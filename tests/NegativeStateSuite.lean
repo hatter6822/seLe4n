@@ -3918,7 +3918,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   | .error e =>
     throw <| IO.userError s!"expected ok for PA just below the declared bound, got {repr e}"
 
-  -- X2-I / WS-SM SM8.B (PR #861 review round 15): `scheduleChecked` on a
+  -- X2-I / WS-SM SM8.B (PR #861 review round 15): `bootScheduleChecked` on a
   -- malformed run queue now *skips* the entry instead of returning
   -- `.schedulerInvariantViolation`, for the reason recorded at the sibling case
   -- in `runSchedulerNegativeChecks`: the error was not local — it aborted the
@@ -3932,13 +3932,13 @@ private def runX2RuntimeInvariantTests : IO Unit := do
       |>.build)
   match bootScheduleChecked malformedSt with
   | .error e =>
-    throw <| IO.userError s!"scheduleChecked must skip a malformed runnable entry rather than fail, got {repr e}"
+    throw <| IO.userError s!"bootScheduleChecked must skip a malformed runnable entry rather than fail, got {repr e}"
   | .ok (_, stChecked) =>
     -- Skipping, not dispatching: there is no TCB behind tid 77 to switch to.
     if (stChecked.scheduler.currentOnCore bootCoreId) = none then
-      IO.println "positive check passed [scheduleChecked skips a malformed runnable entry]"
+      IO.println "positive check passed [bootScheduleChecked skips a malformed runnable entry]"
     else
-      throw <| IO.userError s!"scheduleChecked must not dispatch a malformed runnable entry, got current = {toString (stChecked.scheduler.currentOnCore bootCoreId)}"
+      throw <| IO.userError s!"bootScheduleChecked must not dispatch a malformed runnable entry, got current = {toString (stChecked.scheduler.currentOnCore bootCoreId)}"
 
   -- X2-I: the checked yield on default state (no current thread) is refused by
   -- the yield itself, not as schedulerInvariantViolation — the
@@ -3950,19 +3950,14 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     (bootYieldChecked (default : SystemState))
     .illegalState
 
-  -- ── WS-RR RR8.12 follow-on (`v0.35.192`): the other two X2-I wrappers ──
+  -- ── X2-I differentials for the checked tick and domain switch ──
   --
-  -- The register row that scheduled the wire-or-retire judgement for the four
-  -- unconsumed state transformers observed that `timerTickChecked` and
-  -- `switchDomainChecked` are the undriven members of a four-member symmetric
-  -- family whose other two ARE driven, so deleting half of it may be worse than
-  -- keeping it.  They are kept — and these are the witnesses that make the
-  -- keeping mean something, because each is a DIFFERENTIAL against the unchecked
-  -- form on the same state rather than a smoke test.  A wrapper whose behaviour
-  -- no state distinguishes from its delegate's would have earned deletion
-  -- instead, and that is what these two measure.
+  -- Each is a DIFFERENTIAL against the unchecked form on the same state rather
+  -- than a smoke test: a `withOutgoingContextChecked` guard whose behaviour no
+  -- state distinguishes from its delegate's would add nothing, and these two
+  -- measure that it does.
   --
-  -- (1) `timerTickChecked` SAVES THE OUTGOING CONTEXT and `timerTick` does not.
+  -- (1) `bootTimerTickChecked` SAVES THE OUTGOING CONTEXT and `timerTick` does not.
   -- The checked wrapper runs `saveOutgoingContextChecked` before delegating, so
   -- the current thread's `registerContext` picks up the executing core's bank;
   -- the bare tick leaves the TCB's own context alone.  The control is the bare
@@ -3987,12 +3982,12 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     fun st => (st.getTcb? x2Tid).map (·.registerContext.pc.toNat)
   match bootTimerTickChecked x2Live with
   | .error e =>
-    throw <| IO.userError s!"timerTickChecked must succeed on a resolvable current thread, got {repr e}"
+    throw <| IO.userError s!"bootTimerTickChecked must succeed on a resolvable current thread, got {repr e}"
   | .ok (_, stChecked) =>
     if x2PcAfter stChecked = some 4242 then
-      IO.println "positive check passed [timerTickChecked saves the outgoing context]"
+      IO.println "positive check passed [bootTimerTickChecked saves the outgoing context]"
     else
-      throw <| IO.userError s!"timerTickChecked must save the outgoing context, got pc = {toString (x2PcAfter stChecked)}"
+      throw <| IO.userError s!"bootTimerTickChecked must save the outgoing context, got pc = {toString (x2PcAfter stChecked)}"
   match bootTimerTick x2Live with
   | .error e =>
     throw <| IO.userError s!"the CONTROL (bare timerTick) must succeed on the same state, got {repr e}"
@@ -4002,7 +3997,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     else
       throw <| IO.userError s!"the CONTROL is inert: bare timerTick already saved the context, pc = {toString (x2PcAfter stBare)}"
 
-  -- (2) `switchDomainChecked` REFUSES a state `switchDomain` proceeds on.  Its
+  -- (2) `bootSwitchDomainChecked` REFUSES a state `switchDomain` proceeds on.  Its
   -- guard fires exactly when the current slot names a thread the store does not
   -- hold — an invariant violation `currentThreadValid` forbids — and the bare
   -- `switchDomain` absorbs that silently (its internal `saveOutgoingContext`
@@ -4012,7 +4007,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     (BootstrapBuilder.empty
       |>.withCurrent (some (SeLe4n.ThreadId.ofNat 77))
       |>.build)
-  expectErr "switchDomainChecked refuses a dangling current thread"
+  expectErr "bootSwitchDomainChecked refuses a dangling current thread"
     (bootSwitchDomainChecked x2Dangling)
     .schedulerInvariantViolation
   match bootSwitchDomain x2Dangling with
@@ -4025,7 +4020,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   -- bare tick, total as seL4's `timerTick` is (`v0.36.165`), charges the
   -- dangling current thread nothing and proceeds: here too the GUARD is what
   -- discriminates.
-  expectErr "timerTickChecked refuses a dangling current thread"
+  expectErr "bootTimerTickChecked refuses a dangling current thread"
     (bootTimerTickChecked x2Dangling)
     .schedulerInvariantViolation
   match bootTimerTick x2Dangling with

@@ -1500,7 +1500,7 @@ theorem timerTickOnCore_clears_lastTimeoutErrors (st : SystemState) (c : CoreId)
 -- in-tick domain rotation.  Domain rotation is the separate, atomic
 -- `scheduleDomainOnCore` transition (its boundary branch is `switchDomainOnCore` +
 -- `scheduleEffectiveOnCore`); `switchDomainOnCore_rotates` (§4b) is the rotation
--- witness.  This is exactly the single-core split (`timerTickWithBudget` never
+-- witness.  This is exactly the single-core split (`timerTick` never
 -- rotates; `scheduleDomain` does), and it is what keeps a running thread from
 -- outliving its domain (`currentThreadInActiveDomain` faithfulness).
 

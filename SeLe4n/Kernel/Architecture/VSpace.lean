@@ -32,10 +32,6 @@ namespace SeLe4n.Kernel.Architecture
 
 open SeLe4n.Model
 
-/-- Logical relation: object `rootId` is a VSpace root bound to `asid`. -/
-def asidBoundToRoot (st : SystemState) (asid : SeLe4n.ASID) (rootId : SeLe4n.ObjId) : Prop :=
-  ∃ root, st.objects[rootId]? = some (KernelObject.vspaceRoot root) ∧ root.asid = asid
-
 /-- WS-G3/F-P06/U2-H: Locate the root object id carrying `asid` via O(1) hash lookup.
     Falls back to object-store validation to ensure the entry is still a valid VSpaceRoot.
     U2-H: Rejects ASIDs ≥ `maxASID` (65536 on ARM64) as a defense-in-depth

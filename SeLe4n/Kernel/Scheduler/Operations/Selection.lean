@@ -1058,7 +1058,7 @@ def chooseThreadEffectiveOnCoreCodeWalk (st : SystemState) (c : CoreId) : Nat :=
 
 Uses `chooseBestInBucketEffective` which filters by budget eligibility and
 resolves effective priorities from SchedContext objects. This is used by the
-extended scheduler operations (`scheduleEffective`, `timerTickWithBudget`,
+extended scheduler operations (`scheduleEffective`,
 `handleYieldWithBudget`). The original `chooseThread` is preserved for
 backward compatibility with existing preservation proofs.
 

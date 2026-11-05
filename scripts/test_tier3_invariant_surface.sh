@@ -420,8 +420,6 @@ run_check "INVARIANT" rg -n '^abbrev lifecycleIdentityAliasingInvariant($|[ ({:\
 # the object store, retired with that reader (see the v0.35.78 block below).
 run_check "INVARIANT" rg -U -n '^def lifecycleInvariantBundle \(st : SystemState\) : Prop :=\n  lifecycleIdentityAliasingInvariant st$' SeLe4n/Kernel/Lifecycle/Invariant.lean
 
-# M4-A step-5 lifecycle preservation entrypoint anchors must remain present.
-run_check "INVARIANT" rg -n '^def lifecycleCompositionInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 
 # M4-A step-2 lifecycle transition anchors must remain present.
 run_check "INVARIANT" rg -n '^\s*\| illegalState' SeLe4n/Model/KernelError.lean
@@ -3041,9 +3039,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def spendBudgetO
 # NEGATIVE, per declaration: neither tick carries a raw store write any more.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def timerTickBudget \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
-# The legacy boot-core tick and the trace model's step both resolve the charged
-# thread through the witnessed lookup and hand the witness on.
-run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def timerTickWithBudget : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*match stReplenished\.getTcbWitnessed\? tid with[^\n]*(\n([ \t][^\n]*)?)*timerTickBudget stReplenished tid tcb hTcb" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# The trace model's step resolves the charged thread through the witnessed
+# lookup and hands the witness on.
 run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with[^\n]*(\n([ \t][^\n]*)?)*timerTickBudget st tid tcb hTcb" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
 # ...and the trace model's replenishment fold is a typed update, not a raw
 # SchedContext insert (the fold's `none` arm was the update's `none` arm).
@@ -6099,7 +6096,6 @@ run_check "INVARIANT" rg -n -U 'pub fn timer_tick_count_for\(core_id: usize\) ->
 run_check "INVARIANT" rg -n -U 'pub fn sgi_count_for\(core_id: usize\) -> u64 \{[^\n]*(\n([ \t][^\n]*)?)*?\.sgi_count\.load\(Ordering::Acquire\)' rust/sele4n-hal/src/per_cpu_stats.rs
 # NEGATIVE: a subtype increment that publishes nothing.
 run_negative_check "INVARIANT" rg -n -U '\.(timer_tick_count|sgi_count)\n\s+\.fetch_add\(1, Ordering::Relaxed\)' rust/sele4n-hal/src/per_cpu_stats.rs
-run_check "INVARIANT" rg -n '^def tlbiLocalFullFlush($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
 run_check "INVARIANT" rg -n '^def coreOnlineInMask($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
 run_check "INVARIANT" rg -n '^pub fn tlb_shootdown_req_handler_in' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn round_lock_try_acquire_in' rust/sele4n-hal/src/shootdown.rs
@@ -6112,7 +6108,6 @@ run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown\.sh' scripts/test_tier4_smp
 run_check "INVARIANT" rg -n '^theorem shootdownRoundFor_restores_quiescent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^private def runMaskedRoundChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_ack_round' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_all_acked_for_round' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_self_service_round' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n 'extern "ffi_shootdown_ack_round"' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def shootdownAckRound($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
@@ -6518,7 +6513,6 @@ run_check "INVARIANT" rg -n '^def pageBytes : Nat := 4096' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^def pageBytes : Nat := SeLe4n.pageBytes' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n 'paddr.toNat % SeLe4n.pageBytes != 0 \|\| vaddr.toNat % SeLe4n.pageBytes != 0 then none' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^theorem mapPage_pageAligned($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '_hAligned : paddr.toNat % SeLe4n.pageBytes = 0' SeLe4n/Model/Builder.lean
 run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes != 0 then .error .alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
 # The Architecture granule must not drift back to a second literal.
 run_check "INVARIANT" bash -c "! rg -q '^def pageBytes : Nat := 4096' SeLe4n/Kernel/Architecture/CacheInvalidation.lean"
@@ -6994,7 +6988,7 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 70' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 69' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -7743,7 +7737,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 56' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 55' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -8049,13 +8043,12 @@ run_negative_check "INVARIANT" rg -n 'timerTickOnCoreTimeoutDynamicLockSet =\s*\
 # additionally needs every writer of a queued TCB to hold the queue owner's
 # lock.  **WS-RR RR7.38** closed that: the eleven footprints that can write a
 # queued TCB carry the owner's write lock as a declared member, resolved from
-# the pre-state by `queueOwnerAt`, and the kind is one of exactly two by
+# the pre-state's TCB by `queueOwnerOf?`, and the kind is one of exactly two by
 # construction rather than by a permitted list admitting everything.
 run_check "INVARIANT" rg -n '^def queueOwnershipRespectedBy($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^def queueOwnershipRespected($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem suspendFootprint_respects_queueOwnership($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem QueueOwner.lock_kind($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^@\[inline\] def queueOwnerAt' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem queueOwnerMember_kind($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem queueOwnership_respected_by_tcbSetPriority($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # DELIBERATELY BARE (WS-RR RR8.16, `v0.35.197b`): this is a FAMILY count against
@@ -8236,7 +8229,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 56' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 55' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -8525,7 +8518,7 @@ run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationF
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 70' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 69' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -9396,7 +9389,7 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem fpReleaseNeeded_eq_impl :' SeLe
 run_check "INVARIANT" rg -n '^@\[noinline\] def fpAccessTagOnCore \(st : SystemState\)' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def fpLoadedContext \(st : SystemState\)' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^  \{ ms with fpOwnerCode := ms\.fpOwnerCode\.set c\.val \(ThreadId\.optCode t\?\) c\.isLt \}$' SeLe4n/Machine.lean
-run_negative_check "INVARIANT" rg -n 'restoreTargetAt|Platform\.FFI\.restoreTrapFrame |releaseSwitchedFpOwner coreId|applyFpAccessOutcome r' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n 'restoreTargetAt|Platform\.FFI\.restoreTrapFrame |applyFpAccessOutcome r' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n 'some \(\.capFault decoded\.capAddr\.word inRecv e\)' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'capFault \(UInt64\.ofNat' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def faultRestartFrameOfContext \(ctx : FaultContext\)' SeLe4n/Kernel/Architecture/Fault.lean
@@ -10519,7 +10512,7 @@ run_check "INVARIANT" rg -n 'every declared member is unheld on the ghost table 
 # The check IS the module's elaboration (Tier 1 builds it); these anchors pin
 # that it is wired, that both reconciliation directions exist, and that the
 # planted bare-commit witness is there.
-run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.ExportCommitDisciplineCensus' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.ExportCommitDisciplineCensus\)$' scripts/test_tier1_build.sh
 run_check "INVARIANT" rg -n '^def commitDisciplineRegistry($|[ ({:\[\]])' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 run_check "INVARIANT" rg -n '^def reconciliationViolations($|[ ({:\[\]])' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 run_check "INVARIANT" rg -n 'censusWitnessBareCommit' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
@@ -10650,7 +10643,7 @@ run_check "INVARIANT" rg -n 'SELF-TEST PASS \(12 checks\)' scripts/test_code_vie
 # the right name, because a defaulted trailing `Option` is filled in silently at
 # the citation.  The set is DERIVED from the elaborated environment; building
 # the module is the check, and Tier 1 builds it.
-run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.LockFootprintBoundCensus' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.LockFootprintBoundCensus\)$' scripts/test_tier1_build.sh
 run_check "INVARIANT" rg -n '^def isFootprintDecl($|[ ({:\[\]])' SeLe4n/Testing/LockFootprintBoundCensus.lean
 run_check "INVARIANT" rg -n '^def requiredBoundType($|[ ({:\[\]])' SeLe4n/Testing/LockFootprintBoundCensus.lean
 run_check "INVARIANT" rg -n '^def boundViolation($|[ ({:\[\]])' SeLe4n/Testing/LockFootprintBoundCensus.lean
@@ -11956,7 +11949,7 @@ run_check "INVARIANT" rg -n '^def bootEntryContractViolations($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n '^def bootEntryDeclarations($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessBypass($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessSideInstall($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.BootEntryContract' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.BootEntryContract\)$' scripts/test_tier1_build.sh
 # ...and the link-level half that stays in the Python gate: the extern block is
 # resolved rather than spelled, and unassembled regions provide nothing.
 run_check "INVARIANT" rg -n '^def extern_blocks($|[ ({:\[\]])' scripts/rust_code_view.py
@@ -13555,9 +13548,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.chooseThreadEffective
 #check @SeLe4n.Kernel.timerTickBudget
 #check @SeLe4n.Kernel.scheduleEffective
-#check @SeLe4n.Kernel.timerTickWithBudget
 #check @SeLe4n.Kernel.handleYieldWithBudget
-#check @SeLe4n.Kernel.processReplenishmentsDue
 #check @SeLe4n.Kernel.chooseThreadEffective_state_unchanged
 #check @SeLe4n.Kernel.budgetPositive_subset
 #check @SeLe4n.Kernel.effectiveSchedParams_unbound_legacy
@@ -13666,7 +13657,6 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Architecture.archAssumptionConsumer_distinct_6
 #check @SeLe4n.Kernel.Architecture.architecture_assumptions_index_total_6
 -- SM0.C/D — AN12-B inventory hardening
-#check @SeLe4n.Kernel.Concurrency.smpAnchorVerified
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_sourceTheorems_nodup
 -- SM4.E — single-core witness retirement + retirement ledger
@@ -14005,7 +13995,6 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLock
 #check @SeLe4n.Kernel.Concurrency.TicketLockOp.release
 #check @SeLe4n.Kernel.Concurrency.TicketLockOp.observeServing
 -- SM2.B.6 — Operational semantics
-#check @SeLe4n.Kernel.Concurrency.TicketLockState.captureTicket
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing_eq_serving
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp
@@ -14857,7 +14846,6 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.LockSet.empty
 #check @SeLe4n.Kernel.Concurrency.LockSet.singleton
-#check @SeLe4n.Kernel.Concurrency.LockSet.insert?
 #check @SeLe4n.Kernel.Concurrency.LockSet.insertOrMerge
 #check @SeLe4n.Kernel.Concurrency.LockSet.union
 #check @SeLe4n.Kernel.Concurrency.LockSet.containsKey
@@ -15075,7 +15063,6 @@ import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 #check @SeLe4n.Kernel.Concurrency.LockSet.ofList?_isSome_of_nodup
 #check @SeLe4n.Kernel.Concurrency.LockSet.ofList?_none_of_dup
 #check @SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint_resolves
-#check @SeLe4n.Kernel.Concurrency.dynamicChainHeld
 #check @SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer
 #check @SeLe4n.Kernel.Concurrency.walkStep_extended_increases_objId
 #check @SeLe4n.Kernel.Concurrency.walkStep_extended_blockingServer
@@ -17229,10 +17216,6 @@ run_check "INVARIANT" rg -n -U 'if offset ≥ limit then none' SeLe4n/Platform/D
 run_check "INVARIANT" rg -n -U 'match v\.structBE32\? \(offset \+ 4\), v\.structBE32\? \(offset \+ 8\) with' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match v\.structExtract\? valueOffset valueEnd, v\.stringsName\? nameoff\.toNat with' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n 'match readBE32 blob offset with' SeLe4n/Platform/DeviceTree.lean
-run_negative_check "INVARIANT" rg -n 'match readCString blob \(offset \+ 4\) with' SeLe4n/Platform/DeviceTree.lean
-# NEGATIVE: the unnamed-property fallback, which accepted a name the blob's own
-# strings block does not hold.
-run_negative_check "INVARIANT" rg -n -U 'match lookupFdtString blob offStrings nameoff\.toNat with\n              \| some n => n\n              \| none => ""' SeLe4n/Platform/DeviceTree.lean
 # The tree has exactly one root, and it is named by the empty string.
 run_check "INVARIANT" rg -n -U 'def fdtRoot\? \(nodes : List FdtNode\) : Option FdtNode :=\n  match nodes with\n  \| \[root\] => if root\.name\.isEmpty then some root else none\n  \| _ => none' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match fdtRoot\? nodes with\n      \| none => \.error \.malformedBlob\n      \| some root =>' SeLe4n/Platform/DeviceTree.lean
@@ -17272,12 +17255,12 @@ lake env lean /tmp/fdt_bounded_view_probe.lean'
 # read to size it and an unreadable one cannot shrink it.
 
 # A cell-tuple property is read whole or not at all, and ONE function decides
-# it — the relation was answered three different ways at four sites.
+# it — the relation was answered three different ways at four sites (three
+# since the unused region-list reader was deleted at v0.36.198).
 run_check "INVARIANT" rg -n -U 'def fdtWholeEntryCount \(bytes : ByteArray\) \(entryBytes : Nat\) : Option Nat :=\n  if entryBytes == 0 \|\| bytes\.size % entryBytes != 0 then none\n  else some \(bytes\.size / entryBytes\)' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount bytes \(\(childAddressCells \+ parentAddressCells \+ childSizeCells\) \* 4\) with' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount regBytes \(\(addressCells \+ sizeCells\) \* 4\) with' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount regBytes entryBytes with\n    \| none => \[\]\n    \| some entryCount =>' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U '\(fdtWholeEntryCount regBlob 16\)\.map fun _ =>' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the floor division that dropped a trailing partial tuple, and the
 # two hand-written remainder tests it replaced.
 run_negative_check "INVARIANT" rg -n -U '\(List\.range \(regBytes\.size / entryBytes\)\)\.filterMap' SeLe4n/Platform/DeviceTree.lean
@@ -18948,7 +18931,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def pinCheckWitnesses[^\n]*(\n([ \t][
 run_check "INVARIANT" bash -lc 'rg -U -n "pinViolations env live unreachable standsBesideLive \+\+(\n([ \t][^\n]*)?)*pinCheckWitnessViolations env" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
 
 # Tier 1 runs it.  A census nothing builds reports nothing.
-run_check "INVARIANT" rg -n 'lake build SeLe4n\.Testing\.KernelTransitionReachabilityCensus' \
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.KernelTransitionReachabilityCensus\)$' \
   scripts/test_tier1_build.sh
 
 
@@ -20376,8 +20359,10 @@ run_negative_check "INVARIANT" rg -F -n 'theorem endpointCallWithCapsOnCore_pres
 # ===========================================================================
 # The reachability census's first run named four definitions outside the live
 # closure with no theorem, no suite and no gate.  Two were superseded and are
-# deleted; two are half of a symmetric API-boundary family and are kept, with
-# witnesses that measure what they add rather than that they run.
+# deleted.  The other two were API-boundary wrappers that nothing called; they
+# went with their two siblings at v0.36.197, and what stays is the
+# `withOutgoingContextChecked` guard, driven over the boot core's live ops with
+# witnesses that measure what it adds rather than that it runs.
 # ---------------------------------------------------------------------------
 # (1) THE TWO DELETIONS MUST NOT COME BACK.  `cleanupActiveDonation` was an alias
 # for `returnDonatedSchedContext` whose scenario `cleanupPreReceiveDonation*`
@@ -20392,13 +20377,13 @@ run_negative_check "INVARIANT" rg -F -n 'def endpointCallWithDonation' SeLe4n/Ke
 # by is still there to be superseded by.
 run_check "INVARIANT" rg -F -n 'def cleanupPreReceiveDonation (st : SystemState)' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -F -n 'def cleanupPreReceiveDonationMigrated' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-# (2) THE TWO KEPT WRAPPERS ARE DRIVEN, and each witness is a DIFFERENTIAL: the
+# (2) THE GUARDED TICK AND SWITCH ARE DRIVEN, and each witness is a DIFFERENTIAL: the
 # tick's is the context save the bare tick does not perform, the domain switch's
 # is the guard refusing a state the bare form proceeds on.  A witness with no
 # control asserts that the wrapper runs, not that it does anything.
-run_check "INVARIANT" rg -F -n 'positive check passed [timerTickChecked saves the outgoing context]' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -F -n 'positive check passed [bootTimerTickChecked saves the outgoing context]' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -F -n 'CONTROL passed [the bare timerTick leaves the outgoing context alone]' tests/NegativeStateSuite.lean
-run_check "INVARIANT" rg -F -n 'switchDomainChecked refuses a dangling current thread' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -F -n 'bootSwitchDomainChecked refuses a dangling current thread' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -F -n 'CONTROL passed [the bare switchDomain proceeds on the state the wrapper refuses]' tests/NegativeStateSuite.lean
 # ...and the tick's: the bare tick is total (it charges a dangling current
 # thread nothing), so on the dangling state its guard is what refuses.
@@ -21850,7 +21835,7 @@ run_check "INVARIANT" rg -n '^private def censusPlantedIndirectNamer($|[ ({:\[\]
 # arm, so it separates the two readings on the live tree.
 run_check "INVARIANT" rg -F -n 'consumed.contains ``SeLe4n.Kernel.notificationSignalBoundWriteSet' SeLe4n/Testing/SchedFootprintCensus.lean
 # Building the module IS the check, so Tier 1 must build it.
-run_check "INVARIANT" rg -F -n 'run_check "BUILD" lake build SeLe4n.Testing.SchedFootprintCensus' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -F -x -n 'tier1_targets+=(SeLe4n.Testing.SchedFootprintCensus)' scripts/test_tier1_build.sh
 
 # ============================================================================
 # WS-RR RR8.12 Cut C6a (`v0.35.174`): the non-donating arms' footprints are not

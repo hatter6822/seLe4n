@@ -143,8 +143,8 @@ bits per hop from the capability address `addr`. Each CNode level:
 4. If all bits are consumed, returns the resolved slot reference.
 
 Termination is guaranteed by strict descent of `bitsRemaining`: each hop
-consumes `guardWidth + radixWidth ≥ 1` bits (enforced by `cnodeWellFormed`
-invariant / `hProgress`).
+consumes `guardWidth + radixWidth ≥ 1` bits (enforced by `CNode.wellFormed`
+under `cspaceDepthConsistent` / `hProgress`).
 
 **seL4 divergence (U-M25):** seL4 checks intermediate capability rights
 (read right) during multi-level CSpace traversal. seLe4n enforces rights
@@ -171,10 +171,7 @@ are **not** rights-checked. Specifically:
 - Any new cap-forwarding operation (e.g., a future
   `cspaceForwardCap` that re-uses a resolved slot in a different
   authority context) must establish a rights-reduction proof at the
-  point of call, NOT rely on `resolveCapAddress` to do so.
-
-See `resolveCapAddress_caller_rights_obligation` below for the formal
-contract theorem. -/
+  point of call, NOT rely on `resolveCapAddress` to do so. -/
 def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat)
     (st : SystemState) : Except KernelError SlotRef :=
   if hZero : bitsRemaining = 0 then .error .illegalState        -- no bits to consume
@@ -416,32 +413,6 @@ theorem resolveCapAddress_zero_bits
     (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (st : SystemState) :
     resolveCapAddress rootId addr 0 st = .error .illegalState := by
   simp [resolveCapAddress]
-
-/-- AK8-C (WS-AK / C-M03): **Formal caller rights obligation for
-`resolveCapAddress`.** This theorem documents the design contract that
-`resolveCapAddress` imposes on its callers: the function does NOT check
-intermediate-level capability rights during multi-level CSpace traversal.
-Callers must establish any required rights at the entry-level capability
-before invoking it.
-
-This theorem is intentionally vacuous — it has no Prop content — and
-exists solely to surface the obligation in a machine-searchable form.
-Any future cap-forwarding operation that reuses a resolved slot in a
-different authority context MUST reference this theorem in its
-precondition to acknowledge the contract.
-
-See the `resolveCapAddress` docstring (§AK8-C — Caller rights obligation)
-for the full narrative description. The three current call sites —
-`cspaceLookupMultiLevel`, `cspaceLookupSlot` (via `cspaceResolveRef`),
-and direct `resolveCapAddress` use in the capability dispatcher — all
-satisfy this obligation by checking rights at the operation layer
-(`cspaceMint`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`) before
-dereferencing the resolved slot.
-
-**AN4-F.1 (CAP-M01)**: typed `DocumentedObligation` (a marker constant,
-not a vacuous Prop). Search the codebase for `: DocumentedObligation` to
-enumerate every such caller contract. -/
-def resolveCapAddress_caller_rights_obligation : DocumentedObligation := .recorded
 
 /-- WS-H13/H-01 (deliverable 10): If `resolveCapAddress` succeeds, the returned
 slot reference points to a valid CNode.

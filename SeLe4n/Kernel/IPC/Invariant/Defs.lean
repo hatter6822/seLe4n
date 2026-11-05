@@ -994,9 +994,6 @@ theorem pendingMessagesSatisfy_of_getElem_eq {P : IpcMessage → Prop} {s1 s2 : 
 -- WS-F5/D1d: Badge well-formedness invariant
 -- ============================================================================
 
-/-- WS-F5/D1d: A single badge value is word-bounded (fits in `machineWordBits`). -/
-@[inline] def badgeValid (badge : SeLe4n.Badge) : Prop := badge.valid
-
 /-- WS-F5/D1d: All badges in notification objects are word-bounded.
 Asserts that every notification's `pendingBadge` (when present) satisfies
 `Badge.valid` (value < 2^machineWordBits). This ensures the model cannot
@@ -8915,14 +8912,5 @@ theorem cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
         (donationHeadResolves_of_chainWellFormed st scId hChain) hLk hBind hRecvNotRes
         (hOwnerNotRes recvTcb scId owner hLk hBind) newOwner?
         ((hStack recvTcb scId owner hLk hBind) newOwner? hRes).1
-
-/-- AK1-A (I-H01): Plan-compliant alias. The plan specifies the lemma name
-    `cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` at the
-    top-level function's naming scope. Since we retain two functions
-    (`cleanupPreReceiveDonation` for the defensive frame-lemma
-    infrastructure and `cleanupPreReceiveDonationChecked` for production
-    use), this alias provides the plan-named entry point. -/
-abbrev cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull :=
-  @cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
 
 end SeLe4n.Kernel

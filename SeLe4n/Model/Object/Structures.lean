@@ -220,10 +220,6 @@ def shift (level : Nat) : Nat := 48 - 9 * level
 /-- The index of the level-ℓ table a virtual address passes through. -/
 def indexOf (level : Nat) (vaddr : SeLe4n.VAddr) : Nat := vaddr.toNat >>> shift level
 
-/-- A slot covers the virtual addresses whose level-ℓ index is its own. -/
-def covers (slot : PageTableSlot) (vaddr : SeLe4n.VAddr) : Bool :=
-  indexOf slot.level vaddr == slot.index
-
 end PageTableSlot
 
 /-- WS-ZA ZA5.4: the cell an unmap took out of a root's mapping table (its
@@ -2557,16 +2553,6 @@ theorem CNode.beq_sound (a b : CNode) (h : (a == b) = true) :
 -- WS-H13: CSpace depth consistency predicates
 -- ============================================================================
 
-/-- WS-H13: CNode well-formedness — consumed bits fit in remaining depth,
-and at least one bit is consumed (ensures termination of multi-level resolution).
-
-The two constraints encode:
-- `hConsumed`: the CNode does not consume more bits than available at its depth.
-- `hProgress`: at least one bit is consumed per resolution step, preventing
-  zero-width CNodes that would cause infinite loops. -/
-def cnodeWellFormed (cn : CNode) : Prop :=
-  cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed
-
 /-- WS-H13: Empty CNode is trivially well-formed only when depth = 0.
 For non-trivial resolution, CNodes must have positive bitsConsumed. -/
 theorem CNode.empty_not_wellFormed : ¬ CNode.empty.wellFormed := by
@@ -2576,9 +2562,6 @@ theorem CNode.empty_not_wellFormed : ¬ CNode.empty.wellFormed := by
 -- ============================================================================
 -- WS-E4/C-03: Capability Derivation Tree (CDT) model
 -- ============================================================================
-
-/-- A slot address in the global capability namespace: (CNode ObjId, Slot). -/
-abbrev SlotAddr := SeLe4n.ObjId × SeLe4n.Slot
 
 /-- The operation that created a derivation edge. -/
 inductive DerivationOp where
@@ -2958,12 +2941,6 @@ theorem addEdge_preserves_edgeWellFounded_fresh
       · -- Old edge from child: contradicts hFreshChild
         exact absurd (he0p.trans hChildIsFirst) (hFreshChild e0 hOld0).1
   · exact ⟨e, hOld, hep, hec⟩
-
-/-- WS-H4/M-G03: Runtime cycle-check — returns `true` if adding edge
-(parent → child) would NOT create a cycle. Checks that parent ≠ child and
-parent is not reachable from child via existing edges. -/
-noncomputable def addEdgeWouldBeSafe (cdt : CapDerivationTree) (parent child : SlotRef) : Bool :=
-  parent != child && parent ∉ cdt.descendantsOf child
 
 /-- AE4-C (U-18/CAP-02): Propositional reachability — `src` can reach `dst`
 through a non-empty path of edges. Used as the specification-level reachability

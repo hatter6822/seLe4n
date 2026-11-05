@@ -120,18 +120,6 @@ inductive PageTableDescriptor where
   | page  (outputAddr : PAddr) (attrs : PageAttributes)
   deriving DecidableEq, Repr
 
-/-- Level validity: blocks at L1/L2 only, tables at L0/L1/L2 only, pages at L3 only. -/
-def levelValid (level : PageTableLevel) (desc : PageTableDescriptor) : Bool :=
-  match level, desc with
-  | _, .invalid          => true
-  | .l0, .table _        => true
-  | .l1, .table _        => true
-  | .l2, .table _        => true
-  | .l1, .block _ _      => true   -- 1 GiB block
-  | .l2, .block _ _      => true   -- 2 MiB block
-  | .l3, .page _ _       => true   -- 4 KiB page
-  | _, _                 => false
-
 -- ============================================================================
 -- AG6-A-iii: Encode function (descriptor → UInt64)
 -- ============================================================================
@@ -257,22 +245,6 @@ def AccessPermission.isReadOnly (ap : AccessPermission) : Bool :=
   match ap with
   | .roEL1 | .roAll => true
   | _ => false
-
-/-- A page descriptor is W^X compliant: if executable (¬pxn or ¬uxn), then
-    the access permission must be read-only. This matches the existing
-    `PagePermissions.wxCompliant` invariant from `Model/Object/Structures.lean`. -/
-def descriptorWxCompliant (desc : PageTableDescriptor) : Prop :=
-  match desc with
-  | .block _ attrs | .page _ attrs =>
-    (attrs.pxn = false ∨ attrs.uxn = false) → attrs.ap.isReadOnly = true
-  | .invalid | .table _ => True
-
-/-- Decidable W^X compliance check for runtime validation. -/
-def descriptorWxCompliantDec (desc : PageTableDescriptor) : Bool :=
-  match desc with
-  | .block _ attrs | .page _ attrs =>
-    if !attrs.pxn || !attrs.uxn then attrs.ap.isReadOnly else true
-  | .invalid | .table _ => true
 
 /-- Convert hardware page attributes to the abstract `PagePermissions` model.
     This bridges the ARMv8 descriptor format to the existing kernel model. -/

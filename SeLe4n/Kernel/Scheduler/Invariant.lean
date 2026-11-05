@@ -155,8 +155,8 @@ theorem default_configTimeSlicePositive :
 
 /-- AN5-B (SCH-M03): Replenishment pipeline ordering invariant.
 
-`timerTickWithBudget` performs its replenishment pipeline in a fixed
-three-step order:
+The timer tick (`timerTickOnCore`, per core) performs its replenishment
+pipeline in a fixed three-step order:
 
 1. **Pop due entries** (`popDueReplenishments`): extract every entry
    whose `eligibleAt ≤ now` from the sorted `replenishQueue`.
@@ -186,12 +186,12 @@ the pop-due sweep (step 1). The sorted-queue post-state witness
 `popDueReplenishments_remaining_gt_now` in
 `Scheduler/Operations/Preservation.lean` discharges the invariant
 immediately after step 1 completes. Callers that need the invariant
-held at an arbitrary moment should invoke `processReplenishmentsDue`
-at that moment and then assert the invariant via the sorted-queue
-witness — see `timerTickWithBudget` in
+held at an arbitrary moment should pop the due replenishments
+(`popDueReplenishments`) at that moment and then assert the invariant via the sorted-queue
+witness — see `timerTickOnCore` in
 `Scheduler/Operations/Core.lean` for the canonical call pattern
-(`now := st.machine.timer` then `processReplenishmentsDue st now`
-then dispatch to `timerTickBudget`).
+(`now := st.machine.timer`, then the core's due replenishments, then
+the current thread's budget charge).
 
 A future refactor that reorders the pipeline (e.g. swaps steps 1 and 3)
 would leave due-but-unprocessed entries in the queue, falsifying this

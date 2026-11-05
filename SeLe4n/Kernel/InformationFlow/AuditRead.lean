@@ -784,9 +784,6 @@ def auditBasisBytes (e : DeclassificationEvent) : List UInt8 :=
 /-- WS-SM SM9.A.2: the exported designation width, in bytes. -/
 def maxAuditDesignationBytes : Nat := 256
 
-/-- WS-SM SM9.A.2: bytes per exported chunk. -/
-def auditDesignationBytesPerChunk : Nat := 4
-
 /-- WS-SM SM9.A.2: chunk `i` of a byte list, four bytes little-endian.  Bytes
 past the end read as `0`, which is why the byte **count** is exported
 separately: a trailing NUL is a legal `String` character, so chunk padding is

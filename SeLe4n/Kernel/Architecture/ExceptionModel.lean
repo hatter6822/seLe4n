@@ -192,35 +192,6 @@ inductive ExceptionLevel where
   | el1   -- Kernel mode
   deriving Repr, DecidableEq
 
-/-- AG3-F: Determine the current exception level from SPSR.
-    SPSR_EL1 bits [3:0] encode the target EL on exception return.
-    EL0: M[3:0] = 0b0000, EL1: M[3:0] = 0b0100 or 0b0101. -/
-def exceptionLevelFromSpsr (spsr : UInt64) : ExceptionLevel :=
-  let mBits := spsr &&& 0xF
-  if mBits = 0 then .el0 else .el1
-
-/-- AG3-F: Determine exception level from exception source.
-    Exceptions from lower EL (AArch64/AArch32) came from EL0 (user).
-    Exceptions from current EL came from EL1 (kernel). -/
-def exceptionLevelFromSource (source : ExceptionSource) : ExceptionLevel :=
-  match source with
-  | .lowerElAArch64 => .el0
-  | .lowerElAArch32 => .el0
-  | .currentElSp0   => .el1
-  | .currentElSpX   => .el1
-
-/-- AG3-F: Privilege check — system register access requires EL1. -/
-def canAccessSystemRegisters (level : ExceptionLevel) : Bool :=
-  match level with
-  | .el1 => true
-  | .el0 => false
-
-/-- AG3-F: Privilege check — privileged instruction execution requires EL1. -/
-def canExecutePrivileged (level : ExceptionLevel) : Bool :=
-  match level with
-  | .el1 => true
-  | .el0 => false
-
 -- ============================================================================
 -- AG3-C-iii/iv: Exception dispatch functions
 -- ============================================================================

@@ -151,13 +151,13 @@ This section formally classifies all kernel operations into enforcement categori
 and proves that the policy-checked wrappers are sufficient for the enforcement
 boundary.
 
-**Canonical classification (21 operations):**
+**Canonical classification (20 operations):**
 
 | Category | Operations |
 |---|---|
 | **Policy-gated** (13) | `endpointSendDualChecked`, `endpointReceiveDualChecked`, `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C), `cspaceMintChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked`, `lookupServiceChecked`, `revokeServiceChecked`, `notificationWaitChecked` (V2-A), `endpointReplyRecvChecked` (V2-C) |
 | **Capability-only** (5) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `storeObject` |
-| **Read-only** (3) | `chooseThread`, `lookupObject`, `cspaceResolvePath` |
+| **Read-only** (2) | `chooseThread`, `cspaceResolvePath` |
 
 Policy-gated operations cross domain boundaries and carry explicit information-flow
 risk. Capability-only operations derive authority entirely from capability
@@ -241,7 +241,6 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "untypedResetFromCap"
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
-  , .readOnly "lookupObject"
   , .readOnly "cspaceResolvePath"
   -- Internal/lifecycle: building blocks used under capability-guarded contexts
   , .capabilityOnly "storeObject"

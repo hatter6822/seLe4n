@@ -168,7 +168,7 @@ def cdtAcyclicity (st : SystemState) : Prop :=
 well-formed bit allocation.
 
 Each CNode in the object store has `depth ≤ maxCSpaceDepth`, and whenever its
-`bitsConsumed` is positive it satisfies `cnodeWellFormed` (guard + radix ≤ depth,
+`bitsConsumed` is positive it satisfies `CNode.wellFormed` (guard + radix ≤ depth,
 individual widths bounded). Combined with `bitsConsumed > 0`, this guarantees
 that multi-level `resolveCapAddress` terminates by structural recursion on
 remaining bit count — no cross-CNode depth ordering is required. -/
@@ -405,10 +405,6 @@ definitional unfolding happens automatically during `simp`-closed goals. -/
 
 namespace capabilityInvariantBundle
 
-/-- Extract `cspaceLookupSound` from the tuple form. -/
-@[simp] abbrev lookupSound {st : SystemState} (h : capabilityInvariantBundle st) :
-    cspaceLookupSound st := h.1
-
 /-- Extract `cdtCompleteness` from the tuple form. -/
 @[simp] abbrev cdtCompleteness {st : SystemState} (h : capabilityInvariantBundle st) :
     _root_.SeLe4n.Kernel.cdtCompleteness st := h.2.1
@@ -417,18 +413,9 @@ namespace capabilityInvariantBundle
 @[simp] abbrev cdtAcyclicity {st : SystemState} (h : capabilityInvariantBundle st) :
     _root_.SeLe4n.Kernel.cdtAcyclicity st := h.2.2.1
 
-/-- Extract `cspaceDepthConsistent` from the tuple form. -/
-@[simp] abbrev depthConsistent {st : SystemState} (h : capabilityInvariantBundle st) :
-    cspaceDepthConsistent st := h.2.2.2.1
-
 /-- Extract `st.objects.invExt` from the tuple form. -/
 @[simp] abbrev objectsInvExt {st : SystemState} (h : capabilityInvariantBundle st) :
     st.objects.invExt := h.2.2.2.2.1
-
-/-- WS-SM SM6.D / PR #822 Phase H (#1): extract `replyCapPointsToValidReply` from the
-tuple form (the 6th conjunct). -/
-@[simp] abbrev replyCapBacked {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.replyCapPointsToValidReply st := h.2.2.2.2.2.1
 
 /-- WS-ZA ZA5.3: extract `cdtLinksAgree` from the tuple form (the 7th conjunct). -/
 @[simp] abbrev linksAgree {st : SystemState} (h : capabilityInvariantBundle st) :
@@ -695,12 +682,6 @@ theorem retypeTarget_implies_scrub_token_held
     {st : SystemState} (rt : RetypeTarget st) :
     SeLe4n.Kernel.ScrubToken st rt.id :=
   rt.cleanupHookDischarged.2.2
-
-/-- AN4-F.4 (CAP-M04): Identity-coercion helper — recover the raw `ObjId`
-from a `RetypeTarget`. Used by the cleanup-integrated wrappers when they
-have to drop into the type-erased internal primitive. -/
-@[inline] def RetypeTarget.toObjId {st : SystemState} (tgt : RetypeTarget st) :
-    SeLe4n.ObjId := tgt.id
 
 instance {st : SystemState} : CoeHead (RetypeTarget st) SeLe4n.ObjId where
   coe tgt := tgt.id

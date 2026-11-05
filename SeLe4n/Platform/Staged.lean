@@ -731,10 +731,4 @@ guarantees they all continue to compile.
 
 namespace SeLe4n.Platform.Staged
 
-/-- AN7-D.6 anchor: a dummy definition whose mere presence forces Lean to
-    link the imported modules into this compilation unit.  `lake
-    build SeLe4n.Platform.Staged` will fail loudly if any of those modules
-    acquires a broken proof. -/
-def stagedBuildAnchor : Unit := ()
-
 end SeLe4n.Platform.Staged

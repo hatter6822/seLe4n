@@ -708,8 +708,11 @@ theorem syscallOperandCap?_of_resolved (st : SystemState) (tid : SeLe4n.ThreadId
   simp only [syscallOperandCap?, SystemState.getTcb?, SystemState.getCNode?, hTcb, hRoot, hRef]
 
 /-- The signal's dispatch: `dispatchOperandCheckedR` with the signal's arm
-(`dispatchSignalCheckedR_eq`). -/
-@[inline] def dispatchSignalCheckedR (ctx : LabelingContext)
+(`dispatchSignalCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchSignalCheckedR (ctx : LabelingContext)
     (capAddr : SeLe4n.CPtr)
     (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs)
     (tid : SeLe4n.ThreadId)
@@ -739,8 +742,11 @@ theorem dispatchSignalCheckedR_eq (ctx : LabelingContext)
   exact hArm
 
 /-- The wait's dispatch: `dispatchOperandCheckedR` with the wait's arm
-(`dispatchWaitCheckedR_eq`). -/
-@[inline] def dispatchWaitCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+(`dispatchWaitCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchWaitCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore
     (waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait))

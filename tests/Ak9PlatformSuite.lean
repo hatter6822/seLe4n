@@ -1042,7 +1042,7 @@ private def terminatorOutsideStructBlockDtb : ByteArray :=
 declaring a strings block short enough to exclude `#size-cells` — the last name
 in the table — so a property that references it names a string in trailing data.
 
-`lookupFdtString` searched from `offDtStrings + nameoff` to the end of the blob,
+The retired string lookup searched from `offDtStrings + nameoff` to the end of the blob,
 so the name resolved and the root's `#size-cells` was honoured on a blob that
 does not declare it.  The Rust parser rejects the same offset using
 `strings_size`. -/

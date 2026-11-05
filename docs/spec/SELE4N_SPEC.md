@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.197` (`lakefile.toml`) |
+| **Package version** | `0.36.199` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 575,616 across 539 Lean files |
-| **Test LoC** | 88,478 across 70 Lean test suites |
-| **Proved declarations** | 22,033 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 574,013 across 539 Lean files |
+| **Test LoC** | 88,451 across 70 Lean test suites |
+| **Proved declarations** | 22,015 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1442,7 +1442,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `pending`, `held`) with `Repr`, `Inhabited`, `DecidableEq`
    derived.  `unheld` canonical seed.  `TicketLockOp`
    3-constructor inductive (`tryAcquire`, `release`,
-   `observeServing`).  Operational semantics: `captureTicket`,
+   `observeServing`).  Operational semantics:
    `observeServing`, `applyOp` (with fast-path immediate-promote),
    `promotePending`, `releaseAndPromote`.
 
@@ -2563,7 +2563,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `withDynamicChainExtension` combinator (optimistic walk +
      verify, `ObjId.val` ascending discipline, bounded
      retries; deleted at WS-LS LS2.4, the chain being declared
-     statically since RR7.40), `dynamicChainHeld` predicate,
+     statically since RR7.40), the held-chain properties,
      `dynamic_chain_deadlock_free` theorem, the termination
      result — **three theorems**, not the one `walkAndAcquire_terminates`
      this paragraph used to name, which was never authored under that
@@ -2880,9 +2880,10 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    strictly ascending — the SM0.I total-order discipline that closes
    any potential wait-cycle (two cores walking different chains
    cannot deadlock because each only ever holds locks at strictly
-   ascending `ObjId.val`).  `dynamicChainHeld` is the 4-conjunct
-   chain-held predicate (write-locks held + ObjId-ascending +
-   path-starts-at-start + path-follows-blockingServer).
+   ascending `ObjId.val`).  A held chain has four properties
+   (write-locks held + ObjId-ascending + path-starts-at-start +
+   path-follows-blockingServer), proven separately by the walker and
+   the chain's lock acquisition.
 
    *Since WS-LS LS3.1 (`v0.36.70`) `WithLockSet.lean`, `LockSetHeld.lean`,
    `WithLockSetInventory.lean` and `tests/WithLockSetSuite.lean` are deleted:
@@ -3925,7 +3926,7 @@ machine-checked size witness). Each entry carries five fields
 | 1 | `cspaceLookupMultiLevel` resolved-CNode validity | H-05 / AN4-D |
 | 2 | `cspaceCopy/Move/Mutate` CDT post-state composition | AK7-F.cascade / AN10-B |
 | 3 | `lifecyclePreRetypeCleanup` sequential cleanup ordering | C-M04 / AN9-D |
-| 4 | `timerTickWithBudget` replenishment pipeline | AK2-K / AN5-D |
+| 4 | `timerTickOnCore` replenishment pipeline | AK2-K / AN5-D |
 | 5 | `typedIdDisjointness` invariant | H-10 / AN2-D |
 | 6 | `Architecture/Assumptions.lean` single-core kernel model | AG-* baseline |
 | 7 | `bootFromPlatform` boot-core / current-core | CX-M03 / AN6-F |
@@ -5249,10 +5250,10 @@ the stack head's upward link and the context's head are cleared, the frames
 below keep their callers).  The old head is then a *contextless stack top*: no
 `next`, while the frame below still links up to it.  Its later removal cuts it
 from that frame, as `reply_remove`'s `if (prev_ptr) prev->replyNext = 0` does
-(`severReplyFrameBelowStores`, the fourth arm of `cutReplyFrameOut`, mirrored
+(`severReplyFrameBelowStores`, the fourth arm of `spliceReplyFrameOut`, mirrored
 on the frozen surface and in the in-place splice, whose cut and frame-above
 splice write each link in its slot: `severReplyFrameBelowStoresInPlace`,
-`cutReplyFrameStoresInPlace`), so the removed reply is named
+`spliceReplyFrameStoresInPlace`), so the removed reply is named
 by no other object and is retired, and the frame below becomes the new top.  The
 footprints declare the frame below on that arm too (`replyFrameBelow?` is the
 frame's `prev` unless it heads a stack).  A thread that lent a context from the bottom of a
@@ -6489,21 +6490,8 @@ Every kernel object has a decidable well-formedness predicate:
   of (address, word) pairs and never writes model memory
   (`ffi_capture_user_words`, `overflowRuns`, `userWordAt`), and a core's TLB
   view holds each translation once (`tlbInsertOnCore_of_mem`).  Each of the
-  five scheduling-context scenarios reads 0 allocations.
-- **The suspend's checks come first** (`v0.36.197`, WS-ZA ZA6.33 part 1).
-  `suspendAdmitted` (`Kernel/IPC/CrossCore/SuspendAdmission.lean`) asks, on
-  the state the suspend is handed, every question its later steps ask: a
-  thread blocked on no IPC is admitted whatever it holds, the return of a
-  context it holds on loan decided there (`donatedReturnCommits`); a thread
-  blocked on a notification and holding no loan is admitted, its wait
-  cancelled in its slots (`storeNotificationBlockedCancelled`) and every
-  thread's binding read back after the cancel (`TcbBindingsKept`).  No check
-  assumes the store invariant: each read-back is the table's own frame on a
-  table no insert resizes (`RHTable.noResizeDue`, asked once).  The perform
-  is the specification's state (`suspendThreadOnCore_of_admitted`), and the
-  suspend of the partner waiting on the notification reads 0 allocations.
-  The suspend of a thread blocked on an endpoint or a reply, or on a
-  notification while holding a loan, keeps the general path
+  five scheduling-context scenarios reads 0 allocations.  The suspend of a
+  thread blocked in IPC or holding a donated context keeps the general path
   (`docs/REGISTERED_DEBT.md`, ZA6.33).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
@@ -7302,7 +7290,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`fpAccessOnCore_load_eq_own_context`); a thread whose live values are on
   another core retries (`fpAccessOnCore_retry_of_owned_elsewhere`).  Every
   restoring entry releases a switched-out owner between its commit and its
-  restore (`fpReleaseOnCore`, `Concurrency.releaseSwitchedFpOwner`), and the
+  restore (`fpReleaseOnCore`, `Concurrency.releaseSwitchedFpOwnerOnCore`), and the
   restore lifts the trap exactly while a core resumes its owner
   (`RestoreTarget.user`'s `fpLive`, restore kind `2`).  The release moves to the
   switch-out, where seL4's `CONFIG_HAVE_FPU` waits for the next trap, because
@@ -7994,8 +7982,7 @@ The CBS budget engine (`Kernel/SchedContext/Budget.lean`) provides pure-function
 budget management operations with machine-checked invariants:
 
 - **Budget consumption**: `consumeBudget` decrements `budgetRemaining` with
-  saturating arithmetic (cannot go negative). `isBudgetExhausted` detects
-  zero remaining budget.
+  saturating arithmetic (cannot go negative).
 - **Replenishment scheduling**: `scheduleReplenishment` creates a
   `ReplenishmentEntry` eligible one period in the future and truncates the
   replenishment list to `maxReplenishments` (= 8).
@@ -9340,7 +9327,7 @@ because each is false without the other.
   `cancelledMiddleCaller_splices_at_cut` binds the innermost live caller
   `.donated scId outer` — still owed outward — and leaves **every other thread's
   TCB unchanged**, which is exactly what `reclaimToCancelledThread` would not do.
-  `cutThreadReplyFrameOut` takes the cancelled frame off the middle of the stack
+  `spliceThreadReplyFrameOut` takes the cancelled frame off the middle of the stack
   in `O(1)` before its caller link is consumed, so no frame is left on a stack with
   its caller gone, and since HP6.3 it *repairs* the pair either side of the cut
   rather than breaking it: the frame above takes the cut frame's own downward link,
@@ -9398,7 +9385,7 @@ is replaced by `Reply.next : ReplyStackLink`, the policy was unchanged at this c
 (it flipped to the splice at WS-HP HP6.8, §8.12.11), and the removal is carried
 out by what is now the **splice**:
 
-- **`cutReplyFrameOut`** — then a sever — cleared the `prev` of the frame above
+- **`spliceReplyFrameOut`** — then a sever — cleared the `prev` of the frame above
   the one being removed, so that frame became the bottom of the stack it heads and
   the removed frame left the structure when its caller link was consumed
   (`Reply.consumed`); since §8.12.11 it re-points that `prev` at the frame below
@@ -9407,7 +9394,7 @@ out by what is now the **splice**:
   the frame being cut out is a stale upward link, which the downward-stated
   relation permits and which is therefore read as "nothing above me", never
   repaired.
-- **The cancellation path runs it** (`cutThreadReplyFrameOut`), after the
+- **The cancellation path runs it** (`spliceThreadReplyFrameOut`), after the
   reclaim and before `consumeReplyLink`, with both orders pinned.
 - **A validated frame below the head whose caller was consumed is now an
   `.error`**, not the bottom of the stack: with the removal in place a linked frame
@@ -9717,7 +9704,7 @@ Six properties of the surface this leaves.
    reply path stated as `replyStackHeadIsAnsweredReply`, seen from the cancellation
    end and *proved* rather than assumed, which is why HP7 could delete that
    predicate) and
-   `cancelSplicedFrameAbove?_of_donation` / `cancelCutFrameBelow?_of_donation`
+   `cancelSplicedFrameAbove?_of_donation` / `cancelSplicedFrameBelow?_of_donation`
    (a reclaim excludes both removal members).  Both were sentences about every
    reachable state in footprint docstrings, and the binding reading could not have
    stated either.  The wake and both below-head members needed **no**
@@ -9754,7 +9741,7 @@ instead of breaking the chain there, so the frames below a cut stay on the
 context's stack and the reservation goes on travelling outward to the caller that
 owns it.
 
-**The removal is three stores.**  `cutReplyFrameStores` writes
+**The removal is three stores.**  `spliceReplyFrameStores` writes
 `above.prev := some below`, `below.next := some (.frame above)`, and the cut
 frame's own links cleared (`prev := none, next := none`, seL4's `reply_remove`;
 the `next` too since `v0.36.140`).  The third is not optional: without it the cut
@@ -9764,21 +9751,21 @@ whose target no longer answers it, which falsifies `nextLinkReciprocal`, so the 
 `SeLe4n/Testing/ReplyStackWriteCensus.lean` would have had to accept a half-step
 where the sever stated its result outright.  With it the invariant is preserved
 **outright** across the removal
-(`cutReplyFrameOut_preserves_donationChainWellFormed`,
+(`spliceReplyFrameOut_preserves_donationChainWellFormed`,
 `removeCallerReplyFrame_preserves_donationChainWellFormed`), and it costs nothing:
 the cut frame's lock is already a declared write member on both removal paths, so
 `maxLockSetSize` was unmoved by it, at HP3.5's twenty-three (HP10.6 has since
 taken it to twenty-four, for a member of its own — the TCB a bottom-of-stack pop
 redirects the reservation to).
 
-**The below side degenerates rather than refusing.**  `cutFrameBelow?` answers
+**The below side degenerates rather than refusing.**  `spliceFrameBelow?` answers
 `Option`: a `prev` that does not resolve, one naming the frame above, and a frame
 below whose own `next` does not link back are all *not followed*, and the removal
 then clears the frame above's `prev` (and its `next` too where it names the cut
 frame back, `Reply.unlinkedFrom`) and the cut frame's links, which is the sever.  So this operation's refusal
 set is **exactly** the pre-WS-HP one — every refusal theorem carries verbatim,
-`cutReplyFrameOutOrSelf`'s fold soundness included, and
-`cutReplyFrameOut_eq_sever_of_no_frame_below` is the definitional equality that
+`spliceReplyFrameOutOrSelf`'s fold soundness included, and
+`spliceReplyFrameOut_eq_sever_of_no_frame_below` is the definitional equality that
 makes every repair a case split whose `none` branch is the pre-HP proof.  A stale
 upward link is excluded on every reachable state (`nextLinkReciprocal`); the
 reciprocity checks (`donationChainFrom`, `replyFrameOnLiveStack`) stay as
@@ -9900,8 +9887,8 @@ doubly linked reply stack exactly as the live one does, and a removal that sever
 there loses the frames below a cut exactly as the live sever did.
 
 The trigger half of this mirror flipped at HP4.7 (§8.12.9); this is the removal.
-`frozenCutReplyFrameOut` replaces `frozenDetachReplyFrameAbove`, clause for
-clause with the live `cutReplyFrameOut`: the same three stores, the same
+`frozenSpliceReplyFrameOut` replaces `frozenDetachReplyFrameAbove`, clause for
+clause with the live `spliceReplyFrameOut`: the same three stores, the same
 declining below side, the same refusal set.  The sever's names are **deleted**
 rather than kept beside a spliced body — HP6.1 had kept them deliberately, because
 a `frozenDetach…` beside a live `splice…` read as the *schedule*, and this is the
@@ -9936,7 +9923,7 @@ Four things this section fixes for a reader.
 
 4. **The write census carries three frozen splice entries where the sever had
    two.**  The store step is registered on its own, as the live
-   `cutReplyFrameStores` is, because it performs the writes with none of the
+   `spliceReplyFrameStores` is, because it performs the writes with none of the
    removal's resolution or validation — so a transition reaching for it directly is
    a site.  Each is a `mirrors` entry naming the live counterpart of the *same
    shape*, which makes the store step's chain terminate in a stating entry two hops
@@ -9959,7 +9946,7 @@ the fixture chooses would measure the fixture.
 
 Two things that scenario establishes about its own reach, recorded because a reader
 would otherwise infer the wrong one.  A code mutation of the splice's *stores*
-never reaches it: `cutReplyFrameStores_cases` states the three stores exactly,
+never reaches it: `spliceReplyFrameStores_cases` states the three stores exactly,
 so the full sever and a reconnection that clobbers the frame below's own downward
 link both fail to **elaborate**.  The store shape is therefore pinned by a theorem,
 and the witness's subject is the composition, which no theorem states.  And it is
@@ -9986,7 +9973,7 @@ last step (HP10.10).
 #### 8.12.15 The depth-two payoff — WS-HP HP10.9 (`v0.35.53`)
 
 At reply-stack depth 2 the frame a removal takes off the stack **is** the stack's
-bottom, so there is nothing below it to reconnect: `cutFrameBelow?` answers
+bottom, so there is nothing below it to reconnect: `spliceFrameBelow?` answers
 `none`, the splice degenerates to the sever
 (`removeCallerReplyFrame_clears_prev_of_bottom_frame`), and
 `cancelledMiddleCallerPolicy` writes the same `none` into the frame above whichever
@@ -10153,15 +10140,15 @@ Three things that cut fixed the shape of, and each is one question given one own
 (`storeObject_reply_stackLinks_preserves_nonReciprocal`, over the six pre-state facts a
 stack-link store actually reads) and assembled twice, because the full bundle and the
 relaxed one differ in the pair and nowhere else.  **The splice's store chain has one
-owner** — `cutReplyFrameOut_transport`, stated over *any* predicate a
+owner** — `spliceReplyFrameOut_transport`, stated over *any* predicate a
 caller-preserving Reply store carries — since which stores run, in what order, with
 which lookups surviving between them, is a fact about the operation and not about a
 bundle; both carriages are one application of it, and
-`cutReplyFrameOutOrSelf_replyLinkageFrame` is that same transport at
+`spliceReplyFrameOutOrSelf_replyLinkageFrame` is that same transport at
 `P := replyLinkageFrame st`.  And **the composite states every hypothesis on the state
 the removal runs on**: the answered Reply survives the splice with its `caller`
 (`replyCallerAgree`) and the woken caller's TCB survives it verbatim
-(`cutReplyFrameOutOrSelf_tcb_backward`), both discharged inside
+(`spliceReplyFrameOutOrSelf_tcb_backward`), both discharged inside
 `removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage` rather than
 pushed onto a caller who would have to reason about a state the operation does not rest
 at.
@@ -10201,7 +10188,7 @@ steps carry the bundle for the same reason.  The reclaim
 (`returnDonationToCancelledCaller_preserves_ipcInvariantFull`) composes the holder abort
 with `returnDonatedSchedContext`'s carriage at the *relaxed* donation-owner bundle, the
 relaxation point being the victim the pop rebinds.  The splice is three `.reply`
-stack-link stores (`cutThreadReplyFrameOut_preserves_ipcInvariantFull`).  And the
+stack-link stores (`spliceThreadReplyFrameOut_preserves_ipcInvariantFull`).  And the
 restore and the teardown carry it only **as a pair**, which is §8.12.16.
 
 **Two stated coherence facts, both needed, and neither derivable.**  The keystone takes
@@ -10241,8 +10228,8 @@ highest-priority client transitively waiting on it.
 **TCB field**: `pipBoost : Option Priority := none`. When `some p`, the
 thread's effective priority is `max(SchedContext.priority, p)`.
 
-**Blocking graph**: `blockedOnThread` (direct blocking via `blockedOnReply`),
-`waitersOf` (all direct waiters), `blockingChain` (transitive upward walk).
+**Blocking graph**: `waitersOf` (all direct waiters, read from the
+reply-waiter queue), `blockingChain` (transitive upward walk).
 Acyclicity is a system-level invariant (`blockingAcyclic`); chain depth is
 bounded by `objectIndex.length`.
 
@@ -10367,7 +10354,7 @@ proof-only phase with zero kernel code changes.
 inductive (9 constructors covering all scheduler transitions), `SchedulerTrace`
 (list of step-state pairs), `validTrace` predicate (each step's precondition
 holds and postcondition feeds into the next step). Query predicates:
-`selectedAt`, `runnableAt`, `budgetAvailableAt`. Counting functions:
+`selectedAt`, `runnableAt`. Counting functions:
 `countHigherOrEqualEffectivePriority`, `maxBudgetInBand`, `maxPeriodInBand`.
 
 **Per-mechanism bounds**:
@@ -10626,7 +10613,7 @@ since been integrated:
 1. `ExceptionModel.lean` — ARM64 exception classification and dispatch.
    **Partially integrated at WS-RR RR4 (v0.34.44)**: the syndrome layer this
    module owned — `SynchronousExceptionClass`, `ExceptionContext`,
-   `extractExceptionClass`, `extractInstructionSyndrome`,
+   `extractExceptionClass`,
    `classifySynchronousException` — moved *down* into the production
    `Architecture/Fault.lean`, which does not import `Kernel/API.lean` and so
    is not in the cycle.  The live hardware path is now
@@ -10687,28 +10674,13 @@ construction, fault delivery) can be — and now is — production code below
 #### 8.15.2 Budget-Aware Scheduler Activation
 The CBS budget engine (`SchedContext/Budget.lean`), replenishment queue
 (`SchedContext/ReplenishQueue.lean`), and budget-aware scheduler operations
-(`scheduleEffective`, `handleYieldWithBudget`, `timerTickWithBudget`) are
-implemented with invariants but not yet wired into the checked API dispatch
-path: the single-core checked wrappers still call the non-budget-aware
-variants. **Superseded in practice by WS-SM SM5**: the live hardware tick
-seam is now `@[export lean_per_core_timer_tick]` → `perCoreTimerTickStep` →
+are active on the path hardware calls: the live tick seam is
+`@[export lean_per_core_timer_tick]` → `perCoreTimerTickStep` →
 `timerTickOnCore` (`Kernel/PerCoreTimerEntry.lean`,
 `Scheduler/Operations/PerCoreTimerTick.lean`), which composes the per-core
-CBS budget tick `timerTickBudgetOnCore` — so budget-aware scheduling *is*
-active on the path hardware actually calls; only the legacy single-core
-checked wrappers retain the plain variants.
-
-**Activation steps:**
-1. Update `API.lean` checked wrappers: `scheduleChecked` calls
-   `scheduleEffective`, `handleYieldChecked` calls `handleYieldWithBudget`,
-   `timerTickChecked` calls `timerTickWithBudget`.
-2. Add preservation theorems for all three budget-aware operations in
-   `Scheduler/Operations/Preservation.lean`.
-3. Update NI proofs for the new operation semantics.
-4. Add `SchedulerBudgetSuite.lean` test suite exercising CBS enforcement,
-   budget consumption, replenishment queue, and timeout-on-budget-expiry.
-
-**Dependency:** Preservation proofs must be complete before activation.
+CBS budget tick `timerTickBudgetOnCore`.  The single-core checked wrappers
+that still called the plain variants were deleted at v0.36.197, as was the
+single-core `timerTickWithBudget`: nothing called them.
 
 #### 8.15.3 FFI Bridge Wiring
 At audit time `FFI.lean` declared 17 `@[extern]` Lean functions mapping to
@@ -10743,7 +10715,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 3. domain-aware scheduling semantics (`schedule` is active-domain-only; no cross-domain fallback),
 4. local + composed invariant layering (including `currentThreadInActiveDomain` in the canonical scheduler bundle),
 5. theorem discoverability through stable naming,
-   - canonical IPC/lifecycle composition surfaces: `coreIpcInvariantBundle`, `ipcSchedulerCouplingInvariantBundle`, `lifecycleCompositionInvariantBundle`,
+   - canonical IPC/lifecycle composition surfaces: `coreIpcInvariantBundle`, `ipcSchedulerCouplingInvariantBundle`,
    - canonical trace helper surfaces: `runCapabilityIpcTrace`, `runSchedulerTimingDomainTrace`,
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),

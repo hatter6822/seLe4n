@@ -39,7 +39,7 @@ Three invariants are checked:
    same instruction while naming it nowhere at the call site.
 
 3. **LEAN** -- the Lean bindings for the local FFI exports
-   (``ffiTlbiAll`` / ``ffiTlbiByAsid`` / ``ffiTlbiByVaddr``) may be
+   (``ffiTlbiByAsid`` / ``ffiTlbiByVaddr``) may be
    referenced only from registered production modules.  Everything else
    uses ``ffiTlbiForSharing``.  The declaration sites are exempt per
    occurrence -- the binder line under an ``@[extern "ffi_tlbi_*"]``
@@ -103,7 +103,7 @@ LOCAL_WRAPPERS = (
 # missing here.  An enumeration cannot see an export that does not exist
 # yet -- the same hole a hand-written `LOCAL_WRAPPERS` had (PR #883 review
 # round 4), one layer up.
-LEAN_LOCAL_BINDINGS = ("ffiTlbiAll", "ffiTlbiByAsid", "ffiTlbiByVaddr")
+LEAN_LOCAL_BINDINGS = ("ffiTlbiByAsid", "ffiTlbiByVaddr")
 FFI_MODULE = "rust/sele4n-hal/src/ffi.rs"
 # The boundaries come from `rust_code_view.keyword`, not from Python's `\b`:
 # `\b` is defined against `\w`, which is a Unicode-*table* question, so it
@@ -401,7 +401,7 @@ def lean_declaration_boundaries(code: str) -> list[tuple[str | None, int]]:
     first version enumerated a fixed keyword set and took "the last
     declaration at or before the offset", so a form it did not know simply
     was not a boundary and everything inside it inherited the PRECEDING
-    declaration's allowlist entry.  `initialize bad : Unit <- ffiTlbiAll`
+    declaration's allowlist entry.  `initialize bad : Unit <- ffiTlbiByAsid`
     placed after an allowlisted `def` did exactly that (PR #883 review
     round 4) -- the same defect fixed on the Rust side one round earlier
     and left standing here.
@@ -1129,7 +1129,7 @@ def check_lean_allowlist(root: str, allowed: set[str]) -> tuple[list[str], set[s
     binding_re = re.compile(r"\b(" + "|".join(LEAN_LOCAL_BINDINGS) + r")\b")
     for rel in walk(root, LEAN_ROOT, (".lean",)):
         code = lean_code_view.strip(read(root, rel))
-        # The declaration sites -- `opaque ffiTlbiAll` and friends under an
+        # The declaration sites -- `opaque ffiTlbiByAsid` and friends under an
         # `@[extern "ffi_tlbi_*"]` attribute -- are what every other
         # module's reference resolves to; declaring a binding is not
         # calling it.  Resolved PER OCCURRENCE and over the comment-free
@@ -1262,7 +1262,7 @@ def unrelatedEarlierDecl : BaseIO Unit :=
 /-- SM7.B.7 self-service arm: this core discharges its own outstanding
     shootdown obligation. -/
 def tlbiLocalFullFlush : BaseIO Unit :=
-  SeLe4n.Platform.FFI.ffiTlbiAll
+  SeLe4n.Platform.FFI.ffiTlbiByAsid
 
 end SeLe4n.Kernel.Concurrency
 """
@@ -1281,22 +1281,22 @@ LEAN_BLOCK_SENTINEL = "@BLOCK@"
 BASE_LEAN_BLOCK_TEMPLATE = BASE_LEAN + LEAN_BLOCK_SENTINEL
 
 BASE_FFI_LEAN = """
-@[extern "ffi_tlbi_all"]
-opaque ffiTlbiAll : BaseIO Unit
+@[extern "ffi_tlbi_by_asid"]
+opaque ffiTlbiByAsid : BaseIO Unit
 @[extern "ffi_tlbi_for_sharing"]
 opaque ffiTlbiForSharing : UInt32 → UInt32 → BaseIO Unit
 """
 
 BASE_ALLOWLIST = """# fixture allowlist
 rust/sele4n-hal/src/mmu.rs::enable_mmu
-rust/sele4n-hal/src/ffi.rs::ffi_tlbi_all
+rust/sele4n-hal/src/ffi.rs::ffi_tlbi_by_asid
 SeLe4n/Kernel/Concurrency/Runtime.lean::tlbiLocalFullFlush
 """
 
 
 BASE_FFI_RS = """
 #[no_mangle]
-pub extern "C" fn ffi_tlbi_all() {
+pub extern "C" fn ffi_tlbi_by_asid() {
     crate::tlb::tlbi_vmalle1();
 }
 
@@ -1507,7 +1507,7 @@ def self_test() -> int:
     lean_declarer_also_calls = fixture()
     lean_declarer_also_calls["SeLe4n/Platform/FFI.lean"] = (
         BASE_FFI_LEAN
-        + "\ndef strayLocalFlush : BaseIO Unit :=\n  ffiTlbiAll\n"
+        + "\ndef strayLocalFlush : BaseIO Unit :=\n  ffiTlbiByAsid\n"
     )
     cases.append(
         Case(
@@ -1820,7 +1820,7 @@ def self_test() -> int:
     lean_unknown_form = fixture()
     lean_unknown_form_runtime = (
         BASE_LEAN
-        + "\ninitialize badLocalFlush : Unit \u2190 SeLe4n.Platform.FFI.ffiTlbiAll\n"
+        + "\ninitialize badLocalFlush : Unit \u2190 SeLe4n.Platform.FFI.ffiTlbiByAsid\n"
     )
     lean_unknown_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = (
         lean_unknown_form_runtime)
@@ -2078,7 +2078,7 @@ def self_test() -> int:
     lean_mutual_runtime = (
         BASE_LEAN
         + "\nmutual\n\ndef hiddenLocalFlush : BaseIO Unit :=\n"
-        "  SeLe4n.Platform.FFI.ffiTlbiAll\n\nend\n"
+        "  SeLe4n.Platform.FFI.ffiTlbiByAsid\n\nend\n"
     )
     lean_mutual["SeLe4n/Kernel/Concurrency/Runtime.lean"] = lean_mutual_runtime
     cases.append(
@@ -2098,17 +2098,17 @@ def self_test() -> int:
         (
             "example",
             "\nexample : True := by\n"
-            "  let _ := SeLe4n.Platform.FFI.ffiTlbiAll\n  trivial\n",
+            "  let _ := SeLe4n.Platform.FFI.ffiTlbiByAsid\n  trivial\n",
         ),
         (
             "macro_rules",
             "\nmacro_rules\n  | `(x) => do\n"
-            "    let _ := SeLe4n.Platform.FFI.ffiTlbiAll\n    pure ()\n",
+            "    let _ := SeLe4n.Platform.FFI.ffiTlbiByAsid\n    pure ()\n",
         ),
         (
             "run_cmd",
             "\nrun_cmd do\n"
-            "  let _ := SeLe4n.Platform.FFI.ffiTlbiAll\n  pure ()\n",
+            "  let _ := SeLe4n.Platform.FFI.ffiTlbiByAsid\n  pure ()\n",
         ),
     ):
         block_form = fixture()
@@ -2132,12 +2132,12 @@ def self_test() -> int:
         (
             "local instance",
             "\nlocal instance hiddenLocal : Inhabited Unit :=\n"
-            "  \u27e8SeLe4n.Platform.FFI.ffiTlbiAll\u27e9\n",
+            "  \u27e8SeLe4n.Platform.FFI.ffiTlbiByAsid\u27e9\n",
         ),
         (
             "scoped def",
             "\nscoped def hiddenScoped : BaseIO Unit :=\n"
-            "  SeLe4n.Platform.FFI.ffiTlbiAll\n",
+            "  SeLe4n.Platform.FFI.ffiTlbiByAsid\n",
         ),
     ):
         modifier_form = fixture()

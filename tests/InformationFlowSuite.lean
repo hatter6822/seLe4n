@@ -863,8 +863,10 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA6.9: `schedContextConsumedOnCore` joined, capability-only, and
   -- WS-ZA ZA6.29 `schedContextYieldToOnCore`, capability-only; WS-ZA ZA6.32
   -- the interrupt acknowledge, issue, bind and unbind, capability-only.
-  expect "enforcement boundary: total 56 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 56)
+  -- v0.36.198: the read-only `lookupObject` entry left with the deleted
+  -- definition it named.
+  expect "enforcement boundary: total 55 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 55)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
@@ -1413,13 +1415,14 @@ def runInformationFlowChecks : IO Unit := do
   -- 33 → 34 with `schedContextYieldToOnCore`, both capability-only: the
   -- context capability's write right is their whole authority.  WS-ZA ZA6.32
   -- 34 → 35 with `irqHandlerAck`, and 35 → 38 with `irqControlGetFromCap`,
-  -- `irqHandlerSetNotificationFromCap` and `irqHandlerClear`.
+  -- `irqHandlerSetNotificationFromCap` and `irqHandlerClear`.  Read-only
+  -- 3 → 2 at v0.36.198: `lookupObject` was deleted (nothing called it).
   expect "enforcement boundary has 38 capability-only"
     (coCount = 38)
-  expect "enforcement boundary has 3 read-only"
-    (roCount = 3)
-  expect "enforcement boundary total is 56"
-    (boundary.length = 56)
+  expect "enforcement boundary has 2 read-only"
+    (roCount = 2)
+  expect "enforcement boundary total is 55"
+    (boundary.length = 55)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1523,7 +1526,7 @@ def runInformationFlowChecks : IO Unit := do
 
   -- V6-L: Extended boundary matches canonical
   expect "enforcementBoundaryExtended has 53 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 56)
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 55)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

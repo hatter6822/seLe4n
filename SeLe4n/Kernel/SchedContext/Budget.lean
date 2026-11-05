@@ -49,10 +49,6 @@ namespace SeLe4n.Kernel
 -- Budget exhaustion and the refill sum
 -- ============================================================================
 
-/-- A SchedContext's budget is exhausted when `budgetRemaining` is zero. -/
-@[inline] def isBudgetExhausted (sc : SchedContext) : Bool :=
-  sc.budgetRemaining.isZero
-
 /-- Sum the budget amounts of all replenishment entries. -/
 def sumReplenishments : List ReplenishmentEntry → Nat
   | [] => 0

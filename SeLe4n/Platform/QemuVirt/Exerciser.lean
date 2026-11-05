@@ -46,7 +46,7 @@ scenarios (WS-ZA ZA6.32), and nothing else.
 * **Interrupt handlers at run time** (WS-ZA ZA6.32): the boot binds no line,
   as seL4's does not.  The exerciser issues the handler capabilities of two
   shared peripheral interrupts the `virt` board wires to nothing
-  (`qemuVirtExerciserBoundLine`, `qemuVirtExerciserUnboundLine`) from the root
+  (250 and 251, `IRQ_BOUND_LINE` / `IRQ_UNBOUND_LINE` in the HAL) from the root
   task's IRQControl capability (`seL4_IRQControl_Get`) into slots 24 and 25,
   and binds the first to the interrupt notification
   (`seL4_IRQHandler_SetNotification`), so the interrupt entry's bound and
@@ -106,14 +106,6 @@ instance qemuVirtExerciserPlatformBinding : PlatformBinding QemuVirtExerciserPla
     the exerciser's copy slot, which no scenario fills before the audit
     scenarios end, and whose next use is a copy rather than a carve. -/
 def qemuVirtExerciserAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 10
-
-/-- WS-ZA ZA6.32: the shared peripheral interrupt the exerciser raises after
-    issuing its handler and binding it to the interrupt notification. -/
-def qemuVirtExerciserBoundLine : Nat := 250
-
-/-- WS-ZA ZA6.32: the shared peripheral interrupt the exerciser raises after
-    issuing its handler and binding no notification to it. -/
-def qemuVirtExerciserUnboundLine : Nat := 251
 
 /-- The exerciser's root CNode: the shipped root CNode's capabilities and the
     audit trail's, with read and write (`Capability.auditTrailManage`), in

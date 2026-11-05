@@ -15,26 +15,6 @@ namespace SeLe4n.Kernel.PriorityInheritance
 open SeLe4n.Model
 
 -- ============================================================================
--- D4-C1: blockedOnThread predicate
--- ============================================================================
-
-/-- D4-C1: `waiter` is directly blocked on `server` via Reply IPC.
-True when `waiter` has `ipcState = .blockedOnReply epId (some server)`.
-Returns Bool for decidable runtime use. -/
-def blockedOnThread (st : SystemState) (waiter server : ThreadId) : Bool :=
-  match st.getTcb? waiter with
-  | some tcb =>
-    match tcb.ipcState with
-    | .blockedOnReply _ (some target) => target == server
-    | _ => false
-  | none => false
-
-/-- D4-C1: Propositional form of `blockedOnThread`. -/
-def BlockedOnThread (st : SystemState) (waiter server : ThreadId) : Prop :=
-  ∃ tcb : TCB, st.objects[waiter.toObjId]? = some (.tcb tcb) ∧
-    ∃ epId : ObjId, tcb.ipcState = .blockedOnReply epId (some server)
-
--- ============================================================================
 -- D4-C2: waitersOf (direct dependents)
 -- ============================================================================
 
@@ -193,15 +173,6 @@ theorem blockingServer_isSome_iff_blockedOnReply_some
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _
       | blockedOnNotification _ => simp [hIpc]
 
-/-- AK1-F (I-M04): Plan-named alias for the biconditional characterisation
-    of `blockingServer`. The plan's nomenclature `pipBoost_attached_only_on_reply_blocked`
-    captures the intent — PIP boost propagation (via `propagatePipBoost`
-    walking the blocking graph) only follows chains anchored at a
-    `.blockedOnReply _ (some server)` waiter. This alias makes the
-    plan-suggested name callable. -/
-abbrev pipBoost_attached_only_on_reply_blocked :=
-  @blockingServer_isSome_iff_blockedOnReply_some
-
 /-- AK1-F (I-M04): Specialized corollary — if `blockingServer st tid = some server`,
     then `tid` is in state `.blockedOnReply endpointId (some server)` for some
     endpoint. Used by `timeoutThread` to argue the PIP-revert call path is
@@ -318,13 +289,6 @@ theorem blockingChain_length_le_fuel (st : SystemState) (tid : ThreadId)
 theorem blockingChain_bounded (st : SystemState) (tid : ThreadId) :
     (blockingChain st tid st.objectIndex.length).length ≤ st.objectIndex.length :=
   blockingChain_length_le_fuel st tid st.objectIndex.length
-
-/-- D4-E: Count of TCB objects in the system. -/
-def countTCBs (st : SystemState) : Nat :=
-  st.objectIndex.foldl (fun acc objId =>
-    match st.getObject? objId with
-    | some (KernelObject.tcb _) => acc + 1
-    | _ => acc) 0
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase P1: Subgraph acyclicity foundational lemma

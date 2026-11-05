@@ -126,7 +126,7 @@ order:
    single-authority rule — the shared machine clock advances by one
    (`machine := tick st.machine`) *before* the tick transition reads it, so
    CBS replenishments and IPC timeouts that fall due this tick actually fire.
-   The single-core `timerTick` / `timerTickWithBudget` advanced the clock on
+   The single-core `timerTick` advanced the clock on
    every committed path; the per-core `timerTickOnCore` deliberately reads
    without advancing (each core's CNTP is local), so the advance is re-homed
    here at the composition point, once per global tick, never per core.
@@ -157,8 +157,7 @@ order:
    tick's time-slice quantum is never disturbed.  The tick does budget
    accounting **only** (its own docstring: rotation folded into the tick
    breaks `currentThreadInActiveDomain`), so the run loop must invoke both —
-   exactly as the single-core run loop invokes `timerTickWithBudget` then
-   `scheduleDomain`.
+   exactly as seL4 charges the tick before it rotates the domain.
 
 The SGIs are read off the flags, as every other entry's are (seL4's
 `possibleSwitchTo` → `ksSchedulerAction` / the IPI set taken at kernel exit):

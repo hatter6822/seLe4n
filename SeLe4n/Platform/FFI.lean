@@ -205,11 +205,6 @@ opaque ffiGicIsSpurious : UInt32 → BaseIO Bool
 -- AG7-A-iii: TLB FFI declarations
 -- ============================================================================
 
-/-- Flush all TLB entries at EL1 (TLBI VMALLE1 + DSB ISH + ISB).
-    Rust: `ffi_tlbi_all` in `sele4n-hal/src/ffi.rs` -/
-@[extern "ffi_tlbi_all"]
-opaque ffiTlbiAll : BaseIO Unit
-
 /-- Flush TLB entries by ASID at EL1 (TLBI ASIDE1 + DSB ISH + ISB).
     Rust: `ffi_tlbi_by_asid` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_tlbi_by_asid"]
@@ -338,7 +333,6 @@ opaque ffiStallIfChanged : (core : UInt64) → (committedCode : UInt64) → Base
 -- therefore names the round it discharged and a stale one can never
 -- satisfy a later round.  Lean callers use the typed `CoreId` wrappers
 -- in `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckRound` /
--- `shootdownAckedGeneration` / `shootdownAllAckedForRound` /
 -- `shootdownSelfServiceRound`), whose `Fin numCores` typing makes the
 -- Rust fail-closed panic arms structurally unreachable
 -- (`shootdownAck_ffi_core_in_range`).
@@ -354,24 +348,6 @@ opaque ffiStallIfChanged : (core : UInt64) → (committedCode : UInt64) → Base
     Rust: `ffi_shootdown_ack_round` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_shootdown_ack_round"]
 opaque ffiShootdownAckRound : (coreId : UInt64) → (gen : UInt64) → BaseIO Unit
-
-/-- **WS-SM SM7.F.3**: acquire-load the highest round generation the
-    given core has acknowledged.  Panics on the Rust side if
-    `coreId ≥ 4`.
-
-    Rust: `ffi_shootdown_acked_generation` in `sele4n-hal/src/ffi.rs` -/
-@[extern "ffi_shootdown_acked_generation"]
-opaque ffiShootdownAckedGeneration : (coreId : UInt64) → BaseIO UInt64
-
-/-- **WS-SM SM7.F.3**: acquire-poll the acknowledgment slots for round
-    generation `gen` — the initiator wait-loop's exit condition
-    (plan §3.2 step 5); `1` = every IRQ-serviceable non-initiator core
-    has acknowledged `gen`.  Panics on the Rust side if `initiator ≥ 4`.
-
-    Rust: `ffi_shootdown_all_acked_for_round` in `sele4n-hal/src/ffi.rs` -/
-@[extern "ffi_shootdown_all_acked_for_round"]
-opaque ffiShootdownAllAckedForRound :
-    (gen : UInt64) → (initiator : UInt64) → BaseIO UInt64
 
 /-- **WS-SM SM7.B.7 + SM7.F.3**: the cooperative round-lock acquire's
     self-service arm — if this core has not yet acknowledged the
@@ -422,29 +398,12 @@ opaque ffiShootdownAllocateRoundGeneration : BaseIO UInt64
 @[extern "ffi_shootdown_round_lock_release"]
 opaque ffiShootdownRoundLockRelease : BaseIO Unit
 
-/-- **WS-SM SM7.B.6 + SM7.B.7**: park this PE permanently — the
-    fail-closed barrier's actual stop.  **Never returns.**
-
-    Lean's `panic!` cannot serve as a fail-closed barrier: it requires
-    `[Inhabited α]` precisely because the runtime prints the message and
-    then returns the default value, so in `BaseIO Unit` it reports the
-    violation and execution continues (PR #854 review).  The seam
-    therefore calls `panic!` for the diagnostic and this for the halt.
-
-    The `BaseIO Unit` type is the FFI convention, not a claim that this
-    returns — `ffi_fatal_halt` is `-> !` on the Rust side.  Callers must
-    still not rely on that alone; see `haltFailClosed`.
-
-    Rust: `ffi_fatal_halt` in `sele4n-hal/src/ffi.rs` -/
-@[extern "ffi_fatal_halt"]
-opaque ffiFatalHalt : BaseIO Unit
-
 /-- **WS-SM SM0.H + SM7.B.6/B.7 (PR #854 review)**: broadcast the
     `haltAll` SGI (INTID 4) to every other PE, then park this one.
     **Never returns.**
 
-    This is the form the fail-closed barriers use.  `ffiFatalHalt` parks
-    only the calling PE, which is not a barrier: the other cores keep
+    This is the form the fail-closed barriers use.  Parking only the
+    calling PE would not be a barrier: the other cores would keep
     running against a TLB this core has just declared it could not
     clean, and the target that never acknowledged can resume with the
     stale translation.  `SgiKind.haltAll` had been reserved since SM0.H
@@ -4034,7 +3993,7 @@ opaque ffiCacheCleanPagetableRange : UInt64 → UInt64 → BaseIO Unit
     WS-SM SM7.D.1: production kernel code under SMP must use
     `icMaintenanceBroadcast` below, which routes to the Inner Shareable
     broadcast variants; this binding is kept for the single-PE boot path,
-    symmetric with `ffiTlbiAll`.
+    symmetric with `ffiTlbiByAsid`.
 
     Rust: `cache::ic_iallu` in `sele4n-hal/src/cache.rs`. -/
 @[extern "cache_ic_iallu"]

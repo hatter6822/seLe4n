@@ -42,10 +42,6 @@ def RHSet.insert [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) (k : κ) :
 def RHSet.erase [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) (k : κ) : RHSet κ :=
   ⟨s.table.erase k⟩
 
-/-- Convert the set to a list of keys. -/
-def RHSet.toList [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : List κ :=
-  s.table.toList.map (·.1)
-
 /-- Build a set from a list of keys. -/
 def RHSet.ofList [BEq κ] [Hashable κ] [LawfulBEq κ] (keys : List κ)
     (cap : Nat := 16) (hCapGe4 : 4 ≤ cap := by omega) : RHSet κ :=

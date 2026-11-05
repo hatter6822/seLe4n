@@ -686,8 +686,11 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-- WS-ZA ZA4.7: the reply-receive's dispatch: `dispatchOperandCheckedR` with
-the reply-receive's arm (`dispatchReplyRecvCheckedR_eq`). -/
-@[inline] def dispatchReplyRecvCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+the reply-receive's arm (`dispatchReplyRecvCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchReplyRecvCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=

@@ -175,8 +175,8 @@ def handleInterruptWith (tick : Kernel Unit) (st : SystemState) (intId : Interru
     - Any other line: Return `.invalidIrq` error
 
     Design notes:
-    - Uses `timerTick` (not `timerTickChecked`) because the timer interrupt
-      is a hardware event, not a user-initiated syscall. Context save is
+    - Uses `timerTick` with no `withOutgoingContextChecked` guard because the
+      timer interrupt is a hardware event, not a user-initiated syscall. Context save is
       the responsibility of the exception entry path in ExceptionModel, not
       the interrupt handler. This matches seL4's design where `handleInterrupt`
       is called after exception context has already been saved.
@@ -506,10 +506,9 @@ theorem interruptDispatchSequence_eoi_before_handler
     scheduler tick function. This handler therefore inherits all `timerTick`
     preservation theorems automatically.
 
-    Note: uses `timerTick` (not `timerTickWithBudget`) to match the seL4
-    design where the basic timer tick is the hardware interrupt handler's
-    responsibility. Budget-aware processing is a higher-level scheduler
-    concern handled in the full `timerTickWithBudget` path. -/
+    Note: uses `timerTick` to match the seL4 design where the basic timer
+    tick is the hardware interrupt handler's responsibility. Budget-aware
+    processing is the live per-core tick's concern (`timerTickOnCore`). -/
 noncomputable def timerInterruptHandler : Kernel Unit :=
   fun st => timerTick st
 

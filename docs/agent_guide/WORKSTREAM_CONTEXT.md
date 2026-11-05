@@ -2346,7 +2346,7 @@ keeps one thread's FP state out of another's reach.  (2) **The release happens a
 the entry that switches the owner out**, not when the next thread traps as in
 seL4: this kernel's placement is not fixed by affinity, so pure per-core laziness
 would need seL4's cross-core release IPI on every move.  Every entry that
-restores a context runs `Concurrency.releaseSwitchedFpOwner` between its commit
+restores a context runs `Concurrency.releaseSwitchedFpOwnerOnCore` between its commit
 and its restore — a second commit under the same entry lock — and a new such
 entry does too; its `_def` marker pins it.  (3) **A thread owned on another core
 retries** (`fpAccessOnCore_retry_of_owned_elsewhere`): the trap stays armed and

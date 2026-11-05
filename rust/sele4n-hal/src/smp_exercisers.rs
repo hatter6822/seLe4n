@@ -3782,9 +3782,8 @@ fn heap_allocations_per_syscall() -> Option<bool> {
 }
 
 /// **WS-ZA ZA6.32**: the shared peripheral interrupts the exerciser raises —
-/// one with a handler bound to it (`qemuVirtExerciserBoundLine`, whose handler
-/// is the interrupt notification in [`NOTIFICATION_SLOT`]) and one with none
-/// (`qemuVirtExerciserUnboundLine`).  `virt` wires neither to a device.
+/// one with a handler bound to it (its handler is the interrupt notification
+/// in [`NOTIFICATION_SLOT`]) and one with none.  `virt` wires neither to a device.
 #[cfg(feature = "hw_target")]
 const IRQ_BOUND_LINE: u32 = 250;
 #[cfg(feature = "hw_target")]
