@@ -4299,7 +4299,7 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem consumed_eq_impl' SeLe4n/Model/
 # only at the bottom; moving a thread off the core it runs on writes the old
 # core's scheduler in its cell.
 run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_eq_self_of_head($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
-run_check "INVARIANT" rg -n -U '          \(rp\.prev\.isSome \|\|\n            match sc\.donationOrigin with' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
+run_check "INVARIANT" rg -n -U '          \(rp\.prev\.isSome \|\|\n            match sc\.donationOrigin with' SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean
 run_check "INVARIANT" rg -n '^    \{ st with scheduler := vacatedScheduler st\.scheduler oldCore \}$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n -U 'obtain ⟨sgi, hD⟩ := callDispatchChecked_donating_inPlace ctx st epId ep tid r rt rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '^  runContextlessStackChecks\n  runMiddleReplyFinaliseChecks$' tests/VSpaceCapabilityBindingSuite.lean

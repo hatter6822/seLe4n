@@ -6,6 +6,7 @@ import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.IPC.DualQueue.PopInPlace
 import SeLe4n.Kernel.IPC.DualQueue.RemoveInPlace
 import SeLe4n.Kernel.IPC.Operations.NotificationBind
+import SeLe4n.Kernel.IPC.Operations.DonationPopInPlace
 
 /-!
 # Cancelling every waiter of an endpoint or a notification
@@ -541,7 +542,8 @@ consume write it. -/
 @[inline] def finaliseReplyCallerRevert (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
     (t : TCB) : SystemState :=
   if replyStackLinkIsHead r.next then
-    finaliseReplyRevert (cancelIpcBlockingReclaimed c t st) t.blockingServer?
+    let serverCode := replyCallerServerCode t
+    finaliseReplyRevert (cancelHeadReplyCaller st c t) (SeLe4n.ThreadId.ofOptCode serverCode)
   else
     let serverCode := replyCallerServerCode t
     finaliseReplyRevert (finaliseReplyCancelSplice st c t serverCode)
@@ -553,7 +555,7 @@ theorem finaliseReplyCallerRevert_eq (st : SystemState) (r : Reply) (c : SeLe4n.
       finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer? := by
   unfold finaliseReplyCallerRevert finaliseReplyCancel
   split
-  · rfl
+  · simp only [cancelHeadReplyCaller_eq, ofOptCode_replyCallerServerCode]
   · simp only [finaliseReplyCancelSplice_eq, ofOptCode_replyCallerServerCode]
 
 /-- **`finaliseReplyCallerCancel` as compiled** (`finaliseReplyCallerRevert`). -/
@@ -762,6 +764,22 @@ def finaliseThreadCancel (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
     | _ => st
   | none => st
 
+/-- Whether a notification's queue is headed by `t`, read off its head code. -/
+theorem Notification.waitHeadCode_beq (ntfn : Notification) (t : SeLe4n.ThreadId) :
+    (ntfn.waitHeadCode == t.val + 1) = (ntfn.waitHead == some t) := by
+  unfold Notification.waitHead
+  cases hw : ntfn.waitHeadCode with
+  | zero => simp [SeLe4n.ThreadId.ofOptCode]
+  | succ w =>
+    simp only [SeLe4n.ThreadId.ofOptCode]
+    rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
+    constructor
+    · intro h
+      have hv : w = t.val := by omega
+      rw [hv]
+    · intro h
+      rw [← Option.some.inj h]
+
 /-- **`finaliseThreadCancel` as compiled**: the notification cancel is its
 in-place writes (`storeNotificationBlockedCancelled`,
 `cancelIpcBlocking_notification_inPlace`); the endpoint cancel is already
@@ -775,7 +793,7 @@ def finaliseThreadCancelImpl (st : SystemState) (tid : SeLe4n.ThreadId) : System
       match st.getNotification? n with
       | some ntfn =>
         if notificationWaiterCancellable st n tid t then
-          storeNotificationBlockedCancelled st n tid (ntfn.waitHead == some tid) t.ntfnPrev
+          storeNotificationBlockedCancelled st n tid (ntfn.waitHeadCode == tid.val + 1) t.ntfnPrev
             t.ntfnNext
         else st
       | none => st
@@ -797,7 +815,7 @@ def finaliseThreadCancelImpl (st : SystemState) (tid : SeLe4n.ThreadId) : System
       split
       · rename_i ntfn hN
         split
-        · exact cancelIpcBlocking_notification_inPlace hN hT hB
+        · rw [Notification.waitHeadCode_beq]; exact cancelIpcBlocking_notification_inPlace hN hT hB
         · rfl
       · rfl
     all_goals rfl
@@ -1349,8 +1367,9 @@ when the restore and the consume write it, and is rewritten there. -/
 @[inline] def finaliseReplyCaller (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
     (t : TCB) : SystemState :=
   if replyStackLinkIsHead r.next then
-    finaliseThreadSuspend (finaliseReplyRevert (cancelIpcBlockingReclaimed c t st)
-      t.blockingServer?) c
+    let serverCode := replyCallerServerCode t
+    finaliseThreadSuspend (finaliseReplyRevert (cancelHeadReplyCaller st c t)
+      (SeLe4n.ThreadId.ofOptCode serverCode)) c
   else
     let serverCode := replyCallerServerCode t
     finaliseThreadSuspend (finaliseReplyRevert (finaliseReplyCancelSplice st c t serverCode)
@@ -1362,7 +1381,7 @@ theorem finaliseReplyCaller_eq (st : SystemState) (r : Reply) (c : SeLe4n.Thread
         t.blockingServer?) c := by
   unfold finaliseReplyCaller finaliseReplyCancel
   split
-  · rfl
+  · simp only [cancelHeadReplyCaller_eq, ofOptCode_replyCallerServerCode]
   · simp only [finaliseReplyCancelSplice_eq, ofOptCode_replyCallerServerCode]
 
 /-- **`finaliseReply` as compiled** (`finaliseReplyCaller`). -/
