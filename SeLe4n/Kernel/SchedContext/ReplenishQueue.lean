@@ -161,17 +161,6 @@ def removeImpl (rq : ReplenishQueue) (scId : SchedContextId) : ReplenishQueue :=
 -- Z3-F: ReplenishQueue.peek (next due time)
 -- ============================================================================
 
-/-- The eligibility time of the earliest entry, or `none` if empty.
-O(1) via the sorted invariant — the earliest entry is always the head. -/
-@[inline] def peek (rq : ReplenishQueue) : Option Nat :=
-  match rq.entries with
-  | [] => none
-  | (_, eligibleAt) :: _ => some eligibleAt
-
-/-- Check if the queue is empty. -/
-@[inline] def isEmpty (rq : ReplenishQueue) : Bool :=
-  rq.entries.isEmpty
-
 /-- Check if any entries are due at the given time. O(1). -/
 @[inline] def hasDue (rq : ReplenishQueue) (currentTime : Nat) : Bool :=
   match rq.entries with

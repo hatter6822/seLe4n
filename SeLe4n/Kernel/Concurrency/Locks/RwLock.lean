@@ -4171,36 +4171,6 @@ theorem RwLockExecution.admissionStep_characterization (e : RwLockExecution)
 -- SM2.C-defer D-1.6 / D-1.7 — Append-to-tail / Drop-prefix theorems
 -- ============================================================================
 
-/-- **WS-SM SM2.C-defer D-1.6 (predicate helper)**: extract the `core`
-from an op (for tryAcquire / release ops). -/
-def RwLockOp.coreOfOp : RwLockOp → CoreId
-  | .tryAcquireRead  c => c
-  | .tryAcquireWrite c => c
-  | .releaseRead     c => c
-  | .releaseWrite    c => c
-  | .cancel          c => c
-
-/-- **WS-SM SM2.C-defer D-1.6 (predicate helper)**: extract the access
-mode from an acquire op.
-
-Only the two acquire arms carry a mode.  The others are `.read` **by
-convention**, and every use of this function is guarded by an op-shape
-hypothesis that excludes them — a release names no mode, and a
-withdrawal removes whichever entry the core had queued, of either mode.
-
-The arms are written out rather than closed with a `| _ => .read`
-catch-all so that convention is stated per constructor: a sixth
-operation must be classified by whoever adds it.  A catch-all here
-would have answered `.read` for a cancelled **writer**, which is not a
-convention but a wrong answer waiting for a caller that forgets the
-guard. -/
-def RwLockOp.modeOfOp : RwLockOp → AccessMode
-  | .tryAcquireRead  _ => .read
-  | .tryAcquireWrite _ => .write
-  | .releaseRead     _ => .read
-  | .releaseWrite    _ => .read
-  | .cancel          _ => .read
-
 /-- **WS-SM SM2.C-defer D-1.6**: `tryAcquireRead c` either is a no-op or
 appends EXACTLY `(c, .read)` at the tail.
 

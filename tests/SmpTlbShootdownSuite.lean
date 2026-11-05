@@ -217,12 +217,8 @@ open SeLe4n.Kernel.Concurrency
 
 -- SM7.A completion cut — FFI seam (Rust SHOOTDOWN_ACK realisation):
 #check @SeLe4n.Platform.FFI.ffiShootdownAckRound
-#check @SeLe4n.Platform.FFI.ffiShootdownAckedGeneration
-#check @SeLe4n.Platform.FFI.ffiShootdownAllAckedForRound
 #check @SeLe4n.Platform.FFI.ffiShootdownSelfServiceRound
 #check @SeLe4n.Kernel.Concurrency.shootdownAckRound
-#check @SeLe4n.Kernel.Concurrency.shootdownAckedGeneration
-#check @SeLe4n.Kernel.Concurrency.shootdownAllAckedForRound
 #check @SeLe4n.Kernel.Concurrency.shootdownSelfServiceRound
 #check @SeLe4n.Kernel.Concurrency.shootdownAckRound_eq_ffi
 #check @SeLe4n.Kernel.Concurrency.shootdownSelfServiceRound_eq_ffi
@@ -360,7 +356,6 @@ open SeLe4n.Kernel.Concurrency
 -- PR #854 review: the fail-closed barriers' actual stop.  `fatalHaltAll`
 -- broadcasts the SM0.H `haltAll` SGI before parking, so the halt is
 -- system-wide rather than a park of the core that detected the fault.
-#check @SeLe4n.Kernel.Concurrency.fatalHalt
 #check @SeLe4n.Kernel.Concurrency.fatalHaltAll
 #check @SeLe4n.Kernel.haltFailClosed
 #check @SeLe4n.Kernel.Concurrency.shootdownCoreOnline
@@ -441,8 +436,6 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.shootdownOnlineMask
 #check @SeLe4n.Kernel.Concurrency.coreOnlineInMask
 #check @SeLe4n.Kernel.Concurrency.shootdownCoreOnline_eq_mask_test
-#check @SeLe4n.Kernel.Concurrency.tlbiLocalFullFlush
-#check @SeLe4n.Platform.FFI.ffiTlbiAll
 
 -- SM7.B debt-closure cut — per-descriptor handler operand mailbox (debt (1))
 -- + the withLockSet pendingBounded carriage slice (debt (5)); the bracket's

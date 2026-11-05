@@ -89,17 +89,12 @@ hot read-only paths. -/
 
 @[inline] def size (u : UniqueSlotMap V) : Nat := u.table.size
 
-@[inline] def capacity (u : UniqueSlotMap V) : Nat := u.table.capacity
-
 @[inline] def fold {β : Type} (u : UniqueSlotMap V) (init : β)
     (f : β → SeLe4n.Slot → V → β) : β :=
   u.table.fold init f
 
 @[inline] def toList (u : UniqueSlotMap V) :
     List (SeLe4n.Slot × V) := u.table.toList
-
-@[inline] def contains (u : UniqueSlotMap V) (s : SeLe4n.Slot) : Bool :=
-  (u.get? s).isSome
 
 /-! ## Instances -/
 

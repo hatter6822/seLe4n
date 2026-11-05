@@ -2259,20 +2259,6 @@ theorem RefusalCarrying.ofChecked_eq (admitted : Bool) (perform : SystemState â†
     cases k st <;> rfl
   | true => simp only [â†“reduceIte, RefusalCarrying.ofKernel, h rfl]
 
-def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
-  fun st =>
-    match st.objects[id]? with
-    | none => .error .objectNotFound
-    | some obj => .ok (obj, st)
-
-/-- Read a typed VSpace-root object from the global object store. -/
-def lookupVSpaceRoot (id : SeLe4n.ObjId) : Kernel VSpaceRoot :=
-  fun st =>
-    match st.objects[id]? with
-    | some (.vspaceRoot root) => .ok (root, st)
-    | some _ => .error .vspaceRootInvalid
-    | none => .error .objectNotFound
-
 -- ============================================================================
 -- S4-A/S4-B: Object capacity bounds
 -- ============================================================================
@@ -3481,8 +3467,8 @@ def lookupCNode (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
 --
 -- The AK7-F exploration showed 304 production call sites repeating the
 -- pattern `match st.objects[id]? with | some (.variant x) => ... | _ =>
--- ...`. Only two variants had typed helpers (`lookupVSpaceRoot`,
--- `lookupCNode`). The five helpers below close the gap so downstream
+-- ...`. Only two variants had typed helpers (a VSpace-root lookup since
+-- deleted, and `lookupCNode`). The five helpers below close the gap so downstream
 -- phases (AL3-AL5) can migrate consumers uniformly.
 --
 -- Each helper unwraps the `KernelObject` tag on the same ObjId input

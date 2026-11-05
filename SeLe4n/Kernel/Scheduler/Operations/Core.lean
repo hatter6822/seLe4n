@@ -50,7 +50,7 @@ import SeLe4n.Kernel.SchedContext.ReleaseLinks
      SchedContext at all, so the two differ only in the PIP boost.
 - AK2-D (S-M02): `timeoutBlockedThreads` errors surfaced via
   `SchedulerState.lastTimeoutErrors` diagnostic field, cleared at each
-  `timerTickWithBudget` entry.
+  `timerTickOnCore` entry.
 - AK2-E (S-M03): CBS admission ceiling-round in `Bandwidth.utilization`.
 - AK2-F (S-M04): `ReplenishQueue.insertSorted` strict `<` comparator
   enforces FIFO within equal-eligibility ties.
@@ -535,43 +535,6 @@ def refillSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
   st.updateSchedContext scId fun sc =>
     cbsUpdateDeadline (sc.releaseReadyHead now) now true
 
-/-- Z4-G3: Process all due replenishments and re-enqueue threads whose budget
-was restored. Pops due entries from the replenish queue, refills each
-SchedContext, and for any bound thread whose budget went from 0 to positive,
-enqueues it in the RunQueue.
-
-Z6-F: No timeout action needed during replenishment. Replenishment *restores*
-budget, which is the opposite of timeout. Threads blocked on IPC whose
-SchedContext is replenished should remain blocked — they now have budget
-again. Only `timerTickBudget`'s budget-exhaustion branch (Z4-F3) triggers
-`timeoutBlockedThreads`, ensuring that timeouts fire only when
-`budgetRemaining = 0`. This guard is correct by construction: this function
-never calls `timeoutBlockedThreads`. -/
-noncomputable def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
-  let (remainingQueue, dueIds) := popDueReplenishments st now
-  let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId remainingQueue }
-  dueIds.foldl (fun acc scId =>
-    let wasExhausted := match acc.getSchedContext? scId with
-      | some sc => sc.budgetRemaining.isZero
-      | none => false
-    let refilled := refillSchedContext acc scId now
-    -- If the SchedContext's bound thread was budget-exhausted and is now refilled,
-    -- re-enqueue the thread into the RunQueue
-    match refilled.getSchedContext? scId with
-    | some sc =>
-      if wasExhausted && sc.budgetRemaining.isPositive then
-        match sc.boundThread with
-        | some tid =>
-          -- Only re-enqueue if the thread is not already current or in queue
-          -- AG1-A: Use effective priority (base + PIP boost) for RunQueue insertion
-          if tid ∈ (refilled.scheduler.runQueueOnCore bootCoreId) then refilled
-          else if (refilled.scheduler.currentOnCore bootCoreId) == some tid then refilled
-          else { refilled with scheduler := refilled.scheduler.setRunQueueOnCore bootCoreId (((refilled.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority refilled tid sc))) }
-        | none => refilled
-      else refilled
-    | none => refilled
-  ) st'
-
 -- ============================================================================
 -- Z6-E: Timeout blocked threads on budget expiry
 -- ============================================================================
@@ -771,7 +734,7 @@ noncomputable def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tc
       -- forgets to update the SchedContext table on retype) rather than
       -- being absorbed.  The timer is NOT advanced on the error path: the
       -- `.error` short-circuit returns before any state update, so the
-      -- caller (`timerTickWithBudget`) propagates the error to its caller
+      -- caller propagates the error to its caller
       -- without committing the partial budget accounting.  This is the
       -- correct fail-closed semantics — a kernel that cannot account for
       -- the current thread's tick must halt the operation cleanly rather
@@ -779,7 +742,7 @@ noncomputable def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tc
       .error .missingSchedContext
 
 -- ============================================================================
--- Z4-I: Budget-aware schedule (must precede timerTickWithBudget)
+-- Z4-I: Budget-aware schedule
 -- ============================================================================
 
 /-- Z4-I / AN5-C: **Budget-aware** SchedContext-aware schedule that uses
@@ -788,8 +751,8 @@ semantically equivalent to `_budgetAware` — the function filters by
 budget eligibility and resolves effective priorities from SchedContext.
 Threads with exhausted CBS budgets are automatically skipped during
 selection. The primary `schedule` transition is preserved for backward
-compatibility (unbound threads + legacy test fixtures). Production boot
-paths use `scheduleEffective` via `timerTickWithBudget`. -/
+compatibility (unbound threads + legacy test fixtures). The live per-core
+form is `scheduleEffectiveOnCore`. -/
 noncomputable def scheduleEffective : Kernel Unit :=
   fun st =>
     match chooseThreadEffective st with
@@ -812,47 +775,6 @@ noncomputable def scheduleEffective : Kernel Unit :=
 -- ============================================================================
 -- Z4-H: Integrated timerTick with replenishment and budget
 -- ============================================================================
-
-/-- Z4-H / AN5-C: **Budget-aware** extended timer tick with CBS
-replenishment and budget accounting. Naming-convention note: the
-`WithBudget` suffix is semantically equivalent to `_budgetAware` used in
-the AN5-C documentation — this is the primary timer entry point for
-production boot paths.
-
-This replaces the original `timerTick` as the primary timer entry point.
-Processing order:
-1. Process due replenishments (may re-enqueue budget-restored threads)
-2. Handle current thread's budget (unbound: time-slice; bound: CBS budget)
-3. If preempted, call `schedule` to select next thread
-
-The original `timerTick` is preserved as `timerTickLegacy` for backward
-compatibility with existing preservation proofs. -/
-noncomputable def timerTickWithBudget : Kernel Unit :=
-  fun st =>
-    -- AK2-D (S-M02): clear the diagnostic timeout-error record at the start of
-    -- each tick so a stale list never survives across rounds.
-    let st := { st with scheduler :=
-      st.scheduler.setLastTimeoutErrorsOnCore bootCoreId [] }
-    -- Step 1: Process due replenishments
-    let now := st.machine.timer
-    let stReplenished := processReplenishmentsDue st now
-    -- Step 2: Handle current thread's budget
-    match (stReplenished.scheduler.currentOnCore bootCoreId) with
-    | none =>
-      -- No current thread: just advance the timer
-      .ok ((), { stReplenished with machine := tick stReplenished.machine })
-    | some tid =>
-      match stReplenished.getTcbWitnessed? tid with
-      | some ⟨tcb, hTcb⟩ =>
-        match timerTickBudget stReplenished tid tcb hTcb with
-        | .error e => .error e
-        | .ok (st', true) =>
-          -- Preempted: reschedule using effective selection
-          scheduleEffective st'
-        | .ok (st', false) =>
-          -- Not preempted: continue
-          .ok ((), st')
-      | none => .error .schedulerInvariantViolation
 
 -- ============================================================================
 -- Z4-J: Budget-aware handleYield
@@ -1047,13 +969,13 @@ noncomputable def scheduleDomain : Kernel Unit :=
 -- onto their target core via SM5.C's `wakeThread`), and emits a local preemption
 -- if the running thread's budget / time-slice is exhausted.  Each transition is
 -- the per-core analogue of the single-core production timer machinery
--- (`processReplenishmentsDue`, `timerTickBudget`, `scheduleEffective`,
+-- (`timerTickBudget`, `scheduleEffective`,
 -- `switchDomain`/`scheduleDomain`), indexed by an explicit `(c : CoreId)` and
 -- reading / writing only core `c`'s scheduler slots (plus the shared object
 -- store and — for the cross-core replenish wake — the target core's run queue).
 --
 -- **Global-timer ownership (SMP per-core decision).**  Unlike the single-core
--- `timerTickWithBudget`, the per-core tick does **not** advance the shared
+-- `timerTick`, the per-core tick does **not** advance the shared
 -- `machine.timer` (the abstract global tick counter).  On real hardware each
 -- core's CNTP is independent, but the *global* monotonic tick count is
 -- maintained by a single authority — exactly mirroring the Rust HAL, where
@@ -1085,7 +1007,7 @@ with re-dispatch in `scheduleDomainOnCore`'s boundary branch
 `scheduleDomain` couples `switchDomain` with `schedule`.  Crucially the per-core
 *timer tick* (`timerTickOnCore`) does **not** call this (nor any domain step):
 domain accounting is the separate `scheduleDomainOnCore` transition, mirroring the
-single-core split where `timerTickWithBudget` never touches `domainTimeRemaining`.
+single-core split where `timerTick` never touches `domainTimeRemaining`.
 This decoupling is what keeps a running thread from ever outliving its domain (the
 audit-pass-2 `currentThreadInActiveDomain` faithfulness fix). -/
 def decrementDomainTimeOnCore (st : SystemState) (c : CoreId) : SystemState :=
@@ -1275,7 +1197,7 @@ dispatches it with the inline save→dequeue→restore→set-current sequence, r
 
 This is the *drop-current* dispatch (it does **not** re-enqueue the previous
 current — the caller `timerTickOnCore` has already re-enqueued it via
-`timerTickBudgetOnCore`, exactly as the single-core `timerTickWithBudget` →
+`timerTickBudgetOnCore`, exactly as the single-core `timerTickBudget` →
 `scheduleEffective` pairing).  The selected thread is dequeued-on-dispatch
 (SM5.B.5); if it is core `c`'s previously-current thread re-selected, it simply
 continues running with a fresh time-slice / budget.
@@ -1477,7 +1399,7 @@ thread's `cpuAffinity`, or the boot core when unbound); under the
 a thread whose affinity changed (SM5.H.4 migration deferred) targets a *remote*
 core — the defensive cross-core path SM5.D.4 realises.
 
-Guards (faithful to the single-core `processReplenishmentsDue`): the wake fires
+Guards: the wake fires
 only when the SC was genuinely exhausted-and-now-positive (a no-op refill does
 not wake), and never re-enqueues a thread that is *currently running* on some
 core (re-enqueuing the running thread would violate dequeue-on-dispatch).
@@ -1874,8 +1796,7 @@ def drainDueOnCore (c : CoreId) (now : Nat) : Nat → SystemState → SystemStat
 each due context refilled and placed again by its remaining refills, with the
 queue's count as the bound (every context is taken at most once: one put back
 holds only refills released after `now`, so it goes behind every due one).
-The per-core analogue of `processReplenishmentsDue`, reading / writing core
-`c`'s release queue (plus, via the wakes, the target cores' run queues, their
+This reads and writes core `c`'s release queue (plus, via the wakes, the target cores' run queues, their
 reschedule flags and the object store).  Pure; deterministic; no list is built
 (WS-ZA ZA6.3).  What the wakes owe — a `.reschedule` SGI to each remote core
 whose flag went up, and the local decision when the executing core's did — is
@@ -2440,8 +2361,7 @@ charge's timeout wakes raise on the core whose decision they staled
 @[inline] def rescheduleIfPendingOnCore (st : SystemState) (c : CoreId) : SystemState :=
   if st.scheduler.reschedulePendingOnCore c then handleRescheduleOnCoreState st c else st
 
-/-- WS-SM SM5.D.2 (plan §3.4): the per-core timer tick — the full per-core
-analogue of `timerTickWithBudget`.  Total, as seL4's `timerTick` is (WS-ZA ZA6.2).
+/-- WS-SM SM5.D.2 (plan §3.4): the per-core, budget-aware timer tick.  Total, as seL4's `timerTick` is (WS-ZA ZA6.2).
 
 Processing order (on core `c`, at the current global time `now := machine.timer`,
 which the tick reads but does not advance — see the SM5.D section header):
@@ -2470,7 +2390,7 @@ which the tick reads but does not advance — see the SM5.D section header):
 
 The tick does **budget accounting only** and never writes
 `domainTimeRemainingOnCore` (audit-pass-2 domain-rotation faithfulness, mirroring
-single-core `timerTickWithBudget`); per-core *domain* rotation is the separate
+single-core `timerTick`); per-core *domain* rotation is the separate
 atomic `scheduleDomainOnCore`.
 
 Returns the post-tick state.  The cross-core `.reschedule` SGIs the tick owes
@@ -2485,8 +2405,8 @@ def timerTickOnCore (st : SystemState) (c : CoreId) : SystemState :=
   -- SM5.D.5: per-core budget/time-slice tick + local preemption.  The tick does
   -- **budget accounting only** (audit-pass-2): rotation folded into the tick
   -- left a running thread outside the rotated domain; the run loop invokes
-  -- `timerTickOnCore` then `scheduleDomainOnCore`, as the single-core loop
-  -- invokes `timerTickWithBudget` then `scheduleDomain`.
+  -- `timerTickOnCore` then `scheduleDomainOnCore`, as seL4 charges the tick
+  -- before it rotates the domain.
   match st1.scheduler.currentOnCore c with
   | none => rescheduleIfPendingOnCore st1 c
   | some tid =>

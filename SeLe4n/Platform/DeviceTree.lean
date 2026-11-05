@@ -507,52 +507,6 @@ theorem classifyAddress_found (addr : PAddr) (pm : List MemoryRegion) (r : Memor
     classifyAddress addr pm = r.kind := by
   simp [classifyAddress, hFound]
 
-/-- T6-M: Attempt to construct a `DeviceTree` from a DTB blob.
-    Currently implements:
-    1. FDT header parsing and validation
-    2. Memory region extraction from raw `reg` property bytes (when provided)
-
-    Full FDT structure block traversal (node/property iteration, string table
-    lookup, `/chosen` and `/cpus` nodes) is deferred to WS-U. -/
--- AJ3-B (M-18): `physicalAddressWidth` is now a required parameter (no default).
--- Callers must explicitly specify the PA width for their platform to prevent
--- silent misconfiguration (RPi5: the Cortex-A76's 40 bits, not 48).
-def DeviceTree.fromDtbWithRegions (blob : ByteArray)
-    (physicalAddressWidth : Nat)
-    (memoryRegBytes : Option ByteArray := none) : Option DeviceTree := do
-  let hdr ← parseAndValidateFdtHeader blob
-  -- PR #892 review round 8: the fourth site of the whole-entry relation, and
-  -- the last truncating one.  `extractMemoryRegions` is the raw fixed-stride
-  -- fold and drops a trailing partial pair; every *entry point* now reads the
-  -- property whole or refuses it, so this one goes through the checked form at
-  -- the 2/2 cell widths its 16-byte stride stands for.
-  let memRegions ← match memoryRegBytes with
-    | some regBlob =>
-      (fdtWholeEntryCount regBlob 16).map fun _ =>
-        fdtRegionsToMemoryRegions (extractMemoryRegions regBlob)
-    | none => some []
-  -- AJ3-B (M-18): physicalAddressWidth is a required parameter — callers must
-  -- pass the platform-specific value (e.g., 44 for RPi5 BCM2712, 52 for Sim).
-  let config : MachineConfig := {
-    registerWidth := 64
-    virtualAddressWidth := 48
-    physicalAddressWidth := physicalAddressWidth
-    pageSize := 4096
-    maxASID := 65536
-    memoryMap := memRegions
-  }
-  -- Note: fromDtbWithRegions uses pre-extracted memory bytes and does not
-  -- perform full FDT node traversal. For full device discovery (peripherals,
-  -- interrupt controller, timer), use fromDtbFull which invokes parseFdtNodes.
-  some {
-    platformName := s!"DTB-parsed (version {hdr.version.toNat})"
-    machineConfig := config
-    peripherals := []  -- Use fromDtbFull for full device discovery
-    interruptController := { distributorBase := (SeLe4n.PAddr.ofNat 0), cpuInterfaceBase := (SeLe4n.PAddr.ofNat 0),
-                             spiCount := 0, timerPpiId := ⟨0⟩ }
-    timerFrequencyHz := 0
-  }
-
 /-- T6-M: Empty region bytes produce an empty memory map. -/
 theorem extractMemoryRegions_empty :
     extractMemoryRegions ByteArray.empty = [] := by
@@ -609,45 +563,10 @@ theorem extractMemoryRegionsGeneral_entrySize_eq :
 -- V4-M1/L-PLAT-1: DTB string reading
 -- ============================================================================
 
-/-- V4-M1/V5-A/W4-B/L-PLAT-1: Read a null-terminated C string from a ByteArray
-    at the given offset. Returns the string and the 4-byte-aligned offset past it.
-    Uses fuel to prevent infinite loops on malformed (non-terminated) strings.
-
-    V5-A (M-DEF-1): Uses `ByteArray.get?` instead of the panicking `get!`.
-    W4-B (M-9): Explicit bounds check on initial offset rejects out-of-range
-    starting positions before entering the traversal loop.
-
-    AK9-H (P-L2): The `Option` return type collapses "fuel exhausted"
-    and "out-of-bounds / malformed" into a single `none`. Legacy callers
-    that don't care to distinguish the two continue using this form;
-    new callers should prefer `readCStringChecked` (below) which
-    propagates a typed `DeviceTreeParseError` so that fuel-exhaustion
-    is a distinct signal from a malformed blob. -/
-def readCString (blob : ByteArray) (offset : Nat) (fuel : Nat := 256)
-    : Option (String × Nat) :=
-  if offset ≥ blob.size then none  -- W4-B: reject out-of-bounds start
-  else go blob offset fuel []
-where
-  go (blob : ByteArray) (offset fuel : Nat) (acc : List Char)
-      : Option (String × Nat) :=
-    match fuel with
-    | 0 => none  -- Fuel exhausted without finding null terminator
-    | fuel' + 1 =>
-      match blob[offset]? with
-      | none => none  -- Out of bounds
-      | some byte =>
-        if byte == 0 then
-          -- Found null terminator; align to 4-byte boundary
-          let nextOffset := offset + 1
-          let aligned := ((nextOffset + 3) / 4) * 4
-          some (String.ofList acc.reverse, aligned)
-        else
-          go blob (offset + 1) fuel' (Char.ofNat byte.toNat :: acc)
-
-/-- AK9-H (P-L2): Checked variant of `readCString` that distinguishes
-    **fuel exhaustion** from **malformed / truncated blob**. Intended for
-    new DTB parsing paths that need error attribution. Shape mirrors the
-    legacy Option variant; the default fuel is unchanged at 256.
+/-- V4-M1/AK9-H (P-L2): Read a null-terminated C string from a ByteArray at
+    the given offset; returns the string and the 4-byte-aligned offset past
+    it.  Distinguishes **fuel exhaustion** from **malformed / truncated
+    blob**; the default fuel is 256.
 
     Error semantics:
     - `.error .malformedBlob` — initial offset is out-of-bounds, or a
@@ -799,7 +718,7 @@ def FdtBlob.structExtract? (v : FdtBlob) (start stop : Nat) : Option ByteArray :
 /-- A property **name**, refused unless `nameoff` is inside the declared strings
 block and the name's terminator is inside it too.
 
-`lookupFdtString` searched from `offDtStrings + nameoff` to the end of the whole
+The retired string lookup searched from `offDtStrings + nameoff` to the end of the whole
 blob, so a `nameoff` at or beyond `sizeDtStrings` read trailing data — which is
 how a malformed blob could place the strings `reg` or `compatible` outside its
 declared table and have them treated as declared property names. -/
@@ -860,20 +779,6 @@ where
         if base == 0 && size == 0 then some acc.reverse
         else go (offset + 16) fuel ((base.toNat, size.toNat) :: acc)
       | _, _ => none
-
-/-- V4-M2/L-PLAT-1: Look up a property name in the FDT string table.
-    Given the string table offset and a property's `nameoff`, reads the
-    property name from the DTB string table.
-
-    **Unbounded, and kept only for the deprecated legacy walk** (PR #892 review
-    round 7): it reads to the end of the blob rather than to the end of the
-    declared strings block.  The live parser uses `FdtBlob.stringsName?`. -/
-def lookupFdtString (blob : ByteArray) (offDtStrings : Nat) (nameoff : Nat)
-    : Option String :=
-  let absOffset := offDtStrings + nameoff
-  match readCString blob absOffset with
-  | some (name, _) => some name
-  | none => none
 
 -- ============================================================================
 -- V4-M3/L-PLAT-1: FDT structure block traversal
@@ -1207,8 +1112,8 @@ end
     - FDT_END (0x9): terminates the structure block
 
     Uses depth tracking and fuel bound to prevent infinite loops on
-    malformed DTB data. The W4-B bounds-checked helpers (`readBE32`,
-    `readCString`) are used throughout. -/
+    malformed DTB data. Every read is bounds-checked, through the
+    `FdtBlob` view (`structBE32?`, `structExtract?`, `stringsName?`). -/
 -- AN7-D.4 (PLT-M05): Default fuel is now `hdr.sizeDtStruct.toNat / 4` instead
 -- of the fixed `2000`.  The structure block is at most `sizeDtStruct` bytes
 -- and every FDT token consumes ≥ 4 bytes (FDT_BEGIN_NODE, FDT_END_NODE,

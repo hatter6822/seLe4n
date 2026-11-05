@@ -181,8 +181,8 @@ inventory was written:
   - Re-export hub: `SeLe4n/Kernel/RadixTree.lean`.
 - `SeLe4n/Kernel/SchedContext/` — scheduling context subsystem (WS-Z, v0.23.0–v0.23.20):
   - `Types.lean` — `SchedContextId`, `Budget`, `Period`, `Bandwidth`, `ReplenishmentEntry`, `SchedContext`, `SchedContextBinding` (unbound/bound/donated), BEq instances.
-  - `Budget.lean` — CBS budget operations: `consumeBudget`, `isBudgetExhausted`, replenishment scheduling/processing, `cbsBudgetCheck`, `admissionCheck`.
-  - `ReplenishQueue.lean` — sorted replenishment queue: `insert`, `popDue`, `remove`, `peek`, `hasDue` with `pairwiseSortedBy` invariant.
+  - `Budget.lean` — CBS budget operations: `consumeBudget`, replenishment scheduling/processing, `cbsBudgetCheck`, `admissionCheck`.
+  - `ReplenishQueue.lean` — sorted replenishment queue: `insert`, `popDue`, `remove`, `hasDue` with `pairwiseSortedBy` invariant.
   - `Operations.lean` — `schedContextConfigure` (invoked on a per-core SchedControl capability), `schedContextBind`, `schedContextUnbind`.
   - `PriorityManagement.lean` — D2: `setPriorityOp`, `setMCPriorityOp`, MCP authority validation, run queue migration on priority change.
   - `Invariant/Defs.lean` — `budgetWithinBounds`, `replenishmentListWellFormed`, `schedContextWellFormed`, `replenishmentAmountsBounded`, preservation proofs, bandwidth theorems.
@@ -480,8 +480,8 @@ and its non-interference status are in
   - The synchronous-exception syndrome layer, moved down out of the staged
     `ExceptionModel.lean` so it sits **below** `Kernel/API.lean` in the import
     order and can reach hardware: `SynchronousExceptionClass`,
-    `ExceptionContext`, `extractExceptionClass` (ESR_EL1 EC, bits [31:26]),
-    `extractInstructionSyndrome` (ISS, bits [24:0]) and the total
+    `ExceptionContext`, `extractExceptionClass` (ESR_EL1 EC, bits [31:26])
+    and the total
     `classifySynchronousException`.
   - `faultOfExceptionContext` — the class **plus** the syndrome and fault
     address become a `Model.Fault`.  It reads `ExceptionContext`, not

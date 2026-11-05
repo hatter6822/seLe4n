@@ -250,22 +250,6 @@ class PlatformBinding (platform : Type) where
       deploymentLabeling.separatedLower.toNat != root.id.toNat &&
       deploymentLabeling.separatedUpper.toNat != root.id.toNat) = true
 
-/-- Extract the runtime contract from a platform binding instance. -/
-@[inline] def PlatformBinding.runtime [PlatformBinding platform] : RuntimeBoundaryContract :=
-  PlatformBinding.runtimeContract (platform := platform)
-
-/-- Extract the boot contract from a platform binding instance. -/
-@[inline] def PlatformBinding.boot [PlatformBinding platform] : BootBoundaryContract :=
-  PlatformBinding.bootContract (platform := platform)
-
-/-- Extract the interrupt contract from a platform binding instance. -/
-@[inline] def PlatformBinding.interrupt [PlatformBinding platform] : InterruptBoundaryContract :=
-  PlatformBinding.interruptContract (platform := platform)
-
-/-- Extract the machine configuration from a platform binding instance. -/
-@[inline] def PlatformBinding.config [PlatformBinding platform] : SeLe4n.MachineConfig :=
-  PlatformBinding.machineConfig (platform := platform)
-
 /-- **PR #892 review round 2**: the configuration the binding installs for a
     board account (`bindMachineConfig`), as a projection. -/
 @[inline] def PlatformBinding.boundConfig [PlatformBinding platform]
@@ -281,24 +265,6 @@ theorem PlatformBinding.boundConfig_declaredCoreCount [PlatformBinding platform]
     (PlatformBinding.boundConfig (platform := platform) board).declaredCoreCount =
       PlatformBinding.coreCount (platform := platform) :=
   PlatformBinding.bindMachineConfig_declaredCoreCount (platform := platform) board
-
-/-- **WS-RC R3 (DEEP-BOOT-01)**: Extract the optional boot VSpaceRoot
-    entry from a platform binding instance. -/
-@[inline] def PlatformBinding.bootVSpace [PlatformBinding platform] :
-    Option BootVSpaceRootEntry :=
-  PlatformBinding.bootVSpaceRoot (platform := platform)
-
-/-- **WS-SM SM0.G**: extract the platform's core count.  Wrapper
-    `def` so consumers can write `PlatformBinding.cores (platform := P)`
-    without the verbose `coreCount`. -/
-@[inline] def PlatformBinding.cores [PlatformBinding platform] : Nat :=
-  PlatformBinding.coreCount (platform := platform)
-
-/-- **WS-SM SM0.G**: extract the platform's boot core id, typed as
-    `Fin (cores platform)`. -/
-@[inline] def PlatformBinding.bootCore [PlatformBinding platform] :
-    Fin (PlatformBinding.coreCount (platform := platform)) :=
-  PlatformBinding.bootCoreId (platform := platform)
 
 /-- **WS-RR RR5.1**: the labeling context the platform's boot installs — the
     constructor's output on the binding's `DeploymentLabeling`. -/
@@ -443,10 +409,5 @@ theorem PlatformBinding.labeling_separatedThreads [PlatformBinding platform] :
     (PlatformBinding.labeling (platform := platform)).separatedThreads =
       some ((PlatformBinding.deploymentLabeling (platform := platform)).separatedLower,
         (PlatformBinding.deploymentLabeling (platform := platform)).separatedUpper) := rfl
-
-/-- **WS-SM SM0.G**: extract the platform's ARMv8 sharing domain. -/
-@[inline] def PlatformBinding.sharing [PlatformBinding platform] :
-    SeLe4n.Kernel.Concurrency.SharingDomain :=
-  PlatformBinding.sharingDomain (platform := platform)
 
 end SeLe4n.Platform

@@ -307,33 +307,6 @@ theorem containsKey_iff (l : LockKey) (S : LockSet) :
     rw [containsKey, List.any_eq_true]
     exact ⟨(l, m), hmem, decide_eq_true rfl⟩
 
-/-- WS-SM SM3.B: try to insert a fresh `(LockKey, AccessMode)` pair
-into a `LockSet`.  Returns `none` if the `LockKey` is already
-present (the caller should use `insertOrMerge` instead for the
-merge-via-`lub` semantics).
-
-The strict form is used by tests that want to assert no key is
-duplicated; the merging form is used by production lockSet
-assembly. -/
-def insert? (l : LockKey) (m : AccessMode) (S : LockSet) : Option LockSet :=
-  if h : containsKey l S = true then
-    none
-  else
-    some {
-      pairs := (l, m) :: S.pairs,
-      hUniqueKeys := by
-        have hNotMem : l ∉ S.pairs.map (·.fst) := by
-          intro hmem
-          have : containsKey l S = true := by
-            rw [containsKey, List.any_eq_true]
-            obtain ⟨p, hpmem, hpfst⟩ := List.mem_map.mp hmem
-            exact ⟨p, hpmem, by simp [hpfst]⟩
-          exact h this
-        simp only [List.map_cons]
-        exact List.Pairwise.cons
-          (fun a' ha' hEq => hNotMem (hEq ▸ ha')) S.hUniqueKeys
-    }
-
 /-- WS-SM SM3.B: insert a `(LockKey, AccessMode)` pair, merging modes
 via `AccessMode.lub` if the `LockKey` is already present.
 

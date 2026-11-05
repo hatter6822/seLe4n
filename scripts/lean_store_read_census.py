@@ -1565,7 +1565,7 @@ ACCESSOR_BODIES = {
               "getSchedContext?", "getReply?", "getFrame?", "getPageTable?",
               "getTcbWitnessed?", "getSchedContextWitnessed?",
               "getEndpointWitnessed?", "getNotificationWitnessed?",
-              "lookupObject", "lookupCNode", "lookupVSpaceRoot",
+              "lookupCNode",
               # The stored-entry lookup every accessor above is compiled
               # through (`@[csimp]`); kind-agnostic, as `getObject?` is.
               "SystemState.objectEntry?")

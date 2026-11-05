@@ -80,9 +80,6 @@ namespace RegValue
 /-- R7-C/L-03: A register value is valid if it fits in one machine word. -/
 @[inline] def valid (r : RegValue) : Prop := isWord64 r.val
 
-/-- R7-C/L-03: Decidable validity check for runtime use. -/
-@[inline] def isValid (r : RegValue) : Bool := isWord64Dec r.val
-
 /-- A register value read from a 64-bit word is valid: `UInt64.toNat` is below
 `2^64`. -/
 theorem valid_of_uint64 (x : UInt64) : RegValue.valid ⟨x.toNat⟩ :=
@@ -227,9 +224,6 @@ def Kernel.Architecture.trapFrameWordCount : Nat := 35
 
 /-- The index of `SP_EL0` in the context's word layout. -/
 def Kernel.Architecture.trapFrameSpWord : Nat := 31
-
-/-- The index of `ELR_EL1` (the program counter the thread resumes at). -/
-def Kernel.Architecture.trapFramePcWord : Nat := 32
 
 /-- The index of `SPSR_EL1` (the processor state the thread resumes with). -/
 def Kernel.Architecture.trapFramePstateWord : Nat := 33
@@ -1433,11 +1427,6 @@ def MachineState.fpOwner (ms : MachineState) : _root_.Vector (Option ThreadId) n
 registers hold. -/
 @[inline] def MachineState.residentOnCore (ms : MachineState) (c : CoreId) : Option ThreadId :=
   ThreadId.ofOptCode (ms.residentCode.get c)
-
-/-- Every core's resident thread, decoded (WS-ZA ZA4.7: stored as codes,
-`residentCode`, so a settle writes a scalar). -/
-def MachineState.resident (ms : MachineState) : _root_.Vector (Option ThreadId) numCores :=
-  ms.residentCode.map ThreadId.ofOptCode
 
 /-- **PR #904 review (`v0.36.41`)**: record `t?` as core `c`'s resident thread. -/
 @[inline] def MachineState.setResidentOnCore (ms : MachineState) (c : CoreId)

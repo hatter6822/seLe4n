@@ -79,7 +79,7 @@ abstract memory model.
 `TicketLockState.wf` carries a `Decidable` instance so test fixtures
 can construct lock states and `decide` their well-formedness at
 elaboration time.  The transition functions
-(`captureTicket`, `applyOp`, `promotePending`, `releaseAndPromote`)
+(`applyOp`, `promotePending`, `releaseAndPromote`)
 are total computable functions on `TicketLockState`.
 -/
 
@@ -436,29 +436,8 @@ inductive TicketLockOp where
   deriving Repr
 
 -- ============================================================================
--- SM2.B.6 — captureTicket, observeServing, applyOp
+-- SM2.B.6 — observeServing, applyOp
 -- ============================================================================
-
-/-- **WS-SM SM2.B.6**: the atomic `fetch_add` capture step.
-
-Returns the updated state and the captured ticket.  The state is
-extended by:
-
-* `nextTicket := nextTicket + 1` (the atomic increment side of
-  `LDADDA`).
-* `pending := (core, ticket) :: pending` (the just-captured entry
-  is admitted at the head of the queue; the `applyOp` wrapper
-  then removes it again if the captured ticket equals `serving`
-  and no holder is present, fusing the capture with the immediate
-  spin-loop's first iteration). -/
-def TicketLockState.captureTicket (s : TicketLockState) (core : CoreId) :
-    TicketLockState × Nat :=
-  let ticket := s.nextTicket
-  let s' :=
-    { s with
-      nextTicket := s.nextTicket + 1
-      pending    := (core, ticket) :: s.pending }
-  (s', ticket)
 
 /-- **WS-SM SM2.B.6**: the pure observation step.
 

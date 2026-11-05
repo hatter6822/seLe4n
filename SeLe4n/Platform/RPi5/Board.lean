@@ -52,11 +52,6 @@ DRAM.  Every address this module carried for the UART and the GIC-400 was in
 that retired window (see `CHANGELOG.md` v0.36.2, the BCM2712 address-map
 correction). -/
 
-/-- BCM2712 high-peripheral base address: the start of the 64 GiB `axi`
-window above DRAM (`bcm2712.dtsi`'s `axi` node maps `0x10_0000_0000` 1:1),
-inside which the SoC bus, the GIC-400 and RP1's PCIe apertures sit. -/
-def peripheralBaseHigh : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x1000000000)
-
 /-- **The BCM2712 address-map correction (v0.36.2)**: where the SoC bus
 appears to the CPU.  `bcm2712.dtsi`'s `soc` node carries
 `ranges = <0x7c000000 0x10 0x7c000000 0x04000000>` — the 64 MiB of bus
@@ -373,9 +368,6 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
     Non-secure physical timer: INTID 30. -/
 def timerPpiId : SeLe4n.Irq := ⟨30⟩
 
-/-- ARM Generic Timer virtual timer PPI: INTID 27. -/
-def virtualTimerPpiId : SeLe4n.Irq := ⟨27⟩
-
 -- ============================================================================
 -- WS-H15b/A-41: MMIO region definitions and disjointness
 -- ============================================================================
@@ -469,7 +461,6 @@ tracks validation status.
 
 | Constant | Value | Source | Status |
 |----------|-------|--------|--------|
-| `peripheralBaseHigh` | 0x10_0000_0000 | `bcm2712.dtsi` `axi` node `ranges` (1:1 above DRAM) | Cross-checked |
 | `socPeripheralBase` / `socPeripheralSize` | 0x10_7C00_0000 / 64 MiB | `bcm2712.dtsi` `soc` node, `ranges = <0x7c000000 0x10 0x7c000000 0x04000000>` | Cross-checked |
 | `gicDistributorBase` | 0x10_7FFF_9000 | `bcm2712.dtsi` `interrupt-controller@7fff9000`, `reg` block 0 | Cross-checked |
 | `gicCpuInterfaceBase` | 0x10_7FFF_A000 | the same node, `reg` block 1 (8 KiB) | Cross-checked |
@@ -478,7 +469,7 @@ tracks validation status.
 | `timerFrequencyHz` | 54 MHz | RPi5 crystal; CNTFRQ_EL0 | Carried over |
 | `rpi5MachineConfig.physicalAddressWidth` | 40-bit | Cortex-A76 TRM r4p1 §B2.58: `ID_AA64MMFR0_EL1.PARange = 0b0010` (the `44` carried over from AJ3-B was corrected by the v0.36.2 audit; the HAL derives `TCR_EL1.IPS` from the register, BP8.1 reads it back) | Cross-checked |
 | `gicSpiCount` | 288 | `bcm2712.dtsi`: highest wired SPI is `GIC_SPI 276` (UARTA), rounded up to whole 32-line banks; `rpi5_machine` model `num-irq = 320`; checked at boot against `GICD_TYPER.ITLinesNumber` | Cross-checked |
-| `timerPpiId`, `virtualTimerPpiId` | 30, 27 | ARM GIC architecture; RPi kernel DTS | Carried over |
+| `timerPpiId` | 30 | ARM GIC architecture; RPi kernel DTS | Carried over |
 
 **The BCM2712 address-map correction (v0.36.2).**  Until that version this
 table marked `peripheralBaseLow` (`0xFE00_0000`), a UART at `0xFE20_1000`, a

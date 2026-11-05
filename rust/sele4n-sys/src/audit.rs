@@ -433,8 +433,8 @@ pub fn audit_fold_chunks(chunks: &[u64]) -> Option<u128> {
     Some(value)
 }
 
-/// Number of designation bytes per exported chunk.  Mirrors Lean's
-/// `auditDesignationBytesPerChunk`.
+/// Number of designation bytes per exported chunk.  Mirrors the four-byte
+/// chunks of Lean's `auditBasisChunkValue`.
 pub const AUDIT_DESIGNATION_BYTES_PER_CHUNK: u32 = 4;
 
 /// Extract one byte from a basis-designation chunk, little-endian.  Mirrors

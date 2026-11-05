@@ -300,7 +300,7 @@ will drift; the identifier beside each is stable.
 | 1 | `SeLe4n/Platform/Boot.lean` (`applyGicTimerSetup`) | TLB/ASID maintenance for HAL-parity boot |
 | 2 | `SeLe4n/Platform/Boot.lean` (`bootFromPlatform`) | Minimum-configuration validation (≥ 1 initial thread, valid scheduler state) |
 | 3 | `SeLe4n/Platform/Boot.lean` (bundle bridge) | Builder operations preserve only 4 of the 12 `proofLayerInvariantBundle` components for general configs |
-| 4 | `SeLe4n/Platform/RPi5/MmioAdapter.lean` (P-L2) | `readCString` fuel-exhaustion return-type upgrade |
+| 4 | `SeLe4n/Platform/RPi5/MmioAdapter.lean` (P-L2) | `readCStringWithin` fuel-exhaustion return-type upgrade (the `Option` `readCString` it was registered against is deleted at `v0.36.198`; `readCStringChecked` already separates the two) |
 | 5 | `SeLe4n/Platform/RPi5/MmioAdapter.lean` (P-L4) | `extractPeripherals` beyond 2-level DTB nesting |
 | 6 | `SeLe4n/Platform/RPi5/MmioAdapter.lean` (P-L5) | Multi-core extension of the MMIO write-sequence atomicity argument |
 | 7 | `SeLe4n/Platform/RPi5/MmioAdapter.lean` (P-L11) | FFI `opaque BaseIO` contract bridging |

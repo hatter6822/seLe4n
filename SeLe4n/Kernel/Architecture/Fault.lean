@@ -130,14 +130,6 @@ never be handed a kernel fault.  Inline, so an entry asking it of the saved
 @[inline] def ExceptionContext.takenFromEl0 (ectx : ExceptionContext) : Bool :=
   ((ectx.spsr >>> 2) &&& 0x3) == 0
 
-/-- WS-RR RR4.3: extract the Instruction Specific Syndrome (ISS) field from
-    ESR_EL1 — bits [24:0].  The per-class detail word: for a data abort it
-    carries the DFSC status code, the write-not-read bit and the access size;
-    for an alignment or undefined-instruction fault it carries the
-    class-specific encoding a handler needs to diagnose the trap. -/
-def extractInstructionSyndrome (esr : UInt64) : UInt64 :=
-  esr &&& 0x1FFFFFF
-
 /-- AG3-C: Classify a synchronous exception from the ESR_EL1 EC field.
     Maps ARM64 exception class codes to our model's classification:
     - EC 0x15: SVC from AArch64 (syscall)

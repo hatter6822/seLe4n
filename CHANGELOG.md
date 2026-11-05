@@ -1,3 +1,37 @@
+## v0.36.198 — Dead code removed: 123 definitions and four FFI exports nothing calls
+
+Every definition in the library that no constant names — no kernel code, no
+proof, no test executable, no export and no `@[csimp]` side — is deleted, with
+the anchors, name lists and baselines that pinned it.  The scan reads the Lean
+environment (each constant's type and value), not text, and was repeated until
+it found nothing new.  The three unused frozen-stack operations
+(`frozenLookupCNode`, `frozenCspaceLookupSlot`, `frozenTimerTickBudget`) stay:
+the frozen execute phase is unfinished work, not dead code.  No kernel
+behaviour changes; spec functions and theorems that a proof uses stay.
+
+- **Deleted.**  The four single-core `*Checked` API wrappers (tests drive
+  `withOutgoingContextChecked` over the boot core's live operations, as they
+  already did), the single-core `timerTickWithBudget` and
+  `processReplenishmentsDue`, unused helpers and accessors across the
+  Prelude, Machine, Model, Builder, Capability, Scheduler, SchedContext,
+  Concurrency, InformationFlow, Architecture and Platform layers, the
+  `DocumentedObligation` marker type (its one value had no reader), and the
+  `Option` DTB reader `readCString`.  Inventory entry 4 now names the live
+  tick `timerTickOnCore`.
+- **FFI.**  `ffi_tlbi_all`, `ffi_shootdown_acked_generation`,
+  `ffi_shootdown_all_acked_for_round` and `ffi_fatal_halt` had Lean bindings
+  that nothing called; the bindings, the Rust exports and their tests are
+  gone, the TLBI discipline gate's local bindings and allowlist with them.
+- **Information-flow catalogue.**  The stale read-only entry for the deleted
+  `lookupObject` is retired: canonical 56 → 55, per-core 70 → 69, every count
+  theorem, suite and the `smp_information_flow` fixture with it.
+- **Pins swept.**  Reachability census entries, Tier 3 `#check` and text
+  anchors, the store-reader baseline sites, the store-read census reader
+  list, the hardware cross-check's pending-constant list, and every comment,
+  docstring and spec paragraph that named a deleted definition.  Registered
+  debt C.1 row 4 now names `readCStringWithin`, the reader that still folds
+  fuel exhaustion into `none`.
+
 ## v0.36.197 — Build speed: dead specification code, decode theorems off the critical path, CI lanes
 
 A build-structure change with no semantics change: the kernel's live C is

@@ -14,8 +14,8 @@
 [smp-information-flow] lock acquired on an object low can see: ghost writer true, projection unchanged on every core true
 [smp-information-flow] non-interference coverage: 36 per-core lifts, 32 with derived confinement, 4 catch-all
 [smp-information-flow] cross-core inventory: 38 transitions, 31 live arms, 28 remote writers
-[smp-information-flow] enforcement boundary: canonical 56 = 15 policy-gated + 38 capability-only + 3 read-only
-[smp-information-flow] enforcement boundary: per-core 70 = canonical + 14 cross-core wrappers; re-routed syscalls 14
+[smp-information-flow] enforcement boundary: canonical 55 = 15 policy-gated + 38 capability-only + 2 read-only
+[smp-information-flow] enforcement boundary: per-core 69 = canonical + 14 cross-core wrappers; re-routed syscalls 14
 [smp-information-flow] channel 1 (scheduling state): severity=medium modelVisible=true perCoreInstance=true
 [smp-information-flow] channel 2 (machine timer): severity=medium modelVisible=false perCoreInstance=true
 [smp-information-flow] channel 3 (TCB metadata): severity=low modelVisible=true perCoreInstance=false

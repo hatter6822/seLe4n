@@ -843,12 +843,6 @@ namespace Capability
 raw `Capability`. -/
 @[inline] def ofNonNull (c : NonNullCap) : Capability := c.val
 
-/-- AL1b: Construct a `NonNullCap` when the caller has a
-`cap.isNull = false` witness in hand. Preferred for proof-carrying
-contexts where the non-null property is already established. -/
-@[inline] def toNonNull (cap : Capability) (h : cap.isNull = false) : NonNullCap :=
-  ⟨cap, h⟩
-
 /-- AL1b: Runtime-checked promotion. Returns `some ⟨cap, _⟩` when
 `cap.isNull = false` and `none` otherwise. This is the canonical way a
 runtime-discovered capability (e.g., the result of `cspaceLookupSlot`) is
@@ -1758,12 +1752,6 @@ structure TCB where
   yieldToCode : Nat := 0
   deriving Repr
 
-/-- WS-ZA ZA6.6: the scheduling context a thread has yielded to (seL4-MCS's
-`tcbYieldTo`), read from its code.  Reducible, so a record update that leaves
-the code alone reads the old value by `rfl`. -/
-@[reducible, inline] def TCB.yieldTo (t : TCB) : Option SeLe4n.SchedContextId :=
-  SeLe4n.SchedContextId.ofOptCode t.yieldToCode
-
 /-- WS-ZA ZA6.31: **the thread's fault record, as the words it stores**.
 Reducible, as `TCB.yieldTo` is, so a record update that leaves the fault
 fields alone reads the old record by `rfl`. -/
@@ -2592,14 +2580,6 @@ instance : BEq TCB where
     a.ipcCanGrant == b.ipcCanGrant && a.ipcFaultSend == b.ipcFaultSend &&
     -- WS-ZA ZA6.6: and the yield link, compared as its code.
     a.yieldToCode == b.yieldToCode
-
-/-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
-    Returns `true` if the TCB's identity or address-space references use
-    reserved sentinel values (ID 0), indicating the TCB was freshly created
-    by a builder and has not been configured
-    via `threadConfigureOp`. Unconfigured TCBs must NOT be scheduled. -/
-@[inline] def TCB.isUnconfigured (tcb : TCB) : Bool :=
-  tcb.tid.isReserved || tcb.cspaceRoot.isReserved || tcb.vspaceRoot.isReserved
 
 /-- **A thread a core may run**: ready in IPC and not suspended — seL4's
 `isRunnable`.  The one test every placement that admits a thread no IPC step
@@ -4300,9 +4280,6 @@ namespace UntypedObjectValid
 
 /-- AN2-F.3: Project the underlying `UntypedObject`. -/
 @[inline] def toUntyped (u : UntypedObjectValid) : UntypedObject := u.val
-
-/-- AN2-F.3: Extract the well-formedness witness. -/
-@[inline] def wf (u : UntypedObjectValid) : u.toUntyped.wellFormed := u.property
 
 /-- AN2-F.3: Canonical empty constructor — a fresh untyped region at `base`
     with `size` capacity, zero children, is well-formed by `empty_wellFormed`. -/

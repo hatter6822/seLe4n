@@ -84,16 +84,16 @@ def bootDispatchException (etype : ExceptionType) (ectx : ExceptionContext)
       (Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind) × SystemState) :=
   dispatchExceptionWith bootTimerTick etype ectx rawIntId st executingCore
 
-/-- `scheduleChecked` in front of the boot core's live schedule. -/
+/-- `withOutgoingContextChecked` in front of the boot core's live schedule. -/
 def bootScheduleChecked : Kernel Unit := withOutgoingContextChecked bootSchedule
 
-/-- `handleYieldChecked` in front of the boot core's live yield. -/
+/-- `withOutgoingContextChecked` in front of the boot core's live yield. -/
 def bootYieldChecked : Kernel Unit := withOutgoingContextChecked bootYield
 
-/-- `timerTickChecked` in front of the boot core's live tick. -/
+/-- `withOutgoingContextChecked` in front of the boot core's live tick. -/
 def bootTimerTickChecked : Kernel Unit := withOutgoingContextChecked bootTimerTick
 
-/-- `switchDomainChecked` in front of the boot core's live domain switch. -/
+/-- `withOutgoingContextChecked` in front of the boot core's live domain switch. -/
 def bootSwitchDomainChecked : Kernel Unit := withOutgoingContextChecked bootSwitchDomain
 
 end SeLe4n.Testing

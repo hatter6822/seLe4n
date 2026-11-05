@@ -460,9 +460,7 @@ def tlbBarrierComplete (st : SystemState) : Prop :=
 /-- AN9-B (DEF-A-M06): bitmask constants for the
     `lastTlbBarrierKind` field. -/
 def tlbBarrierBitDsbIsh   : Nat := 0x01
-def tlbBarrierBitDsbIshst : Nat := 0x02
 def tlbBarrierBitIsb      : Nat := 0x04
-def tlbBarrierBitDsbOsh   : Nat := 0x08
 
 /-- AN9-B: bitmask of the canonical `dsb ish; isb` post-tlbi bracket
     required by ARM ARM D8.11. -/

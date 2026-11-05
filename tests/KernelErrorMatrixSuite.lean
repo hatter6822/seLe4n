@@ -379,13 +379,13 @@ private def row_asidNotBound_vspaceMap : KernelErrorRejection :=
       runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
         (mkDecoded #[rv 65536, rv 0, rv 0, rv 0]) 65536) }
 
-/-- Row: `scheduleChecked` rejects when the current TCB is missing with
+/-- Row: `bootScheduleChecked` rejects when the current TCB is missing with
 `.schedulerInvariantViolation`. -/
 private def row_schedulerInvariantViolation : KernelErrorRejection :=
-  { syscall       := "scheduleChecked"
+  { syscall       := "bootScheduleChecked"
     expectedError := .schedulerInvariantViolation
     scenarioTag   := "AN11A.3.schedulerInvariantViolation.current_tcb_missing"
-    scenarioDesc  := "X2-I: scheduleChecked surfaces invariant violation" ++
+    scenarioDesc  := "X2-I: bootScheduleChecked surfaces invariant violation" ++
                      " when scheduler.current points to a missing TCB" ++
                      " (currentThreadValid contradiction is normally" ++
                      " unreachable; the wrapper provides defense-in-depth)"

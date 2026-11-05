@@ -93,7 +93,7 @@ example : True := by
   -- Entry 3: lifecyclePreRetypeCleanup_smpLatent (C-M04 / AN9-D)
   let _ := @SeLe4n.Kernel.lifecyclePreRetypeCleanup
   -- Entry 4: timerTickReplenishmentPipeline_smpLatent (AK2-K / AN5-D)
-  let _ := @SeLe4n.Kernel.timerTickWithBudget
+  let _ := @SeLe4n.Kernel.timerTickOnCore
   let _ := @SeLe4n.Kernel.replenishmentPipelineOrder
   -- Entry 5: typedIdDisjointness_smpLatent (H-10 / AN2-D)
   let _ := @SeLe4n.Kernel.typedIdDisjointness
@@ -132,11 +132,5 @@ example : True := by
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
   trivial
-
-/-- **WS-SM SM0.C**: aggregator marker — `@`-references the build
-anchor `example` so the surface check is itself locatable in the
-proof surface.  Tier-3 surface scans grep for `smpAnchorVerified`
-to confirm the SM0.C gate is wired. -/
-def smpAnchorVerified : Unit := ()
 
 end SeLe4n.Kernel.Concurrency

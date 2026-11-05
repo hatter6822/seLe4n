@@ -42,10 +42,6 @@ namespace Budget
 @[inline] def isZero (b : Budget) : Bool := b.val == 0
 @[inline] def isPositive (b : Budget) : Bool := b.val > 0
 
-/-- Saturating decrement — budget cannot go negative. -/
-@[inline] def decrement (b : Budget) (ticks : Nat := 1) : Budget :=
-  ⟨b.val - ticks⟩
-
 -- AE3-H/SC-06: `Budget.refill` deleted — had inverted semantics (capped down
 -- to ceiling instead of refilling up). Unused by CBS engine; `applyRefill`
 -- in Budget.lean handles actual replenishment.
@@ -89,7 +85,6 @@ deriving DecidableEq, Repr, Inhabited
 
 namespace Bandwidth
 
-@[inline] def isValid (bw : Bandwidth) : Bool := bw.period > 0
 /-- Utilization in per-mille (parts per thousand).
 
 AK2-E (S-M03): Uses CEILING-ROUND division to guarantee over-admission is
@@ -101,9 +96,6 @@ real bandwidth fraction is ≤ 1, eliminating the prior aggregate 6.4% over-
 admission window on 64-context deployments. -/
 @[inline] def utilization (bw : Bandwidth) : Nat :=
   if bw.period > 0 then (bw.budget * 1000 + bw.period - 1) / bw.period else 0
-/-- Check if this bandwidth exceeds another. -/
-@[inline] def exceeds (a b : Bandwidth) : Bool :=
-  a.utilization > b.utilization
 
 end Bandwidth
 
@@ -127,9 +119,6 @@ structure ReplenishmentEntry where
 deriving DecidableEq, Repr, Inhabited
 
 namespace ReplenishmentEntry
-
-@[inline] def isEligible (entry : ReplenishmentEntry) (currentTime : Nat) : Bool :=
-  entry.eligibleAt ≤ currentTime
 
 end ReplenishmentEntry
 
@@ -296,12 +285,6 @@ Reducible, so a record update that leaves the code alone reads the old value by
 @[reducible, inline] def SchedContext.boundThread (sc : SchedContext) :
     Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode sc.boundThreadCode
-
-/-- WS-ZA ZA6.6: the thread that has yielded to this context (seL4-MCS's
-`scYieldFrom`), read from its code.  Reducible, as `boundThread` is. -/
-@[reducible, inline] def SchedContext.yieldFrom (sc : SchedContext) :
-    Option SeLe4n.ThreadId :=
-  SeLe4n.ThreadId.ofOptCode sc.yieldFromCode
 
 /-- WS-ZA ZA6.5: the context with `t` more consumed time (seL4-MCS's
 `sc->scConsumed += consumed` in `chargeBudget`).  One field written, so a
@@ -876,22 +859,6 @@ def empty (scId : SeLe4n.SchedContextId) : SchedContext :=
 /-- Default instance uses sentinel ID and zero budget. -/
 instance : Inhabited SchedContext where
   default := empty ⟨0⟩
-
-/-- Convenience constructor with well-formedness validation. Returns `none` if
-parameters violate well-formedness (period = 0 or budget > period). -/
-def mkChecked (scId : SeLe4n.SchedContextId) (budget : Nat) (period : Nat)
-    (priority : Nat) (deadline : Nat) (domain : Nat) : Option SchedContext :=
-  if period == 0 then none
-  else if budget > period then none
-  else some {
-    scId := scId
-    budget := ⟨budget⟩
-    period := ⟨period⟩
-    priority := ⟨priority⟩
-    deadline := ⟨deadline⟩
-    domain := ⟨domain⟩
-    budgetRemaining := ⟨budget⟩
-  }
 
 end SchedContext
 

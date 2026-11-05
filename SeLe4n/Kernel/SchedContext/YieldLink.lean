@@ -82,17 +82,6 @@ def yieldToContextOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option SeLe4n
     | k + 1 => some ⟨k⟩
   | none => none
 
-/-- The thread that yielded to context `s`, as its yield-from code names it: the
-thread a completion of its recorded yield writes.  `none` on a context with no
-yielder and on an absent one. -/
-def yieldFromThreadOf? (st : SystemState) (s : SeLe4n.SchedContextId) : Option SeLe4n.ThreadId :=
-  match st.getSchedContext? s with
-  | some sc =>
-    match sc.yieldFromCode with
-    | 0 => none
-    | k + 1 => some ⟨k⟩
-  | none => none
-
 /-- **seL4-MCS's `schedContext_cancelYieldTo`**: a thread linked to the context
 it yielded to has both ends cleared, the context's (`scYieldFrom = NULL`) then
 its own (`tcbYieldTo = NULL`), each in its slot.  The identity on a thread with

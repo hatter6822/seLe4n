@@ -165,19 +165,6 @@ def runnableAt (trace : SchedulerTrace) (k : Nat) (tid : ThreadId) : Prop :=
   | none => False
 
 -- ============================================================================
--- D5-B3: budgetAvailableAt — thread's SchedContext has sufficient budget
--- ============================================================================
-
-/-- D5-B3: Thread's bound SchedContext has positive remaining budget at index `k`. -/
-def budgetAvailableAt (trace : SchedulerTrace) (k : Nat) (tid : ThreadId) : Prop :=
-  match traceStateAt trace k with
-  | some st =>
-    match st.objects[tid.toObjId]? with
-    | some (KernelObject.tcb tcb) => hasSufficientBudget st tcb = true
-    | _ => False
-  | none => False
-
--- ============================================================================
 -- D5-B4: selectedAt implies not runnableAt
 -- ============================================================================
 
@@ -194,7 +181,7 @@ theorem selectedAt_implies_not_in_runQueue
   exact hQCC
 
 -- ============================================================================
--- D5-B5: selectedAt implies budgetAvailableAt (conditional)
+-- D5-B5: unbound threads always pass the budget check
 -- ============================================================================
 
 /-- D5-B5: Unbound threads always pass the budget check, so they are always

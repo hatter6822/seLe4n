@@ -21,7 +21,7 @@ regression gate that catches:
   (`#check` of every public symbol).
 * Decidability regressions on `TicketLockState.wf`.
 * Behavioural regressions on the operational semantics
-  (`captureTicket`, `observeServing`, `applyOp`, `promotePending`,
+  (`observeServing`, `applyOp`, `promotePending`,
   `releaseAndPromote`).
 * The substantive theorem surface (mutex, wf preservation, FIFO,
   bounded wait, RA pairing, reachability, determinism, closure-form
@@ -92,7 +92,6 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.TicketLockOp.observeServing
 
 /-! ## SM2.B.6 — Operations -/
-#check @SeLe4n.Kernel.Concurrency.TicketLockState.captureTicket
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing_eq_serving
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp
