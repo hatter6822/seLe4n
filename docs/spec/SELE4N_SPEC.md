@@ -6519,7 +6519,8 @@ Every kernel object has a decidable well-formedness predicate:
   middle reply's severs the stack at the frame, and a context's
   (`schedContext_unbindReply`) clears the head reply's upward link in its
   slot.  A rendezvous with a queue head that has a successor, a block behind a
-  waiter and the resume of a thread callers wait on build no cell.  The
+  waiter, an endpoint's final delete with several waiters (`cancelAllIPC`) and
+  the resume of a thread callers wait on build no cell.  The
   exerciser's third and fourth threads measure each at 0.
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the

@@ -1282,6 +1282,10 @@ def nonExecutedTransitionsPlain : List Name :=
   -- equal to the code form the block paths run (`storeEndpointEnqueueCode_eq`),
   -- which decodes the tail by a match and builds no cell for it.
   , `SeLe4n.Kernel.storeEndpointEnqueue
+  -- WS-ZA ZA6.34: the send rendezvous's store statement over an `Option`
+  -- successor, proven equal to the code form the general send runs
+  -- (`storeSendRendezvousCode_eq`).
+  , `SeLe4n.Kernel.storeSendRendezvous
   , `SeLe4n.Kernel.storeTcbIpcState_fromTcb
   , `SeLe4n.Kernel.storeTcbPendingMessage
   , `SeLe4n.Kernel.sweptAndRestored

@@ -33,14 +33,20 @@ state.
   the cell its state already holds (`TCB.blockingServer?_eq_impl`,
   `blockingServer_eq_impl`).  The middle reply's delete went from 6 to 0 and
   the contextless top's from 2 to 0.
+- **An endpoint's cancel-all and the general send rendezvous.**  The cancel
+  walk reads each queue's head and each waiter's successor as codes
+  (`cancelEndpointQueue_eq_impl`, `storeEndpointWaiterCancelledCode`,
+  `storePopHeadCode`).  The general send rendezvous pops a head with a
+  successor through `storeSendRendezvousCode`.  The new `queue-endpoint-delete`
+  step deletes an endpoint two threads wait on, and reads 0.
 - **A resumed thread's boost** is written as the waiter walk's code
   (`resumeReadyMidState_eq_impl`, 1 to 0).  **A finalised context** lets go of
   its stack in the head reply's slot (`finaliseSchedContextUnstack_eq_impl`,
   4 to 0).
 - **Pins** (`scripts/qemu_exerciser_lib.sh`).  Every new step is pinned at
   (0, 0) except the carves, which keep a carve's counts: a thread 26, a reply
-  15, and a context 15 on both calls (`untyped-retype-sched-context`'s steady
-  state).  No existing pin changed.
+  15, an endpoint 11, and a context 15 on both calls
+  (`untyped-retype-sched-context`'s steady state).  No existing pin changed.
 - **Documentation fixed along the way.**  `cutReplyFrameStores`' docstring
   described the splice that ZA6.33 reversed, and now describes the sever.  A
   comment in `Lifecycle/Suspend.lean` cited a `CLAUDE.md` section that no

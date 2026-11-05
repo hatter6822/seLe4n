@@ -4335,6 +4335,11 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem callWakesInPlace_eq_impl($|[ ({
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem callTakesReplyInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallInPlace.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveTakesInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallTakesInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem cancelEndpointQueue_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointWaiterCancelledCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem storePopHeadCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/PopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem storeSendRendezvousCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^                  \(storeSendRendezvousCode st endpointId head ht\.queueNextCode msg\) head$' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
 # WS-ZA ZA6.34: a middle reply's final delete, and the delete of a stack top
 # whose context is gone, read the frame links off the links themselves (seL4's
 # `reply_remove` non-head arm), the server a blocked thread waits on is the cell
