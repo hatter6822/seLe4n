@@ -558,7 +558,8 @@ for driver in drivers:
             # handing the loaned context back down the stack: seL4's
             # `reply_pop`, the popped frame cleared and the one below re-headed
             # in their slots, the context settled on its new holder's home and
-            # the holder taken off its core (`performReplyDonated`): 0.
+            # the holder taken off its core (`performReplyRecvDonatedDelivered`,
+            # `performReplyDonatedDelivered`): 0.
             "chain-server-reply-recv": (0, 0), "chain-root-replies": (0, 0),
             # The chain's carves, a thread's and a reply's as above.
             "untyped-retype-chain-tcb": (26, 26), "untyped-retype-chain-reply": (15, 15),
