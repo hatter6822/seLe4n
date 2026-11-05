@@ -117,25 +117,6 @@ theorem settleReturnedContext_preserves_projectionOnCore
       | rw [SchedContextOps.settleReturnedContext_machine]
       | (rw [(SchedContextOps.settleReturnedContext_releaseOnlyWrite st d scId).2]; rfl)
 
-/-- WS-SM SM6.E: the donated-arm replenishment migration (§2b) of a
-non-observable context is invisible
-on *every* core — the per-core strengthening of the production SM5.H.4
-boot-core frame. -/
-theorem migrateSchedContextReplenishment_preserves_projectionOnCore
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) (c : CoreId)
-    (hS : objectObservable ctx observer scId.toObjId = false) :
-    projectStateOnCore ctx observer
-      (migrateSchedContextReplenishment st scId fromCore toCore) c =
-    projectStateOnCore ctx observer st c := by
-  refine projectStateOnCore_congr ctx observer
-    (migrateSchedContextReplenishment_preserves_projection ctx observer st scId
-      fromCore toCore hS)
-    ?_ ?_ ?_ ?_ ?_ ?_ <;>
-    first
-      | rw [migrateSchedContextReplenishment_machine]
-      | (rw [(migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).2]; rfl)
-
 -- ============================================================================
 -- §2  The placement deschedule of a high victim is invisible
 -- ============================================================================
