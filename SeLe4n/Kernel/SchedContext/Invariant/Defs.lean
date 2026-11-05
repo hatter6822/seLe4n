@@ -156,6 +156,17 @@ theorem releaseReadyHead_preserves_schedContextWellFormed (sc : SchedContext) (n
     ⟨by rw [SchedContext.releaseReadyHead_refillTotal, hb]; exact h.2.2.2.2.1,
       SchedContext.releaseReadyHead_refillsFit _ _ h.2.2.2.2.2⟩
 
+/-- WS-ZA ZA6.33: **the unblock check keeps the bundle**: the resume's
+`refill_unblock_check`. -/
+theorem refillUnblockCheck_preserves_schedContextWellFormed (sc : SchedContext) (now : Nat)
+    (h : schedContextWellFormed sc) :
+    schedContextWellFormed (sc.refillUnblockCheck now) := by
+  obtain ⟨hp, hb⟩ := SchedContext.refillUnblockCheck_period sc now
+  refine schedContextWellFormed_of_refills _ (by rw [hp]; exact h.1.1) (by rw [hp, hb]; exact h.1.2.1)
+    (SchedContext.refillUnblockCheck_refillsPositive _ _ (schedContextWellFormed_refillsPositive h))
+    ⟨by rw [SchedContext.refillUnblockCheck_refillTotal, hb]; exact h.2.2.2.2.1,
+      SchedContext.refillUnblockCheck_refillsFit _ _ h.2.2.2.2.2⟩
+
 /-- The deadline rule keeps the bundle: it writes only the deadline. -/
 theorem cbsUpdateDeadline_preserves_schedContextWellFormed (sc : SchedContext) (t : Nat) (b : Bool)
     (h : schedContextWellFormed sc) : schedContextWellFormed (cbsUpdateDeadline sc t b) := by

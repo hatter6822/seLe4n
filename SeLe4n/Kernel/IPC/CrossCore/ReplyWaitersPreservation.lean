@@ -57,6 +57,16 @@ theorem migrateSchedContextReplenishment_replyViews_eq (st : SystemState)
     (fun _ t0 hk => ⟨t0, hA.get_of_not_sc (fun _ h => KernelObject.noConfusion h) hk, rfl⟩)
     (fun _ t' hk => ⟨t', hA.symm.get_of_not_sc (fun _ h => KernelObject.noConfusion h) hk⟩)
 
+/-- WS-ZA ZA6.33: the settle of a returned context writes release fields and
+queues alone, so it keeps every reply view. -/
+theorem settleReturnedContext_replyViews_eq (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) :
+    (SchedContextOps.settleReturnedContext st c scId).replyViews = st.replyViews :=
+  have hA := SchedContextOps.settleReturnedContext_agree st c scId
+  replyViews_eq_of_tcbs
+    (fun _ t0 hk => ⟨t0, hA.get_of_not_sc (fun _ h => KernelObject.noConfusion h) hk, rfl⟩)
+    (fun _ t' hk => ⟨t', hA.symm.get_of_not_sc (fun _ h => KernelObject.noConfusion h) hk⟩)
+
 theorem cleanupPreReceiveDonationMigrated_replyViews_eq {st st' : SystemState}
     {r : SeLe4n.ThreadId} (hInv : st.objects.invExt)
     (h : cleanupPreReceiveDonationMigrated st r = .ok st') : st'.replyViews = st.replyViews := by

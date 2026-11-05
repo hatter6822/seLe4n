@@ -3729,7 +3729,6 @@ update sets it to `none`. -/
 def timeoutStagedTcb (tcb : TCB) : TCB :=
   { tcb.setPendingFault none with
     timeoutBudget := none
-    threadState := .Ready
     timedOut := true
     registerContext := tcb.registerContext.stageReturnFrame Architecture.timeoutFrame }
 
@@ -3760,7 +3759,6 @@ theorem abortStagedTcb_eq (tcb : TCB) :
         ((TCB.setIpcState (TCB.setPendingFault { tcb with
            pendingMessage := none
            timeoutBudget := none
-           threadState := .Ready
            timedOut := true
            pendingReceiveReplyCode := 0 } none) .ready))
         Architecture.timeoutFrame

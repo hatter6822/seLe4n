@@ -163,7 +163,7 @@
 [SCO-020e] reclaim queued_holder queued_before=true queued_after=false holder_unplaced=true holder_core_named=true
 [SCO-021] endpointQueueRemove not-found: SeLe4n.Model.KernelError.objectNotFound
 [SCO-022] endpointQueueRemove no-endpoint: SeLe4n.Model.KernelError.objectNotFound
-[SCO-023] timeoutThread blocked: ready=true threadReady=true budgetCleared=true errCode=true linksCleared=true
+[SCO-023] timeoutThread blocked: ready=true threadStateKept=true budgetCleared=true errCode=true linksCleared=true
 [SCO-024] timeoutThread not-found: SeLe4n.Model.KernelError.objectNotFound
 [SCO-025] timeoutThread re-enqueue: in_runQueue=true
 [SCO-026] endpointQueueRemove non-endpoint: SeLe4n.Model.KernelError.invalidCapability

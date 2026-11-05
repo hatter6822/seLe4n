@@ -892,7 +892,7 @@ def lockSet_endpointReply (callerTid : ThreadId)
     -- two coincide `insertOrMerge` merges them and the size does not move.
     (donatedHeadReplyId : Option ReplyId := none)
     -- **WS-RM (`v0.35.6`)**: the frame **above** the answered caller's reply
-    -- object, which the removal's splice rewrites (`spliceReplyFrameOut` points
+    -- object, which the removal's splice rewrites (`cutReplyFrameOut` points
     -- its `prev` at the frame below the cut, or clears it at a bottom frame)
     -- before the caller link is consumed.  `some` exactly
     -- when the answered frame is not a stack head and something still links down
@@ -2548,7 +2548,7 @@ theorem lockSet_endpointReply_belowHead_write_mem (callerTid : ThreadId)
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RM (`v0.35.6`)**: and the frame **above** the answered caller's reply
-object, which the removal's splice rewrites (`spliceReplyFrameOut` points its
+object, which the removal's splice rewrites (`cutReplyFrameOut` points its
 `prev` at the frame below the cut, or clears it at a bottom frame) before the
 caller link is consumed.
 

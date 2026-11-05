@@ -335,6 +335,20 @@ theorem migrateSchedContextReplenishment_confinedToCores (st : SystemState)
     | exact congrArg _ (migrateSchedContextReplenishment_machine st scId fromCore toCore)
     | simp [migrateSchedContextReplenishment_machine]
 
+/-- WS-ZA ZA6.33: the settle of a returned context is per-core silent: it
+writes release fields and queues, which the observer does not read. -/
+theorem settleReturnedContext_confinedToCores (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) :
+    observableSlotsConfinedToCores st (SchedContextOps.settleReturnedContext st c scId) [] := by
+  refine ⟨fun c' _ => SchedContextOps.settleReturnedContext_runQueueOnCore st c scId c',
+          fun c' _ => SchedContextOps.settleReturnedContext_currentOnCore st c scId c',
+          ?_, ?_, ?_, ?_⟩
+  all_goals intro c' _
+  all_goals first
+    | (rw [(SchedContextOps.settleReturnedContext_releaseOnlyWrite st c scId).2]; rfl)
+    | exact congrArg _ (SchedContextOps.settleReturnedContext_machine st c scId)
+    | simp [SchedContextOps.settleReturnedContext_machine]
+
 theorem cleanupPreReceiveDonationChecked_confinedToCores (st st' : SystemState)
     (receiver : SeLe4n.ThreadId)
     (hStep : cleanupPreReceiveDonationChecked st receiver = .ok st') :
@@ -1052,7 +1066,7 @@ theorem cancelIpcBlockingMigrated_confinedToCores (victim : SeLe4n.ThreadId) (tc
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder _
-    exact migrateSchedContextReplenishment_confinedToCores _ scId _ _
+    exact settleReturnedContext_confinedToCores _ _ scId
   · exact observableSlotsConfinedToCores_refl _ _
 
 /-- **`v0.35.158`** (WS-OD OD1.7's wake until then): the reclaim's holder

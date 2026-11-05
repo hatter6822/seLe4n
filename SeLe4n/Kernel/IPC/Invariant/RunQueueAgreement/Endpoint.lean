@@ -179,13 +179,14 @@ theorem endpointSendDualWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.O
       | (rename_i hU; exact s0.trans (receiveTransferCaps_runQueueStage hU).entry)
 
 theorem cleanupPreReceiveDonationChecked_runQueueStage {st st' : SystemState}
-    {receiver : SeLe4n.ThreadId} (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
+    {receiver : SeLe4n.ThreadId} (hA : st.activeAt receiver)
+    (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
     RunQueueStage st st' := by
   unfold cleanupPreReceiveDonationChecked at h
   split at h
   · cases h; exact RunQueueStage.refl _
   · split at h
-    · exact returnDonatedSchedContextResolved_runQueueStage h
+    · exact returnDonatedSchedContextResolved_runQueueStage hA h
     · cases h; exact RunQueueStage.refl _
 
 theorem preReceiveReturnMigration_runQueueStage (st stClean : SystemState)
@@ -197,14 +198,15 @@ theorem preReceiveReturnMigration_runQueueStage (st stClean : SystemState)
   · exact RunQueueStage.refl _
 
 theorem cleanupPreReceiveDonationMigrated_runQueueStage {st st' : SystemState}
-    {receiver : SeLe4n.ThreadId} (h : cleanupPreReceiveDonationMigrated st receiver = .ok st') :
+    {receiver : SeLe4n.ThreadId} (hA : st.activeAt receiver)
+    (h : cleanupPreReceiveDonationMigrated st receiver = .ok st') :
     RunQueueStage st st' := by
   obtain ⟨stClean, hC, rfl⟩ := cleanupPreReceiveDonationMigrated_ok_decompose h
-  exact (cleanupPreReceiveDonationChecked_runQueueStage hC).trans
+  exact (cleanupPreReceiveDonationChecked_runQueueStage hA hC).trans
     (preReceiveReturnMigration_runQueueStage _ _ _)
 
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_ (cleanupPreReceiveDonationMigrated_runQueueStage (by with_reducible assumption)))
+  refine RunQueueStage.trans ?_ (cleanupPreReceiveDonationMigrated_runQueueStage (by assumption) (by with_reducible assumption)))
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_ (linkCallerReply_runQueueStage (by with_reducible assumption)))
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
@@ -220,7 +222,7 @@ theorem endpointReceiveDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (c : Concurrency.CoreId)
     (st : SystemState) (hHeads : endpointHeadsWakeable st)
     (hCur : st.scheduler.currentOnCore c = some receiver)
-    (hNI : isIdleThreadId receiver = false) :
+    (hNI : isIdleThreadId receiver = false) (hAct : st.activeAt receiver) :
     SystemState.RunQueueEntryStage st
       (endpointReceiveDualOnCore endpointId receiver replyId c st).1 := by
   unfold endpointReceiveDualOnCore
@@ -271,7 +273,7 @@ theorem endpointReceiveDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
           split
           · exact (RunQueueStage.refl _).entry
           · rename_i st2 hS2
-            have pre := (cleanupPreReceiveDonationMigrated_runQueueStage hC).trans
+            have pre := (cleanupPreReceiveDonationMigrated_runQueueStage hAct hC).trans
               (endpointQueueEnqueue_runQueueStage hE)
             have hC1 : st1.scheduler.currentOnCore c = some receiver :=
               currentOnCore_of_scheduler_eq (endpointQueueEnqueue_scheduler_eq _ _ _ _ _ hE)
@@ -300,11 +302,11 @@ theorem endpointReceiveDualWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId)
     (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some receiver)
-    (hNI : isIdleThreadId receiver = false) :
+    (hNI : isIdleThreadId receiver = false) (hAct : st.activeAt receiver) :
     SystemState.RunQueueEntryStage st
       (endpointReceiveDualWithCapsOnCore endpointId receiver replyId root base c st).1 := by
   have s0 := endpointReceiveDualOnCore_runQueueEntryStage endpointId receiver replyId c st
-    hHeads hCur hNI
+    hHeads hCur hNI hAct
   unfold endpointReceiveDualWithCapsOnCore
   generalize endpointReceiveDualOnCore endpointId receiver replyId c st = r at s0 ⊢
   obtain ⟨st1, r⟩ := r

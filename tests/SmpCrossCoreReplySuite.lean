@@ -609,7 +609,7 @@ private def runDonationChecks : IO Unit := do
   match SeLe4n.ThreadId.toValid? clientLocalTid with
   | some clientV =>
       assertBool "applyReplyDonationOnCore on a frame heading no context is a no-op (ok)"
-        (match applyReplyDonationOnCore stBase replyId707 clientV bootCoreId bootCoreId with
+        (match applyReplyDonationOnCore stBase replyId707 clientV bootCoreId with
          | .ok _ => true | .error _ => false)
       assertBool "…and the trigger really does decline there, so this is not a vacuous pass"
         (decide (replyFrameHeadHolder? stBase replyId707 = none))
@@ -783,7 +783,7 @@ private def runDonationChecks : IO Unit := do
     (decide (replyFrameHeadHolder? stQueuedServer replyId707 = some (scId, serverTid)))
   match SeLe4n.ThreadId.toValid? clientLocalTid with
   | some clientV =>
-      match applyReplyDonationOnCore stQueuedServer replyId707 clientV core2 core2 with
+      match applyReplyDonationOnCore stQueuedServer replyId707 clientV core2 with
       | .ok stAfter =>
           assertBool "the donation return DESCHEDULES a queued recorded server (v0.35.37)"
             (!(stAfter.queuedOn core2 serverTid))

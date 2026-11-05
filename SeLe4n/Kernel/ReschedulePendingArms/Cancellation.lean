@@ -395,10 +395,10 @@ theorem consumeReplyLink_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId) 
   | none => exact keyInputsEq_refl _
   | some rid => exact consumeCallerReply_keyInputsEq hInv (SystemState.consumeCallerReply_eq_link st tid rid)
 
-theorem spliceThreadReplyFrameOut_keyInputsEq (st : SystemState) (tcb : TCB)
-    (hInv : st.objects.invExt) : keyInputsEq st (spliceThreadReplyFrameOut st tcb) :=
-  keyInputsEq_of_lookups_eq (spliceThreadReplyFrameOut_getTcb?_eq st tcb hInv)
-    (spliceThreadReplyFrameOut_getSchedContext?_eq st tcb hInv)
+theorem cutThreadReplyFrameOut_keyInputsEq (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) : keyInputsEq st (cutThreadReplyFrameOut st tcb) :=
+  keyInputsEq_of_lookups_eq (cutThreadReplyFrameOut_getTcb?_eq st tcb hInv)
+    (cutThreadReplyFrameOut_getSchedContext?_eq st tcb hInv)
 
 theorem removeFromAllEndpointQueues_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) : keyInputsEq st (removeFromAllEndpointQueues st tid) :=
@@ -407,6 +407,15 @@ theorem removeFromAllEndpointQueues_keyInputsEq (st : SystemState) (tid : SeLe4n
       rw [removeFromAllEndpointQueues_getTcb?_eq_splice st tid hInv t]
       exact spliceOutMidQueueNode_tcbField_frame tcbKeyCore (fun _ _ _ _ _ _ => rfl) st tid hInv t)
     (fun s => by rw [removeFromAllEndpointQueues_getSchedContext?_eq st tid hInv s])
+
+theorem removeFromBlockingEndpoint_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hInv : st.objects.invExt) :
+    keyInputsEq st (removeFromBlockingEndpoint st tid e) :=
+  keyInputsEq_of_lookups
+    (fun t => by
+      rw [removeFromBlockingEndpoint_getTcb?_eq_splice st tid e hInv t]
+      exact spliceOutMidQueueNode_tcbField_frame tcbKeyCore (fun _ _ _ _ _ _ => rfl) st tid hInv t)
+    (fun s => by rw [removeFromBlockingEndpoint_getSchedContext?_eq st tid e hInv s])
 
 theorem removeFromNotificationWaitQueue_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) : keyInputsEq st (removeFromNotificationWaitQueue st tid) :=
@@ -421,14 +430,14 @@ theorem removeFromNotificationWaitQueue_keyInputsEq (st : SystemState) (tid : Se
 macro_rules | `(tactic| resident_frame) => `(tactic|
   (simp only [Lifecycle.Suspend.restoreToReadyCancelled_machine_eq,
     Lifecycle.Suspend.restoreToReadyStaging_machine_eq, removeFromAllEndpointQueues_machine_eq,
-    removeFromNotificationWaitQueue_machine_eq, spliceThreadReplyFrameOut_machine_eq,
+    removeFromBlockingEndpoint_machine_eq, removeFromNotificationWaitQueue_machine_eq, cutThreadReplyFrameOut_machine_eq,
     Lifecycle.Suspend.consumeReplyLink_machine_eq, SystemState.unlinkReplyWaiterOpt_machine]; done))
 
 /-- ...and they write no core's bank (`bank_frame`). -/
 macro_rules | `(tactic| bank_frame) => `(tactic|
   (simp only [Lifecycle.Suspend.restoreToReadyCancelled_machine_eq,
     Lifecycle.Suspend.restoreToReadyStaging_machine_eq, removeFromAllEndpointQueues_machine_eq,
-    removeFromNotificationWaitQueue_machine_eq, spliceThreadReplyFrameOut_machine_eq,
+    removeFromBlockingEndpoint_machine_eq, removeFromNotificationWaitQueue_machine_eq, cutThreadReplyFrameOut_machine_eq,
     Lifecycle.Suspend.consumeReplyLink_machine_eq, SystemState.unlinkReplyWaiterOpt_machine]; done))
 
 /-- An object-only step that moves no key input covers. -/
@@ -463,18 +472,18 @@ theorem cancelIpcBlocking_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe
       stepCovers e s (Lifecycle.Suspend.restoreToReadyCancelled s tid) := fun s hs =>
     stepCovers_of_keys_sched (restoreToReadyStaging_keyInputsEq s tid _ hs)
       (Lifecycle.Suspend.restoreToReadyCancelled_scheduler_eq s tid)
-  have hEp : stepCovers e st (Lifecycle.Suspend.restoreToReadyCancelled
-      (removeFromAllEndpointQueues st tid) tid) :=
+  have hEp : ∀ ep, stepCovers e st (Lifecycle.Suspend.restoreToReadyCancelled
+      (removeFromBlockingEndpoint st tid ep) tid) := fun ep =>
     stepCovers_trans
-      (stepCovers_of_keys_sched (removeFromAllEndpointQueues_keyInputsEq st tid hInv)
-        (removeFromAllEndpointQueues_scheduler_eq st tid))
-      (hRestore _ (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv))
+      (stepCovers_of_keys_sched (removeFromBlockingEndpoint_keyInputsEq st tid ep hInv)
+        (removeFromBlockingEndpoint_scheduler_eq st tid ep))
+      (hRestore _ (removeFromBlockingEndpoint_preserves_objects_invExt st tid ep hInv))
   unfold Lifecycle.Suspend.cancelIpcBlocking
   cases tcb.ipcState with
   | ready => exact stepCovers_refl e st
-  | blockedOnSend _ => exact hEp
-  | blockedOnReceive _ => exact hEp
-  | blockedOnCall _ => exact hEp
+  | blockedOnSend ep => exact hEp ep
+  | blockedOnReceive ep => exact hEp ep
+  | blockedOnCall ep => exact hEp ep
   | blockedOnNotification _ =>
     exact stepCovers_trans
       (stepCovers_of_keys_sched (removeFromNotificationWaitQueue_keyInputsEq st tid hInv)
@@ -483,11 +492,11 @@ theorem cancelIpcBlocking_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe
   | blockedOnReply _ _ =>
     have h1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st tid tcb hInv
-    have h2 := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb h1
+    have h2 := cutThreadReplyFrameOut_preserves_objects_invExt _ tcb h1
     have h3 := Lifecycle.Suspend.restoreToReadyStaging_invExt _ tid (some Architecture.cancelledIpcFrame) h2
     refine stepCovers_trans (returnDonationToCancelledCaller_stepCovers e st tid tcb hInv)
-      (stepCovers_trans (stepCovers_of_keys_sched (spliceThreadReplyFrameOut_keyInputsEq _ tcb h1)
-        (spliceThreadReplyFrameOut_scheduler_eq _ tcb))
+      (stepCovers_trans (stepCovers_of_keys_sched (cutThreadReplyFrameOut_keyInputsEq _ tcb h1)
+        (cutThreadReplyFrameOut_scheduler_eq _ tcb))
       (stepCovers_trans (hRestore _ h2)
         (stepCovers_trans
           (stepCovers_of_keys_sched (consumeReplyLink_keyInputsEq _ tid tcb h3)
@@ -617,8 +626,8 @@ theorem cleanupDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState
     · exact returnDonatedSchedContextResolved_stepCovers e hInv h
     · cases h; exact ⟨stepCovers_refl e _, hInv⟩
 
-/-- **The donated cancellation covers**: the return, then the replenishment
-migration, which moves no slot. -/
+/-- **The donated cancellation covers**: the return, then the returned
+context's settle (WS-ZA ZA6.33), a release-only write that moves no slot. -/
 theorem cancelDonatedDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
@@ -630,8 +639,8 @@ theorem cancelDonatedDonationOnCore_stepCovers (e : CoreId) {st st' : SystemStat
     · rename_i sMid hC
       cases h
       obtain ⟨h1, hI⟩ := cleanupDonatedSchedContext_stepCovers e hInv hC
-      exact ⟨stepCovers_trans h1 (migrateSchedContextReplenishment_stepCovers e _ _ _ _),
-        migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hI⟩
+      exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
+        SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hI⟩
   · cases h
 
 end SeLe4n.Kernel

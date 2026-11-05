@@ -3358,8 +3358,9 @@ inductive CancelledMiddleCallerPolicy where
   /-- **Sever at the cut.**  The frame above the cut stops linking down
   (the removal writes `prev := none`), so every frame *below* the cut leaves the
   context's stack; the pop that later reaches the frame above reads `none` and
-  binds that caller `.bound scId`.  `O(1)` at every depth, and the policy this
-  kernel implemented up to `v0.35.44`.
+  binds that caller `.bound scId`.  `O(1)` at every depth; the policy this
+  kernel implemented up to `v0.35.44`, and again since WS-ZA ZA6.33
+  (`v0.36.197`).
 
   What it cost was **measured** at stack depth three in `tests/SmpIpcSuite.lean`
   §3.22, not described: the reservation settles on a thread strictly inside the
@@ -3377,8 +3378,7 @@ inductive CancelledMiddleCallerPolicy where
   *"not the head, remove from middle - break the chain"*: it writes **zero**, not
   the cut frame's own `replyPrev`.  `v0.35.14` asserted the reverse and cited a
   line that is in no release; see `CLAUDE.md`'s WS-RM section for what that cost.
-  So this constructor is kept rather than deleted: it names the behaviour this
-  kernel diverged *from*, and upstream still has it. -/
+  It is the policy in force (`cancelledMiddleCallerPolicy`). -/
   | severAtCut
   /-- **Splice the cut frame out.**  The ordinary doubly-linked-list removal: the
   frame above takes the cut frame's own `prev`, the frame below takes its `next`.
@@ -3393,13 +3393,10 @@ inductive CancelledMiddleCallerPolicy where
   is therefore a property neither kernel has today, which is the whole of WS-HP's
   value and does not depend on the attribution.
 
-  **The policy this kernel implements since `v0.35.45`** (WS-HP HP6).  What it
-  needed was not the splice — `Reply.next` has been there since `v0.35.4` — but a
-  pop whose *trigger* is head-ness rather than the recorded server's binding, since
-  the splice re-heads a frame whose recorded server is by then gone and `.unbound`.
-  HP4 and HP5 moved the trigger; this row takes the splice.  `O(1)`, like the
-  sever: the removal writes the two frames either side of the cut and the cut
-  frame's own links, and no walk. -/
+  The policy this kernel implemented from `v0.35.45` to `v0.36.196` (WS-HP
+  HP6); WS-ZA ZA6.33 returned to `severAtCut`, since a removal is seL4's
+  `reply_remove`.  Kept as a name for the alternative, as
+  `reclaimToCancelledThread` is. -/
   | spliceOutTheCut
   /-- **Reclaim to the cancelled thread.**  The cancellation reaches the
   context's real holder through `SchedContext.scReply` / `boundThread` and hands
@@ -3410,139 +3407,41 @@ inductive CancelledMiddleCallerPolicy where
   | reclaimToCancelledThread
   deriving DecidableEq, Repr
 
-/-- **WS-HP HP6.8: this kernel splices the cut frame out.**
+/-- **WS-ZA ZA6.33: this kernel severs at the cut, as seL4-MCS does.**
 
-`v0.35.45`.  Up to `v0.35.44` it severed, and the reason was never a preference
-for the sever: it was that this kernel decided whether a reply pops a donation
-from the **recorded server's binding** rather than from whether the answered frame
-heads a context, and `severAtCut` is exactly what kept those two facts equivalent.
-WS-HP HP4 and HP5 moved the trigger onto the frame; with that done the splice is
-strictly better on every axis the sever was chosen for.
+seL4's `reply_remove` non-head branch clears the frame above's `replyPrev` and
+the frame below's `replyNext` (*"not the head, remove from middle - break the
+chain"*), and so does every removal here (`cutReplyFrameStores`): the frames
+below the cut leave the context's stack, and the pop that later reaches the
+frame above reads `none` and binds that caller `.bound scId`
+(`cancelledMiddleCaller_severs_at_cut`).  From `v0.35.45` to `v0.36.196` this
+kernel cut the frame out instead (WS-HP HP6.8), which kept a middle
+caller's reservation travelling outward; that was a divergence from upstream,
+and WS-ZA ZA6.33 removes it.  The reservation's recorded origin
+(`SchedContext.donationOrigin`) is unaffected: the pop still consults it when the
+stack bottoms out. -/
+def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := .severAtCut
 
-Read against the three reasons the sever was chosen for, each now measured rather
-than inherited.
-
-1. **It is still one program, not two.**  `replyStackOuterCaller?` answers `none`
-   at the bottom of a stack and `some outer` at a frame that has one below it, and
-   the splice only moves which of those two a cut produces:
-   `replyStackOuterCaller?_follows_policy` is the consumer, and
-   `cancelledMiddleCaller_splices_at_cut` proves the pop's *effect* — the
-   reservation leaves the cut bound `.donated scId outer`, still owed outward,
-   instead of settling `.bound scId` on the thread immediately above the cut.  No
-   second transition and no second set of bundle proofs: the pop is the pop.
-2. **It is `O(1)`.**  The removal writes three Reply objects — the frame above, the
-   frame below, and the cut frame's own links — and walks nothing, so the
-   footprint argument that ruled out `reclaimToCancelledThread` (a `LockSet` is
-   capped at `maxLockSetSize` and a chain is not) does not touch it.  The cost is
-   one declared write member, `maxLockSetSize` 22 → 23 (HP3.5).
-3. **The trigger it needs is live.**  `applyReplyDonation` and
-   `cancelledCallerDonation?` both read the answered caller's own reply *frame*
-   (`replyFrameHeadHolder?`), so a frame that heads no context simply does not pop
-   and an orphan head — a head whose recorded reply server is gone and `.unbound` —
-   is popped on the strength of the link rather than of a binding nobody holds.
-   That orphan head is **reachable from this cut onward**, which is what let HP7
-   (`v0.35.46`) delete the coherence predicate the binding-driven pop stood on: a
-   stated fact the live kernel refutes is not a weaker obligation but a false one.
-   The theorem that named the state went with it, and the evidence is now an
-   executed witness — `tests/SmpCrossCoreReplySuite.lean` builds the orphan head
-   and computes both readings on it.
-
-**What this buys, measured.**  At reply-stack depth three
-(`tests/SmpIpcSuite.lean` §3.22) the reservation of a client whose reply
-capability a callee delegated to a confederate now travels outward to the client
-that owns it, where under the sever it settled on a thread strictly inside the
-chain and the owner was left `.unbound` for good.  That is a **fairness** property
-neither this kernel nor seL4-MCS had: upstream's `reply_remove` severs too
-(`severAtCut`'s own docstring quotes the C and the five revisions it was read at),
-so this is an improvement on upstream rather than parity with it.
-
-**What it does not buy, and where that is tracked.**  At depth **two** the frame
-below the cut is the stack's bottom, so both policies write `none` into the frame
-above and the splice provably cannot reach the loss: the delegate answers the
-client out of order, the client's frame leaves the stack, and the later in-order
-pop binds the reservation to the *intermediate* caller.  Closing that needed the
-reservation's **origin** recorded on the `SchedContext` rather than derived from
-stack reachability, and WS-HP HP10.9 (`v0.35.53`) landed it:
-`donationAccountingPreserved_atCallDepthTwo` is the payoff — **under its own two
-guard hypotheses**, which is the whole of what that theorem claims.
-
-**And one of those hypotheses is false on a reachable state** (PR #897's review,
-`v0.35.141`).  `donationOriginRebindable` refuses a client that is
-`.blockedOnReply`, and a client answered out of order and re-called is exactly
-that while owning nothing — its Call donated no reservation, being `.unbound`.  The
-pop then falls back to the answered caller and the depth-2 loss is live again, so
-**a completed call chain does not return a client's reservation at every depth**.
-Measured at `tests/SmpIpcSuite.lean` §3.25's COST group; registered in
-`docs/REGISTERED_DEBT.md` table C.
-
-**And no object is pinned by a cut, at either policy.**  A frame the removal takes
-off a stack carries no `.head` link, so consuming its caller clears it outright
-(`Reply.consumed`'s non-head branch) — and the removal clears both of the cut
-frame's own links itself, which is seL4's `reply_remove`, so
-`donationChainWellFormed` is preserved **outright** across the removal rather than
-transiently broken (`spliceReplyFrameOut_preserves_donationChainWellFormed`,
-`removeCallerReplyFrame_preserves_donationChainWellFormed`).  Before `v0.35.4` the
-sever was implemented by *leaving the cut frame on the stack* with its `caller`
-consumed and letting the pop read a consumed frame as the bottom; that frame then
-headed the stack forever and an ordinary `.tcbSuspend` of a client whose server
-nested a call burned one of the server's Reply objects per round.  The resolver
-**refuses** a consumed frame now (`replyStackOuterCaller?_of_consumed_frame`,
-`.error .illegalState`) rather than reading it as the bottom.
-
-The authority needed to reach a middle removal at all is the authority to unblock
-the thread being cut — a suspend right over it, or possession of its reply
-capability, which a callee's confederate may legitimately hold. -/
-def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := .spliceOutTheCut
-
-/-- WS-OD OD5.2: and the decision is checkable, not merely declared -- a cut that
-switched the policy has to change this line and the two theorems that read it.
-
-WS-HP HP6.8 is that cut, and it did: the constant, this line,
-`replyStackOuterCaller?_follows_policy` and `cancelledMiddleCaller_splices_at_cut`
-all moved together, and `severAtCut_pop_leaves_no_head` -- whose first conjunct was
-this equality at the old value -- was deleted, because a theorem whose conclusion
-is now false cannot be restated, only retired. -/
+/-- WS-OD OD5.2: the decision is checkable, not merely declared: a cut that
+switched the policy has to change this line and the theorems that read it. -/
 @[simp] theorem cancelledMiddleCallerPolicy_eq :
-    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.spliceOutTheCut := rfl
+    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.severAtCut := rfl
 
-/-- **WS-HP HP6.8: the resolver implements `spliceOutTheCut` at the cut.**
+/-- **WS-ZA ZA6.33: the resolver implements `severAtCut` at the cut.**
 
-A middle removal leaves the frame above the cut linking down to the frame *below*
-it (`removeCallerReplyFrame_splices_reciprocally`), so when the pop later reaches
-that frame the resolver follows the surviving link and answers the caller waiting
-there — and the pop hands the reservation on to it, still owed outward, rather than
-binding the thread immediately above the cut outright.
-
-Stated against the policy constant, so the policy has a consumer rather than being
-a name nothing reads; a cut that chose `severAtCut` or
-`reclaimToCancelledThread` would have to make this false.  Up to `v0.35.44` this
-theorem said the opposite — `hCut : r.prev = none` and `.ok none` — which is the
-sever, and the sever's form survives as `replyStackOuterCaller?_of_bottom_head`,
-still reached at the genuine bottom of a stack.
-
-The companion `replyStackOuterCaller?_of_consumed_frame` is the *other* half of the
-same decision, and it is what makes the splice safe rather than merely better: a
-frame left below a head with its caller consumed — the pre-`v0.35.4`
-implementation of the sever — is **refused**, never read as the bottom.  The
-splice re-heads a frame whose own caller is still live, so it never produces that
-state; the refusal is what says so rather than an argument a reader has to
-reconstruct. -/
+A middle removal leaves the frame above the cut linking down to nothing
+(`removeCallerReplyFrame_breaks_chain`), so when the pop later reaches that
+frame the resolver answers `none` and the pop binds the thread immediately above
+the cut `.bound scId`.  Stated against the policy constant, so the policy has a
+consumer rather than being a name nothing reads. -/
 theorem replyStackOuterCaller?_follows_policy (st : SystemState)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (rid : SeLe4n.ReplyId) (r : Reply)
-    (below : SeLe4n.ReplyId) (b : Reply) (outer : SeLe4n.ThreadId)
     (hSc : st.getSchedContext? scId = some sc)
     (hHead : donationHeadOf? st scId sc = .ok (some (rid, r)))
-    (hCut : r.prev = some below)
-    (hBelow : st.getReply? below = some b)
-    (hRecip : b.next = some (.frame rid))
-    (hCaller : b.caller = some outer) :
-    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.spliceOutTheCut ∧
-      replyStackOuterCaller? st scId = .ok (some outer) := by
-  refine ⟨rfl, ?_⟩
-  unfold replyStackOuterCaller?
-  rw [hSc]
-  simp only [hHead, hCut, hBelow, hRecip, bne_self_eq_false, Bool.false_eq_true, if_false,
-    hCaller]
+    (hCut : r.prev = none) :
+    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.severAtCut ∧
+      replyStackOuterCaller? st scId = .ok none :=
+  ⟨rfl, replyStackOuterCaller?_of_bottom_head st scId sc rid r hSc hHead hCut⟩
 
 /-- Z7-H': Donation-owner uniqueness.  No two **distinct** threads name the same `owner` in a
 `.donated _ owner` binding.  Semantically: a thread becomes a donation `owner` only by donating
@@ -3611,7 +3510,7 @@ context whose stack it heads (`next : Option ReplyStackLink`, `.frame` / `.head`
 — and the context records the top of the stack (`SchedContext.scReply`).  The
 context is therefore recorded **at the head only**, which is what makes taking a
 frame out of the *middle* of a stack an `O(1)` operation on three objects
-(`spliceReplyFrameOut`) rather than a walk clearing a per-frame context field
+(`cutReplyFrameOut`) rather than a walk clearing a per-frame context field
 on every frame below the cut — the walk this kernel's first design refused to
 pay for, and then paid for by leaving frames dead on the stack forever.
 
@@ -4010,7 +3909,7 @@ their `prev` cleared with `next` kept, the post-state walk exists: it follows th
 same frames and stops at the first cleared one.  This is what the splice's
 degenerate (severed) arm costs the chain invariant — a shorter stack, never a
 broken one; the reciprocating arm reconnects the stack instead
-(`spliceReplyFrameOut_preserves_donationChainWellFormed`). -/
+(`cutReplyFrameOut_preserves_donationChainWellFormed`). -/
 theorem donationChainWalk_exists_of_agree_or_cut {st st' : SystemState} :
     ∀ (fuel : Nat) (expect : ReplyStackLink) (rid? : Option SeLe4n.ReplyId)
       (chain : List SeLe4n.ReplyId),
@@ -4049,129 +3948,6 @@ theorem donationChainWalk_exists_of_agree_or_cut {st st' : SystemState} :
         rw [hLinks]
         simp [hNext0]
 
-
-/-- **WS-HP HP6.4: a walk survives a `reply_remove` *splice*.**  Where the
-post-state agrees with the pre-state on every frame's links except that one frame
-`rid` has been taken out of the middle — the frame above it now names the frame
-below it, that frame now answers the frame above, and `rid` itself is read by no
-post-state walk — the post-state walk exists with the same fuel: it follows the
-same frames with `rid` skipped, so it is one shorter and never a broken one.
-
-The `agree_or_cut` form above cannot state this.  There the removal *cleared* the
-frame above's `prev`, which stops the walk; here it is **redirected**, which is
-neither agreement nor a cut, and the walk continues past it.
-
-**Two walks do not survive, and they are exactly the steps the splice deletes**:
-arriving at the frame below with `expect = .frame rid`, the step the removed frame
-used to make, and arriving at `rid` itself from the frame above, the step into the
-removed frame (whose links the splice clears).  Those are the excluded pairs in
-the first conjunct, and no walk from a context *head* takes either once the frame
-above stops naming `rid` — which is why the second conjunct, the skip itself, is
-what the head case reads. -/
-theorem donationChainWalk_exists_of_splice {st st' : SystemState}
-    {rid above below : SeLe4n.ReplyId}
-    {aNext : Option ReplyStackLink} {bPrev : Option SeLe4n.ReplyId}
-    (hNeBR : below ≠ rid) (hNeBA : below ≠ above)
-    (hAgree : ∀ q : SeLe4n.ReplyId, q ≠ above → q ≠ below → q ≠ rid →
-      replyStackLinksAt? st' q = replyStackLinksAt? st q)
-    (hAPre : replyStackLinksAt? st above = some (some rid, aNext))
-    (hAPost : replyStackLinksAt? st' above = some (some below, aNext))
-    (hRPre : replyStackLinksAt? st rid = some (some below, some (.frame above)))
-    (hBPre : replyStackLinksAt? st below = some (bPrev, some (.frame rid)))
-    (hBPost : replyStackLinksAt? st' below = some (bPrev, some (.frame above))) :
-    ∀ (fuel : Nat),
-      (∀ (expect : ReplyStackLink) (rid? : Option SeLe4n.ReplyId)
-          (chain : List SeLe4n.ReplyId),
-          donationChainWalk st expect fuel rid? = some chain →
-          ¬(expect = .frame rid ∧ rid? = some below) →
-          ¬(expect = .frame above ∧ rid? = some rid) →
-          ∃ chain', donationChainWalk st' expect fuel rid? = some chain') ∧
-      (∀ chain : List SeLe4n.ReplyId,
-          donationChainWalk st (.frame rid) fuel (some below) = some chain →
-          ∃ chain', donationChainWalk st' (.frame above) fuel (some below) = some chain') := by
-  intro fuel
-  induction fuel with
-  | zero =>
-    refine ⟨?_, ?_⟩
-    · intro expect rid? chain h _ _
-      cases rid? with
-      | none => exact ⟨[], by simp⟩
-      | some _ => cases h
-    · intro chain h; cases h
-  | succ n ih =>
-    obtain ⟨ihP, ihQ⟩ := ih
-    refine ⟨?_, ?_⟩
-    · intro expect rid? chain h hNot hNotCut
-      cases rid? with
-      | none => exact ⟨[], by simp⟩
-      | some q =>
-        obtain ⟨r, tail, hR, hNext, hRec, rfl⟩ := donationChainWalk_succ_some h
-        have hQLinks : replyStackLinksAt? st q = some (r.prev, r.next) := by
-          unfold replyStackLinksAt? SystemState.getObject?; rw [hR]; rfl
-        by_cases hqA : q = above
-        · -- The frame above the cut: its `next` is unchanged, its `prev` redirected.
-          have hQPre : replyStackLinksAt? st q = some (some rid, aNext) := by
-            rw [hqA]; exact hAPre
-          have hQPost : replyStackLinksAt? st' q = some (some below, aNext) := by
-            rw [hqA]; exact hAPost
-          have hPair := Option.some.inj (hQLinks.symm.trans hQPre)
-          have hPrevRid : r.prev = some rid := congrArg Prod.fst hPair
-          have hNextEq : r.next = aNext := congrArg Prod.snd hPair
-          rw [hPrevRid] at hRec
-          cases n with
-          | zero => exact absurd hRec (by simp)
-          | succ m =>
-            obtain ⟨r2, tail2, hR2, _, hRec2, rfl⟩ := donationChainWalk_succ_some hRec
-            have hR2Links : replyStackLinksAt? st rid = some (r2.prev, r2.next) := by
-              unfold replyStackLinksAt? SystemState.getObject?; rw [hR2]; rfl
-            have hBelowEq : r2.prev = some below :=
-              congrArg Prod.fst (Option.some.inj (hR2Links.symm.trans hRPre))
-            rw [hBelowEq] at hRec2
-            obtain ⟨c2, hc2⟩ := ihQ tail2
-              (donationChainWalk_mono_le st hRec2 (m + 1) (Nat.le_succ m))
-            refine ⟨q :: c2, ?_⟩
-            rw [donationChainWalk_succ, hQPost]
-            simp only []
-            rw [if_pos (hNextEq.symm.trans hNext), hqA, hc2]
-            rfl
-        · by_cases hqB : q = below
-          · -- The frame below the cut: the pre-walk can only have arrived from `rid`.
-            have hQPre : replyStackLinksAt? st q = some (bPrev, some (.frame rid)) := by
-              rw [hqB]; exact hBPre
-            have hNextRid : r.next = some (.frame rid) :=
-              congrArg Prod.snd (Option.some.inj (hQLinks.symm.trans hQPre))
-            exact absurd ⟨Option.some.inj (hNext.symm.trans hNextRid), hqB ▸ rfl⟩ hNot
-          · by_cases hqR : q = rid
-            · -- The cut frame itself: only the frame above links down to it, which is
-              -- the excluded step.
-              have hQPre : replyStackLinksAt? st q = some (some below, some (.frame above)) := by
-                rw [hqR]; exact hRPre
-              have hNextAbove : r.next = some (.frame above) :=
-                congrArg Prod.snd (Option.some.inj (hQLinks.symm.trans hQPre))
-              exact absurd ⟨Option.some.inj (hNext.symm.trans hNextAbove), hqR ▸ rfl⟩ hNotCut
-            · -- Every other frame: links agree, so the post-walk steps identically.
-              obtain ⟨c', hc'⟩ := ihP (.frame q) r.prev tail hRec
-                (by intro hBad; exact hqR (ReplyStackLink.frame.inj hBad.1))
-                (by intro hBad; exact hqA (ReplyStackLink.frame.inj hBad.1))
-              refine ⟨q :: c', ?_⟩
-              rw [donationChainWalk_succ, hAgree q hqA hqB hqR, hQLinks]
-              simp only []
-              rw [if_pos hNext, hc']
-              rfl
-    · intro chain h
-      obtain ⟨r, tail, hR, _, hRec, rfl⟩ := donationChainWalk_succ_some h
-      have hBLinks : replyStackLinksAt? st below = some (r.prev, r.next) := by
-        unfold replyStackLinksAt? SystemState.getObject?; rw [hR]; rfl
-      have hPrevEq : r.prev = bPrev :=
-        congrArg Prod.fst (Option.some.inj (hBLinks.symm.trans hBPre))
-      obtain ⟨c', hc'⟩ := ihP (.frame below) r.prev tail hRec
-        (by intro hBad; exact hNeBR (ReplyStackLink.frame.inj hBad.1))
-        (by intro hBad; exact hNeBA (ReplyStackLink.frame.inj hBad.1))
-      refine ⟨below :: c', ?_⟩
-      rw [donationChainWalk_succ, hBPost]
-      simp only [if_true]
-      rw [← hPrevEq, hc']
-      rfl
 
 theorem donationChainFrom_mem (st : SystemState) (scId : SeLe4n.SchedContextId) :
     ∀ (fuel : Nat) (rid? : Option SeLe4n.ReplyId) (chain : List SeLe4n.ReplyId),

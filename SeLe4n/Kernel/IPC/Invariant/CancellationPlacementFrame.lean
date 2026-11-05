@@ -178,8 +178,8 @@ theorem abortPendingIpcOnEndpoint_stateMono {epId : SeLe4n.ObjId} {isReceiveQ : 
   unfold storeObject at hStore; cases hStore
   refine SystemState.StateMono.insert hInv1 rfl ?_
   rw [lookupTcb_some_objects _ _ _ hLook]
-  exact SystemState.objStateMono_tcb ⟨fun _ => rfl, fun _ => by
-    simp [TCB.Active, TCB.withReturnFrame], rfl⟩
+  exact SystemState.objStateMono_tcb ⟨fun _ => rfl, fun h => by
+    simpa [TCB.Active, TCB.withReturnFrame] using h, rfl⟩
 
 /-- The timeout's abort keeps the table references: the splice's frame, then a
 thread stored over the removed thread. -/
@@ -213,7 +213,11 @@ theorem abortPendingIpcOnEndpoint_refillViewsKept {epId : SeLe4n.ObjId} {isRecei
   obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
   have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
   exact (RefillViewsKept.storeObject hInv1 hStore (by rw [lookupTcb_some_objects _ _ _ hLook]; rfl)).trans
-    (.of_schedContexts_backward (endpointQueueRemove_schedContext_backward _ _ _ _ _ hInv hRem))
+    (.of_schedContexts_backward (endpointQueueRemove_schedContext_backward _ _ _ _ _ hInv hRem)
+      fun a t ha hA => by
+        obtain ⟨t0, h0, e⟩ := endpointQueueRemove_getTcb_backward_upToField TCB.threadState
+          (fun _ _ _ _ => rfl) _ _ _ _ _ hInv hRem a t ha
+        exact ⟨t0, h0, e ▸ hA⟩)
 
 /-- WS-ZA ZA6.6: the queue splice keeps every slot's yield codes: it writes
 threads over threads with their yield-to codes kept, and no context. -/
@@ -361,18 +365,18 @@ theorem cancelReplyPrefix_linkFrame (st : SystemState) (v : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyStaging
-          (spliceThreadReplyFrameOut
+          (cutThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v frame)
         v tcbV).getTcb? x).map TCB.linkFrame
       = (st.getTcb? x).map TCB.linkFrame := by
   have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
     st v tcbV hInv
-  have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+  have hS := cutThreadReplyFrameOut_preserves_objects_invExt
     (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
   rw [consumeReplyLink_map_frame TCB.linkFrame (fun _ => rfl) _ v tcbV
       (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS) x,
     restoreToReadyStaging_linkFrame_frame _ v _ hS x,
-    spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR x,
+    cutThreadReplyFrameOut_getTcb?_eq _ tcbV hR x,
     returnDonationToCancelledCaller_linkFrame_frame st v tcbV hInv x]
 
 /-- **WS-RR RR8.11: the teardown moves no thread's home core.**  The composite of
@@ -387,18 +391,18 @@ theorem cancelIpcBlocking_placement_frame (st : SystemState) (v : SeLe4n.ThreadI
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => rfl
-  | blockedOnSend _ =>
+  | blockedOnSend e =>
     rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x),
-      removeFromAllEndpointQueues_placement_frame st v hInv x]
-  | blockedOnReceive _ =>
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv) x),
+      removeFromBlockingEndpoint_placement_frame st v e hInv x]
+  | blockedOnReceive e =>
     rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x),
-      removeFromAllEndpointQueues_placement_frame st v hInv x]
-  | blockedOnCall _ =>
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv) x),
+      removeFromBlockingEndpoint_placement_frame st v e hInv x]
+  | blockedOnCall e =>
     rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x),
-      removeFromAllEndpointQueues_placement_frame st v hInv x]
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv) x),
+      removeFromBlockingEndpoint_placement_frame st v e hInv x]
   | blockedOnNotification _ =>
     rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
         (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv) x),
@@ -453,17 +457,17 @@ scheduling-context bindings and the reply link. -/
 theorem cancelIpcBlocking_stateMono (st : SystemState) (v : SeLe4n.ThreadId)
     (tcbV : TCB) (hInv : st.objects.invExt) :
     SystemState.StateMono st (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) := by
-  have hQ : SystemState.StateMono st (removeFromAllEndpointQueues st v) :=
+  have hQ : ∀ e, SystemState.StateMono st (removeFromBlockingEndpoint st v e) := fun e =>
     SystemState.StateMono.of_stateFields fun t => by
-      rw [removeFromAllEndpointQueues_getTcb?_eq_splice st v hInv t]
+      rw [removeFromBlockingEndpoint_getTcb?_eq_splice st v e hInv t]
       exact spliceOutMidQueueNode_tcbField_frame (fun x => (x.ipcState, x.threadState, x.cpuAffinity))
         (fun _ _ _ _ _ _ => rfl) st v hInv t
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => exact SystemState.StateMono.refl _
-  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    exact hQ.trans (restoreToReadyStaging_stateMono _ v _
-      (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv))
+  | blockedOnSend e | blockedOnReceive e | blockedOnCall e =>
+    exact (hQ e).trans (restoreToReadyStaging_stateMono _ v _
+      (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv))
   | blockedOnNotification _ =>
     exact (SystemState.StateMono.of_stateFields fun t =>
       removeFromNotificationWaitQueue_tcbField_frame (fun x => (x.ipcState, x.threadState, x.cpuAffinity))
@@ -473,10 +477,10 @@ theorem cancelIpcBlocking_stateMono (st : SystemState) (v : SeLe4n.ThreadId)
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     exact (((returnDonationToCancelledCaller_stateMono st v tcbV hInv).trans
-      (SystemState.StateMono.of_getTcb (spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR))).trans
+      (SystemState.StateMono.of_getTcb (cutThreadReplyFrameOut_getTcb?_eq _ tcbV hR))).trans
       (restoreToReadyStaging_stateMono _ v _ hS)).trans
       ((SystemState.StateMono.of_stateFields fun t =>
         consumeReplyLink_map_frame (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) (fun _ => rfl) _ v tcbV

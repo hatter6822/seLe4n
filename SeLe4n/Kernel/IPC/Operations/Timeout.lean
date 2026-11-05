@@ -87,7 +87,11 @@ def abortPendingIpcOnEndpoint
     | none => .error .objectNotFound
     | some tcb =>
       -- Step 3: Reset IPC state, clear pending message and timeout budget,
-      -- set explicit timedOut flag, update thread state.
+      -- set explicit timedOut flag.  WS-ZA ZA6.33: the thread state is left as
+      -- it is, as every IPC restore leaves it (`TCB.restoredToReady`): the
+      -- abort ends an IPC block and does not resume a suspended thread (seL4's
+      -- timeout reaches the thread through `cancelIPC`, which never makes an
+      -- `Inactive` thread runnable).
       -- AG8-A: Uses timedOut := true instead of sentinel in register x0.
       -- WS-SM SM6.D (PR #822 review): a server-first receive that timed out also
       -- relinquishes its stashed reply (`pendingReceiveReply`) — the stash is only
@@ -111,7 +115,6 @@ def abortPendingIpcOnEndpoint
       let tcb' : TCB := ((TCB.setIpcState (TCB.setPendingFault { tcb with
         pendingMessage := none,
         timeoutBudget := none,
-        threadState := .Ready,
         timedOut := true,
         pendingReceiveReplyCode := 0 } none) .ready) : TCB).withReturnFrame
           Architecture.timeoutFrame
@@ -225,7 +228,6 @@ theorem abortPendingIpcOnEndpoint_tcb_lookup
         refine ⟨(((TCB.setIpcState (TCB.setPendingFault { t1 with
                     pendingMessage := none
                     timeoutBudget := none
-                    threadState := .Ready
                     timedOut := true
                     pendingReceiveReplyCode := 0 } none) .ready) : TCB).withReturnFrame
                   Architecture.timeoutFrame), ?_, hAff1.symm⟩

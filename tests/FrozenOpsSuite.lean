@@ -1681,17 +1681,14 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffB diffA msg) sentinelHeld.state))
 
-/-- FO-043 (**WS-HP HP8.2**): **a MIDDLE frame**, which is the only shape on which
-splicing and severing differ.
+/-- FO-043 (**WS-HP HP8.2**; reversed at WS-ZA ZA6.33): **a MIDDLE frame**, which
+is the only shape on which splicing and severing differ.
 
-HP8.2 makes the frozen removal splice, and every scenario above kept passing
-byte-identically when it did — which is the finding, not the reassurance.  A
-two-frame stack's lower frame is its *bottom*, so both policies write the same
-value into the frame above; the whole of FO-031 and FO-041/042 sits on stacks of
-depth ≤ 2, so none of them can tell a spliced removal from a severed one.  Landing
-HP8 on their evidence would have been HP5.5's gap on this surface: *a sweep for
-fixtures that would break is not a sweep for fixtures that would exercise, and
-only the second measures a flip.*
+A two-frame stack's lower frame is its *bottom*, so both policies write the same
+value into the frame above, and every depth-two scenario above passes under
+either.  This is the scenario that decides it.  Since ZA6.33 both surfaces sever,
+as seL4-MCS's `reply_remove` does (`if (prev_ptr) prev->replyNext = 0`, and the
+frame above loses its `replyPrev`).
 
 **The shape.**  Three frames, bottom → cut → top, with the *cut* frame the one
 the reply answers:
@@ -1702,12 +1699,11 @@ the reply answers:
 * `topRid` heads the donated context, and the context names it back.
 
 So the removal takes a frame out of the middle.  After a **splice** the top frame
-names the bottom and the bottom names the top back — the stack stays connected and
-the reservation goes on travelling outward.  After a **sever** the top frame's
-`prev` is cleared and the bottom is dropped from the stack for good, which is the
-loss WS-HP exists to close.  The two write different values at two different keys,
-so the assertions below discriminate; the last one is the mutation that decides it,
-since it spells the retired sever's own values.
+would name the bottom and the bottom the top back.  After the **sever** the top
+frame's `prev` and the bottom frame's `next` are both cleared, so the stack breaks
+at the cut, as in seL4.  The two write different values at two different keys,
+so the assertions below discriminate; the negative spells the retired splice's
+own values.
 
 **No pop fires here, and that is correct.**  The cut frame heads nothing — the
 *top* frame does — so `frozenReplyFrameHeadHolder?` answers `none` and the
@@ -1727,8 +1723,8 @@ load-bearing all the same (it is seL4's `reply_remove`: without the cleared
 `next` it names a frame whose `prev` no longer answers it, which
 `nextLinkReciprocal` refuses), and it would become
 *observable* the moment `consumed` changed, so the half below drives
-`frozenSpliceReplyFrameOut` directly with no consume after it. -/
-private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
+`frozenCutReplyFrameOut` directly with no consume after it. -/
+private def differentialEndpointReplyMiddleFrameSevers : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨17⟩], badge := none }
   let bottomRid : SeLe4n.ReplyId := ⟨507⟩
   let midRid    : SeLe4n.ReplyId := ⟨508⟩
@@ -1768,31 +1764,31 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
     (liveReplySpine diffB diffA msg chain.state).toOption.isSome
   expect "FO-043 control: and so does the frozen composite"
     (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg (freeze chain)).toOption.isSome
-  -- **The live side really splices.**  Asserted here so the agreement below is
-  -- agreement with a splice rather than between two severs.
-  expect "FO-043: the live removal SPLICES — the top frame names the bottom"
+  -- **The live side really severs** (seL4's `reply_remove`).  Asserted here so
+  -- the agreement below is agreement with a sever rather than between two splices.
+  expect "FO-043: the live removal SEVERS — the top frame names nothing below and the bottom nothing above"
     (match (liveReplySpine diffB diffA msg chain.state).toOption with
      | some (_, post) =>
          (match post.getReply? topRid with
-          | some t => t.prev == some bottomRid
+          | some t => t.prev == none
           | none   => false) &&
          (match post.getReply? bottomRid with
-          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | some b => b.next == none
           | none   => false) &&
          (match post.getReply? midRid with
           | some m => m.prev == none
           | none   => false)
      | none => false)
   -- ...and the frozen composite agrees with it, link for link.
-  expect "FO-043: the frozen removal splices the same way"
+  expect "FO-043: the frozen removal severs the same way"
     (match (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg
               (freeze chain)).toOption with
      | some (_, post) =>
          (match post.getReply? topRid with
-          | some t => t.prev == some bottomRid
+          | some t => t.prev == none
           | none   => false) &&
          (match post.getReply? bottomRid with
-          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | some b => b.next == none
           | none   => false) &&
          (match post.getReply? midRid with
           | some m => m.prev == none
@@ -1803,16 +1799,15 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
       (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg (freeze chain))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffB diffA msg) chain.state))
-  -- **NEGATIVE — the retired sever's own values**, spelled so that a revert of
-  -- HP8.2 fails here rather than passing quietly.  Under the sever the top
-  -- frame's `prev` is cleared and the bottom frame keeps naming the cut frame it
-  -- can no longer reach, which is the state that drops every frame below a cut.
-  expect "FO-043 NEGATIVE: the frozen removal does NOT sever the top frame"
+  -- **NEGATIVE — the retired splice's own values**, spelled so that a revert to
+  -- the splice fails here rather than passing quietly.  Under the splice the top
+  -- frame names the bottom, which seL4's `reply_remove` never writes.
+  expect "FO-043 NEGATIVE: the frozen removal does NOT splice the top frame onto the bottom"
     (match (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg
               (freeze chain)).toOption with
      | some (_, post) =>
          !(match post.getReply? topRid with
-           | some t => t.prev == none
+           | some t => t.prev == some bottomRid
            | none   => false)
      | none => false)
   expect "FO-043 NEGATIVE: ...nor leaves the bottom frame naming the cut frame"
@@ -1832,26 +1827,26 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
   -- beside it, so the two are compared store for store rather than each against
   -- its own expectation.
   expect "FO-043: the frozen PRIMITIVE writes all three links, clearing both of the cut frame's own"
-    (match (frozenSpliceReplyFrameOut (freeze chain) midRid).toOption with
+    (match (frozenCutReplyFrameOut (freeze chain) midRid).toOption with
      | some post =>
          (match post.getReply? topRid with
-          | some t => t.prev == some bottomRid
+          | some t => t.prev == none
           | none   => false) &&
          (match post.getReply? bottomRid with
-          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | some b => b.next == none
           | none   => false) &&
          (match post.getReply? midRid with
           | some m => m.prev == none && m.next == none
           | none   => false)
      | none => false)
   expect "FO-043: ...exactly as the live primitive does"
-    (match (SeLe4n.Kernel.spliceReplyFrameOut chain.state midRid).toOption with
+    (match (SeLe4n.Kernel.cutReplyFrameOut chain.state midRid).toOption with
      | some post =>
          (match post.getReply? topRid with
-          | some t => t.prev == some bottomRid
+          | some t => t.prev == none
           | none   => false) &&
          (match post.getReply? bottomRid with
-          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | some b => b.next == none
           | none   => false) &&
          (match post.getReply? midRid with
           | some m => m.prev == none && m.next == none
@@ -3254,7 +3249,7 @@ private def operationDifferentialScenarios :
     List (SeLe4n.Kernel.FrozenOps.FrozenOpBranch × IO Unit) :=
   [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyDonationAgrees),
-    (.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSplices),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSevers),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin) ]
 
 /-- The claim and the scenarios name the same syscalls, in both directions: a

@@ -158,15 +158,16 @@ theorem schedLockSet_endpointSendOnCore_coversWrites (ctx : LabelingContext)
 /-- **Cut C6a**: `.tcbResume`'s footprint covers its writes. -/
 theorem schedLockSet_resumeThreadOnCore_coversWrites (st st' : SystemState)
     (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
     (hStep : Lifecycle.Suspend.resumeThreadOnCore st vtid executingCore = .ok (st', sgi))
     (hS : LockSet.ofList? (schedLockSet_resumeThreadOnCore st vtid executingCore)
       = some S) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_confined S (resumeThreadOnCoreWriteSet st vtid executingCore)
-    [] st st' (LockSet.ofList?_pairs hS)
+    (resumeThreadOnCoreReplenishCores st vtid) st st' (LockSet.ofList?_pairs hS)
     (resumeThreadOnCore_confinedToCores st st' vtid executingCore sgi hStep)
-    (fun d _ => resumeThreadOnCore_replenishQueueOnCore st st' vtid executingCore sgi d hStep)
+    (fun d hd => resumeThreadOnCore_replenishQueueOnCore st st' vtid executingCore sgi d hObjInv hd
+      hStep)
 
 /-- **Cut C6a**: `.tcbSetPriority`'s footprint covers its writes.
 
@@ -333,7 +334,7 @@ theorem schedLockSet_replyTransferOnCore_coversWrites (replier callerTid : SeLe4
     (replyTransferOnCore_confinedToCores replier callerTid mi regs msg executingCore st st'
       hObjInv hStep)
     (fun d hd => replyTransferOnCore_replenishQueueOnCore_ne replier callerTid mi regs msg
-      executingCore st st' d hd hStep)
+      executingCore st st' d hObjInv hd hStep)
 
 /-- **WS-RR RR8.12 Cut C6e**: `.replyRecv`'s footprint covers its writes.
 

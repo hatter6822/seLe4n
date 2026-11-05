@@ -293,6 +293,14 @@ theorem releasePlace_stepCovers (e : CoreId) (st : SystemState) (c : CoreId)
   stepCovers_of_releaseOnlyWrite e (SystemState.releasePlace_releaseOnlyWrite _ _ _)
     (SystemState.releasePlace_agree _ _ _)
 
+/-- WS-ZA ZA6.33: the settle of a returned context covers: it writes release
+fields and queues alone. -/
+theorem settleReturnedContext_stepCovers (e : CoreId) (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) :
+    stepCovers e st (SchedContextOps.settleReturnedContext st c scId) :=
+  stepCovers_of_releaseOnlyWrite e (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _)
+    (SchedContextOps.settleReturnedContext_agree _ _ _)
+
 theorem migrateRunQueueOnAffinityChange_stepCovers (e : CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
     stepCovers e st (migrateRunQueueOnAffinityChange st tid fromCore toCore) := by

@@ -466,7 +466,7 @@ theorem cancelIpcBlocking_replyArm_unfold (st : SystemState) (c : SeLe4n.ThreadI
       SystemState.unlinkReplyWaiterOpt
         (Lifecycle.Suspend.consumeReplyLink
           (Lifecycle.Suspend.restoreToReadyCancelled
-            (spliceThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) t)
+            (cutThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) t)
             c) c t)
         c t.blockingServer? := by
   unfold Lifecycle.Suspend.cancelIpcBlocking
@@ -482,7 +482,7 @@ theorem cancelIpcBlocking_replyArm_of_noDonation (st : SystemState) (c : SeLe4n.
     Lifecycle.Suspend.cancelIpcBlocking st c t =
       SystemState.unlinkReplyWaiterOpt
         (Lifecycle.Suspend.consumeReplyLink
-          (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+          (Lifecycle.Suspend.restoreToReadyCancelled (cutThreadReplyFrameOut st t) c) c t)
         c t.blockingServer? := by
   have hR : Lifecycle.Suspend.returnDonationToCancelledCaller st c t = st := by
     unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
@@ -1912,10 +1912,10 @@ end FinaliseFrame
 namespace FinaliseFrameAny
 
 /-- The splice of a reply off its stack: at most three replies rewritten. -/
-theorem spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) :
-    FinaliseFrameAny st (SeLe4n.Kernel.spliceReplyFrameOutOrSelf st rid) := by
-  obtain ⟨m1, m2, h1, h2, h3⟩ := spliceReplyFrameOutOrSelf_store_cases st rid hInv
+    FinaliseFrameAny st (SeLe4n.Kernel.cutReplyFrameOutOrSelf st rid) := by
+  obtain ⟨m1, m2, h1, h2, h3⟩ := cutReplyFrameOutOrSelf_store_cases st rid hInv
   have step : ∀ {a b : SystemState}, a.objects.invExt →
       (b = a ∨ ∃ (k : SeLe4n.ReplyId) (o o' : Reply), a.objects[k.toObjId]? = some (.reply o) ∧
         SeLe4n.Model.storeObject k.toObjId (.reply o') a = .ok ((), b)) →
@@ -1928,13 +1928,13 @@ theorem spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
   have f2 := step f1.invExt h2
   exact f1.trans (f2.trans (step f2.invExt h3))
 
-/-- A thread's reply frame spliced off its stack. -/
-theorem spliceThreadReplyFrameOut (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
-    FinaliseFrameAny st (SeLe4n.Kernel.spliceThreadReplyFrameOut st t) := by
-  unfold SeLe4n.Kernel.spliceThreadReplyFrameOut
+/-- A thread's reply frame cut off its stack. -/
+theorem cutThreadReplyFrameOut (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
+    FinaliseFrameAny st (SeLe4n.Kernel.cutThreadReplyFrameOut st t) := by
+  unfold SeLe4n.Kernel.cutThreadReplyFrameOut
   cases t.replyObject with
   | none => exact .refl hInv
-  | some rid => exact spliceReplyFrameOutOrSelf st rid hInv
+  | some rid => exact cutReplyFrameOutOrSelf st rid hInv
 
 /-- The consume of a caller's reply link: the reply consumed, the caller's link
 cleared. -/
@@ -2041,15 +2041,15 @@ theorem replyCancel (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) {ep : SeL
     FinaliseFrameAny st (Lifecycle.Suspend.cancelIpcBlocking st c t) := by
   rw [cancelIpcBlocking_replyArm_unfold st c t hB]
   have f0 := returnDonationToCancelledCaller st c t hInv
-  have f1 := f0.trans (spliceThreadReplyFrameOut _ t f0.invExt)
+  have f1 := f0.trans (cutThreadReplyFrameOut _ t f0.invExt)
   have f2 := f1.trans (show FinaliseFrameAny _ (Lifecycle.Suspend.restoreToReadyCancelled _ c) by
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
     exact (FinaliseFrame.updateTcb _ c _ f1.invExt).any)
   have f3 := f2.trans (consumeReplyLink _ c t f2.invExt)
   exact f3.trans (unlinkReplyWaiterOpt _ c _ f3.invExt)
 
-/-- **The migration of a returned context's replenishments** writes only the
-release queues and the contexts' release fields. -/
+/-- **The settle of a returned context** (WS-ZA ZA6.33) writes only the release
+queues and the contexts' release fields. -/
 theorem cancelIpcBlockingMigrated (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : (Lifecycle.Suspend.cancelIpcBlocking st c t).objects.invExt) :
     FinaliseFrameAny (Lifecycle.Suspend.cancelIpcBlocking st c t)
@@ -2057,9 +2057,9 @@ theorem cancelIpcBlockingMigrated (st : SystemState) (c : SeLe4n.ThreadId) (t : 
   unfold SeLe4n.Kernel.cancelIpcBlockingMigrated
   split
   · exact (FinaliseFrame.of_releaseOnlyWrite
-      (migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _)
-      (migrateSchedContextReplenishment_agree _ _ _ _)
-      (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hInv)).any
+      (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _)
+      (SchedContextOps.settleReturnedContext_agree _ _ _)
+      (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv)).any
   · exact .refl hInv
 
 /-- **A reply-blocked caller's cancel with its reservation handed back**: the
@@ -2306,7 +2306,7 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       refine (hC (descheduleUnboundHolder_onlyObjectsSchedulerDiffer _ _ _ _)).trans ?_
       unfold cancelIpcBlockingMigrated
       split
-      · exact migrateSchedContextReplenishment_cdt _ _ _ _
+      · exact SchedContextOps.settleReturnedContext_cdt _ _ _
       · rfl
     have hRet : (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).cdt = s.cdt := by
       unfold Lifecycle.Suspend.returnDonationToCancelledCaller
@@ -2349,16 +2349,16 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
     have e := SystemState.unlinkReplyWaiterOpt_eq_objects
       (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (spliceThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller s c t) t)
+          (cutThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller s c t) t)
           c) c t)
       c t.blockingServer?
     refine (show _ = _ by rw [e]).trans ((hCons _).trans ?_)
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
     rw [hC (hU _ _ _)]
-    unfold spliceThreadReplyFrameOut
+    unfold cutThreadReplyFrameOut
     split
     · exact h
-    · exact (spliceReplyFrameOutOrSelf_cdt_eq _ _).trans h
+    · exact (cutReplyFrameOutOrSelf_cdt_eq _ _).trans h
 
 /-- **The finalisation keeps the teardown's well-formedness and shrinks no
 root.** -/

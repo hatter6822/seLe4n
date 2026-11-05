@@ -99,7 +99,8 @@ end IpcFrame
 /-- What a kernel entry reads off the state it starts from: the three placement
 properties, the endpoint queues' heads and the notifications' head waiters
 blocked, and every core's current context placeable on its core (WS-ZA ZA6.4:
-what the bound yield's postpone needs). -/
+what the bound yield's postpone needs), and every context a thread holds the one
+its binding names (WS-ZA ZA6.33: what the resume's context settle needs). -/
 structure EntryPremises (st : SystemState) : Prop where
   objInv : st.objects.invExt
   refined : st.runQueueRefined
@@ -107,6 +108,7 @@ structure EntryPremises (st : SystemState) : Prop where
   queueHeads : queueHeadBlockedConsistent st
   ntfnHeads : notificationHeadsWakeable st
   placeable : ∀ c, st.currentContextPlaceableOnCore c
+  holders : holdersNameTheirContexts st
 
 /-- What a syscall arm reads besides: the caller is core `c`'s current thread and
 no idle thread (an idle thread runs the kernel's own loop and never traps). -/
@@ -122,9 +124,11 @@ variable {st st' : SystemState}
 /-- The premises from the state's invariants. -/
 theorem of_invariants (hInv : st.objects.invExt) (hR : st.runQueueRefined)
     (hD : st.currentDequeuedUnique) (hQ : queueHeadBlockedConsistent st)
-    (hNW : notificationWaiterConsistent st) (hP : ∀ c, st.currentContextPlaceableOnCore c) :
+    (hNW : notificationWaiterConsistent st) (hP : ∀ c, st.currentContextPlaceableOnCore c)
+    (hB : schedContextBindingConsistent st) :
     EntryPremises st :=
-  ⟨hInv, hR, hD, hQ, notificationHeadsWakeable_of hD hNW, hP⟩
+  ⟨hInv, hR, hD, hQ, notificationHeadsWakeable_of hD hNW, hP,
+    holdersNameTheirContexts_of_schedContextBindingConsistent hB⟩
 
 theorem endpointHeads (E : EntryPremises st) : endpointHeadsWakeable st :=
   endpointHeadsWakeable_of E.dequeued E.queueHeads
@@ -160,7 +164,14 @@ theorem of_ipcFrame (E : EntryPremises st) (hS : RunQueueStage st st') (hF : Ipc
       obtain ⟨h1, h2⟩ := E.placeable c tid t scId sc hCur ht (by rw [hbd]; exact hb) hS0
       refine ⟨h1, ?_⟩
       unfold SystemState.releaseFreeFor SystemState.releaseCoreOf at h2 ⊢
-      rw [hS]; rw [hS0] at h2; exact h2 }
+      rw [hS]; rw [hS0] at h2; exact h2
+    holders := fun s sc t hs hb x hx => by
+      have hS0 : st.getSchedContext? s = some sc :=
+        (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr (hNT _ _ (fun _ h => by cases h)
+          ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hs))
+      obtain ⟨y, hy, -, hbd⟩ := hTB t x hx
+      rw [← hbd]
+      exact E.holders s sc t hS0 hb y hy }
 
 /-- The caller's premises: core `c`'s current thread, no idle thread. -/
 theorem arm (E : EntryPremises st) {c : Concurrency.CoreId} {tid : SeLe4n.ThreadId}
@@ -176,6 +187,11 @@ variable {st st' : SystemState} {c : Concurrency.CoreId} {tid : SeLe4n.ThreadId}
 
 theorem endpointHeads (P : SyscallArmPremises st c tid) : endpointHeadsWakeable st :=
   P.toEntryPremises.endpointHeads
+
+/-- WS-ZA ZA6.33: the trapping thread is not suspended: it is core `c`'s
+current thread, so runnable. -/
+theorem currentActive (P : SyscallArmPremises st c tid) : st.activeAt tid :=
+  (P.dequeued.runnable P.current).activeAt
 
 theorem blocked (P : SyscallArmPremises st c tid) : blockedCurrentNowhere st :=
   P.toEntryPremises.blocked
@@ -227,6 +243,7 @@ threads' links on every arm but the yieldTo, which links its caller
 theorem dispatchCapabilityOnly_runQueueEntryStage
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (k : Kernel Unit) (st st' : SystemState)
+    (hInv : st.objects.invExt) (hH : holdersNameTheirContexts st)
     (hNY : decoded.syscallId ≠ .schedContextYieldTo)
     (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
     (hStep : k st = .ok ((), st')) :
@@ -521,7 +538,8 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
               simp only [hRes] at hStep
               cases hStep
               exact (retirePendingFaultForResume_runQueueStage st vtid.val).entry.trans
-                  (resumeThreadOnCore_runQueueEntryStage hRes)
+                  (resumeThreadOnCore_runQueueEntryStage
+                    (hH.retirePendingFaultForResume vtid.val hInv) hRes)
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -695,6 +713,7 @@ thread. -/
 theorem dispatchCapabilityOnly_runQueueEntryStageOn
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (k : Kernel Unit) (st st' : SystemState)
+    (hInv : st.objects.invExt) (hH : holdersNameTheirContexts st)
     (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
     (hStep : k st = .ok ((), st')) :
     SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st executingCore) st st' := by
@@ -718,8 +737,8 @@ theorem dispatchCapabilityOnly_runQueueEntryStageOn
               cases hStep
               exact schedContextYieldToOnCore_runQueueEntryStage hC
     | _ => simp only [hTgt] at hStep; cases hStep
-  · exact (dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hNY
-      hArm hStep).toOn _
+  · exact (dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hInv hH
+      hNY hArm hStep).toOn _
 
 /-- The yieldTo is a capability-only arm: the capability dispatch never falls
 through to the routed arms for it. -/
@@ -795,7 +814,7 @@ theorem endpointCallCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingC
   unfold endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
-      P.current P.notIdle
+      P.current P.notIdle P.objInv P.refined P.currentActive
   · exact (RunQueueStage.refl _).entry
 
 theorem notificationSignalBoundCrossCoreDispatchChecked_runQueueStage (ctx : LabelingContext)
@@ -864,8 +883,8 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
   cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hNY hC
-      (dispatchCapabilityOnlyChecked_ok hC h)
+    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st'
+      P.objInv P.holders hNY hC (dispatchCapabilityOnlyChecked_ok hC h)
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -907,10 +926,13 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     all_goals first | (cases h; done) | skip
     rename_i summ _ hRecv _ stDon hHand
     cases h
-    exact (runQueueStage_of_pair_eq
+    have E := runQueueStage_of_pair_eq
       (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ _ P.endpointHeads
-        P.current P.notIdle) hRecv).trans
-      (((applyReceiveRendezvousHandoff_runQueueStage hHand).trans
+        P.current P.notIdle P.currentActive) hRecv
+    obtain ⟨_, hR2⟩ := E.1.links P.objInv P.refined
+    exact E.trans
+      (((applyReceiveRendezvousHandoff_runQueueStage
+          ((E.2 P.objInv P.refined hR2 P.dequeued).coherent _) hHand).trans
         (stageWokenSendCompletion_runQueueStage _ _)).trans
         (stageDeliveredMessage_runQueueStage _ _ _)).entry
   case none.call.object epId =>
@@ -989,7 +1011,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
     cases h
-    exact (endpointReplyRecvOnCore_runQueueEntryStage P.objInv P.dequeued P.queueHeads
+    exact (endpointReplyRecvOnCore_runQueueEntryStage P.objInv P.refined P.dequeued P.queueHeads
       P.current P.notIdle hRR).trans (stageDeliveredMessage_runQueueStage _ _ _).entry
   case none.declassify.object targetId =>
     unfold declassifyObjectFromCore at h
@@ -1025,8 +1047,8 @@ theorem dispatchWithCapChecked_runQueueEntryStageOn (ctx : LabelingContext)
     cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
     | some k =>
       rw [hC] at h
-      exact dispatchCapabilityOnly_runQueueEntryStageOn decoded cap tid executingCore k st st' hC
-        (dispatchCapabilityOnlyChecked_ok hC h)
+      exact dispatchCapabilityOnly_runQueueEntryStageOn decoded cap tid executingCore k st st'
+        P.objInv P.holders hC (dispatchCapabilityOnlyChecked_ok hC h)
     | none => exact absurd hC (dispatchCapabilityOnly_yieldTo_isSome hNY)
   · exact (dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore gate cap st st'
       P hNY h).toOn _
@@ -1097,7 +1119,8 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
   cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hNY hC h
+    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st'
+      P.objInv P.holders hNY hC h
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -1120,10 +1143,13 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     all_goals first | (cases h; done) | skip
     rename_i summ _ hRecv _ stDon hHand
     cases h
-    exact (runQueueStage_of_pair_eq
+    have E := runQueueStage_of_pair_eq
       (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ _ P.endpointHeads
-        P.current P.notIdle) hRecv).trans
-      (((applyReceiveRendezvousHandoff_runQueueStage hHand).trans
+        P.current P.notIdle P.currentActive) hRecv
+    obtain ⟨_, hR2⟩ := E.1.links P.objInv P.refined
+    exact E.trans
+      (((applyReceiveRendezvousHandoff_runQueueStage
+          ((E.2 P.objInv P.refined hR2 P.dequeued).coherent _) hHand).trans
         (stageWokenSendCompletion_runQueueStage _ _)).trans
         (stageDeliveredMessage_runQueueStage _ _ _)).entry
   case none.call.object epId =>
@@ -1132,7 +1158,7 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
       cases h
       exact ((runQueueStage_of_pair_eq
         (endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
-          P.current P.notIdle) hCall)).trans
+          P.current P.notIdle P.objInv P.refined P.currentActive) hCall)).trans
         (stageWokenDelivery_runQueueStage _ _ _).entry
     · cases h
   case none.reply.replyCap rid =>
@@ -1184,7 +1210,7 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     all_goals first | (cases h; done) | skip
     rename_i summ stR hRR
     cases h
-    exact (endpointReplyRecvOnCore_runQueueEntryStage P.objInv P.dequeued P.queueHeads
+    exact (endpointReplyRecvOnCore_runQueueEntryStage P.objInv P.refined P.dequeued P.queueHeads
       P.current P.notIdle hRR).trans (stageDeliveredMessage_runQueueStage _ _ _).entry
 
 /-- WS-ZA ZA6.29: **every arm the unchecked `dispatchWithCap` routes links only
@@ -1200,7 +1226,8 @@ theorem dispatchWithCap_runQueueEntryStageOn (decoded : SyscallDecodeResult)
     cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
     | some k =>
       rw [hC] at h
-      exact dispatchCapabilityOnly_runQueueEntryStageOn decoded cap tid executingCore k st st' hC h
+      exact dispatchCapabilityOnly_runQueueEntryStageOn decoded cap tid executingCore k st st'
+        P.objInv P.holders hC h
     | none => exact absurd hC (dispatchCapabilityOnly_yieldTo_isSome hNY)
   · exact (dispatchWithCap_runQueueEntryStage decoded tid executingCore gate cap st st' P hNY
       h).toOn _
