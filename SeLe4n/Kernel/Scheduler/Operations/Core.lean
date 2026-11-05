@@ -4218,18 +4218,26 @@ theorem vacateTest_iff (st : SystemState) (tid : SeLe4n.ThreadId) (oldCore newCo
       (oldCore ≠ newCore ∧ st.scheduler.currentOnCore oldCore = some tid) := by
   rw [Bool.and_eq_true, bne_iff_ne, runsOnCoreCode_iff]
 
-/-- The compiled `vacateForAffinityChange`: its test on the core's thread code. -/
+/-- The old core's scheduler once the thread it ran leaves it: no current thread
+and a reschedule pending on it.  Out of
+line, so the caller hands over the scheduler it owns and both writes land in
+its cells. -/
+@[noinline] def vacatedScheduler (sch : SchedulerState) (oldCore : CoreId) : SchedulerState :=
+  (sch.setCurrentOnCore oldCore none).markReschedulePendingOnCore oldCore
+
+/-- The compiled `vacateForAffinityChange`: its test on the core's thread code,
+and the scheduler written through `vacatedScheduler`, so the state's record and
+the scheduler's are each written in their cells. -/
 def vacateForAffinityChangeImpl (st : SystemState) (tid : SeLe4n.ThreadId)
     (oldCore newCore : CoreId) : SystemState :=
   if oldCore != newCore && runsOnCoreCode st oldCore tid then
-    { st with scheduler :=
-        (st.scheduler.setCurrentOnCore oldCore none).markReschedulePendingOnCore oldCore }
+    { st with scheduler := vacatedScheduler st.scheduler oldCore }
   else st
 
 @[csimp] theorem vacateForAffinityChange_eq_impl :
     @vacateForAffinityChange = @vacateForAffinityChangeImpl := by
   funext st tid oldCore newCore
-  unfold vacateForAffinityChange vacateForAffinityChangeImpl
+  unfold vacateForAffinityChange vacateForAffinityChangeImpl vacatedScheduler
   by_cases hc : oldCore ≠ newCore ∧ st.scheduler.currentOnCore oldCore = some tid
   · rw [if_pos hc, if_pos ((vacateTest_iff st tid oldCore newCore).mpr hc)]
   · rw [if_neg hc, if_neg (fun x => hc ((vacateTest_iff st tid oldCore newCore).mp x))]

@@ -365,10 +365,35 @@ theorem replyDonationRecipient_eq_self (st : SystemState) (scId : SeLe4n.SchedCo
     rw [hSc] at hSc'; cases hSc'
     exact hO o hO'
 
+/-- And wherever a frame below names an outer caller, whatever origin the context
+records: a pop above the bottom of the stack hands the context to the answered
+caller (`replyDonationRecipient_eq_of_outer_some`). -/
+theorem replyDonationRecipient_eq_self_of_head (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (sc : SchedContext) (c : SeLe4n.ThreadId) (hr : SeLe4n.ReplyId) (r : Reply)
+    (hSc : st.getSchedContext? scId = some sc) (hHead : sc.scReply = some hr)
+    (hR : st.getReply? hr = some r) (hNext : r.next = some (.head scId))
+    (hBelow : ∀ b, r.prev = some b → ∃ bR, st.getReply? b = some bR ∧
+      bR.next = some (.frame hr) ∧ bR.callerCode ≠ 0)
+    (hO : r.prev = none → ∀ o, sc.donationOrigin = some o → o = c) :
+    replyDonationRecipient st scId c = c := by
+  cases hP : r.prev with
+  | none => exact replyDonationRecipient_eq_self st scId sc c hSc (hO hP)
+  | some b =>
+    obtain ⟨_, hRes⟩ := replyStackOuterCaller?_of_head st scId sc hr r hSc hHead hR hNext hBelow
+    obtain ⟨bR, hB, _, hBC⟩ := hBelow b hP
+    have hPo : popOuterCode st r = bR.callerCode := by
+      unfold popOuterCode; rw [hP]; simp only [hB]
+    rw [hPo] at hRes
+    cases hc : bR.callerCode with
+    | zero => exact absurd hc hBC
+    | succ k =>
+      rw [hc] at hRes
+      exact replyDonationRecipient_eq_of_outer_some st scId c ⟨k⟩ hRes
+
 /-- **The reply's donation, in place**: on a state where the answered reply heads
 the stack of a context its holder holds, the frame below (if any) links up to it
-with a caller, the context records no origin other than the answered caller, and
-every check of the pop passes, the reply's donation step returns
+with a caller, the context at the bottom of the stack records no origin other
+than the answered caller, and every check of the pop passes, the reply's donation step returns
 `replyDonationPopInPlace`'s state. -/
 theorem applyReplyDonationOnCore_eq_inPlace (S : SystemState) (rid : SeLe4n.ReplyId)
     (cv : SeLe4n.ValidThreadId) (c holder : SeLe4n.ThreadId) (hcv : cv.val = c)
@@ -376,7 +401,7 @@ theorem applyReplyDonationOnCore_eq_inPlace (S : SystemState) (rid : SeLe4n.Repl
     (hR : S.getReply? rid = some r) (hNext : r.next = some (.head scId))
     (hSc : S.getSchedContext? scId = some sc) (hHead : sc.scReply = some rid)
     (hB : sc.boundThread = some holder)
-    (hOrig : ∀ o, sc.donationOrigin = some o → o = c)
+    (hOrig : r.prev = none → ∀ o, sc.donationOrigin = some o → o = c)
     (hBelow : ∀ b, r.prev = some b → b ≠ rid ∧ (∃ bR, S.getReply? b = some bR ∧
       bR.next = some (.frame rid) ∧ bR.callerCode ≠ 0) ∧
       storeLeavesIndexAndTypes S b.toObjId .reply = true ∧
@@ -402,7 +427,8 @@ theorem applyReplyDonationOnCore_eq_inPlace (S : SystemState) (rid : SeLe4n.Repl
       rw [hR]
       simp only [hNext, hSc, hHead, beq_self_eq_true, ↓reduceIte]
     · rw [hSc]; exact hB
-  have hRecipEq := replyDonationRecipient_eq_self S scId sc c hSc hOrig
+  have hRecipEq := replyDonationRecipient_eq_self_of_head S scId sc c rid r hSc hHead hR hNext
+    (fun b hb => (hBelow b hb).2.1) hOrig
   obtain ⟨hv, hhv⟩ := Option.isSome_iff_exists.mp
     ((SeLe4n.ThreadId.toValid?_isSome_iff holder).mpr hHRes)
   have hhv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hhv
@@ -422,7 +448,7 @@ theorem replyRecvPopDonation_eq_inPlace (S : SystemState) (rid : SeLe4n.ReplyId)
     (hR : S.getReply? rid = some r) (hNext : r.next = some (.head scId))
     (hSc : S.getSchedContext? scId = some sc) (hHead : sc.scReply = some rid)
     (hB : sc.boundThread = some holder)
-    (hOrig : ∀ o, sc.donationOrigin = some o → o = c)
+    (hOrig : r.prev = none → ∀ o, sc.donationOrigin = some o → o = c)
     (hBelow : ∀ b, r.prev = some b → b ≠ rid ∧ (∃ bR, S.getReply? b = some bR ∧
       bR.next = some (.frame rid) ∧ bR.callerCode ≠ 0) ∧
       storeLeavesIndexAndTypes S b.toObjId .reply = true ∧
@@ -448,7 +474,8 @@ theorem replyRecvPopDonation_eq_inPlace (S : SystemState) (rid : SeLe4n.ReplyId)
       rw [hR]
       simp only [hNext, hSc, hHead, beq_self_eq_true, ↓reduceIte]
     · rw [hSc]; exact hB
-  have hRecipEq := replyDonationRecipient_eq_self S scId sc c hSc hOrig
+  have hRecipEq := replyDonationRecipient_eq_self_of_head S scId sc c rid r hSc hHead hR hNext
+    (fun b hb => (hBelow b hb).2.1) hOrig
   obtain ⟨hv, hhv⟩ := Option.isSome_iff_exists.mp
     ((SeLe4n.ThreadId.toValid?_isSome_iff holder).mpr hHRes)
   obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp
@@ -802,9 +829,11 @@ theorem outerCallerAcceptableCode_eq (st : SystemState) (server c : SeLe4n.Threa
 /-- **A reply whose pop may write in place**, read on the pre-state: the
 answered caller `c` (an unreserved thread, unbound) and the server distinct, the
 caller's, its reply object's and the server's slots local, the reply object
-heading the stack of a context the server is bound to and that records no origin
-other than the caller, and the frame below (if any) another local reply linked
-up to it whose caller passes the pop's checks.  Every read is a code, so the
+heading the stack of a context the server is bound to, and the frame below (if
+any) another local reply linked up to it whose caller passes the pop's checks;
+at the bottom of the stack (no frame below) the context records no origin other
+than the caller, since only there is the recorded origin the recipient
+(`donationOriginRecipient?`).  Every read is a code, so the
 test builds nothing. -/
 @[inline] def replyPopsInPlace (st : SystemState) (c : SeLe4n.ThreadId) (cBinding : Nat)
     (server : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Bool :=
@@ -827,9 +856,10 @@ test builds nothing. -/
            | some h => h.val == rid.val
            | none => false) &&
           sc.boundThreadCode == server.val + 1 &&
-          (match sc.donationOrigin with
-           | some o => o.val == c.val
-           | none => true) &&
+          (rp.prev.isSome ||
+            match sc.donationOrigin with
+            | some o => o.val == c.val
+            | none => true) &&
           (match rp.prev with
            | none => true
            | some b =>
@@ -966,10 +996,11 @@ theorem replyPopsInPlace_donation (st : SystemState) (c server : SeLe4n.ThreadId
       rw [this]
   have hB : sc.boundThread = some server := by
     unfold SchedContext.boundThread; rw [beq_iff_eq.mp hBT]; rfl
-  have hOrig : ∀ o, sc.donationOrigin = some o → o = c := by
-    intro o ho
-    rw [ho] at hOr
-    cases o; cases c; simp only [beq_iff_eq] at hOr; subst hOr; rfl
+  have hOrig : rp.prev = none → ∀ o, sc.donationOrigin = some o → o = c := by
+    intro hP o ho
+    rw [hP, ho] at hOr
+    cases o; cases c
+    simp only [Option.isSome_none, Bool.false_or, beq_iff_eq] at hOr; subst hOr; rfl
   refine ⟨rp, scId, sc, hRp, hN, hScO, hHead, ?_, by simp only [replyHeadContextCode, hRg, hN],
     hCRes, hNe, hNo, hLC, hFC, hLR, hFR, ?_⟩
   · intro b hb
@@ -1127,11 +1158,11 @@ theorem replyPopsInPlace_donation (st : SystemState) (c server : SeLe4n.ThreadId
     rfl
   rw [← hDT]
   exact ⟨fun cv hcv => applyReplyDonationOnCore_eq_inPlace T rid cv c server hcv scId sc rp.consumed
-    (holdMessage msg tc1) ht hRT hNextC hScT hHead hB hOrig hBelowT hOuter hRecip hCRes hSRes hOT hHT
+    (holdMessage msg tc1) ht hRT hNextC hScT hHead hB (fun h => hOrig (hPrevC ▸ h)) hBelowT hOuter hRecip hCRes hSRes hOT hHT
     hNe (hLT hLsc) ((hFT _).trans hFsc) (hLT hLR) ((hFT _).trans hFR) (hLT hLC) ((hFT _).trans hFC)
     (hLT hLS),
     replyRecvPopDonation_eq_inPlace T rid c server scId sc rp.consumed
-    (holdMessage msg tc1) ht hRT hNextC hScT hHead hB hOrig hBelowT hOuter hRecip hCRes hSRes hOT hHT
+    (holdMessage msg tc1) ht hRT hNextC hScT hHead hB (fun h => hOrig (hPrevC ▸ h)) hBelowT hOuter hRecip hCRes hSRes hOT hHT
     hNe (hLT hLsc) ((hFT _).trans hFsc) (hLT hLR) ((hFT _).trans hFR) (hLT hLC) ((hFT _).trans hFC)
     (hLT hLS)⟩
 
