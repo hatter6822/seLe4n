@@ -81,7 +81,7 @@
 //! `tlbi_for_sharing`).
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::shootdown::{ShootdownAckSlot, ShootdownOp, ShootdownOpMailbox};
 use crate::smp::MAX_SECONDARY_CORES;
@@ -125,6 +125,18 @@ pub const COMMAND_ROUND: u32 = 6;
 /// the gate refused the return to EL0, `1` when the gate let it return, and
 /// `2` when the request did not find the core in the kernel.
 pub const COMMAND_EXIT_GATE: u32 = 7;
+/// Hold this core in its agent handler, its IRQs masked, until the boot core
+/// releases it ([`HOLD_RELEASED`]) or two seconds pass.  The handler raises
+/// [`HOLD_ENTERED`] first, so once the boot core sees it no kernel entry of
+/// this core (a reschedule SGI, a tick) runs before the release: a thread the
+/// boot core wakes on this core's home stays queued and is never run here.
+/// The result is `1` when released, `0` on the timeout.
+pub const COMMAND_HOLD: u32 = 8;
+
+/// Raised by a core entering [`COMMAND_HOLD`]'s wait.
+pub static HOLD_ENTERED: AtomicBool = AtomicBool::new(false);
+/// Raised by the boot core to end [`COMMAND_HOLD`]'s wait.
+pub static HOLD_RELEASED: AtomicBool = AtomicBool::new(false);
 
 /// One core's command slot: one cache line, written by the issuer (the boot
 /// core, or a secondary acknowledging a ping into slot 0) and by the servicing
@@ -752,6 +764,20 @@ fn execute(core: usize, source_cpu: u8, command: u32, arg: u64) -> u64 {
             // This core is in an interrupt handler, not at EL0.
             crate::remote_stall::note_kernel_entry();
             u64::from(allowed)
+        }
+        COMMAND_HOLD => {
+            HOLD_ENTERED.store(true, Ordering::Release);
+            let start = crate::timer::read_counter();
+            let timeout = command_timeout_ticks();
+            loop {
+                if HOLD_RELEASED.load(Ordering::Acquire) {
+                    return 1;
+                }
+                if crate::timer::read_counter().saturating_sub(start) >= timeout {
+                    return u64::from(HOLD_RELEASED.load(Ordering::Acquire));
+                }
+                core::hint::spin_loop();
+            }
         }
         _ => u64::MAX,
     }
@@ -1616,6 +1642,49 @@ const TIMER_TICK_STEP: u64 = u64::MAX;
 const MASK_TICKS_STEP: u64 = u64::MAX - 1;
 #[cfg(feature = "hw_target")]
 const UNMASK_TICKS_STEP: u64 = u64::MAX - 2;
+/// The second core held in its agent handler ([`COMMAND_HOLD`]) and released:
+/// the steps between wake a thread homed there, which the second core must
+/// not run, since a round-trip thread's frame starts at address 0.  Neither is
+/// measured nor printed.
+#[cfg(feature = "hw_target")]
+const HOLD_SECOND_CORE_STEP: u64 = u64::MAX - 3;
+#[cfg(feature = "hw_target")]
+const RELEASE_SECOND_CORE_STEP: u64 = u64::MAX - 4;
+
+/// Hold `core` in its agent handler ([`COMMAND_HOLD`]); the sequence to await
+/// at the release, once the core has entered the wait.
+#[cfg(feature = "hw_target")]
+fn hold_core(core: usize) -> Option<u64> {
+    HOLD_RELEASED.store(false, Ordering::Release);
+    HOLD_ENTERED.store(false, Ordering::Release);
+    let sequence = agent_issue_in(&AGENTS, core, COMMAND_HOLD, 0);
+    crate::gic::send_sgi(1u8 << core, AGENT_SGI_INTID);
+    let start = crate::timer::read_counter();
+    let timeout = command_timeout_ticks();
+    loop {
+        if HOLD_ENTERED.load(Ordering::Acquire) {
+            return Some(sequence);
+        }
+        if crate::timer::read_counter().saturating_sub(start) >= timeout {
+            HOLD_RELEASED.store(true, Ordering::Release);
+            return HOLD_ENTERED.load(Ordering::Acquire).then_some(sequence);
+        }
+        core::hint::spin_loop();
+    }
+}
+
+/// Release the core [`hold_core`] held; whether it reports the release.
+#[cfg(feature = "hw_target")]
+fn release_core(core: usize, sequence: u64) -> bool {
+    HOLD_RELEASED.store(true, Ordering::Release);
+    agent_await_in(
+        &AGENTS,
+        core,
+        sequence,
+        command_timeout_ticks(),
+        crate::timer::read_counter,
+    ) == Some(1)
+}
 
 /// A scenario step of kind `syscall`, one of the three above.
 #[cfg(feature = "hw_target")]
@@ -2981,11 +3050,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         // WS-ZA ZA6.33: a donation across two home cores, then a donation down
         // a chain.  A server thread and its reply are carved; the partner,
         // holding the context, and the server are resumed; the root task's
-        // receive blocks and the partner runs.  The partner homes the blocked
-        // root task on core 1 and calls it: the context is donated from core
-        // 0's home to core 1's and its replenishment migrated with it, and
-        // the server runs on core 0, homes the root task back (moving the
-        // context back) and receives, so the root task runs.  The root task,
+        // receive blocks and the partner runs.  Core 1 is held in its agent
+        // handler while the partner homes the blocked root task on core 1 and
+        // calls it: the context is donated from core 0's home to core 1's and
+        // its replenishment migrated with it, and the server runs on core 0
+        // and homes the root task back (moving the context back) before core
+        // 1 is released, so core 1 never runs the woken root task, whose
+        // frame starts at address 0.  The server receives, so the root task
+        // runs.  The root task,
         // the context still on loan, calls the server: the donation pushes the
         // server's reply onto a stack that already holds the root task's.
         // The server answers and receives again, the root task answers the
@@ -3012,7 +3084,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             "untyped-retype-chain-reply",
             UNTYPED_RETYPE,
             UNTYPED_CAP,
-            [REPLY_TYPE, CHAIN_CHILD_IDS[1], CNODE_CAP, CHAIN_REPLY_OBJECT_SLOT],
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
         ),
         invocation(
             "chain-reply-cap-mint",
@@ -3045,6 +3122,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [REPLY_CAP, 0],
             true,
         ),
+        kernel_step("hold-second-core", HOLD_SECOND_CORE_STEP),
         invocation(
             "cross-core-home-root",
             TCB_SET_AFFINITY,
@@ -3065,6 +3143,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ROOT_TCB_CAP,
             [AFFINITY_UNBIND, 0, 0, 0],
         ),
+        kernel_step("release-second-core", RELEASE_SECOND_CORE_STEP),
         partner_step(
             "chain-server-receives",
             RECEIVE,
@@ -3096,7 +3175,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         // before suspending itself: the root task runs the teardown.
         invocation("chain-suspend-root", TCB_SUSPEND, ROOT_TCB_CAP, [0; 4]),
         invocation("chain-resume-root", TCB_RESUME, ROOT_TCB_CAP, [0; 4]),
-        invocation("chain-suspend-partner", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        invocation(
+            "chain-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
         invocation(
             "chain-unbind",
             SCHED_CONTEXT_UNBIND,
@@ -3888,8 +3972,32 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         for first in [true, false] {
             let which = if first { " (first call)" } else { "" };
             let mut masked = None;
+            let mut held = None;
             for step in scenario.iter() {
                 let ok = match step.syscall {
+                    HOLD_SECOND_CORE_STEP => {
+                        held = hold_core(1);
+                        if held.is_none() {
+                            crate::kprintln!(
+                                "[smp-test] FAIL: heap-allocations-per-syscall: {}: core 1 was not held",
+                                step.name
+                            );
+                        }
+                        held.is_some()
+                    }
+                    RELEASE_SECOND_CORE_STEP => match held.take() {
+                        Some(sequence) => {
+                            let released = release_core(1, sequence);
+                            if !released {
+                                crate::kprintln!(
+                                    "[smp-test] FAIL: heap-allocations-per-syscall: {}: core 1 did not report its release",
+                                    step.name
+                                );
+                            }
+                            released
+                        }
+                        None => false,
+                    },
                     MASK_TICKS_STEP => {
                         masked = Some(crate::interrupts::disable_interrupts());
                         true
@@ -3910,6 +4018,9 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                     _ => heap_allocations_round_trip(step, which) == Some(true),
                 };
                 if !ok {
+                    if let Some(sequence) = held.take() {
+                        let _released = release_core(1, sequence);
+                    }
                     if let Some(saved) = masked.take() {
                         crate::interrupts::restore_interrupts(saved);
                     }
