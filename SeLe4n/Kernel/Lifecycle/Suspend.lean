@@ -499,9 +499,12 @@ theorem resumeReadyMidState_getSchedContext? (st : SystemState) (tid : SeLe4n.Th
 
 /-- WS-ZA ZA6.33: **seL4-MCS's `isSchedulable` for a resumed thread**: a thread
 running on no context is schedulable on its own time slice; one running on a
-context is schedulable when the context is held, active, and its head refill
-has budget now (so it is not postponed: `SchedContext.releaseKey?` reads no
-release time), the test `yieldToBound` makes of its target. -/
+context is schedulable when the context is held and its head refill has budget
+now (so it is not postponed: `SchedContext.releaseKey?` reads no release time),
+the test `yieldToBound` makes of its target and `hasSufficientBudget` makes of
+every candidate.  seL4's `sc_active` is a configured context, not a context
+that has stayed bound: a context unbound and bound again schedules its new
+thread on the budget it holds, so the binding history is not read here. -/
 def resumeSchedulable (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   match st.getTcb? tid with
   | none => false
@@ -511,7 +514,7 @@ def resumeSchedulable (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
     | some s =>
       match st.getSchedContext? s with
       | none => false
-      | some sc => sc.isActive && sc.budgetRemaining.isPositive
+      | some sc => sc.budgetRemaining.isPositive
 
 /-- WS-SM SM5.F.6 (plan §3.6, resume H1–H5 per-core): the **complete** per-core
 resume — the per-core analogue of `resumeThread`.  Unlike `restoreToReadyOnCore`
@@ -532,7 +535,7 @@ performs the full Inactive→Ready transition:
    refill is not ready.
 6. **H4** — enqueue on the thread's **home core** (`determineTargetCore`) via the
    SM5.C per-core `enqueueRunnableOnCore`, only when the thread is schedulable
-   (`resumeSchedulable`, seL4's `isSchedulable`): unbound, or on an active context
+   (`resumeSchedulable`, seL4's `isSchedulable`): unbound, or on a held context
    whose head has budget now.  A postponed thread is enqueued by the release
    that makes its refill ready; nothing is enqueued and no SGI is raised.
 7. **H5 (reschedule)** — the resumed thread newly enters its home core's run queue
