@@ -17,6 +17,18 @@ be the aarch64 lane's build of the same commit.
   archive the Tier-4 gates link is built from the nightly's own checkout.
   The stale-archive refusal is unchanged.  If a tier ever writes a tracked or
   unignored file, the freshness check still refuses the archive.
+- **Hand-copied trace pins removed.**  With the archive fresh, Tier 4 got
+  past the SMP boot-check and reached its trace checks.  There it failed on
+  `rg 'service isolation api↔denied: true'`.  The service dependency graph
+  and its `[SST-013]` trace line were deleted on 2026-10-27, and that cut did
+  not sweep this check.  The nightlies of 2026-10-28 and 2026-10-29 failed on
+  the same line; on every later night the stale-archive failure came first
+  and hid it.  The three greps in `test_tier4_nightly_candidates.sh` were a
+  hand-copied subset of `tests/fixtures/main_trace_smoke.expected`.  Tier 2,
+  which this same nightly runs, already checks every line of that fixture
+  against `lake exe sele4n`.  So all three greps are deleted rather than
+  re-pinned: a second, hand-kept answer to the same question is how this one
+  drifted.  The nightly still runs the trace twice and diffs the two runs.
 - **Docs.**  `docs/CI_POLICY.md` §2 lists the archive step.
 
 ## v0.36.198 — Dead code removed: 123 definitions and four FFI exports nothing calls
