@@ -66,7 +66,12 @@ context and returns no loan.  `.tcbResume` follows seL4's `restart` and
   (`chain-root-replies`).  The partner restarts the root task before it
   suspends itself.  Core 1 is held in its agent handler (`COMMAND_HOLD`)
   across the cross-core steps, so it never runs the root task woken on its
-  home.
+  home.  `tcb-set-affinity-running` measures the affinity change of a
+  thread running on core 1: a carved thread, bound to a context of its own,
+  resumes at a page of real code (`b .`, mapped user-executable at the user
+  window's first page and published with the instruction-cache unify), runs
+  there at EL0, and the root task homes it back while it runs, which vacates
+  core 1 and stalls it until it has saved the thread.  It reads 0.
 
   These read 0 at first call and in steady state: the notification-wait,
   bound, release-queued and postponed suspends, and the bound and postponed
@@ -138,7 +143,8 @@ context and returns no loan.  `.tcbResume` follows seL4's `restart` and
   test the old core's current thread by its code, so the change builds
   nothing, and moving a thread off the core it runs on writes that core's
   scheduler in its cell (`vacatedScheduler`); the compiled update had
-  copied the scheduler record.
+  copied the scheduler record.  `tcb-set-affinity-running` pins that branch
+  at 0.
 - **Carved cells.**  The push stores links that name the objects' own ids, so
   each object is carved with them: a thread's `idCell`, a reply's `idCell` and
   `frameLinkCell`, and a context's `headLinkCell`.  Each is proof-carrying
