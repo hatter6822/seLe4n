@@ -845,6 +845,11 @@ def syscallDispatchCrossCoreEntry : BaseIO UInt64 := do
   -- the buffer (WS-ZA ZA5.2).
   let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo
   let wordBytes ← Platform.FFI.ffiEntryWordBuffer
+  -- The kernel heap's free bytes, read as a word before the atomic step and
+  -- written into the state right after the words (`withKernelHeapFreeBytes`),
+  -- so a retype refuses, before any write, a carve the heap could not hold
+  -- (`CarveRequest.heapAdmitted`, seL4's `seL4_NotEnoughMemory`).
+  let heapFree ← Platform.FFI.ffiKernelHeapFreeBytes
   -- **WS-ZA ZA3.1**: the restore target's parts are read off the committed
   -- state inside the atomic step (`syscallDispatchCrossCoreStep_restoreTarget`:
   -- the target the step reports is that state's), so what crosses the commit
@@ -856,8 +861,10 @@ def syscallDispatchCrossCoreEntry : BaseIO UInt64 := do
       restoreAsid, committedCodes) ←
     Platform.FFI.modifyGetKernelState fun st =>
       let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore trapped
-        (Architecture.IpcBufferRead.syncUserWords
-          (Architecture.saveCapturedSyscallFrame st execCore frame) wordBytes wordCount)
+        (SeLe4n.Model.SystemState.withKernelHeapFreeBytes
+          (Architecture.IpcBufferRead.syncUserWords
+            (Architecture.saveCapturedSyscallFrame st execCore frame) wordBytes wordCount)
+          heapFree.toNat)
       let post := Architecture.IpcBufferRead.clearUserWords r.2
       ((r.1, Architecture.restoreCommitKindOnCore post execCore,
           Architecture.restoreContextOnCore post execCore,
@@ -924,8 +931,10 @@ return-encoded driver.  Pins the body shape (atomic `modifyGetKernelState` over
 `syscallDispatchFromAbi`, then `fireRaisedReschedules` of the flags the step raised,
 then the remote-core stall against the committed current slots
 (`Concurrency.stallChangedCores`), then — **WS-RR RR7.26** — the HAL current-thread record of the value the same
-atomic step read off the committed post-state) so a refactor that drops the SGI
-firing, the state commit or the record breaks this marker at elaboration;
+atomic step read off the committed post-state, and the kernel heap's free bytes
+read before the step and written into the state the step is handed) so a
+refactor that drops the SGI firing, the state commit, the record or the heap
+capacity a retype is checked against breaks this marker at elaboration;
 combined with `@[export]` (which the Rust extern resolves against) the seam
 cannot regress silently. -/
 theorem syscallDispatchCrossCoreEntry_def :
@@ -940,12 +949,15 @@ theorem syscallDispatchCrossCoreEntry_def :
         let msgInfo := trapped.x1
         let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo
         let wordBytes ← Platform.FFI.ffiEntryWordBuffer
+        let heapFree ← Platform.FFI.ffiKernelHeapFreeBytes
         let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext,
             restoreTableBase, restoreAsid, committedCodes) ←
           Platform.FFI.modifyGetKernelState fun st =>
             let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore trapped
-              (Architecture.IpcBufferRead.syncUserWords
-                (Architecture.saveCapturedSyscallFrame st execCore frame) wordBytes wordCount)
+              (SeLe4n.Model.SystemState.withKernelHeapFreeBytes
+                (Architecture.IpcBufferRead.syncUserWords
+                  (Architecture.saveCapturedSyscallFrame st execCore frame) wordBytes wordCount)
+                heapFree.toNat)
             let post := Architecture.IpcBufferRead.clearUserWords r.2
             ((r.1, Architecture.restoreCommitKindOnCore post execCore,
                 Architecture.restoreContextOnCore post execCore,

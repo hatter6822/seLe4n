@@ -2215,6 +2215,62 @@ def runWSH15PlatformChecks : IO Unit := do
 
   IO.println "all WS-H15 platform contract checks passed"
 
+/-- The kernel heap's capacity (seL4's `seL4_NotEnoughMemory`): a carve the
+modelled heap cannot hold (`MachineState.kernelHeapFreeBytes` below
+`CarveRequest.heapBytes`) is refused with `untypedRegionExhausted` before any
+write, answered in the state it was handed; the same carve at exactly its need,
+and on the default capacity (the whole arena), succeeds; and a CNode's need
+grows with its slots. -/
+def runRetypeHeapCapacityChecks : IO Unit := do
+  IO.println "=== retype kernel-heap capacity checks ==="
+  let utId : SeLe4n.ObjId := ⟨153⟩
+  let cnId : SeLe4n.ObjId := ⟨154⟩
+  let slotAt (n : Nat) : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat n }
+  let roomy : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject utId (.untyped
+          { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x4000 })
+      |>.withObject cnId (.cnode (CNode.ofList 0 0 0 2 [
+          (SeLe4n.Slot.ofNat 0, { target := .object utId, rights := AccessRightSet.ofList [.read, .write, .retype] })
+        ]))
+      |>.withLifecycleObjectType utId .untyped
+      |>.withLifecycleObjectType cnId .cnode
+      |>.buildChecked)
+  let carve (st : SystemState) :=
+    SeLe4n.Kernel.untypedRetypeObject (slotAt 0) ⟨155⟩ (slotAt 1) .notification st
+  let need := SeLe4n.Kernel.CarveRequest.heapBytes roomy .notification
+  let low := roomy.withKernelHeapFreeBytes 4096
+  expectCond "heap" "the default capacity is the whole arena"
+    (roomy.machine.kernelHeapFreeBytes == kernelHeapArenaBytes)
+  expectErr "carve the kernel heap cannot hold" (carve low) .untypedRegionExhausted
+  expectErr "carve one byte short of its need"
+    (carve (roomy.withKernelHeapFreeBytes (need - 1))) .untypedRegionExhausted
+  -- The refusal precedes every other check: through an empty slot it is
+  -- still the heap's.
+  expectErr "the heap refusal precedes the capability lookup"
+    (SeLe4n.Kernel.untypedRetypeObject (slotAt 3) ⟨155⟩ (slotAt 1) .notification low)
+    .untypedRegionExhausted
+  expectCond "heap" "the refusal is answered in the state it was handed"
+    (match RefusalCarrying.ofKernel carve low with
+     | .error (e, s) => e == .untypedRegionExhausted &&
+         s.objectIndex == low.objectIndex &&
+         s.machine.kernelHeapFreeBytes == low.machine.kernelHeapFreeBytes &&
+         (s.objects[(⟨155⟩ : SeLe4n.ObjId)]?).isNone
+     | .ok _ => false)
+  expectCond "heap" "the split carve's admission refuses it too"
+    (!SeLe4n.Kernel.untypedRetypeAdmittedAt low (slotAt 0) (slotAt 1) ⟨155⟩ .notification)
+  expectCond "heap" "the carve at exactly its need succeeds"
+    (match carve (roomy.withKernelHeapFreeBytes need) with
+     | .ok _ => true
+     | .error _ => false)
+  expectCond "heap" "the carve on the default capacity succeeds"
+    (match carve roomy with
+     | .ok _ => true
+     | .error _ => false)
+  expectCond "heap" "a CNode's need grows with its slots"
+    (SeLe4n.Kernel.CarveRequest.heapBytes roomy (.cnode 4 (by decide)) <
+      SeLe4n.Kernel.CarveRequest.heapBytes roomy (.cnode 8 (by decide)))
+
 /-- WS-H16/M-18: Lifecycle operations negative tests — the error branches of
 the untyped carve (`untypedRetypeObject`, `retypeFromUntyped`). -/
 def runWSH16LifecycleChecks : IO Unit := do
@@ -4708,6 +4764,7 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSH15Checks
   SeLe4n.Testing.runWSH15PlatformChecks
   SeLe4n.Testing.runWSH16LifecycleChecks
+  SeLe4n.Testing.runRetypeHeapCapacityChecks
   SeLe4n.Testing.runWSJ1DecodeChecks
   SeLe4n.Testing.runWSKGChecks
   SeLe4n.Testing.runWSL4BlockedThreadChecks

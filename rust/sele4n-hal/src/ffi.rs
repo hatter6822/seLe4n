@@ -1918,6 +1918,16 @@ pub extern "C" fn ffi_entry_word_buffer() -> crate::lean_runtime::Obj {
     }
 }
 
+/// **The kernel heap's free bytes** — `Platform.FFI.ffiKernelHeapFreeBytes`,
+/// which the syscall entry reads before its atomic step so a retype refuses a
+/// carve the heap could not hold
+/// ([`crate::lean_heap::reported_kernel_heap_free_bytes`]: `0` when the heap
+/// cannot be taken into service).  Allocates nothing.
+#[no_mangle]
+pub extern "C" fn ffi_kernel_heap_free_bytes() -> u64 {
+    crate::lean_heap::reported_kernel_heap_free_bytes()
+}
+
 /// `ffi_capture_user_words` over the given buffers and coverage predicate (the
 /// testable form): read the run of `count` words at `base` into core `core`'s
 /// buffer from pair `index`, or `None` on a refusal.

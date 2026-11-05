@@ -898,6 +898,13 @@ theorem FpContext.default_word (i : Nat) : (default : FpContext).word i = 0 := b
   · exact FpContext.word_ofWords _ i h
   · exact FpContext.word_of_count_le _ i (Nat.le_of_not_lt h)
 
+/-- **The kernel heap's arena, in bytes**: the 64 MiB `.lean_heap` section the
+HAL serves every Lean object from (`rust/sele4n-hal/link.ld`, `LEAN_HEAP_SIZE`).
+The modelled free capacity starts here (`MachineState.kernelHeapFreeBytes`), so
+a state no syscall entry has refreshed — every host test's — admits every
+retype the rest of the carve admits. -/
+def kernelHeapArenaBytes : Nat := 64 * 1024 * 1024
+
 /-- Top-level abstract machine state manipulated by kernel transitions.
     AG3-B (P-04): All `MachineConfig` fields are now carried in machine state
     so that kernel transitions can reference platform parameters without
@@ -1063,6 +1070,16 @@ structure MachineState where
       arm's own and no specification reads the word.  Every committed state
       holds what the entry was handed: `0` from boot. -/
   entryReport : Nat := 0
+  /-- **The kernel heap's free bytes**, as the HAL last reported them: its free
+      pages times the page size (`lean_heap::kernel_heap_free_bytes`, read
+      through `Platform.FFI.ffiKernelHeapFreeBytes`).  The syscall entry
+      refreshes it before its step (`Architecture.withKernelHeapFreeBytes`),
+      so a retype reads the capacity the heap has when the syscall runs and
+      refuses, before any write, a carve whose objects the heap could not
+      hold (`CarveRequest.heapAdmitted`, seL4's `seL4_NotEnoughMemory`).  It
+      starts at the whole arena (`kernelHeapArenaBytes`), which is what a
+      state the entry never refreshed reads. -/
+  kernelHeapFreeBytes : Nat := kernelHeapArenaBytes
   /-- **WS-ZA ZA6.32: the interrupt lines masked at the interrupt
       controller**, seL4's `irq_masks`: bit `n % 64` of word `n / 64` is set
       while line `n` is disabled at the distributor (`irqLineMasked`).  The

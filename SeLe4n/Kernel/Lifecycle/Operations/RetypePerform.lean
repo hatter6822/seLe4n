@@ -143,11 +143,13 @@ theorem retypeFromUntyped_of_admitted {st : SystemState} {authority : CSpaceAddr
   rfl
 
 /-- WS-ZA ZA5.4: **every refusal of `untypedRetypeObject`**, read from the state
-it is handed: the request's own precondition, the untyped capability in `src`
-naming an untyped, the destination slot, and the carve's checks. -/
+it is handed: the kernel heap's capacity for what the carve makes
+(`CarveRequest.heapAdmitted`, first, as the carve asks it first), the request's
+own precondition, the untyped capability in `src` naming an untyped, the
+destination slot, and the carve's checks. -/
 @[inline] def untypedRetypeAdmittedAt (st : SystemState) (src dst : CSpaceAddr)
     (childId : SeLe4n.ObjId) (req : CarveRequest) : Bool :=
-  req.admissible st &&
+  req.heapAdmitted st && req.admissible st &&
   match SystemState.lookupSlotCap st src with
   | some utCap =>
     match utCap.target with
@@ -188,9 +190,9 @@ theorem untypedRetypeObject_of_admitted {src dst : CSpaceAddr} {childId : SeLe4n
       .ok ((), untypedRetypePerformAt src dst childId req st) := by
   unfold untypedRetypeAdmittedAt at hA
   simp only [Bool.and_eq_true] at hA
-  obtain ⟨hAdm, hRest⟩ := hA
+  obtain ⟨⟨hHeap, hAdm⟩, hRest⟩ := hA
   unfold untypedRetypeObject untypedRetypePerformAt
-  simp only [hAdm, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+  simp only [hHeap, hAdm, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
   cases hL : SystemState.lookupSlotCap st src with
   | none => rw [hL] at hRest; cases hRest
   | some utCap =>
@@ -223,6 +225,29 @@ theorem untypedRetypeObject_of_admitted {src dst : CSpaceAddr} {childId : SeLe4n
         rw [retypeFromUntyped_of_admitted hL hUt hR, CarveRequest.object_objectType]
         rfl
     | _ => rw [hT] at hRest; cases hRest
+
+/-- **A carve the kernel heap cannot hold is not admitted**, so the compiled
+dispatch (`RefusalCarrying.ofChecked`) never runs its writes and answers the
+carve's own refusal (`untypedRetypeObject_heapRefused`) in the state it was
+handed. -/
+theorem untypedRetypeAdmittedAt_heapRefused {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
+    {req : CarveRequest} {st : SystemState} (hHeap : req.heapAdmitted st = false) :
+    untypedRetypeAdmittedAt st src dst childId req = false := by
+  unfold untypedRetypeAdmittedAt
+  simp only [hHeap, Bool.false_and]
+
+/-- The split carve, refused by the heap: its checks fail, so its writes never
+run, and the refusal is the carve's own, in the state it was handed. -/
+theorem untypedRetypeOfChecked_heapRefused {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
+    {req : CarveRequest} {st : SystemState} (hHeap : req.heapAdmitted st = false) :
+    RefusalCarrying.ofChecked (untypedRetypeAdmittedAt st src dst childId req)
+        (untypedRetypePerformAt src dst childId req)
+        (untypedRetypeObject src childId dst req) st =
+      .error (.untypedRegionExhausted, st) := by
+  unfold RefusalCarrying.ofChecked
+  rw [untypedRetypeAdmittedAt_heapRefused hHeap,
+    untypedRetypeObject_heapRefused src dst childId req st hHeap]
+  rfl
 
 /-- WS-ZA ZA5.4: `CarveRequest.scrub` with the carved page's base and memory
 kind read as words, so the scrub builds no frame record. -/
