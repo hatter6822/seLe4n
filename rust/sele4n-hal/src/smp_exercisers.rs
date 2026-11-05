@@ -3666,6 +3666,49 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             STACK_TOP_TCB_CAP,
             [0; 4],
         ),
+        // WS-ZA ZA6.34: the final delete of an endpoint two threads wait on
+        // (seL4's `cancelAllIPC` over a queue whose head has a successor).  An
+        // endpoint is carved where the deleted context was; the fourth thread
+        // and the partner receive on it, the partner waking the root task
+        // first; the root task deletes it, which cancels both receives, and
+        // suspends the two threads again.
+        invocation(
+            "untyped-retype-queue-endpoint",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [ENDPOINT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+        ),
+        invocation("queue-resume-top", TCB_RESUME, STACK_TOP_TCB_CAP, [0; 4]),
+        partner_step("queue-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "queue-top-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step("queue-top-receives", RECEIVE, MOVE_SC_CAP, 0, [0, 0], true),
+        signal("queue-partner-wakes-root", 0x14),
+        partner_step(
+            "queue-partner-receives",
+            RECEIVE,
+            MOVE_SC_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "queue-endpoint-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MOVE_SC_SLOT, 0, 0, 0],
+        ),
+        invocation("queue-suspend-top", TCB_SUSPEND, STACK_TOP_TCB_CAP, [0; 4]),
+        invocation(
+            "queue-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
         invocation(
             "stack-server-delete",
             CSPACE_DELETE,

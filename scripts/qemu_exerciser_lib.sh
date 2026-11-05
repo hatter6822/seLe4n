@@ -362,6 +362,12 @@ for driver in drivers:
             "contextless-top-wakes-root", "contextless-top-waits", "contextless-context-delete",
             "contextless-top-cap-delete", "contextless-top-delete", "contextless-suspend-partner",
             "contextless-suspend-top", "stack-server-delete", "stack-top-delete",
+            # The final delete of an endpoint two threads wait on, the queue
+            # cancelled head first with each waiter's successor read as its code
+            # (`cancelEndpointQueue_eq_impl`): 0.
+            "queue-resume-top", "queue-root-waits", "queue-top-resumes-partner",
+            "queue-top-receives", "queue-partner-wakes-root", "queue-partner-receives",
+            "queue-endpoint-delete", "queue-suspend-top", "queue-suspend-partner",
             # and seL4's resume of a thread whose refill is not yet due: the
             # bound partner's yield forfeits its budget, its suspend takes the
             # context off the release queue, and the resume postpones it there
@@ -493,6 +499,7 @@ for driver in drivers:
             # since part 26 writes over its slot's boot record and that
             # record's own target as later carves do (11).
             "untyped-retype-busy-endpoint": (11, 11),
+            "untyped-retype-queue-endpoint": (11, 11),
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
             # Since v0.36.139 a CNode carries its occupancy link array

@@ -142,6 +142,92 @@ def cancelEndpointQueue (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) :
       | none => st
     | none => st
 
+/-- The head **code** of one of an endpoint's queues (`endpointWaitQueue`'s
+head, `0` for none). -/
+@[inline] def endpointWaitHeadCode (ep : Endpoint) (isReceiveQ : Bool) : Nat :=
+  if isReceiveQ then ep.recvHeadCode else ep.sendHeadCode
+
+theorem ofOptCode_endpointWaitHeadCode (ep : Endpoint) (isReceiveQ : Bool) :
+    SeLe4n.ThreadId.ofOptCode (endpointWaitHeadCode ep isReceiveQ) =
+      (endpointWaitQueue ep isReceiveQ).head := by
+  unfold endpointWaitHeadCode endpointWaitQueue
+  cases isReceiveQ <;> rfl
+
+/-- `storeEndpointWaiterCancelled` behind the successor's link **code**
+(`storePopHeadCode`), so no `some` cell is built for a waiter with a successor
+(`storeEndpointWaiterCancelledCode_eq`).  Out of line, as the spec form is. -/
+@[noinline] def storeEndpointWaiterCancelledCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (nextCode : Nat) : SystemState :=
+  wakeCancelledWaiter
+    ((storePopHeadCode st endpointId isReceiveQ t nextCode).updateTcb t cancelledEndpointWaiterTcb) t
+
+theorem storeEndpointWaiterCancelledCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (nextCode : Nat) :
+    storeEndpointWaiterCancelledCode st endpointId isReceiveQ t nextCode =
+      storeEndpointWaiterCancelled st endpointId isReceiveQ t
+        (SeLe4n.ThreadId.ofOptCode nextCode) := by
+  unfold storeEndpointWaiterCancelledCode storeEndpointWaiterCancelled
+  rw [storePopHeadCode_eq]
+
+/-- `endpointWaiterCancellable` asked of the waiter's successor **code**
+(`sendWakesInPlaceCode`). -/
+@[inline] def endpointWaiterCancellableCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) (tcb : TCB) : Bool :=
+  cancelledWaiterWakeable st t tcb && tcb.timeoutBudget.isNone &&
+    sendWakesInPlaceCode st endpointId t tcb.queueNextCode
+
+theorem endpointWaiterCancellableCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) (tcb : TCB) :
+    endpointWaiterCancellableCode st endpointId t tcb =
+      endpointWaiterCancellable st endpointId t tcb := by
+  unfold endpointWaiterCancellableCode endpointWaiterCancellable
+  rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode]
+
+/-- `cancelEndpointQueue` as it is compiled: the queue's head and each waiter's
+successor read as codes, so a queue of more than one waiter builds no cell
+(`cancelEndpointQueue_eq_impl`). -/
+def cancelEndpointQueueImpl (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) :
+    Nat → SystemState → SystemState
+  | 0, st => st
+  | fuel + 1, st =>
+    match st.getEndpoint? endpointId with
+    | some ep =>
+      match endpointWaitHeadCode ep isReceiveQ with
+      | 0 => st
+      | k + 1 =>
+        match st.getTcb? ⟨k⟩ with
+        | some tcb =>
+          if endpointWaiterCancellableCode st endpointId ⟨k⟩ tcb then
+            cancelEndpointQueueImpl endpointId isReceiveQ fuel
+              (storeEndpointWaiterCancelledCode st endpointId isReceiveQ ⟨k⟩ tcb.queueNextCode)
+          else st
+        | none => st
+    | none => st
+
+@[csimp] theorem cancelEndpointQueue_eq_impl :
+    @cancelEndpointQueue = @cancelEndpointQueueImpl := by
+  funext endpointId isReceiveQ fuel
+  induction fuel with
+  | zero => funext st; rfl
+  | succ fuel ih =>
+    funext st
+    unfold cancelEndpointQueue cancelEndpointQueueImpl
+    cases st.getEndpoint? endpointId with
+    | none => rfl
+    | some ep =>
+      dsimp only
+      rw [← ofOptCode_endpointWaitHeadCode]
+      cases endpointWaitHeadCode ep isReceiveQ with
+      | zero => rfl
+      | succ k =>
+        dsimp only [SeLe4n.ThreadId.ofOptCode]
+        cases st.getTcb? ⟨k⟩ with
+        | none => rfl
+        | some tcb =>
+          dsimp only
+          rw [endpointWaiterCancellableCode_eq, storeEndpointWaiterCancelledCode_eq,
+            TCB.ofOptCode_queueNextCode, ih]
+
 /-- **seL4's `cancelAllIPC`**: every sender, then every receiver. -/
 def cancelAllIpc (endpointId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   let fuel := st.objects.size

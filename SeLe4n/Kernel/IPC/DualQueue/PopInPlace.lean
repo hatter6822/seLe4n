@@ -163,6 +163,23 @@ is unlinked. -/
     | some n => s1.updateTcb n tcbAsQueueHead
   s2.updateTcb head tcbOffQueue
 
+/-- `storePopHead` behind the successor's link **code**, decoded by a match so
+no `some` cell is built for a head that has a successor
+(`storePopHeadCode_eq`). -/
+@[inline] def storePopHeadCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (head : SeLe4n.ThreadId) (nextCode : Nat) : SystemState :=
+  let s1 := st.modifyObject endpointId (popEndpoint isReceiveQ nextCode)
+  let s2 := match nextCode with
+    | 0 => s1
+    | c + 1 => s1.updateTcb ⟨c⟩ tcbAsQueueHead
+  s2.updateTcb head tcbOffQueue
+
+theorem storePopHeadCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (head : SeLe4n.ThreadId) (nextCode : Nat) :
+    storePopHeadCode st endpointId isReceiveQ head nextCode =
+      storePopHead st endpointId isReceiveQ head (SeLe4n.ThreadId.ofOptCode nextCode) := by
+  rcases nextCode with _ | c <;> rfl
+
 /-- What a pop written in place leaves: the head unlinked, every key found where
 it was, every store still local, and every key other than the endpoint, the head
 and its successor untouched. -/

@@ -133,6 +133,25 @@ each update is specialised in. -/
   (s2.updateTcb head tcbOffQueue).updateTcb head
     (receiveCompleteTcb msg)
 
+/-- `storeSendRendezvous` behind the successor's link **code**, decoded by a
+match so no `some` cell is built for a receiver with a successor
+(`storeSendRendezvousCode_eq`). -/
+@[noinline] def storeSendRendezvousCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (nextCode : Nat) (msg : IpcMessage) : SystemState :=
+  let s1 := st.modifyObject endpointId (popEndpoint true nextCode)
+  let s2 := match nextCode with
+    | 0 => s1
+    | c + 1 => s1.updateTcb ⟨c⟩ tcbAsQueueHead
+  (s2.updateTcb head tcbOffQueue).updateTcb head
+    (receiveCompleteTcb msg)
+
+theorem storeSendRendezvousCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (nextCode : Nat) (msg : IpcMessage) :
+    storeSendRendezvousCode st endpointId head nextCode msg =
+      storeSendRendezvous st endpointId head (SeLe4n.ThreadId.ofOptCode nextCode) msg := by
+  unfold storeSendRendezvousCode storeSendRendezvous
+  rcases nextCode with _ | c <;> rfl
+
 /-- WS-ZA ZA4.7: the guarded send rendezvous's writes are the specification's
 pop and receive completion. -/
 theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -274,9 +293,10 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
           let msg := sendPayloadMessage st sender payload
           match st.getTcb? head with
           | some ht =>
-              if sendWakesInPlace st endpointId head ht.queueNext then
+              if sendWakesInPlaceCode st endpointId head ht.queueNextCode then
                 let (stWoken, wakeSgi) := wakeThread
-                  (storeSendRendezvous st endpointId head ht.queueNext msg) head executingCore
+                  (storeSendRendezvousCode st endpointId head ht.queueNextCode msg) head
+                  executingCore
                 (stWoken, .ok wakeSgi)
               else
               match endpointQueuePopHead endpointId true st with
@@ -313,6 +333,7 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
     @endpointSendDualOnCore = @endpointSendDualOnCoreImpl := by
   funext endpointId sender payload executingCore st
   unfold endpointSendDualOnCore endpointSendDualOnCoreImpl
+  simp only [sendWakesInPlaceCode_eq, storeSendRendezvousCode_eq, TCB.ofOptCode_queueNextCode]
   cases hEp : st.getEndpoint? endpointId with
   | none => rfl
   | some ep =>

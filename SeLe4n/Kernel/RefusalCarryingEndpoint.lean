@@ -138,7 +138,8 @@ theorem sendDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   rw [if_pos hFlow, endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ _ hReq,
     endpointSendDualOnCore_eq_impl]
   unfold endpointSendDualOnCoreImpl
-  simp only [hE, hH, hSTcb, hT, hW, hM, ↓reduceIte]
+  simp only [sendWakesInPlaceCode_eq, storeSendRendezvousCode_eq, TCB.ofOptCode_queueNextCode,
+    hE, hH, hSTcb, hT, hW, hM, ↓reduceIte]
   rfl
 
 /-- Dropping the stash of a thread whose last write left none drops nothing. -/
