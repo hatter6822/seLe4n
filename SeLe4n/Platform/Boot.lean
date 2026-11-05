@@ -1062,7 +1062,9 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
 /-- PR #889 review round 8: a boot **SchedContext**'s own id (`scId`, which
     `replenishScOnCore` keys the replenishment queue by), its bound thread and
     — since WS-OD OD2.1 — its reply-stack head (`scReply`, a Reply object id).
-    Budgets, periods, priorities, replenishment entries and the consumed time hold no id. -/
+    Budgets, periods, priorities, replenishment entries and the consumed time hold no id.
+    The head-link cell names the context's own id (`SchedContext.headLinkCell_eq`),
+    so the id check covers it. -/
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
   | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
@@ -1072,9 +1074,7 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
      boundThreadCode, scReply, donationOrigin, _isActive,
-     releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,
-     -- The head-link cell names the context's own id (`SchedContext.headLinkCell_eq`).
-     _headLinkCell, _hHeadLinkCell⟩ =>
+     releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode, _headLinkCell, _hHeadLinkCell⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
     -- **WS-ZA ZA6.3**: and its release-queue successor, which names a scheduling
     -- context by its code (`0` is none, `s + 1` is `s`).
@@ -2297,9 +2297,7 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
      _boundThread, _scReply, _donationOrigin, _isActive,
-     _releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,
-     -- The head-link cell names the context's own id (`SchedContext.headLinkCell_eq`).
-     _headLinkCell, _hHeadLinkCell⟩ =>
+     _releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode, _headLinkCell, _hHeadLinkCell⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&

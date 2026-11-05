@@ -347,14 +347,16 @@ once.  It is `spliceOutMidQueueNode` (`spliceOutMidQueueNode_eq_impl`). -/
     | some n => s1.updateTcb n (fun t => { t with queuePrevCode := prevC, queuePPrevCode := pprevC })
     | none => s1
 
-/-- A table write at a key that holds a TCB, and no write elsewhere, is
-`updateTcb` at that key. -/
-private theorem objectsTcbPatch_eq_updateTcb (s : SystemState) (p : SeLe4n.ThreadId)
+/-- A patch of a table at a key that holds a TCB, and no write elsewhere, is
+`updateTcb` at that key on the state holding the table: the splice's patches,
+each of the table the one before it left. -/
+private theorem objectsTcbPatch_eq_updateTcb (s : SystemState)
+    (objs : RobinHood.RHTable SeLe4n.ObjId KernelObject) (p : SeLe4n.ThreadId)
     (f : TCB → TCB) :
-    { s with objects := match s.objects[p.toObjId]? with
-        | some (.tcb t) => s.objects.insert p.toObjId (.tcb (f t))
-        | _ => s.objects } = s.updateTcb p f := by
-  cases hx : s.objects[p.toObjId]? with
+    { s with objects := match objs[p.toObjId]? with
+        | some (.tcb t) => objs.insert p.toObjId (.tcb (f t))
+        | _ => objs } = ({ s with objects := objs } : SystemState).updateTcb p f := by
+  cases hx : objs[p.toObjId]? with
   | none =>
     rw [SystemState.updateTcb_eq_self_of_none (by simp [SystemState.getTcb?, hx])]
   | some o =>
@@ -373,7 +375,7 @@ private theorem objectsTcbPatch_eq_updateTcb (s : SystemState) (p : SeLe4n.Threa
     generalize SeLe4n.ThreadId.ofOptCode tcb.queuePrevCode = op
     generalize SeLe4n.ThreadId.ofOptCode tcb.queueNextCode = on
     cases op <;> cases on <;> dsimp only <;>
-      simp only [← objectsTcbPatch_eq_updateTcb] <;> rfl
+      simp only [objectsTcbPatch_eq_updateTcb] <;> rfl
 
 /-- R4-A.1 (M-12) + T5-E (M-LCS-1): Remove a ThreadId from all endpoint send/receive
     queues. First splices the mid-queue node out by patching predecessor/successor
