@@ -231,6 +231,25 @@ theorem of_agreeOffReplyLinks {s s' : SystemState}
       exact ⟨t', h', by rw [← hg t', e, hg]⟩)
     (fun _ _ hk => by obtain ⟨t0, h0, -⟩ := h.get_tcb' hk; exact ⟨t0, h0⟩)
 
+/-- ...and an in-place write of one thread that keeps the projection. -/
+theorem mapTcbInPlace (s : SystemState) (w : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hg : ∀ u, g (f u) = g u) : tcbProjKept g (s.mapTcbInPlace w f) s := fun y => by
+  by_cases hy : w.toObjId = y.toObjId
+  · rw [← SeLe4n.ThreadId.toObjId_injective _ _ hy, SystemState.mapTcbInPlace_getTcb?_self,
+      Option.map_map]
+    cases s.getTcb? w with
+    | none => rfl
+    | some u => exact congrArg some (hg u)
+  · rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hy]
+
+/-- ...and so does one waiter's orphaning, for a projection off the IPC state
+word and the reply-waiter links. -/
+theorem orphanReplyWaiter (s : SystemState) (w x : SeLe4n.ThreadId)
+    (hg : ∀ u, g u.serverForgotten = g u) (hg' : ∀ u, g u.withoutReplyLinks = g u) :
+    tcbProjKept g (SeLe4n.Kernel.orphanReplyWaiter s w x) s :=
+  (of_agreeOffReplyLinks (SystemState.unlinkReplyWaiter_objectsAgreeOffReplyLinks _ w x) hg').trans
+    (mapTcbInPlace s w hg)
+
 /-- A frame excluding no thread keeps whatever its key determines. -/
 theorem of_waiterFrame {s s' : SystemState} (h : WaiterFrame s s' (fun _ => False))
     (hg : ∀ u v, TCB.waiterKeyEq u v → g u = g v) : tcbProjKept g s' s := by
@@ -559,6 +578,16 @@ theorem yieldStep : FinaliseYieldStep (finaliseCarried st y) :=
       (FinaliseFrameAny.yieldStep st).complete s c hF,
       runCodeBounded.of_runCoresAgree
         (SystemState.completeYieldFrom_objectsAgreeOffYield s c hI.2.1).runCoresAgree hB⟩⟩
+
+/-- WS-ZA ZA6.34: one waiter's orphaning carries it: it keeps the invariant
+(`finaliseStepInvariant.orphan`), is a run-queue stage, a finalisation frame, and
+keeps every run-core code. -/
+theorem orphanStep : FinaliseOrphanStep (finaliseCarried st y) :=
+  fun s w x _ ⟨hI, hR, hF, hB⟩ hT _ hS =>
+    ⟨(hI.orphan hT hS).1, hR.trans (orphanReplyWaiter_runQueueStage hT hS).entry,
+      hF.trans (FinaliseFrame.orphanReplyWaiter s w x hF.invExt).any,
+      runCodeBounded.of_runCoresAgree
+        (tcbProjKept.orphanReplyWaiter s w x (fun _ => rfl) (fun _ => rfl)) hB⟩
 
 theorem replyStep : FinaliseReplyStep (finaliseCarried st y) := by
   intro s x r c t ⟨hI, hR, hF, hB⟩ hX hC hT hG
@@ -981,13 +1010,15 @@ theorem readyThread_unlinked {s : SystemState} {x : SeLe4n.ThreadId} {t : TCB}
 -- ============================================================================
 
 /-- **The finalisation's context unbind clears the thread's binding and nothing
-else**: on a thread on no core whose binding names no owner and, when it names a
-context, a context bound back to it, the unbind leaves the thread with no
-binding, every other thread, every core's current slot and the machine as they
+else**: on a thread on no core whose binding, when it names a context, names
+one bound back to it — its own or on loan, which the unbind takes from it alike
+(seL4-MCS's `schedContext_unbindTCB`) — and otherwise names no lender, the unbind
+leaves the thread with no binding, every other thread, every core's current slot and the machine as they
 were. -/
 theorem finaliseThreadUnbindSchedContext_self {s : SystemState} {x : SeLe4n.ThreadId} {t : TCB}
     (hInv : s.objects.invExt) (hX : s.getTcb? x = some t) (hRun : t.runCoreCode = 0)
-    (hHeld : threadHeldOnSomeCore s x = false) (hOwn : t.scBindingOwnerCode = 0)
+    (hHeld : threadHeldOnSomeCore s x = false)
+    (hOwn : t.scBindingScCode = 0 → t.scBindingOwnerCode = 0)
     (hBd : t.scBindingScCode ≠ 0 → ∃ sc, s.getSchedContext? ⟨t.scBindingScCode - 1⟩ = some sc ∧
       sc.boundThreadCode = x.val + 1) :
     (finaliseThreadUnbindSchedContext s x).getTcb? x =
@@ -1004,20 +1035,21 @@ theorem finaliseThreadUnbindSchedContext_self {s : SystemState} {x : SeLe4n.Thre
   · rw [if_neg (by simp [h0])]
     refine ⟨?_, fun _ _ => rfl, fun _ => rfl, rfl⟩
     rw [hX]
+    have hO := hOwn h0
     cases t
-    simp only at h0 hOwn
-    subst h0; subst hOwn; rfl
+    simp only at h0 hO
+    subst h0; subst hO; rfl
   · obtain ⟨sc, hSc, hB⟩ := hBd h0
-    rw [if_pos (by simp [h0, hOwn, hRun, hHeld, hSc, hB])]
-    have hBind := schedContextBinding_of_codes' h0 hOwn
-    rw [cancelDonationArmOnCore_of_bound s x t _ hBind]
-    have hOk := cancelBoundDonationOnCore_of_bound s x t _ hBind
+    rw [if_pos (by simp [h0, hRun, hHeld, hSc, hB])]
+    have hBind := schedContextBinding_ownerCleared (t := t) (x := ⟨t.scBindingScCode - 1⟩)
+      (by show _ = _ - 1 + 1; omega)
+    have hOk := cancelBoundDonationOnCore_of_bound s x _ _ hBind
     rw [hOk]
     dsimp only
-    obtain ⟨g1, g2⟩ := cancelBoundDonationOnCore_getTcb? s _ x t _ hBind hInv hOk
+    obtain ⟨g1, g2⟩ := cancelBoundDonationOnCore_getTcb? s _ x _ _ hBind hInv hOk
     refine ⟨by rw [g1, hX]; rfl, g2,
-      fun c => (cancelBoundDonationOnCore_runQueue_current_eq s _ x t c hOk).2,
-      cancelBoundDonationOnCore_machine_eq s _ x t hOk⟩
+      fun c => (cancelBoundDonationOnCore_runQueue_current_eq s _ x _ c hOk).2,
+      cancelBoundDonationOnCore_machine_eq s _ x _ hOk⟩
 
 /-- **The suspend keeps every thread's blocking server**: the deschedule writes
 run-queue links, the mark the thread's run state and message. -/

@@ -868,6 +868,7 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
       (RunQueueStage.updateTcb s tid (f := TCB.stashCleared) (fun _ _ => rfl)).entry)
     ⟨fun s t h => h.trans (SystemState.cancelYieldTo_runQueueStage s t).entry,
      fun s c h => h.trans (SystemState.completeYieldFrom_runQueueStage s c).entry⟩
+    (fun _ _ _ _ h hT _ hS => h.trans (orphanReplyWaiter_runQueueStage hT hS).entry)
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
 /-- A line's state change writes the tree's issued lines and the mask alone. -/

@@ -803,6 +803,7 @@ theorem finaliseFinalObject_readyEntry {S : SeLe4n.ThreadId → Prop} (target : 
       (SystemState.RunQueueStage.updateTcb s tid (f := TCB.stashCleared) (fun _ _ => rfl)))
     ⟨fun s t h => readyEntry_stage h (SystemState.cancelYieldTo_runQueueStage s t),
      fun s c h => readyEntry_stage h (SystemState.completeYieldFrom_runQueueStage s c)⟩
+    (fun _ _ _ _ h hT _ hS => readyEntry_stage h (orphanReplyWaiter_runQueueStage hT hS))
     target s h
 
 theorem cspaceDeleteSlotFinalising_readyEntry {S : SeLe4n.ThreadId → Prop} {ec : CoreId}

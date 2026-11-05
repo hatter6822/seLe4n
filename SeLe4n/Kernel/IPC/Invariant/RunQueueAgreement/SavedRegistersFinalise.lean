@@ -662,7 +662,7 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
   have blocked : ∀ {a : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}, P a → a.getTcb? t = some tcb →
       tcb.ipcState ≠ .ready → ∀ u, u = t → offCoreFree e st u := fun h hT hS u hu => by
     subst hu; exact offCoreFree_of_blockedSince B h.1.2 hT hS
-  refine (finaliseFinalObject_closed P ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ target s
+  refine (finaliseFinalObject_closed P ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ target s
     ⟨hR, hL, .refl s⟩).2.2
   · intro en q s ep t tcb h hE hH hT hC
     have R := h.1; have L := h.2.1
@@ -780,6 +780,17 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
           (FinaliseFrame.completeYieldFrom s c L.2.1))
         (completeYieldFrom_savedRegsKeptExcept L.2.1)
         (fun _ ⟨_, _, hS, hC, hu⟩ => hu ▸ offCoreFree_of_yieldFromSince B R.1 hS hC)
+  · intro s w x t h hT _ hS
+    have R := h.1; have L := h.2.1
+    exact step h (readyEntry_stage R (orphanReplyWaiter_runQueueStage hT hS))
+      (L.of_frame (orphanReplyWaiter_preserves_ipcInvariantFull L.1 hT hS)
+        (FinaliseFrame.orphanReplyWaiter s w x L.2.1))
+      ((savedRegsKeptExcept.of_map fun y => by
+          by_cases hy : w.toObjId = y.toObjId
+          · rw [← ThreadId.toObjId_injective _ _ hy, SystemState.mapTcbInPlace_getTcb?_self,
+              Option.map_map]; rfl
+          · rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hy]).trans
+        (.of_replyLinks (SystemState.unlinkReplyWaiter_objectsAgreeOffReplyLinks _ _ _))) none
 
 end
 

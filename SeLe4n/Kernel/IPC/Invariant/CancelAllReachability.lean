@@ -1229,6 +1229,37 @@ theorem storeTcbOver {st st' : SystemState} {k : SeLe4n.ObjId} {t t' : TCB}
     · subst e; rw [hAt] at hx; cases hx; exact ⟨t, hPre, hK⟩
     · exact ⟨tx, by rw [← hNe j e]; exact hx, .refl tx⟩
 
+/-- **A reply-blocked caller's server forgotten in place**: it stays blocked on
+no notification, and keeps its notification links and budget. -/
+theorem serverForgotten {st : SystemState} {w x : SeLe4n.ThreadId} {t : TCB}
+    (hT : st.getTcb? w = some t) (hS : replyCallerServerCode t = x.val + 1) :
+    NtfnFrame st (st.mapTcbInPlace w TCB.serverForgotten) := by
+  obtain ⟨-, e, hB⟩ := replyCallerServerCode_blocked hS
+  have hPre := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+  have hK : tcbNtfnFieldsKept t.serverForgotten t :=
+    ⟨fun o => by
+      rw [TCB.serverForgotten_ipcState_of hB, hB]
+      exact ⟨fun h => (by cases h), fun h => (by cases h)⟩, rfl, rfl, rfl⟩
+  have key : ∀ k, (st.mapTcbInPlace w TCB.serverForgotten).objects[k]? =
+      if w.toObjId = k then some (.tcb t.serverForgotten) else st.objects[k]? := by
+    intro k
+    rw [SystemState.objects_mapTcbInPlace]
+    by_cases e : w.toObjId = k
+    · subst e; rw [if_pos (beq_self_eq_true _), if_pos rfl, hPre]; rfl
+    · rw [if_neg (by simpa using e), if_neg e]
+  refine ⟨fun k n => ?_, fun k ty hy => ?_, fun k tx hx => ?_⟩
+  · rw [key k]
+    by_cases e : w.toObjId = k
+    · subst e; rw [if_pos rfl, hPre]; simp
+    · rw [if_neg e]
+  · by_cases e : w.toObjId = k
+    · subst e; rw [hPre] at hy; cases hy; exact ⟨_, by rw [key, if_pos rfl], hK⟩
+    · exact ⟨ty, by rw [key, if_neg e]; exact hy, .refl ty⟩
+  · rw [key k] at hx
+    by_cases e : w.toObjId = k
+    · subst e; rw [if_pos rfl] at hx; cases hx; exact ⟨t, hPre, hK⟩
+    · rw [if_neg e] at hx; exact ⟨tx, hx, .refl tx⟩
+
 /-- **The parts a frame keeps**: the notification queues and every budget. -/
 theorem parts {st st' : SystemState} (h : NtfnFrame st st') (hC : notificationWaiterConsistent st) :
     notificationWaiterConsistent st' ∧ timeoutBudgetFrame st st' :=
@@ -2056,6 +2087,24 @@ theorem unstash {s s1 : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} (x : SeLe
   exact ⟨⟨hI.1, hI.2, q.1, SystemState.replyWaitersConsistent.of_views q.2.2 h.2.2.2.1,
     h.chain_of_frame (FinaliseFrame.updateTcb s tid _ h.2.1), h.loan_of_frame (FinaliseFrame.updateTcb s tid _ h.2.1)⟩, q.2.1⟩
 
+/-- WS-ZA ZA6.34: **the orphan step carries it**, and frames every budget: the
+bundle by `orphanReplyWaiter_preserves_ipcInvariantFull`, the notification queues
+by the step's notification frame, the reply-waiter queues by the views' unlink
+(`orphanReplyWaiter_replyWaitersConsistent`), the chains and the lent-context
+fact by its write frame. -/
+theorem orphan {s : SystemState} {w x : SeLe4n.ThreadId} {t : TCB}
+    (h : finaliseStepInvariant s) (hT : s.getTcb? w = some t)
+    (hS : replyCallerServerCode t = x.val + 1) :
+    finaliseStepInvariant (orphanReplyWaiter s w x) ∧
+      timeoutBudgetFrame s (orphanReplyWaiter s w x) :=
+  have F := FinaliseFrame.orphanReplyWaiter s w x h.2.1
+  have N : NtfnFrame s (orphanReplyWaiter s w x) := (NtfnFrame.serverForgotten hT hS).trans
+    (NtfnFrame.of_agreeOffRunLinks (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ w x))
+  have q := N.parts h.2.2.1
+  ⟨⟨orphanReplyWaiter_preserves_ipcInvariantFull h.1 hT hS, F.invExt, q.1,
+    orphanReplyWaiter_replyWaitersConsistent h.2.2.2.1 hT hS, h.chain_of_frame F,
+    h.loan_of_frame F⟩, q.2⟩
+
 /-- WS-ZA ZA6.6: a yield step carries it, and frames every budget: the yield
 codes, a context's consumed count and a yielder's two return registers. -/
 theorem yieldStep {s s' : SystemState} (h : finaliseStepInvariant s)
@@ -2130,6 +2179,9 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
       have r := h.1.yieldStep (completeYieldFrom_preserves_ipcInvariantFull s c h.1.2.1 h.1.1)
         (ReachFieldFrame.completeYieldFrom s c h.1.2.1) (FinaliseFrame.completeYieldFrom s c h.1.2.1)
       ⟨r.1, h.2.trans r.2⟩⟩
+    (fun _ _ _ _ h hT _ hS =>
+      have r := h.1.orphan hT hS
+      ⟨r.1, h.2.trans r.2⟩)
     target st ⟨.of_ipcReachable h hW, .refl st⟩
   exact ⟨hFull', hInv', allTimeoutBudgetsNone_of_frame hB' h.2.2.1, hNC', hCh',
     ((finaliseFinalObject_runQueueEntryStage target st).1 h.2.1 h.2.2.2.2.2.1).2, hRW'⟩

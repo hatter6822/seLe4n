@@ -20,7 +20,9 @@ after it (`retireFinalisedObject_preserves_projection`).
 
 WS-ZA ZA5.4 part 24: a thread's finalisation (`finaliseThread`) writes the
 thread, its bound notification, its scheduling context, the notification or
-endpoint it waits on and its neighbours in that queue; a scheduling context's
+endpoint it waits on and its neighbours in that queue, and each caller waiting on
+it for a reply, whose server it forgets (`finaliseThreadOrphanWaiters`); a
+scheduling context's
 (`finaliseSchedContext`)
 writes the context and its bound thread.  The replenish entry and the reschedule
 flags they write are outside the projection.  When the observer sees none of the
@@ -103,6 +105,14 @@ theorem updateSchedContext (s : SystemState) (scId : SeLe4n.SchedContextId)
   ⟨SystemState.updateSchedContext_eq_objects_update _ _ _, fun k hk =>
     SystemState.updateSchedContext_objects_ne _ _ _ k
       (fun e => by rw [← e, hX] at hk; cases hk) hInv⟩
+
+/-- A thread rewritten in place, in its hidden slot. -/
+theorem mapTcbInPlace (s : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
+    (hT : objectObservable ctx observer t.toObjId = false) :
+    hiddenObjectsWrite ctx observer s (s.mapTcbInPlace t g) :=
+  ⟨rfl, fun k hk => by
+    rw [SystemState.objects_mapTcbInPlace, if_neg (fun e => by
+      rw [← beq_iff_eq.mp e, hT] at hk; cases hk)]⟩
 
 /-- Two hidden writes in sequence are one. -/
 theorem trans {a b c : SystemState} (h₁ : hiddenObjectsWrite ctx observer a b)
@@ -803,23 +813,6 @@ theorem finaliseReplyCallerCancel_objectIndexFacts (s : SystemState) (c : SeLe4n
   have f4 := FinaliseFrame.finaliseReplyRevert _ t.blockingServer? hI3
   exact ⟨f4.invExt, objectIndexFacts_of_writeAny f4.any.write (by have e := congrArg SystemState.objectIndexSet f4.rest; exact e) h3.1 h3.2⟩
 
-/-- ...and a waiter's whole end, the suspend after the cancel
-(`finaliseReplyWaiter`). -/
-theorem finaliseReplyWaiter_objectIndexFacts (s : SystemState) (w : SeLe4n.ThreadId)
-    (t : TCB) (hInv : s.objects.invExt) (hIdx : SeLe4n.Model.objectIndexSetComplete s)
-    (hSet : s.objectIndexSet.table.invExt) :
-    (finaliseReplyWaiter s w t).objects.invExt ∧
-    SeLe4n.Model.objectIndexSetComplete (finaliseReplyWaiter s w t) ∧
-      (finaliseReplyWaiter s w t).objectIndexSet.table.invExt := by
-  obtain ⟨hI1, hC1, hS1⟩ := finaliseReplyCallerCancel_objectIndexFacts s w t hInv hIdx hSet
-  unfold finaliseReplyWaiter finaliseThreadSuspend
-  split
-  · split
-    · have f := FinaliseFrame.suspend _ w hI1
-      exact ⟨f.invExt, objectIndexFacts_of_writeAny f.any.write (by have e := congrArg SystemState.objectIndexSet f.rest; exact e) hC1 hS1⟩
-    · exact ⟨hI1, hC1, hS1⟩
-  · exact ⟨hI1, hC1, hS1⟩
-
 /-- **A finalised thread's reservation unbind is invisible** when the thread and
 its scheduling context are hidden; it keeps the thread's IPC state and its
 notification successor (`cancelBoundDonationOnCore_reachFieldFrame`). -/
@@ -842,13 +835,13 @@ theorem finaliseThreadUnbindSchedContext_hidden (ctx : LabelingContext)
     rename_i hG
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, Bool.false_eq_true,
       and_false] at hG
-  obtain ⟨⟨⟨⟨hS, hO⟩, -⟩, -⟩, -⟩ := hG
+  obtain ⟨⟨⟨hS, -⟩, -⟩, -⟩ := hG
+  have hBind := schedContextBinding_ownerCleared (t := t) (x := ⟨t.scBindingScCode - 1⟩)
+    (by show _ = _ - 1 + 1; omega)
   · split
     · next st' hOk =>
-      rw [cancelDonationArmOnCore_of_codes s tid hS hO] at hOk
-      have hP := cancelBoundDonationOnCore_hidden ctx observer hInv
-        (schedContextBinding_of_codes hS hO) (hSc hS) hTh hOk
-      have hI := cancelBoundDonationOnCore_preserves_objects_invExt s st' tid t hInv hOk
+      have hP := cancelBoundDonationOnCore_hidden ctx observer hInv hBind (hSc hS) hTh hOk
+      have hI := cancelBoundDonationOnCore_preserves_objects_invExt s st' tid _ hInv hOk
       obtain ⟨tx, hx, hk⟩ := (cancelBoundDonationOnCore_reachFieldFrame hInv hOk).fwd _ t hTo
       exact ⟨hP, hI, tx, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hx, hk.1, hk.2.2.1⟩
     · exact ⟨rfl, hInv, t, hT, rfl, rfl⟩
@@ -1092,100 +1085,6 @@ theorem finaliseReplyCallerCancel_binding {s : SystemState} {c : SeLe4n.ThreadId
     refine Or.inr ⟨r, s', hX, hN, ?_⟩
     rw [← TCB.scBindingScCode_eq_of_binding e0]
     exact TCB.scBindingScCode_of_returnBinding hCases
-
-/-- **What a reply-blocked caller's cancel leaves in another thread's binding**:
-the thread is still a thread, and keeps its context code, or — the holder a head
-reply's pop takes the context from — holds none. -/
-theorem finaliseReplyCallerCancel_otherBinding {s : SystemState} {c y : SeLe4n.ThreadId}
-    {t ty : TCB} (hInv : s.objects.invExt) (hT : s.getTcb? c = some t) (hy : y ≠ c)
-    (hTy : s.getTcb? y = some ty) :
-    ∃ ty', (finaliseReplyCallerCancel s c t).getTcb? y = some ty' ∧
-      (ty'.scBindingScCode = ty.scBindingScCode ∨ ty'.scBindingScCode = 0) := by
-  have hTo := (SystemState.getTcb?_eq_some_iff s y ty).mp hTy
-  unfold finaliseReplyCallerCancel
-  split
-  rotate_left
-  · exact ⟨ty, hTy, Or.inl rfl⟩
-  next r hX =>
-  split
-  rotate_left
-  · exact ⟨ty, hTy, Or.inl rfl⟩
-  next hG =>
-  simp only [Bool.and_eq_true, beq_iff_eq] at hG
-  obtain ⟨⟨-, hF⟩, -⟩ := hG
-  obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hF
-  rw [finaliseReplyCancel_eq hX hF]
-  let s0 := Lifecycle.Suspend.returnDonationToCancelledCaller s c t
-  have hI0 : s0.objects.invExt :=
-    Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt s c t hInv
-  let s1 := cutThreadReplyFrameOut s0 t
-  have hI1 : s1.objects.invExt := cutThreadReplyFrameOut_preserves_objects_invExt s0 t hI0
-  let s2 := Lifecycle.Suspend.restoreToReadyCancelled s1 c
-  have hI2 : s2.objects.invExt := restoreToReadyCancelled_preserves_objects_invExt s1 c hI1
-  let s3 := Lifecycle.Suspend.consumeReplyLink s2 c t
-  have hArm : Lifecycle.Suspend.cancelIpcBlocking s c t = s3.unlinkReplyWaiterOpt c t.blockingServer? := by
-    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
-  have hSame : sameSchedContextBindings s0 (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
-    rw [hArm]
-    exact ((cutThreadReplyFrameOut_sameSchedContextBindings s0 t hI0).trans
-      (restoreToReadyStaging_sameSchedContextBindings s1 c _ hI1)).trans
-      ((consumeReplyLink_sameSchedContextBindings s2 c t hI2).trans
-        (sameSchedContextBindings_of_objectsAgreeOffReplyLinks
-          (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks s3 c _)))
-  have hIc := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s c t hInv
-  have hIR := cancelIpcBlockingReclaimed_objects_invExt c t s hIc
-  have hSameR : sameSchedContextBindings s0 (cancelIpcBlockingReclaimed c t s) :=
-    (hSame.trans (sameSchedContextBindings_of_objectsAgreeOffReleaseLinks
-      (cancelIpcBlockingMigrated_agree c t s))).trans
-      (sameSchedContextBindings_of_objectsAgreeOffRunLinks
-        (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s))
-  have hSameV : sameSchedContextBindings s0
-      (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
-    unfold finaliseReplyRevert
-    cases t.blockingServer? with
-    | none => exact hSameR
-    | some sv => exact hSameR.trans (propagatePipChainCrossCore_sameSchedContextBindings' _ _ _ _ hIR)
-  obtain ⟨tv, hTv⟩ : ∃ tv, (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s)
-      t.blockingServer?).getTcb? y = some tv := by
-    obtain ⟨t1, hL1, -⟩ := Lifecycle.Suspend.cancelIpcBlocking_tcb_lookup s c t y.toObjId ty hInv hTo
-    have hS1 : ((Lifecycle.Suspend.cancelIpcBlocking s c t).getTcb? y).isSome := by
-      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hL1]; rfl
-    have hS2 : ((cancelIpcBlockingReclaimed c t s).getTcb? y).isSome := by
-      have hM := cancelIpcBlockingReclaimed_getTcb? c t s y
-      rw [← Option.isSome_map (f := TCB.withoutRunLinks), hM, Option.isSome_map]; exact hS1
-    have hS3 : ((finaliseReplyRevert (cancelIpcBlockingReclaimed c t s)
-        t.blockingServer?).getTcb? y).isSome := by
-      unfold finaliseReplyRevert
-      cases t.blockingServer? with
-      | none => exact hS2
-      | some sv =>
-        exact PriorityInheritance.propagatePipChainCrossCore_getTcb?_isSome _ _ _ _ hIR y hS2
-    exact Option.isSome_iff_exists.mp hS3
-  refine ⟨tv, hTv, ?_⟩
-  obtain ⟨t0, h0, e0⟩ := hSameV y tv ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTv)
-  rcases replyCallerFinalisable_cases hX hF with ⟨-, hD⟩ |
-      ⟨s', sc, hd, ht, hN, -, -, -, hHd, hBd, hC, hD⟩
-  · have hR : s0 = s := by
-      show Lifecycle.Suspend.returnDonationToCancelledCaller s c t = s
-      unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
-    rw [hR, hTo] at h0
-    cases h0
-    exact Or.inl (TCB.scBindingScCode_eq_of_binding e0.symm)
-  · obtain ⟨n, st', -, hPop, hEq⟩ := replyHeadPop_commits hInv hT hD hC
-    have h0' : st'.objects[y.toObjId]? = some (.tcb t0) := by rw [← hEq]; exact h0
-    have hCases := returnDonatedSchedContext_tcb_binding_cases s st' hd s' c n hInv hPop
-      y.toObjId t0 h0'
-    by_cases hyh : y.toObjId = hd.toObjId
-    · refine Or.inr ?_
-      have e := congrArg SchedContextBinding.scCode (e0.symm.trans (hCases.1 hyh))
-      unfold TCB.schedContextBinding at e
-      rw [SchedContextBinding.scCode_ofCodes] at e
-      exact e
-    · have hyc : y.toObjId ≠ c.toObjId := fun e => hy (SeLe4n.ThreadId.toObjId_injective _ _ e)
-      obtain ⟨t1, h1, e1⟩ := hCases.2.2 hyh hyc
-      rw [hTo] at h1
-      cases h1
-      exact Or.inl (TCB.scBindingScCode_eq_of_binding (e1.trans e0).symm)
 
 /-- **The thread a reply-blocked caller's cancel deschedules is the server it
 waits on**: the cancel's admission (`replyHeadHeldByServer`) reads the context a
@@ -1481,168 +1380,103 @@ theorem finaliseThreadSuspend_hidden (ctx : LabelingContext) (observer : IfObser
     · rfl
   · rfl
 
-/-- **A waiter's end is invisible** when the waiter is hidden, as an object and
-as a thread, and so is every server on its blocking chain: the reply cancel
-(`finaliseReplyCallerCancel_hidden`), then the suspend
-(`finaliseThreadSuspend_hidden`). -/
-theorem finaliseReplyWaiter_hidden (ctx : LabelingContext) (observer : IfObserver)
-    {s : SystemState} {w : SeLe4n.ThreadId} {t : TCB} (hInv : s.objects.invExt)
-    (hValid : LabelingContextValid ctx)
-    (hIdx : SeLe4n.Model.objectIndexSetComplete s) (hSet : s.objectIndexSet.table.invExt)
-    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
-      threadObservable ctx observer t = false →
-      PriorityInheritance.blockingServer s t = some server →
-      threadObservable ctx observer server = false)
-    (hT : s.getTcb? w = some t) (hObj : objectObservable ctx observer w.toObjId = false)
-    (hThr : threadObservable ctx observer w = false)
-    (hHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
-      s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
-      objectObservable ctx observer sc.toObjId = false) :
-    projectState ctx observer (finaliseReplyWaiter s w t) = projectState ctx observer s := by
-  obtain ⟨hI1, -, -⟩ := finaliseReplyCallerCancel_objectIndexFacts s w t hInv hIdx hSet
-  unfold finaliseReplyWaiter
-  rw [finaliseThreadSuspend_hidden ctx observer _ w hI1 hObj hThr]
-  exact finaliseReplyCallerCancel_hidden ctx observer hInv hValid hIdx hSet hBlockingChainHigh
-    hT hThr hHead
+/-- **One waiter's orphaning is invisible** when the waiter is hidden as an
+object: its server forgotten in its hidden slot, then the reply-waiter unlink,
+whose links the projection strips (`unlinkReplyWaiter_preserves_projection`). -/
+theorem orphanReplyWaiter_hidden (ctx : LabelingContext) (observer : IfObserver)
+    (s : SystemState) (w x : SeLe4n.ThreadId)
+    (hObj : objectObservable ctx observer w.toObjId = false) :
+    projectState ctx observer (orphanReplyWaiter s w x) = projectState ctx observer s := by
+  unfold orphanReplyWaiter
+  rw [unlinkReplyWaiter_preserves_projection,
+    (hiddenObjectsWrite.mapTcbInPlace s w TCB.serverForgotten hObj).projection]
 
-/-- **What a waiter's end leaves in another thread's binding**: it is still a
-thread, keeping its context code or — a head reply's pop taking the context from
-it — holding none (`finaliseReplyCallerCancel_otherBinding`); the suspend writes
-the waiter alone and run-queue links. -/
-theorem finaliseReplyWaiter_otherBinding {s : SystemState} {w y : SeLe4n.ThreadId}
-    {t ty : TCB} (hInv : s.objects.invExt) (hT : s.getTcb? w = some t) (hy : y ≠ w)
-    (hTy : s.getTcb? y = some ty) :
-    ∃ ty', (finaliseReplyWaiter s w t).getTcb? y = some ty' ∧
-      (ty'.scBindingScCode = ty.scBindingScCode ∨ ty'.scBindingScCode = 0) := by
-  obtain ⟨ty1, h1, e1⟩ := finaliseReplyCallerCancel_otherBinding (t := t) hInv hT hy hTy
-  have hI1 := (finaliseReplyCallerCancel_binding hInv hT).1
-  have hyo : w.toObjId ≠ y.toObjId := fun e => hy (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
-  unfold finaliseReplyWaiter finaliseThreadSuspend
-  split
-  · split
-    · have hD : (descheduleAtPlacement (finaliseReplyCallerCancel s w t) w).objects.invExt :=
-        (FinaliseFrame.descheduleAt _ w (placedCoreOf? _ w) hI1).invExt
-      obtain ⟨t2, h2, e2⟩ := KernelObject.map_withoutRunLinks_tcb
-        (descheduleAtPlacement_objectsAgreeOffRunLinks _ w y.toObjId)
-        ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1)
-      rw [SystemState.updateTcb_getTcb?_ne _ _ _ hD _ hyo,
-        (SystemState.getTcb?_eq_some_iff _ _ _).mpr h2]
-      refine ⟨t2, rfl, ?_⟩
-      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.scBindingScCode e2]; exact e1
-    · exact ⟨ty1, h1, e1⟩
-  · exact ⟨ty1, h1, e1⟩
-
-/-- **What a waiter's end keeps**: the object table and its index well formed,
+/-- **What an orphaning keeps**: the object table and its index well formed,
 the projection (when the waiters of `x` are hidden), and the server `x`'s
-binding code, or none. -/
+binding code. -/
 def waiterEndKeeps (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (x : SeLe4n.ThreadId) (code : Nat) (s : SystemState) : Prop :=
   s.objects.invExt ∧ SeLe4n.Model.objectIndexSetComplete s ∧ s.objectIndexSet.table.invExt ∧
     projectState ctx observer s = projectState ctx observer st ∧
-    ∃ tx, s.getTcb? x = some tx ∧ (tx.scBindingScCode = code ∨ tx.scBindingScCode = 0)
+    ∃ tx, s.getTcb? x = some tx ∧ tx.scBindingScCode = code
 
-/-- ...and a waiter's end, admitted (`replyWaiterEndable`), keeps it, when every
-thread blocked on `x` is hidden (`hWait`). -/
+/-- ...and one waiter's orphaning keeps it, when every thread blocked on `x` is
+hidden as an object (`hWait`): the orphaning writes the waiter's state word and
+reply-waiter links alone. -/
 theorem waiterEndKeeps.step {ctx : LabelingContext} {observer : IfObserver}
     {st : SystemState} {x : SeLe4n.ThreadId} {code : Nat} {s : SystemState}
-    (hValid : LabelingContextValid ctx)
-    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
-      threadObservable ctx observer t = false →
-      PriorityInheritance.blockingServer s t = some server →
-      threadObservable ctx observer server = false)
     (hWait : ∀ (s : SystemState) (w : SeLe4n.ThreadId),
       PriorityInheritance.blockingServer s w = some x →
-      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false ∧
-      ∀ t, s.getTcb? w = some t → ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
-        s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
-        objectObservable ctx observer sc.toObjId = false)
+      objectObservable ctx observer w.toObjId = false)
     (h : waiterEndKeeps ctx observer st x code s) {w : SeLe4n.ThreadId} {t : TCB}
-    (hT : s.getTcb? w = some t) (hE : replyWaiterEndable s x w t = true) :
-    waiterEndKeeps ctx observer st x code (finaliseReplyWaiter s w t) := by
+    (hT : s.getTcb? w = some t) (hS : replyCallerServerCode t = x.val + 1) :
+    waiterEndKeeps ctx observer st x code (orphanReplyWaiter s w x) := by
   obtain ⟨hInv, hIdx, hSet, hP, tx, hTx, hc⟩ := h
-  simp only [replyWaiterEndable, Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hE
-  obtain ⟨⟨hNe, hS⟩, -⟩ := hE
   have hBs : PriorityInheritance.blockingServer s w = some x := by
     unfold PriorityInheritance.blockingServer; rw [hT]
     show t.blockingServer? = some x
     rw [← ofOptCode_replyCallerServerCode, hS]; rfl
-  obtain ⟨hObj, hThr, hHd⟩ := hWait s w hBs
-  have hF := finaliseReplyWaiter_objectIndexFacts s w t hInv hIdx hSet
-  have hxw : x ≠ w := fun e => hNe (by rw [e])
-  obtain ⟨tx', hTx', hc'⟩ := finaliseReplyWaiter_otherBinding hInv hT hxw hTx
-  refine ⟨hF.1, hF.2.1, hF.2.2, ?_, tx', hTx', ?_⟩
-  · rw [finaliseReplyWaiter_hidden ctx observer hInv hValid hIdx hSet hBlockingChainHigh hT hObj
-      hThr (hHd t hT)]; exact hP
-  · rcases hc' with e | e
-    · rw [e]; exact hc
-    · exact Or.inr e
+  have hObj := hWait s w hBs
+  have F := FinaliseFrame.orphanReplyWaiter s w x hInv
+  have hF := objectIndexFacts_of_writeAny F.any.write
+    (by have e := congrArg SystemState.objectIndexSet F.rest; exact e) hIdx hSet
+  have eM : ((s.mapTcbInPlace w TCB.serverForgotten).getTcb? x).map TCB.scBindingScCode =
+      (s.getTcb? x).map TCB.scBindingScCode := by
+    by_cases hy : w.toObjId = x.toObjId
+    · rw [← SeLe4n.ThreadId.toObjId_injective _ _ hy, SystemState.mapTcbInPlace_getTcb?_self,
+        Option.map_map]
+      cases s.getTcb? w <;> rfl
+    · rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hy]
+  have eU := (SystemState.unlinkReplyWaiter_objectsAgreeOffReplyLinks
+    (s.mapTcbInPlace w TCB.serverForgotten) w x).getTcb?_map TCB.scBindingScCode (t := x)
+  have e := eU.trans eM
+  rw [hTx] at e
+  change Option.map TCB.scBindingScCode ((orphanReplyWaiter s w x).getTcb? x) = _ at e
+  cases hX' : (orphanReplyWaiter s w x).getTcb? x with
+  | none => rw [hX'] at e; cases e
+  | some tx' =>
+    refine ⟨F.invExt, hF.1, hF.2, ?_, tx', hX', ?_⟩
+    · rw [orphanReplyWaiter_hidden ctx observer s w x hObj]; exact hP
+    · rw [hX'] at e
+      simp only [Option.map_some, Option.some.injEq] at e
+      exact e.trans hc
 
-/-- ...so the walk over `x`'s waiters keeps it (`finaliseReplyWaiters`). -/
+/-- ...so the walk over `x`'s waiters keeps it (`orphanReplyWaiters`). -/
 theorem waiterEndKeeps.walk {ctx : LabelingContext} {observer : IfObserver}
     {st : SystemState} {x : SeLe4n.ThreadId} {code : Nat}
-    (hValid : LabelingContextValid ctx)
-    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
-      threadObservable ctx observer t = false →
-      PriorityInheritance.blockingServer s t = some server →
-      threadObservable ctx observer server = false)
     (hWait : ∀ (s : SystemState) (w : SeLe4n.ThreadId),
       PriorityInheritance.blockingServer s w = some x →
-      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false ∧
-      ∀ t, s.getTcb? w = some t → ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
-        s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
-        objectObservable ctx observer sc.toObjId = false) :
+      objectObservable ctx observer w.toObjId = false) :
     ∀ (fuel : Nat) (s : SystemState), waiterEndKeeps ctx observer st x code s →
-      waiterEndKeeps ctx observer st x code (finaliseReplyWaiters x fuel s)
+      waiterEndKeeps ctx observer st x code (orphanReplyWaiters x fuel s)
   | 0, s, h => h
   | fuel + 1, s, h => by
-    unfold finaliseReplyWaiters
+    unfold orphanReplyWaiters
     split
     · split
       · exact h
       · split
         · rename_i t hT
           split
-          · rename_i hE
-            exact waiterEndKeeps.walk hValid hBlockingChainHigh hWait fuel _
-              (waiterEndKeeps.step hValid hBlockingChainHigh hWait h hT hE)
+          · rename_i hG
+            simp only [Bool.and_eq_true, beq_iff_eq] at hG
+            exact waiterEndKeeps.walk hWait fuel _ (waiterEndKeeps.step hWait h hT hG.2)
           · exact h
         · exact h
     · exact h
 
-/-- ...and so do the loan return and the waiters' end of a finalised thread. -/
+/-- ...and so does the finalised thread's walk (`finaliseThreadOrphanWaiters`). -/
 theorem waiterEndKeeps.endAll {ctx : LabelingContext} {observer : IfObserver}
     {st : SystemState} {x : SeLe4n.ThreadId} {code : Nat} {s : SystemState}
-    (hValid : LabelingContextValid ctx)
-    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
-      threadObservable ctx observer t = false →
-      PriorityInheritance.blockingServer s t = some server →
-      threadObservable ctx observer server = false)
     (hWait : ∀ (s : SystemState) (w : SeLe4n.ThreadId),
       PriorityInheritance.blockingServer s w = some x →
-      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false ∧
-      ∀ t, s.getTcb? w = some t → ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
-        s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
-        objectObservable ctx observer sc.toObjId = false)
+      objectObservable ctx observer w.toObjId = false)
     (h : waiterEndKeeps ctx observer st x code s) :
-    waiterEndKeeps ctx observer st x code
-      (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x) := by
-  have h1 : waiterEndKeeps ctx observer st x code (finaliseThreadReturnLoan s x) := by
-    unfold finaliseThreadReturnLoan
-    split
-    · split
-      · exact h
-      · split
-        · rename_i tl hT
-          split
-          · rename_i hE
-            exact waiterEndKeeps.step hValid hBlockingChainHigh hWait h hT hE
-          · exact h
-        · exact h
-    · exact h
-  unfold finaliseThreadEndWaiters
+    waiterEndKeeps ctx observer st x code (finaliseThreadOrphanWaiters s x) := by
+  unfold finaliseThreadOrphanWaiters
   split
-  · exact waiterEndKeeps.walk hValid hBlockingChainHigh hWait _ _ h1
-  · exact h1
+  · exact waiterEndKeeps.walk hWait _ _ h
+  · exact h
 
 /-- **The release of every core's hold on a thread is invisible**: no
 projection reads a core's FP/SIMD owner or its resident. -/
@@ -1660,11 +1494,10 @@ theorem finaliseThreadReleaseCores_hidden (ctx : LabelingContext) (observer : If
 notification, its scheduling context, the notification or endpoint it waits on
 and its neighbours in that queue, and the context its reply heads (a head reply's
 pop hands that context back to it, and the reservation unbind then writes it) —
-each hidden; every thread that waits on it for a reply, as an object and as a
-thread (the waiters' end cancels and suspends each), with the context that
-waiter's reply heads (the cancel moves that context's release entry to its owner's
-home core, and the projection keeps release cores) — and, since the suspend takes it
-off whichever core holds it, the thread is hidden as a thread too. -/
+each hidden; every thread that waits on it for a reply, as an object (the walk
+forgets each one's server in its slot, and unlinks it from the reply-waiter
+queue, whose links the projection strips) — and, since the suspend takes it off
+whichever core holds it, the thread is hidden as a thread too. -/
 def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
   ∀ t, st.getObject? x = some (.tcb t) →
@@ -1682,10 +1515,7 @@ def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
       objectObservable ctx observer sc.toObjId = false) ∧
     (∀ (s : SystemState) (w : SeLe4n.ThreadId),
       PriorityInheritance.blockingServer s w = some ⟨x.val⟩ →
-      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false ∧
-      ∀ t, s.getTcb? w = some t → ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
-        s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
-        objectObservable ctx observer sc.toObjId = false) ∧
+      objectObservable ctx observer w.toObjId = false) ∧
     threadObservable ctx observer ⟨x.val⟩ = false
 
 /-- **What a scheduling context's finalisation writes, besides the context**:
@@ -1767,11 +1597,11 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
         rw [e7, SystemState.getObject?_eq_getElem] at hR
         exact h9 r sc (by rw [SystemState.getObject?_eq_getElem]; exact hRp _ r hR) hN)
     obtain ⟨t2, hT2, f2⟩ := finaliseThreadCancel_scBinding hI1 hT1
-    -- The loan return and the waiters' end.
+    -- The walk orphans the waiters.
     obtain ⟨hIdx2, hSet2⟩ := finaliseThreadCancel_objectIndexFacts (tid := ⟨x.val⟩) hI1 hIdx1 hSet1
-    obtain ⟨hI2', -, -, hPW, tw, hTw, fw⟩ := waiterEndKeeps.endAll hValid hBlockingChainHigh hWait
+    obtain ⟨hI2', -, -, hPW, tw, hTw, fw⟩ := waiterEndKeeps.endAll hWait
       (show waiterEndKeeps ctx observer _ ⟨x.val⟩ t2.scBindingScCode _ from
-        ⟨hI2, hIdx2, hSet2, rfl, t2, hT2, Or.inl rfl⟩)
+        ⟨hI2, hIdx2, hSet2, rfl, t2, hT2, rfl⟩)
     have hP3 := finaliseThreadSuspend_hidden ctx observer _ ⟨x.val⟩ hI2' hX h8
     obtain ⟨hI3, t3, hT3, f3⟩ := finaliseThreadSuspend_scBinding hI2' hTw
     -- WS-ZA ZA6.6: the suspend's yield cancel, the thread hidden (`hX`).
@@ -1786,11 +1616,7 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
     have hI4 := (FinaliseFrame.releaseCores _ ⟨x.val⟩ hI3y).invExt
     have hSc : t3y.scBindingScCode ≠ 0 → objectObservable ctx observer
         (⟨t3y.scBindingScCode - 1⟩ : SeLe4n.SchedContextId).toObjId = false := by
-      rw [f3y, f3]
-      rcases fw with fw | fw
-      rotate_left
-      · intro h; exact absurd fw h
-      rw [fw]
+      rw [f3y, f3, fw]
       rcases f2 with f2 | ⟨r, sc, hR, hN, f2⟩
       · rw [f2, e6]; exact h2
       · intro _

@@ -4,6 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 import SeLe4n.Kernel.IPC.Invariant.CancelAllFrame
+import SeLe4n.Kernel.IPC.Invariant.ReplyServerForget
 import SeLe4n.Kernel.IPC.Invariant.FinaliseLoanCoherence
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
@@ -329,8 +330,8 @@ theorem storeUnbindNotification_preserves_ipcInvariantFull
 /-- **A context's release of its holder keeps the bundle**: the per-core unbind
 read through the owner-cleared view
 (`cancelBoundDonationOnCore_view_preserves_ipcInvariantFull`), on a thread whose
-context — its own or on loan — is bound back to it.  The thread finalisation's unbind is the case of a
-`.bound` holder (`FinaliseScReleaseStep.scUnbind`). -/
+context — its own or on loan — is bound back to it, the thread finalisation's
+unbind among them. -/
 theorem finaliseScReleaseStep_keepsIpcInvariantFull :
     FinaliseScReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s s' t tcb sc x h hT hS hSc hB hOk
@@ -775,6 +776,9 @@ theorem finaliseFinalObject_preserves_finaliseLoanBundle (target : Nat) (st : Sy
         (FinaliseFrame.cancelYieldTo s t h.2.1),
      fun s c h => h.of_frame (completeYieldFrom_preserves_ipcInvariantFull s c h.2.1 h.1)
         (FinaliseFrame.completeYieldFrom s c h.2.1)⟩
+    (fun s w x _ h hT _ hS =>
+      h.of_frame (orphanReplyWaiter_preserves_ipcInvariantFull h.1 hT hS)
+        (FinaliseFrame.orphanReplyWaiter s w x h.2.1))
     target st h
 
 /-- **The finalisation keeps the IPC bundle**, on a state where every lent

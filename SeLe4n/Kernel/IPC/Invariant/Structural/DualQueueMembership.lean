@@ -4219,7 +4219,7 @@ private theorem queueNextPath_backward_of_readAgreement
     {st st' : SystemState}
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState.serverForgotten = ty.ipcState.serverForgotten ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     {a b : SeLe4n.ThreadId} (hPath : QueueNextPath st' a b) :
@@ -4240,7 +4240,7 @@ private theorem intrusiveQueueWellFormed_forward_of_readAgreement
     {st st' : SystemState}
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState.serverForgotten = ty.ipcState.serverForgotten ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     {q : IntrusiveQueue} (hWF : intrusiveQueueWellFormed q st) :
@@ -4263,12 +4263,12 @@ private theorem tcbQueueLinkIntegrity_forward_of_readAgreement
     {st st' : SystemState}
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState.serverForgotten = ty.ipcState.serverForgotten ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState.serverForgotten = ty.ipcState.serverForgotten ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hLI : tcbQueueLinkIntegrity st) :
@@ -4285,6 +4285,19 @@ private theorem tcbQueueLinkIntegrity_forward_of_readAgreement
     obtain ⟨tcbA, hA, hANext⟩ := hRevLI b tyB hStB a (hQPB ▸ hPrevLink)
     obtain ⟨txA, hStA, _, _, hQNA, _⟩ := hBwd a.toObjId tcbA hA
     exact ⟨txA, hStA, hQNA.trans hANext⟩
+
+/-- **The queue-link blocking match reads no reply target**: two states that
+agree with the matched pair once their servers are forgotten match too — a reply
+block matches every state, whatever server it records. -/
+theorem queueNextBlockingMatch_of_serverForgotten {a a' b b' : ThreadIpcState}
+    (ha : a'.serverForgotten = a.serverForgotten) (hb : b'.serverForgotten = b.serverForgotten)
+    (h : queueNextBlockingMatch a b) : queueNextBlockingMatch a' b' := by
+  rcases ThreadIpcState.eq_or_replies_of_serverForgotten ha with ha | ⟨e, r, r', ha, -⟩ <;>
+  rcases ThreadIpcState.eq_or_replies_of_serverForgotten hb with hb | ⟨f, q, q', hb, -⟩
+  · rw [ha, hb]; exact h
+  all_goals first
+    | (rw [hb]; cases a' <;> trivial)
+    | (rw [ha]; cases b' <;> trivial)
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.0), generalised at WS-RR RR2.5: the reusable `ipcInvariantCore`
@@ -4331,12 +4344,12 @@ theorem ipcInvariantCore_of_nonBindingAgreements
       ∃ sc', st'.objects[s]? = some (.schedContext sc'))
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState.serverForgotten = ty.ipcState.serverForgotten ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState.serverForgotten = ty.ipcState.serverForgotten ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hSlots : badgedSlotsBack st st')
@@ -4404,6 +4417,9 @@ theorem ipcInvariantCore_of_nonBindingAgreements
   -- 5. blockedThreadsPendingMessageConsistent: reads `tcb.ipcState`+`pendingMessage` → (b).
   · intro tid tcb hObj
     obtain ⟨ty, hStObj, hIS, hPM, _⟩ := hFwd tid.toObjId tcb hObj
+    rcases ThreadIpcState.eq_or_replies_of_serverForgotten hIS with hIS | ⟨e, r, r', hx, -⟩
+    rotate_left
+    · rw [hx]; trivial
     -- **WS-RR RR8.16 (`v0.35.190`)**: this conjunct reads only whether a message
     -- is PRESENT, which the agreement carries; its content may shrink.
     have hPrev := hInv.blockedThreadsPendingMessageConsistent tid ty hStObj
@@ -4445,6 +4461,9 @@ theorem ipcInvariantCore_of_nonBindingAgreements
   -- the endpoint lookup via (a) and the `prev` queue witness via (b).
   · intro tid tcb hObj
     obtain ⟨ty, hStObj, hIS, _⟩ := hFwd tid.toObjId tcb hObj
+    rcases ThreadIpcState.eq_or_replies_of_serverForgotten hIS with hIS | ⟨e, r, r', hx, -⟩
+    rotate_left
+    · rw [hx]; trivial
     have hbase := hInv.ipcStateQueueMembershipConsistent tid ty hStObj
     rw [hIS]
     cases hq : ty.ipcState with
@@ -4495,7 +4514,7 @@ theorem ipcInvariantCore_of_nonBindingAgreements
     obtain ⟨tyA, hStA, hISA, _, hQNA, _⟩ := hFwd a.toObjId tcbA hA
     obtain ⟨tyB, hStB, hISB, _⟩ := hFwd b.toObjId tcbB hB
     have := hInv.queueNextBlockingConsistent a b tyA tyB hStA hStB (hQNA ▸ hNext)
-    rw [hISA, hISB]; exact this
+    exact queueNextBlockingMatch_of_serverForgotten hISA hISB this
   -- 9. queueHeadBlockedConsistent: `.endpoint` via (a) + `.tcb` via (b).
   · intro epId ep hd tcb hEp hHd
     have hEp' := (hNT epId (.endpoint ep)
@@ -4504,14 +4523,19 @@ theorem ipcInvariantCore_of_nonBindingAgreements
         (fun r => by exact KernelObject.noConfusion)).mp hEp
     obtain ⟨ty, hStObj, hIS, _⟩ := hFwd hd.toObjId tcb hHd
     have := hInv.queueHeadBlockedConsistent epId ep hd ty hEp' hStObj
-    rw [hIS]; exact this
+    rcases ThreadIpcState.eq_or_replies_of_serverForgotten hIS with hIS | ⟨e, r, r', -, hy⟩
+    · rw [hIS]; exact this
+    · rw [hy] at this
+      exact ⟨fun h => absurd (this.1 h) (by simp), fun h => absurd (this.2 h) (by simp)⟩
   -- 10. blockedThreadTimeoutConsistent: hyp `.tcb` via (b); `.schedContext` witness via (a).
   · intro tid tcb scId hObj hBudget
     obtain ⟨ty, hStObj, hIS, _, _, _, _, hTB⟩ := hFwd tid.toObjId tcb hObj
     obtain ⟨⟨sc, hSc⟩, hState⟩ := hInv.blockedThreadTimeoutConsistent tid ty scId
       hStObj (hTB ▸ hBudget)
     refine ⟨hSC scId.toObjId sc hSc, ?_⟩
-    rw [hIS]; exact hState
+    rcases ThreadIpcState.eq_or_replies_of_serverForgotten hIS with hIS | ⟨e, r, r', hx, -⟩
+    · rw [hIS]; exact hState
+    · rw [hx]; trivial
   -- 11-14. The four `schedContextBinding`-reading conjuncts are supplied on the
   -- post-state: the read agreement deliberately says nothing about bindings,
   -- which is what lets a *donation* (the only kernel write to that field)
@@ -4557,20 +4581,20 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
     ipcInvariantCore st' := by
   have hFwd' : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState.serverForgotten = ty.ipcState.serverForgotten ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget := by
     intro s tx h
     obtain ⟨ty, h1, e1, e2, e3, e4, e5, _, e7⟩ := hFwd s tx h
-    exact ⟨ty, h1, e1, e2, e3, e4, e5, e7⟩
+    exact ⟨ty, h1, congrArg _ e1, e2, e3, e4, e5, e7⟩
   have hBwd' : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState.serverForgotten = ty.ipcState.serverForgotten ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget := by
     intro s ty h
     obtain ⟨tx, h1, e1, e2, e3, e4, e5, _, e7⟩ := hBwd s ty h
-    exact ⟨tx, h1, e1, e2, e3, e4, e5, e7⟩
+    exact ⟨tx, h1, congrArg _ e1, e2, e3, e4, e5, e7⟩
   refine ipcInvariantCore_of_nonBindingAgreements st st'
     (ipcInvariantCoreNonDonation_of_core hInv)
     (fun s k hk _ _ => hNT s k hk)

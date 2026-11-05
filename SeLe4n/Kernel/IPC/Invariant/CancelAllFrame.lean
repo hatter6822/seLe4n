@@ -114,16 +114,6 @@ theorem unbindMaybeNotification_closed (P : SystemState → Prop) (notificationI
     · exact h
   · exact h
 
-/-- **The reservation-unbind step a thread's or a context's finalisation takes**:
-a `.bound` thread, queued and held nowhere, whose context is bound back to it,
-unbound by the destroy cleanup's reservation arm (`cancelDonationArmOnCore`). -/
-def FinaliseScUnbindStep (P : SystemState → Prop) : Prop :=
-  ∀ (s s' : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB) (sc : SchedContext), P s →
-    s.getTcb? t = some tcb → tcb.scBindingScCode ≠ 0 → tcb.scBindingOwnerCode = 0 →
-    tcb.runCoreCode = 0 → threadHeldOnSomeCore s t = false →
-    s.getSchedContext? ⟨tcb.scBindingScCode - 1⟩ = some sc → sc.boundThreadCode = t.val + 1 →
-    cancelDonationArmOnCore s t tcb = .ok s' → P s'
-
 /-- **The notification cancel a thread's finalisation takes**: a waiter of a
 notification, wherever it waits in the queue, leaves it, and is not woken
 (`cancelIpcBlocking`). -/
@@ -220,6 +210,14 @@ def FinaliseUnstashStep (P : SystemState → Prop) : Prop :=
     s.getTcb? tid = some t → t.pendingReceiveReplyCode = x.val + 1 →
     s1 = s.updateTcb tid TCB.stashCleared → P s1
 
+/-- **The orphan step a thread's finalisation takes for each caller waiting on
+it** (WS-ZA ZA6.34): the caller `w`, another thread than the server `x` and
+reply-blocked on it, left reply-blocked with its server forgotten and off `x`'s
+reply-waiter queue (`orphanReplyWaiter`). -/
+def FinaliseOrphanStep (P : SystemState → Prop) : Prop :=
+  ∀ (s : SystemState) (w x : SeLe4n.ThreadId) (t : TCB), P s → s.getTcb? w = some t →
+    w.val ≠ x.val → replyCallerServerCode t = x.val + 1 → P (orphanReplyWaiter s w x)
+
 /-- **The yield steps a thread's and a context's finalisation take** (WS-ZA
 ZA6.6): a thread's yield link cancelled (`cancelYieldTo`), and the yield a
 context records completed (`completeYieldFrom`). -/
@@ -246,22 +244,6 @@ theorem FinaliseYieldStep.schedContextCleanup {P : SystemState → Prop} (h : Fi
     · exact hs
   · exact hs
 
-/-- A thread whose owner code is already clear is its own owner-cleared view. -/
-theorem TCB.ownerCleared_of_zero {t : TCB} (h : t.scBindingOwnerCode = 0) :
-    ({ t with scBindingOwnerCode := 0 } : TCB) = t := by
-  cases t; cases h; rfl
-
-/-- **The release step covers the thread finalisation's unbind**: a `.bound`
-thread is its own owner-cleared view. -/
-theorem FinaliseScReleaseStep.scUnbind {P : SystemState → Prop} (h : FinaliseScReleaseStep P) :
-    FinaliseScUnbindStep P := by
-  intro s s' t tcb sc hP hT hS hO _ _ hSc hB hOk
-  rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
-  refine h s s' t tcb sc ⟨tcb.scBindingScCode - 1⟩ hP hT (by show _ = _ - 1 + 1; omega)
-    hSc hB ?_
-  rw [TCB.ownerCleared_of_zero hO]; exact hOk
-
-/-- `replyStackLinkHeads` reads the head link naming the context. -/
 theorem replyStackLinkHeads_spec {x : SeLe4n.ObjId} {n : Option ReplyStackLink}
     (h : replyStackLinkHeads x n = true) : n = some (.head ⟨x.val⟩) := by
   rcases n with _ | (_ | ⟨v⟩)
@@ -754,56 +736,33 @@ theorem finaliseReplyCallerCancel_closed (P : SystemState → Prop) (hRep : Fina
     · exact h
   · exact h
 
-/-- **A property the reply cancel and the suspend keep holds after a waiter's
-end** (`finaliseReplyWaiter`). -/
-theorem finaliseReplyWaiter_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
-    (hSuspend : FinaliseSuspendStep P) (s : SystemState) (w : SeLe4n.ThreadId) (t : TCB)
-    (h : P s) (hT : s.getTcb? w = some t) : P (finaliseReplyWaiter s w t) :=
-  finaliseThreadSuspend_closed P hSuspend _ w (finaliseReplyCallerCancel_closed P hRep s w t h hT)
-
-/-- ...so after the loan return (`finaliseThreadReturnLoan`). -/
-theorem finaliseThreadReturnLoan_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
-    (hSuspend : FinaliseSuspendStep P) (s : SystemState) (x : SeLe4n.ThreadId) (h : P s) :
-    P (finaliseThreadReturnLoan s x) := by
-  unfold finaliseThreadReturnLoan
-  split
-  · split
-    · exact h
-    · split
-      · rename_i tl hT
-        split
-        · exact finaliseReplyWaiter_closed P hRep hSuspend s _ tl h hT
-        · exact h
-      · exact h
-  · exact h
-
-/-- ...and after the walk over a server's waiters (`finaliseReplyWaiters`), by
-induction on the fuel. -/
-theorem finaliseReplyWaiters_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
-    (hSuspend : FinaliseSuspendStep P) (x : SeLe4n.ThreadId) :
-    ∀ (fuel : Nat) (s : SystemState), P s → P (finaliseReplyWaiters x fuel s)
+/-- **A property the orphan step keeps holds after the walk over a server's
+waiters** (`orphanReplyWaiters`), by induction on the fuel. -/
+theorem orphanReplyWaiters_closed (P : SystemState → Prop) (hOrph : FinaliseOrphanStep P)
+    (x : SeLe4n.ThreadId) :
+    ∀ (fuel : Nat) (s : SystemState), P s → P (orphanReplyWaiters x fuel s)
   | 0, s, h => h
   | fuel + 1, s, h => by
-    unfold finaliseReplyWaiters
+    unfold orphanReplyWaiters
     split
     · split
       · exact h
       · split
         · rename_i t hT
           split
-          · exact finaliseReplyWaiters_closed P hRep hSuspend x fuel _
-              (finaliseReplyWaiter_closed P hRep hSuspend s _ t h hT)
+          · rename_i hG
+            simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hG
+            exact orphanReplyWaiters_closed P hOrph x fuel _ (hOrph s _ x t h hT hG.1 hG.2)
           · exact h
         · exact h
     · exact h
 
-/-- ...so after `finaliseThreadEndWaiters`. -/
-theorem finaliseThreadEndWaiters_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
-    (hSuspend : FinaliseSuspendStep P) (s : SystemState) (x : SeLe4n.ThreadId) (h : P s) :
-    P (finaliseThreadEndWaiters s x) := by
-  unfold finaliseThreadEndWaiters
+/-- ...so after `finaliseThreadOrphanWaiters`. -/
+theorem finaliseThreadOrphanWaiters_closed (P : SystemState → Prop) (hOrph : FinaliseOrphanStep P)
+    (s : SystemState) (x : SeLe4n.ThreadId) (h : P s) : P (finaliseThreadOrphanWaiters s x) := by
+  unfold finaliseThreadOrphanWaiters
   split
-  · exact finaliseReplyWaiters_closed P hRep hSuspend x _ s h
+  · exact orphanReplyWaiters_closed P hOrph x _ s h
   · exact h
 
 /-- **The thread finalisation's admission admits its notification unbind**: it
@@ -896,10 +855,11 @@ theorem finaliseThreadCancel_closed (P : SystemState → Prop)
       | exact h1
   · exact h1
 
-/-- **A property the reservation unbind keeps holds after
-`finaliseThreadUnbindSchedContext`.** -/
+/-- **A property the context release keeps holds after
+`finaliseThreadUnbindSchedContext`**: the unbind is the release step's own, at
+the context the thread's binding names, its own or on loan. -/
 theorem finaliseThreadUnbindSchedContext_closed (P : SystemState → Prop)
-    (hSc : FinaliseScUnbindStep P) (s : SystemState) (tid : SeLe4n.ThreadId) (h4 : P s) :
+    (hRel : FinaliseScReleaseStep P) (s : SystemState) (tid : SeLe4n.ThreadId) (h4 : P s) :
     P (finaliseThreadUnbindSchedContext s tid) := by
   unfold finaliseThreadUnbindSchedContext
   split
@@ -910,21 +870,21 @@ theorem finaliseThreadUnbindSchedContext_closed (P : SystemState → Prop)
       simp only [hM]
       split
       · rename_i hG
-        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, Bool.not_eq_true'] at hG
-        obtain ⟨⟨⟨⟨hS, hO⟩, hR⟩, hH⟩, hM'⟩ := hG
+        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hG
         split
         · rename_i s' hOk
-          exact hSc s s' tid t sc h4 hT hS hO hR hH hM hM' hOk
+          exact hRel s s' tid t sc ⟨t.scBindingScCode - 1⟩ h4 hT
+            (by show _ = _ - 1 + 1; omega) hM hG.2 hOk
         · exact h4
       · exact h4
   · exact h4
 
 /-- **A property the thread finalisation's steps keep holds after it.** -/
 theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbindStep P)
-    (hSc : FinaliseScUnbindStep P) (hCancel : FinaliseNotificationCancelStep P)
+    (hRel : FinaliseScReleaseStep P) (hCancel : FinaliseNotificationCancelStep P)
     (hEndpoint : FinaliseEndpointCancelStep P)
     (hSuspend : FinaliseSuspendStep P) (hRelease : FinaliseReleaseStep P)
-    (hRep : FinaliseReplyStep P) (hYield : FinaliseYieldStep P)
+    (hRep : FinaliseReplyStep P) (hYield : FinaliseYieldStep P) (hOrph : FinaliseOrphanStep P)
     (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
     P (finaliseThread x st) := by
   unfold finaliseThread; dsimp only
@@ -932,12 +892,11 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
   · rename_i hA
     obtain ⟨t, hT, hG⟩ := threadFinaliseAdmitted_notificationUnbind hA
     refine hYield.completeHeldYield _ _ ?_
-    exact finaliseThreadUnbindSchedContext_closed P hSc _ _ (hRelease _ _ (hYield.cancel _ _
+    exact finaliseThreadUnbindSchedContext_closed P hRel _ _ (hRelease _ _ (hYield.cancel _ _
       (finaliseThreadSuspend_closed P hSuspend _ _
-        (finaliseThreadEndWaiters_closed P hRep hSuspend _ _
-          (finaliseThreadReturnLoan_closed P hRep hSuspend _ _
-            (finaliseThreadCancel_closed P hCancel hEndpoint hRep _ _
-              (finaliseThreadUnbindNotification_closed P hUnbind _ _ hT hG h)))))))
+        (finaliseThreadOrphanWaiters_closed P hOrph _ _
+          (finaliseThreadCancel_closed P hCancel hEndpoint hRep _ _
+            (finaliseThreadUnbindNotification_closed P hUnbind _ _ hT hG h))))))
   · exact h
 
 /-- **A property the stash clear keeps holds after `finaliseReplyUnstash`.** -/
@@ -1048,7 +1007,7 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
     (hCancel : FinaliseNotificationCancelStep P) (hEndpoint : FinaliseEndpointCancelStep P)
     (hSuspend : FinaliseSuspendStep P)
     (hRelease : FinaliseReleaseStep P) (hUn : FinaliseUnstackStep P) (hRep : FinaliseReplyStep P)
-    (hSt : FinaliseUnstashStep P) (hYield : FinaliseYieldStep P)
+    (hSt : FinaliseUnstashStep P) (hYield : FinaliseYieldStep P) (hOrph : FinaliseOrphanStep P)
     (target : Nat) (st : SystemState) (h : P st) : P (finaliseFinalObject target st) := by
   unfold finaliseFinalObject
   split
@@ -1060,8 +1019,8 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
         (cancelEndpointQueue_closed P _ false (hEp _ false) _ _ h)
     · exact cancelNotificationQueue_closed P _ (hNtfn _) _ _
         (unbindMaybeNotification_closed P _ (hUnbind _) st h)
-    · exact finaliseThread_closed P hUnbind hRel.scUnbind hCancel hEndpoint hSuspend hRelease hRep
-        hYield _ st h
+    · exact finaliseThread_closed P hUnbind hRel hCancel hEndpoint hSuspend hRelease hRep
+        hYield hOrph _ st h
     · exact finaliseSchedContext_closed P hDes hRel hUn hYield _ st h
     · exact finaliseReply_closed P hRep hSuspend hSt _ st h
     · exact h
@@ -1562,6 +1521,45 @@ theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
       finaliseWrite.of_insert hInv rfl hPre
         (finaliseWritable_tcb x) rfl (by simp only [KernelObject.tcbSlots, (hf x).1, (hf x).2]),
       loanWrite.of_insert hInv rfl hPre (objectLoanKept_tcb (hL x))⟩
+
+/-- A thread rewritten in its slot in place, its capability slots, reply link and
+loan kept. -/
+theorem mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt)
+    (hf : ∀ x, (f x).spaceCells = x.spaceCells ∧ (f x).spaceLinks = x.spaceLinks := by
+      intro _; exact ⟨rfl, rfl⟩)
+    (hL : ∀ x, TCB.loanKept (f x) x := by intro _; exact ⟨rfl, fun _ _ h => h⟩) :
+    FinaliseFrame st (st.mapTcbInPlace t f) := by
+  refine ⟨rfl, SystemState.mapTcbInPlace_objects_invExt _ _ _ hInv, fun oid => ?_, fun oid => ?_⟩
+  all_goals
+    rw [SystemState.objects_mapTcbInPlace]
+    split
+    · cases hO : st.objects[oid]? with
+      | none => exact Or.inl rfl
+      | some o =>
+        cases o
+        case tcb x =>
+          first
+            | exact Or.inr ⟨.tcb x, .tcb (f x), rfl, rfl, rfl,
+                by simp only [KernelObject.tcbSlots, (hf x).1, (hf x).2], rfl, finaliseWritable_tcb x⟩
+            | exact Or.inr ⟨.tcb x, .tcb (f x), rfl, rfl, objectLoanKept_tcb (hL x)⟩
+        all_goals exact Or.inl rfl
+    · exact Or.inl rfl
+
+/-- The unlink of a waiter from its server's reply-waiter queue writes reply-waiter
+links alone. -/
+theorem unlinkReplyWaiter (st : SystemState) (w s : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    FinaliseFrame st (st.unlinkReplyWaiter w s) := by
+  have hA := SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks st w s
+  exact ⟨by rw [SystemState.unlinkReplyWaiter_eq_objects st w s]; rfl,
+    SystemState.unlinkReplyWaiter_objects_invExt st w s hInv, .of_agreeOffRunLinks hA,
+    loanWrite.of_agreeOffRunLinks hA⟩
+
+/-- **The orphan step**: the caller's server forgotten in place, then its unlink. -/
+theorem orphanReplyWaiter (st : SystemState) (w x : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    FinaliseFrame st (SeLe4n.Kernel.orphanReplyWaiter st w x) :=
+  have h1 := mapTcbInPlace st w TCB.serverForgotten hInv
+  h1.trans (unlinkReplyWaiter _ w x h1.invExt)
 
 /-- An object rewritten in its slot by an update that keeps every object, or
 keeps a writable one's kind and slots. -/
@@ -2188,7 +2186,9 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
     (FinaliseFrameAny.releaseStep st) (FinaliseFrameAny.unstackStep st)
     (FinaliseFrameAny.replyStep st)
     (fun s _ _ tid _ h _ _ e => e ▸ h.trans (FinaliseFrame.updateTcb s tid _ h.invExt).any)
-    (FinaliseFrameAny.yieldStep st) target st (.refl hInv)
+    (FinaliseFrameAny.yieldStep st)
+    (fun s w x _ h _ _ _ => h.trans (FinaliseFrame.orphanReplyWaiter s w x h.invExt).any)
+    target st (.refl hInv)
 
 /-- **The finalisation keeps the derivation tree**, on any state. -/
 theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
@@ -2264,6 +2264,9 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
     (fun s x r c t h hX hCc _ hG => ?_) (fun s _ _ tid _ h _ _ e => e ▸ (hC (hU s tid _)).trans h)
     ⟨fun s t h => by rw [SystemState.cancelYieldTo_eq_objects]; exact h,
      fun s c h => by rw [SystemState.completeYieldFrom_eq_objects]; exact h⟩
+    (fun s w x _ h _ _ _ => by
+      show (SystemState.unlinkReplyWaiter _ w x).cdt = _
+      rw [SystemState.unlinkReplyWaiter_cdt]; exact h)
     target st rfl
   · unfold storeEndpointWaiterCancelled wakeCancelledWaiter
     exact (hC ((enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans

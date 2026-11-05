@@ -923,6 +923,17 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
         (SystemState.completeYieldFrom_scheduler s c)
         (hRes := by rw [completeYieldFrom_machine]) (hBank := banksKeptOffCore_of_eq (by rw [completeYieldFrom_machine]))),
         SystemState.completeYieldFrom_preserves_objects_invExt _ _ h.2⟩⟩
+    (fun s w x _ h _ _ _ =>
+      have hK : keyInputsEq s (s.mapTcbInPlace w TCB.serverForgotten) := fun oid => by
+        rw [SystemState.objects_mapTcbInPlace]; split
+        · cases s.objects[oid]? with
+          | none => rfl
+          | some o => cases o <;> rfl
+        · rfl
+      ⟨stepCovers_trans (stepCovers_trans h.1 (stepCovers_of_keys_sched hK rfl (hRes := rfl)
+          (hBank := banksKeptOffCore_of_eq rfl))) (unlinkReplyWaiter_stepCovers e _ w x),
+        SystemState.unlinkReplyWaiter_objects_invExt _ w x
+          (SystemState.mapTcbInPlace_objects_invExt _ _ _ h.2)⟩)
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA6.32: a node's retire writes the tree's issued lines and the mask

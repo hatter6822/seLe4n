@@ -4182,25 +4182,25 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' 
 # or executing thread is finalised, not refused: the admission no longer reads
 # the core holds.  v0.36.141: no destroy cleanup follows; the retire reads what
 # the finalisation left off the thread's own links.
-run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    let held := threadHeldContextCode st tid\n    completeHeldYield\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(cancelYieldTo\n            \(finaliseThreadSuspend\n              \(finaliseThreadEndWaiters\n                \(finaliseThreadReturnLoan\n                  \(finaliseThreadCancel\n                    \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) tid\) tid\) tid\) held\n  else st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-# The server's waiters are ended as reply_remove ends them, the lender first
-# (its context returned before the suspend), then the plain waiters head first,
-# fuel the server's own count; each step follows the server's live head.
-run_check "INVARIANT" rg -n -U 'def finaliseReplyWaiters \(x : SeLe4n\.ThreadId\) : Nat → SystemState → SystemState\n  \| 0, st => st\n  \| fuel \+ 1, st =>\n    match st\.getTcb\? x with\n    \| some tx =>\n      match tx\.replyWaitersHeadCode with' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-run_check "INVARIANT" rg -n -U '\| some tx => finaliseReplyWaiters x tx\.replyWaitersCount st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    let held := threadHeldContextCode st tid\n    completeHeldYield\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(cancelYieldTo\n            \(finaliseThreadSuspend\n              \(finaliseThreadOrphanWaiters\n                \(finaliseThreadCancel\n                  \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) tid\) tid\) held\n  else st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The server's waiters are orphaned as seL4-MCS leaves them once the server's
+# TCB is gone: each stays blocked on its reply with no recorded server, unlinked
+# from the server's reply-waiter queue, head first, fuel the server's own count;
+# each step follows the server's live head.  No lender is returned its context.
+run_check "INVARIANT" rg -n -U 'def orphanReplyWaiters \(x : SeLe4n\.ThreadId\) : Nat → SystemState → SystemState\n  \| 0, st => st\n  \| fuel \+ 1, st =>\n    match st\.getTcb\? x with\n    \| some tx =>\n      match tx\.replyWaitersHeadCode with' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '\| some tx => orphanReplyWaiters x tx\.replyWaitersCount st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def orphanReplyWaiter \(st : SystemState\) \(w x : SeLe4n\.ThreadId\) : SystemState :=\n  \(st\.mapTcbInPlace w TCB\.serverForgotten\)\.unlinkReplyWaiter w x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'match cancelBoundDonationOnCore st tid \{ t with scBindingOwnerCode := 0 \} with' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_negative_check "INVARIANT" rg -n 't\.replyWaitersHeadCode == 0 && t\.timeoutBudget\.isNone' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-# On a state its admission reads, the loan return and the walk end every waiter:
-# neither refuses midway.
-run_check "INVARIANT" rg -n '^theorem finaliseReplyWaiters_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem finaliseReplyWaiter_plain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem finaliseReplyWaiter_unframed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem returnDonated_replyUnframed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem replyWaitersEndableFrom_plain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem lenderEndable_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem replyWaitersAdmitted_plain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem finaliseReplyWaiter_plain_bindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem spliceUnframed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+# On a state carrying the finalisation's invariant, the walk orphans every
+# waiter: it never refuses midway, keeps the server, and writes no binding.
+run_check "INVARIANT" rg -n '^theorem orphanReplyWaiters_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadOrphanWaiters_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem orphanReplyWaiter_forgets($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_serverForgotten($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/ReplyServerForget.lean
+run_check "INVARIANT" rg -n '^theorem orphanReplyWaiter_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/ReplyServerForget.lean
+run_check "INVARIANT" rg -n '^theorem orphanReplyWaiter_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/ReplyServerForget.lean
+run_check "INVARIANT" rg -n '^def FinaliseOrphanStep($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 # A finalised object's own record is retirable: the context's released, the
 # thread's quiesced (every field the retire's link guard reads, the space slots
 # aside), each step's effect on the thread read off the invariant it carries.
@@ -4225,7 +4225,7 @@ run_check "INVARIANT" rg -n '^    threadRecordQuiesced \(finaliseThread x st\) x
 run_check "INVARIANT" rg -n -U '\(hBd : runCodeBounded st ⟨x\.val⟩\) \(hA : threadFinaliseAdmitted st x = true\) :\n    threadRecordQuiesced \(finaliseThread x st\) x := by$' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 run_negative_check "INVARIANT" rg -n '\((hCancel|hWait|hBind) : ' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThread_admissionCarried($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
-run_check "INVARIANT" rg -n '^  obtain ⟨hCancel, hWait, hBind⟩ := finaliseThread_admissionCarried x st hI hBd hA$' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^  obtain ⟨hCancel, hBind⟩ := finaliseThread_admissionCarried x st hI hBd hA$' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 run_check "INVARIANT" rg -n '^theorem threadIpcCancelAdmitted_after_unbind($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 # The notification unbind runs first, on the state the admission reads, so it
 # reads no guard of its own: the admission reads the binding back and the
@@ -4233,15 +4233,11 @@ run_check "INVARIANT" rg -n '^theorem threadIpcCancelAdmitted_after_unbind($|[ (
 run_check "INVARIANT" rg -n -U 'def finaliseThreadUnbindNotification \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  let c := boundNotificationCodeOf st tid\n  if c == 0 then st else storeUnbindNotification st tid ⟨c - 1⟩$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^    notificationUnbindAdmitted st tid t &&$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_readsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
-run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_frames($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadCancel_carries($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReplyCallerCancel_carries($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
-run_check "INVARIANT" rg -n '^theorem lenderEndable_transport($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReplyCallerCancel_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
-run_check "INVARIANT" rg -n '^theorem finaliseThreadReturnLoan_unbinds($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_replies($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
-run_check "INVARIANT" rg -n '^structure CancelFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
-run_check "INVARIANT" rg -n '^structure LoanKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^def bindingBack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadSuspend($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
 run_check "INVARIANT" rg -n 't\.tid\.val = x\.val ∧ threadLinksQuiescent t = true ∧' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 # A contextless stack top (the head a context's unstack leaves, no `next`) is cut
@@ -4357,9 +4353,10 @@ run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStores_transport($|[ (
 run_check "INVARIANT" rg -n '^  , `SeLe4n\.Kernel\.severReplyFrameBelowStores$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 # The in-place reply runs only on a reply with no frame below to cut.
 run_check "INVARIANT" rg -n -U '   \| some rp => rp\.next\.isNone && rp\.prev\.isNone\n   \| none => false\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInPlace.lean
-# The thread admission's last clause is the binding's own reciprocity; it
-# scans no other object for origins naming the thread.
-run_check "INVARIANT" rg -n -U '    \(t\.scBindingScCode == 0 \|\|\n      match st\.getSchedContext\? ⟨t\.scBindingScCode - 1⟩ with\n      \| some sc => sc\.boundThreadCode == x\.val \+ 1\n      \| none => false\)\n  \| _ => false' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The thread admission's last clause is the binding's own reciprocity (a thread
+# naming no context names no lender); it scans no other object for origins
+# naming the thread.
+run_check "INVARIANT" rg -n -U '    \(t\.scBindingScCode == 0 && t\.scBindingOwnerCode == 0 \|\|\n      t\.scBindingScCode != 0 && match st\.getSchedContext\? ⟨t\.scBindingScCode - 1⟩ with\n      \| some sc => sc\.boundThreadCode == x\.val \+ 1\n      \| none => false\)\n  \| _ => false' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_negative_check "INVARIANT" rg -n 'originsNameNone|replyPopClearedOrigin' SeLe4n/
 run_check "INVARIANT" rg -n -U '^  runReplyWaiterFinaliseChecks\n  runContextlessStackChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 &&\n        \(t\.threadState != \.Inactive \|\| t\.pendingMessage\.isSome\) && !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid finalisedSuspendMark' SeLe4n/Kernel/IPC/Operations/CancelAll.lean

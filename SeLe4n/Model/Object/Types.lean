@@ -2676,6 +2676,63 @@ theorem TCB.blockingServer?_congr {a b : TCB} (h : a.ipcState = b.ipcState) :
     a.blockingServer? = b.blockingServer? := by
   simp only [TCB.blockingServer?_eq, h]
 
+/-- **A state with its reply target forgotten**: a reply block on `e` with no
+server recorded (`.blockedOnReply e none`); every other state as it is.  The
+shape a caller is left in when its server is deleted: seL4-MCS keeps such a
+caller `BlockedOnReply`, its reply's `replyTCB` still naming it, and records no
+server for it, so a reply cap holder can still answer it or a reply delete end
+it. -/
+def ThreadIpcState.serverForgotten : ThreadIpcState → ThreadIpcState
+  | .blockedOnReply e _ => .blockedOnReply e none
+  | s => s
+
+/-- **Two states that agree once their reply targets are forgotten are equal, or
+both reply blocks on one object.** -/
+theorem ThreadIpcState.eq_or_replies_of_serverForgotten {a b : ThreadIpcState}
+    (h : a.serverForgotten = b.serverForgotten) :
+    a = b ∨ ∃ e r r', a = .blockedOnReply e r ∧ b = .blockedOnReply e r' := by
+  cases a with
+  | blockedOnReply e r =>
+    cases b with
+    | blockedOnReply e' r' =>
+      simp only [serverForgotten, ThreadIpcState.blockedOnReply.injEq, and_true] at h
+      exact Or.inr ⟨e, r, r', rfl, by rw [h]⟩
+    | _ => simp only [serverForgotten, reduceCtorEq] at h
+  | _ =>
+    cases b <;> simp only [serverForgotten, reduceCtorEq] at h <;>
+      first | exact Or.inl rfl | exact Or.inl (by rw [h])
+
+/-- **A thread with the server of its reply block forgotten** (seL4-MCS's
+deleted server: its callers stay `BlockedOnReply` with no server recorded): the
+state word set to `4`, the code of `.blockedOnReply` on the same object with no
+reply target (`TCB.serverForgotten_ipcState`).  One field write, which keeps
+the thread's reply object and every other field. -/
+@[inline] def TCB.serverForgotten (t : TCB) : TCB := { t with ipcStateCode := 4 }
+
+/-- A thread with its server forgotten waits on its reply block's object with no
+server. -/
+theorem TCB.serverForgotten_ipcState (t : TCB) :
+    t.serverForgotten.ipcState = .blockedOnReply ⟨t.ipcObjectCode⟩ none := rfl
+
+/-- A reply-blocked thread with its server forgotten is the same reply block with
+no server. -/
+theorem TCB.serverForgotten_ipcState_of {t : TCB} {e : SeLe4n.ObjId}
+    {r : Option SeLe4n.ThreadId} (h : t.ipcState = .blockedOnReply e r) :
+    t.serverForgotten.ipcState = .blockedOnReply e none := by
+  have ho : t.ipcObjectCode = e.val := by
+    rw [← TCB.objectCode_ipcState, h]; rfl
+  rw [TCB.serverForgotten_ipcState, ho]
+
+/-- ...so its state agrees with the thread's once their servers are forgotten. -/
+theorem TCB.serverForgotten_ipcState_forgotten {t : TCB} {e : SeLe4n.ObjId}
+    {r : Option SeLe4n.ThreadId} (h : t.ipcState = .blockedOnReply e r) :
+    t.serverForgotten.ipcState.serverForgotten = t.ipcState.serverForgotten := by
+  rw [TCB.serverForgotten_ipcState_of h, h]; rfl
+
+/-- A thread with its server forgotten blocks on no server. -/
+theorem TCB.serverForgotten_blockingServer (t : TCB) : t.serverForgotten.blockingServer? = none :=
+  rfl
+
 theorem TCB.boostedPriority_congr {a b : TCB}
     (hp : a.priority = b.priority) (hb : a.pipBoost = b.pipBoost) :
     a.boostedPriority = b.boostedPriority := by

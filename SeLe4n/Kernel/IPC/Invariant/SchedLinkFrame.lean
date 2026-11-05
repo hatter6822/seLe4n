@@ -1237,6 +1237,21 @@ theorem SchedLinkFrame.yieldStep :
         (SystemState.completeYieldFrom_objectsAgreeOffYield s c h.1)
         (SystemState.completeYieldFrom_scheduler s c)).preserves h.2⟩⟩
 
+/-- **The orphan step writes no scheduling link**: the caller's state word and
+reply-waiter links, its neighbours' and its server's reply-waiter links. -/
+theorem SchedLinkFrame.orphanReplyWaiter (st : SystemState) (w x : SeLe4n.ThreadId) :
+    SchedLinkFrame st (SeLe4n.Kernel.orphanReplyWaiter st w x) := by
+  refine (?_ : SchedLinkFrame st (st.mapTcbInPlace w TCB.serverForgotten)).trans
+    (SchedLinkFrame.of_agreeOffRunLinks (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ w x)
+      (by unfold SeLe4n.Kernel.orphanReplyWaiter; rw [SystemState.unlinkReplyWaiter_scheduler]))
+  refine ⟨fun oid => ?_, fun oid => ?_, fun oid => ?_, rfl⟩ <;>
+  · rw [SystemState.objects_mapTcbInPlace]
+    split
+    · cases st.objects[oid]? with
+      | none => rfl
+      | some o => cases o <;> rfl
+    · rfl
+
 /-- **The finalisation keeps every scheduling-link invariant**, every step of
 it (`finaliseFinalObject_closed`): each step a frame (`SchedLinkFrame`) but the
 context's release of its holder
@@ -1283,7 +1298,11 @@ theorem finaliseFinalObject_preserves_schedContextLinkInvariant (target : Nat) (
     (fun s _ _ tid _ h _ _ e => e ▸
       ⟨SystemState.updateTcb_preserves_objects_invExt _ _ _ h.1,
         (SchedLinkFrame.updateTcb s tid _ h.1).preserves h.2⟩)
-    SchedLinkFrame.yieldStep target st ⟨hInv, h⟩).2
+    SchedLinkFrame.yieldStep
+    (fun s w x _ h _ _ _ =>
+      ⟨(FinaliseFrame.orphanReplyWaiter s w x h.1).invExt,
+        (SchedLinkFrame.orphanReplyWaiter s w x).preserves h.2⟩)
+    target st ⟨hInv, h⟩).2
 
 -- ============================================================================
 -- §9  The retire

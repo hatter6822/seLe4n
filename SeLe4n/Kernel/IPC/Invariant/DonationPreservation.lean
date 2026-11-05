@@ -1155,9 +1155,9 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
       (fun s tx h => ?_) (fun s ty h => ?_) hSlots
       hAcyclic hOwnerValid hBudgetTransfer
     · obtain ⟨ty, h1, e1, e2, e3, e4, e5, e6, _, _⟩ := hBwd s tx h
-      exact ⟨ty, h1, e1, e2, e3, e4, e5, e6⟩
+      exact ⟨ty, h1, congrArg _ e1, e2, e3, e4, e5, e6⟩
     · obtain ⟨tx, h1, e1, e2, e3, e4, e5, e6, _, _⟩ := hFwd s ty h
-      exact ⟨tx, h1, e1, e2, e3, e4, e5, e6⟩
+      exact ⟨tx, h1, congrArg _ e1, e2, e3, e4, e5, e6⟩
   refine ipcInvariantFull_of_core_replyCallerLinkage hCore ⟨⟨?_, ?_⟩, ?_⟩ ⟨?_, ?_, ?_⟩ hOwnerUnique
     ?_ ?_ (.of_codes hCodes hInv.notificationBindingReciprocal) ?_
   -- 16a. replyCallerLinkageReciprocal, TCB → Reply.
