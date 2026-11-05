@@ -99,6 +99,29 @@ jobs:
           fi
           qemu-system-aarch64 --version
 
+      # The Lean-linked half of every tier-4 gate (`--lean-kernel`) links the
+      # cross archive `libsele4n.a`, and refuses one whose build record names
+      # a different working tree (`build_lean_aarch64_archive.py
+      # --check-fresh`).  Nothing in the nightly built that archive: the one
+      # `.lake/build` carried was whatever the restored cache held, and the
+      # caches the restore keys reach (the fast, full and aarch64 lanes) are
+      # built from other commits and inherit `.lake/build` from one another,
+      # so the archive was another tree's and every `--lean-kernel` gate
+      # failed as stale.  Build it here, from this checkout, with the same
+      # script and toolchain as the `Lean aarch64 Archive` lane, so the
+      # archive tier 4 links is this tree's.  Tiers 0-3 run after this step
+      # and must leave the tree as checked out; if one ever writes a tracked
+      # or unignored file, tier 4's freshness check refuses the archive.
+      - name: Install Rust toolchain (the cross archive and the kernel image)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.94.1
+          components: llvm-tools
+          targets: aarch64-unknown-none-softfloat
+
+      - name: Build the kernel's Lean archive for aarch64 from this checkout
+        run: ./scripts/test_lean_aarch64_archive.sh
+
       # Tier 4 reports NOT RUN (exit 77) when its acceptance gates cannot
       # execute, and that status propagates to here.  Since WS-BP BP8.4 the
       # bring-up, the PE-withheld boot and the in-image exercisers run on

@@ -35,6 +35,7 @@ CI tests code, not documentation: no job or tier reads `.md` files, `docs/`, REA
 
 Determinism checks run in the `Nightly Determinism` workflow (`.github/workflows/nightly_determinism.yml`) using:
 
+- `./scripts/test_lean_aarch64_archive.sh` first, so the cross archive the Tier-4 `--lean-kernel` gates link is built from the nightly's own checkout (the gates refuse an archive whose build record names another tree, and a restored `.lake/build` carries one built from another commit)
 - `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh`
 
 This includes staged Tier 4 repeat-run replay/diff checks and uploads nightly artifacts from `tests/artifacts/nightly/`.
