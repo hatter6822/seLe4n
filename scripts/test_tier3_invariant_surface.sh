@@ -22929,9 +22929,13 @@ run_negative_check "INVARIANT" rg -n 'clearReschedulePendingOnCore' SeLe4n/Kerne
 # (`releaseRemoveThread`), between the `.Inactive` store and the yield cancel,
 # as in the specification.  Mutation: bring a binding step back, or move the
 # purge.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendPerform \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*  let st0 := suspendTeardownState st tid\n" SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendPerform \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*  let st0 := suspendTeardownState st tid executingCore\n" SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendPerform \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*  let st3 := st2\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\n  let st3a := releaseRemoveThread st3 tid\n  let st4 := cancelYieldTo st3a tid" SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean'
 run_negative_check "INVARIANT" rg -n 'suspendBindingState|suspendReleasePerform|suspendHoldsLoan|suspendLoanReturnState' --glob '*.lean' SeLe4n tests
+# WS-ZA ZA6.33: the resume's refill-unblock check writes its context in its
+# slot: the compiled form is a `@[csimp]` equality to the specification's.
+# Mutation: drop the attribute, and the compiled resume allocates again.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem SchedContext\.refillUnblockCheck_eq_impl' SeLe4n/Kernel/SchedContext/Budget.lean
 # WS-ZA ZA6.33 part 1 (`v0.36.197`, shipped at `v0.36.199`): the suspend's checks
 # are read before any write.  RELATION: the notification arm's teardown is the
 # in-place cancel and the admission asks for the victim's slot in place; the

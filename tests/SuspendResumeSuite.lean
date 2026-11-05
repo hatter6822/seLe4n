@@ -281,7 +281,9 @@ private def sr016_suspendBlockedOnNotification : IO Unit := do
 -- D1-Q5: SchedContext binding tests
 -- ============================================================================
 
-/-- SR-017: Suspend a thread with bound SchedContext — binding cleared. -/
+/-- SR-017: Suspend a thread with bound SchedContext — binding kept (WS-ZA
+ZA6.33: seL4-MCS's `suspend` unbinds nothing; the context stays bound and
+names the thread back). -/
 private def sr017_suspendBoundSchedContext : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 50
@@ -296,8 +298,10 @@ private def sr017_suspendBoundSchedContext : IO Unit := do
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
       expect "thread is Inactive" (tcb'.threadState == .Inactive)
-      expect "schedContextBinding is unbound"
-        (tcb'.schedContextBinding == .unbound)
+      expect "schedContextBinding is kept bound"
+        (tcb'.schedContextBinding == .bound scId)
+      expect "the context still names the thread"
+        ((st'.getSchedContext? scId).bind (·.boundThread) == some tid)
     | _ => throw <| IO.userError "TCB not found"
   | .error e => throw <| IO.userError s!"suspend should succeed, got {repr e}"
 
@@ -918,9 +922,9 @@ private def sr039_threadFinaliseCancelsYield : IO Unit := do
 
 /-- SR-040 (WS-ZA ZA6.6, the frozen suspend mirrors the live one): a thread
 bound to context 50 and yielded to context 60, suspended live and frozen from
-the same objects.  Both release the bound context (unbound, inactive, no
-origin), clear the thread's binding codes and cancel both ends of the yield
-link, and they agree field for field. -/
+the same objects.  Both keep the bound context (WS-ZA ZA6.33: seL4-MCS's
+`suspend` unbinds nothing), cancel both ends of the yield link, and agree field
+for field. -/
 private def sr040_liveFrozenSuspendAgree : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let scBound : SeLe4n.Kernel.SchedContext := {
@@ -944,10 +948,11 @@ private def sr040_liveFrozenSuspendAgree : IO Unit := do
         fst'.objects.get? (⟨50⟩ : ObjId), fst'.objects.get? (⟨60⟩ : ObjId) with
     | some (.tcb t), some (.schedContext b), some (.schedContext y),
         some (.tcb ft), some (.schedContext fb), some (.schedContext fy) =>
-      expect "SR-040 the live suspend releases the bound context"
-        (b.boundThreadCode == 0 && !b.isActive && b.donationOrigin.isNone &&
-          t.scBindingScCode == 0 && t.scBindingOwnerCode == 0)
-      expect "SR-040 the frozen suspend releases it the same way"
+      expect "SR-040 the live suspend keeps the bound context"
+        (b.boundThreadCode == SeLe4n.ThreadId.optCode (some tid) && b.isActive &&
+          t.scBindingScCode == SeLe4n.Kernel.SchedContextBinding.scCode
+            (.bound (SeLe4n.SchedContextId.ofNat 50)) && t.scBindingOwnerCode == 0)
+      expect "SR-040 the frozen suspend keeps it the same way"
         (fb.boundThreadCode == b.boundThreadCode && fb.isActive == b.isActive &&
           fb.donationOrigin == b.donationOrigin && ft.scBindingScCode == t.scBindingScCode &&
           ft.scBindingOwnerCode == t.scBindingOwnerCode)

@@ -1067,7 +1067,7 @@ private def stDonated : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
           scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId ownerTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId ownerTid) })
-      |>.withObject ownerTid.toObjId (.tcb (mkTcb 711 25 none))
+      |>.withObject ownerTid.toObjId (.tcb { mkTcb 711 25 none with threadState := .BlockedReply })
       |>.withObject scId.toObjId (.schedContext (mkSc (some victimTid) true))
       |>.build)
   -- Seed the SC's pending replenishment on the VICTIM's home core (core 1),
@@ -2060,6 +2060,7 @@ private def stFrameHeadReclaim : SystemState :=
       |>.withObject rId.toObjId (.reply
           { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid), next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
+          threadState := .BlockedReply,
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
           scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
@@ -2254,6 +2255,7 @@ private def stRefusedReclaimRemoteHolder : SystemState :=
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
           scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scIdOther), scBindingOwnerCode := 0 } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
+          threadState := .Ready,
           scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
@@ -2565,18 +2567,18 @@ private def runReclaimCompleteSuspendChecks : IO Unit := do
     match Lifecycle.Suspend.suspendThreadOnCore stQ vv bootCoreId with
     | .error e => assertBool s!"the live per-core suspend succeeds (error: {reprStr e})" false
     | .ok (stPost, _) =>
-      assertBool "the live suspend leaves the unbound holder on NO scheduler slot"
-        (!runnableOnSomeCore stPost serverTid && !runningOnSomeCore stPost serverTid)
-      -- ...which is the payoff's own conclusion, in the payoff's own vocabulary.
-      assertBool "...which is `threadPlacedOnSomeCore = false` of the state the transition ends in"
-        (!threadPlacedOnSomeCore stPost serverTid)
-      assertBool "...`.ready` and `.unbound`, recoverable by its own manager"
-        (decide ((stPost.getTcb? serverTid).map (·.ipcState) = some .ready)
+      -- WS-ZA ZA6.33: the suspend is seL4-MCS's `cancelIPC`, whose reply arm is
+      -- `reply_remove_tcb`: the victim's frame is cut off the context it heads
+      -- and the server keeps the context as its own, so it stays where it was.
+      assertBool "the live suspend leaves the holder QUEUED on core 2, holding the context as its own"
+        (stPost.queuedOn core2 serverTid
           && decide ((stPost.getTcb? serverTid).map (·.schedContextBinding)
-              = some SchedContextBinding.unbound))
-      assertBool "...and its `.bound` arm's purge reaches the migrated entry, so no \
-entry names the deactivated reservation"
-        (!replenishHolds stPost core1 scId && !replenishHolds stPost core2 scId)
+              = some (SchedContextBinding.bound scId))
+          && decide ((stPost.getSchedContext? scId).bind (·.boundThread) = some serverTid))
+      assertBool "...the context heads no frame any more"
+        (decide ((stPost.getSchedContext? scId).bind (·.scReply) = none))
+      assertBool "...and the victim is `.Inactive` and holds nothing"
+        (decide ((stPost.getTcb? victimTid).map (·.threadState) = some .Inactive))
   -- (vii) And the single-core reference path.  Until WS-RR RR8.12's fifth cut it
   -- reached for the bare teardown -- `cancelIpcBlockingReclaimed` was declared in
   -- a module that imports `Lifecycle/Suspend.lean`, so this path could not see it.
@@ -2590,12 +2592,10 @@ entry names the deactivated reservation"
     match bootSuspendThread stQ vv with
     | .error _ => assertBool "the boot-core suspend succeeds" false
     | .ok stRef =>
-      assertBool "the boot-core suspend leaves the unbound holder on no scheduler slot"
-        (!threadPlacedOnSomeCore stRef serverTid)
-      assertBool "...where the RETIRED bare G2 left it queued and unbound on core 2"
-        ((bareTeardownG2 stQ victimTid tcbQ).queuedOn core2 serverTid
-          && decide (((bareTeardownG2 stQ victimTid tcbQ).getTcb? serverTid).map
-              (·.schedContextBinding) = some SchedContextBinding.unbound))
+      assertBool "the boot-core suspend leaves the holder queued with the context as its own"
+        (stRef.queuedOn core2 serverTid
+          && decide ((stRef.getTcb? serverTid).map (·.schedContextBinding)
+              = some (SchedContextBinding.bound scId)))
   -- (viii) The footprint names the holder's placed core, and the pre-RR8.12
   -- arity omitted it.
   assertBool "the suspend sched footprint covers the core the reclaim deschedules the holder at"
@@ -2889,16 +2889,19 @@ private def runReclaimMigrationFootprintChecks : IO Unit := do
             (cancelUnboundHolderCore? stQ (cancelIpcBlockingMigrated victimTid tcbQ stQ)
               victimTid tcbQ)
             (cancelIpcBlockingReplenishCores stQ victimTid tcbQ)))
-  -- (v) The RESOLVED footprint — the one the bracket will consume — names both
-  -- with nothing handed to it at all.
+  -- (v) The RESOLVED footprint — the one the bracket will consume.  WS-ZA
+  -- ZA6.33: the suspend is seL4-MCS's, which returns no loan, so the context
+  -- stays with the server and the suspend migrates no replenishment; its own
+  -- replenish writes are the victim's context's release cores alone, and here
+  -- the victim holds none.
   match victimTid.toValid? with
   | none => assertBool "setup: victim ValidThreadId" false
   | some vtid =>
-      assertBool "the RESOLVED footprint names both endpoints, resolved from the state alone"
+      assertBool "the RESOLVED footprint names neither endpoint of the retired migration"
         (decide ((LockKey.replenishQueue core2, Concurrency.AccessMode.write)
-            ∈ schedLockSet_suspendThreadOnCore stQ vtid bootCoreId)
+            ∉ schedLockSet_suspendThreadOnCore stQ vtid bootCoreId)
           && decide ((LockKey.replenishQueue core1, Concurrency.AccessMode.write)
-            ∈ schedLockSet_suspendThreadOnCore stQ vtid bootCoreId))
+            ∉ schedLockSet_suspendThreadOnCore stQ vtid bootCoreId))
       assertBool "...and the holder's placed core and the executing core, as before"
         (decide ((LockKey.runQueue core2, Concurrency.AccessMode.write)
             ∈ schedLockSet_suspendThreadOnCore stQ vtid bootCoreId)
@@ -2922,13 +2925,10 @@ private def runReclaimMigrationFootprintChecks : IO Unit := do
           assertBool "the live suspend writes no replenish queue on core 3"
             ((stS.releaseEntriesOn core3)
               == (stQ.releaseEntriesOn core3))
-          -- Both of the segment's cores are written, and by different steps:
-          -- G2's reclaim moves the entry off core 2 and onto core 1, and G3's
-          -- `.bound` arm then purges core 1 — the victim is `.bound scId` by
-          -- then, the teardown having handed the reservation back to it.  The
-          -- entry is gone from both, which is only reachable by writing both.
-          assertBool "...and DOES write the two the resolved segment names"
-            (!replenishHolds stS core2 scId && !replenishHolds stS core1 scId
+          -- ...nor on cores 1 and 2: the server keeps the context, so its entry
+          -- stays on core 2 and none is placed on core 1.
+          assertBool "...and leaves the server's entry on core 2, placing none on core 1"
+            (replenishHolds stS core2 scId && !replenishHolds stS core1 scId
               && replenishHolds stQ core2 scId)
       | .error _ => assertBool "the queued-holder suspend succeeds" false
 

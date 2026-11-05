@@ -5227,6 +5227,9 @@ heading a context's reply stack is popped first, as `reply_remove`'s head branch
 does it (`reply_pop`): the context goes back to the caller with its
 replenishments on the caller's core, the thread it is taken from leaves its core,
 and the reply is unheaded (`finaliseReplyCancel`, `cancelIpcBlockingReclaimed`).
+Since `v0.36.199` the returned context is settled on the caller as
+`schedContext_resume` settles it (`settleReturnedContext`): its refill is
+checked and it is postponed onto the release queue when not yet due.
 Whether the pop commits is decided on the pre-state, before any write
 (`replyHeadPopCommits`, which reads the donated return's own check
 `donatedReturnCommits`); it refuses a caller that holds a binding of its own,
@@ -6093,13 +6096,15 @@ Every kernel object has a decidable well-formedness predicate:
     every context in the object store, the reconfigured one at its new
     parameters (`checkAdmission`).
   - **No refill is stranded.**  `SystemState.releaseNoRefillStranded`: every
-    bound context whose head refill is used up and pending is on some core's
-    release queue at that refill's time.  Configure places the bound context on
-    its thread's home core, and bind releases a ready head and otherwise
-    postpones the context there (`releasePlace`: seL4's `postpone`).  Resume
-    needs no postpone of its own: suspend unbinds the thread's bound context and
-    purges its entry (`suspendReleasePerform`), so a resumed thread holds no
-    bound context until a bind, which places it.  Placing preserves the
+    context whose holder is active (`heldReleaseKey?`) and whose head refill is
+    used up and pending is on some core's release queue at that refill's time.
+    Configure places the bound context on its thread's home core, and bind
+    releases a ready head and otherwise postpones the context there
+    (`releasePlace`: seL4's `postpone`).  Since `v0.36.199` suspend keeps the
+    context bound and takes it off the release queues (`releaseRemoveThread`,
+    seL4's `tcbReleaseRemove`), which the exemption for an inactive holder
+    permits; resume runs `refillUnblockCheck` and postpones a context whose
+    refill is not yet due (`resumeContext`, seL4's `schedContext_resume`).  Placing preserves the
     invariant (`releasePlace_noRefillStranded`), and so does every step that
     writes no release field and no queue (`releaseNoRefillStranded_of_frame`);
     the runtime check (`releaseNoRefillStrandedChecks`) runs in every suite's
@@ -6484,15 +6489,23 @@ Every kernel object has a decidable well-formedness predicate:
   thread in a word (`SchedContext.boundThread`), a thread's binding is two
   words (`SchedContextBinding.ofCodes`), and a context's first refill is
   plain fields behind the `SchedContext.replenishments` view.  The suspend
-  of a thread holding a bound context (`suspendReleasePerform`) and the
-  resume of a thread with a pending fault are admitted checks-first.  The
+  of a thread holding a bound context and the resume of a thread with a
+  pending fault are admitted checks-first.  The
   entry captures a caller's overflow message words into a per-core buffer
   of (address, word) pairs and never writes model memory
   (`ffi_capture_user_words`, `overflowRuns`, `userWordAt`), and a core's TLB
   view holds each translation once (`tlbInsertOnCore_of_mem`).  Each of the
-  five scheduling-context scenarios reads 0 allocations.  The suspend of a
-  thread blocked in IPC or holding a donated context keeps the general path
-  (`docs/REGISTERED_DEBT.md`, ZA6.33).
+  five scheduling-context scenarios reads 0 allocations.  Since `v0.36.199`
+  (ZA6.33) the suspend is total and is seL4-MCS's `suspend`: `cancelIPC`
+  (the targeted endpoint dequeue `removeFromBlockingEndpoint`, the reply's
+  `reply_remove_tcb` through `cutCancelledCallerHead`, the notification's
+  in-place cancel), `tcbSchedDequeue`, `tcbReleaseRemove`
+  (`releaseRemoveThread`), `schedContext_cancelYieldTo`, then `Inactive`.  It
+  unbinds no context and returns no loan.  `suspendAdmitted` admits every arm
+  (`suspendThreadOnCore_of_admitted`).  The resume follows seL4's `restart`
+  and `schedContext_resume`: the context's `refillUnblockCheck`, a postpone
+  onto the release queue when its refill is not yet due, and an enqueue only
+  when the thread is then schedulable (`resumeContext`, `resumeSchedulable`).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write

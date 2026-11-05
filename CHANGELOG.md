@@ -1,35 +1,104 @@
-## v0.36.199 — WS-ZA: the suspend's checks are read before any write (ZA6.33 part 1)
+## v0.36.199 — WS-ZA ZA6.33: the suspend is total, and is seL4's
 
-The suspend of a thread blocked on a notification, and of a thread holding a
-context on loan, now runs every check before any write and changes each object
-in its slot, as the quiescent and bound suspends already did.
+`.tcbSuspend` now admits every thread it can be handed, and what it does is
+seL4-MCS's `suspend`: `cancelIPC`, `tcbSchedDequeue`, `tcbReleaseRemove`,
+`schedContext_cancelYieldTo`, then `Inactive`.  It unbinds no scheduling
+context and returns no loan.  `.tcbResume` follows seL4's `restart` and
+`schedContext_resume`.
 
-- **The admission** (`SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean`, new).
-  `suspendAdmitted` reads, on the state the suspend is handed, every question
-  the specification's later steps ask of the states they run on.  It admits a
-  thread blocked on no IPC whatever it holds: a context it holds on loan goes
-  back to its lender, the return's refusal decided first (`donatedReturnCommits`,
-  as seL4 decides `reply_pop`'s before writing).  It admits a thread blocked on a
-  notification and holding no loan: the wait is cancelled in its slots
-  (`storeNotificationBlockedCancelled`) and every thread's binding is read back
-  after the cancel (`TcbBindingsKept`).  No check assumes the store invariant:
-  each read-back is the table's own frame on a table no insert resizes
-  (`RHTable.noResizeDue`, asked once), so the compiled entry's unconditional
-  equality holds (`returnDonatedSchedContextResolved_ok_of_commits_nr`).
-- **The perform** (`suspendPerform`): the teardown, the end of the reservation
-  (`suspendBindingState`: the loan's return or the bound release), the
-  deschedule, `.Inactive`, the yield link and the local scheduling point.  It is
-  the specification's state (`suspendThreadOnCore_of_admitted`).  The earlier
-  quiescent-only admission and perform in `Cancellation.lean` are removed.
-- **The exerciser.**  The yieldTo branches end with the partner blocked on the
-  notification wait, holding the bound context; its suspend is now measured as
-  `tcb-suspend-waiting`, pinned at 0 at first call and steady state
-  (`scripts/qemu_exerciser_lib.sh`).
-- **Still on the general path** (`docs/REGISTERED_DEBT.md`, ZA6.33): the
-  suspend of a thread blocked on an endpoint (the specification's teardown is a
-  sweep of every object in the store, where seL4 dequeues from the one endpoint
-  the thread state names), on a reply (the binding must be carried through the
-  priority-inheritance revert walk), or on a notification while holding a loan.
+- **The admission** (`SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean`).
+  `suspendAdmitted` asks, before any write, that the target is a thread not
+  already `.Inactive`.  For a thread blocked on a notification it also asks
+  that the thread's slot is found in place and that the notification exists,
+  so the wait is cancelled in its slots (`storeNotificationBlockedCancelled`).
+  Every other arm is admitted, because once these checks pass the
+  specification commits.  The perform (`suspendPerform`) runs the teardown
+  (`suspendTeardownState`: the in-place notification cancel, or
+  `suspendCancelRevert`, which is `cancelIpcKeepingContexts` followed by the
+  priority-inheritance revert walk), the deschedule, the pending-state clear,
+  `.Inactive`, `releaseRemoveThread`, `cancelYieldTo` and the local scheduling
+  point.  `suspendThreadOnCore_of_admitted` proves it is the specification's
+  state.  No arm keeps a copy of the store for a possible refusal any more.
+- **No unbind and no loan return.**  The suspend's binding step
+  (`suspendBindingState`) and its release perform are deleted.  A thread
+  keeps a context it holds, bound or on loan.  The context leaves the release
+  queues through `releaseRemoveThread`, keyed on `releaseEntryOf?`.
+- **The IPC cancel** (`cancelIpcKeepingContexts`, `SeLe4n/Kernel/Lifecycle/Suspend.lean`).
+  On an endpoint the cancel is seL4's `tcbEPDequeue`: the thread leaves the one
+  endpoint its state names (`removeFromBlockingEndpoint`), not a sweep of the
+  store.  On a reply the cancel is seL4's `reply_remove_tcb`.  A frame that
+  heads a context's stack is cut off it (`cutCancelledCallerHead`,
+  `cutHeadFrameKeepingContext`), and the server makes the context its own.  A
+  frame in the middle of a stack breaks the chain there, as seL4's
+  `reply_remove` does (the earlier splice is reversed into a sever).
+- **The resume** (`resumePerform`).  The thread's context runs
+  `refillUnblockCheck`, and a context whose refill is not yet due is
+  postponed onto the release queue (`resumeContext`, settled through
+  `settleReturnedContext`).  The thread is enqueued only if it is then
+  schedulable (`resumeSchedulable`).
+- **Returns settle.**  A context that comes back to a thread is settled where
+  it lands: in `finaliseReply`'s head pop, in `cancelIpcBlockingMigrated` and
+  in the reply sites.  `cleanupPreReceiveDonationMigrated` still migrates.
+- **The refill exemption** keys on the context's holder being active, not on
+  a quiescence flag.  The quiescence field is removed.  Donation preservation
+  takes a donor-active hypothesis from outside.
+- **Compiled shapes.**
+  - `releaseCoreOf` is inlined.
+  - `releaseEntryOf?` compares the bound-thread code.
+  - `resumeContext` reads the timer before its write.
+  - `refillUnblockCheck`'s compiled form (`refillUnblockCheck_eq_impl`,
+    `@[csimp]`) chooses the head's start through a scalar helper, so the
+    context is written in its slot.
+
+  Each of these fixes removes an allocation on the bound resume.
+- **The exerciser** (`rust/sele4n-hal/src/smp_exercisers.rs`,
+  `scripts/qemu_exerciser_lib.sh`).  New scenarios suspend the partner while
+  it is blocked on an endpoint receive, an endpoint send, a notification wait
+  and a reply.  They also cover a reply on which the partner's context is
+  donated, a bound suspend and resume, and a resume postponed on a refill not
+  yet due.  The postpone and donated scenarios run inside the
+  scheduling-context scenario, after the real `SchedContext_Unbind`.
+
+  These read 0 at first call and in steady state: the notification-wait,
+  bound, release-queued and postponed suspends, and the bound and postponed
+  resumes.
+
+  The endpoint and reply arms are pinned at what the specification's writes
+  read today, which rebuild the neighbours', the endpoint's and the reply's
+  records:
+
+  | Arm | Reading |
+  |---|---|
+  | receive-blocked | 14 |
+  | send-blocked | 12 |
+  | reply-blocked | 11 |
+  | donated reply | 25 |
+
+  ZA6.35 brings them to zero.
+
+  Two other pins come from this change.  The donating call that sets up the
+  donated scenario reads 124: that is the call's donation leg, measured here
+  for the first time.  The yieldTo requeue's first call reads 3, because it
+  now follows these scenarios.
+- **Debt.**  The `docs/REGISTERED_DEBT.md` row for the suspend's general path
+  is closed.
+- **Fixture.**  `tests/fixtures/main_trace_smoke.expected` changes one line, and
+  its checksum is refreshed.  `[SCO-023]` reported `threadReady=true`, because
+  the timeout abort set the thread `.Ready`.  The abort now leaves the thread
+  state as it was, as every IPC restore does (`TCB.restoredToReady`), so it
+  never makes a suspended thread runnable: seL4's timeout reaches a thread
+  through `cancelIPC`.  The line now reports `threadStateKept=true`.
+- **Suites.**  The suites now check seL4's behaviour:
+  - the suspend keeps the bound or donated context, and takes it off the
+    release queues;
+  - a middle reply's removal severs the stack (`FrozenOpsSuite` FO-043, the
+    final-delete scenario);
+  - a resume enqueues only a schedulable thread;
+  - a returned context is settled only on an active holder.
+
+  The fixtures' threads are made live where they stood in for running threads.
+  The runtime stranded-refill check reads `heldReleaseKey?`, as the invariant
+  does.
 
 ## v0.36.198 — Dead code removed: 123 definitions and four FFI exports nothing calls
 

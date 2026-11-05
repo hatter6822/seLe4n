@@ -256,9 +256,12 @@ private def replyMsgD : IpcMessage :=
 private def sendMsgE : IpcMessage :=
   { registers := #[SeLe4n.RegValue.ofNat 5], badge := none }
 
+-- WS-ZA ZA6.33: the workload's threads are live (`.Ready`), not the record's
+-- `.Inactive` default: a context returned to a thread is settled only while its
+-- holder is active (`settleReturnedContext`, seL4's `schedContext_resume`).
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnRoot vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
-    cpuAffinity := aff }
+    cpuAffinity := aff, threadState := .Ready }
 
 /-- The 4-thread / 4-core IPC workload: two client/server pairs, one per core
 pair (client A on core 0 ↔ server B homed core 1; client C on core 2 ↔ server D
@@ -1575,11 +1578,13 @@ private def runSuspendArmChecks : IO Unit := do
           assertBool "the suspended server is .Inactive"
             (match stSusp.getTcb? donServer with
              | some t => decide (t.threadState = ThreadState.Inactive) | none => false)
-          assertBool "the suspend returns the donated SchedContext to its original owner"
-            (match stSusp.getTcb? donClient with
-             | some t => decide (t.schedContextBinding = .bound scClient) | none => false)
-          assertBool "the suspend leaves the server SC-less (.unbound)"
+          -- WS-ZA ZA6.33: seL4-MCS's `suspend` returns no loan: the server keeps
+          -- the donated context, and the client stays waiting on its reply.
+          assertBool "the suspend leaves the donated SchedContext with the server"
             (match stSusp.getTcb? donServer with
+             | some t => decide (t.schedContextBinding = .donated scClient donClient) | none => false)
+          assertBool "the suspend gives the client nothing back"
+            (match stSusp.getTcb? donClient with
              | some t => decide (t.schedContextBinding = SchedContextBinding.unbound) | none => false)
           assertBool "the suspend descheds the victim from its home core 1"
             (stSusp.scheduler.currentOnCore c1 != some donServer
@@ -1589,11 +1594,11 @@ private def runSuspendArmChecks : IO Unit := do
              | some t => decide (t.ipcState = ThreadIpcState.ready)
                  && decide (t.queueNext = none) && decide (t.queuePrev = none)
              | none => false)
-          -- RR2.17's subject: the suspend's five extra stages write TCBs and
-          -- scheduler slots only, so no notification object moves. The donated
-          -- SC's replenishments follow the binding home, exactly as on the reply.
-          assertBool "the suspend migrates the returned SC's replenishments back to core 0"
-            (decide (replenishCountFor stSusp c0 scClient = 1)
+          -- RR2.17's subject: the suspend's stages write TCBs and scheduler slots
+          -- only, so no notification object moves.  The held context leaves
+          -- the release queues (seL4's `tcbReleaseRemove`) and is placed on none.
+          assertBool "the suspend takes the held SC off every release queue"
+            (decide (replenishCountFor stSusp c0 scClient = 0)
               && decide (replenishCountFor stSusp c1 scClient = 0))
           assertBool "the suspend leaves the bystander SchedContext's entry alone"
             (decide (replenishCountFor stSusp c1 scBystander = 1))
