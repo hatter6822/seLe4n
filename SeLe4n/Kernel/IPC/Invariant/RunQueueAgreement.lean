@@ -25,11 +25,12 @@ theorem modifyTcb_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {f : TCB → TCB} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hm : TCB.StateMono f := by tcb_state_mono)
-    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hT : ∀ x, (f x).threadState = x.threadState := by intro _; rfl) :
     RunQueueStage st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact RunQueueStage.storeObject_tcb hS (lookupTcb_some_objects st tid tcb hL) (hf tcb)
-    (SystemState.objStateMono_tcb (hm tcb)) (hY tcb)
+    (SystemState.objStateMono_tcb (hm tcb)) (hY tcb) (hT tcb)
 
 theorem storeTcbQueueLinks_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
@@ -136,9 +137,10 @@ theorem storeObject_tcbOver_runQueueStage {st st' : SystemState} {tid : SeLe4n.T
     (hS : storeObject tid.toObjId (.tcb t) st = .ok ((), st'))
     (h : ∀ c, t.runLinkOn c = old.runLinkOn c)
     (hm : TCB.StepMono old t := by exact ⟨id, id, by first | rfl | simp_all⟩)
-    (hY : t.yieldToCode = old.yieldToCode := by first | rfl | simp_all) : RunQueueStage st st' :=
+    (hY : t.yieldToCode = old.yieldToCode := by first | rfl | simp_all)
+    (hTS : t.threadState = old.threadState := by first | rfl | simp_all) : RunQueueStage st st' :=
   RunQueueStage.storeObject_tcb hS ((SystemState.getTcb?_eq_some_iff st tid old).mp hOld) h
-    (SystemState.objStateMono_tcb hm) hY
+    (SystemState.objStateMono_tcb hm) hY hTS
 
 /-- A Reply stored over a Reply. -/
 theorem storeObject_replyOver_runQueueStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
@@ -827,10 +829,15 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.refi
     {st st' : SystemState} {oid : SeLe4n.ObjId}
     (h : SystemState.objectAgreesOffDerivationMetadataAt st' st oid) :
     objRefillView st'.objects[oid]? = objRefillView st.objects[oid]? := by
-  rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
+  rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, hw⟩
   · rw [e]
   · rw [ha, hb]; rfl
-  · rw [ha, hb]; rfl
+  · rw [ha, hb]
+    show Kernel.tcbRefillView _ = Kernel.tcbRefillView _
+    unfold Kernel.tcbRefillView
+    have e := congrArg TCB.threadState hw
+    dsimp only [TCB.withoutLinks] at e
+    rw [e]
 
 /-- The capability transfer keeps every context's refill view: every object it
 writes is a CNode or a thread's links. -/
@@ -920,41 +927,216 @@ theorem receiveTransferCaps_runQueueStage
       · exact ipcUnwrapCaps_runQueueStage h
 
 /-- The donation rebinds a context and two threads' bindings: no run-queue
-field moves. -/
-theorem donateSchedContext_runQueueStage {st st' : SystemState}
+field moves, and the refills of every context but the donated one are kept. -/
+theorem donateSchedContext_runQueueFrameStage {st st' : SystemState}
     {client server : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
-    (h : donateSchedContext st client server scId = .ok st') : RunQueueStage st st' :=
+    (h : donateSchedContext st client server scId = .ok st') :
+    SystemState.RunQueueFrameStage (· = scId) st st' :=
   have hS := donateSchedContext_scheduler_eq st st' client server scId h
-  RunQueueStage.of_placement
+  SystemState.RunQueueFrameStage.of_placement (P := (· = scId))
     (fun hInv => donateSchedContext_preserves_objects_invExt st st' client server scId hInv h)
     (by rw [hS]) (by rw [hS])
     (fun hInv x => donateSchedContext_getTcb?_placement_eq st st' client server scId hInv h x)
     (fun hInv => SystemState.StateMono.of_stateFields
       (donateSchedContext_getTcb?_stateFields_eq st st' client server scId hInv h))
     (fun hInv => donateSchedContext_releaseStateAgree st st' client server scId hInv h)
-    (fun hInv => donateSchedContext_refillViewsKept st st' client server scId hInv h)
+    (fun hInv => donateSchedContext_refillsKeptOff st st' client server scId hInv h)
     (fun hInv => donateSchedContext_yieldLinksKept st st' client server scId hInv h)
     (by rw [hS])
     (by rw [donateSchedContext_machine_eq st st' client server scId h])
 
+/-- ...and a stage when the donor is not suspended (`hD`) — seL4's donor is the
+running caller or a caller blocked on the endpoint (WS-ZA ZA6.33) — so the
+context's holder is not suspended after unless it was before, and its refill
+state stays sound (`refillsSoundExcept_rebind`). -/
+theorem donateSchedContext_runQueueStage {st st' : SystemState}
+    {client server : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    (hD : st.activeAt client)
+    (h : donateSchedContext st client server scId = .ok st') : RunQueueStage st st' :=
+  have hS := donateSchedContext_scheduler_eq st st' client server scId h
+  (donateSchedContext_runQueueFrameStage h).withRefills
+    fun S _ hInv _ _ _ hQ' hSnd _ => by
+      obtain ⟨b, a, hb, hbB, ha, haB, hv⟩ :=
+        donateSchedContext_rebinds st st' client server scId hInv h
+      refine SystemState.refillsSoundExcept_rebind
+        (donateSchedContext_refillsKeptOff st st' client server scId hInv h) hQ'
+        (fun c => by unfold SchedulerState.replenishQueueOnCore; rw [hS]) ha hb hv
+        (by rw [haB]; rfl) (fun _ => ?_) hSnd
+      obtain ⟨x, hx, hA⟩ := hD
+      unfold SystemState.holderActive
+      rw [hbB]
+      simp only [hx, Option.any_some, bne_iff_ne, ne_eq]
+      exact hA
+
 theorem applyCallDonation_runQueueStage {st st' : SystemState}
-    {callerV receiverV : SeLe4n.ValidThreadId}
+    {callerV receiverV : SeLe4n.ValidThreadId} (hD : st.activeAt callerV.val)
     (h : applyCallDonation st callerV receiverV = .ok st') : RunQueueStage st st' := by
   rw [applyCallDonation_characterisation] at h
   split at h
-  · exact donateSchedContext_runQueueStage h
+  · exact donateSchedContext_runQueueStage hD h
   · cases h; exact RunQueueStage.refl _
 
 theorem applyCallDonationOnCore_runQueueStage {st st' : SystemState}
     {callerV receiverV : SeLe4n.ValidThreadId} {donorHome doneeHome : Concurrency.CoreId}
+    (hD : st.activeAt callerV.val)
     (h : applyCallDonationOnCore st callerV receiverV donorHome doneeHome = .ok st') :
     RunQueueStage st st' := by
   obtain ⟨st1, hDon, harm⟩ :=
     applyCallDonationOnCore_ok_decompose st st' callerV receiverV donorHome doneeHome h
   rcases harm with ⟨-, rfl⟩ | ⟨scId, -, rfl⟩
-  · exact applyCallDonation_runQueueStage hDon
-  · exact (applyCallDonation_runQueueStage hDon).trans
+  · exact applyCallDonation_runQueueStage hD hDon
+  · exact (applyCallDonation_runQueueStage hD hDon).trans
       (migrateSchedContextReplenishment_runQueueStage _ _ _ _)
+
+/-- The donation with no premise is a frame stage off every context: its link,
+release, activity and current-thread halves hold of any donor. -/
+theorem applyCallDonationOnCore_runQueueFrameStage {st st' : SystemState}
+    {callerV receiverV : SeLe4n.ValidThreadId} {donorHome doneeHome : Concurrency.CoreId}
+    (h : applyCallDonationOnCore st callerV receiverV donorHome doneeHome = .ok st') :
+    SystemState.RunQueueFrameStage (fun _ => True) st st' := by
+  obtain ⟨st1, hDon, harm⟩ :=
+    applyCallDonationOnCore_ok_decompose st st' callerV receiverV donorHome doneeHome h
+  have h1 : SystemState.RunQueueFrameStage (fun _ => True) st st1 := by
+    rw [applyCallDonation_characterisation] at hDon
+    split at hDon
+    · exact (donateSchedContext_runQueueFrameStage hDon).mono fun _ _ => trivial
+    · cases hDon; exact (RunQueueStage.refl _).toFrame _
+  rcases harm with ⟨-, rfl⟩ | ⟨scId, -, rfl⟩
+  · exact h1
+  · exact h1.trans ((migrateSchedContextReplenishment_runQueueStage _ _ _ _).toFrame _)
+
+-- ============================================================================
+-- Activity frames (WS-ZA ZA6.33)
+-- ============================================================================
+
+/-- WS-ZA ZA6.33: **a step that suspends no thread**, read from the link
+invariants at its start: every thread not suspended stays so.  A donation reads
+it of its donor (`donateSchedContext_runQueueStage`): seL4 donates only from
+the running caller or a caller blocked on the endpoint, never from a suspended
+thread. -/
+def activeKeptStage (st st' : SystemState) : Prop :=
+  st.objects.invExt → st.runQueueRefined → ∀ t, st.activeAt t → st'.activeAt t
+
+namespace activeKeptStage
+
+theorem refl (st : SystemState) : activeKeptStage st st := fun _ _ _ h => h
+
+theorem of_stage {st st' : SystemState} (h : RunQueueStage st st') : activeKeptStage st st' :=
+  fun hI hR _ ha => (h.2.2 hI hR).activeAt ha
+
+theorem of_dispatch {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : SystemState.RunQueueDispatchStage c st st') : activeKeptStage st st' :=
+  fun hI hR _ ha => (h.2.2 hI hR).activeAt ha
+
+/-- Two activity frames compose over the link invariants the first step keeps. -/
+theorem trans {a b d : SystemState} (L : SystemState.RunQueueLinkStage a b)
+    (h1 : activeKeptStage a b) (h2 : activeKeptStage b d) : activeKeptStage a d :=
+  fun hI hR t ha => let ⟨hI', hR'⟩ := L.links hI hR; h2 hI' hR' t (h1 hI hR t ha)
+
+end activeKeptStage
+
+/-- **The blocking arm's IPC-state store suspends no thread**: it writes the IPC
+state and the message of one TCB. -/
+theorem storeTcbIpcStateAndMessage_activeKeptStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {s : ThreadIpcState} {m : Option IpcMessage}
+    (h : storeTcbIpcStateAndMessage st tid s m = .ok st') : activeKeptStage st st' :=
+  fun hI _ t ⟨x, hx, hA⟩ => by
+    obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
+    by_cases e : t = tid
+    · subst e
+      rw [getTcb?_of_lookupTcb st t tcb hL] at hx; cases hx
+      exact ⟨_, storeObject_getTcb?_self st st' t _ hI hS, hA⟩
+    · exact ⟨x, by
+        rw [storeObject_getTcb?_ne st st' _ _ t
+          (fun h' => e (ThreadId.toObjId_injective _ _ h')) hI hS]; exact hx, hA⟩
+
+/-- **The cross-core call suspends no thread**: the receiver's hand-over and
+wake are run-queue stages, the caller's block is its IPC-state store, and the
+deschedule closing the window is a dispatch. -/
+theorem endpointCallOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : Concurrency.CoreId)
+    (st : SystemState) (hHeads : endpointHeadsWakeable st)
+    (hCur : st.scheduler.currentOnCore c = some caller) (hNI : isIdleThreadId caller = false) :
+    activeKeptStage st (endpointCallOnCore endpointId caller payload c st).1 := by
+  unfold endpointCallOnCore
+  split
+  · rename_i ep hEp
+    split
+    · rename_i r hHead
+      split
+      · exact .refl _
+      · rename_i receiver tcb st1 hPop
+        split
+        · exact .refl _
+        · rename_i st2 hS2
+          have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
+            (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
+          have hC2 : st2.scheduler.currentOnCore c = some caller :=
+            currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
+              (currentOnCore_of_scheduler_eq (endpointQueuePopHead_scheduler_eq _ _ _ _ _ hPop) hCur)
+          have hC3 : (wakeThread st2 receiver c).1.scheduler.currentOnCore c = some caller := by
+            show (enqueueRunnableOnCore st2 _ receiver).scheduler.currentOnCore c = _
+            rw [enqueueRunnableOnCore_currentOnCore]; exact hC2
+          split
+          · exact .refl _
+          · rename_i st4 hS4
+            split
+            · exact .refl _
+            · rename_i st5 hS5
+              have hC5 : st5.scheduler.currentOnCore c = some caller :=
+                currentOnCore_of_scheduler_eq (linkServerStashedReply_scheduler_eq _ _ _ _ hS5)
+                  (currentOnCore_of_scheduler_eq
+                    (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS4) hC3)
+              have P := ((endpointQueuePopHead_runQueueStage hPop).trans
+                (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)).then_wake c hN
+                (hHeads.popped_blocked hPop)
+              have W := storeTcbIpcStateAndMessage_runQueueBlockStage hS4 hC3 hNI
+              have L5 := linkServerStashedReply_runQueueStage hS5
+              have D := SystemState.RunQueueDispatchStage.descheduleCurrent st5 c caller hC5
+              exact (activeKeptStage.of_stage P).trans P.1
+                ((storeTcbIpcStateAndMessage_activeKeptStage hS4).trans W.1
+                ((activeKeptStage.of_stage L5).trans L5.1
+                ((activeKeptStage.of_dispatch D).trans D.1
+                (activeKeptStage.of_stage (SystemState.linkReplyWaiter_runQueueStage _ caller
+                  receiver)))))
+    · split
+      · exact .refl _
+      · rename_i st1 hE
+        split
+        · exact .refl _
+        · rename_i st2 hS2
+          have hC1 : st1.scheduler.currentOnCore c = some caller :=
+            currentOnCore_of_scheduler_eq (endpointQueueEnqueue_scheduler_eq _ _ _ _ _ hE) hCur
+          have E1 := endpointQueueEnqueue_runQueueStage hE
+          have W := storeTcbIpcStateAndMessage_runQueueBlockStage hS2 hC1 hNI
+          have D := SystemState.RunQueueDispatchStage.descheduleCurrent st2 c caller
+            (currentOnCore_of_scheduler_eq
+              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1)
+          exact (activeKeptStage.of_stage E1).trans E1.1
+            ((storeTcbIpcStateAndMessage_activeKeptStage hS2).trans W.1
+            ((activeKeptStage.of_dispatch D).trans D.1
+            (activeKeptStage.of_stage (recordSendCap_runQueueStage _ caller _ _))))
+  · split <;> exact .refl _
+
+theorem endpointCallWithCapsOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
+    (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
+    (hNI : isIdleThreadId caller = false) :
+    activeKeptStage st (endpointCallWithCapsOnCore endpointId caller payload base c st).1 := by
+  have s0 := (endpointCallOnCore_runQueueEntryStage endpointId caller payload c st hHeads hCur hNI).1
+  have r0 := endpointCallOnCore_activeKeptStage endpointId caller payload c st hHeads hCur hNI
+  unfold endpointCallWithCapsOnCore
+  generalize endpointCallOnCore endpointId caller payload c st = r at s0 r0 ⊢
+  obtain ⟨st1, r⟩ := r
+  cases r with
+  | error e => exact r0
+  | ok sgi =>
+    dsimp only
+    repeat' split
+    all_goals first
+      | exact r0
+      | (rename_i hU; exact r0.trans s0 (.of_stage (receiveTransferCaps_runQueueStage hU)))
 
 -- ============================================================================
 -- Call dispatch
@@ -984,13 +1166,16 @@ theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.Ob
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
-    (hNI : isIdleThreadId caller = false) :
+    (hNI : isIdleThreadId caller = false)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt caller) :
     SystemState.RunQueueEntryStage st
       (endpointCallCrossCoreDispatch endpointId caller payload base c st).1 := by
   have s0 := endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller payload base c st
     hHeads hCur hNI
+  have a0 := endpointCallWithCapsOnCore_activeKeptStage endpointId caller payload base c st
+    hHeads hCur hNI hInv hR caller hAct
   unfold endpointCallCrossCoreDispatch
-  generalize endpointCallWithCapsOnCore endpointId caller payload base c st = r at s0 ⊢
+  generalize endpointCallWithCapsOnCore endpointId caller payload base c st = r at s0 a0 ⊢
   obtain ⟨st1, r⟩ := r
   cases r with
   | error e => exact s0
@@ -999,7 +1184,8 @@ theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.Ob
     repeat' split
     all_goals first
       | exact s0
-      | (rename_i hD; exact s0.trans ((applyCallDonationOnCore_runQueueStage hD).trans
+      | (rename_i hD; exact s0.trans ((applyCallDonationOnCore_runQueueStage
+          (by rw [SeLe4n.ThreadId.toValid?_some_val_eq caller _ (by assumption)]; exact a0) hD).trans
           (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)).entry)
 
 -- ============================================================================
@@ -1053,10 +1239,12 @@ theorem descheduleThenOffWrite_runQueueEntryStage (st : SystemState)
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hAf : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     SystemState.RunQueueEntryStage st ((removeRunnableOnCore st tid c).updateTcb tid f) := by
   have hS := SystemState.RunQueueStage.runDescheduleOnCore st c tid
-  refine ⟨hS.1.trans (SystemState.RunQueueLinkStage.updateTcb _ tid hf hYf),
+  refine ⟨hS.1.trans (SystemState.RunQueueLinkStage.updateTcb _ tid hf hYf hAf),
     fun hInv hR _ d => ?_⟩
   obtain ⟨hInv1, hR1⟩ := hS.1 hInv hR
   refine SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv1
@@ -1093,11 +1281,13 @@ theorem placedThenOffWrite_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hAf : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     SystemState.RunQueueEntryStage st
       ((removeRunnableOnCore st tid ((placedCoreOf? st tid).getD c₀)).updateTcb tid f) := by
   refine descheduleThenOffWrite_runQueueEntryStage st tid _ (fun d c' hq => ?_)
-    (fun d c' hc => ?_) hRdy hNI hf hReady hYf
+    (fun d c' hc => ?_) hRdy hNI hf hReady hYf hAf
   · cases hP : placedCoreOf? st tid with
     | none => rw [((placedCoreOf?_none_iff st tid).mp hP c').1] at hq; cases hq
     | some c =>
@@ -1124,19 +1314,21 @@ theorem descheduleAtPlacedThenOffWrite_runQueueEntryStage (st : SystemState)
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hAf : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     SystemState.RunQueueEntryStage st
       ((descheduleAt st tid (placedCoreOf? st tid)).updateTcb tid f) := by
   cases hP : placedCoreOf? st tid with
   | none =>
-    refine ⟨SystemState.RunQueueLinkStage.updateTcb st tid hf hYf, fun hInv _ _ d => ?_⟩
+    refine ⟨SystemState.RunQueueLinkStage.updateTcb st tid hf hYf hAf, fun hInv _ _ d => ?_⟩
     exact SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv d
       (fun c => ((placedCoreOf?_none_iff st tid).mp hP c).2)
       (fun c => ((placedCoreOf?_none_iff st tid).mp hP c).1) hNI hf
       (fun x hx => .inl (hReady x (hRdy d x hx)))
   | some c =>
     have e : (placedCoreOf? st tid).getD c = c := by rw [hP]; rfl
-    have h := placedThenOffWrite_runQueueEntryStage st tid c hRdy hNI hf hReady hYf
+    have h := placedThenOffWrite_runQueueEntryStage st tid c hRdy hNI hf hReady hYf hAf
     rw [e] at h
     exact h
 
@@ -1151,12 +1343,16 @@ theorem descheduleAtPlacedThenOffWrites_runQueueEntryStage (st : SystemState)
     (hg : ∀ x c, (g x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (g (f x)).ipcState = .ready)
     (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
-    (hYg : ∀ x, (g x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    (hYg : ∀ x, (g x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hAf : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h))
+    (hAg : ∀ x, (g x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     SystemState.RunQueueEntryStage st
       (((descheduleAt st tid (placedCoreOf? st tid)).updateTcb tid f).updateTcb tid g) := by
   have hW : ∀ s : SystemState, SystemState.RunQueueLinkStage s ((s.updateTcb tid f).updateTcb tid g) :=
-    fun s => (SystemState.RunQueueLinkStage.updateTcb s tid hf hYf).trans
-      (SystemState.RunQueueLinkStage.updateTcb _ tid hg hYg)
+    fun s => (SystemState.RunQueueLinkStage.updateTcb s tid hf hYf hAf).trans
+      (SystemState.RunQueueLinkStage.updateTcb _ tid hg hYg hAg)
   cases hP : placedCoreOf? st tid with
   | none =>
     refine ⟨hW st, fun hInv _ _ d => ?_⟩
@@ -1224,7 +1420,8 @@ fail-closed suspend; then the woken handler's frame and the fault record. -/
 theorem faultDeliverOnCore_runQueueEntryStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : Fault) (fctx : FaultContext) (c : Concurrency.CoreId)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some tid)
-    (hNI : isIdleThreadId tid = false) :
+    (hNI : isIdleThreadId tid = false)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt tid) :
     SystemState.RunQueueEntryStage st (faultDeliverOnCore st tid f fctx c).1 := by
   have sus := (faultSuspendOnCore_runQueueEntryStage st tid c hCur hNI).trans
     (recordPendingFault_runQueueStage _ tid { fault := f, context := fctx }).entry
@@ -1233,7 +1430,7 @@ theorem faultDeliverOnCore_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
   · exact sus
   · rename_i tgt _
     have s0 := endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hHeads hCur hNI
+      (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hHeads hCur hNI hInv hR hAct
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
       (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st = r at s0 ⊢
     obtain ⟨st1, r⟩ := r
@@ -1246,7 +1443,8 @@ theorem faultDeliverOnCore_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
 theorem faultDeliverOnCoreChecked_runQueueEntryStage (ctx : LabelingContext) (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (fctx : FaultContext) (c : Concurrency.CoreId)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some tid)
-    (hNI : isIdleThreadId tid = false) :
+    (hNI : isIdleThreadId tid = false)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt tid) :
     SystemState.RunQueueEntryStage st (faultDeliverOnCoreChecked ctx st tid f fctx c).1 := by
   have sus := (faultSuspendOnCore_runQueueEntryStage st tid c hCur hNI).trans
     (recordPendingFault_runQueueStage _ tid { fault := f, context := fctx }).entry
@@ -1254,7 +1452,7 @@ theorem faultDeliverOnCoreChecked_runQueueEntryStage (ctx : LabelingContext) (st
   split
   · exact sus
   · split
-    · exact faultDeliverOnCore_runQueueEntryStage st tid f fctx c hHeads hCur hNI
+    · exact faultDeliverOnCore_runQueueEntryStage st tid f fctx c hHeads hCur hNI hInv hR hAct
     · exact sus
 
 end SeLe4n.Kernel

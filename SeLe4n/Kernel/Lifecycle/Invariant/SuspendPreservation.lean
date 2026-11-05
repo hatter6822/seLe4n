@@ -1486,6 +1486,188 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
       (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv)
       (removeFromNotificationWaitQueue_preserves_ipcInvariant st tid hInv hIpc)
 
+-- ============================================================================
+-- WS-ZA ZA6.33: the suspend's head cut — what it keeps
+-- ============================================================================
+
+/-- WS-ZA ZA6.33: a context's head and origin cleared is a kind-preserving
+write. -/
+theorem updateSchedContext_kindPreservingWrite (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (f : SchedContext → SchedContext)
+    (hInv : st.objects.invExt) :
+    kindPreservingWrite st (st.updateSchedContext scId f) := by
+  unfold SystemState.updateSchedContext
+  split
+  · next sc h _ =>
+    refine SystemState.rewriteObject_kindPreservingWrite _ _ _ _ hInv (fun old hOld => ?_)
+      (fun old hOld => ?_) (fun old hOld => ?_) (fun old hOld => ?_) (fun old hOld => ?_)
+    all_goals
+      rw [(SystemState.getSchedContext?_eq_some_iff st scId sc).mp h] at hOld; cases hOld; rfl
+  · exact kindPreservingWrite.refl st
+
+/-- WS-ZA ZA6.33: the head cut keeps the store's invariant. -/
+theorem cutHeadFrameKeepingContext_preserves_objects_invExt (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
+    (cutHeadFrameKeepingContext st rid).objects.invExt :=
+  cutHeadFrameKeepingContext_closed (fun s => s.objects.invExt)
+    (fun s s1 _ _ _ h _ _ hS => SystemState.updateSchedContext_preserves_objects_invExt _ _ _
+      (storeObject_preserves_objects_invExt s s1 _ _ h hS))
+    (fun s _ _ _ _ h _ _ _ => by
+      show (markKeyChangeFrom _ _ _).objects.invExt
+      rw [markKeyChangeFrom_objects]
+      exact SystemState.updateTcb_preserves_objects_invExt _ _ _ h)
+    st rid hInv
+
+/-- WS-ZA ZA6.33: **the head cut is a kind-preserving write**: a reply for a
+reply, a context for a context, a thread for a thread. -/
+theorem cutHeadFrameKeepingContext_kindPreservingWrite (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
+    kindPreservingWrite st (cutHeadFrameKeepingContext st rid) := by
+  refine (cutHeadFrameKeepingContext_closed
+    (fun s => s.objects.invExt ∧ kindPreservingWrite st s) ?_ ?_ st rid
+    ⟨hInv, kindPreservingWrite.refl st⟩).2
+  · intro s s1 rid' r _ ⟨h, hK⟩ _ hR hS
+    have hK1 : kindPreservingWrite s s1 :=
+      storeObject_kindPreservingWrite h hS ((SystemState.getReply?_eq_some_iff s rid' r).mp hR)
+        rfl (by simp [KernelObject.objectType])
+    have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h hS
+    exact ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1,
+      hK.trans (hK1.trans (updateSchedContext_kindPreservingWrite _ _ _ hI1))⟩
+  · intro s _ holder _ _ ⟨h, hK⟩ _ _ _
+    refine ⟨by rw [markKeyChangeFrom_objects]; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ h, ?_⟩
+    exact hK.trans ((SystemState.updateTcb_kindPreservingWrite s holder _ h).trans
+      (kindPreservingWrite.of_objects_eq (markKeyChangeFrom_objects _ _ _)))
+
+/-- A context rewrite moves no object of another kind. -/
+theorem updateSchedContext_objects_backward_of_kind (s : SystemState)
+    (scId : SeLe4n.SchedContextId) (f : SchedContext → SchedContext) (h : s.objects.invExt)
+    (oid : SeLe4n.ObjId) (o : KernelObject) (hk : ¬ donationReturnWritesKind o)
+    (hp : (s.updateSchedContext scId f).objects[oid]? = some o) : s.objects[oid]? = some o := by
+  by_cases hEq : scId.toObjId = oid
+  · subst hEq
+    unfold SystemState.updateSchedContext at hp
+    split at hp
+    · rw [SystemState.rewriteObject_objects_self _ _ _ _ h] at hp
+      cases hp; exact absurd trivial hk
+    · exact hp
+  · rwa [SystemState.updateSchedContext_objects_ne _ _ _ _ hEq h] at hp
+
+/-- A thread rewrite moves no object of another kind. -/
+theorem updateTcb_objects_backward_of_kind (s : SystemState)
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (h : s.objects.invExt)
+    (oid : SeLe4n.ObjId) (o : KernelObject) (hk : ¬ donationReturnWritesKind o)
+    (hp : (s.updateTcb tid f).objects[oid]? = some o) : s.objects[oid]? = some o := by
+  by_cases hEq : tid.toObjId = oid
+  · subst hEq
+    unfold SystemState.updateTcb at hp
+    split at hp
+    · rw [SystemState.rewriteObject_objects_self _ _ _ _ h] at hp
+      cases hp; exact absurd trivial hk
+    · exact hp
+  · rwa [SystemState.updateTcb_objects_ne _ _ _ _ hEq h] at hp
+
+/-- WS-ZA ZA6.33: **the head cut moves only objects of the kinds the donation
+return writes**: a key holding anything but a context, a reply or a thread
+afterwards held it before. -/
+theorem cutHeadFrameKeepingContext_objects_backward_of_kind (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (o : KernelObject)
+    (hKind : ¬ donationReturnWritesKind o)
+    (hPost : (cutHeadFrameKeepingContext st rid).objects[oid]? = some o) :
+    st.objects[oid]? = some o := by
+  refine (cutHeadFrameKeepingContext_closed
+    (fun s => s.objects.invExt ∧ ((s.objects[oid]? = some o) → st.objects[oid]? = some o))
+    ?_ ?_ st rid ⟨hInv, id⟩).2 hPost
+  · intro s s1 rid' r _ ⟨h, hB⟩ _ _ hS
+    have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h hS
+    refine ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1, fun hp => hB ?_⟩
+    have h1 := updateSchedContext_objects_backward_of_kind _ _ _ hI1 oid o hKind hp
+    by_cases hEq : oid = rid'.toObjId
+    · subst hEq
+      rw [storeObject_objects_eq s s1 _ _ h hS] at h1
+      cases h1; exact absurd trivial hKind
+    · rwa [storeObject_objects_ne s s1 _ _ _ hEq h hS] at h1
+  · intro s _ holder _ _ ⟨h, hB⟩ _ _ _
+    refine ⟨by rw [markKeyChangeFrom_objects]; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ h,
+      fun hp => hB ?_⟩
+    rw [markKeyChangeFrom_objects] at hp
+    exact updateTcb_objects_backward_of_kind _ _ _ h oid o hKind hp
+
+/-- WS-ZA ZA6.33: the head cut keeps `ipcInvariant`: it writes no notification. -/
+theorem cutHeadFrameKeepingContext_preserves_ipcInvariant (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cutHeadFrameKeepingContext st rid) := fun oid ntfn hN =>
+  hIpc oid ntfn (cutHeadFrameKeepingContext_objects_backward_of_kind st rid hInv oid _
+    (donationReturnWritesKind_notification ntfn) hN)
+
+/-- WS-ZA ZA6.33: the thread-keyed head cut keeps the store's invariant. -/
+theorem cutThreadHeadFrameKeepingContext_preserves_objects_invExt (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) :
+    (cutThreadHeadFrameKeepingContext st tcb).objects.invExt := by
+  unfold cutThreadHeadFrameKeepingContext; split
+  · exact hInv
+  · exact cutHeadFrameKeepingContext_preserves_objects_invExt _ _ hInv
+
+/-- WS-ZA ZA6.33: ...and `ipcInvariant`. -/
+theorem cutThreadHeadFrameKeepingContext_preserves_ipcInvariant (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cutThreadHeadFrameKeepingContext st tcb) := by
+  unfold cutThreadHeadFrameKeepingContext; split
+  · exact hIpc
+  · exact cutHeadFrameKeepingContext_preserves_ipcInvariant _ _ hInv hIpc
+
+/-- WS-ZA ZA6.33: the cancelled caller's head cut keeps the store's invariant. -/
+theorem cutCancelledCallerHead_preserves_objects_invExt (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) :
+    (cutCancelledCallerHead st tcb).objects.invExt := by
+  unfold cutCancelledCallerHead; split
+  · exact cutThreadHeadFrameKeepingContext_preserves_objects_invExt _ _ hInv
+  · exact hInv
+
+/-- WS-ZA ZA6.33: ...and `ipcInvariant`. -/
+theorem cutCancelledCallerHead_preserves_ipcInvariant (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cutCancelledCallerHead st tcb) := by
+  unfold cutCancelledCallerHead; split
+  · exact cutThreadHeadFrameKeepingContext_preserves_ipcInvariant _ _ hInv hIpc
+  · exact hIpc
+
+/-- WS-ZA ZA6.33: the suspend's IPC cancel keeps the store's invariant. -/
+theorem cancelIpcKeepingContexts_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
+    (cancelIpcKeepingContexts st tid tcb).objects.invExt :=
+  cancelIpcBlocking_preserves_objects_invExt _ tid tcb
+    (cutCancelledCallerHead_preserves_objects_invExt st tcb hInv)
+
+/-- WS-ZA ZA6.33: ...and `ipcInvariant`. -/
+theorem cancelIpcKeepingContexts_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cancelIpcKeepingContexts st tid tcb) :=
+  cancelIpcBlocking_preserves_ipcInvariant _ tid tcb
+    (cutCancelledCallerHead_preserves_objects_invExt st tcb hInv)
+    (cutCancelledCallerHead_preserves_ipcInvariant st tcb hInv hIpc)
+
+/-- WS-ZA ZA6.33: the release removal writes the release links alone. -/
+theorem releaseRemoveThread_releaseOnlyWrite (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (releaseRemoveThread st tid).releaseOnlyWrite st := by
+  rcases releaseRemoveThread_cases st tid with e | ⟨s, _, e⟩ <;> rw [e]
+  · exact SystemState.releaseOnlyWrite.refl st
+  · exact SchedContextOps.purgeReplenishment_releaseOnlyWrite st s
+
+/-- WS-ZA ZA6.33: ...so it agrees with its pre-state off the release links. -/
+theorem releaseRemoveThread_agree (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (releaseRemoveThread st tid).objectsAgreeOffReleaseLinks st := by
+  rcases releaseRemoveThread_cases st tid with e | ⟨s, _, e⟩ <;> rw [e]
+  · exact SystemState.objectsAgreeOffReleaseLinks.refl st
+  · exact SchedContextOps.purgeReplenishment_agree st s
+
+/-- WS-ZA ZA6.33: ...and keeps the store's invariant. -/
+theorem releaseRemoveThread_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : st.objects.invExt) : (releaseRemoveThread st tid).objects.invExt := by
+  rcases releaseRemoveThread_cases st tid with e | ⟨s, _, e⟩ <;> rw [e]
+  · exact h
+  · exact SchedContextOps.purgeReplenishment_objects_invExt st s h
+
 /-- WS-SM SM6.E: `cancelBoundDonation` preserves `ipcInvariant` — the bound
 arm's object writes are the SchedContext deactivation insert and the TCB
 unbind insert; the replenish-queue edit does not touch the object store. -/

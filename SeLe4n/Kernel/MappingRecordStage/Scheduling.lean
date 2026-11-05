@@ -14,8 +14,9 @@ import SeLe4n.Kernel.SchedContext.SchedControl
 
 A finalisation-shaped write (`FinaliseFrameAny`) rewrites threads, endpoints,
 notifications, scheduling contexts and replies alone, none of which carries a
-mapping fact, so it is a `MappingStage`; that covers the suspend's teardown and
-donation cancellation.  The priority, affinity, resume and scheduling-context
+mapping fact, so it is a `MappingStage`; that covers the suspend's teardown.
+The release-queue removal, the returned context's settle and the resumed
+context's placement write contexts' release fields alone.  The priority, affinity, resume and scheduling-context
 arms rewrite threads and contexts in place keeping the threads' space slots, and
 re-bucket run queues, so each is a composition of stages.
 -/
@@ -46,6 +47,57 @@ theorem updateSchedContext_mappingStage (st : SystemState) (scId : SeLe4n.SchedC
     have hRaw := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp h
     exact MappingStage.rewriteObject _ _ _ (fun old hOld => by rw [hRaw] at hOld; cases hOld; rfl)
       (fun old hOld => by rw [hRaw] at hOld; cases hOld; rfl)
+  · exact MappingStage.refl _
+
+/-- The release queue's re-placement writes contexts' release fields alone. -/
+theorem releasePlace_mappingStage (st : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) :
+    MappingStage st (st.releasePlace c scId) :=
+  MappingStage.of_objectsAgreeOffSchedulerLinks
+    (fun h => SystemState.releasePlace_objects_invExt st c scId h)
+    (.of_releaseLinks (SystemState.releasePlace_agree st c scId))
+
+/-- The replenishment purge writes the release-queue links alone. -/
+theorem purgeReplenishment_mappingStage (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    MappingStage st (SchedContextOps.purgeReplenishment st scId) :=
+  MappingStage.of_kindPreservingWrite (SchedContextOps.purgeReplenishment_objects_invExt st scId)
+    fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+      (SchedContextOps.purgeReplenishment_agree st scId)).kindPreserving
+
+/-- WS-ZA ZA6.33: the settle of a returned context: the purge, then perhaps the
+placement. -/
+theorem settleReturnedContext_mappingStage (st : SystemState) (c : CoreId)
+    (s : SeLe4n.SchedContextId) :
+    MappingStage st (SchedContextOps.settleReturnedContext st c s) := by
+  rcases SchedContextOps.settleReturnedContext_cases st c s with e | e <;> rw [e]
+  · exact purgeReplenishment_mappingStage st s
+  · exact (purgeReplenishment_mappingStage st s).trans (releasePlace_mappingStage _ c s)
+
+/-- WS-ZA ZA6.33: `tcbReleaseRemove`: nothing, or the purge. -/
+theorem releaseRemoveThread_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) :
+    MappingStage st (Lifecycle.Suspend.releaseRemoveThread st tid) := by
+  rcases Lifecycle.Suspend.releaseRemoveThread_cases st tid with e | ⟨s, _, e⟩ <;> rw [e]
+  · exact MappingStage.refl _
+  · exact purgeReplenishment_mappingStage st s
+
+/-- WS-ZA ZA6.33: the resume of a context: nothing, or the refill-unblock check
+in place and the settle. -/
+theorem resumeContext_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId) :
+    MappingStage st (Lifecycle.Suspend.resumeContext st tid home) := by
+  rcases Lifecycle.Suspend.resumeContext_cases st tid home with e | ⟨s, e⟩ <;> rw [e]
+  · exact MappingStage.refl _
+  · exact (updateSchedContext_mappingStage _ _ _).trans (settleReturnedContext_mappingStage _ home s)
+
+/-- WS-ZA ZA6.33: the cancelled caller's head cut (`reply_remove_tcb`'s head
+branch) keeps every object's kind and mapping facts. -/
+theorem cutCancelledCallerHead_mappingStage (st : SystemState) (tcb : TCB) :
+    MappingStage st (Lifecycle.Suspend.cutCancelledCallerHead st tcb) := by
+  unfold Lifecycle.Suspend.cutCancelledCallerHead Lifecycle.Suspend.cutThreadHeadFrameKeepingContext
+  split
+  · split
+    · exact MappingStage.refl _
+    · exact MappingStage.of_kindPreservingWrite
+        (Lifecycle.Suspend.cutHeadFrameKeepingContext_preserves_objects_invExt _ _)
+        (Lifecycle.Suspend.cutHeadFrameKeepingContext_kindPreservingWrite _ _)
   · exact MappingStage.refl _
 
 /-- WS-ZA ZA6.6: the yield-link cancel rewrites a context and a thread in place. -/
@@ -217,38 +269,6 @@ theorem cancelIpcBlockingReclaimed_mappingStage (st : SystemState) (tid : SeLe4n
     (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks tid tcb st) h2.1
   ⟨h3.1, h3.2 ∘ h2.2 ∘ h1.2⟩
 
-/-- The suspend's donation arm: nothing, the in-place unbind, or the return and
-the replenishment migration. -/
-theorem cancelSuspendDonation_mappingStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
-    {tcb : TCB}
-    (hStep : (match tcb.schedContextBinding with
-              | .unbound => (Except.ok st : Except KernelError SystemState)
-              | .bound _ => cancelBoundDonationOnCore st tid tcb
-              | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
-    MappingStage st st' := by
-  revert hStep
-  cases hBind : tcb.schedContextBinding with
-  | unbound => intro hStep; cases hStep; exact MappingStage.refl st
-  | bound _ =>
-    intro hStep
-    exact MappingStage.of_finaliseFrame fun hI => FinaliseFrame.cancelBoundDonationOnCore hI hStep
-  | donated scId owner =>
-    intro hStep
-    unfold cancelDonatedDonationOnCore at hStep
-    rw [hBind] at hStep
-    simp only at hStep
-    split at hStep
-    · cases hStep
-    · rename_i s1 hC
-      cases hStep
-      refine (?_ : MappingStage st s1).trans (migrateSchedContextReplenishment_mappingStage _ _ _ _)
-      unfold cleanupDonatedSchedContext at hC
-      split at hC
-      · cases hC; exact MappingStage.refl _
-      · split at hC
-        · exact returnDonatedSchedContextResolved_mappingStage hC
-        · cases hC; exact MappingStage.refl _
-
 /-- The suspend's scheduling point: a reschedule on the executing core or nothing. -/
 theorem suspendRescheduleOnCore_mappingStage {st st' : SystemState}
     {runningCore executingCore : CoreId} {wasCurrent localDeboosted : Bool}
@@ -263,9 +283,15 @@ theorem suspendRescheduleOnCore_mappingStage {st st' : SystemState}
         exact handleRescheduleSgiOnCore_mappingStage hH)
     | (rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact MappingStage.refl _)
 
-/-- **The thread suspend keeps the mappings recorded**: the reclaimed teardown,
-the chain revert, the donation arm, the deschedule, two thread rewrites and the
-scheduling point. -/
+/-- WS-ZA ZA6.33: seL4-MCS's `cancelIPC` as the suspend runs it: the head cut,
+then the teardown. -/
+theorem cancelIpcKeepingContexts_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : MappingStage st (Lifecycle.Suspend.cancelIpcKeepingContexts st tid tcb) :=
+  (cutCancelledCallerHead_mappingStage st tcb).trans (cancelIpcBlocking_mappingStage _ tid tcb)
+
+/-- **The thread suspend keeps the mappings recorded**: the IPC cancel, the
+chain revert, the deschedule, two thread rewrites, the release-queue removal,
+the yield-link cancel and the scheduling point. -/
 theorem suspendThreadOnCore_mappingStage {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId} {executingCore : CoreId}
     {sgi? : Option (CoreId × Concurrency.SgiKind)}
@@ -275,31 +301,26 @@ theorem suspendThreadOnCore_mappingStage {st st' : SystemState}
   split at hStep
   case h_2 => exact absurd hStep (by simp)
   case h_1 tcb hT =>
-    have hS1 := cancelIpcBlockingReclaimed_mappingStage st vtid.val tcb
+    have hS1 := cancelIpcKeepingContexts_mappingStage st vtid.val tcb
     split at hStep
     case isTrue => exact absurd hStep (by simp)
     case isFalse hA =>
-      have hS12 : MappingStage (cancelIpcBlockingReclaimed vtid.val tcb st)
+      have hS12 : MappingStage (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb)
           (match PriorityInheritance.blockingServer st vtid.val with
            | some serverId => (PriorityInheritance.propagatePipChainCrossCore
-               (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore).1
-           | none => cancelIpcBlockingReclaimed vtid.val tcb st) := by
+               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
+           | none => Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) := by
         cases PriorityInheritance.blockingServer st vtid.val with
         | none => exact MappingStage.refl _
         | some serverId => exact propagatePipChainCrossCore_mappingStage
-      revert hStep
-      split
-      · intro hStep; exact absurd hStep (by simp)
-      · next s3 hDon =>
-        intro hStep
-        refine ((hS1.trans hS12).trans (cancelSuspendDonation_mappingStage hDon)).trans ?_
-        refine (MappingStage.of_finaliseFrame fun hI =>
-          FinaliseFrame.descheduleAt s3 vtid.val (placedCoreOf? st vtid.val) hI).trans ?_
-        refine (show MappingStage _ (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
-          unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
-          exact updateTcb_mappingStage _ _ _).trans ?_
-        exact ((updateTcb_mappingStage _ _ _).trans (cancelYieldTo_mappingStage _ _)).trans
-          (suspendRescheduleOnCore_mappingStage hStep)
+      refine (hS1.trans hS12).trans ?_
+      refine (MappingStage.of_finaliseFrame fun hI =>
+        FinaliseFrame.descheduleAt _ vtid.val (placedCoreOf? st vtid.val) hI).trans ?_
+      refine (show MappingStage _ (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
+        unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
+        exact updateTcb_mappingStage _ _ _).trans ?_
+      exact (((updateTcb_mappingStage _ _ _).trans (releaseRemoveThread_mappingStage _ _)).trans
+        (cancelYieldTo_mappingStage _ _)).trans (suspendRescheduleOnCore_mappingStage hStep)
 
 /-- The resume's ready mark: two thread rewrites. -/
 theorem resumeReadyMidState_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -320,16 +341,20 @@ theorem resumeThreadOnCore_mappingStage {st st' : SystemState}
   split at h
   · split at h
     · cases h
-    · have hS := ((resumeReadyMidState_mappingStage st vtid.val).trans
+    · have hS0 := ((resumeReadyMidState_mappingStage st vtid.val).trans
         (markKeyChangeFrom_mappingStage st _ vtid.val)).trans
+        (resumeContext_mappingStage _ vtid.val (determineTargetCore st vtid.val))
+      have hS := hS0.trans
         (enqueueRunnableOnCore_mappingStage _ (determineTargetCore st vtid.val) vtid.val)
       split at h
       · split at h
-        · rename_i hH
-          rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]
-          exact hS.trans (handleRescheduleSgiOnCore_mappingStage hH)
-        · cases h
-      · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact hS
+        · split at h
+          · rename_i hH
+            rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]
+            exact hS.trans (handleRescheduleSgiOnCore_mappingStage hH)
+          · cases h
+        · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact hS
+      · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact hS0
   · cases h
 
 /-! ### Priorities -/
@@ -417,13 +442,6 @@ theorem setMCPriorityOnCore_mappingStage {st st' : SystemState}
   · cases h
 
 /-! ### Scheduling contexts and affinity -/
-
-/-- The release queue's re-placement writes contexts' release fields alone. -/
-theorem releasePlace_mappingStage (st : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) :
-    MappingStage st (st.releasePlace c scId) :=
-  MappingStage.of_objectsAgreeOffSchedulerLinks
-    (fun h => SystemState.releasePlace_objects_invExt st c scId h)
-    (.of_releaseLinks (SystemState.releasePlace_agree st c scId))
 
 /-- WS-ZA ZA6.29: **the yieldTo invocation keeps every mapping record**: the
 completion, the resume's release, `setConsumed`, the requeue and the linked
@@ -534,13 +552,6 @@ theorem schedContextConfigureBoundPropagate_mappingStage (stStored : SystemState
     · exact hP _
     · exact (hP _).trans (MappingStage.rewriteObject_tcb hCur _)
   · exact hP _
-
-/-- The replenishment purge writes the release-queue links alone. -/
-theorem purgeReplenishment_mappingStage (st : SystemState) (scId : SeLe4n.SchedContextId) :
-    MappingStage st (SchedContextOps.purgeReplenishment st scId) :=
-  MappingStage.of_kindPreservingWrite (SchedContextOps.purgeReplenishment_objects_invExt st scId)
-    fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
-      (SchedContextOps.purgeReplenishment_agree st scId)).kindPreserving
 
 /-- The configure's resume tail writes run-queue links alone. -/
 theorem configureResumeBound_mappingStage (st : SystemState) (t : SeLe4n.ThreadId)

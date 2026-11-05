@@ -210,8 +210,6 @@ open SeLe4n.Testing
 #check @cancelIpcBlockingOnCore_bootPlaced_state_eq
 #check @descheduleThread_fully_descheduled
 #check @cancelBoundDonationOnCore_replenishments_purged
-#check @cancelDonationOnCore_bootHome_ok
-#check @cancelDonationOnCore_bootHome_error
 #check @Lifecycle.Suspend.suspendThreadOnCore
 #check @Lifecycle.Suspend.suspendThreadOnCore_rejects_absent
 #check @Lifecycle.Suspend.suspendThreadOnCore_rejects_inactive
@@ -559,10 +557,10 @@ example (c : CoreId) (hInv : st.objects.invExt) (h1 : placedCoreOf? st victim = 
 #check @cancelIpcBlockingOnCoreLockSet_covers_holder_deschedule
 -- WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): the migration member both parametric
 -- footprints were missing, and the resolved footprint that found it.
-#check @cancelIpcBlockingOnCoreLockSet_covers_migration
+#check @cancelIpcBlockingOnCoreLockSet_covers_settle
 #check @suspendThreadOnCoreLockSet_contains_reclaim_replenishQueue_writes
 #check @cancelIpcBlockingReplenishCores_of_donation
-#check @schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes
+#check @schedLockSet_suspendThreadOnCore_contains_release_replenishQueue_writes
 #check @suspendThreadOnCore_replenishQueueOnCore_ne
 
 /-- `v0.35.158` payoff: a holder the reclaim unbound is on **no** scheduler slot

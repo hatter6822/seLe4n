@@ -178,8 +178,8 @@ theorem abortPendingIpcOnEndpoint_stateMono {epId : SeLe4n.ObjId} {isReceiveQ : 
   unfold storeObject at hStore; cases hStore
   refine SystemState.StateMono.insert hInv1 rfl ?_
   rw [lookupTcb_some_objects _ _ _ hLook]
-  exact SystemState.objStateMono_tcb ⟨fun _ => rfl, fun _ => by
-    simp [TCB.Active, TCB.withReturnFrame], rfl⟩
+  exact SystemState.objStateMono_tcb ⟨fun _ => rfl, fun h => by
+    simpa [TCB.Active, TCB.withReturnFrame] using h, rfl⟩
 
 /-- The timeout's abort keeps the table references: the splice's frame, then a
 thread stored over the removed thread. -/
@@ -213,7 +213,11 @@ theorem abortPendingIpcOnEndpoint_refillViewsKept {epId : SeLe4n.ObjId} {isRecei
   obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
   have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
   exact (RefillViewsKept.storeObject hInv1 hStore (by rw [lookupTcb_some_objects _ _ _ hLook]; rfl)).trans
-    (.of_schedContexts_backward (endpointQueueRemove_schedContext_backward _ _ _ _ _ hInv hRem))
+    (.of_schedContexts_backward (endpointQueueRemove_schedContext_backward _ _ _ _ _ hInv hRem)
+      fun a t ha hA => by
+        obtain ⟨t0, h0, e⟩ := endpointQueueRemove_getTcb_backward_upToField TCB.threadState
+          (fun _ _ _ _ => rfl) _ _ _ _ _ hInv hRem a t ha
+        exact ⟨t0, h0, e ▸ hA⟩)
 
 /-- WS-ZA ZA6.6: the queue splice keeps every slot's yield codes: it writes
 threads over threads with their yield-to codes kept, and no context. -/

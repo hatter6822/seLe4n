@@ -2799,7 +2799,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "holderPlaced\.toList\)\n[ \t]
 # the reclaim can leave the victim `.donated`, and the second pop migrates to
 # whatever thread that binding records.
 run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_migrates_to_recorded_owner($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_settles_on_recorded_owner($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # ...and the arm selector really does re-read the POST-teardown binding, which is
 # what makes the double pop reachable at all.
 run_check "INVARIANT" bash -lc 'rg -U -n "let tcb. := \(st\.getTcb\? tid\)\.getD tcb\n[ \t]*match \(match tcb.\.schedContextBinding with" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
@@ -18866,7 +18866,7 @@ run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreLockSet_contains_execut
 # declared beside the transition so the two composites over one migration
 # cannot name different cores.
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreLockSet_contains_reclaim_replenishQueue_writes($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreLockSet_covers_migration($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreLockSet_covers_settle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\) reclaimReplenish" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\) \[\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingReplenishCores \(st : SystemState\) \(victim : SeLe4n\.ThreadId\)[^\n]*(\n([ \t][^\n]*)?)*let torn := Lifecycle\.Suspend\.cancelIpcBlocking st victim tcb(\n([ \t][^\n]*)?)*let fromCore := determineTargetCore st holder(\n([ \t][^\n]*)?)*\[fromCore, replenishHomeOfSchedContext torn scId fromCore\]" SeLe4n/Kernel/Lifecycle/Suspend.lean'

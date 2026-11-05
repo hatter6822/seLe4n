@@ -1460,7 +1460,7 @@ theorem RefillsKeptOff.markReschedulePendingOnCore (P : SeLe4n.SchedContextId �
 theorem RefillsKeptOff.updateTcb (P : SeLe4n.SchedContextId → Prop) (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hInv : st.objects.invExt)
     (hA : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
-      intro _ h; exact h) :
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     RefillsKeptOff P (st.updateTcb tid f) st :=
   .of_releaseSlots (.updateTcb st tid f hInv hA) (by rw [updateTcb_scheduler])
 

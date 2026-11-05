@@ -626,8 +626,8 @@ theorem cleanupDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState
     · exact returnDonatedSchedContextResolved_stepCovers e hInv h
     · cases h; exact ⟨stepCovers_refl e _, hInv⟩
 
-/-- **The donated cancellation covers**: the return, then the replenishment
-migration, which moves no slot. -/
+/-- **The donated cancellation covers**: the return, then the returned
+context's settle (WS-ZA ZA6.33), a release-only write that moves no slot. -/
 theorem cancelDonatedDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
@@ -639,8 +639,8 @@ theorem cancelDonatedDonationOnCore_stepCovers (e : CoreId) {st st' : SystemStat
     · rename_i sMid hC
       cases h
       obtain ⟨h1, hI⟩ := cleanupDonatedSchedContext_stepCovers e hInv hC
-      exact ⟨stepCovers_trans h1 (migrateSchedContextReplenishment_stepCovers e _ _ _ _),
-        migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hI⟩
+      exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
+        SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hI⟩
   · cases h
 
 end SeLe4n.Kernel

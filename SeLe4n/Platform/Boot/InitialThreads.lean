@@ -774,20 +774,24 @@ theorem bootFromPlatformCheckedStartedFor_allCores_threadInactiveFlagConsistent
   threadStateConsistent_implies_threadInactiveFlagConsistent _
     (bootFromPlatformCheckedStartedFor_allCores_threadStateConsistent config ist h)
 
-/-- **The start of a startable thread is a run-queue stage**: the `.Ready` mark
-leaves its run links alone and suspends nothing, and the wake that follows
-queues a thread no core runs, now active. -/
+/-- **The start of a startable thread is a run-queue stage off the contexts it
+holds** (WS-ZA ZA6.33): the `.Ready` mark leaves its run links alone, and the
+wake that follows queues a thread no core runs, now active.  The mark
+unsuspends the thread, so a context it holds has its refill obligations read
+anew (`RunQueueFrameStage.updateTcb_heldBy`). -/
 theorem startInitialThreadOnCore_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (hs : initialThreadStartable st tid = true) :
-    SystemState.RunQueueStage st (startInitialThreadOnCore st tid) :=
-  SystemState.RunQueueStage.of_invExt fun hInv => by
+    SystemState.RunQueueFrameStage (SystemState.HeldBy st tid) st
+      (startInitialThreadOnCore st tid) :=
+  SystemState.RunQueueFrameStage.of_invExt fun hInv => by
     obtain ⟨tcb, hT, -, -, -, -, hRun⟩ := initialThreadStartable_spec hs
     unfold startInitialThreadOnCore
-    refine (SystemState.RunQueueStage.updateTcb st tid (f := fun t => { t with threadState := .Ready })
-      (fun _ _ => rfl)).trans (enqueueRunnableOnCore_runQueueStage _ _ tid ?_ ?_
+    refine (SystemState.RunQueueFrameStage.updateTcb_heldBy st tid
+      (f := fun t => { t with threadState := .Ready }) (fun _ _ => rfl)).trans
+      ((enqueueRunnableOnCore_runQueueStage _ _ tid ?_ ?_
         (fun x hx => by
           rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hT] at hx
-          cases hx; exact homedOn_determineTargetCore st tid tcb hT))
+          cases hx; exact homedOn_determineTargetCore st tid tcb hT)).toFrame _)
     · have h0 : st.currentNowhere tid := fun c hc => by
         simp only [runningOnSomeCore, SeLe4n.Kernel.Concurrency.allCores,
           List.any_eq_false] at hRun
@@ -826,9 +830,9 @@ theorem bootFromPlatformCheckedStartedFor_allCores_currentDequeuedUnique
   exact startInitialThreads_induct
     (fun i => i.state.runQueueRefined ∧ i.state.currentDequeuedUnique)
     (fun i t hs hP => by
-      have hS := (startInitialThreadOnCore_runQueueStage _ _ hs).entry
-      have hR' := (hS.1 i.hAllTables.objects.1 hP.1).2
-      exact ⟨hR', hS.2 i.hAllTables.objects.1 hP.1 hR' hP.2⟩)
+      have hS := startInitialThreadOnCore_runQueueStage _ _ hs
+      have hR' := (hS.1.links i.hAllTables.objects.1 hP.1).2
+      exact ⟨hR', hS.2.1 none i.hAllTables.objects.1 hP.1 hR' hP.2⟩)
     _ _ _ hStart
     ⟨hRun, bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique config base hBase⟩
 

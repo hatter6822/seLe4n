@@ -1038,12 +1038,12 @@ theorem endpointReplyOnCore_stepCovers (e : CoreId) {replier target : SeLe4n.Thr
             · exact hRefl
     · exact hRefl
 
-/-- The reply's donation return covers: the resolved return, the replenishment
-migration, and the holder's deschedule. -/
+/-- The reply's donation return covers: the resolved return, the returned
+context's settle, and the holder's deschedule. -/
 theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
-    {rid : SeLe4n.ReplyId} {targetVtid : SeLe4n.ValidThreadId} {holderHome ownerHome : CoreId}
+    {rid : SeLe4n.ReplyId} {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId}
     (hInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st') :
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold applyReplyDonationOnCore at h
   dsimp only at h
@@ -1056,11 +1056,11 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
         cases h
         obtain ⟨h1, h1Inv⟩ := returnDonatedSchedContextResolved_stepCovers e hInv hRet
         refine ⟨stepCovers_trans (stepCovers_trans h1
-          (migrateSchedContextReplenishment_stepCovers e _ _ _ _))
+          (settleReturnedContext_stepCovers e _ _ _))
           (descheduleAt_stepCovers e _ _ _), ?_⟩
         unfold descheduleAtPlacement
         exact descheduleAt_objects_invExt _ _ _
-          (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ h1Inv)
+          (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv)
     · cases h
 
 /-- The live reply covers on every outcome: the reply leg, the donation
@@ -1528,8 +1528,8 @@ theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
       · rename_i st1 hRet
         cases h
         obtain ⟨h1, h1Inv⟩ := returnDonatedSchedContextResolved_stepCovers e hInv hRet
-        exact ⟨stepCovers_trans h1 (migrateSchedContextReplenishment_stepCovers e _ _ _ _),
-          migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ h1Inv⟩
+        exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
+          SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv⟩
     · cases h
   · cases h; exact ⟨stepCovers_refl e st, hInv⟩
 

@@ -928,34 +928,63 @@ theorem resumeThreadOnCore_schedPointPrefix {e : CoreId} {base st st' : SystemSt
     have hMid := PriorityInheritance.resumeReadyMidState_objects_invExt st vtid.val hInv
     have h1Inv : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
         vtid.val).objects.invExt := by rw [markKeyChangeFrom_objects]; exact hMid
-    have k : savedRegsKeptExcept (fun _ => False) st (enqueueRunnableOnCore
+    have hCInv := Lifecycle.Suspend.resumeContext_objects_invExt _ vtid.val
+      (determineTargetCore st vtid.val) h1Inv
+    -- WS-ZA ZA6.33: the context's resume writes a context and release links.
+    have kC : savedRegsKeptExcept (fun _ => False)
         (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
-        (determineTargetCore st vtid.val) vtid.val) :=
+        (Lifecycle.Suspend.resumeContext
+          (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
+          vtid.val (determineTargetCore st vtid.val)) := by
+      rcases Lifecycle.Suspend.resumeContext_cases
+        (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
+        vtid.val (determineTargetCore st vtid.val) with hc | ⟨sc, hc⟩ <;> rw [hc]
+      · exact .refl _
+      · exact (savedRegsKeptExcept.of_map fun x => by
+          rw [SystemState.updateSchedContext_getTcb? _ _ _ h1Inv]).trans
+          (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ _ _))
+    have hMC : (Lifecycle.Suspend.resumeContext
+        (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
+        vtid.val (determineTargetCore st vtid.val)).machine = st.machine := by
+      rcases Lifecycle.Suspend.resumeContext_cases
+        (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
+        vtid.val (determineTargetCore st vtid.val) with hc | ⟨sc, hc⟩ <;> rw [hc]
+      · rw [markKeyChangeFrom_machine, PriorityInheritance.resumeReadyMidState_machine_eq]
+      · rw [SchedContextOps.settleReturnedContext_machine, SystemState.updateSchedContext_machine,
+          markKeyChangeFrom_machine, PriorityInheritance.resumeReadyMidState_machine_eq]
+    generalize hSC : Lifecycle.Suspend.resumeContext
+        (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
+        vtid.val (determineTargetCore st vtid.val) = sC at h hCInv kC hMC
+    have kC' : savedRegsKeptExcept (fun _ => False) st sC :=
       ((resumeReadyMidState_savedRegsKeptExcept st vtid.val hInv).trans
-        (.of_objects_eq (markKeyChangeFrom_objects _ _ _))).trans
-        (fun t _ => savedRegs_enqueueRunnableOnCore _ _ _ h1Inv t)
-    have hK : currentKeptOnCore e st (enqueueRunnableOnCore
-        (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
-        (determineTargetCore st vtid.val) vtid.val) :=
+        (.of_objects_eq (markKeyChangeFrom_objects _ _ _))).trans kC
+    have hKC : currentKeptOnCore e st sC :=
       (currentKeptOnCore.of_eq (by
         rw [markKeyChangeFrom_currentOnCore, PriorityInheritance.resumeReadyMidState_scheduler_eq])).trans
-        (.of_offCore fun e' => enqueueRunnableOnCore_currentKept e' _ _ _)
-    have hB : (enqueueRunnableOnCore
-        (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
-        (determineTargetCore st vtid.val) vtid.val).machine.regsOnCore e =
-          st.machine.regsOnCore e := by
-      rw [enqueueRunnableOnCore_machine_eq, markKeyChangeFrom_machine,
-        PriorityInheritance.resumeReadyMidState_machine_eq]
-    have h2Inv := enqueueRunnableOnCore_preserves_objects_invExt _
-      (determineTargetCore st vtid.val) vtid.val h1Inv
+        (hSC ▸ currentKeptOnCore.of_stepCovers fun e' =>
+          resumeContext_stepCovers e' _ vtid.val (determineTargetCore st vtid.val) h1Inv)
     split at h
-    · split at h
-      · rename_i st4 hH
-        cases h
-        exact ⟨_, .of_kept k hK hB h2Inv (.inr hH)⟩
+    · have k : savedRegsKeptExcept (fun _ => False) st
+          (enqueueRunnableOnCore sC (determineTargetCore st vtid.val) vtid.val) :=
+        kC'.trans (fun t _ => savedRegs_enqueueRunnableOnCore _ _ _ hCInv t)
+      have hK : currentKeptOnCore e st
+          (enqueueRunnableOnCore sC (determineTargetCore st vtid.val) vtid.val) :=
+        hKC.trans (.of_offCore fun e' => enqueueRunnableOnCore_currentKept e' _ _ _)
+      have hB : (enqueueRunnableOnCore sC (determineTargetCore st vtid.val)
+          vtid.val).machine.regsOnCore e = st.machine.regsOnCore e := by
+        rw [enqueueRunnableOnCore_machine_eq, hMC]
+      have h2Inv := enqueueRunnableOnCore_preserves_objects_invExt _
+        (determineTargetCore st vtid.val) vtid.val hCInv
+      split at h
+      · split at h
+        · rename_i st4 hH
+          cases h
+          exact ⟨_, .of_kept k hK hB h2Inv (.inr hH)⟩
+        · cases h
       · cases h
+        exact ⟨_, .of_kept k hK hB h2Inv (.inl rfl)⟩
     · cases h
-      exact ⟨_, .of_kept k hK hB h2Inv (.inl rfl)⟩
+      exact ⟨_, .of_kept kC' hKC (by rw [hMC]) hCInv (.inl rfl)⟩
   · cases h
 
 /-- WS-ZA ZA6.25: **the resume writes no saved register but its scheduling
@@ -1014,62 +1043,24 @@ theorem tcbResume_savedRegsKeptOffCore {e : CoreId} {st st' : SystemState}
 
 /-! ### The suspend -/
 
-namespace savedRegsKeptExcept
-
-variable {W : SeLe4n.ThreadId → Prop}
-
-/-- The reclaim's extra steps over the cancellation write run-queue links and
-release fields alone. -/
-theorem of_cancelIpcBlockingReclaimed (st : SystemState) (v : SeLe4n.ThreadId) (tcb : TCB) :
-    savedRegsKeptExcept W (Lifecycle.Suspend.cancelIpcBlocking st v tcb)
-      (cancelIpcBlockingReclaimed v tcb st) :=
-  of_map fun x => by
-    rw [← TCB.map_proj_eq_of_map_withoutRunLinks_eq TCB.registerContext
-      (cancelIpcBlockingReclaimed_getTcb? v tcb st x)]
-
-/-- A donated context handed back writes binding codes alone. -/
-theorem of_cleanupDonatedSchedContext {st st' : SystemState} {v : SeLe4n.ThreadId}
-    (hInv : st.objects.invExt) (h : cleanupDonatedSchedContext st v = .ok st') :
-    savedRegsKeptExcept W st st' := by
-  unfold cleanupDonatedSchedContext at h
-  split at h
-  · cases h; exact .refl _
-  · split at h
-    · obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact of_map fun x => returnDonatedSchedContext_getTcb?_map_eq TCB.registerContext
-        (fun _ _ _ => rfl) _ st' _ _ _ hInv newOwner? hPop x
-    · cases h; exact .refl _
-
-end savedRegsKeptExcept
-
-/-- The donated-context return writes binding codes and release links alone. -/
-theorem cancelDonatedDonationOnCore_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
-    {st st' : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
-    (h : cancelDonatedDonationOnCore st t tcb = .ok st') : savedRegsKeptExcept W st st' := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · split at h
-    · cases h
-    · rename_i sMid hC
-      cases h
-      exact (savedRegsKeptExcept.of_cleanupDonatedSchedContext hInv hC).trans
-        (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _))
-  · cases h
-
-/-- WS-ZA ZA6.25: **the suspend's cancellation writes the victim alone, and only
-when it was blocked**, so then no core runs it or holds it resident
-(`offCoreFree_of_blocked`); a ready victim's cancellation writes no thread. -/
-theorem cancelIpcBlockingReclaimed_savedRegsWrittenFree {e : CoreId} {st : SystemState}
+/-- WS-ZA ZA6.25, ZA6.33: **the suspend's IPC cancel writes the victim alone,
+and only when it was blocked**, so then no core runs it or holds it resident
+(`offCoreFree_of_blocked`); the head cut before it writes a holder's binding
+owner code alone, and a ready victim's cancel writes no thread. -/
+theorem cancelIpcKeepingContexts_savedRegsWrittenFree {e : CoreId} {st : SystemState}
     {v : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt) (hB : blockedCurrentNowhere st)
     (hBN : st.blockedNotResident) (hT : st.getTcb? v = some tcb) :
-    savedRegsWrittenFree e st st (cancelIpcBlockingReclaimed v tcb st) := by
+    savedRegsWrittenFree e st st (Lifecycle.Suspend.cancelIpcKeepingContexts st v tcb) := by
   by_cases hS : tcb.ipcState = .ready
-  · refine .of_kept (W := fun _ => False)
-      ((savedRegsKeptExcept.of_objects_eq ?_).trans (.of_cancelIpcBlockingReclaimed st v tcb))
+  · refine .of_kept (W := fun _ => False) (savedRegsKeptExcept.of_objects_eq ?_)
       (fun _ h => h.elim)
-    simp only [Lifecycle.Suspend.cancelIpcBlocking, hS]
-  · exact .of_kept ((cancelIpcBlocking_savedRegsKeptExcept st v tcb hInv).trans
-      (.of_cancelIpcBlockingReclaimed st v tcb)) (fun _ ht => ht ▸ offCoreFree_of_blocked hB hBN hT hS)
+    simp only [Lifecycle.Suspend.cancelIpcKeepingContexts, Lifecycle.Suspend.cutCancelledCallerHead,
+      Lifecycle.Suspend.cancelIpcBlocking, hS]
+  · exact .of_kept ((savedRegsKeptExcept.of_map
+      (cutCancelledCallerHead_getTcb?_map st tcb TCB.registerContext (fun _ => rfl) hInv)).trans
+      (cancelIpcBlocking_savedRegsKeptExcept _ v tcb
+        (Lifecycle.Suspend.cutCancelledCallerHead_preserves_objects_invExt st tcb hInv)))
+      (fun _ ht => ht ▸ offCoreFree_of_blocked hB hBN hT hS)
 
 /-- A suspend's scheduling point is the identity or the executing core's
 reschedule. -/
@@ -1085,10 +1076,10 @@ theorem suspendRescheduleOnCore_state_cases {st st' : SystemState} {runningCore 
     | (rename_i st4 hH; cases h; exact .inr hH)
 
 /-- WS-ZA ZA6.28: **the suspend's prefix writes no saved register but a blocked
-victim's, and not the executing core's slot or bank.**  The cancellation writes the victim only when it
-was blocked (`cancelIpcBlockingReclaimed_savedRegsWrittenFree`); the boost
-revert, the donation cancel, the deschedule, the state clears and the yield-link
-cancel write boost codes, binding codes, run-queue and release links and state
+victim's, and not the executing core's slot or bank.**  The IPC cancel writes the
+victim only when it was blocked (`cancelIpcKeepingContexts_savedRegsWrittenFree`);
+the boost revert, the deschedule, the state clears, the release removal and the
+yield-link cancel write boost codes, run-queue and release links and state
 fields; and none puts a thread in the executing core's slot, so the thread its
 scheduling point saves was the core's current thread at the entry. -/
 theorem suspendThreadOnCore_schedPointPrefix {e : CoreId} {st st' : SystemState}
@@ -1102,97 +1093,88 @@ theorem suspendThreadOnCore_schedPointPrefix {e : CoreId} {st st' : SystemState}
   · rename_i tcb hT
     split at h
     · cases h
-    have hW1 := fun e' => cancelIpcBlockingReclaimed_savedRegsWrittenFree (e := e') hInv hB hBN hT
-    have hK1 : currentKeptOnCore e st (cancelIpcBlockingReclaimed vtid.val tcb st) :=
-      .of_stepCovers fun e' => cancelIpcBlockingReclaimed_stepCovers e' st vtid.val tcb hInv
-    have hB1 : (cancelIpcBlockingReclaimed vtid.val tcb st).machine.regsOnCore e =
+    have hW1 := fun e' => cancelIpcKeepingContexts_savedRegsWrittenFree (e := e') hInv hB hBN hT
+    have hK1 : currentKeptOnCore e st (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) :=
+      .of_stepCovers fun e' => (cancelIpcKeepingContexts_stepCovers e' st vtid.val tcb hInv).1
+    have hB1 : (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).machine.regsOnCore e =
         st.machine.regsOnCore e :=
-      (cancelIpcBlockingReclaimed_stepCovers (otherCore e) st vtid.val tcb hInv).banksKept e
+      (cancelIpcKeepingContexts_stepCovers (otherCore e) st vtid.val tcb hInv).1.banksKept e
         (ne_otherCore e)
-    have h1Inv : (cancelIpcBlockingReclaimed vtid.val tcb st).objects.invExt :=
-      cancelIpcBlockingReclaimed_objects_invExt vtid.val tcb st
-        (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st vtid.val tcb hInv)
+    have h1Inv := (cancelIpcKeepingContexts_stepCovers e st vtid.val tcb hInv).2
     cases hBS : PriorityInheritance.blockingServer st vtid.val
     case' none =>
       rw [hBS] at h
       dsimp only at h
-      generalize cancelIpcBlockingReclaimed vtid.val tcb st = s2 at h hW1 hK1 hB1 h1Inv
+      generalize Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb = s2 at h hW1 hK1 hB1 h1Inv
     case' some srv =>
       rw [hBS] at h
       dsimp only at h
       have hc := fun e' => propagatePipChainCrossCore_stepCovers e' e
-        (cancelIpcBlockingReclaimed vtid.val tcb st).objectIndex.length _ srv h1Inv
+        (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objectIndex.length _ srv h1Inv
       replace hW1 := fun e' => (hW1 e').trans (.of_kept (W := fun _ => False)
         (.of_propagatePipChainCrossCore _ srv e
-          (cancelIpcBlockingReclaimed vtid.val tcb st).objectIndex.length h1Inv) (fun _ h => h.elim))
+          (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objectIndex.length h1Inv)
+        (fun _ h => h.elim))
       replace hK1 := hK1.trans (.of_stepCovers fun e' => (hc e').1)
       replace hB1 := ((hc (otherCore e)).1.banksKept e (ne_otherCore e)).trans hB1
       replace h1Inv := (hc e).2
       clear hc
       generalize (PriorityInheritance.propagatePipChainCrossCore
-        (cancelIpcBlockingReclaimed vtid.val tcb st) srv e).1 = s2 at h hW1 hK1 hB1 h1Inv
+        (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) srv e).1 = s2 at h hW1 hK1 hB1 h1Inv
     all_goals
-      split at h
-      · cases h
-      rename_i s3 hDon
-      obtain ⟨k3, hK3, hB3, h3Inv⟩ : savedRegsKeptExcept (fun _ => False) s2 s3 ∧
-          currentKeptOnCore e s2 s3 ∧ s3.machine.regsOnCore e = s2.machine.regsOnCore e ∧
-          s3.objects.invExt := by
-        split at hDon
-        · cases hDon; exact ⟨.refl _, .refl _, rfl, h1Inv⟩
-        · exact ⟨cancelBoundDonationOnCore_savedRegsKeptExcept h1Inv hDon,
-            .of_stepCovers fun e' => (cancelBoundDonationOnCore_stepCovers e' h1Inv hDon).1,
-            (cancelBoundDonationOnCore_stepCovers (otherCore e) h1Inv hDon).1.banksKept e
-              (ne_otherCore e),
-            (cancelBoundDonationOnCore_stepCovers e h1Inv hDon).2⟩
-        · exact ⟨cancelDonatedDonationOnCore_savedRegsKeptExcept h1Inv hDon,
-            .of_stepCovers fun e' => (cancelDonatedDonationOnCore_stepCovers e' h1Inv hDon).1,
-            (cancelDonatedDonationOnCore_stepCovers (otherCore e) h1Inv hDon).1.banksKept e
-              (ne_otherCore e),
-            (cancelDonatedDonationOnCore_stepCovers e h1Inv hDon).2⟩
-      have h4Inv : (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)).objects.invExt :=
-        descheduleAt_objects_invExt _ _ _ h3Inv
+      have h4Inv : (descheduleAt s2 vtid.val (placedCoreOf? st vtid.val)).objects.invExt :=
+        descheduleAt_objects_invExt _ _ _ h1Inv
       have h5Inv : (Lifecycle.Suspend.clearPendingStateValid
-          (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) vtid).objects.invExt :=
+          (descheduleAt s2 vtid.val (placedCoreOf? st vtid.val)) vtid).objects.invExt :=
         SystemState.updateTcb_preserves_objects_invExt _ _ _ h4Inv
       have h6Inv := SystemState.updateTcb_preserves_objects_invExt _ vtid.val
         (fun t => { t with threadState := .Inactive }) h5Inv
-      have h6bInv := SystemState.cancelYieldTo_preserves_objects_invExt _ vtid.val h6Inv
-      have k : savedRegsKeptExcept (fun _ => False) s2 (cancelYieldTo
-          ((Lifecycle.Suspend.clearPendingStateValid
-            (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) vtid).updateTcb vtid.val
-            fun t => { t with threadState := .Inactive }) vtid.val) :=
-        (((k3.trans (.of_runLinks (by
+      generalize hS6 : (Lifecycle.Suspend.clearPendingStateValid
+          (descheduleAt s2 vtid.val (placedCoreOf? st vtid.val)) vtid).updateTcb vtid.val
+          (fun t => { t with threadState := .Inactive }) = s6 at h h6Inv
+      have hR := releaseRemoveThread_stepCovers (otherCore e) s6 vtid.val h6Inv
+      have h6rInv := hR.2
+      have h6bInv := SystemState.cancelYieldTo_preserves_objects_invExt _ vtid.val h6rInv
+      have k6 : savedRegsKeptExcept (fun _ => False) s2 s6 := by
+        rw [← hS6]
+        exact ((savedRegsKeptExcept.of_runLinks (by
           unfold descheduleAt
           split
           · exact removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _
-          · exact .refl _))).trans
-          (show savedRegsKeptExcept _ (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val))
+          · exact .refl _)).trans
+          (show savedRegsKeptExcept _ (descheduleAt s2 vtid.val (placedCoreOf? st vtid.val))
             (Lifecycle.Suspend.clearPendingStateValid
-              (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) vtid) from
+              (descheduleAt s2 vtid.val (placedCoreOf? st vtid.val)) vtid) from
             .updateTcb _ vtid.val _ h4Inv (fun _ => rfl))).trans
-          (.updateTcb _ vtid.val (fun t => { t with threadState := .Inactive }) h5Inv (fun _ => rfl))).trans
-          (cancelYieldTo_savedRegsKeptExcept _ vtid.val h6Inv)
-      have hK : currentKeptOnCore e st (cancelYieldTo
-          ((Lifecycle.Suspend.clearPendingStateValid
-            (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) vtid).updateTcb vtid.val
-            fun t => { t with threadState := .Inactive }) vtid.val) :=
-        ((hK1.trans hK3).trans (.of_stepCovers fun e' =>
-          descheduleAt_stepCovers e' s3 vtid.val (placedCoreOf? st vtid.val))).trans
+          (.updateTcb _ vtid.val (fun t => { t with threadState := .Inactive }) h5Inv (fun _ => rfl))
+      have k : savedRegsKeptExcept (fun _ => False) s2
+          (cancelYieldTo (Lifecycle.Suspend.releaseRemoveThread s6 vtid.val) vtid.val) :=
+        (k6.trans (.of_releaseLinks (Lifecycle.Suspend.releaseRemoveThread_agree s6 vtid.val))).trans
+          (cancelYieldTo_savedRegsKeptExcept _ vtid.val h6rInv)
+      have hK6 : currentKeptOnCore e s2 s6 := by
+        rw [← hS6]
+        exact (currentKeptOnCore.of_stepCovers fun e' =>
+          descheduleAt_stepCovers e' s2 vtid.val (placedCoreOf? st vtid.val)).trans
           (.of_eq (by
-            rw [SystemState.cancelYieldTo_scheduler, SystemState.updateTcb_scheduler]
+            rw [SystemState.updateTcb_scheduler]
             unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
             rw [SystemState.updateTcb_scheduler]))
-      have hBk : (cancelYieldTo
-          ((Lifecycle.Suspend.clearPendingStateValid
-            (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) vtid).updateTcb vtid.val
-            fun t => { t with threadState := .Inactive }) vtid.val).machine.regsOnCore e =
-            st.machine.regsOnCore e := by
-        refine Eq.trans ?_ (((descheduleAt_stepCovers (otherCore e) s3 vtid.val
-          (placedCoreOf? st vtid.val)).banksKept e (ne_otherCore e)).trans (hB3.trans hB1))
-        rw [SystemState.cancelYieldTo_machine, SystemState.updateTcb_machine]
+      have hK : currentKeptOnCore e st
+          (cancelYieldTo (Lifecycle.Suspend.releaseRemoveThread s6 vtid.val) vtid.val) :=
+        ((hK1.trans hK6).trans (.of_stepCovers fun e' =>
+          (releaseRemoveThread_stepCovers e' s6 vtid.val h6Inv).1)).trans
+          (.of_eq (by rw [SystemState.cancelYieldTo_scheduler]))
+      have hB6 : s6.machine.regsOnCore e = s2.machine.regsOnCore e := by
+        rw [← hS6]
+        refine Eq.trans ?_ ((descheduleAt_stepCovers (otherCore e) s2 vtid.val
+          (placedCoreOf? st vtid.val)).banksKept e (ne_otherCore e))
+        rw [SystemState.updateTcb_machine]
         unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
         rw [SystemState.updateTcb_machine]
+      have hBk : (cancelYieldTo (Lifecycle.Suspend.releaseRemoveThread s6 vtid.val)
+          vtid.val).machine.regsOnCore e = st.machine.regsOnCore e := by
+        rw [SystemState.cancelYieldTo_machine]
+        exact ((hR.1.banksKept e (ne_otherCore e)).trans hB6).trans hB1
       exact ⟨_, fun e' => (hW1 e').trans (.of_kept k (fun _ h => h.elim)), hK, hBk, h6bInv,
         suspendRescheduleOnCore_state_cases h⟩
   · cases h

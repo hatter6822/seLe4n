@@ -1692,6 +1692,24 @@ theorem releaseQueueRefined_of_entries {st st' : SystemState} (hL : ReleaseLinks
 def releaseCoreOf (st : SystemState) (s : SeLe4n.SchedContextId) : Option CoreId :=
   (st.getSchedContext? s).bind SchedContext.releaseCore?
 
+/-- The core a context's link names is the core whose release link it holds. -/
+theorem releaseCoreOf_eq_some_iff (st : SystemState) (s : SeLe4n.SchedContextId) (d : CoreId) :
+    st.releaseCoreOf s = some d ↔ (st.releaseLinkOn d s).isSome := by
+  unfold releaseCoreOf releaseLinkOn
+  cases st.getSchedContext? s with
+  | none => simp
+  | some sc =>
+    simp only [Option.bind_some, SchedContext.releaseLinkOn, sc.releaseCore?_eq_some_iff d]
+    split <;> simp_all
+
+/-- WS-ZA ZA6.33: a step that keeps every release link keeps the core each
+context's link names — the purge's core is read off the links alone. -/
+theorem releaseCoreOf_of_linksAgree {st st' : SystemState} (h : ReleaseLinksAgree st' st)
+    (s : SeLe4n.SchedContextId) : st'.releaseCoreOf s = st.releaseCoreOf s := by
+  apply Option.ext
+  intro d
+  rw [releaseCoreOf_eq_some_iff, releaseCoreOf_eq_some_iff, h d s]
+
 /-- WS-ZA ZA6.3: take context `s` off the release queue its own link names —
 exact, whichever core that is, with no core computed for it: the links and that
 core's abstract queue, nothing on any other core.  A context on no queue, or no

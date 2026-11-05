@@ -1511,27 +1511,20 @@ theorem donateSchedContext_releaseStateAgree
   have a5 : SystemState.releaseStateAgree st' s4 := .of_objects_eq (by rw [hEq]) (by rw [hEq]; rfl)
   exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
 
-/-- WS-ZA ZA6.4: the donation keeps every context's refill view: the context is
-rebound (bound to the client before, to the server after) with its budget and
-refills kept, the frame push writes no context, and the threads are stored over
-threads. -/
-theorem donateSchedContext_refillViewsKept
+/-- WS-ZA ZA6.33: the donation keeps every context's refill view but the
+donated one's, which it rebinds (bound to the client before, to the server
+after) with its refills kept; the frame push writes no context, the threads are
+stored over threads, and no queue moves. -/
+theorem donateSchedContext_refillsKeptOff
     (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
     (clientScId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
-    RefillViewsKept st' st := by
+    SystemState.RefillsKeptOff (· = clientScId) st' st := by
   obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
-    hSc, hBound, _, hFrame, hS1, hS2, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, hFrame, hS1, hS2, hL1, hS3, hL2, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have hScRaw := (SystemState.getSchedContext?_eq_some_iff st clientScId sc).mp hSc
-  have a1 : RefillViewsKept s1 st := .storeObject hObjInv hS1 (by
-    rw [hScRaw]; simp only [objRefillView, Option.some.injEq]
-    unfold SchedContext.boundThread at hBound
-    unfold SchedContext.refillView
-    rcases hc : sc.boundThreadCode with _ | k
-    · rw [hc] at hBound; cases hBound
-    · simp only [SeLe4n.ThreadId.optCode]
-      rw [show min (serverTid.val + 1) 1 = 1 by omega, show min (k + 1) 1 = 1 by omega])
+  have a1 : SystemState.RefillsKeptOff (· = clientScId) s1 st := .storeObject hObjInv hS1
   have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   obtain ⟨_, hRepPre, _, _, _⟩ := donationPushFrame?_ok st donorTcb pushRid pushReply hFrame
   have hRep1 : s1.getReply? pushRid = some pushReply := by
@@ -1545,6 +1538,7 @@ theorem donateSchedContext_refillViewsKept
     exact hRepPre
   have a2 : RefillViewsKept s2 s1 :=
     .of_getSchedContext?_eq (storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2)
+      (fun t => by rw [storeDonationFramePush_getTcb?_eq hInv1 hRep1 hS2])
   have hInv2 := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have a3 : RefillViewsKept s3 s2 := .storeObject hInv2 hS3 (by
     rw [lookupTcb_some_objects s2 clientTid clientTcb hL1]; rfl)
@@ -1552,7 +1546,61 @@ theorem donateSchedContext_refillViewsKept
   have a4 : RefillViewsKept s4 s3 := .storeObject hInv3 hS4 (by
     rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; rfl)
   have a5 : RefillViewsKept st' s4 := .of_objects_eq (by rw [hEq])
-  exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
+  have hQ : ∀ c, (st'.scheduler.replenishQueueOnCore c).entries =
+      (s1.scheduler.replenishQueueOnCore c).entries := fun c => by
+    rw [storeObject_scheduler_eq st s1 _ _ hS1]
+    unfold SchedulerState.replenishQueueOnCore
+    rw [donateSchedContext_scheduler_eq st st' clientTid serverTid clientScId h]
+  exact (SystemState.RefillsKeptOff.of_kept (a5.trans (a4.trans (a3.trans a2))) hQ).trans a1
+
+/-- WS-ZA ZA6.33: the donated context before and after: bound to the client,
+then to the server, its refills kept. -/
+theorem donateSchedContext_rebinds
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    ∃ b a, st.getSchedContext? clientScId = some b ∧ b.boundThread = some clientTid ∧
+      st'.getSchedContext? clientScId = some a ∧ a.boundThread = some serverTid ∧
+      a.refillsView = b.refillsView := by
+  obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
+      hObj, hBound, _, hFrame, hS1, hS2, hLC, hS3, hL, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have hRepPre : st.getReply? pushRid = some pushReply :=
+    (donationPushFrame?_ok st donorTcb pushRid pushReply hFrame).2.1
+  have hRepRaw := (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
+  have hKeyNe := getReply?_getSchedContext?_key_ne st pushRid clientScId pushReply sc
+    hRepPre hObj
+  have hRep1 : s1.getReply? pushRid = some pushReply := by
+    rw [SystemState.getReply?_eq_some_iff,
+      storeObject_objects_ne st s1 clientScId.toObjId pushRid.toObjId _ hKeyNe hObjInv hS1]
+    exact hRepRaw
+  have hRaw1 : s2.getTcb? clientTid = some clientTcb :=
+    getTcb?_of_lookupTcb s2 clientTid clientTcb hLC
+  have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
+    getTcb?_of_lookupTcb s3 serverTid serverTcb hL
+  have e1 : s1.getSchedContext? clientScId
+      = some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
+                       donationOrigin :=
+                         if donationFirstPush donorTcb clientScId then some clientTid
+                         else sc.donationOrigin } := by
+    rw [SystemState.getSchedContext?_eq_some_iff,
+      storeObject_objects_eq st s1 clientScId.toObjId _ hObjInv hS1]
+  have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 clientScId
+  have e3 := storeObject_tcbAt_getSchedContext?_eq_donation s2 s3 clientTid clientTcb
+    _ hRaw1 hInv2 hS3 clientScId
+  have e4 := storeObject_tcbAt_getSchedContext?_eq_donation s3 s4 serverTid serverTcb
+    { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }
+    hRaw2 hInv3 hS4 clientScId
+  have hA : st'.getSchedContext? clientScId = s1.getSchedContext? clientScId := by
+    rw [hEq]
+    show s4.getSchedContext? clientScId = _
+    rw [e4, e3, e2]
+  rw [e1] at hA
+  refine ⟨sc, _, hObj, hBound, hA, ?_, rfl⟩
+  simp [SchedContext.boundThread, SeLe4n.ThreadId.optCode, SeLe4n.ThreadId.ofOptCode]
 
 /-- WS-ZA ZA6.6: the donation keeps every yield code: the context is rebound,
 the frame push writes no thread or context, and the threads are stored over
@@ -1906,7 +1954,11 @@ theorem applyReplyDonation_ok_decompose
       -- `replyDonationRecipient_eq_of_no_origin`.
       returnDonatedSchedContext st holderVtid.val scId
         (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
-      st'' = removeRunnable st' holderVtid.val := by
+      -- **WS-ZA ZA6.33**: the returned context settles (seL4's
+      -- `schedContext_donate`): purged, and re-placed only under an active holder.
+      st'' = removeRunnable
+        (SchedContextOps.settleReturnedContext st' Concurrency.bootCoreId scId)
+        holderVtid.val := by
   rw [applyReplyDonation_characterisation] at h
   cases hRet : replyFrameHeadHolder? st rid with
   | none => rw [hRet] at h; exact Or.inl ⟨rfl, (Except.ok.inj h).symm⟩
@@ -2174,7 +2226,10 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
             (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
     rw [hEq]
     exact ipcInvariantFull_of_objectsAgreeOffRunLinks
-      (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val) hFull'
+      (removeRunnable_objectsAgreeOffRunLinks _ holderVtid.val)
+      (ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+        (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree st'
+          Concurrency.bootCoreId scId)) hFull')
 
 
 /-- WS-RR RR3.12: `replyDonationReturn?` reads only the thread's
@@ -2283,7 +2338,10 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
               (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
       rw [hEq]
       exact ipcInvariantFull_of_objectsAgreeOffRunLinks
-        (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val) hFull'
+        (removeRunnable_objectsAgreeOffRunLinks _ holderVtid.val)
+        (ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+          (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree st'
+            Concurrency.bootCoreId scId)) hFull')
   · -- Nothing is donated by the woken thread, so the relaxation is empty.
     exact applyReplyDonation_preserves_ipcInvariantFull st st'' rid targetVtid hObjInv
       (ipcInvariantFull_of_exceptDonationOwner hInv
@@ -2304,8 +2362,9 @@ theorem applyReplyDonation_preserves_objects_invExt
   · rw [hEq]; exact hObjInv
   · rw [hEq]
     refine removeRunnable_objects_invExt _ _ ?_
-    exact returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
-      (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hR
+    exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _
+      (returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
+        (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hR)
 
 
 -- ============================================================================

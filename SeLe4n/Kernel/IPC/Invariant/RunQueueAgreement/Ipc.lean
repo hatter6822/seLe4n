@@ -24,11 +24,13 @@ theorem modifyTcbOpt_runQueueStage {st st' : SystemState} {t? : Option SeLe4n.Th
     {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hm : TCB.StateMono f := by tcb_state_mono)
-    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) : RunQueueStage st st' := by
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hT : ∀ x, (f x).threadState = x.threadState := by intro _; rfl) :
+    RunQueueStage st st' := by
   unfold modifyTcbOpt at h
   split at h
   · cases h; exact RunQueueStage.refl _
-  · exact modifyTcb_runQueueStage h hf hm hY
+  · exact modifyTcb_runQueueStage h hf hm hY hT
 
 theorem linkNtfnWaiter_runQueueStage {st st' : SystemState} {w : SeLe4n.ThreadId}
     {tail : Option SeLe4n.ThreadId} (h : linkNtfnWaiter st w tail = .ok st') :
@@ -301,8 +303,8 @@ theorem endpointReplyOnCore_runQueueStage (replier target : SeLe4n.ThreadId) (ms
            run_queue_current_nowhere; done))
 
 theorem applyReplyDonationOnCore_runQueueStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    {targetV : SeLe4n.ValidThreadId} {holderHome ownerHome : Concurrency.CoreId}
-    (h : applyReplyDonationOnCore st rid targetV holderHome ownerHome = .ok st') :
+    {targetV : SeLe4n.ValidThreadId} {ownerHome : Concurrency.CoreId}
+    (h : applyReplyDonationOnCore st rid targetV ownerHome = .ok st') :
     RunQueueStage st st' := by
   unfold applyReplyDonationOnCore at h
   repeat' (first | split at h | dsimp only at h)
@@ -310,8 +312,10 @@ theorem applyReplyDonationOnCore_runQueueStage {st st' : SystemState} {rid : SeL
     | (cases h; exact RunQueueStage.refl _)
     | (cases h; done)
     | (cases h
-       exact ((returnDonatedSchedContextResolved_runQueueStage (by assumption)).trans
-         (migrateSchedContextReplenishment_runQueueStage _ _ _ _)).trans
+       rename_i hRet
+       exact (SchedContextOps.settleReturnedContext_runQueueStage
+         (returnDonatedSchedContextResolved_runQueueFrameStage hRet)
+         (fun S hs hI hS _ => returnDonatedSchedContextResolved_wellFormed hI hRet hs hS)).trans
          (descheduleAt_runQueueStage _ _ _))
 
 theorem endpointReplyCrossCoreDispatch_runQueueStage (replier target : SeLe4n.ThreadId)
@@ -441,27 +445,48 @@ theorem stageWokenSendCompletion_runQueueStage (st : SystemState)
     | exact RunQueueStage.refl _
     | exact writeReturnFrameToTcb_runQueueStage _ _ _
 
+/-- WS-ZA ZA6.33: **the rendezvous donor is not suspended** — its guard reads it
+blocked on the reply (`rendezvousDequeuedCall`), and a coherent blocked thread is
+active.  seL4 donates only from a caller blocked on the endpoint. -/
+theorem rendezvousDequeuedCall_activeAt {st : SystemState} {t : SeLe4n.ThreadId}
+    (hC : st.coherentAt t) (h : rendezvousDequeuedCall st t = true) : st.activeAt t := by
+  unfold rendezvousDequeuedCall at h
+  cases hL : lookupTcb st t with
+  | none => rw [hL] at h; cases h
+  | some tcb =>
+    rw [hL] at h
+    dsimp only at h
+    have hG : st.getTcb? t = some tcb := by
+      unfold lookupTcb at hL; split at hL
+      · cases hL
+      · exact hL
+    refine ⟨tcb, hG, (hC tcb hG).resolve_left fun hr => ?_⟩
+    rw [hr] at h; cases h
+
 theorem applyRendezvousCallDonation_runQueueStage {st st' : SystemState}
-    {receiver donor : SeLe4n.ThreadId}
+    {receiver donor : SeLe4n.ThreadId} (hD : st.activeAt donor)
     (h : applyRendezvousCallDonation st receiver donor = .ok st') : RunQueueStage st st' := by
   unfold applyRendezvousCallDonation at h
   split at h
-  · exact applyCallDonationOnCore_runQueueStage h
+  · rename_i donorV _ hV _
+    exact applyCallDonationOnCore_runQueueStage
+      (by rw [SeLe4n.ThreadId.toValid?_some_val_eq donor donorV hV]; exact hD) h
   · cases h
 
 theorem applyReceiveRendezvousHandoff_runQueueStage {st st' : SystemState}
     {receiver dequeued : SeLe4n.ThreadId} {c : Concurrency.CoreId}
+    (hC : st.coherentAt dequeued)
     (h : applyReceiveRendezvousHandoff st receiver dequeued c = .ok st') :
     RunQueueStage st st' := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose st st' receiver
     dequeued c h
   have s0 : RunQueueStage st stDon := by
     unfold applyReceiveRendezvousDonation at hDon
-    repeat' split at hDon
-    all_goals first
-      | (cases hDon; exact RunQueueStage.refl _)
-      | exact applyRendezvousCallDonation_runQueueStage hDon
-      | cases hDon
+    split at hDon
+    · rename_i hCall
+      exact applyRendezvousCallDonation_runQueueStage (rendezvousDequeuedCall_activeAt hC hCall)
+        hDon
+    · cases hDon; exact RunQueueStage.refl _
   split
   · exact s0.trans (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
   · exact s0
@@ -484,8 +509,10 @@ theorem replyRecvPopDonation_runQueueStage {rid : SeLe4n.ReplyId} {target : SeLe
     | (cases h; exact RunQueueStage.refl _)
     | (cases h; done)
     | (cases h
-       exact (returnDonatedSchedContextResolved_runQueueStage (by assumption)).trans
-         (migrateSchedContextReplenishment_runQueueStage _ _ _ _))
+       rename_i hRet
+       exact SchedContextOps.settleReturnedContext_runQueueStage
+         (returnDonatedSchedContextResolved_runQueueFrameStage hRet)
+         (fun S hs hI hS _ => returnDonatedSchedContextResolved_wellFormed hI hRet hs hS))
 
 theorem replyRecvHolderDeschedule_runQueueStage (tid holder : SeLe4n.ThreadId)
     (st : SystemState) : RunQueueStage st (replyRecvHolderDeschedule tid holder st) := by
@@ -497,6 +524,7 @@ theorem replyRecvHolderDeschedule_runQueueStage (tid holder : SeLe4n.ThreadId)
 theorem replyRecvPostReceiveDonation_runQueueStage {tid recordedServer nextThread : SeLe4n.ThreadId}
     {c : Concurrency.CoreId} {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)}
     {st st' : SystemState}
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hC : st.coherentAt nextThread)
     (h : replyRecvPostReceiveDonation tid recordedServer nextThread c returned? st = .ok ((), st')) :
     RunQueueStage st st' := by
   unfold replyRecvPostReceiveDonation at h
@@ -505,9 +533,11 @@ theorem replyRecvPostReceiveDonation_runQueueStage {tid recordedServer nextThrea
     | (cases h; done)
     | (cases h; exact PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
     | (cases h
-       exact ((replyRecvHolderDeschedule_runQueueStage _ _ _).trans
-         (applyRendezvousCallDonation_runQueueStage (by assumption))).trans
-         (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _))
+       refine ((replyRecvHolderDeschedule_runQueueStage tid _ st).trans
+         (applyRendezvousCallDonation_runQueueStage ?_ (by assumption))).trans
+         (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
+       exact activeKeptStage.of_stage (replyRecvHolderDeschedule_runQueueStage _ _ _) hInv hRf _
+         (rendezvousDequeuedCall_activeAt hC (by assumption)))
     | (cases h
        exact (descheduleAt_runQueueStage _ _ _).trans
          (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _))
@@ -564,7 +594,7 @@ theorem endpointReplyOnCore_preserves_queueHeadBlockedConsistent (replier target
         (wakeThread_preserves_objects_invExt st1 target c hInv1) hQ2 hR
 
 /-- The donation pop writes only scheduling-context bindings and replenishment
-queues: it adds no endpoint, keeps every current slot and every IPC state. -/
+queues (the settle): it adds no endpoint, keeps every current slot and every IPC state. -/
 theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
     {st st' : SystemState} {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)}
     (hInv : st.objects.invExt) (h : replyRecvPopDonation rid target st = .ok (r, st')) :
@@ -582,18 +612,18 @@ theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.Threa
   rename_i st1 hRet
   cases h
   refine ⟨fun oid ep hE => ?_, fun c' => ?_, fun t tcb' hT => ?_⟩
-  · replace hE := (migrateSchedContextReplenishment_agree _ _ _ _).symm.get_of_not_sc
+  · replace hE := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
       (fun _ e => KernelObject.noConfusion e) hE
     exact returnDonatedSchedContextResolved_lift (P := fun s =>
       s.objects[oid]? = some (.endpoint ep) → st.objects[oid]? = some (.endpoint ep)) hRet
       (fun n s hS => returnDonatedSchedContext_endpoint_backward st s _ _ _ hInv n hS oid ep) hE
-  · rw [(migrateSchedContextReplenishment_runQueue_current_eq _ _ _ _ c').2]
+  · rw [SchedContextOps.settleReturnedContext_currentOnCore]
     exact returnDonatedSchedContextResolved_lift (P := fun s =>
       s.scheduler.currentOnCore c' = st.scheduler.currentOnCore c') hRet
       (fun n s hS => by
         show s.scheduler.currentOnCore c' = _
         rw [returnDonatedSchedContext_scheduler_eq st s _ _ _ n hS]; rfl)
-  · replace hT := (migrateSchedContextReplenishment_agree _ _ _ _).symm.get_of_not_sc
+  · replace hT := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
       (fun _ e => KernelObject.noConfusion e) hT
     exact returnDonatedSchedContextResolved_lift (P := fun s =>
       s.objects[t.toObjId]? = some (.tcb tcb') →
@@ -610,7 +640,8 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {epId : SeLe4n.ObjId} {tid : 
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
     {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : Concurrency.CoreId}
     {st st' : SystemState} {s : CapTransferSummary}
-    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique) (hQ : queueHeadBlockedConsistent st)
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
     (h : endpointReplyRecvOnCore epId tid rid prevCaller msg root base c st = .ok (s, st')) :
     SystemState.RunQueueEntryStage st st' := by
@@ -638,9 +669,15 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {epId : SeLe4n.ObjId} {tid : 
   · cases h
   rename_i ret st1p hPop
   obtain ⟨hPE, hPC, hPT⟩ := replyRecvPopDonation_frame hInv1 hPop
+  -- The replier is current, so active; the reply and the pop suspend no thread.
+  have hA1 : st1.activeAt tid :=
+    activeKeptStage.of_stage hE hInv hRf tid (hD.runnable hCur).activeAt
+  have hAp : st1p.activeAt tid :=
+    let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+    activeKeptStage.of_stage (replyRecvPopDonation_runQueueStage hPop) hI1 hR1 tid hA1
   have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) root base c
     st1p (hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
-      (hQ1 _ rfl))) ((hPC c).trans hC1) hNI
+      (hQ1 _ rfl))) ((hPC c).trans hC1) hNI hAp
   generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) root base c st1p = q at hR h
   obtain ⟨st2, r2⟩ := q
   dsimp only at hR
@@ -650,8 +687,13 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {epId : SeLe4n.ObjId} {tid : 
   · cases h
   rename_i st3 hPost
   cases h
-  exact ((hE.trans (replyRecvPopDonation_runQueueStage hPop)).entry.trans hR).trans
-    (((((replyRecvPostReceiveDonation_runQueueStage hPost).trans
+  -- The donor the post-receive hand-off reads is blocked on its reply, and the
+  -- stages so far keep every thread coherent, so it is not suspended.
+  have hAll := (hE.trans (replyRecvPopDonation_runQueueStage hPop)).entry.trans hR
+  obtain ⟨hI2, hR2⟩ := hAll.1.links hInv hRf
+  have hD2 := hAll.2 hInv hRf hR2 hD
+  exact hAll.trans
+    (((((replyRecvPostReceiveDonation_runQueueStage hI2 hR2 (hD2.coherent nt) hPost).trans
     (applyReceiveLegPipHandoff_runQueueStage _ _ _ _ _)).trans
     (stageDeliveredMessage_runQueueStage _ _ _)).trans
     (stageWokenSendCompletion_runQueueStage _ _)).entry)

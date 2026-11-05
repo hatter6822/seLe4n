@@ -703,7 +703,8 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
       (cancelBoundDonationOnCore_savedRegsKeptExcept L.2.1 hOk) none
   · intro s n t tcb nt h hT hI hN hC
     have R := h.1; have L := h.2.1
-    exact step h (readyEntry_stage R (cancelIpcBlocking_runQueueStage s t tcb))
+    exact step h (readyEntry_stage R (cancelIpcBlocking_runQueueStage s t tcb
+        (by unfold Lifecycle.Suspend.cancelledCallerDonation?; rw [hI])))
       (L.of_frame (finaliseNotificationCancelStep_keepsIpcInvariantFull s n t tcb nt ⟨L.1, L.2.1⟩ hT
         hI hN hC).1 (FinaliseFrame.notificationCancel s t tcb n L.2.1 hI))
       (cancelIpcBlocking_savedRegsKeptExcept s t tcb L.2.1)

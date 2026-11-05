@@ -102,6 +102,21 @@ theorem setReplenishQueueOnCore_preserves_projectionOnCore
       st.scheduler c cObs rq)
     rfl
 
+/-- WS-ZA ZA6.33: the settle of a non-observable returned context preserves
+the per-core projection. -/
+theorem settleReturnedContext_preserves_projectionOnCore
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (d : CoreId) (scId : SeLe4n.SchedContextId) (c : CoreId)
+    (hS : objectObservable ctx observer scId.toObjId = false) :
+    projectStateOnCore ctx observer (SchedContextOps.settleReturnedContext st d scId) c =
+    projectStateOnCore ctx observer st c := by
+  refine projectStateOnCore_congr ctx observer
+    (settleReturnedContext_preserves_projection ctx observer st d scId hS)
+    ?_ ?_ ?_ ?_ ?_ ?_ <;>
+    first
+      | rw [SchedContextOps.settleReturnedContext_machine]
+      | (rw [(SchedContextOps.settleReturnedContext_releaseOnlyWrite st d scId).2]; rfl)
+
 /-- WS-SM SM6.E: the donated-arm replenishment migration (§2b) of a
 non-observable context is invisible
 on *every* core — the per-core strengthening of the production SM5.H.4
@@ -220,7 +235,7 @@ theorem cancelIpcBlockingMigrated_preserves_projection
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder hRes
-    exact migrateSchedContextReplenishment_preserves_projection ctx observer _ scId _ _
+    exact settleReturnedContext_preserves_projection ctx observer _ _ scId
       (hCtxHigh scId holder hRes)
   · rfl
 
@@ -234,7 +249,7 @@ theorem cancelIpcBlockingMigrated_preserves_projectionOnCore
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder hRes
-    exact migrateSchedContextReplenishment_preserves_projectionOnCore ctx observer _ scId _ _ c
+    exact settleReturnedContext_preserves_projectionOnCore ctx observer _ _ scId c
       (hCtxHigh scId holder hRes)
   · rfl
 
@@ -429,7 +444,8 @@ theorem cancelIpcBlockingOnCore_ready_cancellation_NI_smp
 /-- WS-SM SM6.E (boot-core form): the per-core donated-arm cancellation is
 invisible given the single-core return's projection preservation (the
 AK6-F.17 `cancelDonatedDonation_preserves_projection` obligation) — the
-SM6.E-new replenishment migration is discharged substantively. -/
+returned context's settle (WS-ZA ZA6.33; formerly the SM6.E replenishment
+migration) is discharged substantively. -/
 theorem cancelDonatedDonationOnCore_cancellation_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -446,7 +462,7 @@ theorem cancelDonatedDonationOnCore_cancellation_NI
     · cases h
     · injection h with h
       subst h
-      rw [migrateSchedContextReplenishment_preserves_projection ctx observer _ _ _ _
+      rw [settleReturnedContext_preserves_projection ctx observer _ _ _
         (hCtxHigh scId owner hBind)]
       exact hReturnProj _ (by assumption)
   · cases h
@@ -472,7 +488,7 @@ theorem cancelDonatedDonationOnCore_cancellation_NI_smp
     · cases h
     · injection h with h
       subst h
-      rw [migrateSchedContextReplenishment_preserves_projectionOnCore ctx observer _ _ _ _ c
+      rw [settleReturnedContext_preserves_projectionOnCore ctx observer _ _ _ c
         (hCtxHigh scId owner hBind)]
       exact hReturnProj _ (by assumption) c
   · cases h

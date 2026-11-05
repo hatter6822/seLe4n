@@ -861,27 +861,26 @@ theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent
         rw [hTNe y hYT]; exact hT0'
 
 /-- WS-SM SM6.E.3 (donated arm across cores): cancel a donated SchedContext
-binding **and migrate its pending replenishments home**.
+binding **and settle the returned context** (WS-ZA ZA6.33).
 
 The R5.A `cancelDonatedDonation` return (`cleanupDonatedSchedContext` →
-`returnDonatedSchedContext`, object writes only) followed by the
-replenishment migration from the **victim's** home core (where per-core ticks
-enqueued them while the server ran on the donated budget) to the **original
+`returnDonatedSchedContext`, object writes only) followed by seL4's
+`schedContext_donate` shape (`SchedContextOps.settleReturnedContext`): the
+context comes off whichever release queue its own link names
+(`tcbReleaseRemove` of the old holder), and is placed again on the **original
 owner's** home core — the SC's post-return bound thread, whose home core the
-SM5.H affinity invariant names as the entries' required residence.  The
-victim's home is pre-resolved from the pre-state (the return never touches
-`cpuAffinity`); the owner's home is read post-return.  Self-migration —
-shared home core, and in particular every single-core configuration — is a
-definitional no-op (`migrateSchedContextReplenishment_noop`), recovering
-the single-core arm exactly (`cancelDonatedDonationOnCore_eq_of_sharedHome`,
-`IPC/CrossCore/Cancellation.lean`).
+SM5.H affinity invariant names as the entries' required residence — when that
+owner is not suspended.  The destroyed or retyped holder may itself be
+suspended, and a suspend takes its context off the release queue, so the
+settle is what puts an active owner's pending refill back on a queue; a
+suspended owner's context stays off until its resume re-places it.
 
 The destination is read off the **post-return** state and the recorded owner
 rather than through `replenishHomeOfSchedContext` (WS-RR RR8.11's rule for a
-step that can refuse) because the migration runs only in the return's `.ok`
+step that can refuse) because the settle runs only in the return's `.ok`
 continuation, where the context is bound to that owner
-(`cancelDonatedDonationOnCore_migrates_to_recorded_owner`); on a refusal
-nothing migrates.
+(`cancelDonatedDonationOnCore_settles_on_recorded_owner`); on a refusal
+nothing moves.
 
 Returns `.error .illegalState` on a non-`.donated` binding, exactly like the
 single-core arm.  Relocated from `Cancellation.lean` at `v0.35.164` so the
@@ -893,8 +892,8 @@ def cancelDonatedDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
       match cleanupDonatedSchedContext st tid with
       | .error e => .error e
       | .ok st' =>
-          .ok (migrateSchedContextReplenishment st' scId
-                (determineTargetCore st tid) (determineTargetCore st' originalOwner))
+          .ok (SchedContextOps.settleReturnedContext st'
+                (determineTargetCore st' originalOwner) scId)
   | _ => .error .illegalState
 
 /-- **`v0.35.164`: the per-core donation-cancellation arm, `Except`-shaped** — the
@@ -903,7 +902,7 @@ three-way binding match the suspend pipeline's G3 spells inline
 `suspendDonationArm_eq_cancelDonationArmOnCore`), named, so that the destroy
 path runs the same step: `.unbound` is the identity, `.bound` is the in-place
 unbind with the replenish purge on the thread's **home** core, `.donated` is
-the return plus the replenishment migration to the owner's home.
+the return plus the settle of the returned context on the owner's home.
 
 Two spellings of one dispatcher exist deliberately, and one is defined through
 the other: `cancelDonationOnCore` (`IPC/CrossCore/Cancellation.lean`) is this
@@ -938,7 +937,7 @@ theorem cancelDonationArmOnCore_of_bound (st : SystemState) (tid : SeLe4n.Thread
       = cancelBoundDonationOnCore st tid tcb := by
   simp only [cancelDonationArmOnCore, h]
 
-/-- The `.donated` arm is the migrating return. -/
+/-- The `.donated` arm is the settling return. -/
 theorem cancelDonationArmOnCore_of_donated (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
     (h : tcb.schedContextBinding = .donated scId owner) :

@@ -2048,8 +2048,8 @@ theorem replyCancel (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) {ep : SeL
   have f3 := f2.trans (consumeReplyLink _ c t f2.invExt)
   exact f3.trans (unlinkReplyWaiterOpt _ c _ f3.invExt)
 
-/-- **The migration of a returned context's replenishments** writes only the
-release queues and the contexts' release fields. -/
+/-- **The settle of a returned context** (WS-ZA ZA6.33) writes only the release
+queues and the contexts' release fields. -/
 theorem cancelIpcBlockingMigrated (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : (Lifecycle.Suspend.cancelIpcBlocking st c t).objects.invExt) :
     FinaliseFrameAny (Lifecycle.Suspend.cancelIpcBlocking st c t)
@@ -2057,9 +2057,9 @@ theorem cancelIpcBlockingMigrated (st : SystemState) (c : SeLe4n.ThreadId) (t : 
   unfold SeLe4n.Kernel.cancelIpcBlockingMigrated
   split
   · exact (FinaliseFrame.of_releaseOnlyWrite
-      (migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _)
-      (migrateSchedContextReplenishment_agree _ _ _ _)
-      (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hInv)).any
+      (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _)
+      (SchedContextOps.settleReturnedContext_agree _ _ _)
+      (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv)).any
   · exact .refl hInv
 
 /-- **A reply-blocked caller's cancel with its reservation handed back**: the
@@ -2306,7 +2306,7 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       refine (hC (descheduleUnboundHolder_onlyObjectsSchedulerDiffer _ _ _ _)).trans ?_
       unfold cancelIpcBlockingMigrated
       split
-      · exact migrateSchedContextReplenishment_cdt _ _ _ _
+      · exact SchedContextOps.settleReturnedContext_cdt _ _ _
       · rfl
     have hRet : (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).cdt = s.cdt := by
       unfold Lifecycle.Suspend.returnDonationToCancelledCaller

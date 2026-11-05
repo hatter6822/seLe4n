@@ -309,9 +309,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.setYieldLink,
       "`{ sc with yieldFromCode := _ }` on the context, then the caller's `yieldToCode`; `scReply` is untouched")
   , (`SeLe4n.Kernel.FrozenOps.frozenSuspendThread,
-      "the frozen twin of the suspend's `cancelYieldTo`: `{ sc with yieldFromCode := 0 }` on the context the thread yielded to, then the thread's own record; `scReply` is untouched (the reservation step is `frozenSuspendDonation`'s)")
-  , (`SeLe4n.Kernel.FrozenOps.frozenSuspendDonation,
-      "the frozen twin of the suspend's G3: `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` on a bound context, then the thread's binding codes; a loaned context goes back through `frozenReturnDonatedSchedContextResolved`, the registered chain writer, whose pop is its own; `scReply` is not in either assignment list")
+      "the frozen twin of the suspend's `cancelYieldTo`: `{ sc with yieldFromCode := 0 }` on the context the thread yielded to, then the thread's own record; `scReply` is untouched (WS-ZA ZA6.33: the suspend ends no reservation)")
     -- `v0.35.99`: `frozenSetPriority` LEFT this list, and that is the
     -- reconciliation working rather than an exemption going missing.  Its
     -- `{ sc with priority := _ }` moved into the shared `frozenWriteBasePriority`
@@ -403,10 +401,12 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` and the TCB's binding codes; `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbindPerformImpl,
       "the compiled form of the same unbind; same reason")
-  , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendReleasePerform,
-      "the bound release proven equal to `cancelBoundDonationOnCore` (exempt below): `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.resumeContext,
+      "WS-ZA ZA6.33: `refillUnblockCheck` on the bound context (a refill-list rewrite) and its settle (release links and the run queue); `scReply` is untouched")
+  , (`SeLe4n.Kernel.suspendThreadReplenishCores,
+      "a footprint: builds the suspend's intermediate states only to read the cores the release removal purges from, and returns those cores; stores nothing")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendPerform,
-      "the admitted suspend: the notification wait's cancel in its slots, then the loan's return (`cancelDonatedDonationOnCore`, the specification's own, exempt) or the bound release (`suspendReleasePerform`), the deschedule and the TCB's state; an admitted victim waits on no reply, so holds no reply link to consume")
+      "the admitted suspend: the notification wait's cancel in its slots, the deschedule, the TCB's state, `tcbReleaseRemove`'s purge (release links alone) and the yield cancel; WS-ZA ZA6.33: no reservation ends; an admitted victim waits on no reply, so holds no reply link to consume")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,
       "`{ sc with priority := _ }` or `{ tcb with priority := _ }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.dispatchInvocationByR,
@@ -869,6 +869,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- chain proof; it is a corollary now.
   , (`SeLe4n.Kernel.Lifecycle.Suspend.consumeReplyLink,
       .states [`SeLe4n.Kernel.consumeReplyLink_preserves_donationChainWellFormed])
+    -- WS-ZA ZA6.33: the suspend's reply arm (seL4-MCS's `reply_remove_tcb` on
+    -- a head): the frame's upward link and the context's head cleared, the
+    -- context kept by the thread it is bound to.
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.cutHeadFrameKeepingContext,
+      .states [`SeLe4n.Kernel.cutHeadFrameKeepingContext_preserves_donationChainWellFormed])
     -- WS-ZA ZA5.4 part 25: a finalised scheduling context lets go of the
     -- stack it heads (seL4's `schedContext_unbindReply`): the head's upward
     -- link cleared, then the context's head.

@@ -787,7 +787,7 @@ theorem finaliseReplyCallerCancel_objectIndexFacts (s : SystemState) (c : SeLe4n
       (Lifecycle.Suspend.cancelIpcBlocking s c t).objectIndexSet := by
     unfold cancelIpcBlockingMigrated
     split
-    · rw [(migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _).1]
+    · rw [(SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _).1]
     · rfl
   have h2 := objectIndexFacts_of_writeAny f2.write hM h1.1 h1.2
   have h3 : SeLe4n.Model.objectIndexSetComplete (cancelIpcBlockingReclaimed c t s) ∧

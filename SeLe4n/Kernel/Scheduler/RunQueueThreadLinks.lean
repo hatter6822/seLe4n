@@ -284,7 +284,7 @@ unsuspends no thread keeps every thread's (`tcbRefillView`). -/
 theorem _root_.SeLe4n.Kernel.RefillViewsKept.mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId)
     (g : TCB → TCB)
     (hA : ∀ x, (g x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
-      intro _ h; exact h) :
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     RefillViewsKept (st.mapTcbInPlace t g) st := fun x v hv => by
   rw [objects_mapTcbInPlace] at hv
   split at hv
@@ -2112,7 +2112,8 @@ macro "refill_view" : tactic =>
     | (rw [(getReply?_eq_some_iff _ _ _).mp ‹SystemState.getReply? _ _ = some _›]; rfl)
     | (rw [(getCNode?_eq_some_iff _ _ _).mp ‹SystemState.getCNode? _ _ = some _›]; rfl)
     | (rw [(getUntyped?_eq_some_iff _ _ _).mp ‹SystemState.getUntyped? _ _ = some _›]; rfl)
-    | (simp_all only [objRefillView]; done))
+    | (simp_all only [objRefillView]; done)
+    | (simp_all only [objRefillView]; unfold tcbRefillView; rfl))
 
 /-- Closes `objYieldCodes (some obj) = objYieldCodes st.objects[k]?` for a store
 that keeps the slot's yield codes (WS-ZA ZA6.6): an object holding no link end
@@ -3562,7 +3563,7 @@ theorem RunQueueLinkStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
     (hA : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
-      intro _ h; exact h) :
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     RunQueueLinkStage st (st.updateTcb tid f) :=
   .of_frames
     (fun h r => ⟨updateTcb_preserves_objects_invExt st tid f h, updateTcb_runQueueRefined h hf r⟩)
@@ -3576,9 +3577,76 @@ theorem RunQueueStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : 
     (hm : TCB.StateMono f := by tcb_state_mono)
     (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
     (hA : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
-      intro _ h; exact h) :
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     RunQueueStage st (st.updateTcb tid f) :=
   ⟨RunQueueLinkStage.updateTcb st tid hf hY hA,
+    fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [updateTcb_scheduler]) (fun c x => by
+      unfold SystemState.updateTcb; split
+      · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ h hT (hf t) c x
+      · rfl) (StateMono.updateTcb h tid hm) d, fun h _ => StateMono.updateTcb h tid hm⟩
+
+/-- WS-ZA ZA6.33: **the contexts `st` names `tid` the holder of** — the ones
+whose refill obligations read whether `tid` is suspended. -/
+def HeldBy (st : SystemState) (tid : SeLe4n.ThreadId) (s : SeLe4n.SchedContextId) : Prop :=
+  ∃ sc, st.getSchedContext? s = some sc ∧ sc.boundThread = some tid
+
+/-- A TCB rewrite leaves alone whether a context held by another thread has an
+unsuspended holder. -/
+theorem holderActive_updateTcb_of_ne (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) {sc : SchedContext} (h : sc.boundThread ≠ some tid) :
+    (st.updateTcb tid f).holderActive sc = st.holderActive sc := by
+  unfold SystemState.holderActive
+  cases e : sc.boundThread with
+  | none => rfl
+  | some t =>
+    have hne : ¬ tid.toObjId = t.toObjId := fun h' =>
+      h (by rw [e, ThreadId.toObjId_injective _ _ h'])
+    dsimp only
+    rw [updateTcb_getTcb?_ne st tid f hInv t hne]
+
+/-- WS-ZA ZA6.33: **a TCB rewrite keeps the refill state sound off the
+contexts the thread holds**, whatever it does to the thread's state: it writes
+no context and no queue, and every other context's holder is another thread. -/
+theorem refillsSoundExcept_updateTcb_heldBy {S : SeLe4n.SchedContextId → Prop} {st : SystemState}
+    {tid : SeLe4n.ThreadId} {f : TCB → TCB} (hInv : st.objects.invExt)
+    (hS : ∀ x, HeldBy st tid x → S x) (h : st.refillsSoundExcept S) :
+    (st.updateTcb tid f).refillsSoundExcept S := by
+  obtain ⟨hW, hN, hB⟩ := h
+  have hG := updateTcb_getSchedContext? st tid f hInv
+  have hQ : (st.updateTcb tid f).scheduler = st.scheduler := updateTcb_scheduler _ _ _
+  refine ⟨fun s sc hs hsc => hW s sc hs (by rw [← hG s]; exact hsc), fun s t hs hk => ?_,
+    fun c e hs he => ?_⟩
+  · rw [hG s] at hk
+    cases e : st.getSchedContext? s with
+    | none => rw [e] at hk; cases hk
+    | some sc =>
+      rw [e] at hk
+      have hne : sc.boundThread ≠ some tid := fun hb => hs (hS s ⟨sc, e, hb⟩)
+      have hk' : st.heldReleaseKey? sc = some t := by
+        simp only [Option.bind_some] at hk
+        unfold SystemState.heldReleaseKey? at hk ⊢
+        rw [holderActive_updateTcb_of_ne st tid f hInv hne] at hk; exact hk
+      obtain ⟨c, hc⟩ := hN s t hs (by rw [e]; exact hk')
+      exact ⟨c, by rw [hQ]; exact hc⟩
+  · rw [hQ] at he
+    obtain ⟨sc, h1, h2⟩ := hB c e hs he
+    exact ⟨sc, by rw [hG]; exact h1, h2⟩
+
+/-- WS-ZA ZA6.33: **a TCB rewrite that may unsuspend the thread is a frame
+stage off the contexts it holds** (`HeldBy`): their refill obligations read
+whether it is suspended, so a step that wakes it must settle them
+(`RunQueueFrameStage.withRefills`); every other obligation is kept. -/
+theorem RunQueueFrameStage.updateTcb_heldBy (st : SystemState) (tid : SeLe4n.ThreadId)
+    {f : TCB → TCB} (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hm : TCB.StateMono f := by tcb_state_mono)
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    RunQueueFrameStage (HeldBy st tid) st (st.updateTcb tid f) :=
+  ⟨⟨fun h r => ⟨updateTcb_preserves_objects_invExt st tid f h, updateTcb_runQueueRefined h hf r⟩,
+    fun h _ q => (releaseStateAgree.of_getSchedContext? (updateTcb_getSchedContext? st tid f h)
+      (by rw [updateTcb_scheduler])).refined q,
+    fun S hS h _ _ x => refillsSoundExcept_updateTcb_heldBy h hS x,
+    fun h _ y => yieldLinksAgree_of_kept (YieldLinksKept.updateTcb st tid f h hY) y,
+    fun h _ => .of_kept (YieldLinksKept.updateTcb st tid f h hY) (by resident_frame)⟩,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [updateTcb_scheduler]) (fun c x => by
       unfold SystemState.updateTcb; split
       · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ h hT (hf t) c x

@@ -1168,7 +1168,7 @@ theorem finaliseReplyCancel_preserves_schedContextLinkInvariant {s : SystemState
   rw [← hEq] at F
   have hInvC : (Lifecycle.Suspend.cancelIpcBlocking s c t).objects.invExt :=
     (FinaliseFrameAny.replyCancel s c t hInv hB).invExt
-  -- The migration: objects kept off the release links, the replenishments moved.
+  -- The settle: objects kept off the release links, the returned context re-placed.
   have hObjM := cancelIpcBlockingMigrated_agree c t s
   have bM : allTimeoutBudgetsNone (cancelIpcBlockingMigrated c t s) :=
     allTimeoutBudgetsNone_of_aux (schedAuxAgree.of_objectsAgreeOffReleaseLinks hObjM)
@@ -1183,17 +1183,17 @@ theorem finaliseReplyCancel_preserves_schedContextLinkInvariant {s : SystemState
   have rM : (cancelIpcBlockingMigrated c t s).releaseQueueRefined := by
     unfold cancelIpcBlockingMigrated
     split
-    · exact migrateSchedContextReplenishment_refined rC _ _ _
+    · exact SchedContextOps.settleReturnedContext_refined rC _ _
     · exact rC
   have qC := replenishQueueEntriesBound_smp_of_frame F.binding F.replenish qR
   have qM : replenishQueueEntriesBound_smp (cancelIpcBlockingMigrated c t s) := by
     unfold cancelIpcBlockingMigrated
     split
-    · exact migrateSchedContextReplenishment_preserves_replenishQueueEntriesBound_smp _ _ _ _ qC
+    · exact settleReturnedContext_preserves_replenishQueueEntriesBound_smp _ _ _ qC
     · exact qC
   have hM : schedContextLinkInvariant (cancelIpcBlockingMigrated c t s) :=
     ⟨bM, cM, qM, cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp c t s
-      hInv hI.replenishAffinity, rM⟩
+      hInv hI.refined hI.replenishAffinity, rM⟩
   -- The holder's deschedule and the revert.
   have FD : SchedLinkFrame (cancelIpcBlockingMigrated c t s) (cancelIpcBlockingReclaimed c t s) :=
     SchedLinkFrame.of_agreeOffRunLinks

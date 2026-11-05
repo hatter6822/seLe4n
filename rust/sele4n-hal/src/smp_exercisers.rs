@@ -2245,11 +2245,12 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   kernel-entered timer ticks (the timer masked across them) and unbound;
 ///   then configured (its fifth word read from that buffer), bound to the
 ///   suspended partner and unbound, then bound again and held while the partner is resumed and
-///   suspended, which releases it.  A service is registered on the image's
+///   suspended, which leaves it bound (seL4's suspend unbinds nothing), and
+///   unbound.  A service is registered on the image's
 ///   endpoint against the interface the boot installs (its fifth word read
 ///   from that buffer), queried and revoked.
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
     &[
         invocation(
             "cspace-copy",
@@ -2449,6 +2450,267 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             CNODE_CAP,
             [MINT_SLOT, 0, 0, 0],
         ),
+    ],
+    // WS-ZA ZA6.33: seL4's suspend of a blocked thread (`cancelIPC`, then
+    // `tcbSchedDequeue`, `tcbReleaseRemove`, `schedContext_cancelYieldTo` and
+    // `Inactive`), run as the root task: the partner resumed, the root task's
+    // receive that blocks so the partner runs, the partner's send that wakes
+    // it, and the partner's own blocking step, which leaves the root task
+    // current; then the suspend.  Each arm's cancel writes its queue and the
+    // partner's links in their slots, so the second run finds the state the
+    // first did.  The timer is masked across the sequence, so no tick
+    // switches the two threads between steps and the roles stay fixed.  The
+    // partner blocked on a receive:
+    &[
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        invocation("suspend-recv-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "suspend-recv-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-recv-wake-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+        partner_step(
+            "suspend-recv-partner-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-receive-blocked",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // ...on a send:
+        invocation("suspend-send-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "suspend-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-send-wake-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+        partner_step(
+            "suspend-send-partner-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x88, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-send-blocked",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // ...on the notification wait:
+        invocation("suspend-wait-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "suspend-wait-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-wait-wake-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+        partner_step(
+            "suspend-wait-partner-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-wait-blocked",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // ...and on the reply, its call taken by the root task's receive through
+        // the reply capability: the suspend's reply arm is seL4's
+        // `reply_remove_tcb`, which unlinks the reply from the caller.
+        invocation("suspend-reply-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "suspend-reply-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-reply-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x66, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-reply-blocked",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+    ],
+    // The same with the partner holding the image's scheduling context, so its
+    // call donates the context to the root task: the suspend's reply arm takes
+    // the reply off the context's reply stack and leaves the context with the
+    // server, now its bound holder (seL4 returns no loan on a suspend).  The
+    // context's real unbind then takes it from the root task.  The timer is
+    // masked across the sequence, so no tick switches the threads between steps.
+    &[
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "suspend-donated-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "suspend-donated-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "suspend-donated-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "suspend-donated-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-donated-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x66, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-reply-donated",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "suspend-donated-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+    ],
+    // seL4's resume of a thread whose context's refill is not yet due
+    // (`restart`, `schedContext_resume`: `refill_unblock_check`, then the
+    // postpone onto the release queue).  The partner, bound to the context
+    // configured to a one-tick budget every two ticks, resumed and run (the
+    // root task's receive blocks, the partner's send wakes it); its yield
+    // forfeits the budget and queues its refill two ticks on, which leaves the
+    // root task current.  The suspend of the release-queued partner takes the
+    // context off the release queue; the resume finds the refill not due and
+    // postpones the context, which is not placed on a run queue; then the
+    // partner is suspended again and the context unbound.  No tick may come
+    // between the forfeit and the resume, so the timer is masked throughout.
+    &[
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "postpone-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                REFILL_BUDGET,
+                REFILL_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "postpone-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "postpone-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "postpone-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "postpone-wake-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+        kernel_step("postpone-partner-yield", YIELD),
+        invocation(
+            "tcb-suspend-release-queued",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation("tcb-resume-postpone", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        invocation("postpone-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        invocation(
+            "postpone-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
     ],
     &[
         invocation(
@@ -2686,6 +2948,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
         yield_to("sched-context-yield-to"),
         invocation("tcb-resume-bound", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("tcb-suspend-bound", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        // WS-ZA ZA6.33: seL4's suspend leaves the context bound to the
+        // suspended thread, so the context's own unbind releases it.
+        invocation(
+            "sched-context-unbind-suspended",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
         invocation(
             "vspace-unmap",
             VSPACE_UNMAP,
@@ -3155,11 +3425,21 @@ const YIELD_TO_PARTNER_BLOCKS: RoundTrip = partner_step(
 /// **The suspend of a blocked partner** (WS-ZA ZA6.33): the partner, blocked on
 /// the notification wait and holding the bound context, suspended by the root
 /// task.  The suspend cancels the wait (the notification's queue and the
-/// partner's own links, each in its slot), releases the context and sets the
-/// partner inactive, so the second run finds the state the first did.
+/// partner's own links, each in its slot) and sets the partner inactive; as in
+/// seL4 the context stays bound to it, so the context's unbind follows
+/// ([`UNBIND_SUSPENDED_PARTNER`]) and the second run finds the state the first
+/// did.
 #[cfg(feature = "hw_target")]
 const SUSPEND_WAITING_PARTNER: RoundTrip =
     invocation("tcb-suspend-waiting", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]);
+/// The context's unbind from the suspended partner, measured.
+#[cfg(feature = "hw_target")]
+const UNBIND_SUSPENDED_PARTNER: RoundTrip = invocation(
+    "sched-context-unbind-waiting",
+    SCHED_CONTEXT_UNBIND,
+    SCHED_CONTEXT_CAP,
+    [0; 4],
+);
 /// The link cleared: a caller with a pending yield is refused, so a second
 /// yieldTo (the partner blocked, so not schedulable) succeeds only if the
 /// activation cleared the root task's end of the link.  Unmeasured.
@@ -4390,8 +4670,8 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
 /// **WS-ZA ZA6.29's requeue and linked branches**: the setup, the measured
 /// requeue, the partner raised, the measured linked round trip, the link's
 /// clearing checked, and the partner, blocked on the notification wait,
-/// suspended (measured; the suspend releases the context), so the second run
-/// finds the state the first did.
+/// suspended and the context unbound from it (each measured), so the second
+/// run finds the state the first did.
 #[cfg(feature = "hw_target")]
 fn yield_to_branches(which: &str) -> Option<bool> {
     for step in YIELD_TO_SETUP.iter() {
@@ -4416,8 +4696,12 @@ fn yield_to_branches(which: &str) -> Option<bool> {
     }
     // WS-ZA ZA6.33: the partner, blocked on the notification wait and holding
     // the bound context, is suspended through the routed arm (its wait
-    // cancelled in place, the context released), measured.
+    // cancelled in place, the context left bound), then the context unbound,
+    // each measured.
     if heap_allocations_round_trip(&SUSPEND_WAITING_PARTNER, which) != Some(true) {
+        return Some(false);
+    }
+    if heap_allocations_round_trip(&UNBIND_SUSPENDED_PARTNER, which) != Some(true) {
         return Some(false);
     }
     Some(true)

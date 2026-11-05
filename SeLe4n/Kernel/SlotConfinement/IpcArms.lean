@@ -243,38 +243,33 @@ purpose is to stop it running.
 
 The other two legs are silent — `returnDonatedSchedContext` moves `boundThread`
 in the object store and leaves the scheduler and every register bank alone, and
-the RR2.8 replenishment migration writes a queue SM8.A's
+the returned context's settle (WS-ZA ZA6.33) writes release-queue state SM8.A's
 `onCore_perCore_independence` puts outside the observer's read set — so the whole
 leg still collapses to the one deschedule, and at a replier the state places
 nowhere the core list is empty because the step is the identity. -/
 theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
-    (holderHome ownerHome : CoreId) (hObjInv : st.objects.invExt)
-    (hStep : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st') :
+    (ownerHome : CoreId) (hObjInv : st.objects.invExt)
+    (hStep : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     observableSlotsConfinedToCores st st' (replyDonationDescheduleCores st rid) := by
-  rcases applyReplyDonationOnCore_ok_decompose st st' rid targetVtid holderHome
+  rcases applyReplyDonationOnCore_ok_decompose st st' rid targetVtid
     ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, stRet, hHead, _, hRet, hEq⟩
   · exact observableSlotsConfinedToCores_of_eq _ hEq
   · -- The core list is stated on the **pre**-state, which is the only state a
     -- caller holds.  That is sound because neither step before the deschedule
-    -- moves a thread: the return writes objects alone and the migration writes
-    -- replenish queues alone, so the two slices `placedCoreOf?` reads are fixed.
-    let stMig : SystemState := migrateSchedContextReplenishment stRet scId holderHome ownerHome
-    have hMig : ∀ c : CoreId,
-        stMig.scheduler.runQueueOnCore c = stRet.scheduler.runQueueOnCore c
-        ∧ stMig.scheduler.currentOnCore c = stRet.scheduler.currentOnCore c :=
-      fun c => migrateSchedContextReplenishment_runQueue_current_eq stRet scId
-        holderHome ownerHome c
+    -- moves a thread: the return writes objects alone and the settle writes
+    -- release-queue state alone, so the two slices `placedCoreOf?` reads are fixed.
+    let stSet : SystemState := SchedContextOps.settleReturnedContext stRet ownerHome scId
     have hRetSched :=
       returnDonatedSchedContext_scheduler_eq st stRet _ _ _ n hRet
     have hList : replyDonationDescheduleCores st rid
         = descheduleAtPlacementCores st holderVtid.val := by
       unfold replyDonationDescheduleCores; rw [hHead]
-    have hCores : descheduleAtPlacementCores stMig holderVtid.val
+    have hCores : descheduleAtPlacementCores stSet holderVtid.val
         = descheduleAtPlacementCores st holderVtid.val := by
       rw [descheduleAtPlacementCores_congr_of_runCores_current_eq _
-        (fun y => by rw [(migrateSchedContextReplenishment_agree _ _ _ _).getTcb? y])
-        (fun c => (hMig c).2)]
+        (fun y => by rw [SchedContextOps.settleReturnedContext_getTcb?])
+        (fun c => SchedContextOps.settleReturnedContext_currentOnCore stRet ownerHome scId c)]
       unfold descheduleAtPlacementCores
       rw [placedCoreOf?_congr_of_scheduler_eq _ hRetSched
         (returnDonatedSchedContext_runCoresAgree st stRet _ _ _ hObjInv _ hRet)]
@@ -284,8 +279,8 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
         simpa using observableSlotsConfinedToCores_trans
           (observableSlotsConfinedToCores_nil_of_scheduler_regs_eq hRetSched
             (fun _ => by rw [returnDonatedSchedContext_machine_eq st stRet _ _ _ n hRet]))
-          (migrateSchedContextReplenishment_confinedToCores stRet scId holderHome ownerHome))
-      (descheduleAtPlacement_confinedToCores stMig holderVtid.val)
+          (settleReturnedContext_confinedToCores stRet ownerHome scId))
+      (descheduleAtPlacement_confinedToCores stSet holderVtid.val)
 
 -- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `endpointReplyDispatchWriteSet` moved to
 -- `IPC/CrossCore/EndpointReplyDispatch.lean` §6, beside the dispatch it mirrors, so
@@ -339,7 +334,6 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
             | some targetV =>
               simp only []
               cases hDon : applyReplyDonationOnCore st1 rid targetV
-                  (replyDonationHolderHome st1 rid target)
                   (replyDonationRecipientHome st1 rid target) with
               | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
               | ok st2 =>
@@ -347,7 +341,6 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
                 exact observableSlotsConfinedToCores_trans
                   (observableSlotsConfinedToCores_trans hReply
                     (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
-                      (replyDonationHolderHome st1 rid target)
                       (replyDonationRecipientHome st1 rid target)
                       (by
                         have h1 := endpointReplyOnCore_preserves_objects_invExt replier target msg
@@ -593,13 +586,13 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
             observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
               (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ n hPopN)
               (returnDonatedSchedContext_machine_eq st st1' _ _ _ n hPopN)
-          have hEq : migrateSchedContextReplenishment st1' oldScId
-              (determineTargetCore st holder)
-                (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
+          have hEq : SchedContextOps.settleReturnedContext st1'
+                (determineTargetCore st (replyDonationRecipient st oldScId target)) oldScId
+              = st' :=
             (by simpa using hStep : some (oldScId, holder) = returned? ∧ _).2
           rw [← hEq]
           simpa using observableSlotsConfinedToCores_trans hReturn
-            (migrateSchedContextReplenishment_confinedToCores st1' oldScId _ _)
+            (settleReturnedContext_confinedToCores st1' _ oldScId)
 
 -- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvHolderDescheduleWriteSet` moved out of this module,
 -- beside the transition it describes (since `v0.36.49` both live in
@@ -1219,9 +1212,9 @@ theorem migrateRunQueueOnAffinityChange_confinedToCores (st : SystemState)
   all_goals simp
 
 /-- SM8.B.2: the donated-SchedContext cancellation arm is per-core silent for
-the same reason — the SC returns to its owner in the object store and its
-replenishments migrate between two cores' replenishment queues, neither of
-which the observer reads. -/
+the same reason — the SC returns to its owner in the object store and is
+settled (WS-ZA ZA6.33): purged from the queue that holds it and placed on the
+owner's home core's, neither of which the observer reads. -/
 theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
@@ -1237,7 +1230,7 @@ theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
         (observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
           (cleanupDonatedSchedContext_scheduler_eq st stCleanup tid hCleanup)
           (cleanupDonatedSchedContext_machine_eq st stCleanup tid hCleanup))
-        (migrateSchedContextReplenishment_confinedToCores stCleanup _ _ _)
+        (settleReturnedContext_confinedToCores stCleanup _ _)
   · exact absurd h (by simp)
 
 -- WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): `suspendThreadOnCoreWriteSet` moved to
@@ -1262,12 +1255,57 @@ theorem cancelYieldTo_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId) 
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
     (SystemState.cancelYieldTo_scheduler _ _) (by rw [SystemState.cancelYieldTo_eq_objects])
 
-/-- WS-ZA ZA6.6: the suspend's `.Inactive` store, then its yield-link cancel. -/
-theorem suspendInactiveCancelYield_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId) :
-    observableSlotsConfinedToCores s
-      (cancelYieldTo (s.updateTcb tid fun t => { t with threadState := .Inactive }) tid) [] := by
+/-- WS-ZA ZA6.33: the cancelled caller's head cut is per-core silent: a reply,
+a context and a thread rewritten in the store, and the key hook's flags. -/
+theorem cutCancelledCallerHead_confinedToCores (s : SystemState) (tcb : TCB) :
+    observableSlotsConfinedToCores s (Lifecycle.Suspend.cutCancelledCallerHead s tcb) [] := by
+  refine Lifecycle.Suspend.cutCancelledCallerHead_closed
+    (fun x => observableSlotsConfinedToCores s x []) ?_ ?_ s tcb
+    (observableSlotsConfinedToCores_refl _ _)
+  · intro x x1 rid r scId hx _ _ hS
+    have h1 : observableSlotsConfinedToCores x x1 [] :=
+      observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (storeObject_scheduler_eq x x1 _ _ hS) (storeObject_machine_eq x x1 _ _ hS)
+    have h2 := observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+      (SystemState.updateSchedContext_scheduler x1 scId
+        fun sc => { sc with scReply := none, donationOrigin := none })
+      (SystemState.updateSchedContext_machine x1 scId
+        fun sc => { sc with scReply := none, donationOrigin := none })
+    simpa only [List.nil_append] using
+      observableSlotsConfinedToCores_trans (observableSlotsConfinedToCores_trans hx h1) h2
+  · intro x scId holder ht o hx _ _ _
+    have h1 := observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+      (SystemState.updateTcb_scheduler x holder fun t => { t with scBindingOwnerCode := 0 })
+      (SystemState.updateTcb_machine x holder fun t => { t with scBindingOwnerCode := 0 })
+    simpa only [List.nil_append] using
+      observableSlotsConfinedToCores_trans (observableSlotsConfinedToCores_trans hx h1)
+        (markKeyChangeFrom_confinedToCores x _ holder)
+
+/-- WS-ZA ZA6.33: the suspend's IPC cancel (`cancelIpcKeepingContexts`): the
+head cut, then the teardown, both per-core silent. -/
+theorem cancelIpcKeepingContexts_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) :
+    observableSlotsConfinedToCores s (Lifecycle.Suspend.cancelIpcKeepingContexts s tid tcb) [] := by
   simpa only [List.nil_append] using observableSlotsConfinedToCores_trans
-    (suspendInactiveStore_confinedToCores s tid) (cancelYieldTo_confinedToCores _ tid)
+    (cutCancelledCallerHead_confinedToCores s tcb) (cancelIpcBlocking_confinedToCores _ tid tcb)
+
+/-- WS-ZA ZA6.33: `tcbReleaseRemove` is per-core silent: the replenish queue is
+not one of the confined slots. -/
+theorem releaseRemoveThread_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores s (Lifecycle.Suspend.releaseRemoveThread s tid) [] := by
+  rcases Lifecycle.Suspend.releaseRemoveThread_cases s tid with e | ⟨x, _, e⟩ <;> rw [e]
+  · exact observableSlotsConfinedToCores_refl _ _
+  · exact purgeReplenishment_confinedToCores _ _
+
+/-- WS-ZA ZA6.33: the suspend's tail — the `.Inactive` store, the release-queue
+removal and the yield-link cancel — is per-core silent. -/
+theorem suspendInactiveTail_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores s
+      (cancelYieldTo (Lifecycle.Suspend.releaseRemoveThread
+        (s.updateTcb tid fun t => { t with threadState := .Inactive }) tid) tid) [] := by
+  simpa only [List.nil_append] using observableSlotsConfinedToCores_trans
+    (observableSlotsConfinedToCores_trans (suspendInactiveStore_confinedToCores s tid)
+      (releaseRemoveThread_confinedToCores _ tid)) (cancelYieldTo_confinedToCores _ tid)
 
 /-- SM8.B.2: whichever donation-cancellation arm the victim's binding selects,
 the step is per-core silent. -/
@@ -1337,47 +1375,51 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
     · next hInact => simp only [hInact] at hStep; exact absurd hStep (by simp)
     · next hInact =>
       rw [if_neg hInact] at hStep
-      have hCancel : observableSlotsConfinedToCores st
-          (cancelIpcBlockingReclaimed vtid.val tcb st)
-          (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
-            vtid.val tcb).toList :=
-        cancelIpcBlockingReclaimed_confinedToCores vtid.val tcb st
+      have hCancel := cancelIpcKeepingContexts_confinedToCores st vtid.val tcb
       -- The chain reversion, stated over the same `blockingServer` scrutinee the
       -- transition and the write set both read, so the two stay in step.
       have hPre : observableSlotsConfinedToCores st
           (match PriorityInheritance.blockingServer st vtid.val with
            | some serverId =>
              (PriorityInheritance.propagatePipChainCrossCore
-               (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore).1
-           | none => cancelIpcBlockingReclaimed vtid.val tcb st)
-          ((cancelUnboundHolderCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
-              vtid.val tcb).toList
-            ++ match PriorityInheritance.blockingServer st vtid.val with
-               | some serverId =>
-                 pipChainWriteSet (cancelIpcBlockingReclaimed vtid.val tcb st) serverId
-                   executingCore
-                   (cancelIpcBlockingReclaimed vtid.val tcb st).objectIndex.length
-               | none => []) := by
+               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
+           | none => Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb)
+          (match PriorityInheritance.blockingServer st vtid.val with
+           | some serverId =>
+             pipChainWriteSet (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId
+               executingCore
+               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objectIndex.length
+           | none => []) := by
         cases hSrv : PriorityInheritance.blockingServer st vtid.val with
-        | none => simpa only [List.append_nil] using hCancel
+        | none => exact hCancel
         | some serverId =>
-          simp only []
-          exact observableSlotsConfinedToCores_trans hCancel
+          simpa only [List.nil_append] using observableSlotsConfinedToCores_trans hCancel
             (propagatePipChainCrossCore_confinedToCores executingCore _ _ serverId)
-      split at hStep
-      · exact absurd hStep (by simp)
-      · next stD hDonArm =>
-        exact (observableSlotsConfinedToCores_trans
+      have hD : observableSlotsConfinedToCores
+          (match PriorityInheritance.blockingServer st vtid.val with
+           | some serverId =>
+             (PriorityInheritance.propagatePipChainCrossCore
+               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
+           | none => Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb)
+          (descheduleAt (match PriorityInheritance.blockingServer st vtid.val with
+           | some serverId =>
+             (PriorityInheritance.propagatePipChainCrossCore
+               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
+           | none => Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb)
+            vtid.val (placedCoreOf? st vtid.val))
+          (descheduleAtPlacementCores st vtid.val) :=
+        descheduleAtPlacementCores_eq_toList st vtid.val ▸
+          descheduleAt_confinedToCores _ vtid.val (placedCoreOf? st vtid.val)
+      have hAll := observableSlotsConfinedToCores_trans
+          (observableSlotsConfinedToCores_trans
             (observableSlotsConfinedToCores_trans
-              (observableSlotsConfinedToCores_trans
-                (observableSlotsConfinedToCores_trans
-                  (observableSlotsConfinedToCores_trans hPre
-                    (suspendDonationArms_confinedToCores _ stD vtid.val _ hDonArm))
-                  (descheduleAtPlacementCores_eq_toList st vtid.val ▸
-                    descheduleAt_confinedToCores stD vtid.val (placedCoreOf? st vtid.val)))
-                (clearPendingState_confinedToCores _ vtid.val))
-              (suspendInactiveCancelYield_confinedToCores _ vtid.val))
-            (suspendRescheduleOnCore_confinedToCores _ st' _ executingCore _ _ sgi hStep))
+              (observableSlotsConfinedToCores_trans hPre hD)
+              (clearPendingState_confinedToCores _ vtid.val))
+            (suspendInactiveTail_confinedToCores _ vtid.val))
+          (suspendRescheduleOnCore_confinedToCores _ st' _ executingCore _ _ sgi hStep)
+      refine observableSlotsConfinedToCores_mono (fun c hc => ?_) hAll
+      simp only [List.append_nil, List.mem_append, or_assoc] at hc ⊢
+      exact hc
 
 -- ============================================================================
 -- §5f The live `.tcbResume` arm
@@ -1407,6 +1449,16 @@ theorem resumeReadyMidState_confinedToCores (st : SystemState) (tid : SeLe4n.Thr
     (resumeReadyMidState_scheduler_eq st tid)
     (resumeReadyMidState_machine_eq st tid)
 
+/-- WS-ZA ZA6.33: the context's resume (`refill_unblock_check` and `postpone`)
+is per-core silent: it writes a context and the release queues, which the
+observer does not read. -/
+theorem resumeContext_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId) :
+    observableSlotsConfinedToCores st (Lifecycle.Suspend.resumeContext st tid home) [] := by
+  have h := Lifecycle.Suspend.resumeContext_releaseOnlyWrite st tid home
+  refine ⟨fun c _ => h.runQueueOnCore c, fun c _ => h.currentOnCore c,
+    fun c _ => h.activeDomainOnCore c, fun c _ => h.domainTimeRemainingOnCore c,
+    fun c _ => h.domainScheduleIndexOnCore c, fun c _ => by rw [h.machine]⟩
+
 /-- SM8.B.2 (**the live `.tcbResume` bound**): `resumeThreadOnCore` writes no
 core outside `resumeThreadOnCoreWriteSet`.
 
@@ -1427,15 +1479,30 @@ theorem resumeThreadOnCore_confinedToCores (st st' : SystemState)
     split at hStep
     · exact absurd hStep (by simp)
     · next hInactive =>
-      have hPre : observableSlotsConfinedToCores st
-          (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
-            (determineTargetCore st vtid.val) vtid.val)
-          [determineTargetCore st vtid.val] :=
-        observableSlotsConfinedToCores_widen_cons
+      have hMid : observableSlotsConfinedToCores st
+          (Lifecycle.Suspend.resumeContext
+            (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) vtid.val
+            (determineTargetCore st vtid.val)) [] := by
+        simpa only [List.nil_append] using observableSlotsConfinedToCores_trans
           (observableSlotsConfinedToCores_then_flagOnly
             (resumeReadyMidState_confinedToCores st vtid.val)
             (markKeyChangeFrom_confinedToCores st _ vtid.val))
+          (resumeContext_confinedToCores _ vtid.val _)
+      have hPre : observableSlotsConfinedToCores st
+          (enqueueRunnableOnCore (Lifecycle.Suspend.resumeContext
+            (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) vtid.val
+            (determineTargetCore st vtid.val))
+            (determineTargetCore st vtid.val) vtid.val)
+          [determineTargetCore st vtid.val] :=
+        observableSlotsConfinedToCores_widen_cons hMid
           (enqueueRunnableOnCore_confinedToCores _ (determineTargetCore st vtid.val) vtid.val)
+      split at hStep
+      rotate_left
+      · -- POSTPONED (WS-ZA ZA6.33): nothing is enqueued.
+        rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hs, -⟩ := hStep
+        subst hs
+        exact observableSlotsConfinedToCores_mono (fun _ h => by cases h) hMid
       split at hStep
       · -- LOCAL: the home core is the executing core, reschedule runs inline.
         -- `[target] ++ [executingCore]` *is* the declared set, definitionally.

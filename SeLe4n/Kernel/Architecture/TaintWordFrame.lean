@@ -807,15 +807,13 @@ theorem refillsSound_of_objectsAgreeOffTaint
     rw [h2] at hv
     obtain ⟨o, h1, e⟩ := hA.some_iff _ o' h2
     rw [h1]
-    cases hH : o'.holdsTaint with
-    | false =>
-      have hx := KernelObject.eq_of_eraseTaint_eq hH e
-      first | (rw [← hx]; exact hv) | (rw [hx]; exact hv) | (subst hx; exact hv)
-    | true =>
-      cases o' with
-      | tcb x => cases hv
-      | notification n => cases hv
-      | _ => simp [KernelObject.holdsTaint] at hH
+    -- No refill view reads a taint word: a context's is its refills, a
+    -- thread's its state (`tcbRefillView`).
+    have k : ∀ x : KernelObject, objRefillView (some x.eraseTaint) = objRefillView (some x) := by
+      intro x; cases x <;> rfl
+    first
+      | (rw [← k o, e, k o']; exact hv)
+      | (rw [← k o, ← e, k o']; exact hv)
 
 /-- WS-ZA ZA6.3: a word write keeps every release link — a context holds no
 taint word, and a thread or a notification holds no release link — and writes

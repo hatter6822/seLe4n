@@ -3876,9 +3876,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   cases hStep
                   exact suspendThreadOnCore_preserves_ipcInvariantFull st st' vtid _ sgiU
                     hObjInv (hPack.targetThreadQuiescent objId (Or.inl hSy) hTgt vtid hVal)
-                    (schedContextBindingBidirectional_of_consistent
-                      hPack.schedContextLinks.binding hInv.donationOwnerValid) hInv
-                    hPack.replyStacksSettleOnWaitingDonors hSus
+                    hInv hSus
     all_goals try cases hStep
   case tcbResume =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

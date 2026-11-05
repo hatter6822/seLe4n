@@ -463,56 +463,21 @@ the purge is exact, so the arm takes no core and the bridge holds at every one.)
       = cancelBoundDonation st tid tcb := rfl
 
 -- ----------------------------------------------------------------------------
--- §2b  The donated arm across cores — replenishment migration (SM6.E.3)
+-- §2b  The donated arm across cores — the returned context settled (SM6.E.3)
 -- ----------------------------------------------------------------------------
 -- `returnDonatedSchedContext` re-binds the SC from the server (victim) back to
--- the original owner with object writes only.  Under the SM5.H affinity
--- discipline (`replenishQueueAffinityConsistentOnCore`) an SC's pending
--- replenishments live on its **bound thread's** home core's queue — per-core
--- ticks enqueue on the tick's core while the server runs — so a cross-core
--- donated return that merely re-binds strands the entries on the *server's*
--- home core.  The per-core donated arm therefore migrates them to the owner's
--- home core after the return (`migrateSchedContextReplenishment`, the same
--- production primitive the live `.tcbSetAffinity` path uses), restoring the
--- affinity invariant at the cancellation boundary.  Self-migration (shared
--- home core — in particular the whole single-core config) is a definitional
--- no-op, so the single-core semantics is recovered exactly
--- (`cancelDonatedDonationOnCore_eq_of_sharedHome`).
-
--- WS-RR RR2.3: the five hand-written production twins of the SM5.H migration
--- frames that used to sit here (`…_objects_eq`, `…_self_eq`,
--- `…_runQueue_current_eq`, `…_replenishQueue_other_eq`, `…_from_eq`) are gone.
--- They existed because the canonical forms lived in the staged
--- `Scheduler/Operations/PerCoreCbs.lean`, which production may not import; the
--- canonical forms now live in the production
--- `SeLe4n.Kernel.SchedContext.ReplenishAffinity` (imported above), so this arm
--- consumes `migrateSchedContextReplenishment_{noop,objects,machine,
--- runQueue_current_eq,replenishQueueOnCore_{to,from,other}}` directly and the
--- migration's frame is stated once for the whole tree.
-
-
--- `v0.35.164`: `cancelDonatedDonationOnCore` is defined in
--- `Lifecycle/Operations/Cleanup.lean` now, for the same reason as the bound arm
--- (the docstring travelled with it).  The single-core bridge below stays here.
-
-/-- WS-SM SM6.E.3: when the victim and the original owner share a home core —
-in particular in every single-core configuration — the per-core donated arm
-is exactly the single-core `cancelDonatedDonation` (the migration self-pair
-is a definitional no-op). -/
-theorem cancelDonatedDonationOnCore_eq_of_sharedHome (st : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
-    (owner : SeLe4n.ThreadId)
-    (hBind : tcb.schedContextBinding = .donated scId owner)
-    (hHome : ∀ st', cleanupDonatedSchedContext st tid = .ok st' →
-        determineTargetCore st' owner = determineTargetCore st tid) :
-    cancelDonatedDonationOnCore st tid tcb = cancelDonatedDonation st tid tcb := by
-  unfold cancelDonatedDonationOnCore cancelDonatedDonation
-  simp only [hBind]
-  cases hC : cleanupDonatedSchedContext st tid with
-  | error e => rfl
-  | ok st' =>
-      simp only []
-      rw [hHome st' hC, migrateSchedContextReplenishment_noop]
+-- the original owner with object writes only.  The per-core donated arm then
+-- settles the context the way seL4-MCS's `schedContext_donate` does: it is
+-- purged off whichever release queue its own link names
+-- (`purgeReplenishment`, `tcbReleaseRemove(sc->scTcb)`), and placed on the
+-- owner's home core only when the owner is not `.Inactive`
+-- (`SchedContextOps.settleReturnedContext`).  A purge-then-place is the
+-- identity on a shared home only when the context was already where the place
+-- puts it, so there is no single-core equation for this arm to recover; the
+-- single-core suspend no longer cancels donations at all.
+--
+-- `cancelDonatedDonationOnCore` is defined in
+-- `Lifecycle/Operations/Cleanup.lean` (the docstring travelled with it).
 
 -- `v0.35.164`: `cancelDonatedDonationOnCore_preserves_objects_invExt` and
 -- `cancelDonatedDonationOnCore_runQueue_current_eq` moved to
@@ -3184,8 +3149,8 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
     cases h
 
 /-- WS-SM SM6.E.3: the per-core donated arm preserves `ipcInvariant` — the
-return writes SchedContext/TCB objects only and the replenishment migration
-only release-queue links. -/
+return writes SchedContext/TCB objects only and the context settle only
+release-queue links. -/
 theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
@@ -3198,7 +3163,7 @@ theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
     · injection h with h
       subst h
       exact ipcInvariant_of_objectsAgreeOffSchedulerLinks
-        (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _))
+        (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ _ _))
         (cleanupDonatedSchedContext_preserves_ipcInvariant _ _ _ hInv hIpc
           (by assumption))
   · cases h
@@ -3538,7 +3503,7 @@ The member is a **list**, not a pair of cores, because that is the shape
 `schedFootprintOfCores` takes and the shape the resolver answers in: a caller
 passes `cancelIpcBlockingReplenishCores st victim tcb`, which is empty on every
 arm but a reply arm whose caller had donated, and
-`cancelIpcBlockingOnCoreLockSet_covers_migration` is the relation. -/
+`cancelIpcBlockingOnCoreLockSet_covers_settle` is the relation. -/
 def cancelIpcBlockingOnCoreLockSet (placed holderPlaced : Option CoreId)
     (reclaimReplenish : List CoreId) :
     List (LockKey × Concurrency.AccessMode) :=
@@ -3646,26 +3611,25 @@ theorem cancelIpcBlockingOnCoreLockSet_covers_holder_deschedule
   rw [hCore]
   exact cancelIpcBlockingOnCoreLockSet_contains_holder_runQueue_write _ c _
 
-/-- **`v0.35.170`: ...and the two replenish queues the reclaim's MIGRATION
-writes.**
+/-- **`v0.35.170`: ...and the replenish queues the reclaim's SETTLE writes**
+(WS-ZA ZA6.33).
 
-The member this footprint was missing.  `cancelIpcBlockingMigrated` moves the
-reclaimed reservation from the holder's home core to the home the context is
-bound to at the torn state, and `migrateSchedContextReplenishment` writes the
-replenish queue of both; `cancelIpcBlockingReplenishCores` names exactly that
-pair, read through the same `let`s, so this is the member's own resolution
-rather than a claim about it.  Vacuous where nothing was donated — the resolver
-is `[]` there and the transition migrates nothing, which is the honest shape for
-a segment whose membership is the arm's own guard. -/
-theorem cancelIpcBlockingOnCoreLockSet_covers_migration
+`cancelIpcBlockingMigrated` purges the returned context off the queue its own
+release link names at the torn state and places it again on the home it is
+bound to there; `cancelIpcBlockingReplenishCores` names exactly those cores,
+read through the same `let`s, so this is the member's own resolution rather than
+a claim about it.  Vacuous where nothing was donated — the resolver is `[]`
+there and the transition settles nothing. -/
+theorem cancelIpcBlockingOnCoreLockSet_covers_settle
     (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState)
     (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder)) :
-    (LockKey.replenishQueue (determineTargetCore st holder),
-      Concurrency.AccessMode.write)
-      ∈ cancelIpcBlockingOnCoreLockSet (placedCoreOf? st victim)
-          (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
-            victim tcb) (cancelIpcBlockingReplenishCores st victim tcb) ∧
+    (∀ d ∈ SchedContextOps.purgeReplenishCores
+        (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId,
+      (LockKey.replenishQueue d, Concurrency.AccessMode.write)
+        ∈ cancelIpcBlockingOnCoreLockSet (placedCoreOf? st victim)
+            (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
+              victim tcb) (cancelIpcBlockingReplenishCores st victim tcb)) ∧
     (LockKey.replenishQueue
         (replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
           (determineTargetCore st holder)),
@@ -3673,9 +3637,10 @@ theorem cancelIpcBlockingOnCoreLockSet_covers_migration
       ∈ cancelIpcBlockingOnCoreLockSet (placedCoreOf? st victim)
           (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
             victim tcb) (cancelIpcBlockingReplenishCores st victim tcb) := by
-  constructor <;>
-    exact (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
-      (by rw [cancelIpcBlockingReplenishCores_of_donation _ _ _ _ _ h]; simp)
+  rw [cancelIpcBlockingReplenishCores_of_donation _ _ _ _ _ h]
+  exact ⟨fun d hd => (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
+      (List.mem_append_left _ hd),
+    (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr (by simp)⟩
 
 /-- WS-SM SM6.E: the scheduler-domain footprint of `cancelBoundDonationOnCore`
 — the object-store table write lock (the SC + TCB rebinding rides the table
@@ -3993,27 +3958,26 @@ theorem suspendThreadOnCoreLockSet_contains_reclaim_replenishQueue_writes
           holderPlaced reclaimReplenish :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mpr (by simp [hc])
 
-/-- **WS-OD OD5.3: the second pop's migration endpoints, read off the operation.**
+/-- **WS-OD OD5.3: the second pop's settle destination, read off the operation.**
 
-`cancelDonatedDonationOnCore` migrates the reclaimed context's replenishments
-from the victim's own home core to the home of the thread its binding **records
-as owner**.  At call depth 1 that thread is whoever donated to the victim; at
-depth ≥ 2, after the G2 teardown has already reclaimed and rebound the victim
-through `donationReturnBinding`, it is the *outer caller* the reply stack
-resolved -- a core the pre-state binding does not mention, because the victim
-entered the syscall `.unbound`.
+`cancelDonatedDonationOnCore` settles the reclaimed context (WS-ZA ZA6.33,
+seL4's `schedContext_donate`): off the release queue its own link names, and
+placed again on the home of the thread its binding **records as owner**.  At
+call depth 1 that thread is whoever donated to the victim; at depth ≥ 2 it is
+the *outer caller* the reply stack resolved -- a core the pre-state binding
+does not mention.
 
-Stated so the footprint's third replenish member has a consumer: the destination
-is `determineTargetCore stC originalOwner`, and `originalOwner` is the binding's
-own field rather than anything resolvable before the teardown ran. -/
-theorem cancelDonatedDonationOnCore_migrates_to_recorded_owner
+Stated so the footprint's owner replenish member has a consumer: the
+destination is `determineTargetCore stC originalOwner`, and `originalOwner` is
+the binding's own field rather than anything resolvable before the return ran. -/
+theorem cancelDonatedDonationOnCore_settles_on_recorded_owner
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (hBind : tcb.schedContextBinding = .donated scId originalOwner)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
     ∃ stC, cleanupDonatedSchedContext st tid = .ok stC ∧
-      st' = migrateSchedContextReplenishment stC scId
-        (determineTargetCore st tid) (determineTargetCore stC originalOwner) := by
+      st' = SchedContextOps.settleReturnedContext stC
+        (determineTargetCore stC originalOwner) scId := by
   unfold cancelDonatedDonationOnCore at h
   rw [hBind] at h
   simp only [] at h
@@ -4138,8 +4102,11 @@ The single-core G1–G7 pipeline generalised across cores:
 * **G7-precapture** — the core actually **running** the victim
   (`runningCoreOf?`, pre-state resolution per the SM3.B discipline), which
   G7 must make choose a successor.
-* **G2 (IPC teardown) + G2b (per-core PIP revert)** — the upstream blocking
-  server is captured BEFORE `cancelIpcBlocking` clears the victim's
+* **G2 (IPC teardown) + G2b (per-core PIP revert)** — the teardown is
+  seL4-MCS's `cancelIPC` (`cancelIpcKeepingContexts`, WS-ZA ZA6.33): a reply
+  wait is ended by `reply_remove_tcb`, so a context the victim lent stays with
+  the thread running on it and nothing is handed back.  The upstream blocking
+  server is captured BEFORE the teardown clears the victim's
   `ipcState` (the D4-N capture → clear → revert-from-server order
   `timeoutThread` uses; see the `suspendThread` ordering-fix note), and the
   revert then walks the chain from that server on the post-teardown state —
@@ -4152,12 +4119,6 @@ The single-core G1–G7 pipeline generalised across cores:
   the cross-core `.reschedule` pokes the re-bucketing warrants are
   re-derived by the diff seam (`computeCrossCoreSgis`, fired by both
   `.tcbSuspend` entry paths).
-* **G3 (donation)** — dispatches to the **per-core** arms:
-  `cancelBoundDonationOnCore` purges the context off the release queue its
-  own link names (exact, WS-ZA ZA6.3; the victim's home core under the SM5.H
-  affinity discipline) and
-  `cancelDonatedDonationOnCore` migrates the returned SchedContext's
-  replenishments to the original owner's home core (§2b).
 * **G4** — `descheduleAt` at the pre-captured placement: the victim leaves
   the run queue and the current slot of the core the state places it on.  The
   single-core form's bootCore-pinned `removeRunnable` left a remote victim
@@ -4173,6 +4134,11 @@ The single-core G1–G7 pipeline generalised across cores:
   there, unpin — `none` admits every core, so the running-thread refusal does
   not fire — be preempted).
 * **G5/G6** — pending-state clear + `.Inactive` write (unchanged).
+* **G6a (WS-ZA ZA6.33)** — seL4-MCS's `tcbReleaseRemove`: the context the
+  victim runs on leaves the release queue (`releaseRemoveThread`).  **No
+  reservation ends**: a context bound to the victim stays bound and one it
+  holds on loan stays with it, as seL4's `suspend` keeps `tcbSchedContext`.
+* **G6b** — the victim's yield link cancelled (`cancelYieldTo`).
 * **G7 (reschedule)** — mirrors `resumeThreadOnCore`'s H5 local/remote seam,
   keyed on the running core; a victim current nowhere needs no successor
   chosen, so its target defaults to the executing core, where no SGI arises:
@@ -4197,9 +4163,10 @@ The single-core G1–G7 pipeline generalised across cores:
     server).  A priority raise triggers nothing (the running choice can only
     outrank strictly more).
 
-Errors mirror `suspendThread`: `invalidArgument` for a non-TCB target,
-`illegalState` for an already-`.Inactive` one, and the G3 donation-arm
-errors propagate. -/
+Errors mirror `suspendThread`: `invalidArgument` for a non-TCB target and
+`illegalState` for an already-`.Inactive` one, both decided before any write.
+No later step refuses (`suspendThreadOnCore_total`): seL4's `suspend` never
+fails. -/
 def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     (executingCore : CoreId)
     : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
@@ -4214,14 +4181,10 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- G4-precapture (WS-RR RR8.6): the core the state PLACES the victim on,
       -- queued or current — resolved on the pre-state, where
       -- `suspendThreadOnCoreLockSet` declares it, and removed at below.
-      -- Nothing between here and the removal moves THE VICTIM between scheduler
-      -- slots: both donation arms write no run queue and no current slot, the
-      -- priority-inheritance revert re-buckets a chain member inside the queue it
-      -- already sits in, and G2's reclaim deschedules the *holder* it unbound
-      -- (`descheduleUnboundHolder`, `v0.35.158`), which is never the victim --
-      -- `cancelUnboundHolder?_ne_victim`, structural in the trigger.  The
-      -- sentence used to say "a thread" and no longer can: the teardown does
-      -- move one, just not this one.
+      -- Nothing between here and the removal moves a thread between scheduler
+      -- slots: the IPC cancel writes objects and, at a cut head, reschedule
+      -- flags, and the priority-inheritance revert re-buckets a chain member
+      -- inside the queue it already sits in.
       let placed := placedCoreOf? st tid
       -- G7-precapture (PR #831 review 4, P1): the core ACTUALLY running the
       -- victim (`runningCoreOf?`) — its home on every committed state (the
@@ -4242,15 +4205,12 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- G2-precapture (D4-N, SM6.E ordering fix — see `suspendThread`): the
       -- reply-blocking edge is read before G2 clears it.
       let maybeBlockingServer := PriorityInheritance.blockingServer st tid
-      -- G2 (**WS-RR RR8.12**, re-keyed at `v0.35.158`): the teardown with its
-      -- reclaim COMPLETED -- the migration and the deschedule of the holder the
-      -- reclaim unbound (WS-OD OD1.7's wake of it until `v0.35.158`), which until
-      -- RR8.12's second cut were only in `cancelIpcBlockingOnCore`, a composite
-      -- no production path calls.  See `cancelIpcBlockingReclaimed` for what the
-      -- live path was therefore missing and for why the step takes this state
-      -- pair.  It is NOT the whole composite: that ends in the victim's own
-      -- deschedule, which G4 below performs at the pre-captured placement.
-      let st := cancelIpcBlockingReclaimed tid tcb st
+      -- G2 (WS-ZA ZA6.33): seL4-MCS's `cancelIPC` (`cancelIpcKeepingContexts`):
+      -- the endpoint and notification waits dequeued from the one object the
+      -- thread state names, a reply wait ended by `reply_remove_tcb` -- the
+      -- frame cut off its stack and off the context it heads, which stays with
+      -- the thread it is bound to.  Nothing is handed back and nothing refuses.
+      let st := cancelIpcKeepingContexts st tid tcb
       -- G2b (D4-N × SM5.F.4): revert the PIP chain from the captured server
       -- on the post-teardown state, migrating each chain member's run-queue
       -- bucket on its OWN home core (the boot-pinned `revertPriorityInheritance`
@@ -4259,13 +4219,6 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
         | some serverId =>
           (PriorityInheritance.propagatePipChainCrossCore st serverId executingCore).1
         | none => st
-      let tcb' := (st.getTcb? tid).getD tcb
-      match (match tcb'.schedContextBinding with
-             | .unbound => (Except.ok st : Except KernelError SystemState)
-             | .bound _ => cancelBoundDonationOnCore st tid tcb'
-             | .donated _ _ => cancelDonatedDonationOnCore st tid tcb') with
-      | .error e => .error e
-      | .ok st =>
       -- G4 (WS-RR RR8.6): deschedule the victim where the state places it —
       -- one removal, at the pre-captured placement, in place of the home
       -- removal and the running-core removal that used to stand here.
@@ -4275,6 +4228,10 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- `suspendThread`'s G6 since `v0.35.64`, and the identity on an absent
       -- thread, exactly as the raw store's own match was.
       let st := st.updateTcb tid fun t => { t with threadState := .Inactive }
+      -- G6a (WS-ZA ZA6.33): seL4-MCS's `tcbReleaseRemove`: the context the
+      -- victim runs on leaves the release queue that holds it.  The victim
+      -- keeps its binding, as seL4's `suspend` keeps `tcbSchedContext`.
+      let st := releaseRemoveThread st tid
       -- G6b (WS-ZA ZA6.6): the victim's yield link cancelled, seL4-MCS's
       -- `schedContext_cancelYieldTo` as the last write of its `suspend`.
       let st := cancelYieldTo st tid
@@ -4347,43 +4304,6 @@ theorem currentDeboostedFrom_eq_code (st post : SystemState) (ec : CoreId) :
       simp only [resolveEffectivePrioDeadline_eq, TCB.boostedPriority]
       rw [currentOnCore_beq_some]
       rfl
-
-/-- WS-ZA ZA5.2: the suspend's release of a context bound to the victim
-(`cancelBoundDonationOnCore`), the victim's entry-time scheduling key and budget
-eligibility read before anything is written; the identity on a victim holding no
-bound context.  WS-ZA ZA6.3: the context leaves the release queue it is on, read
-off its own core code (`SchedContextOps.purgeReplenishment`), so no home core is
-resolved. -/
-def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-    match tcb.schedContextBinding with
-    | .bound scId =>
-      let p0 := tcb.boostedPriority
-      let d0 := effectiveDeadline st tcb
-      let dom0 := tcb.domain
-      let e0 := hasSufficientBudget st tcb
-      let st1 : SystemState := st.updateSchedContext scId fun sc =>
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-      let st2 := SchedContextOps.purgeReplenishment st1 scId
-      markKeyChangeParts
-        (markCandidacyGainFor
-          (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
-          tid e0)
-        tid p0 d0 dom0
-    | _ => st
-  | none => st
-
-theorem cancelBoundDonationOnCore_eq_release {st : SystemState} {tid : SeLe4n.ThreadId}
-    {tcb : TCB} {scId : SeLe4n.SchedContextId} (hT : st.getTcb? tid = some tcb)
-    (hB : tcb.schedContextBinding = .bound scId) :
-    cancelBoundDonationOnCore st tid tcb =
-      .ok (suspendReleasePerform st tid) := by
-  unfold cancelBoundDonationOnCore suspendReleasePerform
-  simp only [hT, hB]
-  unfold markKeyChangeFrom
-  simp only [hT]
-  rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
 
 -- ============================================================================
 -- §14  WS-RR RR2.17 — the `.tcbSuspend` operation preserves `ipcInvariant`
@@ -4528,16 +4448,14 @@ theorem suspendThreadOnCore_sgi_remote_reschedule (st st' : SystemState)
   split at h
   · split at h
     · cases h
-    · split at h
-      · cases h
-      · obtain ⟨hc, hk, hne⟩ := suspendRescheduleOnCore_sgi_shape _ _ _ _ _ _ _ _ h
-        refine ⟨?_, hk, hc ▸ hne⟩
-        cases hR : runningCoreOf? st vtid.val with
-        | none => exact absurd (by simp [hR]) hne
-        | some r =>
-          rw [hR] at hc
-          simp only [Option.getD_some] at hc
-          rw [hc]
+    · obtain ⟨hc, hk, hne⟩ := suspendRescheduleOnCore_sgi_shape _ _ _ _ _ _ _ _ h
+      refine ⟨?_, hk, hc ▸ hne⟩
+      cases hR : runningCoreOf? st vtid.val with
+      | none => exact absurd (by simp [hR]) hne
+      | some r =>
+        rw [hR] at hc
+        simp only [Option.getD_some] at hc
+        rw [hc]
   · cases h
 
 /-- WS-SM SM6.E: a victim whose resolved reschedule target — the core
@@ -4553,10 +4471,20 @@ theorem suspendThreadOnCore_local_no_sgi (st st' : SystemState)
   split at h
   · split at h
     · cases h
-    · split at h
-      · cases h
-      · exact suspendRescheduleOnCore_local_no_sgi _ _ _ _ _ _ _ hLocal h
+    · exact suspendRescheduleOnCore_local_no_sgi _ _ _ _ _ _ _ hLocal h
   · cases h
+
+/-- WS-ZA ZA6.33: **the suspend is total**: a thread that is held and not
+already `.Inactive` is suspended, with no refusal after the checks, as seL4's
+`suspend` never fails. -/
+theorem suspendThreadOnCore_total (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (ec : CoreId) (tcb : TCB) (hGet : st.getTcb? vtid.val = some tcb)
+    (hActive : tcb.threadState ≠ .Inactive) :
+    ∃ st' sgi, suspendThreadOnCore st vtid ec = .ok (st', sgi) := by
+  have hb : (tcb.threadState == .Inactive) = false := by simpa using hActive
+  simp only [suspendThreadOnCore, hGet, hb, Bool.false_eq_true, ↓reduceIte]
+  obtain ⟨sgi, h⟩ := suspendRescheduleOnCore_eq_state _ _ _ _ _
+  exact ⟨_, sgi, h⟩
 
 end Lifecycle.Suspend
 
@@ -4727,61 +4655,6 @@ theorem cancelBoundDonationOnCore_replenishments_purged
   (cancelBoundDonationOnCore_replenishQueue_purged_of_refined st st' tid tcb scId hB
     hInv hRef h c e hMem).2
 
-/-- WS-SM SM6.E: at a bootCore-homed victim with a shared-home donated owner
-(in particular every single-core configuration), the per-core donation
-dispatcher's success outcome is exactly the single-core `cancelDonation`'s. -/
-theorem cancelDonationOnCore_bootHome_ok
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (st st' : SystemState)
-    (hHome : determineTargetCore st tid = bootCoreId)
-    (hOwnerHome : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
-        ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
-          determineTargetCore stR owner = determineTargetCore st tid)
-    (hOk : cancelDonation st tid tcb = .ok st') :
-    cancelDonationOnCore tid tcb st = (st', .ok ()) := by
-  cases hB : tcb.schedContextBinding with
-  | unbound =>
-    simp only [cancelDonation, hB] at hOk
-    injection hOk with hOk
-    subst hOk
-    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB]
-  | bound scId =>
-    simp only [cancelDonation, hB] at hOk
-    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB, hHome, cancelBoundDonationOnCore_eq_cancelBoundDonation,
-      hOk]
-  | donated scId owner =>
-    simp only [cancelDonation, hB] at hOk
-    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB,
-      cancelDonatedDonationOnCore_eq_of_sharedHome st tid tcb scId owner hB
-        (hOwnerHome scId owner hB)]
-    simp only [hOk]
-
-/-- WS-SM SM6.E: the error twin of `cancelDonationOnCore_bootHome_ok` — the
-dispatcher returns the pre-state with the single-core arm's error. -/
-theorem cancelDonationOnCore_bootHome_error
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (e : KernelError)
-    (hHome : determineTargetCore st tid = bootCoreId)
-    (hOwnerHome : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
-        ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
-          determineTargetCore stR owner = determineTargetCore st tid)
-    (hErr : cancelDonation st tid tcb = .error e) :
-    cancelDonationOnCore tid tcb st = (st, .error e) := by
-  cases hB : tcb.schedContextBinding with
-  | unbound =>
-    simp only [cancelDonation, hB] at hErr
-    cases hErr
-  | bound scId =>
-    simp only [cancelDonation, hB] at hErr
-    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB, hHome, cancelBoundDonationOnCore_eq_cancelBoundDonation,
-      hErr]
-  | donated scId owner =>
-    simp only [cancelDonation, hB] at hErr
-    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB,
-      cancelDonatedDonationOnCore_eq_of_sharedHome st tid tcb scId owner hB
-        (hOwnerHome scId owner hB)]
-    simp only [hErr]
-
-
-
 
 /-- WS-RR RR2.17: one stage of a composite, as far as `ipcInvariant` is
 concerned — it carries the object-store invariant its successor needs, and it
@@ -4844,6 +4717,19 @@ theorem cancelIpcBlockingReclaimed_ipcInvariantStage (st : SystemState)
     ⟨cancelIpcBlockingReclaimed_objects_invExt tid tcb st,
      fun _ h => ipcInvariant_of_objectsAgreeOffSchedulerLinks
       (cancelIpcBlockingReclaimed_objectsAgreeOffSchedulerLinks tid tcb st) h⟩
+
+/-- WS-ZA ZA6.33: the suspend's IPC cancel is a stage. -/
+theorem cancelIpcKeepingContexts_ipcInvariantStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : IpcInvariantStage st (cancelIpcKeepingContexts st tid tcb) :=
+  ⟨fun h => cancelIpcKeepingContexts_preserves_objects_invExt st tid tcb h,
+   fun hInv hIpc => cancelIpcKeepingContexts_preserves_ipcInvariant st tid tcb hInv hIpc⟩
+
+/-- WS-ZA ZA6.33: the release removal is a stage: it writes release links alone. -/
+theorem releaseRemoveThread_ipcInvariantStage (st : SystemState) (tid : SeLe4n.ThreadId) :
+    IpcInvariantStage st (releaseRemoveThread st tid) :=
+  ⟨fun h => releaseRemoveThread_objects_invExt st tid h,
+   fun _ h => ipcInvariant_of_objectsAgreeOffSchedulerLinks
+     (.of_releaseLinks (releaseRemoveThread_agree st tid)) h⟩
 
 /-- WS-RR RR2.17: the cross-core priority-inheritance revert is a stage — it
 writes `pipBoost` and run-queue buckets, never a notification. -/
@@ -5009,29 +4895,23 @@ theorem suspendThreadOnCore_ipcInvariantStage
         refine IpcInvariantStage.trans (st' := ?_) ?_ ?_
         · exact (match PriorityInheritance.blockingServer st vtid.val with
                  | some serverId => (PriorityInheritance.propagatePipChainCrossCore
-                     (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore).1
-                 | none => cancelIpcBlockingReclaimed vtid.val tcb st)
+                     (cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
+                 | none => cancelIpcKeepingContexts st vtid.val tcb)
         · cases PriorityInheritance.blockingServer st vtid.val with
-          | none => exact cancelIpcBlockingReclaimed_ipcInvariantStage st vtid.val tcb
+          | none => exact cancelIpcKeepingContexts_ipcInvariantStage st vtid.val tcb
           | some serverId =>
               exact IpcInvariantStage.trans
-                (cancelIpcBlockingReclaimed_ipcInvariantStage st vtid.val tcb)
+                (cancelIpcKeepingContexts_ipcInvariantStage st vtid.val tcb)
                 (propagatePipChainCrossCore_ipcInvariantStage _ serverId executingCore _)
         · -- Stage 3 onwards, on the post-revert state.
-          revert hStep
-          split
-          · intro hStep; cases hStep
-          · next s3 hDon =>
-            intro hStep
-            refine IpcInvariantStage.trans
-              (cancelSuspendDonation_ipcInvariantStage _ s3 vtid.val _ hDon) ?_
-            refine IpcInvariantStage.trans ?_
-              (suspendRescheduleOnCore_ipcInvariantStage _ st' _ executingCore _ _ sgi? hStep)
-            refine IpcInvariantStage.trans
-              (descheduleAt_ipcInvariantStage s3 vtid.val (placedCoreOf? st vtid.val)) ?_
-            refine IpcInvariantStage.trans (clearPendingState_ipcInvariantStage _ vtid.val) ?_
-            exact (updateTcb_ipcInvariantStage _ vtid.val _).trans
-              (cancelYieldTo_ipcInvariantStage _ vtid.val)
+          refine IpcInvariantStage.trans ?_
+            (suspendRescheduleOnCore_ipcInvariantStage _ st' _ executingCore _ _ sgi? hStep)
+          refine IpcInvariantStage.trans
+            (descheduleAt_ipcInvariantStage _ vtid.val (placedCoreOf? st vtid.val)) ?_
+          refine IpcInvariantStage.trans (clearPendingState_ipcInvariantStage _ vtid.val) ?_
+          exact (updateTcb_ipcInvariantStage _ vtid.val _).trans
+            ((releaseRemoveThread_ipcInvariantStage _ vtid.val).trans
+              (cancelYieldTo_ipcInvariantStage _ vtid.val))
   exact hChain
 
 /-- **WS-RR RR2.17: the live `.tcbSuspend` arm preserves the object-store

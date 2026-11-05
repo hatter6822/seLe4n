@@ -208,7 +208,7 @@ theorem cancelIpcBlockingMigrated_replyViews_eq (victim : SeLe4n.ThreadId) (tcb 
     (cancelIpcBlockingMigrated victim tcb st).replyViews = (cancelIpcBlocking st victim tcb).replyViews := by
   unfold cancelIpcBlockingMigrated
   split
-  · exact migrateSchedContextReplenishment_replyViews_eq _ _ _ _
+  · exact settleReturnedContext_replyViews_eq _ _ _
   · rfl
 
 /-- **The per-core cancellation keeps the reply-waiter queues consistent.** -/

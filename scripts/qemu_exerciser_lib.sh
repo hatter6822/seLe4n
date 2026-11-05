@@ -272,12 +272,12 @@ for driver in drivers:
             "tcb-set-fault-handler", "tcb-bind-notification", "tcb-unbind-notification",
             "tcb-set-space", "tcb-resume", "tcb-suspend", "tcb-set-ipc-buffer",
             # and the scheduling-context arms (the partner resumed and
-            # suspended while it holds the context, the suspend releasing it),
-            # behind the root task's own IPC-buffer set that the configure's
-            # fifth word is read through.
+            # suspended while it holds the context, which the suspend leaves
+            # bound, then the context's unbind), behind the root task's own
+            # IPC-buffer set that the configure's fifth word is read through.
             "root-set-ipc-buffer", "sched-context-configure", "sched-context-bind",
             "sched-context-unbind", "sched-context-consumed", "sched-context-consumed-reset", "sched-context-rebind",
-            "sched-context-yield-to",
+            "sched-context-yield-to", "sched-context-unbind-suspended",
             # WS-ZA ZA6.29's other branches (added at ZA6.30): a schedulable
             # partner ranked below the caller, requeued at its band's head with
             # the consumed time returned at once; and one ranked with it on its
@@ -286,10 +286,37 @@ for driver in drivers:
             "sched-context-yield-to-requeue", "sched-context-yield-to-linked",
             # WS-ZA ZA6.33: the partner, blocked on the notification wait and
             # holding the bound context, suspended: the wait cancelled in
-            # place and the context released.
-            "tcb-suspend-waiting",
+            # place and the context left bound (seL4's suspend unbinds
+            # nothing), then unbound.
+            "tcb-suspend-waiting", "sched-context-unbind-waiting",
             "tcb-resume-bound",
             "tcb-suspend-bound",
+            # WS-ZA ZA6.33: seL4's suspend of a blocked thread, as the root
+            # task: the partner resumed, the root task's receive that blocks,
+            # the partner's send that wakes it and the partner's own blocking
+            # receive, send, wait or call, then the suspend, each arm's cancel
+            # in place; the call's again with the partner holding the context,
+            # so the call donates it and the suspend's reply arm leaves it with
+            # the server, which the context's unbind then releases.
+            "suspend-recv-resume", "suspend-recv-root-receives", "suspend-recv-wake-root",
+            "suspend-recv-partner-receives", "tcb-suspend-receive-blocked",
+            "suspend-send-resume", "suspend-send-root-receives", "suspend-send-wake-root",
+            "suspend-send-partner-sends", "tcb-suspend-send-blocked",
+            "suspend-wait-resume", "suspend-wait-root-receives", "suspend-wait-wake-root",
+            "suspend-wait-partner-waits", "tcb-suspend-wait-blocked",
+            "suspend-reply-resume", "suspend-reply-root-receives", "suspend-reply-partner-calls",
+            "tcb-suspend-reply-blocked",
+            "suspend-donated-configure", "suspend-donated-bind-partner", "suspend-donated-resume",
+            "suspend-donated-root-receives", "suspend-donated-partner-calls",
+            "tcb-suspend-reply-donated", "suspend-donated-unbind",
+            # and seL4's resume of a thread whose refill is not yet due: the
+            # bound partner's yield forfeits its budget, its suspend takes the
+            # context off the release queue, and the resume postpones it there
+            # (`refill_unblock_check`, then the postpone), placing no run queue.
+            "postpone-configure", "postpone-bind-partner", "postpone-resume-partner",
+            "postpone-root-receives", "postpone-wake-root", "postpone-partner-yield",
+            "tcb-suspend-release-queued", "tcb-resume-postpone", "postpone-suspend",
+            "postpone-unbind",
             # WS-ZA ZA5.5: a service query reads the code its endpoint records,
             # and a revoke clears it and erases the registry entry in place.
             "service-query", "service-revoke",

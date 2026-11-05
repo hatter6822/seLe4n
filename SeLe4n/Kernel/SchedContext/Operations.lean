@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Model.State
 import SeLe4n.Kernel.SchedContext.ReleaseLinks
+import SeLe4n.Kernel.SchedContext.ReturnSettle
 import SeLe4n.Kernel.Scheduler.RunQueueHeadEnqueue
 
 /-! # SchedContext Operations — WS-Z Phase Z5
@@ -40,23 +41,6 @@ open SeLe4n.Kernel
 -- WS-SM SM8.B: per-core replenish-queue purging
 -- ============================================================================
 
-/-- WS-SM SM8.B / WS-ZA ZA6.3: drop `scId`'s replenishment from the release
-queue that holds it, read from the context's own link
-(`SystemState.releaseRemoveAnywhere`): exact whichever core that is, so neither
-a home core to compute nor a sweep over every core is needed (a context whose
-bound thread is gone from the store is purged the same way). -/
-def purgeReplenishment (st : SystemState) (scId : SchedContextId) : SystemState :=
-  st.releaseRemoveAnywhere scId
-
-/-- WS-ZA ZA6.3: the cores whose replenish queue the purge of `scId` writes —
-the one its own link names, or none — read from the context alone, so a
-footprint locks the queue the purge edits and no other. -/
-def purgeReplenishCores (st : SystemState) (scId : SchedContextId) :
-    List SeLe4n.Kernel.Concurrency.CoreId :=
-  match st.releaseCoreOf scId with
-  | some d => [d]
-  | none => []
-
 /-! ### Frames
 
 The release queue is **not** one of the six `observableSlotsConfinedToCores`
@@ -64,14 +48,6 @@ slots, so the purge is invisible to per-core confinement.  Stated as `@[simp]`
 frames on the helper rather than left to unfold at each use site, so the
 confinement proofs reason about the purge as a unit and a later change to its
 body cannot silently escape them. -/
-
-theorem purgeReplenishment_releaseOnlyWrite (st : SystemState) (scId : SchedContextId) :
-    (purgeReplenishment st scId).releaseOnlyWrite st :=
-  SystemState.releaseRemoveAnywhere_releaseOnlyWrite st scId
-
-theorem purgeReplenishment_agree (st : SystemState) (scId : SchedContextId) :
-    (purgeReplenishment st scId).objectsAgreeOffReleaseLinks st :=
-  SystemState.releaseRemoveAnywhere_agree st scId
 
 @[simp] theorem purgeReplenishment_machine (st : SystemState) (scId : SchedContextId) :
     (purgeReplenishment st scId).machine = st.machine :=
@@ -128,10 +104,6 @@ theorem purgeReplenishment_agree (st : SystemState) (scId : SchedContextId) :
 theorem purgeReplenishment_getTcb? (st : SystemState) (scId : SchedContextId)
     (t : SeLe4n.ThreadId) : (purgeReplenishment st scId).getTcb? t = st.getTcb? t :=
   (purgeReplenishment_agree st scId).getTcb? t
-
-theorem purgeReplenishment_objects_invExt (st : SystemState) (scId : SchedContextId)
-    (h : st.objects.invExt) : (purgeReplenishment st scId).objects.invExt :=
-  SystemState.releaseRemoveAnywhere_objects_invExt st scId h
 
 /-- **The purge writes the queue of the core the context's own link names, and
 no other** — the exactness half of every footprint that names that core. -/
@@ -199,15 +171,15 @@ theorem purgeReplenishment_runQueueFrameStage (st : SystemState) (scId : SchedCo
         exact ⟨fun h => h.1, fun h => ⟨h, he⟩⟩)
       hS (purgeReplenishment_refined hR scId) h)
 
-/-- WS-ZA ZA6.4: **purging a context with nothing pending while bound keeps
-the refill state sound off every set** — the entries it drops are its own, and
-it is not bound and pending, so nothing is stranded; the rest of the queues and
-every context's refills are kept. -/
-theorem purgeReplenishment_refillsSoundExcept {S : SchedContextId → Prop} {st : SystemState}
+/-- WS-ZA ZA6.33: **purging a context with no held place keeps the refill
+state sound off every set** — the entries it drops are its own, and it has no
+place while held (nothing pending, or its holder suspended), so nothing is
+stranded; the rest of the queues and every context's refills are kept. -/
+theorem purgeReplenishment_refillsSoundExceptHeld {S : SchedContextId → Prop} {st : SystemState}
     (hR : st.releaseQueueRefined) (scId : SchedContextId)
-    (hU : (st.getSchedContext? scId).bind SchedContext.boundReleaseKey? = none)
+    (hU : (st.getSchedContext? scId).bind st.heldReleaseKey? = none)
     (h : st.refillsSoundExcept S) : (purgeReplenishment st scId).refillsSoundExcept S := by
-  refine SystemState.refillsSoundExcept_of_releaseMove
+  refine SystemState.refillsSoundExcept_of_releaseMoveHeld
     (.of_agreeOffReleaseLinks (purgeReplenishment_agree st scId)) ?_
     (fun c e he => ⟨c, purgeReplenishment_entries_subset st scId c e he⟩)
     (purgeReplenishment_refined hR scId) h
@@ -220,15 +192,186 @@ theorem purgeReplenishment_refillsSoundExcept {S : SchedContextId → Prop} {st 
     obtain ⟨a, b⟩ := e
     exact List.mem_filter.mpr ⟨he, by simpa using hs⟩
 
+/-- A context with nothing pending while bound has no held place. -/
+theorem bind_heldReleaseKey?_none {st : SystemState} {scId : SchedContextId}
+    (hU : (st.getSchedContext? scId).bind SchedContext.boundReleaseKey? = none) :
+    (st.getSchedContext? scId).bind st.heldReleaseKey? = none := by
+  cases e : (st.getSchedContext? scId).bind st.heldReleaseKey? with
+  | none => rfl
+  | some t => rw [SystemState.bind_heldReleaseKey?_bound e] at hU; cases hU
+
+/-- WS-ZA ZA6.4: purging a context with nothing pending while bound keeps the
+refill state sound off every set. -/
+theorem purgeReplenishment_refillsSoundExcept {S : SchedContextId → Prop} {st : SystemState}
+    (hR : st.releaseQueueRefined) (scId : SchedContextId)
+    (hU : (st.getSchedContext? scId).bind SchedContext.boundReleaseKey? = none)
+    (h : st.refillsSoundExcept S) : (purgeReplenishment st scId).refillsSoundExcept S :=
+  purgeReplenishment_refillsSoundExceptHeld hR scId (bind_heldReleaseKey?_none hU) h
+
+/-- WS-ZA ZA6.33: the purge of a context with no held place is a run-queue
+stage. -/
+theorem purgeReplenishment_runQueueStageHeld (st : SystemState) (scId : SchedContextId)
+    (hU : (st.getSchedContext? scId).bind st.heldReleaseKey? = none) :
+    SystemState.RunQueueStage st (purgeReplenishment st scId) :=
+  .of_releaseOnlyWrite (purgeReplenishment_releaseOnlyWrite st scId)
+    (purgeReplenishment_agree st scId) (purgeReplenishment_objects_invExt st scId)
+    (fun _ h => purgeReplenishment_refined h scId)
+    (fun _ _ hq s => purgeReplenishment_refillsSoundExceptHeld hq scId hU s)
+
 /-- The purge of a context with nothing pending while bound is a run-queue
 stage. -/
 theorem purgeReplenishment_runQueueStage (st : SystemState) (scId : SchedContextId)
     (hU : (st.getSchedContext? scId).bind SchedContext.boundReleaseKey? = none) :
     SystemState.RunQueueStage st (purgeReplenishment st scId) :=
-  .of_releaseOnlyWrite (purgeReplenishment_releaseOnlyWrite st scId)
-    (purgeReplenishment_agree st scId) (purgeReplenishment_objects_invExt st scId)
-    (fun _ h => purgeReplenishment_refined h scId)
-    (fun _ _ hq s => purgeReplenishment_refillsSoundExcept hq scId hU s)
+  purgeReplenishment_runQueueStageHeld st scId (bind_heldReleaseKey?_none hU)
+
+-- ============================================================================
+-- WS-ZA ZA6.33: settling a returned context (seL4's `schedContext_donate`)
+-- ============================================================================
+
+theorem settleReturnedContext_refined {st : SystemState} (h : st.releaseQueueRefined)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
+    (settleReturnedContext st c s).releaseQueueRefined := by
+  rcases settleReturnedContext_cases st c s with e | e <;> rw [e]
+  · exact purgeReplenishment_refined h s
+  · exact SystemState.releasePlace_refined (purgeReplenishment_refined h s) c s
+
+/-! The settle's frames, each read off the two halves' write shape. -/
+
+@[simp] theorem settleReturnedContext_cdt (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
+    (settleReturnedContext st c s).cdt = st.cdt := by
+  rw [(settleReturnedContext_releaseOnlyWrite st c s).1]
+
+@[simp] theorem settleReturnedContext_tlbShootdown (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
+    (settleReturnedContext st c s).tlbShootdown = st.tlbShootdown := by
+  rw [(settleReturnedContext_releaseOnlyWrite st c s).1]
+
+@[simp] theorem settleReturnedContext_runQueueOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (settleReturnedContext st c s).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' :=
+  (settleReturnedContext_releaseOnlyWrite st c s).runQueueOnCore c'
+
+@[simp] theorem settleReturnedContext_currentOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (settleReturnedContext st c s).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' :=
+  (settleReturnedContext_releaseOnlyWrite st c s).currentOnCore c'
+
+theorem settleReturnedContext_getSchedContext? (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s s' : SchedContextId) :
+    ((settleReturnedContext st c s).getSchedContext? s').map SchedContext.withoutRelease
+      = (st.getSchedContext? s').map SchedContext.withoutRelease :=
+  (settleReturnedContext_agree st c s).getSchedContext? s'
+
+theorem settleReturnedContext_boundThread (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s s' : SchedContextId) :
+    ((settleReturnedContext st c s).getSchedContext? s').map (·.boundThread)
+      = (st.getSchedContext? s').map (·.boundThread) :=
+  (settleReturnedContext_agree st c s).getSchedContext?_map _ (fun _ => rfl) s'
+
+theorem settleReturnedContext_getTcb? (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) (t : SeLe4n.ThreadId) :
+    (settleReturnedContext st c s).getTcb? t = st.getTcb? t :=
+  (settleReturnedContext_agree st c s).getTcb? t
+
+theorem settleReturnedContext_determineTargetCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) (t : SeLe4n.ThreadId) :
+    determineTargetCore (settleReturnedContext st c s) t = determineTargetCore st t := by
+  unfold determineTargetCore; rw [settleReturnedContext_getTcb?]
+
+theorem settleReturnedContext_runQueue_current_eq (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (settleReturnedContext st c s).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c'
+    ∧ (settleReturnedContext st c s).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' :=
+  ⟨settleReturnedContext_runQueueOnCore st c s c', settleReturnedContext_currentOnCore st c s c'⟩
+
+/-- WS-ZA ZA6.33: the settle writes the replenish queue its purge names
+(`purgeReplenishCores`) and its destination's, no other. -/
+theorem settleReturnedContext_replenishQueueOnCore_ne (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) (hP : c' ∉ purgeReplenishCores st s) (hC : c' ≠ c) :
+    (settleReturnedContext st c s).scheduler.replenishQueueOnCore c' =
+      st.scheduler.replenishQueueOnCore c' := by
+  rcases settleReturnedContext_cases st c s with e | e <;> rw [e]
+  · exact purgeReplenishment_replenishQueueOnCore_of_not_mem st s c' hP
+  · rw [SystemState.releasePlace_replenishQueueOnCore_ne _ c s c' hC]
+    exact purgeReplenishment_replenishQueueOnCore_of_not_mem st s c' hP
+
+/-- The placement half of the settle is a frame stage off the placed context. -/
+theorem releasePlace_runQueueFrameStage' (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
+    SystemState.RunQueueFrameStage (· = s) st (st.releasePlace c s) :=
+  .of_releaseOnlyWrite (SystemState.releasePlace_releaseOnlyWrite st c s)
+    (SystemState.releasePlace_agree st c s) (SystemState.releasePlace_objects_invExt st c s)
+    (fun _ h => SystemState.releasePlace_refined h c s)
+    (fun _ hS _ hq r => SystemState.releasePlace_refillsSoundExcept hq c s
+      (fun hs => absurd (hS s rfl) hs) r)
+
+/-- WS-ZA ZA6.33: **a write to context `s` closed by its settle**: a frame
+stage off `s` up to `X`, in which `s` is well formed, is a stage up to `s`
+settled on `c` — the purge leaves it on no queue, and it is placed exactly when
+its holder is not suspended, which is when the refill rule asks for its place
+(and a context with a holder is bound). -/
+theorem settleReturnedContext_runQueueStage {st X : SystemState}
+    {c : SeLe4n.Kernel.Concurrency.CoreId} {s : SchedContextId}
+    (hF : SystemState.RunQueueFrameStage (· = s) st X)
+    (hX : ∀ S : SchedContextId → Prop, ¬ S s → st.objects.invExt → st.refillsSoundExcept S →
+      X.objects.invExt → ∀ a, X.getSchedContext? s = some a → schedContextWellFormed a) :
+    SystemState.RunQueueStage st (settleReturnedContext X c s) := by
+  have hFP := hF.trans (purgeReplenishment_runQueueFrameStage X s)
+  -- What the purged state knows of `s`: well formed and bound, on no queue.
+  have hY : ∀ S : SchedContextId → Prop, ¬ S s → st.objects.invExt → st.runQueueRefined →
+      st.releaseQueueRefined → st.refillsSoundExcept S →
+      (purgeReplenishment X s).releaseQueueRefined ∧
+      (purgeReplenishment X s).refillsSoundExcept (fun x => S x ∨ x = s) ∧
+      (∀ a, (purgeReplenishment X s).getSchedContext? s = some a →
+        schedContextWellFormed a) ∧
+      (∀ c e, e ∈ ((purgeReplenishment X s).scheduler.replenishQueueOnCore c).entries →
+        e.1 ≠ s) := by
+    intro S hs hI hR hQ hS
+    have hYR := hFP.1.release hI hR hQ
+    refine ⟨hYR, hFP.1.refills _ (fun x hx => Or.inr hx) hI hR hQ (hS.mono fun x hx => Or.inl hx),
+      fun a ha => ?_, fun c e he => SystemState.not_mem_entries_of_not_queued hYR
+        (SystemState.releaseRemoveAnywhere_not_queued X s) c e he⟩
+    obtain ⟨b, hb, hv⟩ :=
+      (RefillViewsKept.of_agreeOffReleaseLinks (purgeReplenishment_agree X s)).getSchedContext? ha
+    have hW := hX S hs hI hS (hF.1.links hI hR).1 b hb
+    rw [← schedContextWellFormed_refillView, ← hv, schedContextWellFormed_refillView]; exact hW
+  unfold settleReturnedContext
+  dsimp only
+  split
+  · rename_i hAct
+    have hT := hFP.trans (releasePlace_runQueueFrameStage' (purgeReplenishment X s) c s)
+    refine ⟨⟨hT.1.links, hT.1.release, fun S hI hR hQ hS => ?_, hT.1.yield, hT.1.live⟩, hT.2⟩
+    by_cases hs : S s
+    · exact hT.1.refills S (fun x hx => hx ▸ hs) hI hR hQ hS
+    · obtain ⟨hYR, hYS, hYs, hYn⟩ := hY S hs hI hR hQ hS
+      refine SystemState.releasePlace_close hYR c s
+        (SystemState.releaseFreeFor_of_not_named hYR hYn c)
+        hYs (fun a ha _ => ?_) (fun c e he hes => absurd hes (hYn c e he)) hYS
+      unfold contextHolderActive at hAct
+      rw [ha] at hAct
+      exact SystemState.holderActive_bound hAct
+  · rename_i hAct
+    refine ⟨⟨hFP.1.links, hFP.1.release, fun S hI hR hQ hS => ?_, hFP.1.yield, hFP.1.live⟩,
+      hFP.2⟩
+    by_cases hs : S s
+    · exact hFP.1.refills S (fun x hx => hx ▸ hs) hI hR hQ hS
+    · obtain ⟨_, hYS, hYs, hYn⟩ := hY S hs hI hR hQ hS
+      refine SystemState.refillsSoundExcept_close hYS hYs
+        (fun t ht => ?_) (fun c e he hes => absurd hes (hYn c e he))
+      unfold contextHolderActive at hAct
+      cases e : (purgeReplenishment X s).getSchedContext? s with
+      | none => rw [e] at ht; cases ht
+      | some a =>
+        rw [e] at ht hAct
+        simp only [Option.any_some, Bool.not_eq_true] at hAct
+        simp only [Option.bind_some, SystemState.heldReleaseKey?, hAct] at ht
+        cases ht
 
 -- ============================================================================
 -- Z5-F1: Parameter validation
@@ -2189,10 +2332,10 @@ theorem schedContextUnbind_storedView {st1 : SystemState} {k : SeLe4n.ObjId} {u 
     (ha : (schedContextUnbindQueueStage ((st1.rewriteObject k (.schedContext u) h).updateTcb tid f)
       home tid' prio wc).getSchedContext? (SchedContextId.ofObjId k) = some a) :
     a.refillView = u.refillView := by
-  obtain ⟨b, hb, hv⟩ := ((RefillViewsKept.of_agreeOffRunLinks
-    (schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _)).trans
-    (.of_getSchedContext?_eq (SystemState.updateTcb_getSchedContext? _ _ _
-      (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI)))).getSchedContext? ha
+  obtain ⟨b, hb, hv⟩ := (RefillViewsKept.of_agreeOffRunLinks
+    (schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _)).getSchedContext? ha
+  rw [SystemState.updateTcb_getSchedContext? _ _ _
+    (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI)] at hb
   cases Option.some.inj ((SystemState.rewriteObject_schedContext_getSchedContext?_self st1
     (SchedContextId.ofObjId k) u h hI).symm.trans hb)
   exact hv.symm

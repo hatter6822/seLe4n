@@ -113,6 +113,13 @@ theorem of_migrate (st : SystemState) (scId : SeLe4n.SchedContextId) (a b : Core
   ⟨.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _),
     migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hInv⟩
 
+/-- WS-ZA ZA6.33: the settle of a returned context writes release links alone. -/
+theorem of_settle (st : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) :
+    savedRegsUnwritten st (SchedContextOps.settleReturnedContext st c scId) :=
+  ⟨.of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ _ _),
+    SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv⟩
+
 theorem of_descheduleAt (st : SystemState) (tid : SeLe4n.ThreadId) (placed : Option CoreId)
     (hInv : st.objects.invExt) : savedRegsUnwritten st (descheduleAt st tid placed) := by
   unfold descheduleAt
@@ -499,11 +506,11 @@ theorem endpointReplyOnCore_savedRegsUnwritten (replier target : SeLe4n.ThreadId
             · exact .refl hInv
     · exact .refl hInv
 
-/-- The reply's donation return: the resolved return, the replenishment
-migration and the holder's deschedule. -/
+/-- The reply's donation return: the resolved return, the returned context's
+settle and the holder's deschedule. -/
 theorem applyReplyDonationOnCore_savedRegsUnwritten {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    {targetVtid : SeLe4n.ValidThreadId} {holderHome ownerHome : CoreId} (hInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st') :
+    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId} (hInv : st.objects.invExt)
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     savedRegsUnwritten st st' := by
   unfold applyReplyDonationOnCore at h
   dsimp only at h
@@ -515,9 +522,9 @@ theorem applyReplyDonationOnCore_savedRegsUnwritten {st st' : SystemState} {rid 
       · rename_i st1 hRet
         cases h
         have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
-        exact h1.trans ((savedRegsUnwritten.of_migrate _ _ _ _ h1.2).trans
+        exact h1.trans ((savedRegsUnwritten.of_settle _ _ _ h1.2).trans
           (savedRegsUnwritten.of_descheduleAt _ _ _
-            (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ h1.2)))
+            (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1.2)))
     · cases h
 
 /-- The live reply writes no saved register: the reply leg, the donation
@@ -565,7 +572,7 @@ theorem replyRecvPopDonation_savedRegsUnwritten {rid : SeLe4n.ReplyId} {target :
       · rename_i st1 hRet
         cases h
         have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
-        exact h1.trans (savedRegsUnwritten.of_migrate _ _ _ _ h1.2)
+        exact h1.trans (savedRegsUnwritten.of_settle _ _ _ h1.2)
     · cases h
   · cases h; exact .refl hInv
 

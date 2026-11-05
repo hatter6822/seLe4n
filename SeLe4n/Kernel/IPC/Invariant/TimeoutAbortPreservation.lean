@@ -42,7 +42,6 @@ theorem abortPendingIpcOnEndpoint_shape
           ((TCB.setIpcState (TCB.setPendingFault { tcb1 with
              pendingMessage := none
              timeoutBudget := none
-             threadState := .Ready
              timedOut := true
              pendingReceiveReplyCode := 0 } none) .ready)) Architecture.timeoutFrame)) st1
         = .ok ((), st') := by

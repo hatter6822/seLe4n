@@ -1538,6 +1538,85 @@ theorem finaliseUnstack_preserves_donationChainWellFormed {s s1 : SystemState}
           · rw [e3, hRO] at ha; cases ha; exact hap
         · exact ⟨a, by rw [hO, if_neg (hRX ha), if_neg e3]; exact ha, hap⟩
 
+
+/-- WS-ZA ZA6.33: two rewrites of one context that leave it the same stack head
+frame each other: the chain reads a context's `scReply` and nothing else of it. -/
+theorem donationChainFrame_updateSchedContext_sameHead (s : SystemState)
+    (scId : SeLe4n.SchedContextId) (f g : SchedContext → SchedContext)
+    (hInv : s.objects.invExt) (hfg : ∀ sc, (g sc).scReply = (f sc).scReply) :
+    donationChainFrame (s.updateSchedContext scId f) (s.updateSchedContext scId g) := by
+  cases hG : s.getSchedContext? scId with
+  | none =>
+    rw [SystemState.updateSchedContext_eq_self_of_none hG,
+      SystemState.updateSchedContext_eq_self_of_none hG]
+    exact donationChainFrame.refl _
+  | some sc =>
+    rw [SystemState.updateSchedContext_eq_of_some hG f, SystemState.updateSchedContext_eq_of_some hG g]
+    have hPt : ∀ (o : KernelObject) (k : SeLe4n.ObjId),
+        (s.objects.insert scId.toObjId o)[k]? =
+          if k = scId.toObjId then some o else s.objects[k]? := by
+      intro o k
+      by_cases hk : k = scId.toObjId
+      · subst hk; rw [if_pos rfl]
+        exact RobinHood.RHTable.getElem?_insert_self s.objects _ o hInv
+      · rw [if_neg hk]
+        exact RobinHood.RHTable.getElem?_insert_ne s.objects _ k o
+          (by simpa using fun h => hk h.symm) hInv
+    refine ⟨fun k => ?_, fun k => ?_, fun k r' hR hC => ?_⟩
+    · show replyStackLinks? ((s.objects.insert _ _)[k]?) =
+        replyStackLinks? ((s.objects.insert _ _)[k]?)
+      rw [hPt, hPt]; split <;> rfl
+    · show schedContextStackHead? ((s.objects.insert _ _)[k]?) =
+        schedContextStackHead? ((s.objects.insert _ _)[k]?)
+      rw [hPt, hPt]; split
+      · simp only [schedContextStackHead?, hfg]
+      · rfl
+    · have hR' : (s.objects.insert scId.toObjId (.schedContext (g sc)))[k]? = some (.reply r') := hR
+      rw [hPt] at hR'
+      split at hR'
+      · cases hR'
+      · rename_i hk
+        refine ⟨r', ?_, hC⟩
+        show (s.objects.insert _ _)[k]? = _
+        rw [hPt, if_neg hk]; exact hR'
+
+/-- WS-ZA ZA6.33: **the head cut keeps the donation chains** — seL4-MCS's
+`reply_remove_tcb` on a head frame: `sc->scReply = NULL` and the frame's upward
+link cleared, the frame keeping its downward link (the finalisation's unstack,
+`finaliseUnstack_preserves_donationChainWellFormed`), the context's origin
+cleared beside its head, and the holder's binding made its own, which writes a
+thread and no chain field. -/
+theorem cutHeadFrameKeepingContext_preserves_donationChainWellFormed (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hC : donationChainWellFormed st) :
+    donationChainWellFormed (Lifecycle.Suspend.cutHeadFrameKeepingContext st rid) := by
+  refine (Lifecycle.Suspend.cutHeadFrameKeepingContext_closed
+    (fun s => s.objects.invExt ∧ donationChainWellFormed s) ?_ ?_ st rid ⟨hInv, hC⟩).2
+  · intro s s1 rid' r scId ⟨h, hCs⟩ hH hR hS
+    obtain ⟨r0, sc, hR0, hNext, hSc, -⟩ := replyFrameHeadContext?_eq_some hH
+    rw [hR] at hR0; cases hR0
+    have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h hS
+    refine ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1, ?_⟩
+    have hU := finaliseUnstack_preserves_donationChainWellFormed (x := scId.toObjId)
+      h hCs hSc hR hNext hS
+    exact donationChainWellFormed_of_frame
+      (donationChainFrame_updateSchedContext_sameHead s1 ⟨scId.toObjId.val⟩
+        (fun sc => { sc with scReply := none })
+        (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 (fun _ => rfl)) hU
+  · intro s _ holder ht _ ⟨h, hCs⟩ _ hT _
+    have hI := SystemState.updateTcb_preserves_objects_invExt s holder
+      (fun t => { t with scBindingOwnerCode := 0 }) h
+    refine ⟨by rw [markKeyChangeFrom_objects]; exact hI, ?_⟩
+    refine donationChainWellFormed_of_frame ?_ hCs
+    have hFr : donationChainFrame s
+        (s.updateTcb holder fun t => { t with scBindingOwnerCode := 0 }) := by
+      rw [SystemState.updateTcb_eq_of_some hT]
+      have hPre := (SystemState.getTcb?_eq_some_iff s holder ht).mp hT
+      exact donationChainFrame_of_objects_insert h (by rw [hPre]; rfl) (by rw [hPre]; rfl)
+        (fun _ e => by cases e)
+    exact ⟨fun k => by rw [markKeyChangeFrom_objects]; exact hFr.replyLinks k,
+      fun k => by rw [markKeyChangeFrom_objects]; exact hFr.stackHeads k,
+      fun k r' hR hc => hFr.callerKept k r' (by rw [markKeyChangeFrom_objects] at hR; exact hR) hc⟩
+
 /-- **A scheduling context's unstack keeps the donation chains** (seL4's
 `schedContext_unbindReply`): the stack it let go of is no context's, so every
 remaining context's walk reads what it read before. -/

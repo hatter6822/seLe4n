@@ -619,6 +619,17 @@ theorem trans {a b c : SystemState} (L : SystemState.RunQueueLinkStage a b)
     (h1 : readyKeptStage S a b) (h2 : readyKeptStage S b c) : readyKeptStage S a c :=
   fun hI hR => let ⟨hI', hR'⟩ := L.links hI hR; (h1 hI hR).trans (h2 hI' hR')
 
+/-- ...over a frame stage's link half. -/
+theorem transFrame {P : SeLe4n.SchedContextId → Prop} {a b c : SystemState}
+    (L : SystemState.RunQueueFrameStage P a b)
+    (h1 : readyKeptStage S a b) (h2 : readyKeptStage S b c) : readyKeptStage S a c :=
+  fun hI hR => let ⟨hI', hR'⟩ := L.1.links hI hR; (h1 hI hR).trans (h2 hI' hR')
+
+/-- A frame stage keeps every thread's readiness: its activity half. -/
+theorem of_frame {P : SeLe4n.SchedContextId → Prop} {st st' : SystemState}
+    (h : SystemState.RunQueueFrameStage P st st') : readyKeptStage S st st' :=
+  fun hI hR => .of_stateMono (h.2.2 hI hR)
+
 theorem mono {S' : SeLe4n.ThreadId → Prop} {st st' : SystemState} (hS : ∀ t, S t → S' t)
     (h : readyKeptStage S st st') : readyKeptStage S' st st' :=
   fun hI hR t hn => h hI hR t fun hs => hn (hS t hs)
@@ -764,8 +775,10 @@ theorem endpointCallCrossCoreDispatch_readyKeptStage (endpointId : SeLe4n.ObjId)
     repeat' split
     all_goals first
       | exact r0
-      | (rename_i hD; exact r0.trans s0 (.of_stage ((applyCallDonationOnCore_runQueueStage hD).trans
-          (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _))))
+      | (rename_i hD; exact r0.trans s0
+          ((readyKeptStage.of_frame (applyCallDonationOnCore_runQueueFrameStage hD)).transFrame
+            (applyCallDonationOnCore_runQueueFrameStage hD)
+            (.of_stage (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _))))
 
 /-- **The fault suspend keeps every thread's readiness**: the deschedule is a
 stage, and the off-queue write sets the thread state, not the IPC state. -/
@@ -780,7 +793,7 @@ the fail-closed suspend; then the woken handler's frame and the fault record. -/
 theorem faultDeliverOnCore_readyKeptStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : Fault) (fctx : FaultContext) (c : CoreId)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some tid)
-    (hNI : isIdleThreadId tid = false) :
+    (hNI : isIdleThreadId tid = false) (hAct : st.activeAt tid) :
     readyKeptStage (· = tid) st (faultDeliverOnCore st tid f fctx c).1 := by
   have sus := (faultSuspendOnCore_readyKeptStage (S := (· = tid)) st tid c).trans
     (faultSuspendOnCore_runQueueEntryStage st tid c hCur hNI).1
@@ -789,23 +802,25 @@ theorem faultDeliverOnCore_readyKeptStage (st : SystemState) (tid : SeLe4n.Threa
   split
   · exact sus
   · rename_i tgt _
+    intro hI hR
     have s0 := (endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hHeads hCur hNI).1
+      (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hHeads hCur hNI
+      hI hR hAct).1
     have r0 := endpointCallCrossCoreDispatch_readyKeptStage tgt.endpoint tid
       (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hHeads hCur hNI
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
       (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st = r at s0 r0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
-    | error e => exact sus
+    | error e => exact sus hI hR
     | ok res =>
       exact r0.trans s0 (.of_stage ((stageWokenDelivery_runQueueStage _ _ _).trans
-        (recordPendingFault_runQueueStage _ _ _)))
+        (recordPendingFault_runQueueStage _ _ _))) hI hR
 
 theorem faultDeliverOnCoreChecked_readyKeptStage (ctx : LabelingContext) (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (fctx : FaultContext) (c : CoreId)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some tid)
-    (hNI : isIdleThreadId tid = false) :
+    (hNI : isIdleThreadId tid = false) (hAct : st.activeAt tid) :
     readyKeptStage (· = tid) st (faultDeliverOnCoreChecked ctx st tid f fctx c).1 := by
   have sus := (faultSuspendOnCore_readyKeptStage (S := (· = tid)) st tid c).trans
     (faultSuspendOnCore_runQueueEntryStage st tid c hCur hNI).1
@@ -814,7 +829,7 @@ theorem faultDeliverOnCoreChecked_readyKeptStage (ctx : LabelingContext) (st : S
   split
   · exact sus
   · split
-    · exact faultDeliverOnCore_readyKeptStage st tid f fctx c hHeads hCur hNI
+    · exact faultDeliverOnCore_readyKeptStage st tid f fctx c hHeads hCur hNI hAct
     · exact sus
 
 /-- **The executing core's successor blocks no thread**: the reschedule, or
@@ -834,7 +849,8 @@ current thread**: a vacated core's dispatch blocks none, and the delivery
 blocks the faulting thread, which is that core's current thread. -/
 theorem faultEntryDeliver_readyKeptStage (lctx : LabelingContext) (st : SystemState)
     (f : Fault) (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
-    (hHeads : endpointHeadsWakeable st) :
+    (hHeads : endpointHeadsWakeable st)
+    (hAct : ∀ t, st.scheduler.currentOnCore c = some t → st.activeAt t) :
     readyKeptStage (fun t => st.scheduler.currentOnCore c = some t) st
       (faultEntryDeliver lctx st f ectx w c).2 := by
   unfold faultEntryDeliver
@@ -847,13 +863,15 @@ theorem faultEntryDeliver_readyKeptStage (lctx : LabelingContext) (st : SystemSt
     · rename_i hIdle
       intro hI hR
       have hNI : isIdleThreadId tid = false := by simpa using hIdle
-      have D := faultDeliveredState_runQueueEntryStage lctx st f ectx w c _ hI hHeads hCur hNI
+      have D := faultDeliveredState_runQueueEntryStage lctx st f ectx w c _ hI hR (hAct _ hCur)
+        hHeads hCur hNI
       have hW := writeFaultRegistersToTcb_runQueueStage st tid w
       have r1 : readyKeptStage (· = tid) st (faultDeliveredState lctx st f ectx w c tid) :=
         (readyKeptStage.of_stage hW).trans hW.1
           (faultDeliverOnCoreChecked_readyKeptStage lctx _ tid f _ c
             (hHeads.updateTcb hI fun _ => rfl)
-            (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur) hNI)
+            (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur) hNI
+            ((hW.2.2 hI hR).activeAt (hAct _ hCur)))
       exact (readyKeptStage.mono (fun t (h : t = tid) => by subst h; exact hCur)
         (r1.trans D.1 fun hI' hR' =>
           .of_stateMono (scheduleLocalSuccessorFrom_stateMono _ _ c hI' hR'))) hI hR
@@ -900,7 +918,8 @@ theorem faultEntryState_preserves_blockedNotResident (lctx : LabelingContext)
       split
       · split
         · exact .refl _
-        · exact (faultEntryDeliver_readyKeptStage lctx _ _ ectx w _ ES.endpointHeads).mono
+        · exact (faultEntryDeliver_readyKeptStage lctx _ _ ectx w _ ES.endpointHeads
+            fun _ h => (ES.dequeued.runnable h).activeAt).mono
             fun t ht => by rwa [saveCapturedTrapFrameAt_scheduler] at ht
       · exact .refl _
   · intro hc
@@ -950,7 +969,8 @@ theorem unknownSyscallEntryState_preserves_blockedNotResident (lctx : LabelingCo
     · unfold unknownSyscallEntryStep
       rw [dif_pos h]
       split
-      · exact (faultEntryDeliver_readyKeptStage lctx _ _ ectx w _ ES.endpointHeads).mono
+      · exact (faultEntryDeliver_readyKeptStage lctx _ _ ectx w _ ES.endpointHeads
+            fun _ h => (ES.dequeued.runnable h).activeAt).mono
           fun t ht => by rwa [saveCapturedSyscallFrameAt_scheduler] at ht
       · exact .refl _
   · intro hc

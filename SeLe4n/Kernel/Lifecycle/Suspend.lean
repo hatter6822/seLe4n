@@ -323,6 +323,192 @@ def restoreToReadyWithWake (st : SystemState) (tid : SeLe4n.ThreadId)
          | some _ => some (target, SgiKind.reschedule)
   (st', sgi)
 
+/-- WS-ZA ZA6.33: **seL4-MCS's `refill_unblock_check` then `schedContext_resume`
+for a resumed thread**, on its home core `home`: the context it runs on has a
+head released by now moved to now and the pending refills it overlaps merged in
+(`SchedContext.refillUnblockCheck`), then is settled on `home`
+(`SchedContextOps.settleReturnedContext`): taken off any release queue still
+holding it (seL4's suspend leaves none, and here a thread made `.Inactive`
+other than by the suspend may leave one), then — when its holder is not
+suspended, seL4's `isSchedulable(sc->scTcb)` — placed by its refills on
+`home`'s release queue (seL4's `postpone`: linked in while its head is used up,
+off the queue otherwise).  A thread running on no context, or naming one the
+store does not hold, is left as it is. -/
+def resumeContext (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId) : SystemState :=
+  match st.getTcb? tid with
+  | none => st
+  | some t =>
+    match t.schedContextBinding.scId? with
+    | none => st
+    | some s =>
+      match st.getSchedContext? s with
+      | none => st
+      | some _ =>
+        SchedContextOps.settleReturnedContext
+          (st.updateSchedContext s fun sc => sc.refillUnblockCheck st.machine.timer) home s
+
+/-- WS-ZA ZA6.33: the resume of a context is the identity, or its
+refill-unblock check and its settle. -/
+theorem resumeContext_cases (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId) :
+    resumeContext st tid home = st ∨ ∃ s,
+      resumeContext st tid home = SchedContextOps.settleReturnedContext
+        (st.updateSchedContext s fun sc => sc.refillUnblockCheck st.machine.timer) home s := by
+  unfold resumeContext
+  split
+  · exact .inl rfl
+  · split
+    · exact .inl rfl
+    · rename_i s _
+      split
+      · exact .inl rfl
+      · exact .inr ⟨s, rfl⟩
+
+/-- ...so it keeps the store's invariant. -/
+theorem resumeContext_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId)
+    (hInv : st.objects.invExt) : (resumeContext st tid home).objects.invExt := by
+  rcases resumeContext_cases st tid home with e | ⟨s, e⟩ <;> rw [e]
+  · exact hInv
+  · exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _
+      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
+
+/-- ...and writes no thread. -/
+theorem resumeContext_getTcb? (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId)
+    (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    (resumeContext st tid home).getTcb? x = st.getTcb? x := by
+  rcases resumeContext_cases st tid home with e | ⟨s, e⟩ <;> rw [e]
+  rw [SchedContextOps.settleReturnedContext_getTcb?, SystemState.updateSchedContext_getTcb? _ _ _ hInv x]
+
+/-- ...and writes the objects and the release fields alone. -/
+theorem resumeContext_releaseOnlyWrite (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId) :
+    (resumeContext st tid home).releaseOnlyWrite st := by
+  rcases resumeContext_cases st tid home with e | ⟨s, e⟩ <;> rw [e]
+  · exact .refl st
+  · refine SystemState.releaseOnlyWrite.trans
+      (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ home s) ?_
+    refine ⟨?_, by rw [SystemState.updateSchedContext_scheduler]; rfl⟩
+    unfold SystemState.updateSchedContext; split <;> rfl
+
+/-- ...so it keeps every core's current thread. -/
+theorem resumeContext_currentOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (home c : CoreId) :
+    (resumeContext st tid home).scheduler.currentOnCore c = st.scheduler.currentOnCore c :=
+  (resumeContext_releaseOnlyWrite st tid home).currentOnCore c
+
+/-- ...and the machine. -/
+theorem resumeContext_machine (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId) :
+    (resumeContext st tid home).machine = st.machine :=
+  (resumeContext_releaseOnlyWrite st tid home).machine
+
+/-- WS-ZA ZA6.33: **the cores whose replenish queue `resumeContext` writes** —
+its purge's (`SchedContextOps.purgeReplenishCores`) and the home it places the
+context on — read from the same binding and the same context, so a footprint
+locks the queues the resume edits and no other. -/
+def resumeContextCores (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId) :
+    List CoreId :=
+  match st.getTcb? tid with
+  | none => []
+  | some t =>
+    match t.schedContextBinding.scId? with
+    | none => []
+    | some s =>
+      match st.getSchedContext? s with
+      | none => []
+      | some _ => SchedContextOps.purgeReplenishCores st s ++ [home]
+
+/-- The resume of a context writes no replenish queue off `resumeContextCores`. -/
+theorem resumeContext_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (home d : CoreId) (hInv : st.objects.invExt) (hd : d ∉ resumeContextCores st tid home) :
+    (resumeContext st tid home).scheduler.replenishQueueOnCore d =
+      st.scheduler.replenishQueueOnCore d := by
+  unfold resumeContextCores at hd
+  unfold resumeContext
+  cases hT : st.getTcb? tid with
+  | none => rfl
+  | some t =>
+    simp only [hT] at hd ⊢
+    cases hs : t.schedContextBinding.scId? with
+    | none => rfl
+    | some s =>
+      simp only [hs] at hd ⊢
+      cases hc : st.getSchedContext? s with
+      | none => rfl
+      | some _ =>
+        simp only [hc, List.mem_append, List.mem_singleton, not_or] at hd ⊢
+        rw [SchedContextOps.settleReturnedContext_replenishQueueOnCore_ne _ home s d ?_ hd.2,
+          SystemState.updateSchedContext_scheduler]
+        unfold SchedContextOps.purgeReplenishCores
+        rw [SystemState.releaseCoreOf_updateSchedContext _ _ _ hInv
+          (fun sc => SchedContext.refillUnblockCheck_releaseCoreCode sc _)]
+        exact hd.1
+
+/-- The resume's cores read the thread's binding and the contexts alone. -/
+theorem resumeContextCores_congr {st st' : SystemState} {tid : SeLe4n.ThreadId} (home : CoreId)
+    (hB : (st'.getTcb? tid).map TCB.schedContextBinding =
+      (st.getTcb? tid).map TCB.schedContextBinding)
+    (hS : ∀ s, st'.getSchedContext? s = st.getSchedContext? s) :
+    resumeContextCores st' tid home = resumeContextCores st tid home := by
+  have hP : ∀ s, SchedContextOps.purgeReplenishCores st' s =
+      SchedContextOps.purgeReplenishCores st s := by
+    intro s; unfold SchedContextOps.purgeReplenishCores SystemState.releaseCoreOf; rw [hS s]
+  have hM : ∀ (σ : SystemState),
+      resumeContextCores σ tid home =
+        match ((σ.getTcb? tid).map TCB.schedContextBinding).bind SchedContextBinding.scId? with
+        | none => []
+        | some s =>
+          match σ.getSchedContext? s with
+          | none => []
+          | some _ => SchedContextOps.purgeReplenishCores σ s ++ [home] := by
+    intro σ; unfold resumeContextCores; cases σ.getTcb? tid <;> rfl
+  rw [hM, hM, hB]
+  simp only [hS, hP]
+
+/-- A TCB rewrite that keeps the binding keeps every thread's binding. -/
+theorem getTcb?_binding_updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (hf : ∀ t, (f t).schedContextBinding = t.schedContextBinding)
+    (x : SeLe4n.ThreadId) :
+    ((st.updateTcb tid f).getTcb? x).map TCB.schedContextBinding =
+      (st.getTcb? x).map TCB.schedContextBinding := by
+  by_cases h : tid.toObjId = x.toObjId
+  · cases ThreadId.toObjId_injective tid x h
+    rw [SystemState.updateTcb_getTcb?_self st tid f hInv]
+    cases st.getTcb? tid <;> simp [hf]
+  · rw [SystemState.updateTcb_getTcb?_ne st tid f hInv x h]
+
+/-- The resume's ready mark keeps every binding... -/
+theorem resumeReadyMidState_binding (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((resumeReadyMidState st tid).getTcb? x).map TCB.schedContextBinding =
+      (st.getTcb? x).map TCB.schedContextBinding := by
+  unfold resumeReadyMidState restoreToReady restoreToReadyStaging
+  dsimp only
+  exact (getTcb?_binding_updateTcb _ _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv)
+    (by intro _; rfl) x).trans (getTcb?_binding_updateTcb _ _ _ hInv (by intro _; rfl) x)
+
+/-- ...and every context. -/
+theorem resumeReadyMidState_getSchedContext? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (s : SeLe4n.SchedContextId) :
+    (resumeReadyMidState st tid).getSchedContext? s = st.getSchedContext? s := by
+  unfold resumeReadyMidState restoreToReady restoreToReadyStaging
+  dsimp only
+  rw [SystemState.updateTcb_getSchedContext? _ _ _
+    (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv),
+    SystemState.updateTcb_getSchedContext? _ _ _ hInv]
+
+/-- WS-ZA ZA6.33: **seL4-MCS's `isSchedulable` for a resumed thread**: a thread
+running on no context is schedulable on its own time slice; one running on a
+context is schedulable when the context is held, active, and its head refill
+has budget now (so it is not postponed: `SchedContext.releaseKey?` reads no
+release time), the test `yieldToBound` makes of its target. -/
+def resumeSchedulable (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | none => false
+  | some t =>
+    match t.schedContextBinding.scId? with
+    | none => true
+    | some s =>
+      match st.getSchedContext? s with
+      | none => false
+      | some sc => sc.isActive && sc.budgetRemaining.isPositive
+
 /-- WS-SM SM5.F.6 (plan §3.6, resume H1–H5 per-core): the **complete** per-core
 resume — the per-core analogue of `resumeThread`.  Unlike `restoreToReadyOnCore`
 (the IPC-clear+enqueue helper, parallel to the shared `restoreToReady`), this
@@ -336,9 +522,16 @@ performs the full Inactive→Ready transition:
 4. **H3c** — set `threadState := .Ready` *and* the recomputed `pipBoost` (the
    step `restoreToReadyOnCore` deliberately omits, completing the resume) — both via
    the `resumeReadyMidState` helper.
-5. **H4** — enqueue on the thread's **home core** (`determineTargetCore`) via the
-   SM5.C per-core `enqueueRunnableOnCore`.
-6. **H5 (reschedule)** — the resumed thread newly enters its home core's run queue
+5. **H3d** (WS-ZA ZA6.33) — seL4-MCS's `refill_unblock_check` and
+   `schedContext_resume` on the context the thread runs on (`resumeContext`):
+   its ready head moved to now, then postponed on the home core while its head
+   refill is not ready.
+6. **H4** — enqueue on the thread's **home core** (`determineTargetCore`) via the
+   SM5.C per-core `enqueueRunnableOnCore`, only when the thread is schedulable
+   (`resumeSchedulable`, seL4's `isSchedulable`): unbound, or on an active context
+   whose head has budget now.  A postponed thread is enqueued by the release
+   that makes its refill ready; nothing is enqueued and no SGI is raised.
+7. **H5 (reschedule)** — the resumed thread newly enters its home core's run queue
    and may outrank that core's current thread, so that core must re-evaluate:
    * **LOCAL** (home = `executingCore`): process the reschedule **inline** on the
      executing core via `handleRescheduleSgiOnCore` — the *exact* `.reschedule`-SGI
@@ -372,19 +565,30 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
       -- `.Inactive` thread sits on no core, so under the kernel invariants this
       -- raises nothing; the hook is what makes the coverage hold without them.
       let st2 := markKeyChangeFrom st (resumeReadyMidState st tid) tid
-      -- H4: enqueue on the home core
-      let st3 := enqueueRunnableOnCore st2 target tid
-      -- H5: process the reschedule (PR #811 P2-5).
-      if target == executingCore then
-        -- LOCAL: run the per-core reschedule handler inline on the executing core
-        -- (the exact handler the remote core would run on the SGI) — preemption-gated
-        -- and switch-based (no inversion, no drop).  No SGI is returned.
-        match handleRescheduleSgiOnCore st3 executingCore with
-        | .ok st4 => .ok (st4, none)
-        | .error e => .error e
-      else
-        -- REMOTE: hand the home core a `.reschedule` SGI so it runs the same handler.
-        .ok (st3, some (target, SgiKind.reschedule))
+      -- H3d (WS-ZA ZA6.33): seL4-MCS's `restart` → `refill_unblock_check` and
+      -- `schedContext_resume`: the context the thread runs on has its ready
+      -- head moved to now and is postponed on the thread's home core while its
+      -- head refill is not ready (`resumeContext`).  An unbound thread has no
+      -- context and is left as it is.
+      let st2 := resumeContext st2 tid target
+      -- H4: enqueue on the home core — only a schedulable thread (seL4's
+      -- `if (isSchedulable(target)) possibleSwitchTo(target)`): an unbound one,
+      -- or one whose context has budget now (`resumeSchedulable`).  One that is
+      -- postponed is enqueued by the release when its refill comes due.
+      if resumeSchedulable st2 tid then
+        let st3 := enqueueRunnableOnCore st2 target tid
+        -- H5: process the reschedule (PR #811 P2-5).
+        if target == executingCore then
+          -- LOCAL: run the per-core reschedule handler inline on the executing core
+          -- (the exact handler the remote core would run on the SGI) — preemption-gated
+          -- and switch-based (no inversion, no drop).  No SGI is returned.
+          match handleRescheduleSgiOnCore st3 executingCore with
+          | .ok st4 => .ok (st4, none)
+          | .error e => .error e
+        else
+          -- REMOTE: hand the home core a `.reschedule` SGI so it runs the same handler.
+          .ok (st3, some (target, SgiKind.reschedule))
+      else .ok (st2, none)
   | none => .error .invalidArgument
 
 /-- WS-ZA ZA5.2: the checks `.tcbResume` makes, asked before any write: the
@@ -403,8 +607,9 @@ When they pass the operation's state is `resumePerform` of the answered state
 
 /-- WS-ZA ZA5.2: the resume once admitted.  The home core and the thread's
 entry-time scheduling key and budget eligibility are read before anything is written, so the state is
-handed to the writes alone; the local reschedule never refuses
-(`handleRescheduleSgiOnCore_eq_state`). -/
+handed to the writes alone; the context is resumed (`resumeContext`), the thread
+enqueued only when schedulable (`resumeSchedulable`), and the local reschedule
+never refuses (`handleRescheduleSgiOnCore_eq_state`). -/
 def resumePerform (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) :
     SystemState :=
   match st.getTcb? tid with
@@ -415,11 +620,13 @@ def resumePerform (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : Co
     let d0 := effectiveDeadline st tcb
     let dom0 := tcb.domain
     let e0 := hasSufficientBudget st tcb
-    let st2 := markKeyChangeParts (markCandidacyGainFor (resumeReadyMidState st tid) tid e0)
-      tid p0 d0 dom0
-    let st3 := enqueueRunnableOnCore st2 target tid
-    if target == executingCore then handleRescheduleOnCoreState st3 executingCore
-    else st3
+    let st2 := resumeContext (markKeyChangeParts
+      (markCandidacyGainFor (resumeReadyMidState st tid) tid e0) tid p0 d0 dom0) tid target
+    if resumeSchedulable st2 tid then
+      let st3 := enqueueRunnableOnCore st2 target tid
+      if target == executingCore then handleRescheduleOnCoreState st3 executingCore
+      else st3
+    else st2
 
 theorem resumeThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     (executingCore : CoreId) (h : resumeAdmitted st vtid.val = true) :
@@ -443,8 +650,10 @@ theorem resumeThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidTh
       rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
     rw [hM]
     split
-    · rw [handleRescheduleSgiOnCore_eq_state]; exact ⟨none, rfl⟩
-    · exact ⟨_, rfl⟩
+    · split
+      · rw [handleRescheduleSgiOnCore_eq_state]; exact ⟨none, rfl⟩
+      · exact ⟨_, rfl⟩
+    · exact ⟨none, rfl⟩
 
 -- WS-BP BP7.6 (v0.36.19): `resumeThreadEnqueueOnly` and `resumeThreadOnCoreLive`
 -- are retired.  They gated `resumeThreadOnCore`'s inline local dispatch on the
@@ -778,6 +987,415 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     restoreToReadyCancelled (removeFromNotificationWaitQueue st tid) tid
 
 -- ============================================================================
+-- WS-ZA ZA6.33: the suspend's IPC cancel — seL4-MCS's `cancelIPC`
+-- ============================================================================
+
+/-- WS-ZA ZA6.33: **the head arm of seL4-MCS's `reply_remove_tcb`**: a cancelled
+caller's reply frame that heads a scheduling context's stack is cut off it
+(`sc->scReply = NULL`; the frame's own upward link cleared), and the context
+**stays with the thread it is bound to**.  seL4 keeps `sc->scTcb` as it is, so
+the server running on the caller's donation keeps running on it; this kernel's
+binding names the lender (`.donated scId caller`), and the lender has just
+stopped waiting on the reply, so the holder's binding becomes its own
+(`.bound scId`) and the context's reservation origin is cleared with it: the
+loan has no lender to go back to.  The holder's binding moved, so the write
+ends in the key hook (`markKeyChangeFrom`).  A frame heading no context is left
+alone, and so is a holder whose binding is not this context's loan. -/
+def cutHeadFrameKeepingContext (st : SystemState) (rid : SeLe4n.ReplyId) : SystemState :=
+  match replyFrameHeadContext? st rid with
+  | none => st
+  | some scId =>
+    match st.getReply? rid with
+    | none => st
+    | some r =>
+      match storeObject rid.toObjId (.reply { r with next := none }) st with
+      | .error _ => st
+      | .ok ((), st1) =>
+        let st2 := st1.updateSchedContext scId fun sc =>
+          { sc with scReply := none, donationOrigin := none }
+        match (st2.getSchedContext? scId).bind (·.boundThread) with
+        | none => st2
+        | some holder =>
+          match st2.getTcb? holder with
+          | none => st2
+          | some ht =>
+            match ht.schedContextBinding with
+            | .donated s _ =>
+              if s = scId then
+                markKeyChangeFrom st2
+                  (st2.updateTcb holder fun t => { t with scBindingOwnerCode := 0 }) holder
+              else st2
+            | _ => st2
+
+/-- WS-ZA ZA6.33: the head cut keyed on a thread's own reply object. -/
+def cutThreadHeadFrameKeepingContext (st : SystemState) (tcb : TCB) : SystemState :=
+  match tcb.replyObject with
+  | none => st
+  | some rid => cutHeadFrameKeepingContext st rid
+
+/-- WS-ZA ZA6.33: the head cut a cancelled caller's IPC cancel makes first: on a
+thread blocked on a reply, its frame cut off the context it heads
+(`cutThreadHeadFrameKeepingContext`); on any other thread, nothing. -/
+def cutCancelledCallerHead (st : SystemState) (tcb : TCB) : SystemState :=
+  match tcb.ipcState with
+  | .blockedOnReply _ _ => cutThreadHeadFrameKeepingContext st tcb
+  | _ => st
+
+/-- WS-ZA ZA6.33: **seL4-MCS's `cancelIPC`, as the suspend runs it.**  Every arm
+but the reply arm is `cancelIpcBlocking`'s.  The reply arm is `reply_remove_tcb`:
+the caller's frame is cut off the context it heads, which **stays with the thread
+it is bound to** (`cutCancelledCallerHead`), and then `cancelIpcBlocking`'s reply
+arm runs on a frame that heads nothing: there is no donation left to hand back
+(`cancelIpcKeepingContexts_reply_arm`), so it is the cut off the frames above
+and below (seL4's "break the chain"), `reply_unlink` and the caller's exit from
+its server's reply-waiter queue.  seL4's `cancelIPC` donates nothing; the
+return `cancelIpcBlocking` makes at a head is the reply object's own
+finalisation (`reply_remove`, whose head branch is `reply_pop`). -/
+def cancelIpcKeepingContexts (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    SystemState :=
+  cancelIpcBlocking (cutCancelledCallerHead st tcb) tid tcb
+
+/-- WS-ZA ZA6.33: **the head cut, decomposed**: the identity, or the frame's
+upward link cleared (`storeObject` of the reply over itself), then the
+context's head and origin cleared, then — when the context's holder holds it on
+loan — the holder's binding made its own, ending in the key hook. -/
+theorem cutHeadFrameKeepingContext_cases (st : SystemState) (rid : SeLe4n.ReplyId) :
+    cutHeadFrameKeepingContext st rid = st ∨
+    ∃ (scId : SeLe4n.SchedContextId) (r : Reply) (st1 : SystemState),
+      replyFrameHeadContext? st rid = some scId ∧ st.getReply? rid = some r ∧
+      storeObject rid.toObjId (.reply { r with next := none }) st = .ok ((), st1) ∧
+      (cutHeadFrameKeepingContext st rid = st1.updateSchedContext scId (fun sc =>
+          { sc with scReply := none, donationOrigin := none }) ∨
+       ∃ (holder : SeLe4n.ThreadId) (ht : TCB) (o : SeLe4n.ThreadId),
+         ((st1.updateSchedContext scId fun sc =>
+            { sc with scReply := none, donationOrigin := none }).getSchedContext? scId).bind
+              (·.boundThread) = some holder ∧
+         (st1.updateSchedContext scId fun sc =>
+            { sc with scReply := none, donationOrigin := none }).getTcb? holder = some ht ∧
+         ht.schedContextBinding = .donated scId o ∧
+         cutHeadFrameKeepingContext st rid =
+           markKeyChangeFrom (st1.updateSchedContext scId fun sc =>
+               { sc with scReply := none, donationOrigin := none })
+             ((st1.updateSchedContext scId fun sc =>
+               { sc with scReply := none, donationOrigin := none }).updateTcb holder
+                 fun t => { t with scBindingOwnerCode := 0 }) holder) := by
+  unfold cutHeadFrameKeepingContext
+  cases hH : replyFrameHeadContext? st rid with
+  | none => exact .inl rfl
+  | some scId =>
+    cases hR : st.getReply? rid with
+    | none => exact .inl rfl
+    | some r =>
+      dsimp only
+      cases hS : storeObject rid.toObjId (.reply { r with next := none }) st with
+      | error => exact .inl rfl
+      | ok p =>
+        obtain ⟨⟨⟩, st1⟩ := p
+        refine .inr ⟨scId, r, st1, rfl, rfl, hS, ?_⟩
+        dsimp only
+        generalize st1.updateSchedContext scId (fun sc =>
+          { sc with scReply := none, donationOrigin := none }) = st2
+        cases hB : (st2.getSchedContext? scId).bind (·.boundThread) with
+        | none => exact .inl rfl
+        | some holder =>
+          dsimp only
+          cases hT : st2.getTcb? holder with
+          | none => exact .inl rfl
+          | some ht =>
+            dsimp only
+            cases hb : ht.schedContextBinding with
+            | unbound => exact .inl rfl
+            | bound _ => exact .inl rfl
+            | donated s o =>
+              dsimp only
+              by_cases hs : s = scId
+              · subst hs
+                exact .inr ⟨holder, ht, o, rfl, hT, hb, by simp⟩
+              · exact .inl (by simp [hs])
+
+/-- WS-ZA ZA6.33: **a property each of the head cut's writes keeps holds after
+it**: the reply store over a reply held there, the context's head and origin
+cleared on the context the frame heads, and the holder's binding made its own —
+asked only of a holder bound to that context on loan. -/
+theorem cutHeadFrameKeepingContext_closed (P : SystemState → Prop)
+    (hStore : ∀ (s s1 : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
+      (scId : SeLe4n.SchedContextId), P s → replyFrameHeadContext? s rid = some scId →
+      s.getReply? rid = some r →
+      storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1) →
+      P (s1.updateSchedContext scId fun sc => { sc with scReply := none, donationOrigin := none }))
+    (hHolder : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+      (ht : TCB) (o : SeLe4n.ThreadId), P s →
+      (s.getSchedContext? scId).bind (·.boundThread) = some holder →
+      s.getTcb? holder = some ht → ht.schedContextBinding = .donated scId o →
+      P (markKeyChangeFrom s (s.updateTcb holder fun t => { t with scBindingOwnerCode := 0 })
+        holder))
+    (st : SystemState) (rid : SeLe4n.ReplyId) (h : P st) :
+    P (cutHeadFrameKeepingContext st rid) := by
+  rcases cutHeadFrameKeepingContext_cases st rid with e | ⟨scId, r, st1, hH, hR, hS, e | ⟨holder, ht, o, hB, hT, hb, e⟩⟩
+  · rw [e]; exact h
+  · rw [e]; exact hStore st st1 rid r scId h hH hR hS
+  · rw [e]; exact hHolder _ scId holder ht o (hStore st st1 rid r scId h hH hR hS) hB hT hb
+
+/-- WS-ZA ZA6.33: the head cut keyed on a thread, closed under what the cut keeps. -/
+theorem cutThreadHeadFrameKeepingContext_closed (P : SystemState → Prop)
+    (hStore : ∀ (s s1 : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
+      (scId : SeLe4n.SchedContextId), P s → replyFrameHeadContext? s rid = some scId →
+      s.getReply? rid = some r →
+      storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1) →
+      P (s1.updateSchedContext scId fun sc => { sc with scReply := none, donationOrigin := none }))
+    (hHolder : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+      (ht : TCB) (o : SeLe4n.ThreadId), P s →
+      (s.getSchedContext? scId).bind (·.boundThread) = some holder →
+      s.getTcb? holder = some ht → ht.schedContextBinding = .donated scId o →
+      P (markKeyChangeFrom s (s.updateTcb holder fun t => { t with scBindingOwnerCode := 0 })
+        holder))
+    (st : SystemState) (tcb : TCB) (h : P st) :
+    P (cutThreadHeadFrameKeepingContext st tcb) := by
+  unfold cutThreadHeadFrameKeepingContext
+  cases tcb.replyObject with
+  | none => exact h
+  | some rid => exact cutHeadFrameKeepingContext_closed P hStore hHolder st rid h
+
+/-- WS-ZA ZA6.33: the cancelled caller's head cut, closed under what the cut
+keeps. -/
+theorem cutCancelledCallerHead_closed (P : SystemState → Prop)
+    (hStore : ∀ (s s1 : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
+      (scId : SeLe4n.SchedContextId), P s → replyFrameHeadContext? s rid = some scId →
+      s.getReply? rid = some r →
+      storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1) →
+      P (s1.updateSchedContext scId fun sc => { sc with scReply := none, donationOrigin := none }))
+    (hHolder : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+      (ht : TCB) (o : SeLe4n.ThreadId), P s →
+      (s.getSchedContext? scId).bind (·.boundThread) = some holder →
+      s.getTcb? holder = some ht → ht.schedContextBinding = .donated scId o →
+      P (markKeyChangeFrom s (s.updateTcb holder fun t => { t with scBindingOwnerCode := 0 })
+        holder))
+    (st : SystemState) (tcb : TCB) (h : P st) :
+    P (cutCancelledCallerHead st tcb) := by
+  unfold cutCancelledCallerHead
+  split
+  · exact cutThreadHeadFrameKeepingContext_closed P hStore hHolder st tcb h
+  · exact h
+
+/-- WS-ZA ZA6.33: the head cut writes no replenish queue: a reply store, a
+context's head and origin, a thread's binding and the key hook's flags. -/
+theorem cutCancelledCallerHead_replenishQueueOnCore (st : SystemState) (tcb : TCB)
+    (c : CoreId) :
+    (cutCancelledCallerHead st tcb).scheduler.replenishQueueOnCore c =
+      st.scheduler.replenishQueueOnCore c :=
+  cutCancelledCallerHead_closed
+    (fun s => s.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
+    (fun s s1 _ _ _ h _ _ hS => by
+      show (SystemState.updateSchedContext s1 _ _).scheduler.replenishQueueOnCore c = _
+      rw [SystemState.updateSchedContext_scheduler, storeObject_scheduler_eq s s1 _ _ hS]
+      exact h)
+    (fun s _ _ _ _ h _ _ _ => by
+      show (markKeyChangeFrom _ _ _).scheduler.replenishQueueOnCore c = _
+      rw [markKeyChangeFrom_replenishQueueOnCore, SystemState.updateTcb_scheduler]; exact h)
+    st tcb rfl
+
+/-- WS-ZA ZA6.33: the IPC cancel of a thread not blocked on a reply is
+`cancelIpcBlocking`'s. -/
+theorem cancelIpcKeepingContexts_of_not_reply (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (h : ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
+    cancelIpcKeepingContexts st tid tcb = cancelIpcBlocking st tid tcb := by
+  unfold cancelIpcKeepingContexts cutCancelledCallerHead
+  cases hI : tcb.ipcState with
+  | blockedOnReply ep rt => exact absurd hI (h ep rt)
+  | _ => rfl
+
+/-- A context rewrite leaves every key holding no context as it is. -/
+theorem updateSchedContext_objects_of_not_sc (s : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) (hInv : s.objects.invExt) (k : SeLe4n.ObjId)
+    (o : KernelObject) (hO : s.objects[k]? = some o) (hN : ∀ sc, o ≠ .schedContext sc) :
+    (s.updateSchedContext scId f).objects[k]? = some o := by
+  by_cases hEq : scId.toObjId = k
+  · subst hEq
+    unfold SystemState.updateSchedContext
+    split
+    · next sc h _ =>
+      rw [(SystemState.getSchedContext?_eq_some_iff s scId sc).mp h] at hO
+      cases hO; exact absurd rfl (hN sc)
+    · exact hO
+  · rw [SystemState.updateSchedContext_objects_ne _ _ _ _ hEq hInv]; exact hO
+
+/-- A thread rewrite leaves every key holding no thread as it is. -/
+theorem updateTcb_objects_of_not_tcb (s : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (hInv : s.objects.invExt) (k : SeLe4n.ObjId)
+    (o : KernelObject) (hO : s.objects[k]? = some o) (hN : ∀ t, o ≠ .tcb t) :
+    (s.updateTcb tid f).objects[k]? = some o := by
+  by_cases hEq : tid.toObjId = k
+  · subst hEq
+    unfold SystemState.updateTcb
+    split
+    · next t h _ =>
+      rw [(SystemState.getTcb?_eq_some_iff s tid t).mp h] at hO
+      cases hO; exact absurd rfl (hN t)
+    · exact hO
+  · rw [SystemState.updateTcb_objects_ne _ _ _ _ hEq hInv]; exact hO
+
+/-- WS-ZA ZA6.33: **after the head cut the frame is a reply with no upward link**,
+when it was a head. -/
+theorem cutHeadFrameKeepingContext_getReply? (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) {scId : SeLe4n.SchedContextId}
+    (hH : replyFrameHeadContext? st rid = some scId) :
+    ∃ r, st.getReply? rid = some r ∧
+      (cutHeadFrameKeepingContext st rid).getReply? rid = some { r with next := none } := by
+  obtain ⟨r, _, hR, _, _, _⟩ := replyFrameHeadContext?_eq_some hH
+  refine ⟨r, hR, ?_⟩
+  rw [SystemState.getReply?_eq_some_iff]
+  have hS : storeObject rid.toObjId (.reply { r with next := none }) st =
+      .ok ((), _) := rfl
+  have hI1 := storeObject_preserves_objects_invExt st _ _ _ hInv hS
+  have h1 := storeObject_objects_eq st _ _ _ hInv hS
+  have h2 := updateSchedContext_objects_of_not_sc _ scId
+    (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 _ _ h1
+    (fun _ h => by cases h)
+  have hI2 := SystemState.updateSchedContext_preserves_objects_invExt _ scId
+    (fun sc => { sc with scReply := none, donationOrigin := none }) hI1
+  unfold cutHeadFrameKeepingContext
+  rw [hH, hR]
+  simp only [hS]
+  generalize SystemState.updateSchedContext _ scId _ = st2 at h2 hI2
+  split
+  · exact h2
+  · split
+    · exact h2
+    · split
+      · split
+        · rw [markKeyChangeFrom_objects]
+          exact updateTcb_objects_of_not_tcb _ _ _ hI2 _ _ h2 (fun _ h => by cases h)
+        · exact h2
+      · exact h2
+
+/-- WS-ZA ZA6.33: **after the head cut the frame heads no context.** -/
+theorem replyFrameHeadContext?_cutHeadFrameKeepingContext (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
+    replyFrameHeadContext? (cutHeadFrameKeepingContext st rid) rid = none := by
+  cases hH : replyFrameHeadContext? st rid with
+  | none =>
+    have e : cutHeadFrameKeepingContext st rid = st := by
+      unfold cutHeadFrameKeepingContext; rw [hH]
+    rw [e, hH]
+  | some scId =>
+    obtain ⟨r, _, hR'⟩ := cutHeadFrameKeepingContext_getReply? st rid hInv hH
+    unfold replyFrameHeadContext?
+    rw [hR']
+
+/-- WS-ZA ZA6.33: **so the cancelled caller is owed nothing back** once its head
+is cut: the reclaim's trigger reads the frame's head. -/
+theorem cancelledCallerDonation?_cutCancelledCallerHead (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
+    cancelledCallerDonation? (cutCancelledCallerHead st tcb) tid tcb = none := by
+  unfold cancelledCallerDonation? cutCancelledCallerHead
+  cases tcb.ipcState with
+  | blockedOnReply _ _ =>
+    dsimp only
+    unfold cutThreadHeadFrameKeepingContext
+    cases tcb.replyObject with
+    | none => rfl
+    | some rid =>
+      dsimp only
+      rw [replyFrameHeadHolder?_of_no_head _ _
+        (replyFrameHeadContext?_cutHeadFrameKeepingContext st rid hInv)]
+  | _ => rfl
+
+/-- WS-ZA ZA6.33: **the reply arm, unfolded**: the head cut, then the cut off
+the frames above and below, the restore, `reply_unlink` and the exit from the
+server's reply-waiter queue — `cancelIpcBlocking`'s reply arm with nothing
+handed back. -/
+theorem cancelIpcKeepingContexts_reply_arm (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (h : tcb.ipcState = .blockedOnReply ep rt) (hInv : st.objects.invExt) :
+    cancelIpcKeepingContexts st tid tcb =
+      SystemState.unlinkReplyWaiterOpt
+        (consumeReplyLink
+          (restoreToReadyCancelled
+            (cutThreadReplyFrameOut (cutThreadHeadFrameKeepingContext st tcb) tcb) tid)
+          tid tcb)
+        tid tcb.blockingServer? := by
+  have hD := cancelledCallerDonation?_cutCancelledCallerHead st tid tcb hInv
+  have hC : cutCancelledCallerHead st tcb = cutThreadHeadFrameKeepingContext st tcb := by
+    unfold cutCancelledCallerHead; rw [h]
+  unfold cancelIpcKeepingContexts cancelIpcBlocking
+  rw [h]
+  dsimp only
+  have hR : returnDonationToCancelledCaller (cutCancelledCallerHead st tcb) tid tcb =
+      cutCancelledCallerHead st tcb := by
+    unfold returnDonationToCancelledCaller; rw [hD]
+  rw [hR, hC]
+
+/-- WS-ZA ZA6.33: **the release-queue entry that stands for a thread**: the
+scheduling context the thread runs on — its own or one it holds on loan — when
+the store holds it and it is bound to the thread.  A release queue holds
+contexts, and a bound context's entry is its thread's place there, so this is
+the entry seL4's release queue holds for the TCB itself. -/
+def releaseEntryOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option SeLe4n.SchedContextId :=
+  match st.getTcb? tid with
+  | none => none
+  | some t =>
+    match t.schedContextBinding.scId? with
+    | none => none
+    | some s =>
+      match st.getSchedContext? s with
+      | none => none
+      | some sc => if sc.boundThread = some tid then some s else none
+
+/-- The entry that stands for a thread is a context the store holds, bound to it. -/
+theorem releaseEntryOf?_some {st : SystemState} {tid : SeLe4n.ThreadId}
+    {s : SeLe4n.SchedContextId} (h : releaseEntryOf? st tid = some s) :
+    ∃ sc, st.getSchedContext? s = some sc ∧ sc.boundThread = some tid := by
+  unfold releaseEntryOf? at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · rename_i s' _ sc hsc
+        split at h
+        · cases h; exact ⟨sc, hsc, by assumption⟩
+        · cases h
+
+/-- WS-ZA ZA6.33: **seL4-MCS's `tcbReleaseRemove`**: the thread's entry
+(`releaseEntryOf?`) taken off whichever release queue holds it
+(`SchedContextOps.purgeReplenishment`).  A thread with no entry is left alone. -/
+def releaseRemoveThread (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match releaseEntryOf? st tid with
+  | none => st
+  | some s => SchedContextOps.purgeReplenishment st s
+
+/-- The release removal is the identity or the purge of the thread's entry. -/
+theorem releaseRemoveThread_cases (st : SystemState) (tid : SeLe4n.ThreadId) :
+    releaseRemoveThread st tid = st ∨ ∃ s, releaseEntryOf? st tid = some s ∧
+      releaseRemoveThread st tid = SchedContextOps.purgeReplenishment st s := by
+  unfold releaseRemoveThread
+  cases h : releaseEntryOf? st tid with
+  | none => exact .inl rfl
+  | some s => exact .inr ⟨s, rfl, rfl⟩
+
+/-- WS-ZA ZA6.33: the cores whose replenish queue `releaseRemoveThread` writes —
+its purge's (`SchedContextOps.purgeReplenishCores`), read from the same state
+and the same entry, so a footprint locks the queue the removal edits. -/
+def releaseRemoveThreadCores (st : SystemState) (tid : SeLe4n.ThreadId) : List CoreId :=
+  match releaseEntryOf? st tid with
+  | none => []
+  | some s => SchedContextOps.purgeReplenishCores st s
+
+/-- ...and it writes no other. -/
+theorem releaseRemoveThread_replenishQueueOnCore_ne (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (h : c ∉ releaseRemoveThreadCores st tid) :
+    (releaseRemoveThread st tid).scheduler.replenishQueueOnCore c =
+      st.scheduler.replenishQueueOnCore c := by
+  unfold releaseRemoveThreadCores at h
+  unfold releaseRemoveThread
+  cases hs : releaseEntryOf? st tid with
+  | none => rfl
+  | some s =>
+    rw [hs] at h
+    exact SchedContextOps.purgeReplenishment_replenishQueueOnCore_of_not_mem st s c h
+
+-- ============================================================================
 -- D1-D: cancelDonation (split into two named arms — R5.A / DEEP-SUSP-02)
 -- ============================================================================
 --
@@ -920,95 +1538,66 @@ open SeLe4n.Kernel.Concurrency
 open SeLe4n.Kernel.Lifecycle.Suspend
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the single-core teardown, with the
-SM5.H replenishment migration the returned donation obliges.
+returned donation **settled** (WS-ZA ZA6.33, seL4's `schedContext_donate` shape:
+`tcbReleaseRemove` of the old holder, then the place the new holder's refill
+rule asks for).
 
-The migration lives here rather than inside `cancelIpcBlocking` because that is
-where this tree puts it for every other donation-carrying path
-(`applyCallDonation` rebinds, `applyCallDonationOnCore` migrates; the reply
-chain's return likewise), and it is what keeps `cancelIpcBlocking` an
-objects-only write — see `cancelIpcBlocking_scheduler_eq`.
+The settle (`SchedContextOps.settleReturnedContext`) lives here rather than inside
+`cancelIpcBlocking` because that is what keeps `cancelIpcBlocking` an
+objects-only write — see `cancelIpcBlocking_scheduler_eq`.  It purges the
+returned context off whichever release queue its own link names, and places it
+again — when its holder after the teardown is not suspended — on
+`replenishHomeOfSchedContext` of the torn state: the home of the thread the
+context is bound to **after** the teardown, which is what the replenish-affinity
+invariant demands of every entry naming it.  On a committed reclaim that thread
+is the victim; on a refused one (the outer-caller check, the recipient guard and
+the head validation are all fail-closed) it is still `holder`, whose home is the
+source, so a refusal re-places the context where it already lived.
 
-The **source** core is resolved from the pre-state so the `withLockSet` bracket
-can declare the `LockKey.replenishQueue` write locks before the transition
-runs; neither the teardown nor the return writes a `cpuAffinity`, so a pre-state
-reading is the reading the post-state would give.  A shared home core is a
-definitional no-op (`migrateSchedContextReplenishment_noop`), so on one core this
-is exactly `cancelIpcBlocking`.
+**Why a settle and not the migration it replaces.**  The migration moved the
+context's queued entries between homes and so kept its place only where the old
+holder had one.  A holder that is suspended keeps its donated context (seL4's
+`suspend` neither unbinds nor returns a loan), and a suspended holder's context
+is purged from the release queues (`releaseRemoveThread`); returning it to a
+running caller must then *place* it, which only the settle does.
 
-**WS-RR RR8.11: the DESTINATION is the fact, not the victim's home.**  Until
-RR8.11 the destination was `determineTargetCore st victim` — the home of the
-thread the reclaim is *about to* bind `scId` to — and the reclaim can refuse: the
-outer-caller check, the recipient guard and the head validation are all
-fail-closed, and on a refusal `returnDonationToCancelledCaller` returns `st` with
-`scId` still bound to `holder` while this migration still fired.  That moved
-`scId`'s replenishments to a core no thread bound to `scId` is homed on, which is
-`replenishQueueAffinityConsistentOnCore`'s own negation.  The reply path never had
-the defect because its migration sits in the `.ok` continuation of its return
-(`applyReplyDonationOnCore`), so the asymmetry was between two spellings of one
-question — and the pure spelling is the one that got it wrong.
-
-`replenishHomeOfSchedContext` reads the home of the thread `scId` is bound to **on
-the post-teardown state**, which is what the invariant demands of every entry
-naming it.  On a committed reclaim that thread is the victim, so the destination is
-`determineTargetCore st victim` exactly as before (the teardown writes no
-`cpuAffinity`); on a refused one it is `holder`, whose home *is* the source, so the
-migration degenerates to its own no-op.  The footprint is unchanged either way —
-both cores it can name were already declared — and
-`cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp` needs
-no hypothesis beyond `st.objects.invExt` and the pre-state invariant, because the
-destination obligation becomes `replenishHomeOfSchedContext_spec`.
-
-**`v0.35.121`: the torn state and the source core are each written ONCE**, and the
-reason is not the one it looks like.  They were spelled twice — as the migration's
-input and again inside the destination resolver — and PR #897's review read that as
-a latency cost, since strict evaluation would run a whole reply-stack reclamation,
-holder abort and several object-table writes twice inside the suspend critical
-section.  Measured against Lean 4.28's IR (`trace.compiler.ir.result`), it is
-**not** a cost: LCNF's CSE pass runs three times in the default pipeline and the
-donation arm compiles to one `cancelIpcBlocking` and one `determineTargetCore`
-either way — the two shapes' IR is identical.
-
-What the duplication really was is a **divergence hazard**, and that is worth more
-than the latency would have been.  Both occurrences are `SystemState`, so a later
-cut that edits one and not the other typechecks and yields a *different transition*:
-the migration would run on one state while its destination was read off another,
-which is `replenishQueueAffinityConsistentOnCore`'s own negation — the WS-RR RR8.11
-defect reachable again, through a copy rather than through a proxy.  Binding makes
-the second occurrence impossible instead of merely equal, and it is definitionally
-the same term (zeta), so every result about this definition carries verbatim. -/
+The source core is resolved from the pre-state so the `withLockSet` bracket can
+declare the `LockKey.replenishQueue` write locks before the transition runs
+(`cancelIpcBlockingReplenishCores`); the torn state and the source are each
+bound once, so the settle and its destination read one state. -/
 def cancelIpcBlockingMigrated (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) :
     SystemState :=
   match Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
   | some (scId, holder) =>
       let torn := cancelIpcBlocking st victim tcb
       let fromCore := determineTargetCore st holder
-      migrateSchedContextReplenishment torn scId fromCore
-        (replenishHomeOfSchedContext torn scId fromCore)
+      SchedContextOps.settleReturnedContext torn
+        (replenishHomeOfSchedContext torn scId fromCore) scId
   | none => cancelIpcBlocking st victim tcb
 
-/-- **`v0.35.170`: the cores the reclaim's teardown moves a RESERVATION
-between** — the holder's home, where per-core ticks enqueued the donated
-context's replenishments, and the home the context is bound to once the teardown
-has returned it (`replenishHomeOfSchedContext` at the torn state, WS-RR RR8.11's
-rule for a step that can refuse).
+/-- **`v0.35.170`: the cores the reclaim's teardown writes a replenish queue
+on** (WS-ZA ZA6.33: the settle's) — the core the returned context's own release
+link names at the torn state, which the settle's purge edits
+(`SchedContextOps.purgeReplenishCores`), and the home the context is bound to
+once the teardown has returned it (`replenishHomeOfSchedContext` at the torn
+state, WS-RR RR8.11's rule for a step that can refuse), where it is placed again.
 
 Read exactly as `cancelIpcBlockingMigrated` reads them — the same `let`s, the
-same resolvers, the same torn state — so the footprints that declare this pair
-and the transition that writes it cannot name different cores.
-
-It lives here, beside the transition, rather than in the resolved-footprint
-module, because both of the *parametric* footprints over this step
-(`cancelIpcBlockingOnCoreLockSet`, `suspendThreadOnCoreLockSet`) must
-name it too and neither can see that module — *when a question has one owner and
-an asker that cannot see it, the owner is in the wrong layer* (`v0.35.59`).  It
-mentions no `LockKey`, so nothing about it belongs above this layer. -/
+same resolvers, the same torn state — so the footprints that declare these cores
+and the transition that writes them cannot name different ones.  It lives here,
+beside the transition, because both of the *parametric* footprints over this step
+must name it too and neither can see that module — *when a question has one
+owner and an asker that cannot see it, the owner is in the wrong layer*
+(`v0.35.59`).  It mentions no `LockKey`, so nothing about it belongs above this
+layer. -/
 def cancelIpcBlockingReplenishCores (st : SystemState) (victim : SeLe4n.ThreadId)
     (tcb : TCB) : List CoreId :=
   match Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
   | some (scId, holder) =>
       let torn := Lifecycle.Suspend.cancelIpcBlocking st victim tcb
       let fromCore := determineTargetCore st holder
-      [fromCore, replenishHomeOfSchedContext torn scId fromCore]
+      SchedContextOps.purgeReplenishCores torn scId ++
+        [replenishHomeOfSchedContext torn scId fromCore]
   | none => []
 
 /-- `v0.35.170`: with nothing donated the reclaim migrates nothing, so the pair
@@ -1020,16 +1609,15 @@ is empty — every arm but a reply arm whose caller had donated. -/
   unfold cancelIpcBlockingReplenishCores
   rw [h]
 
-/-- `v0.35.170`: ...and where a donation is reclaimed the pair is exactly the
-migration's two endpoints, in the order `cancelIpcBlockingMigrated` hands them
-to `migrateSchedContextReplenishment`. -/
+/-- `v0.35.170`: ...and where a donation is reclaimed they are exactly the
+settle's purge core and its destination, in that order. -/
 theorem cancelIpcBlockingReplenishCores_of_donation (st : SystemState)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (holder : SeLe4n.ThreadId)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder)) :
     cancelIpcBlockingReplenishCores st victim tcb
-      = [determineTargetCore st holder,
-         replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
+      = SchedContextOps.purgeReplenishCores (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
+        ++ [replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
            (determineTargetCore st holder)] := by
   unfold cancelIpcBlockingReplenishCores
   rw [h]
@@ -1052,7 +1640,7 @@ theorem cancelIpcBlockingMigrated_agree (victim : SeLe4n.ThreadId)
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder _
-    exact migrateSchedContextReplenishment_agree _ scId _ _
+    exact SchedContextOps.settleReturnedContext_agree _ _ scId
   · exact .refl _
 
 /-- ...and keeps the extension invariant. -/
@@ -1062,7 +1650,7 @@ theorem cancelIpcBlockingMigrated_objects_invExt (victim : SeLe4n.ThreadId)
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder _
-    exact migrateSchedContextReplenishment_preserves_objects_invExt _ scId _ _ hInv
+    exact SchedContextOps.settleReturnedContext_objects_invExt _ _ scId hInv
   · exact hInv
 
 /-- The migration touches only replenish queues, so every core's run queue is the
@@ -1074,7 +1662,7 @@ plain teardown's. -/
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder _
-    exact migrateSchedContextReplenishment_runQueueOnCore _ scId _ _ c
+    exact SchedContextOps.settleReturnedContext_runQueueOnCore _ _ scId c
   · rfl
 
 /-- The migration writes no TCB, so every TCB lookup is the plain teardown's. -/
@@ -1101,7 +1689,7 @@ current thread of every core is the plain teardown's. -/
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder _
-    exact (migrateSchedContextReplenishment_runQueue_current_eq _ scId _ _ c).2
+    exact SchedContextOps.settleReturnedContext_currentOnCore _ _ scId c
   · rfl
 
 /-- **`v0.35.158`: the holder the reclaim UNBOUND — `some holder` exactly when
@@ -1627,14 +2215,18 @@ def currentDeboostedFrom (post : SystemState) (ec : CoreId)
           | none => false)
   | none => false
 
-/-- D1-G: Suspend a thread — the complete suspension sequence.
+/-- D1-G: Suspend a thread — the complete suspension sequence, seL4-MCS's
+`suspend`.
 
-Validates the target thread exists and is not already Inactive, then
-performs the full cleanup pipeline: IPC blocking cancellation, donation
-cleanup, run queue removal, pending state clearing, thread state
-transition to Inactive, and the cancel of its yield link (`cancelYieldTo`,
-seL4-MCS's `schedContext_cancelYieldTo`). If the suspended thread was the
-current thread, triggers a reschedule.
+Validates the target thread exists and is not already Inactive, then runs
+seL4's steps: the IPC cancel (`cancelIpcKeepingContexts`, `cancelIPC`), run
+queue removal (`tcbSchedDequeue`), pending state clearing, thread state
+transition to Inactive, the context it runs on off the release queue
+(`releaseRemoveThread`, `tcbReleaseRemove`), and the cancel of its yield link
+(`cancelYieldTo`, `schedContext_cancelYieldTo`).  **It ends no reservation**:
+a context bound to the thread stays bound, and one it holds on loan stays with
+it, as seL4's `suspend` keeps `tcbSchedContext`.  If the suspended thread was
+the current thread, triggers a reschedule.
 
 Returns `invalidArgument` if the target is not a TCB, `invalidState` if
 the thread is already Inactive.
@@ -1660,10 +2252,10 @@ noncomputable def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- victim, so the pre-fix post-G4 read at G7 made the reschedule guard
       -- unsatisfiable (dead code): suspending the running thread left
       -- `current = none` without dispatching a successor.  The intermediate
-      -- steps G2..G6 never write the current slot (`cancelIpcBlocking` and
-      -- `clearPendingState` are scheduler-silent, the donation arms touch
-      -- only the replenish queue, PIP reversion re-buckets run-queue
-      -- entries), so the entry-time read is the just-before-G4 value.
+      -- steps G2..G6 never write the current slot (the IPC cancel and
+      -- `clearPendingState` write objects and, at a cut head, reschedule
+      -- flags; PIP reversion re-buckets run-queue entries), so the entry-time
+      -- read is the just-before-G4 value.
       let wasCurrent : Bool := (st.scheduler.currentOnCore bootCoreId) == some tid
       -- Local-disinheritance precapture (PR #831 review 2): the boot core's
       -- current thread's entry-time effective priority.  The G2b PIP revert
@@ -1688,62 +2280,28 @@ noncomputable def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- boost is still earned — and the old victim-leg recompute was a
       -- fixed-point no-op for exactly that reason.)
       let maybeBlockingServer := PriorityInheritance.blockingServer st tid
-      -- G2 (**WS-RR RR8.12, fifth cut**): the teardown with its reclaim COMPLETED
-      -- — the replenishment migration and, since `v0.35.158`, the deschedule of
-      -- the holder the reclaim unbound (OD1.7's wake until then).  Until the
-      -- fifth cut both were declared in `IPC/CrossCore/Cancellation.lean`, a
-      -- module that imports this one, so this reference path reached for the
-      -- *bare* teardown.  See `cancelIpcBlockingReclaimed` above for what the
-      -- step is and why it takes this state pair.
-      let st := cancelIpcBlockingReclaimed tid tcb st
+      -- G2 (WS-ZA ZA6.33): seL4-MCS's `cancelIPC` (`cancelIpcKeepingContexts`):
+      -- the endpoint and notification waits dequeued from the one object the
+      -- thread state names, and a reply wait ended by `reply_remove_tcb` — the
+      -- frame cut off its stack and off the context it heads, which stays with
+      -- the thread it is bound to.  Nothing is handed back and nothing refuses.
+      let st := cancelIpcKeepingContexts st tid tcb
       -- G2b (D4-N): revert PIP from the captured upstream server — now that
       -- the victim's `ipcState` is cleared, `waitersOf` no longer includes
       -- it, so the chain recompute genuinely drops the victim's donation.
       let st := match maybeBlockingServer with
         | some serverId => PriorityInheritance.revertPriorityInheritance st serverId
         | none => st
-      -- AI2-D (M-20) / AF5-H (AF-28): Re-lookup is necessary because
-      -- `cancelIpcBlocking` modifies the TCB via `restoreToReadyCancelled`,
-      -- which updates `ipcState`, `queuePrev`, `queueNext`, and `queuePPrev`.
-      -- The `schedContextBinding` field is NOT modified — the restore
-      -- uses record-with syntax that preserves all unmentioned fields
-      -- (structurally guaranteed).
-      --
-      -- H3-ATOMICITY: Between `cancelIpcBlocking` (G2) and the re-lookup
-      -- below, a transient window exists where the TCB has been partially
-      -- cleaned (IPC fields cleared) but `schedContextBinding` metadata has
-      -- not yet been processed by `cancelDonation` (G3). In the sequential
-      -- model this is safe: no other operation can observe the intermediate
-      -- state between G2 and G3. On hardware, this entire G2→G3→G4→G5→G6
-      -- sequence MUST execute atomically with interrupts disabled to prevent
-      -- an ISR from observing the partially-cleaned TCB. The syscall trap
-      -- handler runs with IRQs masked (trap.rs), which provides this guarantee.
-      --
-      -- Defensive re-lookup ensures `cancelDonation` sees the post-IPC-cleanup
-      -- TCB state, guarding against future changes to `cancelIpcBlocking` that
-      -- might modify additional TCB fields.
-      let tcb' := (st.getTcb? tid).getD tcb
-      -- G3: Cancel donation (AJ1-A/M-14: propagate cleanup errors).
-      -- R5.A (DEEP-SUSP-02): Explicit dispatch on the binding variant —
-      -- `cancelBoundDonation` for the in-place unbind, `cancelDonatedDonation`
-      -- for the return-to-original-owner path, identity on `.unbound`. Pre-R5
-      -- the cancellation went through `cancelDonationValid` which folded both
-      -- arms behind a single name; the split makes the two-arm semantics
-      -- legible at the call site. The dispatcher `cancelDonationValid` is
-      -- retained for backward compatibility with closure-form preservation
-      -- theorems (see `cancelDonation` in Suspend.lean).
-      match (match tcb'.schedContextBinding with
-             | .unbound => (Except.ok st : Except KernelError SystemState)
-             | .bound _ => cancelBoundDonation st tid tcb'
-             | .donated _ _ => cancelDonatedDonation st tid tcb') with
-      | .error e => .error e
-      | .ok st =>
       -- G4: Remove from run queue — AN10-residual-1 (commit 2): typed entry-point.
       let st := removeRunnableValid st vtid
       -- G5: Clear pending state — AN10-residual-1 (commit 3): typed entry-point.
       let st := clearPendingStateValid st vtid
       -- G6: Set threadState := .Inactive
       let st := st.updateTcb tid fun tcb'' => { tcb'' with threadState := .Inactive }
+      -- G6a (WS-ZA ZA6.33): seL4-MCS's `tcbReleaseRemove`: the context the
+      -- victim runs on leaves the release queue.  The victim keeps its binding,
+      -- as seL4's `suspend` keeps `tcbSchedContext`.
+      let st := releaseRemoveThread st tid
       -- G6b: the victim's yield link cancelled, seL4-MCS's
       -- `schedContext_cancelYieldTo` as the last step of its `suspend`.
       let st := cancelYieldTo st tid
