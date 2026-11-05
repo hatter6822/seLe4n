@@ -3205,6 +3205,133 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
+        // WS-ZA ZA6.34: a third thread issues the final deletes that stop the
+        // two threads they are about.  The server and its reply are carved
+        // again and the context bound to the partner; the root task waits on
+        // the notification, so the server runs (the partner is suspended), and
+        // at each switch below exactly one thread is runnable.  The server
+        // resumes the partner and receives; the partner's call lends it the
+        // context, the server's reply heading its stack; the server wakes the
+        // root task and waits on the notification.  The root task deletes the
+        // reply's last capability: seL4-MCS's `reply_remove` pops the head,
+        // the context back to the partner, which is left `Inactive`, and taken
+        // from the server.  Then the same lend through the root task's reply
+        // object, and the root task deletes the server's last capability: the
+        // loan goes back to its lender, who is ended as the server's waiter,
+        // and the server's wait is cancelled before it is retired.  The
+        // context's unbind leaves the state the scenario found.
+        invocation(
+            "untyped-retype-third-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ),
+        invocation(
+            "third-tcb-set-space",
+            TCB_SET_SPACE,
+            CHAIN_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "third-tcb-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-third-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+        ),
+        invocation(
+            "third-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "third-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "third-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation("third-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
+        partner_step("third-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "head-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "head-server-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [CHAIN_REPLY_CAP, 0],
+            true,
+        ),
+        partner_step("head-partner-calls", CALL, ENDPOINT_CAP, 1, [0x68, 0], true),
+        signal("head-server-wakes-root", 0x10),
+        partner_step("head-server-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "head-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "head-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        signal("waited-wake-server", 0x11),
+        partner_step("waited-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "waited-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "waited-server-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step("waited-partner-calls", CALL, ENDPOINT_CAP, 1, [0x69, 0], true),
+        signal("waited-server-wakes-root", 0x12),
+        partner_step("waited-server-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "waited-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "third-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         invocation(
             "vspace-unmap",

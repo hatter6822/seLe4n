@@ -322,6 +322,24 @@ for driver in drivers:
             "cross-core-home-root-back", "chain-server-receives",
             "chain-suspend-server", "chain-suspend-root", "chain-resume-root",
             "chain-suspend-partner", "chain-unbind", "chain-tcb-delete", "chain-reply-cap-delete", "chain-reply-delete",
+            # WS-ZA ZA6.34: a third thread issues the final deletes that stop
+            # the other two.  The server and its reply carved again, the
+            # context bound to the partner, the server resumed and the root
+            # task's wait; the server resumes the partner and receives, the
+            # partner's call lends it the context, the server wakes the root
+            # task and waits; the root task deletes the reply's minted
+            # capability, then its last (the head reply popped, the context
+            # back to its caller, which is ended); the same lend through the
+            # root task's reply object, then the server's last capability
+            # deleted (its loan returned, its waiter ended, its wait
+            # cancelled); the context unbound.
+            "third-tcb-set-space", "third-tcb-set-priority", "third-reply-cap-mint",
+            "third-configure", "third-bind-partner", "third-resume-server", "third-root-waits",
+            "head-server-resumes-partner", "head-server-receives", "head-partner-calls",
+            "head-server-wakes-root", "head-server-waits", "head-reply-cap-delete", "head-reply-delete",
+            "waited-wake-server", "waited-root-waits", "waited-server-resumes-partner",
+            "waited-server-receives", "waited-partner-calls", "waited-server-wakes-root",
+            "waited-server-waits", "waited-server-delete", "third-unbind",
             # and seL4's resume of a thread whose refill is not yet due: the
             # bound partner's yield forfeits its budget, its suspend takes the
             # context off the release queue, and the resume postpones it there
@@ -563,6 +581,8 @@ for driver in drivers:
             "chain-server-reply-recv": (0, 0), "chain-root-replies": (0, 0),
             # The chain's carves, a thread's and a reply's as above.
             "untyped-retype-chain-tcb": (26, 26), "untyped-retype-chain-reply": (15, 15),
+            # and the third thread's (WS-ZA ZA6.34), the same carves.
+            "untyped-retype-third-tcb": (26, 26), "untyped-retype-third-reply": (15, 15),
             # The affinity change of a thread running on core 1 (seL4's
             # `setAffinity`: the thread taken off core 1's current slot, a
             # reschedule raised there, the remote stall until core 1 has
