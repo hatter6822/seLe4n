@@ -444,6 +444,14 @@ object is carved with (`TCB.idCell`, `Reply.idCell`, `Reply.frameLinkCell`,
 `SchedContext.headLinkCell`) rather than building one, and new code between
 a pop and a receive keeps to what the pop writes (`popFrame`) or carries the
 receive's checks across it.
+Since `v0.36.202` (ZA6.34) a compiled guard or store reads an optional link
+by its code or off the link itself and never builds the `Option` to compare or
+decode it: a queue's successor through `sendWakesInPlaceCode` and
+`queueSuccessorDiffers`, an enqueue behind a tail through
+`storeEndpointEnqueueCode`, a reply's frame links through `Reply.prevNames` and
+`Reply.nextNamesFrame`, a blocked thread's server as the cell its state holds
+(`TCB.blockingServer?_eq_impl`).  New compiled code on those paths keeps that
+form, or the exerciser's multi-waiter and stacked-reply steps read nonzero.
 Since `v0.36.164` (ZA6.1) the timer tick, the reschedule SGI and
 each core's first entry allocate nothing: the tick's dispatch and domain
 accounting never refuse (`scheduleEffectiveOnCore_eq_state`,

@@ -137,6 +137,20 @@ theorem blockingChain_acyclic (st : SystemState)
 def blockingServer (st : SystemState) (tid : ThreadId) : Option ThreadId :=
   (st.getTcb? tid).bind TCB.blockingServer?
 
+/-- `blockingServer` as it is compiled: the thread read by a match rather than
+through `Option.bind`, so no `some` cell is built for the thread record, and
+the server is the cell its IPC state holds (`TCB.blockingServer?_eq_impl`)
+(`blockingServer_eq_impl`). -/
+@[inline] def blockingServerImpl (st : SystemState) (tid : ThreadId) : Option ThreadId :=
+  match st.getTcb? tid with
+  | some t => t.blockingServer?
+  | none => none
+
+@[csimp] theorem blockingServer_eq_impl : @blockingServer = @blockingServerImpl := by
+  funext st tid
+  unfold blockingServer blockingServerImpl
+  cases st.getTcb? tid <;> rfl
+
 -- ============================================================================
 -- AK1-F (I-M04): PIP-boost / reply-blocked relation
 -- ============================================================================

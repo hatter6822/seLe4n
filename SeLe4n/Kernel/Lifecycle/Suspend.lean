@@ -294,6 +294,21 @@ def resumeReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState
     PriorityInheritance.computeMaxWaiterPriority st1 tid
   st1.updateTcb tid fun t => { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
 
+/-- `resumeReadyMidState` as it is compiled: the boost written as the waiter
+walk's code (`PriorityInheritance.computeMaxWaiterCode`), so a resumed thread
+that callers wait on builds no `some` cell for its boost
+(`resumeReadyMidState_eq_impl`). -/
+def resumeReadyMidStateImpl (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  let st1 := restoreToReady st tid
+  let newCode := PriorityInheritance.computeMaxWaiterCode st1 tid
+  st1.updateTcb tid fun t => { t with threadState := .Ready, pipBoostCode := newCode }
+
+@[csimp] theorem resumeReadyMidState_eq_impl :
+    @resumeReadyMidState = @resumeReadyMidStateImpl := by
+  funext st tid
+  unfold resumeReadyMidState resumeReadyMidStateImpl
+  simp only [PriorityInheritance.optCode_computeMaxWaiterPriority]
+
 /-- WS-ZA ZA6.33: **seL4-MCS's `refill_unblock_check` then `schedContext_resume`
 for a resumed thread**, on its home core `home`: the context it runs on has a
 head released by now moved to now and the pending refills it overlaps merged in
@@ -985,10 +1000,9 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     -- WS-OD (`v0.35.4`): and a frame that is **not** the head — the caller's
     -- callee donated onward — is detached from its stack in `O(1)` before the
     -- caller link is consumed (`cutThreadReplyFrameOut`, the first write of
-    -- seL4's `reply_remove_tcb` non-head branch; upstream also clears the frame
-    -- below's upward link and the removed frame's own links, which this tree
-    -- validates reciprocity for instead -- see `CLAUDE.md`'s WS-RM section), so no
-    -- frame is ever left dead on a stack.  It runs
+    -- seL4's `reply_remove_tcb` non-head branch, which also clears the frame
+    -- below's upward link and the removed frame's own links, as
+    -- `cutReplyFrameStores` does), so no frame is ever left dead on a stack.  It runs
     -- after the reclaim, on whose success it is the identity.
     --
     -- WS-ZA ZA4.6: and the caller leaves its server's reply-waiter queue, last,

@@ -2646,6 +2646,22 @@ whole of the remedy. -/
       | .blockedOnReply _ (some server) => some server
       | _ => none := rfl
 
+/-- `TCB.blockingServer?` as it is compiled: the server cell the thread's IPC
+state already holds is returned as it stands, so reading a reply-blocked
+thread's server builds no `some` cell (`TCB.blockingServer?_eq_impl`). -/
+@[inline] def TCB.blockingServerShared? (tcb : TCB) : Option SeLe4n.ThreadId :=
+  match tcb.ipcState with
+  | .blockedOnReply _ server => server
+  | _ => none
+
+@[csimp] theorem TCB.blockingServer?_eq_impl :
+    @TCB.blockingServer? = @TCB.blockingServerShared? := by
+  funext tcb
+  unfold TCB.blockingServer? TCB.blockingServerShared?
+  cases tcb.ipcState <;> try rfl
+  rename_i server
+  cases server <;> rfl
+
 @[simp] theorem TCB.boostedPriority_eq (tcb : TCB) :
     tcb.boostedPriority = tcb.priority.raisedBy tcb.pipBoost := rfl
 

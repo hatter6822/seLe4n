@@ -253,6 +253,152 @@ theorem cutReplyFrameOutOrSelfInPlace_eq (st : SystemState) (rid : SeLe4n.ReplyI
             have hP' : a.prev = some rid := by simpa using hP
             rw [cutReplyFrameStoresInPlace_eq hR hN hA hP']
 
+/-- A reply's `prev` names `rid`, read off the link itself, so no `some` cell is
+built to compare it with (`Reply.prevNames_eq`). -/
+@[inline] def Reply.prevNames (a : Reply) (rid : SeLe4n.ReplyId) : Bool :=
+  match a.prev with
+  | some x => x == rid
+  | none => false
+
+theorem Reply.prevNames_eq (a : Reply) (rid : SeLe4n.ReplyId) :
+    a.prevNames rid = !(a.prev != some rid) := by
+  unfold Reply.prevNames
+  cases a.prev with
+  | none => rfl
+  | some x => simp [bne]
+
+/-- A reply's `next` is the frame link to `rid`, read off the link itself, so no
+`some (.frame rid)` cells are built to compare it with
+(`Reply.nextNamesFrame_eq`). -/
+@[inline] def Reply.nextNamesFrame (b : Reply) (rid : SeLe4n.ReplyId) : Bool :=
+  match b.next with
+  | some (.frame x) => x == rid
+  | _ => false
+
+theorem Reply.nextNamesFrame_eq (b : Reply) (rid : SeLe4n.ReplyId) :
+    b.nextNamesFrame rid = !(b.next != some (.frame rid)) := by
+  unfold Reply.nextNamesFrame
+  rcases b.next with _ | ⟨x⟩ | ⟨_⟩
+  · rfl
+  · by_cases h : x = rid
+    · subst h; simp
+    · have h1 : (x == rid) = false := by simpa using h
+      have h2 : (some (ReplyStackLink.frame x) == some (.frame rid)) = false := by simpa using h
+      simp [bne, h1, h2]
+  · simp
+
+/-- `cutFrameBelow?`'s question, answered as a test: the cut frame's `prev`
+names a frame other than the one above that resolves and links up to the cut
+frame.  Read off the links, so no cell is built for the answer
+(`cutReplyFrameStoresInPlace_eq_impl`). -/
+@[inline] def cutFrameBelowLinks (st : SystemState) (rid below above : SeLe4n.ReplyId) : Bool :=
+  below != above &&
+  (match st.getReply? below with
+   | some b => b.nextNamesFrame rid
+   | none => false)
+
+/-- `cutReplyFrameStoresInPlace` as it is compiled: the frame below found from
+the cut frame's own `prev` (`cutFrameBelowLinks`), so neither the comparison
+with the frame link nor the resolved pair builds a cell. -/
+@[inline] def cutReplyFrameStoresInPlaceImpl (st : SystemState) (rid above : SeLe4n.ReplyId)
+    (r a : Reply) : SystemState :=
+  match r.prev with
+  | some below =>
+    if cutFrameBelowLinks st rid below above then
+      if st.objects.findsInPlace above.toObjId && st.objects.findsInPlace below.toObjId then
+        ((st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
+          below.toObjId fun b => { b with next := none }).storeReplyWith
+          rid.toObjId fun r => { r with prev := none, next := none }
+      else
+        match cutReplyFrameStores st rid above r a with
+        | .ok st' => st'
+        | .error _ => st
+    else
+      if st.objects.findsInPlace above.toObjId then
+        (st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
+          rid.toObjId fun r => { r with prev := none, next := none }
+      else
+        match cutReplyFrameStores st rid above r a with
+        | .ok st' => st'
+        | .error _ => st
+  | none =>
+    if st.objects.findsInPlace above.toObjId then
+      (st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
+        rid.toObjId fun r => { r with prev := none, next := none }
+    else
+      match cutReplyFrameStores st rid above r a with
+      | .ok st' => st'
+      | .error _ => st
+
+@[csimp] theorem cutReplyFrameStoresInPlace_eq_impl :
+    @cutReplyFrameStoresInPlace = @cutReplyFrameStoresInPlaceImpl := by
+  funext st rid above r a
+  unfold cutReplyFrameStoresInPlace cutReplyFrameStoresInPlaceImpl cutFrameBelow?
+    cutFrameBelowLinks
+  cases r.prev with
+  | none => rfl
+  | some below =>
+    dsimp only
+    cases hE : (below == above)
+    · cases hB : st.getReply? below with
+      | none => simp [bne, hE]
+      | some b =>
+        by_cases hN : b.next = some (.frame rid)
+        · simp [bne, hE, hN, Reply.nextNamesFrame]
+        · have hN' : b.nextNamesFrame rid = false := by
+            rw [Reply.nextNamesFrame_eq]; simpa using hN
+          simp [bne, hE, hN, hN']
+    · simp [bne, hE]
+
+/-- `cutReplyFrameOutOrSelfInPlace` as it is compiled: the reciprocity tests
+read off the links (`Reply.prevNames`, `Reply.nextNamesFrame`), so no cell is
+built to compare a link with. -/
+@[inline] def cutReplyFrameOutOrSelfInPlaceImpl (st : SystemState) (rid : SeLe4n.ReplyId) :
+    SystemState :=
+  match st.getReply? rid with
+  | none => st
+  | some r =>
+    match r.next with
+    | some (.frame above) =>
+      match st.getReply? above with
+      | none => st
+      | some a =>
+        if a.prevNames rid then cutReplyFrameStoresInPlace st rid above r a
+        else st
+    | some (.head _) => st
+    | none =>
+      match r.prev with
+      | none => st
+      | some below =>
+        match st.getReply? below with
+        | none => st
+        | some b =>
+          if b.nextNamesFrame rid then severReplyFrameBelowStoresInPlace st rid below r b
+          else st
+
+@[csimp] theorem cutReplyFrameOutOrSelfInPlace_eq_impl :
+    @cutReplyFrameOutOrSelfInPlace = @cutReplyFrameOutOrSelfInPlaceImpl := by
+  funext st rid
+  unfold cutReplyFrameOutOrSelfInPlace cutReplyFrameOutOrSelfInPlaceImpl
+  simp only [Reply.prevNames_eq, Reply.nextNamesFrame_eq]
+  rcases st.getReply? rid with _ | r
+  · rfl
+  · dsimp only
+    rcases r.next with _ | ⟨above⟩ | ⟨_⟩
+    · rcases r.prev with _ | below
+      · rfl
+      · dsimp only
+        rcases st.getReply? below with _ | b
+        · rfl
+        · dsimp only
+          cases (b.next != some (.frame rid)) <;> rfl
+    · dsimp only
+      rcases st.getReply? above with _ | a
+      · rfl
+      · dsimp only
+        cases (a.prev != some rid) <;> rfl
+    · rfl
+
 /-- **A caller's reply link consumed, as compiled**: the reply's consumed record
 and the caller's cleared link, each written in its slot (`storeReplyWith`,
 `storeTcbWith`) — the stores `consumeCallerReplyLink` makes.  `storeTcbWith`

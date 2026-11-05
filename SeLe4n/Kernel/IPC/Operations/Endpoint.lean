@@ -4866,16 +4866,15 @@ them in this module, so a per-store case analysis would change the pattern at al
 47 where a composed step leaves the arity alone and proves the multi-store
 analysis **once**, here.
 
-**The splice ends at the cut frame itself.**  Where there is a frame below, the
-first two stores are the reciprocal pair — `above.prev := some below` and
-`below.next := some (.frame above)` — written *together*, so the pair the removal
-repairs is never transiently inconsistent; that closes the divergence from
-upstream where this tree left the frame below's upward link stale and validated
-reciprocity at every read instead.  Where there is none, the first store is the
-frame above's `Reply.unlinkedFrom`: `above.prev := none`, and its `next` cleared
-too where it names the cut frame — a two-frame cycle, which no operation builds
-and the chain invariant does not exclude, and which would otherwise leave the
-frame above naming a frame that no longer names it back.  The last store clears **both** of the cut frame's
+**The removal severs the stack at the cut frame**, as seL4's `reply_remove`
+does on a frame that is not the head (since WS-ZA ZA6.33; the earlier splice
+was reversed into this sever).  The first store is the frame above's
+`Reply.unlinkedFrom`: `above.prev := none`, and its `next` cleared too where it
+names the cut frame — a two-frame cycle, which no operation builds and the chain
+invariant does not exclude, and which would otherwise leave the frame above
+naming a frame that no longer names it back.  Where a frame below reciprocates
+(`cutFrameBelow?` answers `some`), the second store clears its upward link,
+`below.next := none`, seL4's `replyPrev->replyNext = 0`.  The last store clears **both** of the cut frame's
 links, and it is **not optional**: once the frame above names something else (or
 nothing) as its `prev`, a `next` still naming the frame above would falsify
 `donationChainWellFormed.nextLinkReciprocal` at the cut frame, and once nothing

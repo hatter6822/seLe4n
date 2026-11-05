@@ -59,6 +59,36 @@ and blocked on a call, and no SchedContext donated. -/
    | .blockedOnCall _ => true
    | _ => false)
 
+/-- `receiveCallTakesInPlace` as it is compiled: the caller's successor asked
+of its link code, so no `some` cell is built for a caller with a successor
+(`receiveCallTakesInPlace_eq_impl`). -/
+@[inline] def receiveCallTakesInPlaceImpl (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver s : SeLe4n.ThreadId) (sTcb : TCB) (rid : SeLe4n.ReplyId) : Bool :=
+  sendWakesInPlaceCode st endpointId s sTcb.queueNextCode &&
+  !receiver.isReserved && receiver != s &&
+  queueSuccessorDiffers receiver sTcb.queueNextCode &&
+  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
+  st.objects.findsInPlace receiver.toObjId &&
+  storeLeavesIndexAndTypes st rid.toObjId .reply &&
+  st.objects.findsInPlace rid.toObjId &&
+  sTcb.replyObject.isNone &&
+  (match st.getTcb? receiver with
+   | some rt => callDonatesNothing sTcb rt
+   | none => false) &&
+  (match st.getReply? rid with
+   | some rp => rp.isFree
+   | none => false) &&
+  (match sTcb.ipcState with
+   | .blockedOnCall _ => true
+   | _ => false)
+
+@[csimp] theorem receiveCallTakesInPlace_eq_impl :
+    @receiveCallTakesInPlace = @receiveCallTakesInPlaceImpl := by
+  funext st endpointId receiver s sTcb rid
+  unfold receiveCallTakesInPlace receiveCallTakesInPlaceImpl
+  rw [sendWakesInPlaceCode_eq, queueSuccessorDiffers_eq, TCB.ofOptCode_queueNextCode]
+  rfl
+
 /-- The receive's writes taking a queued caller, each in its slot: the caller
 popped and blocked on the reply, the reply object linked to it, the caller
 linked to the reply object, the receiver made ready holding no message, and

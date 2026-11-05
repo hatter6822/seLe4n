@@ -222,6 +222,31 @@ holding no reply object, the reply object free, and no SchedContext donated. -/
    | some rp => rp.isFree
    | none => false)
 
+/-- `callWakesInPlace` as it is compiled: the receiver's successor asked of its
+link code (`sendWakesInPlaceCode`, `queueSuccessorDiffers`), so no `some` cell
+is built for a receiver with a successor (`callWakesInPlace_eq_impl`). -/
+@[inline] def callWakesInPlaceImpl (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId) : Bool :=
+  sendWakesInPlaceCode st endpointId r rt.queueNextCode &&
+  !caller.isReserved && caller != r &&
+  queueSuccessorDiffers caller rt.queueNextCode &&
+  storeLeavesIndexAndTypes st caller.toObjId .tcb &&
+  st.objects.findsInPlace caller.toObjId &&
+  storeLeavesIndexAndTypes st rid.toObjId .reply &&
+  st.objects.findsInPlace rid.toObjId &&
+  (match st.getTcb? caller with
+   | some ct => ct.replyObject.isNone && callDonatesNothing ct rt
+   | none => false) &&
+  (match st.getReply? rid with
+   | some rp => rp.isFree
+   | none => false)
+
+@[csimp] theorem callWakesInPlace_eq_impl : @callWakesInPlace = @callWakesInPlaceImpl := by
+  funext st endpointId caller r rt rid
+  unfold callWakesInPlace callWakesInPlaceImpl
+  rw [sendWakesInPlaceCode_eq, queueSuccessorDiffers_eq, TCB.ofOptCode_queueNextCode]
+  rfl
+
 /-- The call rendezvous's writes up to the priority walk, each in its slot: the
 receiver popped and handed the message, woken on its home core; the caller
 blocked on its reply, linked to the reply object the receiver stashed, taken off
@@ -260,6 +285,32 @@ donation's checks). -/
   (match st.getReply? rid with
    | some rp => rp.isFree
    | none => false)
+
+/-- `callTakesReplyInPlace` as it is compiled: the receiver's successor asked
+of its link code, so no `some` cell is built for it
+(`callTakesReplyInPlace_eq_impl`). -/
+@[inline] def callTakesReplyInPlaceImpl (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId) : Bool :=
+  sendWakesInPlaceCode st endpointId r rt.queueNextCode &&
+  !caller.isReserved && caller != r &&
+  queueSuccessorDiffers caller rt.queueNextCode &&
+  storeLeavesIndexAndTypes st caller.toObjId .tcb &&
+  st.objects.findsInPlace caller.toObjId &&
+  storeLeavesIndexAndTypes st rid.toObjId .reply &&
+  st.objects.findsInPlace rid.toObjId &&
+  (match st.getTcb? caller with
+   | some ct => ct.replyObject.isNone
+   | none => false) &&
+  (match st.getReply? rid with
+   | some rp => rp.isFree
+   | none => false)
+
+@[csimp] theorem callTakesReplyInPlace_eq_impl :
+    @callTakesReplyInPlace = @callTakesReplyInPlaceImpl := by
+  funext st endpointId caller r rt rid
+  unfold callTakesReplyInPlace callTakesReplyInPlaceImpl
+  rw [sendWakesInPlaceCode_eq, queueSuccessorDiffers_eq, TCB.ofOptCode_queueNextCode]
+  rfl
 
 /-- A rendezvous that donates nothing takes its slots in place. -/
 theorem callWakesInPlace_takesReply {st : SystemState} {endpointId : SeLe4n.ObjId}

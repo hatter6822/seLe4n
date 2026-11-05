@@ -699,7 +699,7 @@ send queue (`storeEndpointEnqueue`), then blocked on the call holding no
 message (`storeSendBlock` for a call). -/
 @[noinline] def storeCallBlock (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (tailCode : Nat) : SystemState :=
-  (storeEndpointEnqueue st endpointId false caller (ThreadId.ofOptCode tailCode)).updateTcb caller
+  (storeEndpointEnqueueCode st endpointId false caller tailCode).updateTcb caller
     (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnCall endpointId))
 
 /-- **The guarded blocking call is the specification's block path**
@@ -723,6 +723,7 @@ theorem callBlock_inPlace_eq (endpointId : SeLe4n.ObjId) (caller : SeLe4n.Thread
     simp only [enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
     exact hG.1.1.1.1.1
   unfold endpointCallOnCore storeCallBlock
+  rw [storeEndpointEnqueueCode_eq]
   rw [show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl]
   simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hH, hEnq]
   generalize storeEndpointEnqueue st endpointId false caller ep.sendQ.tail = S at hT hL ⊢

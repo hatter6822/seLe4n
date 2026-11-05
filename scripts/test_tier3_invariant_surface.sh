@@ -4308,6 +4308,46 @@ run_check "INVARIANT" rg -n -U 'def replyFrameBelow\? \(st : SystemState\) \(rid
 run_check "INVARIANT" rg -n '^theorem severFrameBelow_mem_replyFrameBelow\?($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem severFrameBelow_mem_answeredReplyFrameBelow\?($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem severFrameBelow_mem_cancelCutFrameBelow\?($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# WS-ZA ZA6.34: a head reply's final delete, and a waited server's, pop the
+# context back to the caller in place (seL4's `reply_remove` head arm,
+# `reply_pop`), each proven the specification's and routed from the cancel arms
+# the final deletes run.
+run_check "INVARIANT" rg -n '^theorem replyPopsInPlace_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingReclaimed_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem cancelHeadReplyCaller_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem donatedReturnCommits_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean
+run_check "INVARIANT" rg -n '^    finaliseReplyRevert \(cancelHeadReplyCaller st c t\) \(SeLe4n\.ThreadId\.ofOptCode serverCode\)$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^    finaliseThreadSuspend \(finaliseReplyRevert \(cancelHeadReplyCaller st c t\)$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem Notification\.waitHeadCode_beq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# WS-ZA ZA6.34: a queue with a waiter behind its head is read by its link codes,
+# so a block behind a waiter and a rendezvous with a head that has a successor
+# build no cell: the enqueue's and the pop's code forms are the specification's,
+# the block paths and the send arm route through them, and each rendezvous guard
+# is compiled through its code form.
+run_check "INVARIANT" rg -n '^theorem storeEndpointEnqueueCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointEnqueueInPlace.lean
+run_check "INVARIANT" rg -n '^theorem sendWakesInPlaceCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/PopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem queueSuccessorDiffers_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/PopInPlace.lean
+run_check "INVARIANT" rg -n -U '  \(storeReplyStasher \(\(storeEndpointEnqueueCode st endpointId true receiver\n      tailCode\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^  \(storeEndpointEnqueueCode st endpointId false sender tailCode\)\.updateTcb sender$' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^  \(storeEndpointEnqueueCode st endpointId false caller tailCode\)\.updateTcb caller$' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
+run_check "INVARIANT" rg -n '^                        sendWakesInPlaceCode st epId r rt\.queueNextCode then$' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem callWakesInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem callTakesReplyInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveTakesInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallTakesInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
+# WS-ZA ZA6.34: a middle reply's final delete, and the delete of a stack top
+# whose context is gone, read the frame links off the links themselves (seL4's
+# `reply_remove` non-head arm), the server a blocked thread waits on is the cell
+# its state holds, a resumed thread's boost is written as the walk's code, and
+# a finalised context lets go of its stack in the head reply's slot.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem cutReplyFrameStoresInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/ReplyFrameInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem cutReplyFrameOutOrSelfInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/ReplyFrameInPlace.lean
+run_check "INVARIANT" rg -n '^theorem Reply\.prevNames_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/ReplyFrameInPlace.lean
+run_check "INVARIANT" rg -n '^theorem Reply\.nextNamesFrame_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/ReplyFrameInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem TCB\.blockingServer\?_eq_impl($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem blockingServer_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem resumeReadyMidState_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem finaliseSchedContextUnstack_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStores_transport($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^  , `SeLe4n\.Kernel\.severReplyFrameBelowStores$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 # The in-place reply runs only on a reply with no frame below to cut.

@@ -1157,6 +1157,47 @@ def finaliseSchedContextUnstack (st : SystemState) (x : SeLe4n.ObjId) : SystemSt
     | none => st
   | none => st
 
+/-- `finaliseSchedContextUnstack` as it is compiled: the head reply's upward
+link cleared in its slot (`SystemState.storeReplyWith`), so no reply record, no
+object cell and no store result is built
+(`finaliseSchedContextUnstack_eq_impl`). -/
+@[inline] def finaliseSchedContextUnstackImpl (st : SystemState) (x : SeLe4n.ObjId) :
+    SystemState :=
+  match st.getSchedContext? ⟨x.val⟩ with
+  | some sc =>
+    match sc.scReply with
+    | some rid =>
+      match st.getReply? rid with
+      | some r =>
+        if replyStackLinkHeads x r.next then
+          (st.storeReplyWith rid.toObjId fun r => { r with next := none }).updateSchedContext
+            ⟨x.val⟩ fun sc => { sc with scReply := none }
+        else st
+      | none => st
+    | none => st
+  | none => st
+
+@[csimp] theorem finaliseSchedContextUnstack_eq_impl :
+    @finaliseSchedContextUnstack = @finaliseSchedContextUnstackImpl := by
+  funext st x
+  unfold finaliseSchedContextUnstack finaliseSchedContextUnstackImpl
+  cases st.getSchedContext? ⟨x.val⟩ with
+  | none => rfl
+  | some sc =>
+    dsimp only
+    cases sc.scReply with
+    | none => rfl
+    | some rid =>
+      dsimp only
+      cases hR : st.getReply? rid with
+      | none => rfl
+      | some r =>
+        dsimp only
+        split
+        · rw [SystemState.storeObject_reply_eq_storeReplyWith
+            ((SystemState.getReply?_eq_some_iff _ _ _).mp hR) (fun r => { r with next := none })]
+        · rfl
+
 /-- **The destroy cleanup of a finalised scheduling context**
 (`lifecyclePreRetypeCleanup`'s scheduling-context arm), run once the context is
 bound to no thread and heads no reply stack, so its release finds no binding

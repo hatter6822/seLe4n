@@ -808,8 +808,8 @@ as its stasher (`storeReplyStasher`), and the receiver stashing that reply.
 Compiled as its own function so each update is specialised in. -/
 @[noinline] def storeReceiveBlock (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) : SystemState :=
-  (storeReplyStasher ((storeEndpointEnqueue st endpointId true receiver
-      (ThreadId.ofOptCode tailCode)).updateTcb receiver
+  (storeReplyStasher ((storeEndpointEnqueueCode st endpointId true receiver
+      tailCode).updateTcb receiver
       (fun t => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))))
     replyCode receiver).updateTcb receiver (fun t => { t with pendingReceiveReplyCode := replyCode })
 
@@ -845,7 +845,7 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     revert hB
     cases h : rt.schedContextBinding <;> simp [h]
   unfold endpointReceiveDualOnCore storeReceiveBlock
-  rw [Endpoint.ofOptCode_recvTailCode]
+  rw [storeEndpointEnqueueCode_eq, Endpoint.ofOptCode_recvTailCode]
   simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hS,
     cleanupPreReceiveDonationMigrated_of_no_donation st receiver hNoDon, hEnq]
   generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hL hSlot ⊢
@@ -882,7 +882,7 @@ theorem receiveBlock_receiver_blocked (st : SystemState) (endpointId : SeLe4n.Ob
     (fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId)))
     hE hF hG
   unfold storeReceiveBlock
-  rw [Endpoint.ofOptCode_recvTailCode]
+  rw [storeEndpointEnqueueCode_eq, Endpoint.ofOptCode_recvTailCode]
   generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hSlot ⊢
   let g2 := fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))
   have hT2 := updateTcb_getTcb?_self_of_findsInPlace g2 hT hF

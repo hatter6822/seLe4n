@@ -354,7 +354,7 @@ message -- its words stay in its registers.  Compiled as its own function so
 each update is specialised in. -/
 @[noinline] def storeSendBlock (st : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (tailCode : Nat) : SystemState :=
-  (storeEndpointEnqueue st endpointId false sender (ThreadId.ofOptCode tailCode)).updateTcb sender
+  (storeEndpointEnqueueCode st endpointId false sender tailCode).updateTcb sender
     (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnSend endpointId))
 
 /-- WS-ZA ZA4.7: **the guarded blocking send is the specification's block
@@ -378,6 +378,7 @@ theorem sendBlock_inPlace_eq (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thread
     simp only [enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
     exact hG.1.1.1.1.1
   unfold endpointSendDualOnCore storeSendBlock
+  rw [storeEndpointEnqueueCode_eq]
   rw [show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl]
   simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hH, hEnq]
   generalize storeEndpointEnqueue st endpointId false sender ep.sendQ.tail = S at hT hF hL ⊢

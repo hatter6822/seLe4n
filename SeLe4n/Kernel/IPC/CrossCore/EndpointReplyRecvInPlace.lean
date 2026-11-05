@@ -512,7 +512,9 @@ theorem storeReplyStasher_msg (st : SystemState) (r recv : SeLe4n.ThreadId) (rc 
 theorem storeReceiveBlock_noResizeDue (st : SystemState) (epId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (tc rc : Nat) (hNo : st.objects.noResizeDue) :
     (storeReceiveBlock st epId tid tc rc).objects.noResizeDue := by
-  unfold storeReceiveBlock storeEndpointEnqueue
+  unfold storeReceiveBlock
+  simp only [storeEndpointEnqueueCode_eq]
+  unfold storeEndpointEnqueue
   dsimp only
   have h1 := modifyObject_noResizeDue st epId
     (enqueueEndpoint true tid (ThreadId.optCode (ThreadId.ofOptCode tc))) hNo
@@ -527,7 +529,9 @@ theorem storeReceiveBlock_msg (st : SystemState) (epId : SeLe4n.ObjId)
     (hNo : st.objects.noResizeDue) (hNe : tid ≠ r) :
     storeReceiveBlock (st.mapTcbInPlace r (holdMessage msg)) epId tid tc rc =
       (storeReceiveBlock st epId tid tc rc).mapTcbInPlace r (holdMessage msg) := by
-  unfold storeReceiveBlock storeEndpointEnqueue
+  unfold storeReceiveBlock
+  simp only [storeEndpointEnqueueCode_eq]
+  unfold storeEndpointEnqueue
   dsimp only
   rw [modifyObject_msg _ _ _ _ _ _ hNo (fun o => by
     cases o <;> try rfl

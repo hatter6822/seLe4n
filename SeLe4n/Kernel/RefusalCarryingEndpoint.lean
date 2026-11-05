@@ -222,7 +222,7 @@ the general arm. -/
                         (st.getTcb? tid).isSome &&
                         endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                           (ctx.endpointLabelOf epId) &&
-                        sendWakesInPlace st epId r rt.queueNext then
+                        sendWakesInPlaceCode st epId r rt.queueNextCode then
                       .ok ((), performSendDelivered st epId r rt.queueNextCode layout rf len
                         cap.badgeWord cap.badged executingCore)
                     else endpointSendCheckedArmGeneralR ctx tid executingCore cap st
@@ -265,6 +265,7 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
           · next hG =>
             simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
             obtain ⟨⟨⟨hSz, hS⟩, hFlow⟩, hW⟩ := hG
+            rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
             have hNo : st.objects.noResizeDue := by
               simp only [sendWakesInPlace, Bool.and_eq_true] at hW
               exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2

@@ -1,3 +1,53 @@
+## v0.36.202 — WS-ZA ZA6.34: a third thread, and the final deletes it issues allocate nothing
+
+The QEMU exerciser gains a third and a fourth thread, so the final deletes
+that stop the threads they are about can be issued from outside the stack and
+measured.  Every allocation the new steps found was removed, in the forms
+seL4-MCS gives, and each new step now reads 0 on its first call and in steady
+state.
+
+- **The scenarios** (`rust/sele4n-hal/src/smp_exercisers.rs`).  After the
+  chain scenario, the root task issues four deletes.  `head-reply-delete` is
+  seL4's `reply_remove` head arm (`reply_pop`).  `waited-server-delete` is a
+  server's own delete with a caller waiting on it.  `middle-reply-delete` is
+  the middle reply of a stack three frames deep (the non-head arm's sever).
+  `contextless-top-delete` is the top reply of a stack whose context was
+  deleted first (`contextless-context-delete`, seL4's
+  `schedContext_unbindReply`).  At every switch exactly one thread is
+  runnable.
+- **The head pop in place** (`IPC/Operations/DonationPopInPlace.lean`, new).
+  `cancelHeadReplyCaller` hands the context back to the caller in its slots
+  (`cancelHeadReplyCallerInPlace`, `replyPopsInPlace_pop`,
+  `donatedReturnCommits_eq_impl`).  The reply's final delete went from 63 to
+  0 and the waited server's from 79 to 0.
+- **Queues read by their link codes.**
+  - A block behind a waiter goes through `storeEndpointEnqueueCode` (1 to 0).
+  - A rendezvous with a head that has a successor uses `sendWakesInPlaceCode`
+    and `queueSuccessorDiffers`, with csimps for `callWakesInPlace`,
+    `callTakesReplyInPlace`, `receiveTakesInPlace` and
+    `receiveCallTakesInPlace` (2 to 0).
+- **Reply links read off the links** (`IPC/Operations/ReplyFrameInPlace.lean`).
+  `Reply.prevNames` and `Reply.nextNamesFrame` replace comparisons that built
+  `some` cells, through the `cutReplyFrameStoresInPlace` and
+  `cutReplyFrameOutOrSelfInPlace` csimps.  A blocked thread's server is now
+  the cell its state already holds (`TCB.blockingServer?_eq_impl`,
+  `blockingServer_eq_impl`).  The middle reply's delete went from 6 to 0 and
+  the contextless top's from 2 to 0.
+- **A resumed thread's boost** is written as the waiter walk's code
+  (`resumeReadyMidState_eq_impl`, 1 to 0).  **A finalised context** lets go of
+  its stack in the head reply's slot (`finaliseSchedContextUnstack_eq_impl`,
+  4 to 0).
+- **Pins** (`scripts/qemu_exerciser_lib.sh`).  Every new step is pinned at
+  (0, 0) except the carves, which keep a carve's counts: a thread 26, a reply
+  15, and a context 15 on both calls (`untyped-retype-sched-context`'s steady
+  state).  No existing pin changed.
+- **Documentation fixed along the way.**  `cutReplyFrameStores`' docstring
+  described the splice that ZA6.33 reversed, and now describes the sever.  A
+  comment in `Lifecycle/Suspend.lean` cited a `CLAUDE.md` section that no
+  longer exists.
+- **Closed**: "A head reply's final delete has no QEMU scenario"
+  (`docs/REGISTERED_DEBT.md`).
+
 ## v0.36.199 — WS-ZA ZA6.33: the suspend is total, and is seL4's
 
 `.tcbSuspend` now admits every thread it can be handed, and what it does is

@@ -607,8 +607,9 @@ for driver in drivers:
             "untyped-retype-third-tcb": (26, 26), "untyped-retype-third-reply": (15, 15),
             "untyped-retype-stack-server": (26, 26), "untyped-retype-stack-top": (26, 26),
             "untyped-retype-stack-server-reply": (15, 15), "untyped-retype-stack-top-reply": (15, 15),
-            # and a context's (16, the move scenario's below).
-            "untyped-retype-stack-context": (16, 16),
+            # and a context's: 15 on both calls, `untyped-retype-sched-context`'s
+            # steady state, the capability's target record already built.
+            "untyped-retype-stack-context": (15, 15),
             # The affinity change of a thread running on core 1 (seL4's
             # `setAffinity`: the thread taken off core 1's current slot, a
             # reschedule raised there, the remote stall until core 1 has
