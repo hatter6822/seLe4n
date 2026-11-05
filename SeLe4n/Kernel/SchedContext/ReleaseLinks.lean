@@ -1688,8 +1688,9 @@ theorem releaseQueueRefined_of_entries {st st' : SystemState} (hL : ReleaseLinks
   · intro e he; rw [hL.atOn c]; rw [hE] at he; exact hc.at_eq e he
   · rw [hCt, hE]; exact hc.count
 
-/-- The core whose release queue context `s`'s own link names, if any. -/
-def releaseCoreOf (st : SystemState) (s : SeLe4n.SchedContextId) : Option CoreId :=
+/-- The core whose release queue context `s`'s own link names, if any.  Inline,
+so its `some` meets the caller's match and is never built. -/
+@[inline] def releaseCoreOf (st : SystemState) (s : SeLe4n.SchedContextId) : Option CoreId :=
   (st.getSchedContext? s).bind SchedContext.releaseCore?
 
 /-- The core a context's link names is the core whose release link it holds. -/

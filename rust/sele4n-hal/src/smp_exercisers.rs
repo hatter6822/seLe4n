@@ -2250,7 +2250,7 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   endpoint against the interface the boot installs (its fifth word read
 ///   from that buffer), queried and revoked.
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
     &[
         invocation(
             "cspace-copy",
@@ -2586,132 +2586,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
     ],
-    // The same with the partner holding the image's scheduling context, so its
-    // call donates the context to the root task: the suspend's reply arm takes
-    // the reply off the context's reply stack and leaves the context with the
-    // server, now its bound holder (seL4 returns no loan on a suspend).  The
-    // context's real unbind then takes it from the root task.  The timer is
-    // masked across the sequence, so no tick switches the threads between steps.
-    &[
-        kernel_step("mask-ticks", MASK_TICKS_STEP),
-        configure(
-            "suspend-donated-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                SCHED_CONTEXT_BUDGET,
-                SCHED_CONTEXT_PERIOD,
-                PARTNER_PRIORITY,
-            ],
-        ),
-        invocation(
-            "suspend-donated-bind-partner",
-            SCHED_CONTEXT_BIND,
-            SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
-        ),
-        invocation(
-            "suspend-donated-resume",
-            TCB_RESUME,
-            PARTNER_TCB_CAP,
-            [0; 4],
-        ),
-        partner_step(
-            "suspend-donated-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
-        ),
-        partner_step(
-            "suspend-donated-partner-calls",
-            CALL,
-            ENDPOINT_CAP,
-            1,
-            [0x66, 0],
-            true,
-        ),
-        invocation(
-            "tcb-suspend-reply-donated",
-            TCB_SUSPEND,
-            PARTNER_TCB_CAP,
-            [0; 4],
-        ),
-        invocation(
-            "suspend-donated-unbind",
-            SCHED_CONTEXT_UNBIND,
-            SCHED_CONTEXT_CAP,
-            [0; 4],
-        ),
-        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
-    ],
-    // seL4's resume of a thread whose context's refill is not yet due
-    // (`restart`, `schedContext_resume`: `refill_unblock_check`, then the
-    // postpone onto the release queue).  The partner, bound to the context
-    // configured to a one-tick budget every two ticks, resumed and run (the
-    // root task's receive blocks, the partner's send wakes it); its yield
-    // forfeits the budget and queues its refill two ticks on, which leaves the
-    // root task current.  The suspend of the release-queued partner takes the
-    // context off the release queue; the resume finds the refill not due and
-    // postpones the context, which is not placed on a run queue; then the
-    // partner is suspended again and the context unbound.  No tick may come
-    // between the forfeit and the resume, so the timer is masked throughout.
-    &[
-        kernel_step("mask-ticks", MASK_TICKS_STEP),
-        configure(
-            "postpone-configure",
-            [
-                SCHED_CONTEXT_CAP,
-                REFILL_BUDGET,
-                REFILL_PERIOD,
-                PARTNER_PRIORITY,
-            ],
-        ),
-        invocation(
-            "postpone-bind-partner",
-            SCHED_CONTEXT_BIND,
-            SCHED_CONTEXT_CAP,
-            [PARTNER_TCB_CAP, 0, 0, 0],
-        ),
-        invocation(
-            "postpone-resume-partner",
-            TCB_RESUME,
-            PARTNER_TCB_CAP,
-            [0; 4],
-        ),
-        partner_step(
-            "postpone-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            0,
-            [0, 0],
-            true,
-        ),
-        partner_step(
-            "postpone-wake-root",
-            SEND,
-            ENDPOINT_CAP,
-            1,
-            [0x55, 0],
-            false,
-        ),
-        kernel_step("postpone-partner-yield", YIELD),
-        invocation(
-            "tcb-suspend-release-queued",
-            TCB_SUSPEND,
-            PARTNER_TCB_CAP,
-            [0; 4],
-        ),
-        invocation("tcb-resume-postpone", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
-        invocation("postpone-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
-        invocation(
-            "postpone-unbind",
-            SCHED_CONTEXT_UNBIND,
-            SCHED_CONTEXT_CAP,
-            [0; 4],
-        ),
-        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
-    ],
     &[
         invocation(
             "untyped-retype-page-table-1",
@@ -2956,6 +2830,133 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 9] = [
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),
+        // WS-ZA ZA6.33: the release-queued and donated suspends run here, where
+        // both threads' IPC buffers are set (a configure reads its fifth word
+        // from the root task's) and the context is configured and unbound.  The
+        // postpone runs first, so the donated suspend's configure leaves the
+        // context as the yieldTo setup below expects it.
+        // seL4's resume of a thread whose context's refill is not yet due
+        // (`restart`, `schedContext_resume`: `refill_unblock_check`, then the
+        // postpone onto the release queue).  The partner, bound to the context
+        // configured to a one-tick budget every two ticks, resumed and run (the
+        // root task's receive blocks, the partner's send wakes it); its yield
+        // forfeits the budget and queues its refill two ticks on, which leaves the
+        // root task current.  The suspend of the release-queued partner takes the
+        // context off the release queue; the resume finds the refill not due and
+        // postpones the context, which is not placed on a run queue; then the
+        // partner is suspended again and the context unbound.  No tick may come
+        // between the forfeit and the resume, so the timer is masked throughout.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "postpone-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                REFILL_BUDGET,
+                REFILL_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "postpone-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "postpone-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "postpone-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "postpone-wake-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+        kernel_step("postpone-partner-yield", YIELD),
+        invocation(
+            "tcb-suspend-release-queued",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation("tcb-resume-postpone", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        invocation("postpone-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        invocation(
+            "postpone-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // The same with the partner holding the image's scheduling context, so its
+        // call donates the context to the root task: the suspend's reply arm takes
+        // the reply off the context's reply stack and leaves the context with the
+        // server, now its bound holder (seL4 returns no loan on a suspend).  The
+        // context's real unbind then takes it from the root task.  The timer is
+        // masked across the sequence, so no tick switches the threads between steps.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "suspend-donated-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "suspend-donated-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "suspend-donated-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "suspend-donated-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-donated-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x66, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-reply-donated",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "suspend-donated-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         invocation(
             "vspace-unmap",
             VSPACE_UNMAP,

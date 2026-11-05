@@ -344,8 +344,11 @@ def resumeContext (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId) : S
       match st.getSchedContext? s with
       | none => st
       | some _ =>
+        -- The time is read before the write, so the update's closure holds it
+        -- and not the state it rewrites.
+        let now := st.machine.timer
         SchedContextOps.settleReturnedContext
-          (st.updateSchedContext s fun sc => sc.refillUnblockCheck st.machine.timer) home s
+          (st.updateSchedContext s fun sc => sc.refillUnblockCheck now) home s
 
 /-- WS-ZA ZA6.33: the resume of a context is the identity, or its
 refill-unblock check and its settle. -/
@@ -1329,8 +1332,10 @@ theorem cancelIpcKeepingContexts_reply_arm (st : SystemState) (tid : SeLe4n.Thre
 scheduling context the thread runs on — its own or one it holds on loan — when
 the store holds it and it is bound to the thread.  A release queue holds
 contexts, and a bound context's entry is its thread's place there, so this is
-the entry seL4's release queue holds for the TCB itself. -/
-def releaseEntryOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option SeLe4n.SchedContextId :=
+the entry seL4's release queue holds for the TCB itself.  The binding test reads
+the context's code, so the compiled check builds no `Option` to compare. -/
+@[inline] def releaseEntryOf? (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
   match st.getTcb? tid with
   | none => none
   | some t =>
@@ -1339,7 +1344,7 @@ def releaseEntryOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option SeLe4n.S
     | some s =>
       match st.getSchedContext? s with
       | none => none
-      | some sc => if sc.boundThread = some tid then some s else none
+      | some sc => if sc.boundThreadCode == tid.val + 1 then some s else none
 
 /-- The entry that stands for a thread is a context the store holds, bound to it. -/
 theorem releaseEntryOf?_some {st : SystemState} {tid : SeLe4n.ThreadId}
@@ -1354,7 +1359,9 @@ theorem releaseEntryOf?_some {st : SystemState} {tid : SeLe4n.ThreadId}
       · cases h
       · rename_i s' _ sc hsc
         split at h
-        · cases h; exact ⟨sc, hsc, by assumption⟩
+        · rename_i hb
+          cases h
+          exact ⟨sc, hsc, (SeLe4n.ThreadId.ofOptCode_eq_some_iff _ _).mpr (by simpa using hb)⟩
         · cases h
 
 /-- WS-ZA ZA6.33: **seL4-MCS's `tcbReleaseRemove`**: the thread's entry

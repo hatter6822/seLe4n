@@ -406,7 +406,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.suspendThreadReplenishCores,
       "a footprint: builds the suspend's intermediate states only to read the cores the release removal purges from, and returns those cores; stores nothing")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendPerform,
-      "the admitted suspend: the notification wait's cancel in its slots, the deschedule, the TCB's state, `tcbReleaseRemove`'s purge (release links alone) and the yield cancel; WS-ZA ZA6.33: no reservation ends; an admitted victim waits on no reply, so holds no reply link to consume")
+      "the admitted suspend: the notification wait's cancel in its slots or the specification's cancel and revert (`suspendCancelRevert`, through `cancelIpcKeepingContexts`, whose reply arm's chain writes are the registered head cut and frame cut), the deschedule, the TCB's state, `tcbReleaseRemove`'s purge (release links alone) and the yield cancel; its own body builds no chain-bearing record")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,
       "`{ sc with priority := _ }` or `{ tcb with priority := _ }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.dispatchInvocationByR,

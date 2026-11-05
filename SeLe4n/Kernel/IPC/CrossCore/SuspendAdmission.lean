@@ -42,14 +42,31 @@ open SeLe4n.Kernel.Concurrency
 
 namespace Lifecycle.Suspend
 
+/-- **The suspend's IPC cancel and the boost revert, as the specification runs
+them** (seL4's `cancelIPC`): `cancelIpcKeepingContexts` — an endpoint wait
+dequeued from the one endpoint the thread state names, a reply wait ended by
+`reply_remove_tcb` — and, for a thread that waited on a reply, the
+priority-inheritance walk from the server it waited on, read off its TCB before
+the cancel clears the edge. -/
+def suspendCancelRevert (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (executingCore : CoreId) : SystemState :=
+  let server? := tcb.blockingServer?
+  let st1 := cancelIpcKeepingContexts st tid tcb
+  match server? with
+  | some s => (PriorityInheritance.propagatePipChainCrossCore st1 s executingCore).1
+  | none => st1
+
 /-- **The IPC teardown of an admitted suspend, as its writes** (seL4's
-`cancelIPC`): a thread blocked on a notification leaves that notification's
-queue wherever it waits there and is restored `.ready` with the cancellation
-frame (`storeNotificationBlockedCancelled`, which the specification's
-`cancelIpcBlocking` notification arm is, `cancelIpcBlocking_notification_inPlace`);
-any other thread is left as it is.  The notification is read once, and the
-waiter's head question is asked of its code. -/
-def suspendTeardownState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+`cancelIPC`): a thread blocked on a notification the store holds leaves that
+notification's queue wherever it waits there and is restored `.ready` with the
+cancellation frame (`storeNotificationBlockedCancelled`, which the
+specification's `cancelIpcBlocking` notification arm is,
+`cancelIpcBlocking_notification_inPlace`), the notification read once and the
+waiter's head question asked of its code; every other thread is torn down by the
+specification's own cancel and revert (`suspendCancelRevert`), on the state the
+syscall entry hands it alone. -/
+def suspendTeardownState (st : SystemState) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : SystemState :=
   match st.getTcb? tid with
   | some tcb =>
     match tcb.ipcStateCode with
@@ -59,18 +76,18 @@ def suspendTeardownState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
       | some ntfn =>
         storeNotificationBlockedCancelled st n tid (ntfn.waitHeadCode == tid.val + 1)
           tcb.ntfnPrev tcb.ntfnNext
-      | none => st
-    | _ => st
+      | none => suspendCancelRevert st tid tcb executingCore
+    | _ => suspendCancelRevert st tid tcb executingCore
   | none => st
 
 /-- **The checks `.tcbSuspend` makes, asked before any write** (seL4's
 `decodeTCBInvocation` then `suspend`, which never fails): the target is a
-thread not already `.Inactive`, and
-
-* it is blocked on no IPC (`ready`, no object): nothing is torn down; or
-* it is blocked on a notification the store holds, its slot found in place, so
-  the cancel's writes land in place and are the specification's
-  (`cancelIpcBlocking_notification_inPlace`).
+thread not already `.Inactive`, and, when it is blocked on a notification, its
+slot is found in place and the notification is one the store holds, so the
+cancel's writes land in place and are the specification's
+(`cancelIpcBlocking_notification_inPlace`).  Every other arm is admitted: once
+these checks pass the specification commits (`suspendThreadOnCore_total`), so
+its state is the writes alone.
 
 WS-ZA ZA6.33: seL4's `suspend` neither unbinds the thread's context nor returns
 a loan it holds, so nothing about its binding is asked.  When the checks pass
@@ -80,11 +97,10 @@ the suspend's state is `suspendPerform` (`suspendThreadOnCore_of_admitted`). -/
   | some tcb =>
     !(tcb.threadState == .Inactive) &&
       match tcb.ipcStateCode with
-      | 0 => tcb.ipcObjectCode == 0
       | 2 =>
         st.objects.findsInPlace tid.toObjId &&
           (st.getNotification? ⟨tcb.ipcObjectCode⟩).isSome
-      | _ => false
+      | _ => true
   | none => false
 
 /-- **The admitted suspend** (seL4's `suspend`): the placement, the core
@@ -101,7 +117,7 @@ def suspendPerform (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCo
   let runningCore? := runningCoreOf? st tid
   let curCode := st.scheduler.currentCode.get executingCore
   let prioCode := currentEffectivePrioCode st executingCore
-  let st0 := suspendTeardownState st tid
+  let st0 := suspendTeardownState st tid executingCore
   let st1 := descheduleAt st0 tid placed
   let st2 := clearPendingStateValid st1 vtid
   let st3 := st2.updateTcb tid fun t => { t with threadState := .Inactive }
@@ -111,9 +127,10 @@ def suspendPerform (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCo
     runningCore?.isSome (currentDeboostedFromCode st4 executingCore curCode prioCode)
 
 /-- **Every check `suspendThreadOnCore` makes is `suspendAdmitted`'s, and when
-it passes the suspend commits as `suspendPerform`.**  The ready arm tears
-nothing down; the notification arm's teardown is the in-place cancel; neither
-thread waits on a server, so there is no chain to revert. -/
+it passes the suspend commits as `suspendPerform`.**  The notification arm's
+teardown is the in-place cancel, and that thread waits on no server; every other
+arm's teardown is the specification's cancel and revert, so the two states are
+one. -/
 theorem suspendThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     (executingCore : CoreId) (h : suspendAdmitted st vtid.val = true) :
     ∃ sgi, suspendThreadOnCore st vtid executingCore =
@@ -124,62 +141,66 @@ theorem suspendThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidT
   | some tcb =>
     simp only [hT, Bool.and_eq_true, Bool.not_eq_true'] at h
     obtain ⟨hI, hArm⟩ := h
-    have hMid : cancelIpcKeepingContexts st vtid.val tcb = suspendTeardownState st vtid.val ∧
-        PriorityInheritance.blockingServer st vtid.val = none := by
+    have hBS : PriorityInheritance.blockingServer st vtid.val = tcb.blockingServer? := by
+      unfold PriorityInheritance.blockingServer; rw [hT]; rfl
+    -- The teardown is the specification's cancel, then its revert.
+    have hMid : suspendTeardownState st vtid.val executingCore =
+        match tcb.blockingServer? with
+        | some s => (PriorityInheritance.propagatePipChainCrossCore
+            (cancelIpcKeepingContexts st vtid.val tcb) s executingCore).1
+        | none => cancelIpcKeepingContexts st vtid.val tcb := by
+      have hGen : suspendCancelRevert st vtid.val tcb executingCore =
+          match tcb.blockingServer? with
+          | some s => (PriorityInheritance.propagatePipChainCrossCore
+              (cancelIpcKeepingContexts st vtid.val tcb) s executingCore).1
+          | none => cancelIpcKeepingContexts st vtid.val tcb := rfl
+      unfold suspendTeardownState
+      rw [hT]
       cases hc : tcb.ipcStateCode with
-      | zero =>
-        rw [hc] at hArm
-        simp only [beq_iff_eq] at hArm
-        have hReady : tcb.ipcState = .ready := by
-          simp only [TCB.ipcState, hArm, hc]; rfl
-        have hTd : suspendTeardownState st vtid.val = st := by
-          unfold suspendTeardownState; rw [hT]; simp only [hc]
-        rw [hTd]
-        refine ⟨?_, ?_⟩
-        · rw [cancelIpcKeepingContexts_of_not_reply _ _ _ (by rw [hReady]; intro _ _ h; cases h)]
-          unfold cancelIpcBlocking; rw [hReady]
-        · unfold PriorityInheritance.blockingServer
-          rw [hT]; simp [TCB.blockingServer?, hReady]
+      | zero => simp only [hc]; exact hGen
       | succ k =>
         cases k with
-        | zero => rw [hc] at hArm; cases hArm
+        | zero => simp only [hc]; exact hGen
         | succ k =>
           cases k with
-          | succ k => rw [hc] at hArm; cases hArm
+          | succ k => simp only [hc]; exact hGen
           | zero =>
-            rw [hc] at hArm
-            simp only [Bool.and_eq_true, Option.isSome_iff_exists] at hArm
-            obtain ⟨_, ntfn, hN⟩ := hArm
-            have hB : tcb.ipcState = .blockedOnNotification ⟨tcb.ipcObjectCode⟩ := by
-              simp only [TCB.ipcState, hc]; rfl
-            have hHead : (ntfn.waitHeadCode == vtid.val.val + 1) = (ntfn.waitHead == some vtid.val) := by
-              unfold Notification.waitHead
-              cases hw : ntfn.waitHeadCode with
-              | zero => simp [SeLe4n.ThreadId.ofOptCode]
-              | succ w =>
-                simp only [SeLe4n.ThreadId.ofOptCode]
-                rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
-                constructor
-                · intro h
-                  have hv : w = vtid.val.val := by omega
-                  rw [hv]
-                · intro h
-                  rw [← Option.some.inj h]
-            have hTd : suspendTeardownState st vtid.val =
-                storeNotificationBlockedCancelled st ⟨tcb.ipcObjectCode⟩ vtid.val
-                  (ntfn.waitHead == some vtid.val) tcb.ntfnPrev tcb.ntfnNext := by
-              unfold suspendTeardownState; rw [hT]; simp only [hc, hN, hHead]
-            refine ⟨?_, ?_⟩
-            · rw [cancelIpcKeepingContexts_of_not_reply _ _ _ (by rw [hB]; intro _ _ h; cases h),
-                hTd]
-              exact cancelIpcBlocking_notification_inPlace hN hT hB
-            · unfold PriorityInheritance.blockingServer
-              rw [hT]; simp [TCB.blockingServer?, hB]
-    obtain ⟨hC, hBS⟩ := hMid
+            simp only [hc]
+            cases hN : st.getNotification? ⟨tcb.ipcObjectCode⟩ with
+            | none => simp only [hN]; exact hGen
+            | some ntfn =>
+              have hB : tcb.ipcState = .blockedOnNotification ⟨tcb.ipcObjectCode⟩ := by
+                simp only [TCB.ipcState, hc]; rfl
+              have hHead : (ntfn.waitHeadCode == vtid.val.val + 1) =
+                  (ntfn.waitHead == some vtid.val) := by
+                unfold Notification.waitHead
+                cases hw : ntfn.waitHeadCode with
+                | zero => simp [SeLe4n.ThreadId.ofOptCode]
+                | succ w =>
+                  simp only [SeLe4n.ThreadId.ofOptCode]
+                  rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
+                  constructor
+                  · intro h
+                    have hv : w = vtid.val.val := by omega
+                    rw [hv]
+                  · intro h
+                    rw [← Option.some.inj h]
+              have hNS : tcb.blockingServer? = none := by simp [TCB.blockingServer?, hB]
+              simp only [hN, hNS, hHead]
+              rw [cancelIpcKeepingContexts_of_not_reply _ _ _ (by rw [hB]; intro _ _ h; cases h)]
+              exact (cancelIpcBlocking_notification_inPlace hN hT hB).symm
     unfold suspendThreadOnCore suspendPerform
-    simp only [hT, hI, Bool.false_eq_true, ↓reduceIte, hC, hBS,
-      currentDeboostedFrom_eq_code st]
-    exact suspendRescheduleOnCore_eq_state _ _ _ _ _
+    cases hS : tcb.blockingServer? with
+    | none =>
+      rw [hS] at hMid
+      simp only [hT, hI, Bool.false_eq_true, ↓reduceIte, hBS, hS, hMid,
+        currentDeboostedFrom_eq_code st]
+      exact suspendRescheduleOnCore_eq_state _ _ _ _ _
+    | some s =>
+      rw [hS] at hMid
+      simp only [hT, hI, Bool.false_eq_true, ↓reduceIte, hBS, hS, hMid,
+        currentDeboostedFrom_eq_code st]
+      exact suspendRescheduleOnCore_eq_state _ _ _ _ _
 
 end Lifecycle.Suspend
 
