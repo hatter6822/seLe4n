@@ -1249,13 +1249,80 @@ it, the scrub zeroes from it, and `retypeFromUntyped` records the child at it. -
 def CarveRequest.carveIndex (req : CarveRequest) (ut : UntypedObject) (idx : Nat) : Nat :=
   alignedCarveIndex req.objectType req.size ut idx
 
+-- ============================================================================
+-- The kernel heap's capacity, checked before a carve writes anything
+-- ============================================================================
+
+/-- Bytes of kernel heap a carve may need beyond its own objects: the
+transient cells the syscall's commit, return and settlement build around it. -/
+def retypeHeapReserveBytes : Nat := 64 * 1024
+
+/-- Bytes of kernel heap a carved fixed-size object takes, over-approximated:
+the object's record and cells together with the store's bookkeeping for it —
+its object-table, index-set and type-table entries, its index row, the
+untyped's child record and the capability written for it.  A frame, a child
+untyped, a table page and a VSpace root are records in the store, not the
+memory they name, so they take this too. -/
+def carvedObjectHeapBytes : Nat := 1024
+
+/-- Bytes a carved thread takes, over-approximated: its record, register file,
+FP/SIMD context, space slots and their spare records. -/
+def carvedTcbHeapBytes : Nat := 8 * 1024
+
+/-- Bytes each slot of a carved CNode takes, over-approximated: its cell, its
+link and occupancy words and its spare capability record with that record's
+`some` cell and target. -/
+def cnodeSlotHeapBytes : Nat := 256
+
+/-- Bytes per slot of a Robin Hood table the heap holds after a resize,
+over-approximated: the slot's pointer, its `some` cell and the entry record. -/
+def rhSlotHeapBytes : Nat := 64
+
+/-- **The heap an insert into `t` takes for its resize**: the doubled table,
+`2 · capacity` slots, when the insert's load check (`RHTable.insert`, 75%)
+resizes it, and nothing otherwise. -/
+def rhInsertResizeHeapBytes {α β : Type} (t : SeLe4n.Kernel.RobinHood.RHTable α β) : Nat :=
+  if t.size * 4 ≥ t.capacity * 3 then t.capacity * 2 * rhSlotHeapBytes else 0
+
+/-- The bytes of kernel heap the object a request carves takes: a CNode's
+scale with its slot count, every other kind's are fixed. -/
+def CarveRequest.objectHeapBytes : CarveRequest → Nat
+  | .tcb _ _ => carvedTcbHeapBytes
+  | .cnode r _ => carvedObjectHeapBytes + cnodeSlotHeapBytes * 2 ^ r
+  | _ => carvedObjectHeapBytes
+
+/-- **What a carve needs of the kernel heap**, over-approximated: the reserve,
+the carved object, and the doubled table of each Robin Hood table the store's
+inserts would resize — the object table, the index set and the type table for
+every carve, and the ASID table for a VSpace root. -/
+def CarveRequest.heapBytes (st : SystemState) (req : CarveRequest) : Nat :=
+  retypeHeapReserveBytes + req.objectHeapBytes
+    + rhInsertResizeHeapBytes st.objects
+    + rhInsertResizeHeapBytes st.objectIndexSet.table
+    + rhInsertResizeHeapBytes st.lifecycle.objectTypes
+    + (match req with
+       | .vspaceRoot _ => rhInsertResizeHeapBytes st.asidTable
+       | _ => 0)
+
+/-- **Can the kernel heap hold what the carve makes?**  The request's bytes
+(`CarveRequest.heapBytes`) against the heap's free bytes the syscall entry
+read (`MachineState.kernelHeapFreeBytes`).  A carve the heap cannot hold is
+refused before any write, as seL4's `Untyped_Retype` answers
+`seL4_NotEnoughMemory`: the Lean runtime cannot recover from a failed
+allocation (`lean_heap::heap_halt`), so a carve that ran out of heap would
+halt the system instead of answering its caller. -/
+def CarveRequest.heapAdmitted (st : SystemState) (req : CarveRequest) : Bool :=
+  decide (req.heapBytes st ≤ st.machine.kernelHeapFreeBytes)
+
 /-- **WS-BP BP7.1 (`v0.36.5`, generalized at slice 4, `v0.36.8`): carve one object
 out of an untyped the caller holds — seL4's `Untyped_Retype`.**
 
 `src` is the slot of the untyped capability the syscall was invoked on, `childId`
 the object id the carved object takes, `dst` the empty slot its capability goes
 to, and `req` what is carved — a frame, or a child untyped of `2 ^ b` bytes.
-Four steps, and every refusal commits nothing:
+First, the kernel heap must hold what the carve makes
+(`CarveRequest.heapAdmitted`; `untypedRegionExhausted` otherwise, seL4's
+`seL4_NotEnoughMemory`).  Then four steps, and every refusal commits nothing:
 
 1. **The carve** is `retypeFromUntyped` at `req.object untypedId childId ut idx` and
    `req.size` bytes, where `idx` is the index the carve starts from
@@ -1292,6 +1359,7 @@ holder of a capability to it.
 def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
     (dst : CSpaceAddr) (req : CarveRequest) : Kernel Unit :=
   fun st =>
+    if !req.heapAdmitted st then .error .untypedRegionExhausted else
     if !req.admissible st then .error .illegalState else
     match cspaceLookupSlot src st with
     | .error e => .error e
@@ -1409,6 +1477,9 @@ theorem untypedRetypeObject_ok_writes
       st' = ((req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))).storeCNodeWith dst.cnode
         (·.insert dst.slot (req.capability childId))).cdtAddChild src dst .retype := by
   unfold untypedRetypeObject at hStep
+  cases hHeap : req.heapAdmitted st
+  · simp only [hHeap, Bool.not_false, ↓reduceIte] at hStep; cases hStep
+  simp only [hHeap, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
   cases hAdm : req.admissible st
   · simp only [hAdm, Bool.not_false, ↓reduceIte] at hStep; cases hStep
   simp only [hAdm, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
@@ -1515,25 +1586,63 @@ theorem untypedRetypeObject_ok_admissible
     (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     req.admissible st = true := by
   unfold untypedRetypeObject at hStep
+  cases hHeap : req.heapAdmitted st
+  · simp only [hHeap, Bool.not_false, ↓reduceIte] at hStep; cases hStep
+  simp only [hHeap, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
   cases hAdm : req.admissible st
   · simp only [hAdm, Bool.not_false, ↓reduceIte] at hStep; cases hStep
   · rfl
 
+/-- **A successful carve fit the kernel heap**: the request's bytes were within
+the heap's free bytes the entry read (`CarveRequest.heapAdmitted`). -/
+theorem untypedRetypeObject_ok_heapAdmitted
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
+    (st st' : SystemState)
+    (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    req.heapAdmitted st = true := by
+  unfold untypedRetypeObject at hStep
+  cases hHeap : req.heapAdmitted st
+  · simp only [hHeap, Bool.not_false, ↓reduceIte] at hStep; cases hStep
+  · rfl
+
+/-- **A carve the kernel heap cannot hold is refused first**, with
+`untypedRegionExhausted` (seL4's `seL4_NotEnoughMemory`), whatever the
+capability, the child id and the destination are: the check reads nothing the
+caller named, and precedes every other check and every write. -/
+theorem untypedRetypeObject_heapRefused
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
+    (st : SystemState) (hHeap : req.heapAdmitted st = false) :
+    untypedRetypeObject src childId dst req st = .error .untypedRegionExhausted := by
+  unfold untypedRetypeObject
+  simp only [hHeap, Bool.not_false, ↓reduceIte]
+
+/-- **The heap refusal leaves the state as it was**: answered in the state the
+carve was handed (`RefusalCarrying.ofKernel`, the form the dispatcher answers
+its caller from), so no object, slot, derivation edge or memory changed. -/
+theorem untypedRetypeObject_heapRefused_stateUnchanged
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
+    (st : SystemState) (hHeap : req.heapAdmitted st = false) :
+    RefusalCarrying.ofKernel (untypedRetypeObject src childId dst req) st =
+      .error (.untypedRegionExhausted, st) := by
+  unfold RefusalCarrying.ofKernel
+  rw [untypedRetypeObject_heapRefused src dst childId req st hHeap]
+
 /-- **WS-ZA ZA5.4 part 14: the carve asks authority before it reads anything
-the caller named.**  An admissible request through a capability that names an
+the caller named.**  An admissible request the kernel heap can hold through a capability that names an
 object without the `.retype` right is refused with `.illegalAuthority`, whatever
 the object, the child id and the destination are — so the refusal answers no
 question about any of them. -/
 theorem untypedRetypeObject_unauthorized
     (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
     (st : SystemState) (cap : Capability) (untypedId : SeLe4n.ObjId)
+    (hHeap : req.heapAdmitted st = true)
     (hAdm : req.admissible st = true)
     (hLk : cspaceLookupSlot src st = .ok (cap, st))
     (hTgt : cap.target = .object untypedId)
     (hAu : lifecycleRetypeAuthority cap untypedId = false) :
     untypedRetypeObject src childId dst req st = .error .illegalAuthority := by
   unfold untypedRetypeObject
-  simp only [hAdm, Bool.not_true, Bool.false_eq_true, ↓reduceIte, hLk, hTgt, hAu,
+  simp only [hHeap, hAdm, Bool.not_true, Bool.false_eq_true, ↓reduceIte, hLk, hTgt, hAu,
     Bool.not_false]
 
 /-- **WS-BP BP7.1 slice 4b: `freshAsid?` answers an ASID a VSpace-root carve

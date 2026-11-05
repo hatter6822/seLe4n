@@ -3913,7 +3913,14 @@ run_check "INVARIANT" rg -n -U '^def freshAsid\? \(st : SystemState\) : Option S
 run_check "INVARIANT" rg -n -U '^def freshAsidFrom[^\n]*(\n([ \t][^\n]*)?)*        if \(st\.asidTable\[SeLe4n\.ASID\.ofNat n\]\?\)\.isNone then some \(SeLe4n\.ASID\.ofNat n\)\n        else freshAsidFrom st fuel \(n \+ 1\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_negative_check "INVARIANT" rg -n 'List\.range st\.machine\.maxASID' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.admissible[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot asid =>\n      asid\.toNat != 0 && decide \(asid\.toNat < st\.machine\.maxASID\) &&\n        \(st\.asidTable\[asid\]\?\)\.isNone' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject \(src[^\n]*(\n([ \t][^\n]*)?)*  fun st =>\n    if !req\.admissible st then \.error \.illegalState else' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject \(src[^\n]*(\n([ \t][^\n]*)?)*  fun st =>\n    if !req\.heapAdmitted st then \.error \.untypedRegionExhausted else\n    if !req\.admissible st then \.error \.illegalState else' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# The kernel heap's capacity is the carve's first check, and the split carve's
+# admission asks it first too, so the compiled dispatch never performs a carve
+# the heap cannot hold.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def untypedRetypeAdmittedAt [^\n]*\n[^\n]*\n  req\.heapAdmitted st && req\.admissible st &&$' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
+run_check "INVARIANT" rg -n -U '^def CarveRequest\.heapAdmitted \(st : SystemState\) \(req : CarveRequest\) : Bool :=\n  decide \(req\.heapBytes st ≤ st\.machine\.kernelHeapFreeBytes\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_heapRefused_stateUnchanged($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeOfChecked_heapRefused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextVSpaceRoot[^\n]*\n  \{ asid := asid, mappings := \{\}, tableBase := some \(untypedNextFrame ut idx\)\.base \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedNextVSpaceRoot_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -5141,7 +5148,7 @@ run_check "INVARIANT" rg -n '^          captureOverflowRuns st stcb sstop sstop 
 run_check "INVARIANT" rg -n '^theorem expandRuns_overflowRuns($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem overflowRuns_within_page($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n -U '^    if captured\.is_none\(\) \{\n        crate::gic::halt_all\(\);$' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n '^        \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^          \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^          let st := Architecture\.saveCapturedTrapFrame st0 c \(some frame\)\n          let pending0 := reschedulePendingSnapshot st\n          let mid := faultEntryStepState lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^          let st := Architecture\.saveCapturedSyscallFrame st0 c \(some frame\)\n          let pending0 := reschedulePendingSnapshot st\n          let mid := unknownSyscallEntryStepState lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^        let mid := \(\(rescheduleBracket coreId\)\.run \(Architecture\.saveCapturedTrapFrame st c frame\)\)\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
@@ -5536,7 +5543,12 @@ run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' Se
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^      let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore trapped\n        \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore trapped\n        \(SeLe4n\.Model\.SystemState\.withKernelHeapFreeBytes\n          \(Architecture\.IpcBufferRead\.syncUserWords\n            \(Architecture\.saveCapturedSyscallFrame st execCore frame\) wordBytes wordCount\)\n          heapFree\.toNat\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# The kernel heap's free bytes are read as a word before the atomic step, from
+# the HAL's export, which the exerciser image alone may cap.
+run_check "INVARIANT" rg -n -U '^  let wordBytes ← Platform\.FFI\.ffiEntryWordBuffer\n([ \t]*(--[^\n]*)?\n)*  let heapFree ← Platform\.FFI\.ffiKernelHeapFreeBytes$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn ffi_kernel_heap_free_bytes\(\) -> u64 \{\n    crate::lean_heap::reported_kernel_heap_free_bytes\(\)\n\}$' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n -U '^#\[cfg\(feature = "smp_exercisers"\)\]\npub fn set_reported_free_bytes_ceiling\(' rust/sele4n-hal/src/lean_heap.rs
 # The syscall's number and arguments cross the boundary once: the HAL passes
 # no argument, and the Lean side reads them all from the context it takes whole
 # (WS-ZA ZA6.27).  Capture and restore are one call each, not one per word.
@@ -22069,7 +22081,7 @@ run_check "INVARIANT" rg -n 'C6f: ...and the segment is a strict subset here' te
 # RELATION: the refusal holds for EVERY state, child id and destination, under
 # an admissible request and a capability without the retype right.  Mutation:
 # move the authority test below the child-id collision check.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem untypedRetypeObject_unauthorized\n[^\n]*\n *\(st : SystemState\) \(cap : Capability\) \(untypedId : SeLe4n\.ObjId\)\n *\(hAdm : req\.admissible st = true\)\n *\(hLk : cspaceLookupSlot src st = \.ok \(cap, st\)\)\n *\(hTgt : cap\.target = \.object untypedId\)\n *\(hAu : lifecycleRetypeAuthority cap untypedId = false\) :\n *untypedRetypeObject src childId dst req st = \.error \.illegalAuthority" SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem untypedRetypeObject_unauthorized\n[^\n]*\n *\(st : SystemState\) \(cap : Capability\) \(untypedId : SeLe4n\.ObjId\)\n *\(hHeap : req\.heapAdmitted st = true\)\n *\(hAdm : req\.admissible st = true\)\n *\(hLk : cspaceLookupSlot src st = \.ok \(cap, st\)\)\n *\(hTgt : cap\.target = \.object untypedId\)\n *\(hAu : lifecycleRetypeAuthority cap untypedId = false\) :\n *untypedRetypeObject src childId dst req st = \.error \.illegalAuthority" SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean'
 # NEGATIVE: the retired in-place path does not come back, as code anywhere.
 run_negative_check "INVARIANT" rg -n '^def (lifecycleRetypeObject|lifecycleRetypeDirectWithCleanup|lifecycleRetypeDirectCommit|lifecycleRetypeWithCleanup)( |$)' SeLe4n/
 run_negative_check "INVARIANT" rg -n '^  \| lifecycleRetype\s*$' SeLe4n/Model/Object/Types.lean

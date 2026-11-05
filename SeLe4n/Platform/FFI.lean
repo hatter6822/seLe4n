@@ -3628,6 +3628,18 @@ opaque ffiApplyPhysicalWrite : UInt64 → UInt64 → UInt64 → BaseIO Unit
 @[extern "ffi_entry_word_buffer"]
 opaque ffiEntryWordBuffer : BaseIO ByteArray
 
+/-- **The kernel heap's free bytes**: its free pages times the page size, read
+    under the heap's lock (`lean_heap::kernel_heap_free_bytes`), as a word, so
+    nothing is allocated.  The syscall entry reads it before its atomic step
+    and hands it to the state (`SystemState.withKernelHeapFreeBytes`), where a
+    retype reads it to refuse a carve the heap could not hold.  `0` when the
+    heap cannot be taken into service, which refuses every retype: a capacity
+    nothing can read is no capacity.
+
+    Rust: `ffi_kernel_heap_free_bytes` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_kernel_heap_free_bytes"]
+opaque ffiKernelHeapFreeBytes : BaseIO UInt64
+
 /-- **WS-BP BP7.8 (batched at the `v0.36.47` audit, into the entry-word buffer
     at WS-ZA ZA5.2): the `count` user words at `base`**, read into the
     executing core's entry-word buffer as pairs `index, index + 1, …` — a run

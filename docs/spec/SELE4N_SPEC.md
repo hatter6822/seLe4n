@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.198` (`lakefile.toml`) |
+| **Package version** | `0.36.200` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 574,013 across 539 Lean files |
 | **Test LoC** | 88,451 across 70 Lean test suites |
@@ -4808,6 +4808,34 @@ carries every right but `.retype` (`CarveRequest.capability_eq`).  Theorems:
 (`chain29SyscallCarve`).  The QEMU exerciser scenarios for the kernel kinds
 come with finalising them on final delete (a carve repeats only after its object
 is finalised); the untyped-reset plan schedules them there.
+
+**A carve the kernel heap cannot hold is refused** (`v0.36.200`).  Every Lean
+object lives in the 64 MiB `.lean_heap` arena (`link.ld`'s `LEAN_HEAP_SIZE`),
+and the runtime cannot recover from a failed allocation (`lean_heap`'s
+`heap_halt` halts the system), so a carve is bounded by the heap as well as by
+`maxObjects` and its untyped's region, as seL4's `Untyped_Retype` answers
+`seL4_NotEnoughMemory`.  The syscall entry reads the heap's free bytes (its free
+pages times 4096, `ffi_kernel_heap_free_bytes`) as a word before its atomic step
+and writes them into `MachineState.kernelHeapFreeBytes` right after the entry's
+words (`SystemState.withKernelHeapFreeBytes`); a state no entry refreshed holds
+the whole arena (`kernelHeapArenaBytes`).  `untypedRetypeObject`'s first check,
+mirrored first in `untypedRetypeAdmittedAt` so the compiled dispatch
+(`RefusalCarrying.ofChecked`) never performs a refused carve, is
+`CarveRequest.heapAdmitted`: the request's bytes (`CarveRequest.heapBytes`) — a
+64 KiB reserve, the object (1 KiB for a fixed-size kind, 8 KiB for a thread,
+1 KiB plus 256 bytes per slot for a CNode) and, for each Robin Hood table the
+store's insert would resize at its 75% load (the object table, the index set,
+the type table, and the ASID table for a VSpace root), the doubled table at 64
+bytes per slot — must not exceed it.  Otherwise the carve is refused with
+`untypedRegionExhausted` before any read of what the caller named and before
+any write (`untypedRetypeObject_heapRefused`), answered in the state it was
+handed (`untypedRetypeObject_heapRefused_stateUnchanged`,
+`untypedRetypeOfChecked_heapRefused`).  Witnesses:
+`tests/NegativeStateSuite.lean` (`runRetypeHeapCapacityChecks`), and the QEMU
+exerciser's `untyped-retype-heap-refused`, where the exerciser image's hook
+caps the free bytes the kernel is told at one page and the refused carve is
+pinned at 0 heap allocations; the same carve then succeeds on the heap's own
+capacity.  No test fills the heap.
 
 **The carve keeps the capability bundle** (`v0.36.128`).  All eight conjuncts
 of `capabilityInvariantBundle` hold after a carve

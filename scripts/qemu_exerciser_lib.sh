@@ -469,6 +469,10 @@ for driver in drivers:
             # invoked capability's free index, so its dispatch runs through
             # `RefusalCarrying.ofChecked` and keeps no pre-state.
             "untyped-reset": (0, 0),
+            # A carve the kernel heap cannot hold (the free bytes the kernel
+            # is told capped at one page by the exerciser's hook) is refused
+            # with untypedRegionExhausted before any write: nothing allocated.
+            "untyped-retype-heap-refused": (0, 0),
             # WS-ZA ZA5.9 (`v0.36.159`; 6 and 4 before, 9 and 7 before
             # ZA5.5): the registry table is retired, so a register's one write
             # is its endpoint's record, set in its slot from the decoded words

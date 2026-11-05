@@ -1,3 +1,49 @@
+## v0.36.200 — A retype the kernel heap cannot hold is refused before any write
+
+Every Lean object lives in the fixed 64 MiB `.lean_heap` arena, and the Lean
+runtime cannot recover from a failed allocation: the HAL halts the system.  A
+retype was bounded only by `maxObjects` and its untyped's region, so a thread
+holding a large untyped could carve objects (a CNode's slots most of all) until
+the heap ran out and the whole system halted.  Now the carve asks the heap
+first, as seL4's `Untyped_Retype` answers `seL4_NotEnoughMemory`.
+
+- **The capacity read.**  `ffi_kernel_heap_free_bytes` (`ffi.rs`) returns the
+  heap's free pages times 4096 (`lean_heap::kernel_heap_free_bytes`), `0` when
+  the heap cannot be taken into service.  The syscall entry reads it as a word
+  before its atomic step (`Platform.FFI.ffiKernelHeapFreeBytes`) and writes it
+  into the new `MachineState.kernelHeapFreeBytes` right after the entry's words
+  (`SystemState.withKernelHeapFreeBytes`).  The field defaults to the whole
+  arena (`kernelHeapArenaBytes`), so host states admit what they did before.
+  `syscallDispatchCrossCoreEntry_def` and its Tier 3 anchors pin the read.
+- **The check.**  `CarveRequest.heapAdmitted` is `untypedRetypeObject`'s first
+  check and the first conjunct of `untypedRetypeAdmittedAt`, so the compiled
+  `RefusalCarrying.ofChecked` arm never performs a refused carve.  The bound
+  (`CarveRequest.heapBytes`) over-approximates: a 64 KiB reserve, 1 KiB per
+  fixed-size object, 8 KiB per thread, 1 KiB plus 256 bytes per CNode slot, and
+  the doubled table (64 bytes a slot) of each Robin Hood table the store's
+  insert would resize at 75% load — the object table, the index set, the type
+  table, and the ASID table for a VSpace root.  A refusal is
+  `untypedRegionExhausted` (code 20).
+- **Proofs.**  `untypedRetypeObject_heapRefused`,
+  `untypedRetypeObject_heapRefused_stateUnchanged` (the refusal is answered in
+  the state it was handed), `untypedRetypeObject_ok_heapAdmitted`,
+  `untypedRetypeAdmittedAt_heapRefused`, `untypedRetypeOfChecked_heapRefused`,
+  and `withKernelHeapFreeBytes_syncUserWords` (the refresh commutes with the
+  words' sync, so the entry-state theorems cover the refreshed state).  The
+  proofs that unfold the carve take the new branch;
+  `untypedRetypeObject_unauthorized` takes `req.heapAdmitted st = true`.
+- **Tests.**  `runRetypeHeapCapacityChecks` (`tests/NegativeStateSuite.lean`):
+  low capacity refuses, one byte short refuses, exact need and the default
+  admit, the refusal precedes the capability lookup, and a CNode's need grows
+  with its slots.  The QEMU exerciser adds `untyped-retype-heap-refused`: its
+  image's hook (`lean_heap::set_reported_free_bytes_ceiling`, `smp_exercisers`
+  only) caps the reported free bytes at one page, the carve is refused and
+  pinned at (0, 0) heap allocations, and the same carve then succeeds on the
+  heap's own capacity and is deleted, unmeasured.  Every existing pin is
+  unchanged.  No test fills the heap.
+- **Debt.**  Registered: only the retype checks the heap, and its costs are
+  constants rather than measured layouts (`docs/REGISTERED_DEBT.md`).
+
 ## v0.36.198 — Dead code removed: 123 definitions and four FFI exports nothing calls
 
 Every definition in the library that no constant names — no kernel code, no
