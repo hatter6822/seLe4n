@@ -20903,7 +20903,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*
 # the single-core reference, the cross-core wake, and the frozen mirror.
 run_check "INVARIANT" bash -lc 'rg -n -U "^noncomputable def resumeThread [^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "let st := resumeContext st tid bootCoreId"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^noncomputable def resumeThread [^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "if !resumeSchedulable st tid then .ok st"'
-run_check "INVARIANT" bash -lc 'rg -n "^theorem resumeThread_eq_of_unschedulable" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" rg -n '^theorem resumeThread_eq_of_unschedulable($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyWithWake[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "if resumeSchedulable st2 tid then"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F "match frozenResumeContext stored tcb"'
 # (4) THE SHARED READINGS ARE THEOREMS, so a cut that sends either side back to
