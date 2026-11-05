@@ -863,6 +863,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- (`cutReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed`).
   , (`SeLe4n.Kernel.cutReplyFrameStoresInPlace,
       .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
+    -- WS-ZA ZA6.34: the compiled form of `cutReplyFrameStoresInPlace`
+    -- (`cutReplyFrameStoresInPlace_eq_impl`, `@[csimp]`), the same stores.
+  , (`SeLe4n.Kernel.cutReplyFrameStoresInPlaceImpl,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
   , (`SeLe4n.Kernel.severReplyFrameBelowStoresInPlace,
       .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
@@ -889,6 +893,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- link cleared, then the context's head.
   , (`SeLe4n.Kernel.finaliseSchedContextUnstack,
       .states [`SeLe4n.Kernel.finaliseSchedContextUnstack_preserves_donationChainWellFormed])
+    -- WS-ZA ZA6.34: its compiled form, the head reply's link cleared in its
+    -- slot (`finaliseSchedContextUnstack_eq_impl`, `@[csimp]`): the same writes.
+  , (`SeLe4n.Kernel.finaliseSchedContextUnstackImpl,
+      .mirrors `SeLe4n.Kernel.finaliseSchedContextUnstack)
     -- The push's second store: the new head's links and the old head's `next`.
     -- Between the two stores the context's head names a frame that does not yet
     -- answer it, so the chain is broken by construction here.
