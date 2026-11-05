@@ -1069,6 +1069,70 @@ theorem removeFromAllEndpointQueues_binding_frame (st : SystemState)
   rw [removeFromAllEndpointQueues_getTcb?_eq_splice st tid hInv x]
   exact spliceOutMidQueueNode_binding_frame st tid hInv x
 
+/-- **WS-ZA ZA6.33: the targeted dequeue leaves every non-endpoint object the
+splice's** — its one rewrite is an endpoint. -/
+theorem removeFromBlockingEndpoint_nonEndpoint (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (o : KernelObject) (hNotEp : ∀ e, o ≠ .endpoint e) :
+    ((removeFromBlockingEndpoint st tid e).objects[k]? = some o) ↔
+      ((spliceOutMidQueueNode st tid).objects[k]? = some o) := by
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  by_cases hK : e = k
+  · subst hK
+    constructor
+    · intro hx
+      have hx' := (SystemState.rewriteObject_objects_self _ e _ _ hExt).symm.trans hx
+      exact absurd (Option.some.inj hx').symm (hNotEp _)
+    · intro hx
+      rw [hE] at hx
+      exact absurd (Option.some.inj hx).symm (hNotEp ep)
+  · rw [SystemState.rewriteObject_objects_ne _ e k _ _ hK hExt]
+
+theorem removeFromBlockingEndpoint_getSchedContext?_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (hInv : st.objects.invExt)
+    (scId : SeLe4n.SchedContextId) :
+    (removeFromBlockingEndpoint st tid e).getSchedContext? scId
+      = st.getSchedContext? scId := by
+  refine SystemState.getSchedContext?_eq_of_kind_iff (fun sc => ?_)
+  refine Iff.trans (removeFromBlockingEndpoint_nonEndpoint st tid e
+      (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+      scId.toObjId (.schedContext sc) (fun e => fun hc => KernelObject.noConfusion hc)) ?_
+  exact spliceOutMidQueueNode_nonTcb st tid hInv scId.toObjId (.schedContext sc)
+    (fun t => fun hc => KernelObject.noConfusion hc)
+
+theorem removeFromBlockingEndpoint_getTcb?_eq_splice (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    (removeFromBlockingEndpoint st tid e).getTcb? x
+      = (spliceOutMidQueueNode st tid).getTcb? x := by
+  have hFold : ∀ t : TCB,
+      (removeFromBlockingEndpoint st tid e).getTcb? x = some t
+        ↔ (spliceOutMidQueueNode st tid).getTcb? x = some t := fun t =>
+    Iff.trans (SystemState.getTcb?_eq_some_iff _ x t)
+      (Iff.trans (removeFromBlockingEndpoint_nonEndpoint st tid e
+          (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+          x.toObjId (.tcb t) (fun e => fun hc => KernelObject.noConfusion hc))
+        (SystemState.getTcb?_eq_some_iff _ x t).symm)
+  cases hA : (spliceOutMidQueueNode st tid).getTcb? x with
+  | none =>
+    cases hB : (removeFromBlockingEndpoint st tid e).getTcb? x with
+    | none => rfl
+    | some t => exact absurd ((hFold t).mp hB) (by rw [hA]; simp)
+  | some t => exact (hFold t).mpr hA
+
+theorem removeFromBlockingEndpoint_placement_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((removeFromBlockingEndpoint st tid e).getTcb? x).map TCB.placement
+      = (st.getTcb? x).map TCB.placement := by
+  rw [removeFromBlockingEndpoint_getTcb?_eq_splice st tid e hInv x]
+  exact spliceOutMidQueueNode_placement_frame st tid hInv x
+
+theorem removeFromBlockingEndpoint_binding_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((removeFromBlockingEndpoint st tid e).getTcb? x).map (·.schedContextBinding)
+      = (st.getTcb? x).map (·.schedContextBinding) := by
+  rw [removeFromBlockingEndpoint_getTcb?_eq_splice st tid e hInv x]
+  exact spliceOutMidQueueNode_binding_frame st tid hInv x
+
 /-- The composite leaves every object that is neither a TCB nor an endpoint
 exactly as it found it — which is what carries the notification, CNode, Reply and
 SchedContext conjuncts across without an argument of their own. -/
@@ -2240,16 +2304,44 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
 -- §13  The live operation: `cancelIpcBlocking`'s endpoint arm
 -- ============================================================================
 
-/-- The cancellation's endpoint arm **is** the swept-and-restored composite —
-`rfl`, so the two cannot drift.  `sweptAndRestored`'s `frame` argument is the
-`.ipcCancelled` frame WS-RR RR7.14 stages there. -/
+/-- **A thread blocked on `e` is a boundary of no other endpoint**: a queue's
+head and tail are blocked on that queue's own endpoint
+(`queueHeadBlockedConsistent`, `endpointQueueTailBlockedConsistent`), and a
+thread has one IPC state. -/
+theorem endpointBoundariesOnly_of_blocked (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (e : SeLe4n.ObjId) (hT : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hBlocked : tcb.ipcState = .blockedOnSend e ∨ tcb.ipcState = .blockedOnReceive e ∨
+      tcb.ipcState = .blockedOnCall e)
+    (hHead : queueHeadBlockedConsistent st) (hTail : endpointQueueTailBlockedConsistent st) :
+    endpointBoundariesOnly st tid e := by
+  intro k ep hk hE
+  have hH := hHead k ep tid tcb hE hT
+  have hL := hTail k ep tid tcb hE hT
+  have hNot : (tcb.ipcState = .blockedOnSend k ∨ tcb.ipcState = .blockedOnCall k) → False := by
+    intro h
+    rcases hBlocked with h1 | h1 | h1 <;> rcases h with h2 | h2 <;> rw [h1] at h2 <;>
+      first | (cases h2; exact hk rfl) | cases h2
+  have hNotR : tcb.ipcState = .blockedOnReceive k → False := by
+    intro h2
+    rcases hBlocked with h1 | h1 | h1 <;> rw [h1] at h2 <;> first | (cases h2; exact hk rfl) | cases h2
+  exact ⟨fun h => hNot (hH.2 h), fun h => hNot (hL.2 h),
+    fun h => hNotR (hH.1 h), fun h => hNotR (hL.1 h)⟩
+
+/-- The cancellation's endpoint arm **is** the swept-and-restored composite when
+no other endpoint names the thread at a boundary (`endpointBoundariesOnly`, which
+the queue invariants give, `endpointBoundariesOnly_of_blocked`): the arm runs
+seL4's targeted dequeue, and the sweep agrees with it there
+(`removeFromAllEndpointQueues_eq_blocking`).  `sweptAndRestored`'s `frame`
+argument is the `.ipcCancelled` frame WS-RR RR7.14 stages there. -/
 theorem cancelIpcBlocking_endpoint_arm_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (epId : SeLe4n.ObjId)
     (hBlocked : tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnReceive epId ∨
-      tcb.ipcState = .blockedOnCall epId) :
+      tcb.ipcState = .blockedOnCall epId)
+    (hInv : st.objects.invExt) (hOnly : endpointBoundariesOnly st tid epId) :
     Lifecycle.Suspend.cancelIpcBlocking st tid tcb =
       sweptAndRestored st tid (some Architecture.cancelledIpcFrame) := by
   unfold Lifecycle.Suspend.cancelIpcBlocking sweptAndRestored
+  rw [removeFromAllEndpointQueues_eq_blocking st tid epId hInv hOnly]
   rcases hBlocked with h | h | h <;> rw [h] <;> rfl
 
 /-- **WS-RR RR7.22 (residual)**: the cancellation's endpoint arm preserves
@@ -2269,7 +2361,10 @@ theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hCoh : sweptThreadQueueCoherent st v) :
     ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) := by
-  rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV epId hBlocked]
+  have hT : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
+  rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV epId hBlocked hInv
+    (endpointBoundariesOnly_of_blocked st v tcbV epId hT hBlocked
+      hBundle.queueHeadBlockedConsistent hBundle.endpointQueueTailBlockedConsistent)]
   refine sweptAndRestored_preserves_ipcInvariantFull st v _ tcbV hInv hLookup hBundle hAllBudgetsNone
     ?_ hCoh
   intro ep rt hEq

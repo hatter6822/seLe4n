@@ -319,8 +319,10 @@ theorem retireFinalObject_runQueueStage (ec : Concurrency.CoreId) (target record
       SystemState.runQueueRefined_of_frame (hL hInv) (by rw [hS]) (by rw [hS]) r⟩,
       fun hInv _ hR => (retireFinalObject_releaseStateAgree ec target recorder st hInv).refined hR,
       fun _ hInv _ hR x => SystemState.refillsSoundExcept_of_kept
-        (.of_schedContexts_backward fun _ _ hp => retireFinalObject_back ec target recorder st hInv hp
+        (.of_schedContexts_backward (fun _ _ hp => retireFinalObject_back ec target recorder st hInv hp
           (fun _ h => KernelObject.noConfusion h))
+          (fun _ t hp hA => ⟨t, retireFinalObject_back ec target recorder st hInv hp
+            (fun _ h => KernelObject.noConfusion h), hA⟩))
         (fun c => by rw [(retireFinalObject_releaseStateAgree ec target recorder st hInv).replenishQueueOnCore c])
         ((retireFinalObject_releaseStateAgree ec target recorder st hInv).refined hR) x,
       fun hInv _ hY => SystemState.yieldLinksAgree_of_kept
@@ -452,10 +454,12 @@ theorem insertTcb_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId} {tcb 
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
     (h : ∀ c, tcb'.runLinkOn c = tcb.runLinkOn c) (hm : TCB.StepMono tcb tcb' := by exact ⟨id, id, by first | rfl | simp_all⟩)
     (hW : tcb'.taintWords = tcb.taintWords := by taint_words_kept)
-    (hY : tcb'.yieldToCode = tcb.yieldToCode := by first | rfl | simp_all) :
+    (hY : tcb'.yieldToCode = tcb.yieldToCode := by first | rfl | simp_all)
+    (hA : tcb'.threadState = tcb.threadState := by first | rfl | simp_all) :
     RunQueueStage st { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } :=
   RunQueueStage.insert rfl rfl rfl (fun c => by rw [hPre]; exact h c)
     (by rw [hPre]; exact SystemState.objStateMono_tcb hm)
+    (hV := by rw [hPre]; simp only [objRefillView, tcbRefillView, hA])
     (hY := by rw [hPre]; simp only [objYieldCodes, hY])
 
 theorem setIPCBufferOp_runQueueStage {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
@@ -687,10 +691,11 @@ theorem notificationWaiterCancel_runQueueStage (st : SystemState)
     (hC : notificationWaiterCancellable st notificationId t tcb = true) :
     RunQueueStage st (wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking st t tcb) t) := by
   refine RunQueueStage.of_invExt fun hInv => ?_
-  obtain ⟨-, -, -, -, hW⟩ := notificationWaiterCancellable_parts hC
+  obtain ⟨-, hB, -, -, hW⟩ := notificationWaiterCancellable_parts hC
   simp only [cancelledWaiterWakeable, Bool.and_eq_true, decide_eq_true_eq,
     Bool.not_eq_true'] at hW
-  refine (cancelIpcBlocking_runQueueStage st t tcb).trans
+  refine (cancelIpcBlocking_runQueueStage st t tcb
+      (by unfold Lifecycle.Suspend.cancelledCallerDonation?; rw [hB])).trans
     (wakeCancelledWaiter_runQueueStage _ t ?_
       ((cancelIpcBlocking_stateMono st t tcb hInv).activeAt ⟨tcb, hT, hW.1⟩))
   unfold runningOnSomeCore
@@ -788,7 +793,8 @@ theorem finaliseUnbindStep_runQueueEntryStage (st : SystemState) :
 /-- The finalisation's notification cancel is a run-queue stage. -/
 theorem finaliseNotificationCancelStep_runQueueEntryStage (st : SystemState) :
     FinaliseNotificationCancelStep (SystemState.RunQueueEntryStage st) :=
-  fun s _ t tcb _ h _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry
+  fun s _ t tcb _ h _ hB _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb
+    (by unfold Lifecycle.Suspend.cancelledCallerDonation?; rw [hB])).entry
 
 /-- The finalisation's endpoint cancel is a run-queue stage. -/
 theorem finaliseEndpointCancelStep_runQueueEntryStage (st : SystemState) :

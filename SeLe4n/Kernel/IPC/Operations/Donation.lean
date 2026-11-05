@@ -404,7 +404,9 @@ theorem applyReplyDonation_characterisation
                   (match returnDonatedSchedContextResolved st holderVtid.val scId
                       (replyDonationRecipient st scId targetVtid.val) with
                    | .error e => .error e
-                   | .ok st' => .ok (removeRunnable st' holderVtid.val))
+                   | .ok st' => .ok (removeRunnable
+                       (SchedContextOps.settleReturnedContext st'
+                         Concurrency.bootCoreId scId) holderVtid.val))
               | none => .error .invalidArgument)
          | none => .ok st) := by
   simp only [applyReplyDonation]

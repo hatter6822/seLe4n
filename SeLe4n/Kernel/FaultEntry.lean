@@ -159,13 +159,16 @@ run-queue field and no IPC state, and the delivery is a kernel entry
 `c`'s current thread and no idle thread. -/
 theorem faultDeliveredState_runQueueEntryStage (lctx : LabelingContext) (st : SystemState)
     (f : Fault) (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hHeads : endpointHeadsWakeable st)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hAct : st.activeAt tid) (hHeads : endpointHeadsWakeable st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false) :
     SystemState.RunQueueEntryStage st (faultDeliveredState lctx st f ectx w c tid) :=
-  (writeFaultRegistersToTcb_runQueueStage st tid w).entry.trans
+  have hW := writeFaultRegistersToTcb_runQueueStage st tid w
+  hW.entry.trans
     (faultDeliverOnCoreChecked_runQueueEntryStage lctx _ tid f _ c
       (hHeads.updateTcb hInv fun _ => rfl)
-      (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur) hNI)
+      (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur) hNI
+      (hW.1.links hInv hR).1 (hW.1.links hInv hR).2 ((hW.2.2 hInv hR).activeAt hAct))
 
 /-- Review round (PR #887): **the delivery the two fault entries share**, given
 the fault already chosen.  Spill the trap frame's window, build the context
@@ -1008,9 +1011,9 @@ theorem faultEntryDeliver_not_dispatchable (lctx : LabelingContext) (st : System
     (f : Fault) (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some tid)
     (hNI : isIdleThreadId tid = false) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
-    (hHeads : endpointHeadsWakeable st) :
+    (hAct : st.activeAt tid) (hHeads : endpointHeadsWakeable st) :
     ¬ dispatchableOnCore (faultEntryDeliver lctx st f ectx w c).2 tid c := by
-  have hR' := ((faultDeliveredState_runQueueEntryStage lctx st f ectx w c tid hInv hHeads hCur
+  have hR' := ((faultDeliveredState_runQueueEntryStage lctx st f ectx w c tid hInv hR hAct hHeads hCur
     hNI).1 hInv hR).2 c
   unfold faultEntryDeliver
   simp only [hCur, hNI, Bool.false_eq_true, ↓reduceIte]
@@ -1037,13 +1040,13 @@ theorem faultEntryStep_not_dispatchable (lctx : LabelingContext) (st : SystemSta
     (hEl0 : ectx.takenFromEl0 = true)
     (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
     (hFault : (faultOfExceptionContext ectx).isSome) (hNI : isIdleThreadId tid = false)
-    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hHeads : endpointHeadsWakeable st) :
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt tid) (hHeads : endpointHeadsWakeable st) :
     ¬ dispatchableOnCore (faultEntryStep lctx st ectx w coreId).2 tid ⟨coreId.toNat, h⟩ := by
   unfold faultEntryStep
   rw [dif_pos h, if_pos hEl0]
   cases hF : faultOfExceptionContext ectx with
   | none => rw [hF] at hFault; exact absurd hFault (by simp)
-  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur hNI hInv hR hHeads
+  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur hNI hInv hR hAct hHeads
 
 /-- Review round (PR #887): the unknown-syscall entry carries the same
 guarantee — a thread that issued an unknown syscall is never resumed at it
@@ -1054,12 +1057,13 @@ theorem unknownSyscallEntryStep_not_dispatchable (lctx : LabelingContext)
     (hEl0 : ectx.takenFromEl0 = true)
     (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
     (hNI : isIdleThreadId tid = false) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hAct : st.activeAt tid)
     (hHeads : endpointHeadsWakeable st) :
     ¬ dispatchableOnCore (unknownSyscallEntryStep lctx st ectx w coreId).2 tid
       ⟨coreId.toNat, h⟩ := by
   unfold unknownSyscallEntryStep
   rw [dif_pos h, if_pos hEl0]
-  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur hNI hInv hR hHeads
+  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur hNI hInv hR hAct hHeads
 
 /-- PR #887 review round 3: **the syscall seam's capability fault carries the
 same guarantee.**  `deliverSyscallCapFault` is the abort entry's delivery at

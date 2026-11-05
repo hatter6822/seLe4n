@@ -2057,7 +2057,7 @@ theorem consumeCallerReply_tcb_ntfnLinks
         · rw [storeObject_objects_ne st1 st' _ k _ hs hObjInv1 hStep] at hx
           exact ⟨tx, (hLeg k tx).mp hx, rfl, rfl, rfl⟩
 
-/-- WS-ZA ZA4.4: the frame splice writes no TCB, so `removeCallerReplyFrame`
+/-- WS-ZA ZA4.4: the frame cut writes no TCB, so `removeCallerReplyFrame`
 keeps every TCB's IPC state and notification-queue links as the consume does. -/
 theorem removeCallerReplyFrame_tcb_ntfnLinks
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -2071,11 +2071,11 @@ theorem removeCallerReplyFrame_tcb_ntfnLinks
         tx.ntfnPrev = ty.ntfnPrev ∧ tx.ntfnNext = ty.ntfnNext) := by
   rw [removeCallerReplyFrame_eq] at hStep
   obtain ⟨hF, hB⟩ := consumeCallerReply_tcb_ntfnLinks _ st' caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep
-  refine ⟨fun k ty hy => hF k ty (spliceReplyFrameOutOrSelf_tcb_eq st rid hObjInv k ty hy),
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep
+  refine ⟨fun k ty hy => hF k ty (cutReplyFrameOutOrSelf_tcb_eq st rid hObjInv k ty hy),
     fun k tx hx => ?_⟩
   obtain ⟨ty, hy, h⟩ := hB k tx hx
-  exact ⟨ty, spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv k ty hy, h⟩
+  exact ⟨ty, cutReplyFrameOutOrSelf_tcb_backward st rid hObjInv k ty hy, h⟩
 
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `notificationWaiterConsistent`
 — notifications are untouched by the consume's two writes and every TCB keeps

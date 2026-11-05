@@ -50,8 +50,28 @@ theorem resumeReadyMidState_runCoresAgree (st : SystemState) (tid : SeLe4n.Threa
     SystemState.RunCoresAgree.updateTcb hInv1 (fun _ => rfl)
   exact h2.trans h1
 
-/-- **Resume covers.**  The boost write ends in the key hook, the enqueue flags
-the core it inserts on, and the inline reschedule is a scheduling point. -/
+/-- WS-ZA ZA6.33: **the resume of a context covers**: its refill-unblock check
+moves neither its deadline nor whether it has budget, so no key input, and its
+settle writes release fields and queues alone. -/
+theorem resumeContext_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (home : CoreId) (hInv : st.objects.invExt) :
+    stepCovers e st (Lifecycle.Suspend.resumeContext st tid home) := by
+  rcases Lifecycle.Suspend.resumeContext_cases st tid home with h | ⟨s, h⟩ <;> rw [h]
+  · exact stepCovers_refl e st
+  · exact stepCovers_trans
+      (stepCovers_of_keys_sched
+        (keyInputsEq_updateSchedContext hInv
+          (fun sc => SchedContext.refillUnblockCheck_deadline sc _)
+          (fun sc => SchedContext.refillUnblockCheck_budgetPositive sc _))
+        (SystemState.updateSchedContext_scheduler _ _ _)
+        (by rw [SystemState.updateSchedContext_machine])
+        (banksKeptOffCore_of_eq (by rw [SystemState.updateSchedContext_machine])))
+      (settleReturnedContext_stepCovers e _ _ _)
+
+/-- **Resume covers.**  The boost write ends in the key hook, the context's
+resume moves no key (`resumeContext_stepCovers`), the enqueue of a schedulable
+thread flags the core it inserts on, and the inline reschedule is a scheduling
+point. -/
 theorem resumeThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
     (e : CoreId) (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
     (hStep : Lifecycle.Suspend.resumeThreadOnCore st vtid e = .ok (st', sgi)) :
@@ -82,22 +102,29 @@ theorem resumeThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Vali
           (tcbsKept.of_objects_eq (markKeyChangeFrom_objects _ _ _))).residentTcbKept⟩
     have h1Inv : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
         vtid.val).objects.invExt := by rw [markKeyChangeFrom_objects]; exact hMidInv
-    have h2 := stepCovers_trans h1
-      ⟨enqueueRunnableOnCore_covers e (determineTargetCore st vtid.val) _ vtid.val h1Inv,
-       enqueueRunnableOnCore_monotone e (determineTargetCore st vtid.val) _ vtid.val, enqueueRunnableOnCore_currentKept e _ _ _,
-       residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]),
-       (tcbsKept_enqueueRunnableOnCore _ _ _ h1Inv).residentTcbKept⟩
-    have h2Inv := enqueueRunnableOnCore_preserves_objects_invExt _
-      (determineTargetCore st vtid.val) vtid.val h1Inv
+    have hC := stepCovers_trans h1
+      (resumeContext_stepCovers e _ vtid.val (determineTargetCore st vtid.val) h1Inv)
+    have hCInv := Lifecycle.Suspend.resumeContext_objects_invExt _ vtid.val
+      (determineTargetCore st vtid.val) h1Inv
     split at hStep
-    · split at hStep
-      · rename_i st4 hH
-        cases hStep
-        exact ⟨stepCovers_trans h2 (handleRescheduleSgiOnCore_stepCovers e _ _ h2Inv hH),
-          handleRescheduleSgiOnCore_preserves_objects_invExt _ e _ h2Inv hH⟩
-      · contradiction
+    · have h2 := stepCovers_trans hC
+        ⟨enqueueRunnableOnCore_covers e (determineTargetCore st vtid.val) _ vtid.val hCInv,
+         enqueueRunnableOnCore_monotone e (determineTargetCore st vtid.val) _ vtid.val, enqueueRunnableOnCore_currentKept e _ _ _,
+         residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]),
+         (tcbsKept_enqueueRunnableOnCore _ _ _ hCInv).residentTcbKept⟩
+      have h2Inv := enqueueRunnableOnCore_preserves_objects_invExt _
+        (determineTargetCore st vtid.val) vtid.val hCInv
+      split at hStep
+      · split at hStep
+        · rename_i st4 hH
+          cases hStep
+          exact ⟨stepCovers_trans h2 (handleRescheduleSgiOnCore_stepCovers e _ _ h2Inv hH),
+            handleRescheduleSgiOnCore_preserves_objects_invExt _ e _ h2Inv hH⟩
+        · contradiction
+      · cases hStep
+        exact ⟨h2, h2Inv⟩
     · cases hStep
-      exact ⟨h2, h2Inv⟩
+      exact ⟨hC, hCInv⟩
   · contradiction
 
 /-- Retiring a pending fault on resume rewrites registers and the fault slot
@@ -163,12 +190,73 @@ theorem cancelIpcBlockingReclaimed_stepCovers (e : CoreId) (st : SystemState)
   have hMig : stepCovers e st (cancelIpcBlockingMigrated victim tcb st) := by
     unfold cancelIpcBlockingMigrated
     split
-    · exact stepCovers_trans hTorn (migrateSchedContextReplenishment_stepCovers e _ _ _ _)
+    · exact stepCovers_trans hTorn (settleReturnedContext_stepCovers e _ _ _)
     · exact hTorn
   unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
   split
   · exact hMig
   · exact stepCovers_trans hMig (descheduleAt_stepCovers e _ _ _)
+
+/-- WS-ZA ZA6.33: **the head cut covers**: the reply store and the context's
+head and origin move no key input, and the holder's binding made its own ends
+in the key hook. -/
+theorem cutCancelledCallerHead_stepCovers (e : CoreId) (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (Lifecycle.Suspend.cutCancelledCallerHead st tcb) ∧
+      (Lifecycle.Suspend.cutCancelledCallerHead st tcb).objects.invExt :=
+  Lifecycle.Suspend.cutCancelledCallerHead_closed
+    (fun s => stepCovers e st s ∧ s.objects.invExt)
+    (fun s s1 rid r scId ⟨hC, hI⟩ _ hR hS => by
+      have hO : s.objects[rid.toObjId]? = some (.reply r) := by
+        unfold SystemState.getReply? at hR
+        split at hR <;> simp_all
+      have hI1 := storeObject_preserves_objects_invExt s s1 _ _ hI hS
+      refine ⟨stepCovers_trans hC (stepCovers_of_keys_sched
+        (keyInputsEq_trans (keyInputsEq_storeObject hI hS (by rw [hO]; rfl))
+          (keyInputsEq_updateSchedContext hI1 (fun _ => rfl)))
+        (by rw [SystemState.updateSchedContext_scheduler, storeObject_scheduler_eq _ _ _ _ hS])
+        (by rw [SystemState.updateSchedContext_machine, storeObject_machine_eq _ _ _ _ hS])
+        (banksKeptOffCore_of_eq (by
+          rw [SystemState.updateSchedContext_machine, storeObject_machine_eq _ _ _ _ hS]))),
+        SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1⟩)
+    (fun s _ holder ht _ ⟨hC, hI⟩ _ hT _ => by
+      have k := keyInputsEqExcept_updateTcb (tid := holder)
+        (f := fun t => { t with scBindingOwnerCode := 0 }) hI (by rw [hT]; rfl)
+      refine ⟨stepCovers_trans hC (stepCovers_markKeyChangeFrom
+        (fun t h => ⟨schedKeyView_eq_of_keyInputsEqExcept k h,
+          budgetEligibleView_eq_of_keyInputsEqExcept k h⟩)
+        (SystemState.RunCoresAgree.updateTcb hI (fun _ => rfl))
+        (fun c => by rw [SystemState.updateTcb_scheduler])
+        (fun c h => by rw [SystemState.updateTcb_scheduler]; exact h)
+        (tcbsKept.updateTcb _ _ _ hI)
+        (by rw [SystemState.updateTcb_machine])
+        (banksKeptOffCore_of_eq (by rw [SystemState.updateTcb_machine]))), ?_⟩
+      rw [markKeyChangeFrom_objects]
+      exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hI)
+    st tcb ⟨stepCovers_refl e st, hInv⟩
+
+/-- WS-ZA ZA6.33: **the suspend's IPC cancel covers**: the head cut, then the
+teardown. -/
+theorem cancelIpcKeepingContexts_stepCovers (e : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
+    stepCovers e st (Lifecycle.Suspend.cancelIpcKeepingContexts st tid tcb) ∧
+      (Lifecycle.Suspend.cancelIpcKeepingContexts st tid tcb).objects.invExt := by
+  obtain ⟨h1, h1Inv⟩ := cutCancelledCallerHead_stepCovers e st tcb hInv
+  exact ⟨stepCovers_trans h1 (cancelIpcBlocking_stepCovers e _ tid tcb h1Inv),
+    Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt _ tid tcb h1Inv⟩
+
+/-- WS-ZA ZA6.33: **the release removal covers**: the identity or the purge, a
+release-only write. -/
+theorem releaseRemoveThread_stepCovers (e : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    stepCovers e st (Lifecycle.Suspend.releaseRemoveThread st tid) ∧
+      (Lifecycle.Suspend.releaseRemoveThread st tid).objects.invExt := by
+  rcases Lifecycle.Suspend.releaseRemoveThread_cases st tid with h | ⟨s, _, h⟩ <;> rw [h]
+  · exact ⟨stepCovers_refl e st, hInv⟩
+  · exact ⟨stepCovers_of_releaseOnlyWrite e
+      (SchedContextOps.purgeReplenishment_releaseOnlyWrite st s)
+      (SchedContextOps.purgeReplenishment_agree st s),
+      SchedContextOps.purgeReplenishment_objects_invExt st s hInv⟩
 
 /-- Clearing the pending state touches no key field. -/
 theorem clearPendingState_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -212,10 +300,11 @@ theorem cancelYieldTo_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.T
     (keyInputsEq_of_objectsAgreeOffYield (SystemState.cancelYieldTo_objectsAgreeOffYield st tid hInv))
     (SystemState.cancelYieldTo_scheduler st tid)
 
-/-- **Suspend covers.**  The IPC teardown, the PIP revert, the donation
-cancellation (each key write hooked), the deschedule (a cleared current slot
-flags its core), two key-free TCB writes, the key-free yield-link cancel and the
-executing core's own scheduling point. -/
+/-- **Suspend covers.**  The IPC cancel (the head cut ending in its key hook,
+then the teardown), the PIP revert, the deschedule (a cleared current slot flags
+its core), two key-free TCB writes, the release removal (a release-only write),
+the key-free yield-link cancel and the executing core's own scheduling point.
+WS-ZA ZA6.33: no donation is cancelled. -/
 theorem suspendThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
     (e : CoreId) (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid e = .ok (st', sgi)) :
@@ -226,43 +315,30 @@ theorem suspendThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Val
   · rename_i tcb hT
     split at hStep
     · contradiction
-    have h1 := cancelIpcBlockingReclaimed_stepCovers e st vtid.val tcb hInv
-    have h1Inv : (cancelIpcBlockingReclaimed vtid.val tcb st).objects.invExt := by
-      exact cancelIpcBlockingReclaimed_objects_invExt vtid.val tcb st
-        (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st vtid.val tcb hInv)
+    obtain ⟨h1, h1Inv⟩ := cancelIpcKeepingContexts_stepCovers e st vtid.val tcb hInv
     cases hB : PriorityInheritance.blockingServer st vtid.val
     case' none =>
       rw [hB] at hStep
       dsimp only at hStep
-      generalize cancelIpcBlockingReclaimed vtid.val tcb st = s2 at hStep h1 h1Inv
+      generalize Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb = s2 at hStep h1 h1Inv
     case' some srv =>
       rw [hB] at hStep
       dsimp only at hStep
       have hc := propagatePipChainCrossCore_stepCovers e e
-        (cancelIpcBlockingReclaimed vtid.val tcb st).objectIndex.length _ srv h1Inv
+        (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objectIndex.length _ srv h1Inv
       replace h1 := stepCovers_trans h1 hc.1
       replace h1Inv := hc.2
       clear hc
       generalize (PriorityInheritance.propagatePipChainCrossCore
-        (cancelIpcBlockingReclaimed vtid.val tcb st) srv e).1 = s2 at hStep h1 h1Inv
+        (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) srv e).1 = s2 at hStep h1 h1Inv
     all_goals
-      split at hStep
-      · contradiction
-      rename_i s3 hDon
-      obtain ⟨h3, h3Inv⟩ : stepCovers e st s3 ∧ s3.objects.invExt := by
-        split at hDon
-        · cases hDon; exact ⟨h1, h1Inv⟩
-        · obtain ⟨a, b⟩ := cancelBoundDonationOnCore_stepCovers e h1Inv hDon
-          exact ⟨stepCovers_trans h1 a, b⟩
-        · obtain ⟨a, b⟩ := cancelDonatedDonationOnCore_stepCovers e h1Inv hDon
-          exact ⟨stepCovers_trans h1 a, b⟩
-      have h4 := stepCovers_trans h3 (descheduleAt_stepCovers e s3 vtid.val (placedCoreOf? st vtid.val))
-      have h4Inv : (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)).objects.invExt := by
-        exact descheduleAt_objects_invExt _ _ _ h3Inv
+      have h4 := stepCovers_trans h1 (descheduleAt_stepCovers e s2 vtid.val (placedCoreOf? st vtid.val))
+      have h4Inv : (descheduleAt s2 vtid.val (placedCoreOf? st vtid.val)).objects.invExt := by
+        exact descheduleAt_objects_invExt _ _ _ h1Inv
       have h5 := stepCovers_trans h4 (stepCovers_of_keys_sched
         (clearPendingState_keyInputsEq _ vtid.val h4Inv) (SystemState.updateTcb_scheduler _ _ _))
       have h5Inv : (Lifecycle.Suspend.clearPendingStateValid
-          (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) vtid).objects.invExt := by
+          (descheduleAt s2 vtid.val (placedCoreOf? st vtid.val)) vtid).objects.invExt := by
         unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
         exact SystemState.updateTcb_preserves_objects_invExt _ _ _ h4Inv
       have h6 := stepCovers_trans h5 (stepCovers_of_keys_sched
@@ -271,8 +347,10 @@ theorem suspendThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Val
         (SystemState.updateTcb_scheduler _ _ _))
       have h6Inv := SystemState.updateTcb_preserves_objects_invExt _ vtid.val
         (fun t => { t with threadState := .Inactive }) h5Inv
-      have h6b := stepCovers_trans h6 (cancelYieldTo_stepCovers e _ vtid.val h6Inv)
-      have h6bInv := SystemState.cancelYieldTo_preserves_objects_invExt _ vtid.val h6Inv
+      obtain ⟨h6r, h6rInv⟩ := releaseRemoveThread_stepCovers e _ vtid.val h6Inv
+      have h6a := stepCovers_trans h6 h6r
+      have h6b := stepCovers_trans h6a (cancelYieldTo_stepCovers e _ vtid.val h6rInv)
+      have h6bInv := SystemState.cancelYieldTo_preserves_objects_invExt _ vtid.val h6rInv
       obtain ⟨h7, h7Inv⟩ := suspendRescheduleOnCore_stepCovers e h6bInv hStep
       exact ⟨stepCovers_trans h6b h7, h7Inv⟩
   · contradiction

@@ -803,7 +803,7 @@ def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
 /-- **WS-HP HP8.1, frozen mirror**: the frame *below* the cut, when there is one
 that reciprocates.
 
-`spliceFrameBelow?`'s counterpart, clause for clause, and the **four declining
+`cutFrameBelow?`'s counterpart, clause for clause, and the **four declining
 arms are load-bearing here for the same reason they are live**: the removal's
 `…OrSelf` fold turns a *refusal* into the identity, and that is sound only
 because a refusal means nothing links down to the cut frame, so the consume that
@@ -820,7 +820,7 @@ at one key, leaving a self-referential frame no walk can leave.
 The cut frame's record is an **argument** rather than re-read, because the one
 caller has already resolved it and read the `next` that named `above`: reading it
 again would answer one question twice. -/
-def frozenSpliceFrameBelow? (st : FrozenSystemState) (rid : SeLe4n.ReplyId)
+def frozenCutFrameBelow? (st : FrozenSystemState) (rid : SeLe4n.ReplyId)
     (r : SeLe4n.Kernel.Reply) (above : SeLe4n.ReplyId) :
     Option (SeLe4n.ReplyId × SeLe4n.Kernel.Reply) :=
   match r.prev with
@@ -835,16 +835,16 @@ def frozenSpliceFrameBelow? (st : FrozenSystemState) (rid : SeLe4n.ReplyId)
 /-- **WS-HP HP8.1, frozen mirror**: the removal's store step — **three** stores
 when there is a frame below, two when there is not.
 
-`spliceReplyFrameStores`'s counterpart.  The last store, clearing both of the cut
+`cutReplyFrameStores`'s counterpart.  The last store, clearing both of the cut
 frame's links, is not optional and the live docstring says why: a `prev` that
 nothing below names back falsifies the chain's `prevLinkReciprocal` at the cut
 frame, and a `next` naming a frame whose `prev` no longer names it falsifies
 `nextLinkReciprocal`.  It is seL4's `reply_remove` unlink of the removed reply,
 and on this surface it costs nothing either — the frozen store writes by key and
 the cut frame's key is already written by the consume that follows. -/
-def frozenSpliceReplyFrameStores (st : FrozenSystemState) (rid above : SeLe4n.ReplyId)
+def frozenCutReplyFrameStores (st : FrozenSystemState) (rid above : SeLe4n.ReplyId)
     (r a : SeLe4n.Kernel.Reply) : Except KernelError FrozenSystemState :=
-  match frozenSpliceFrameBelow? st rid r above with
+  match frozenCutFrameBelow? st rid r above with
   | none =>
     match frozenWithObjectStored st above.toObjId (.reply (a.unlinkedFrom rid)) with
     | .error e => .error e
@@ -852,11 +852,11 @@ def frozenSpliceReplyFrameStores (st : FrozenSystemState) (rid above : SeLe4n.Re
       frozenWithObjectStored st1 rid.toObjId (.reply { r with prev := none, next := none })
   | some (below, b) =>
     match frozenWithObjectStored st above.toObjId
-        (.reply { a with prev := some below }) with
+        (.reply (a.unlinkedFrom rid)) with
     | .error e => .error e
     | .ok st1 =>
       match frozenWithObjectStored st1 below.toObjId
-          (.reply { b with next := some (.frame above) }) with
+          (.reply { b with next := none }) with
       | .error e => .error e
       | .ok st2 =>
         frozenWithObjectStored st2 rid.toObjId (.reply { r with prev := none, next := none })
@@ -870,9 +870,9 @@ def frozenSeverReplyFrameBelowStores (st : FrozenSystemState) (rid below : SeLe4
   | .error e => .error e
   | .ok st1 => frozenWithObjectStored st1 rid.toObjId (.reply { r with prev := none })
 
-/-- **WS-HP HP8, frozen mirror**: splice the frame `rid` out of its reply stack.
+/-- **WS-HP HP8, frozen mirror**: cut the frame `rid` out of its reply stack.
 
-`spliceReplyFrameOut`'s counterpart, and the frozen surface's whole reason for
+`cutReplyFrameOut`'s counterpart, and the frozen surface's whole reason for
 carrying one: `FrozenKernelObject.reply` holds the **live** `SeLe4n.Kernel.Reply`
 and `Model.freeze` copies a live state's Reply objects verbatim, so a frozen state
 taken mid-call-chain holds a doubly linked reply stack exactly as the live one
@@ -893,7 +893,7 @@ whose target is missing is `.objectNotFound`; and a target that does **not**
 reciprocate is `.invalidArgument` rather than a write, which is what confines
 the stores to the genuine frame above.  So the refusal set is unchanged from
 the sever's, and every refusal this surface's scenarios exercise carries. -/
-def frozenSpliceReplyFrameOut (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+def frozenCutReplyFrameOut (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
     Except KernelError FrozenSystemState :=
   match st.getReply? rid with
   | none => .ok st
@@ -904,7 +904,7 @@ def frozenSpliceReplyFrameOut (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
       | none => .error .objectNotFound
       | some a =>
         if a.prev != some rid then .error .invalidArgument
-        else frozenSpliceReplyFrameStores st rid above r a
+        else frozenCutReplyFrameStores st rid above r a
     | some (.head _) => .ok st
     | none =>
       match r.prev with
@@ -918,18 +918,18 @@ def frozenSpliceReplyFrameOut (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
 
 /-- **WS-HP HP8, frozen mirror**: the removal folded to the identity on refusal.
 
-`spliceReplyFrameOutOrSelf`'s counterpart, and the two make the same reading: a
+`cutReplyFrameOutOrSelf`'s counterpart, and the two make the same reading: a
 non-reciprocating upward link means "nothing above me on my stack".  The chain
 invariant refuses that state (`donationChainWellFormed.nextLinkReciprocal`), so on
 every reachable state the reading is never exercised; it is the fail-closed answer
 for a state the invariant does not hold of. -/
-def frozenSpliceReplyFrameOutOrSelf (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+def frozenCutReplyFrameOutOrSelf (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
     FrozenSystemState :=
-  (frozenSpliceReplyFrameOut st rid).toOption.getD st
+  (frozenCutReplyFrameOut st rid).toOption.getD st
 
 /-- **WS-HP HP8.1: where there is nothing below to splice to, the splice is the
 sever plus the cut frame's own unlink** — the frozen counterpart of
-`spliceReplyFrameOut_eq_sever_of_no_frame_below`.
+`cutReplyFrameOut_eq_sever_of_no_frame_below`.
 
 This is the measurement that the flip is confined to the shape it is about: on a
 frame whose `prev` names nothing that reciprocates — every reply in a frozen state
@@ -937,15 +937,15 @@ with no call chain, and every *bottom* cut frame — the frame above is written 
 the retired `frozenDetachReplyFrameAbove` wrote it, and the cut frame's links are
 cleared as the consume that follows clears them, so no differential scenario that
 passed before HP8 can change its answer for any other reason. -/
-theorem frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below
+theorem frozenCutReplyFrameStores_eq_sever_of_no_frame_below
     {st : FrozenSystemState} {rid above : SeLe4n.ReplyId} {r a : SeLe4n.Kernel.Reply}
-    (h : frozenSpliceFrameBelow? st rid r above = none) :
-    frozenSpliceReplyFrameStores st rid above r a =
+    (h : frozenCutFrameBelow? st rid r above = none) :
+    frozenCutReplyFrameStores st rid above r a =
       match frozenWithObjectStored st above.toObjId (.reply (a.unlinkedFrom rid)) with
       | .error e => .error e
       | .ok st1 =>
         frozenWithObjectStored st1 rid.toObjId (.reply { r with prev := none, next := none }) := by
-  unfold frozenSpliceReplyFrameStores
+  unfold frozenCutReplyFrameStores
   rw [h]
 
 /-- **WS-HP HP8.1, frozen mirror**: the scheduling context the frame `rid`

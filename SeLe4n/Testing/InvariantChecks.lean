@@ -261,20 +261,22 @@ def replyNextLinkReciprocalChecks (objectIds : List SeLe4n.ObjId) (st : SystemSt
     | none => acc) []
 
 /-- **WS-ZA ZA6.4**: `SystemState.releaseNoRefillStranded` as a runtime check:
-a bound context whose head refill is used up and pending is on some core's
+a context whose holder is active (`heldReleaseKey?`, WS-ZA ZA6.33: a
+suspended holder's context is off every queue, as seL4's `tcbReleaseRemove`
+leaves it) and whose head refill is used up and pending is on some core's
 release queue at that refill's time, read off the links themselves: the
 context is on the core's chain walked from its head (`releaseWalk`, the count
 as fuel) and its link holds that time.
 
-One row per bound context holding a pending refill; a failing row names the
+One row per held context holding a pending refill; a failing row names the
 context and the release time no queue holds. -/
 def releaseNoRefillStrandedChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
     List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
     let s := SeLe4n.SchedContextId.ofObjId oid
-    match (st.getSchedContext? s).bind SeLe4n.Kernel.SchedContext.boundReleaseKey? with
+    match (st.getSchedContext? s).bind st.heldReleaseKey? with
     | some t =>
-        (s!"bound context with a pending refill is queued: oid={oid} at={t}",
+        (s!"held context with a pending refill is queued: oid={oid} at={t}",
           SeLe4n.Kernel.Concurrency.allCores.any fun c =>
             (st.releaseWalk c (st.scheduler.releaseCountOnCore c)
               (st.scheduler.releaseHeadOnCore c)).contains s && st.releaseAtOn c s == t) :: acc

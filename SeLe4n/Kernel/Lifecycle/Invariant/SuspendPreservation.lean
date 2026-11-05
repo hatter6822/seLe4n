@@ -183,13 +183,13 @@ holder whose binding is not a donation naming this caller. -/
   rw [h]
 
 /-- The splice writes only Reply objects, never a notification. -/
-theorem spliceThreadReplyFrameOut_preserves_ipcInvariant (st : SystemState) (tcb : TCB)
+theorem cutThreadReplyFrameOut_preserves_ipcInvariant (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
-    ipcInvariant (spliceThreadReplyFrameOut st tcb) := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
+    ipcInvariant (cutThreadReplyFrameOut st tcb) := by
+  rcases cutThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]; exact hIpc
   · intro oid ntfn hN
-    exact hIpc oid ntfn (spliceReplyFrameOut_notification_backward hInv h oid ntfn hN)
+    exact hIpc oid ntfn (cutReplyFrameOut_notification_backward hInv h oid ntfn hN)
 
 /-- D1-I: cancelIpcBlocking only modifies `objects`, preserving the scheduler
     except the reschedule flags (the donation return's KSC-1 key-change hook).
@@ -205,15 +205,15 @@ theorem cancelIpcBlocking_scheduler_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    -- restoreToReadyCancelled preserves scheduler, removeFromAllEndpointQueues preserves scheduler
-    rw [restoreToReadyCancelled_scheduler_eq, removeFromAllEndpointQueues_scheduler_eq]
+    -- restoreToReadyCancelled preserves scheduler, the targeted dequeue preserves scheduler
+    rw [restoreToReadyCancelled_scheduler_eq, removeFromBlockingEndpoint_scheduler_eq]
   | blockedOnReply _ _ =>
     -- WS-SM SM6.D (PR #822 review): the reply-link consume only writes `objects`.
     -- WS-RR RR7.22 (residual, remediation): so does the donation return — its
     -- three `storeObject`s leave the scheduler alone, which is why the
     -- replenishment migration sits at the `OnCore` layer and not here.
     simp only [SystemState.unlinkReplyWaiterOpt_scheduler, consumeReplyLink_scheduler_eq,
-      restoreToReadyCancelled_scheduler_eq, spliceThreadReplyFrameOut_scheduler_eq]
+      restoreToReadyCancelled_scheduler_eq, cutThreadReplyFrameOut_scheduler_eq]
     exact returnDonationToCancelledCaller_scheduler_eq st tid tcb
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_scheduler_eq, removeFromNotificationWaitQueue_scheduler_eq]
@@ -236,12 +236,12 @@ theorem cancelIpcBlocking_machine_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    rw [restoreToReadyCancelled_machine_eq, removeFromAllEndpointQueues_machine_eq]
+    rw [restoreToReadyCancelled_machine_eq, removeFromBlockingEndpoint_machine_eq]
   | blockedOnReply _ _ =>
     dsimp only
     rw [SystemState.unlinkReplyWaiterOpt_machine, consumeReplyLink_machine_eq,
       restoreToReadyCancelled_machine_eq,
-      spliceThreadReplyFrameOut_machine_eq, returnDonationToCancelledCaller_machine_eq]
+      cutThreadReplyFrameOut_machine_eq, returnDonationToCancelledCaller_machine_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_machine_eq, removeFromNotificationWaitQueue_machine_eq]
 
@@ -1099,12 +1099,12 @@ theorem cancelIpcBlocking_preserves_objects_invExt
   | ready => exact hInv
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     exact restoreToReadyCancelled_invExt _ _
-      (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
+      (removeFromBlockingEndpoint_preserves_objects_invExt st tid _ hInv)
   | blockedOnReply _ _ =>
     exact SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _
       (consumeReplyLink_preserves_objects_invExt _ _ _
       (restoreToReadyCancelled_invExt _ _
-        (spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb
+        (cutThreadReplyFrameOut_preserves_objects_invExt _ tcb
           (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv))))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_invExt _ _
@@ -1207,9 +1207,9 @@ theorem cancelIpcBlocking_tcb_lookup
   | ready => exact ⟨t0, hPre, rfl⟩
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     obtain ⟨hInvE, t₁, hL1, hAff1⟩ :=
-      removeFromAllEndpointQueues_tcb_lookup st tid k t0 hInv hPre
+      removeFromBlockingEndpoint_tcb_lookup st tid _ k t0 hInv hPre
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      restoreToReadyCancelled_tcb_lookup (removeFromAllEndpointQueues st tid) tid k t₁
+      restoreToReadyCancelled_tcb_lookup (removeFromBlockingEndpoint st tid _) tid k t₁
         hInvE hL1
     exact ⟨t₂, hL2, hAff2.trans hAff1⟩
   | blockedOnReply _ _ =>
@@ -1219,17 +1219,17 @@ theorem cancelIpcBlocking_tcb_lookup
     obtain ⟨t₀, hL0, hAff0⟩ :=
       returnDonationToCancelledCaller_tcb_lookup st tid tcb hInv k t0 hPre
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
-    -- `v0.35.4`: the frame splice writes only Reply objects, so the TCB is untouched.
-    have hLD := spliceThreadReplyFrameOut_tcb_eq _ tcb hInvR k t₀ hL0
-    have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
+    -- `v0.35.4`: the frame cut writes only Reply objects, so the TCB is untouched.
+    have hLD := cutThreadReplyFrameOut_tcb_eq _ tcb hInvR k t₀ hL0
+    have hInvD := cutThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
     obtain ⟨t₁, hL1, hAff1⟩ :=
       restoreToReadyCancelled_tcb_lookup
-        (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid k _
+        (cutThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid k _
         hInvD hLD
     obtain ⟨t₂, hL2, hAff2⟩ :=
       consumeReplyLink_tcb_lookup
         (restoreToReadyCancelled
-          (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+          (cutThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
         tid tcb k t₁ (restoreToReadyCancelled_invExt _ tid hInvD) hL1
     obtain ⟨t₃, hL3, hE3⟩ :=
       (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ tid _).get_tcb hL2
@@ -1282,14 +1282,14 @@ theorem cancelIpcBlocking_getTcb?_none
   unfold cancelIpcBlocking
   cases tcb.ipcState with
   | ready => exact hT
-  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    obtain ⟨hInvE, hNoE⟩ := removeFromAllEndpointQueues_no_tcb st tid hInv hNo
-    have hTE : (removeFromAllEndpointQueues st tid).getTcb? tid = none := by
-      cases hX : (removeFromAllEndpointQueues st tid).getTcb? tid with
+  | blockedOnSend ep | blockedOnReceive ep | blockedOnCall ep =>
+    obtain ⟨hInvE, hNoE⟩ := removeFromBlockingEndpoint_no_tcb st tid ep hInv hNo
+    have hTE : (removeFromBlockingEndpoint st tid ep).getTcb? tid = none := by
+      cases hX : (removeFromBlockingEndpoint st tid ep).getTcb? tid with
       | none => rfl
       | some t =>
         exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoE t)
-    show (restoreToReadyCancelled (removeFromAllEndpointQueues st tid) tid).getTcb? tid
+    show (restoreToReadyCancelled (removeFromBlockingEndpoint st tid ep) tid).getTcb? tid
       = none
     rw [restoreToReadyCancelled_eq_self_of_getTcb?_none _ tid hTE]
     exact hTE
@@ -1297,22 +1297,22 @@ theorem cancelIpcBlocking_getTcb?_none
     refine (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ tid _).getTcb?_none ?_
     show (consumeReplyLink
       (restoreToReadyCancelled
-        (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+        (cutThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
       tid tcb).getTcb? tid = none
     rw [returnDonationToCancelledCaller_eq_self_of_getTcb?_none st tid tcb hT]
-    -- `v0.35.4`: the frame splice writes only Reply objects, so the victim's key
+    -- `v0.35.4`: the frame cut writes only Reply objects, so the victim's key
     -- still holds no TCB after it.
-    have hTD : (spliceThreadReplyFrameOut st tcb).getTcb? tid = none := by
-      rw [spliceThreadReplyFrameOut_getTcb?_eq st tcb hInv tid]; exact hT
-    have hInvD : (spliceThreadReplyFrameOut st tcb).objects.invExt :=
-      spliceThreadReplyFrameOut_preserves_objects_invExt st tcb hInv
+    have hTD : (cutThreadReplyFrameOut st tcb).getTcb? tid = none := by
+      rw [cutThreadReplyFrameOut_getTcb?_eq st tcb hInv tid]; exact hT
+    have hInvD : (cutThreadReplyFrameOut st tcb).objects.invExt :=
+      cutThreadReplyFrameOut_preserves_objects_invExt st tcb hInv
     have hNoD : ∀ t : TCB,
-        (spliceThreadReplyFrameOut st tcb).objects[tid.toObjId]? ≠ some (.tcb t) := by
+        (cutThreadReplyFrameOut st tcb).objects[tid.toObjId]? ≠ some (.tcb t) := by
       intro t h
       have hSome := (SystemState.getTcb?_eq_some_iff _ tid t).mpr h
       rw [hTD] at hSome
       cases hSome
-    generalize hD : spliceThreadReplyFrameOut st tcb = sD at hTD hInvD hNoD ⊢
+    generalize hD : cutThreadReplyFrameOut st tcb = sD at hTD hInvD hNoD ⊢
     rw [restoreToReadyCancelled_eq_self_of_getTcb?_none sD tid hTD]
     unfold consumeReplyLink
     cases tcb.replyObject with
@@ -1469,22 +1469,204 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
   | ready => exact hIpc
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
-      (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
-      (removeFromAllEndpointQueues_preserves_ipcInvariant st tid hInv hIpc)
+      (removeFromBlockingEndpoint_preserves_objects_invExt st tid _ hInv)
+      (removeFromBlockingEndpoint_preserves_ipcInvariant st tid _ hInv hIpc)
   | blockedOnReply _ _ =>
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
-    have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
+    have hInvD := cutThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
     exact ipcInvariant_of_objectsAgreeOffRunLinks
       (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ tid _)
       (consumeReplyLink_preserves_ipcInvariant _ tid tcb
       (restoreToReadyCancelled_invExt _ tid hInvD)
       (restoreToReadyCancelled_preserves_ipcInvariant _ tid hInvD
-        (spliceThreadReplyFrameOut_preserves_ipcInvariant _ tcb hInvR
+        (cutThreadReplyFrameOut_preserves_ipcInvariant _ tcb hInvR
           (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc))))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
       (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv)
       (removeFromNotificationWaitQueue_preserves_ipcInvariant st tid hInv hIpc)
+
+-- ============================================================================
+-- WS-ZA ZA6.33: the suspend's head cut — what it keeps
+-- ============================================================================
+
+/-- WS-ZA ZA6.33: a context's head and origin cleared is a kind-preserving
+write. -/
+theorem updateSchedContext_kindPreservingWrite (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (f : SchedContext → SchedContext)
+    (hInv : st.objects.invExt) :
+    kindPreservingWrite st (st.updateSchedContext scId f) := by
+  unfold SystemState.updateSchedContext
+  split
+  · next sc h _ =>
+    refine SystemState.rewriteObject_kindPreservingWrite _ _ _ _ hInv (fun old hOld => ?_)
+      (fun old hOld => ?_) (fun old hOld => ?_) (fun old hOld => ?_) (fun old hOld => ?_)
+    all_goals
+      rw [(SystemState.getSchedContext?_eq_some_iff st scId sc).mp h] at hOld; cases hOld; rfl
+  · exact kindPreservingWrite.refl st
+
+/-- WS-ZA ZA6.33: the head cut keeps the store's invariant. -/
+theorem cutHeadFrameKeepingContext_preserves_objects_invExt (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
+    (cutHeadFrameKeepingContext st rid).objects.invExt :=
+  cutHeadFrameKeepingContext_closed (fun s => s.objects.invExt)
+    (fun s s1 _ _ _ h _ _ hS => SystemState.updateSchedContext_preserves_objects_invExt _ _ _
+      (storeObject_preserves_objects_invExt s s1 _ _ h hS))
+    (fun s _ _ _ _ h _ _ _ => by
+      show (markKeyChangeFrom _ _ _).objects.invExt
+      rw [markKeyChangeFrom_objects]
+      exact SystemState.updateTcb_preserves_objects_invExt _ _ _ h)
+    st rid hInv
+
+/-- WS-ZA ZA6.33: **the head cut is a kind-preserving write**: a reply for a
+reply, a context for a context, a thread for a thread. -/
+theorem cutHeadFrameKeepingContext_kindPreservingWrite (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
+    kindPreservingWrite st (cutHeadFrameKeepingContext st rid) := by
+  refine (cutHeadFrameKeepingContext_closed
+    (fun s => s.objects.invExt ∧ kindPreservingWrite st s) ?_ ?_ st rid
+    ⟨hInv, kindPreservingWrite.refl st⟩).2
+  · intro s s1 rid' r _ ⟨h, hK⟩ _ hR hS
+    have hK1 : kindPreservingWrite s s1 :=
+      storeObject_kindPreservingWrite h hS ((SystemState.getReply?_eq_some_iff s rid' r).mp hR)
+        rfl (by simp [KernelObject.objectType])
+    have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h hS
+    exact ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1,
+      hK.trans (hK1.trans (updateSchedContext_kindPreservingWrite _ _ _ hI1))⟩
+  · intro s _ holder _ _ ⟨h, hK⟩ _ _ _
+    refine ⟨by rw [markKeyChangeFrom_objects]; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ h, ?_⟩
+    exact hK.trans ((SystemState.updateTcb_kindPreservingWrite s holder _ h).trans
+      (kindPreservingWrite.of_objects_eq (markKeyChangeFrom_objects _ _ _)))
+
+/-- A context rewrite moves no object of another kind. -/
+theorem updateSchedContext_objects_backward_of_kind (s : SystemState)
+    (scId : SeLe4n.SchedContextId) (f : SchedContext → SchedContext) (h : s.objects.invExt)
+    (oid : SeLe4n.ObjId) (o : KernelObject) (hk : ¬ donationReturnWritesKind o)
+    (hp : (s.updateSchedContext scId f).objects[oid]? = some o) : s.objects[oid]? = some o := by
+  by_cases hEq : scId.toObjId = oid
+  · subst hEq
+    unfold SystemState.updateSchedContext at hp
+    split at hp
+    · rw [SystemState.rewriteObject_objects_self _ _ _ _ h] at hp
+      cases hp; exact absurd trivial hk
+    · exact hp
+  · rwa [SystemState.updateSchedContext_objects_ne _ _ _ _ hEq h] at hp
+
+/-- A thread rewrite moves no object of another kind. -/
+theorem updateTcb_objects_backward_of_kind (s : SystemState)
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (h : s.objects.invExt)
+    (oid : SeLe4n.ObjId) (o : KernelObject) (hk : ¬ donationReturnWritesKind o)
+    (hp : (s.updateTcb tid f).objects[oid]? = some o) : s.objects[oid]? = some o := by
+  by_cases hEq : tid.toObjId = oid
+  · subst hEq
+    unfold SystemState.updateTcb at hp
+    split at hp
+    · rw [SystemState.rewriteObject_objects_self _ _ _ _ h] at hp
+      cases hp; exact absurd trivial hk
+    · exact hp
+  · rwa [SystemState.updateTcb_objects_ne _ _ _ _ hEq h] at hp
+
+/-- WS-ZA ZA6.33: **the head cut moves only objects of the kinds the donation
+return writes**: a key holding anything but a context, a reply or a thread
+afterwards held it before. -/
+theorem cutHeadFrameKeepingContext_objects_backward_of_kind (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (o : KernelObject)
+    (hKind : ¬ donationReturnWritesKind o)
+    (hPost : (cutHeadFrameKeepingContext st rid).objects[oid]? = some o) :
+    st.objects[oid]? = some o := by
+  refine (cutHeadFrameKeepingContext_closed
+    (fun s => s.objects.invExt ∧ ((s.objects[oid]? = some o) → st.objects[oid]? = some o))
+    ?_ ?_ st rid ⟨hInv, id⟩).2 hPost
+  · intro s s1 rid' r _ ⟨h, hB⟩ _ _ hS
+    have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h hS
+    refine ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1, fun hp => hB ?_⟩
+    have h1 := updateSchedContext_objects_backward_of_kind _ _ _ hI1 oid o hKind hp
+    by_cases hEq : oid = rid'.toObjId
+    · subst hEq
+      rw [storeObject_objects_eq s s1 _ _ h hS] at h1
+      cases h1; exact absurd trivial hKind
+    · rwa [storeObject_objects_ne s s1 _ _ _ hEq h hS] at h1
+  · intro s _ holder _ _ ⟨h, hB⟩ _ _ _
+    refine ⟨by rw [markKeyChangeFrom_objects]; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ h,
+      fun hp => hB ?_⟩
+    rw [markKeyChangeFrom_objects] at hp
+    exact updateTcb_objects_backward_of_kind _ _ _ h oid o hKind hp
+
+/-- WS-ZA ZA6.33: the head cut keeps `ipcInvariant`: it writes no notification. -/
+theorem cutHeadFrameKeepingContext_preserves_ipcInvariant (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cutHeadFrameKeepingContext st rid) := fun oid ntfn hN =>
+  hIpc oid ntfn (cutHeadFrameKeepingContext_objects_backward_of_kind st rid hInv oid _
+    (donationReturnWritesKind_notification ntfn) hN)
+
+/-- WS-ZA ZA6.33: the thread-keyed head cut keeps the store's invariant. -/
+theorem cutThreadHeadFrameKeepingContext_preserves_objects_invExt (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) :
+    (cutThreadHeadFrameKeepingContext st tcb).objects.invExt := by
+  unfold cutThreadHeadFrameKeepingContext; split
+  · exact hInv
+  · exact cutHeadFrameKeepingContext_preserves_objects_invExt _ _ hInv
+
+/-- WS-ZA ZA6.33: ...and `ipcInvariant`. -/
+theorem cutThreadHeadFrameKeepingContext_preserves_ipcInvariant (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cutThreadHeadFrameKeepingContext st tcb) := by
+  unfold cutThreadHeadFrameKeepingContext; split
+  · exact hIpc
+  · exact cutHeadFrameKeepingContext_preserves_ipcInvariant _ _ hInv hIpc
+
+/-- WS-ZA ZA6.33: the cancelled caller's head cut keeps the store's invariant. -/
+theorem cutCancelledCallerHead_preserves_objects_invExt (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) :
+    (cutCancelledCallerHead st tcb).objects.invExt := by
+  unfold cutCancelledCallerHead; split
+  · exact cutThreadHeadFrameKeepingContext_preserves_objects_invExt _ _ hInv
+  · exact hInv
+
+/-- WS-ZA ZA6.33: ...and `ipcInvariant`. -/
+theorem cutCancelledCallerHead_preserves_ipcInvariant (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cutCancelledCallerHead st tcb) := by
+  unfold cutCancelledCallerHead; split
+  · exact cutThreadHeadFrameKeepingContext_preserves_ipcInvariant _ _ hInv hIpc
+  · exact hIpc
+
+/-- WS-ZA ZA6.33: the suspend's IPC cancel keeps the store's invariant. -/
+theorem cancelIpcKeepingContexts_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
+    (cancelIpcKeepingContexts st tid tcb).objects.invExt :=
+  cancelIpcBlocking_preserves_objects_invExt _ tid tcb
+    (cutCancelledCallerHead_preserves_objects_invExt st tcb hInv)
+
+/-- WS-ZA ZA6.33: ...and `ipcInvariant`. -/
+theorem cancelIpcKeepingContexts_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cancelIpcKeepingContexts st tid tcb) :=
+  cancelIpcBlocking_preserves_ipcInvariant _ tid tcb
+    (cutCancelledCallerHead_preserves_objects_invExt st tcb hInv)
+    (cutCancelledCallerHead_preserves_ipcInvariant st tcb hInv hIpc)
+
+/-- WS-ZA ZA6.33: the release removal writes the release links alone. -/
+theorem releaseRemoveThread_releaseOnlyWrite (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (releaseRemoveThread st tid).releaseOnlyWrite st := by
+  rcases releaseRemoveThread_cases st tid with e | ⟨s, _, e⟩ <;> rw [e]
+  · exact SystemState.releaseOnlyWrite.refl st
+  · exact SchedContextOps.purgeReplenishment_releaseOnlyWrite st s
+
+/-- WS-ZA ZA6.33: ...so it agrees with its pre-state off the release links. -/
+theorem releaseRemoveThread_agree (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (releaseRemoveThread st tid).objectsAgreeOffReleaseLinks st := by
+  rcases releaseRemoveThread_cases st tid with e | ⟨s, _, e⟩ <;> rw [e]
+  · exact SystemState.objectsAgreeOffReleaseLinks.refl st
+  · exact SchedContextOps.purgeReplenishment_agree st s
+
+/-- WS-ZA ZA6.33: ...and keeps the store's invariant. -/
+theorem releaseRemoveThread_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : st.objects.invExt) : (releaseRemoveThread st tid).objects.invExt := by
+  rcases releaseRemoveThread_cases st tid with e | ⟨s, _, e⟩ <;> rw [e]
+  · exact h
+  · exact SchedContextOps.purgeReplenishment_objects_invExt st s h
 
 /-- WS-SM SM6.E: `cancelBoundDonation` preserves `ipcInvariant` — the bound
 arm's object writes are the SchedContext deactivation insert and the TCB

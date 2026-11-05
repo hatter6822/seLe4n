@@ -751,10 +751,10 @@ theorem finaliseReplyCallerCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId}
       have k1 := tcbProjKept.returnDonationToCancelledCaller (g := TCB.bindKey) s x t1 hInv
         (fun _ _ _ => rfl)
       generalize Lifecycle.Suspend.returnDonationToCancelledCaller s x t1 = S1 at i1 k1
-      have i2 := spliceThreadReplyFrameOut_preserves_objects_invExt S1 t1 i1
-      have k2 : tcbProjKept TCB.bindKey (spliceThreadReplyFrameOut S1 t1) s := fun y => by
-        rw [spliceThreadReplyFrameOut_getTcb?_eq S1 t1 i1 y]; exact k1 y
-      generalize spliceThreadReplyFrameOut S1 t1 = S2 at i2 k2
+      have i2 := cutThreadReplyFrameOut_preserves_objects_invExt S1 t1 i1
+      have k2 : tcbProjKept TCB.bindKey (cutThreadReplyFrameOut S1 t1) s := fun y => by
+        rw [cutThreadReplyFrameOut_getTcb?_eq S1 t1 i1 y]; exact k1 y
+      generalize cutThreadReplyFrameOut S1 t1 = S2 at i2 k2
       obtain ⟨u, hu, ku⟩ := k2.get hX
       have i3 := Lifecycle.Suspend.restoreToReadyCancelled_invExt S2 x i2
       obtain ⟨w3, hx3, e3⟩ : ∃ w3, (Lifecycle.Suspend.restoreToReadyCancelled S2 x).getTcb? x =

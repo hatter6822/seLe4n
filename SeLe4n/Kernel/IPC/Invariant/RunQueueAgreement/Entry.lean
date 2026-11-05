@@ -511,7 +511,8 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         exact IpcFrame.updateTcb _ _ fun _ => rfl)
       exact ((hW.trans hW2).entry.trans
         (faultDeliverOnCoreChecked_runQueueEntryStage _ _ tid _ _ e E2.endpointHeads
-          (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1) hNI)).toOn _
+          (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1) hNI E2.objInv E2.refined
+          (E2.dequeued.runnable (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1)).activeAt)).toOn _
     · cases h
       exact (hW.trans (RunQueueStage.of_frame
         (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
@@ -650,8 +651,8 @@ theorem faultEntryDeliver_runQueueEntryStage (lctx : LabelingContext) (st : Syst
     split
     · exact (RunQueueStage.refl _).entry
     · rename_i hIdle
-      exact (faultDeliveredState_runQueueEntryStage lctx st f ectx w c _ E.objInv
-        E.endpointHeads hCur (by simpa using hIdle)).trans
+      exact (faultDeliveredState_runQueueEntryStage lctx st f ectx w c _ E.objInv E.refined
+        (E.dequeued.runnable hCur).activeAt E.endpointHeads hCur (by simpa using hIdle)).trans
         (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ c)
 
 theorem faultEntryStep_runQueueEntryStage (lctx : LabelingContext) (st : SystemState)

@@ -279,16 +279,28 @@ theorem _root_.SeLe4n.Kernel.YieldLinksKept.mapTcbInPlace (st : SystemState) (t 
   · rfl
 
 /-- **The in-place thread write primitive keeps every context's refill view**:
-it writes a thread, which holds none. -/
+it writes a thread, which holds none — and, WS-ZA ZA6.33, a write that
+unsuspends no thread keeps every thread's (`tcbRefillView`). -/
 theorem _root_.SeLe4n.Kernel.RefillViewsKept.mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId)
-    (g : TCB → TCB) : RefillViewsKept (st.mapTcbInPlace t g) st :=
-  .of_eq fun x => by
-    rw [objects_mapTcbInPlace]
-    split
-    · cases st.objects[x]? with
-      | none => rfl
-      | some o => cases o <;> rfl
-    · rfl
+    (g : TCB → TCB)
+    (hA : ∀ x, (g x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
+    RefillViewsKept (st.mapTcbInPlace t g) st := fun x v hv => by
+  rw [objects_mapTcbInPlace] at hv
+  split at hv
+  · cases e : st.objects[x]? with
+    | none => rw [e] at hv; cases hv
+    | some o =>
+      rw [e] at hv
+      cases o with
+      | tcb y =>
+        simp only [Option.map_some, KernelObject.mapTcb, objRefillView] at hv ⊢
+        unfold Kernel.tcbRefillView at hv ⊢
+        split at hv
+        · cases hv
+        · rw [if_neg (hA y ‹_›)]; exact hv
+      | _ => exact hv
+  · exact hv
 
 theorem mapTcbInPlace_objects_invExt (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
     (hInv : st.objects.invExt) : (st.mapTcbInPlace t g).objects.invExt :=
@@ -2100,7 +2112,8 @@ macro "refill_view" : tactic =>
     | (rw [(getReply?_eq_some_iff _ _ _).mp ‹SystemState.getReply? _ _ = some _›]; rfl)
     | (rw [(getCNode?_eq_some_iff _ _ _).mp ‹SystemState.getCNode? _ _ = some _›]; rfl)
     | (rw [(getUntyped?_eq_some_iff _ _ _).mp ‹SystemState.getUntyped? _ _ = some _›]; rfl)
-    | (simp_all only [objRefillView]; done))
+    | (simp_all only [objRefillView]; done)
+    | (simp_all only [objRefillView]; unfold tcbRefillView; rfl))
 
 /-- Closes `objYieldCodes (some obj) = objYieldCodes st.objects[k]?` for a store
 that keeps the slot's yield codes (WS-ZA ZA6.6): an object holding no link end
@@ -3548,21 +3561,92 @@ theorem RunQueueStage.of_frame_vacate {st st' : SystemState} (hO : st'.objects =
 /-- A TCB write that keeps the run-queue fields keeps the link agreement. -/
 theorem RunQueueLinkStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
-    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hA : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     RunQueueLinkStage st (st.updateTcb tid f) :=
   .of_frames
     (fun h r => ⟨updateTcb_preserves_objects_invExt st tid f h, updateTcb_runQueueRefined h hf r⟩)
     (fun h => .of_getSchedContext? (updateTcb_getSchedContext? st tid f h)
       (by rw [updateTcb_scheduler]))
-    (fun h => .of_getSchedContext?_eq (updateTcb_getSchedContext? st tid f h))
+    (fun h => .updateTcb st tid f h hA)
     (fun h => .updateTcb st tid f h hY)
 
 theorem RunQueueStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hm : TCB.StateMono f := by tcb_state_mono)
-    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hA : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
     RunQueueStage st (st.updateTcb tid f) :=
-  ⟨RunQueueLinkStage.updateTcb st tid hf hY,
+  ⟨RunQueueLinkStage.updateTcb st tid hf hY hA,
+    fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [updateTcb_scheduler]) (fun c x => by
+      unfold SystemState.updateTcb; split
+      · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ h hT (hf t) c x
+      · rfl) (StateMono.updateTcb h tid hm) d, fun h _ => StateMono.updateTcb h tid hm⟩
+
+/-- WS-ZA ZA6.33: **the contexts `st` names `tid` the holder of** — the ones
+whose refill obligations read whether `tid` is suspended. -/
+def HeldBy (st : SystemState) (tid : SeLe4n.ThreadId) (s : SeLe4n.SchedContextId) : Prop :=
+  ∃ sc, st.getSchedContext? s = some sc ∧ sc.boundThread = some tid
+
+/-- A TCB rewrite leaves alone whether a context held by another thread has an
+unsuspended holder. -/
+theorem holderActive_updateTcb_of_ne (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) {sc : SchedContext} (h : sc.boundThread ≠ some tid) :
+    (st.updateTcb tid f).holderActive sc = st.holderActive sc := by
+  unfold SystemState.holderActive
+  cases e : sc.boundThread with
+  | none => rfl
+  | some t =>
+    have hne : ¬ tid.toObjId = t.toObjId := fun h' =>
+      h (by rw [e, ThreadId.toObjId_injective _ _ h'])
+    dsimp only
+    rw [updateTcb_getTcb?_ne st tid f hInv t hne]
+
+/-- WS-ZA ZA6.33: **a TCB rewrite keeps the refill state sound off the
+contexts the thread holds**, whatever it does to the thread's state: it writes
+no context and no queue, and every other context's holder is another thread. -/
+theorem refillsSoundExcept_updateTcb_heldBy {S : SeLe4n.SchedContextId → Prop} {st : SystemState}
+    {tid : SeLe4n.ThreadId} {f : TCB → TCB} (hInv : st.objects.invExt)
+    (hS : ∀ x, HeldBy st tid x → S x) (h : st.refillsSoundExcept S) :
+    (st.updateTcb tid f).refillsSoundExcept S := by
+  obtain ⟨hW, hN, hB⟩ := h
+  have hG := updateTcb_getSchedContext? st tid f hInv
+  have hQ : (st.updateTcb tid f).scheduler = st.scheduler := updateTcb_scheduler _ _ _
+  refine ⟨fun s sc hs hsc => hW s sc hs (by rw [← hG s]; exact hsc), fun s t hs hk => ?_,
+    fun c e hs he => ?_⟩
+  · rw [hG s] at hk
+    cases e : st.getSchedContext? s with
+    | none => rw [e] at hk; cases hk
+    | some sc =>
+      rw [e] at hk
+      have hne : sc.boundThread ≠ some tid := fun hb => hs (hS s ⟨sc, e, hb⟩)
+      have hk' : st.heldReleaseKey? sc = some t := by
+        simp only [Option.bind_some] at hk
+        unfold SystemState.heldReleaseKey? at hk ⊢
+        rw [holderActive_updateTcb_of_ne st tid f hInv hne] at hk; exact hk
+      obtain ⟨c, hc⟩ := hN s t hs (by rw [e]; exact hk')
+      exact ⟨c, by rw [hQ]; exact hc⟩
+  · rw [hQ] at he
+    obtain ⟨sc, h1, h2⟩ := hB c e hs he
+    exact ⟨sc, by rw [hG]; exact h1, h2⟩
+
+/-- WS-ZA ZA6.33: **a TCB rewrite that may unsuspend the thread is a frame
+stage off the contexts it holds** (`HeldBy`): their refill obligations read
+whether it is suspended, so a step that wakes it must settle them
+(`RunQueueFrameStage.withRefills`); every other obligation is kept. -/
+theorem RunQueueFrameStage.updateTcb_heldBy (st : SystemState) (tid : SeLe4n.ThreadId)
+    {f : TCB → TCB} (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hm : TCB.StateMono f := by tcb_state_mono)
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    RunQueueFrameStage (HeldBy st tid) st (st.updateTcb tid f) :=
+  ⟨⟨fun h r => ⟨updateTcb_preserves_objects_invExt st tid f h, updateTcb_runQueueRefined h hf r⟩,
+    fun h _ q => (releaseStateAgree.of_getSchedContext? (updateTcb_getSchedContext? st tid f h)
+      (by rw [updateTcb_scheduler])).refined q,
+    fun S hS h _ _ x => refillsSoundExcept_updateTcb_heldBy h hS x,
+    fun h _ y => yieldLinksAgree_of_kept (YieldLinksKept.updateTcb st tid f h hY) y,
+    fun h _ => .of_kept (YieldLinksKept.updateTcb st tid f h hY) (by resident_frame)⟩,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [updateTcb_scheduler]) (fun c x => by
       unfold SystemState.updateTcb; split
       · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ h hT (hf t) c x
@@ -3755,7 +3839,10 @@ theorem RunQueueFrameStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
-    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame)
+    (hA : ∀ x, obj = .tcb x → x.threadState ≠ .Inactive →
+      ∃ y, st.objects[k]? = some (.tcb y) ∧ y.threadState ≠ .Inactive := by
+      intro _ h; cases h) :
     RunQueueFrameStage (· = SeLe4n.SchedContextId.ofObjId k) st st' :=
   ⟨⟨fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects k obj hInv,
       runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩,
@@ -3763,7 +3850,8 @@ theorem RunQueueFrameStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj
     fun S hP hInv _ q x => refillsSoundExcept_of_keptOff
       (RefillsKeptOff.of_insert (s := SeLe4n.SchedContextId.ofObjId k) hInv
         (by rw [SeLe4n.SchedContextId.toObjId_ofObjId]; exact hO)
-        (fun c => by rw [(show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).replenishQueueOnCore c]))
+        (fun c => by rw [(show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).replenishQueueOnCore c])
+        (by rw [SeLe4n.SchedContextId.toObjId_ofObjId]; exact hA))
       hP ((show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).refined q) x,
     fun hInv _ y => yieldLinksAgree_of_kept (.insert hInv hO hY) y,
     fun hInv _ => .of_kept (.insert hInv hO hY) hRes⟩,
@@ -3777,10 +3865,13 @@ theorem RunQueueFrameStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
     (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
     (hm : objStateMono st.objects[k]? obj)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
-    (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes) :
+    (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
+    (hA : ∀ x, obj = .tcb x → x.threadState ≠ .Inactive →
+      ∃ y, st.objects[k]? = some (.tcb y) ∧ y.threadState ≠ .Inactive := by
+      intro _ h; cases h) :
     RunQueueFrameStage (· = SeLe4n.SchedContextId.ofObjId k) st st' := by
   unfold SeLe4n.Model.storeObject at hS; cases hS
-  exact RunQueueFrameStage.insert rfl rfl rfl h hm rfl hR hY
+  exact RunQueueFrameStage.insert rfl rfl rfl h hm rfl hR hY rfl rfl hA
 
 /-- WS-ZA ZA6.4: **a context created in an empty slot** — unbound and well
 formed — is a stage: no entry names the slot (its pre-state holds no context),
@@ -3927,10 +4018,13 @@ theorem RunQueueStage.storeObject_tcb {st st' : SystemState} {k : SeLe4n.ObjId}
     {t old : TCB} (hS : SeLe4n.Model.storeObject k (.tcb t) st = .ok ((), st'))
     (hOld : st.objects[k]? = some (.tcb old)) (h : ∀ c, t.runLinkOn c = old.runLinkOn c)
     (hm : objStateMono (some (.tcb old)) (.tcb t) := by obj_state_mono)
-    (hYc : t.yieldToCode = old.yieldToCode := by first | rfl | simp_all) :
+    (hYc : t.yieldToCode = old.yieldToCode := by first | rfl | simp_all)
+    (hTS : t.threadState = old.threadState := by first | rfl | simp_all) :
     RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by rw [hOld]; exact h c) (by rw [hOld]; exact hm)
-    (fun _ => by rw [hOld]; rfl) (by rw [hOld]; rfl) (by rw [hOld]; simp only [objYieldCodes, hYc])
+    (fun _ => by rw [hOld]; rfl)
+    (by rw [hOld]; simp only [objRefillView, Kernel.tcbRefillView, hTS])
+    (by rw [hOld]; simp only [objYieldCodes, hYc])
 
 
 /-- **The block write**: a TCB stored over core `c`'s current thread `t` that
@@ -3955,7 +4049,7 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
   refine ⟨.of_frames (fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects _ _ hInv,
     runQueueRefined_of_frame (runLinkOn_insert hInv hO hLk) (by rw [hSc]) (by rw [hSc]) r⟩)
     (fun hInv => ⟨.insert hInv hO (fun _ => by rw [hRaw]; rfl), by rw [hSc]⟩)
-    (fun hInv => .insert hInv hO (by rw [hRaw]; rfl))
+    (fun hInv => .insert hInv hO (by rw [hRaw]; simp only [objRefillView, Kernel.tcbRefillView, hT]))
     (fun hInv => .insert hInv hO (by rw [hRaw]; simp only [objYieldCodes, hYc]))
     (by unfold SeLe4n.Model.storeObject at hS; cases hS; rfl),
     fun hInv _ _ d => ?_, fun _ hp => by cases hp⟩

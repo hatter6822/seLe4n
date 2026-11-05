@@ -184,11 +184,15 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_tcb {st : Sy
     {tid : SeLe4n.ThreadId} {t t' : TCB} (h : st.getTcb? tid = some t)
     (hL : ∀ c, t'.runLinkOn c = t.runLinkOn c) (hA : st.rewriteAdmissible tid.toObjId (.tcb t'))
     (hm : TCB.StepMono t t' := by exact ⟨id, id, by first | rfl | simp_all⟩)
-    (hY : t'.yieldToCode = t.yieldToCode := by first | rfl | simp_all) :
+    (hY : t'.yieldToCode = t.yieldToCode := by first | rfl | simp_all)
+    (hTS : t'.threadState = t.threadState := by first | rfl | simp_all) :
     RunQueueStage st (st.rewriteObject tid.toObjId (.tcb t') hA) :=
   RunQueueStage.insert (st' := st.rewriteObject tid.toObjId (.tcb t') hA) rfl rfl rfl
     (fun c => by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; exact hL c)
     (by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; exact SystemState.objStateMono_tcb hm)
+    (hV := by
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]
+      simp only [objRefillView, tcbRefillView, hTS])
     (hY := by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; simp only [objYieldCodes, hY])
 
 /-- The configure's bound-thread propagation: TCB rewrites that keep the
@@ -626,11 +630,161 @@ theorem ValidThreadId.isReserved_false (v : SeLe4n.ValidThreadId) : v.val.isRese
   simp only [SeLe4n.ThreadId.isReserved, decide_eq_false_iff_not]
   intro h; subst h; exact hv rfl
 
-/-- The thread suspend: the reclaimed teardown, the chain revert and the
-donation arm — stages that leave the victim runnable and placed where the
-pre-state placed it — then the removal from that placement, two writes to the
-victim no core runs and no queue holds, and the scheduling point.  The victim
-is no idle thread: the arm's validator refuses one. -/
+/-- WS-ZA ZA6.33: **the head cut keeps every thread's TCB but for the holder's
+owner code**, so any reading of a TCB that ignores that code reads every thread
+alike across it. -/
+theorem cutCancelledCallerHead_getTcb?_map {β : Type} (st : SystemState) (tcb : TCB)
+    (g : TCB → β) (hg : ∀ t, g { t with scBindingOwnerCode := 0 } = g t)
+    (hInv : st.objects.invExt) (y : SeLe4n.ThreadId) :
+    ((cutCancelledCallerHead st tcb).getTcb? y).map g = (st.getTcb? y).map g :=
+  (cutCancelledCallerHead_closed
+    (fun s => s.objects.invExt ∧ ∀ y, (s.getTcb? y).map g = (st.getTcb? y).map g)
+    (fun s s1 rid r scId ⟨hI, hP⟩ _ hR hS => by
+      have hI1 := storeObject_preserves_objects_invExt s _ _ _ hI hS
+      refine ⟨SystemState.updateSchedContext_preserves_objects_invExt _ scId _ hI1, fun y => ?_⟩
+      rw [SystemState.updateSchedContext_getTcb? _ _ _ hI1,
+        storeObject_replyAt_getTcb?_eq s s1 rid r _ hR hI hS]
+      exact hP y)
+    (fun s _ holder _ _ ⟨hI, hP⟩ _ _ _ => by
+      refine ⟨by
+        rw [markKeyChangeFrom_objects]
+        exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hI, fun y => ?_⟩
+      rw [markKeyChangeFrom_getTcb?]
+      by_cases hy : holder = y
+      · subst hy
+        rw [SystemState.updateTcb_getTcb?_self _ _ _ hI, Option.map_map, ← hP holder]
+        cases s.getTcb? holder with
+        | none => rfl
+        | some t => exact congrArg some (hg t)
+      · rw [SystemState.updateTcb_getTcb?_ne _ _ _ hI y
+          (fun h => hy (SeLe4n.ThreadId.toObjId_injective _ _ h))]
+        exact hP y)
+    st tcb ⟨hInv, fun _ => rfl⟩).2 y
+
+/-- WS-ZA ZA6.33: the head cut writes no current slot. -/
+theorem cutCancelledCallerHead_currentOnCore (st : SystemState) (tcb : TCB)
+    (c : Concurrency.CoreId) :
+    (cutCancelledCallerHead st tcb).scheduler.currentOnCore c = st.scheduler.currentOnCore c :=
+  cutCancelledCallerHead_closed
+    (fun s => s.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (fun s s1 _ _ _ h _ _ hS => by
+      show (SystemState.updateSchedContext s1 _ _).scheduler.currentOnCore c = _
+      rw [SystemState.updateSchedContext_scheduler, storeObject_scheduler_eq s s1 _ _ hS]
+      exact h)
+    (fun s _ _ _ _ h _ _ _ => by
+      dsimp only
+      rw [markKeyChangeFrom_currentOnCore, SystemState.updateTcb_scheduler]; exact h)
+    st tcb rfl
+
+/-- WS-ZA ZA6.33: **the head cut is a run-queue stage**: a reply stored over
+itself, a context's head and origin cleared (no refill field), and a holder's
+owner code cleared under the key hook. -/
+theorem cutCancelledCallerHead_runQueueStage (st : SystemState) (tcb : TCB) :
+    RunQueueStage st (cutCancelledCallerHead st tcb) :=
+  cutCancelledCallerHead_closed (RunQueueStage st)
+    (fun _ s1 _ _ scId h _ hR hS => (h.trans (storeObject_replyOver_runQueueStage hR hS)).trans
+      (updateSchedContext_runQueueStage s1 scId _))
+    (fun s _ holder _ _ h _ _ _ =>
+      (h.trans (RunQueueStage.updateTcb s holder
+        (f := fun t => { t with scBindingOwnerCode := 0 }) (fun _ _ => rfl))).trans
+        (markKeyChangeFrom_runQueueStage _ _ holder))
+    st tcb (RunQueueStage.refl st)
+
+/-- WS-ZA ZA6.33: **the suspend's IPC cancel is a run-queue stage**: the head
+cut, then the teardown, which hands nothing back once the head is cut. -/
+theorem cancelIpcKeepingContexts_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : RunQueueStage st (cancelIpcKeepingContexts st tid tcb) :=
+  RunQueueStage.of_invExt fun hInv =>
+    (cutCancelledCallerHead_runQueueStage st tcb).trans
+      (cancelIpcBlocking_runQueueStage _ tid tcb
+        (cancelledCallerDonation?_cutCancelledCallerHead st tid tcb hInv))
+
+/-- WS-ZA ZA6.33: the suspend's IPC cancel places every thread where it was. -/
+theorem cancelIpcKeepingContexts_placedCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    placedCoreOf? (cancelIpcKeepingContexts st tid tcb) x = placedCoreOf? st x := by
+  have hI1 := cutCancelledCallerHead_preserves_objects_invExt st tcb hInv
+  unfold cancelIpcKeepingContexts
+  apply placedCoreOf?_congr_of_runCores_current_eq
+  · exact SystemState.RunCoresAgree.trans
+      (cancelIpcBlocking_runCoresAgree _ tid tcb hI1)
+      (fun y => cutCancelledCallerHead_getTcb?_map st tcb TCB.runCoreCode (fun _ => rfl) hInv y)
+  · intro c
+    rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]
+    exact cutCancelledCallerHead_currentOnCore st tcb c
+
+/-- WS-ZA ZA6.33: **the suspend's IPC cancel leaves an active victim runnable**:
+the head cut keeps its IPC and thread state, the teardown makes it `.ready`,
+and neither suspends a thread. -/
+theorem cancelIpcKeepingContexts_victim_runnable (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (hInv : st.objects.invExt) (hNR : v.isReserved = false)
+    (hT : st.getTcb? v = some tcbV) (hA : tcbV.threadState ≠ .Inactive) :
+    (cancelIpcKeepingContexts st v tcbV).runnable v := by
+  have hI1 := cutCancelledCallerHead_preserves_objects_invExt st tcbV hInv
+  have hIp := cutCancelledCallerHead_getTcb?_map st tcbV TCB.ipcState (fun _ => rfl) hInv v
+  have hTS := cutCancelledCallerHead_getTcb?_map st tcbV TCB.threadState (fun _ => rfl) hInv v
+  rw [hT] at hIp hTS
+  obtain ⟨x, hx, hxI⟩ := Option.map_eq_some_iff.mp hIp
+  rw [hx] at hTS
+  have hxA : x.threadState ≠ .Inactive := by
+    have := Option.some.inj hTS; rw [this]; exact hA
+  unfold cancelIpcKeepingContexts
+  obtain ⟨z, hz, hzA⟩ := (cancelIpcBlocking_stateMono _ v tcbV hI1).activeAt ⟨x, hx, hxA⟩
+  have hzR := cancelIpcBlocking_victim_ready_of_ipcState _ v tcbV x hI1
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx) (by simp [hNR]) hxI z
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hz)
+  exact ⟨z, hz, hzR, hzA⟩
+
+/-- WS-ZA ZA6.33: **`tcbReleaseRemove` of a suspended thread is a run-queue
+stage**: the entry it purges is bound to the thread, which is `.Inactive`, so
+the context has no held place and nothing is stranded. -/
+theorem releaseRemoveThread_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hI : ∀ t, st.getTcb? tid = some t → t.threadState = .Inactive) :
+    RunQueueStage st (releaseRemoveThread st tid) := by
+  rcases releaseRemoveThread_cases st tid with e | ⟨s, hs, e⟩ <;> rw [e]
+  · exact RunQueueStage.refl _
+  · obtain ⟨sc, hsc, hb⟩ := releaseEntryOf?_some hs
+    refine SchedContextOps.purgeReplenishment_runQueueStageHeld st s ?_
+    rw [hsc]
+    show st.heldReleaseKey? sc = none
+    have hNA : st.holderActive sc = false := by
+      unfold SystemState.holderActive
+      rw [hb]
+      dsimp only
+      cases ht : st.getTcb? tid with
+      | none => rfl
+      | some t => simp [hI t ht]
+    unfold SystemState.heldReleaseKey?
+    simp [hNA]
+
+/-- WS-ZA ZA6.33: `tcbReleaseRemove` is a frame stage off every context: a
+purge or nothing. -/
+theorem releaseRemoveThread_runQueueFrameStage (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.RunQueueFrameStage (fun _ => True) st (releaseRemoveThread st tid) := by
+  rcases releaseRemoveThread_cases st tid with e | ⟨s, _, e⟩ <;> rw [e]
+  · exact (RunQueueStage.refl _).toFrame _
+  · exact (SchedContextOps.purgeReplenishment_runQueueFrameStage st s).mono fun _ _ => trivial
+
+/-- A kernel entry followed by one that holds from a start whose store keeps
+its invariant and whose queues agree with the links is a kernel entry. -/
+theorem runQueueEntryStage_trans_of_invExt {a b c : SystemState}
+    (h1 : SystemState.RunQueueEntryStage a b)
+    (h2 : a.objects.invExt → a.runQueueRefined → SystemState.RunQueueEntryStage b c) :
+    SystemState.RunQueueEntryStage a c :=
+  ⟨⟨fun h r => (h1.1 h r).elim (h2 h r).1.links,
+    fun h r q => let ⟨h', r'⟩ := h1.1 h r; (h2 h r).1.release h' r' (h1.1.release h r q),
+    fun S h r q x => let ⟨h', r'⟩ := h1.1 h r
+      (h2 h r).1.refills S h' r' (h1.1.release h r q) (h1.1.refills S h r q x),
+    fun h r y => let ⟨h', r'⟩ := h1.1 h r; (h2 h r).1.yield h' r' (h1.1.yield h r y),
+    fun h r => let ⟨h', r'⟩ := h1.1 h r; ((h2 h r).1.live h' r').trans (h1.1.live h r)⟩,
+   fun h r r'' d => let ⟨h', r'⟩ := h1.1 h r; (h2 h r).2 h' r' r'' (h1.2 h r r' d)⟩
+
+/-- The thread suspend: seL4-MCS's `cancelIPC` and the chain revert — stages
+that leave the victim runnable and placed where the pre-state placed it — then
+the removal from that placement, two writes to the victim no core runs and no
+queue holds, `tcbReleaseRemove` of the now `.Inactive` victim, the yield-link
+cancel and the scheduling point.  The victim is no idle thread: the arm's
+validator refuses one. -/
 theorem suspendThreadOnCore_runQueueEntryStage {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId} {executingCore : Concurrency.CoreId}
     {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
@@ -641,24 +795,24 @@ theorem suspendThreadOnCore_runQueueEntryStage {st st' : SystemState}
   split at hStep
   case h_2 => exact absurd hStep (by simp)
   case h_1 tcb hT =>
-    have hS1 := cancelIpcBlockingReclaimed_runQueueStage st vtid.val tcb
+    have hS1 := cancelIpcKeepingContexts_runQueueStage st vtid.val tcb
     split at hStep
     case isTrue => exact absurd hStep (by simp)
     case isFalse hA =>
-      have hS12 : RunQueueStage (cancelIpcBlockingReclaimed vtid.val tcb st)
+      have hS12 : RunQueueStage (cancelIpcKeepingContexts st vtid.val tcb)
           (match PriorityInheritance.blockingServer st vtid.val with
            | some serverId => (PriorityInheritance.propagatePipChainCrossCore
-               (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore).1
-           | none => cancelIpcBlockingReclaimed vtid.val tcb st) := by
+               (cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
+           | none => cancelIpcKeepingContexts st vtid.val tcb) := by
         cases PriorityInheritance.blockingServer st vtid.val with
         | none => exact RunQueueStage.refl _
         | some serverId => exact PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _
-      have hP12 : (cancelIpcBlockingReclaimed vtid.val tcb st).objects.invExt →
+      have hP12 : (cancelIpcKeepingContexts st vtid.val tcb).objects.invExt →
           placedCoreOf? (match PriorityInheritance.blockingServer st vtid.val with
            | some serverId => (PriorityInheritance.propagatePipChainCrossCore
-               (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore).1
-           | none => cancelIpcBlockingReclaimed vtid.val tcb st) vtid.val
-            = placedCoreOf? (cancelIpcBlockingReclaimed vtid.val tcb st) vtid.val := by
+               (cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
+           | none => cancelIpcKeepingContexts st vtid.val tcb) vtid.val
+            = placedCoreOf? (cancelIpcKeepingContexts st vtid.val tcb) vtid.val := by
         intro hInv1
         cases PriorityInheritance.blockingServer st vtid.val with
         | none => rfl
@@ -666,48 +820,57 @@ theorem suspendThreadOnCore_runQueueEntryStage {st st' : SystemState}
           exact placedCoreOf?_congr_of_bits _ fun c =>
             ⟨PriorityInheritance.propagatePipChainCrossCore_queuedOn _ _ _ _ _ _ hInv1,
               by rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore]⟩
-      revert hStep
-      split
-      · intro hStep; exact absurd hStep (by simp)
-      · next s3 hDon =>
-        intro hStep
-        have hS23 := cancelSuspendDonation_runQueueStage _ s3 vtid.val _ hDon
-        have hS3 := (hS1.trans hS12).trans hS23
-        refine SystemState.RunQueueEntryStage.trans ?_
-          (suspendRescheduleOnCore_runQueueEntryStage hStep)
-        refine SystemState.RunQueueEntryStage.trans ?_
-          (SystemState.cancelYieldTo_runQueueStage _ vtid.val).entry
-        refine SystemState.RunQueueEntryStage.of_inv ?_ fun hInv hR _ => ?_
-        · unfold clearPendingStateValid clearPendingState
-          exact (hS3.1.trans (descheduleAt_runQueueStage s3 vtid.val _).1).trans
-            ((SystemState.RunQueueLinkStage.updateTcb _ vtid.val
-              (f := fun tcb => { tcb with
+      have hS3 := hS1.trans hS12
+      refine SystemState.RunQueueEntryStage.trans ?_
+        (suspendRescheduleOnCore_runQueueEntryStage hStep)
+      refine SystemState.RunQueueEntryStage.trans ?_
+        (SystemState.cancelYieldTo_runQueueStage _ vtid.val).entry
+      unfold clearPendingStateValid clearPendingState
+      refine runQueueEntryStage_trans_of_invExt ?_ fun hInv hR =>
+        (releaseRemoveThread_runQueueStage _ vtid.val fun t ht => ?_).entry
+      rotate_left
+      · obtain ⟨hI3, hR3⟩ := hS3.1.links hInv hR
+        rw [SystemState.updateTcb_getTcb?_self _ _ _ ?_] at ht
+        · obtain ⟨_, _, rfl⟩ := Option.map_eq_some_iff.mp ht
+          rfl
+        · exact SystemState.updateTcb_preserves_objects_invExt _ vtid.val _
+            ((descheduleAt_runQueueStage _ vtid.val _).1.links hI3 hR3).1
+      refine SystemState.RunQueueEntryStage.of_inv ?_ fun hInv hR _ => ?_
+      · exact (hS3.1.trans (descheduleAt_runQueueStage _ vtid.val _).1).trans
+          ((SystemState.RunQueueLinkStage.updateTcb _ vtid.val
+            (f := fun tcb => { tcb with
+              pendingMessage := none
+              timeoutBudget := none
+              queuePrevCode := 0
+              queueNextCode := 0
+              queuePPrevCode := 0 })
+            (fun _ _ => rfl)).trans
+            (SystemState.RunQueueLinkStage.updateTcb _ vtid.val
+              (f := fun t => { t with threadState := .Inactive }) (fun _ _ => rfl)))
+      obtain ⟨hInv1, hR1⟩ := hS1.1 hInv hR
+      have hP := ((hP12 hInv1).trans (cancelIpcKeepingContexts_placedCoreOf? _ _ _ hInv _)).symm
+      have hRun3 := (hS12.mono hInv1 hR1).runnable
+          (cancelIpcKeepingContexts_victim_runnable st _ tcb hInv
+            (ValidThreadId.isReserved_false vtid) hT
+            (fun h => hA (by rw [h]; first | rfl | decide | simp)))
+      refine hS3.entry.trans ?_
+      have key : ∀ (M : SystemState) p, p = placedCoreOf? M vtid.val → M.runnable vtid.val →
+          SystemState.RunQueueEntryStage M
+            (((descheduleAt M vtid.val p).updateTcb vtid.val fun tcb => { tcb with
                 pendingMessage := none
                 timeoutBudget := none
                 queuePrevCode := 0
                 queueNextCode := 0
-                queuePPrevCode := 0 })
-              (fun _ _ => rfl)).trans
-              (SystemState.RunQueueLinkStage.updateTcb _ vtid.val
-                (f := fun t => { t with threadState := .Inactive }) (fun _ _ => rfl)))
-        obtain ⟨hInv1, hR1⟩ := hS1.1 hInv hR
-        obtain ⟨hInv2, hR2⟩ := hS12.1 hInv1 hR1
-        have hP : placedCoreOf? st vtid.val = placedCoreOf? s3 vtid.val := by
-          rw [cancelSuspendDonation_placedCoreOf? _ s3 _ _ vtid.val hInv2 hDon, hP12 hInv1,
-            cancelIpcBlockingReclaimed_placedCoreOf?_victim _ _ _ hInv]
-        have hRun3 : s3.runnable vtid.val :=
-          ((hS12.trans hS23).mono hInv1 hR1).runnable
-            (cancelIpcBlockingReclaimed_victim_runnable st _ tcb hInv
-              (ValidThreadId.isReserved_false vtid) hT
-              (fun h => hA (by rw [h]; first | rfl | decide | simp)))
-        rw [hP]
-        refine hS3.entry.trans ?_
-        unfold clearPendingStateValid clearPendingState
-        exact descheduleAtPlacedThenOffWrites_runQueueEntryStage s3 vtid.val
+                queuePPrevCode := 0 }).updateTcb vtid.val
+              fun t => { t with threadState := .Inactive }) := by
+        intro M p hp hRun
+        subst hp
+        exact descheduleAtPlacedThenOffWrites_runQueueEntryStage M vtid.val
           (fun _ x hx => by
-            obtain ⟨y, hy, hr⟩ := hRun3
+            obtain ⟨y, hy, hr⟩ := hRun
             rw [hx] at hy; cases hy; exact hr.1)
           hNI (fun _ _ => rfl) (fun _ _ => rfl) (fun _ h => h)
+      exact key _ _ hP hRun3
 
 /-- The resume's fault retirement: one TCB rewrite of the restart frame. -/
 theorem retirePendingFaultForResume_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -721,20 +884,151 @@ theorem retirePendingFaultForResume_runQueueStage (st : SystemState) (tid : SeLe
     · exact RunQueueStage.refl _
   · exact RunQueueStage.refl _
 
-/-- The resume's ready mark: two TCB rewrites keeping the run-queue fields. -/
-theorem resumeReadyMidState_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId) :
-    RunQueueStage st (resumeReadyMidState st tid) :=
-  (show RunQueueStage st (restoreToReady st tid) from by
-    unfold restoreToReady restoreToReadyStaging
-    exact RunQueueStage.updateTcb _ _ (fun _ _ => rfl)).trans
-    (RunQueueStage.updateTcb _ _ (fun _ _ => rfl))
+/-- WS-ZA ZA6.33: the resume's ready mark: a TCB rewrite keeping the run-queue
+fields, then the `.Ready` mark, which unsuspends the thread — a frame stage off
+the contexts it holds (`RunQueueFrameStage.updateTcb_heldBy`), whose refill
+obligations the mark makes read anew. -/
+theorem resumeReadyMidState_runQueueFrameStage (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.RunQueueFrameStage (SystemState.HeldBy st tid) st (resumeReadyMidState st tid) :=
+  SystemState.RunQueueFrameStage.of_invExt fun hInv => by
+    have hS1 : RunQueueStage st (restoreToReady st tid) := by
+      unfold restoreToReady restoreToReadyStaging
+      exact RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
+    have hG : ∀ x, (restoreToReady st tid).getSchedContext? x = st.getSchedContext? x := by
+      intro x; unfold restoreToReady restoreToReadyStaging
+      exact SystemState.updateTcb_getSchedContext? _ _ _ hInv x
+    unfold resumeReadyMidState
+    exact (hS1.toFrame _).trans
+      ((SystemState.RunQueueFrameStage.updateTcb_heldBy _ tid
+        (f := fun t => { t with
+          threadState := .Ready
+          pipBoostCode := SeLe4n.Priority.optCode
+            (PriorityInheritance.computeMaxWaiterPriority (restoreToReady st tid) tid) })
+        (fun _ _ => rfl)).mono
+        (P' := SystemState.HeldBy st tid) fun x (hx : SystemState.HeldBy (restoreToReady st tid) tid x) => by
+          obtain ⟨sc, h1, h2⟩ := hx
+          exact ⟨sc, by rw [← hG]; exact h1, h2⟩)
 
-/-- The thread resume: the ready mark, the key hook, the wake on the home core
-and the local scheduling point.  The resumed thread was suspended, so between
-scheduling points no core runs it; the ready mark makes it active. -/
+/-- WS-ZA ZA6.33: **every context a thread holds is the one its binding
+names** — the half of `schedContextBindingConsistent` a resume reads: the
+contexts whose refill obligations its ready mark wakes are the one context it
+settles. -/
+def holdersNameTheirContexts (st : SystemState) : Prop :=
+  ∀ s sc t, st.getSchedContext? s = some sc → sc.boundThread = some t →
+    ∀ x, st.getTcb? t = some x → x.schedContextBinding.scId? = some s
+
+theorem holdersNameTheirContexts_of_schedContextBindingConsistent {st : SystemState}
+    (h : schedContextBindingConsistent st) : holdersNameTheirContexts st := by
+  intro s sc t hs hb x hx
+  obtain ⟨y, hy, hB⟩ := h.2 s sc ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hs) t hb
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hx] at hy
+  cases hy
+  rcases hB with hB | ⟨o, hB⟩ <;> rw [hB] <;> rfl
+
+/-- ...and it holds across a TCB rewrite that keeps the binding. -/
+theorem holdersNameTheirContexts.updateTcb {st : SystemState} (h : holdersNameTheirContexts st)
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hInv : st.objects.invExt)
+    (hf : ∀ t, (f t).schedContextBinding = t.schedContextBinding) :
+    holdersNameTheirContexts (st.updateTcb tid f) := by
+  intro s sc t hs hb x hx
+  rw [SystemState.updateTcb_getSchedContext? _ _ _ hInv] at hs
+  have hB := getTcb?_binding_updateTcb st tid f hInv hf t
+  rw [hx] at hB
+  obtain ⟨y, hy, e⟩ := Option.map_eq_some_iff.mp hB.symm
+  rw [← e]
+  exact h s sc t hs hb y hy
+
+/-- WS-ZA ZA6.33: the resume's fault retirement keeps every thread's binding. -/
+theorem holdersNameTheirContexts.retirePendingFaultForResume {st : SystemState}
+    (h : holdersNameTheirContexts st) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    holdersNameTheirContexts (SeLe4n.Kernel.retirePendingFaultForResume st tid) := by
+  unfold SeLe4n.Kernel.retirePendingFaultForResume
+  split
+  · split
+    · split
+      · unfold discardPendingFault; exact h.updateTcb _ _ hInv (fun _ => rfl)
+      · unfold applyFaultRestart; exact h.updateTcb _ _ hInv (fun _ => rfl)
+    · exact h
+  · exact h
+
+/-- WS-ZA ZA6.33: **the resume of a context closes the ready mark's frame**:
+the contexts the resumed thread holds are the one its binding names
+(`holdersNameTheirContexts`), and that one is refill-checked in place and
+settled — purged, then placed exactly when its holder is not suspended.  A
+thread naming no context the store holds holds none, and the frame is a stage. -/
+theorem resumeContext_runQueueStage {st X : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (home : Concurrency.CoreId)
+    (hF : SystemState.RunQueueFrameStage (SystemState.HeldBy st tid) st X)
+    (hH : holdersNameTheirContexts st) (hT : st.getTcb? tid = some tcb)
+    (hXI : st.objects.invExt → X.objects.invExt)
+    (hXB : st.objects.invExt →
+      (X.getTcb? tid).map TCB.schedContextBinding = some tcb.schedContextBinding)
+    (hXS : st.objects.invExt → ∀ s, X.getSchedContext? s = st.getSchedContext? s) :
+    RunQueueStage st (resumeContext X tid home) := by
+  refine RunQueueStage.of_invExt fun hInv => ?_
+  have hHeld : ∀ x, SystemState.HeldBy st tid x → tcb.schedContextBinding.scId? = some x :=
+    fun x ⟨sc, h1, h2⟩ => hH x sc tid h1 h2 tcb hT
+  have close0 : (∀ x, ¬ SystemState.HeldBy st tid x) → RunQueueStage st X := fun h0 =>
+    let h := hF.mono (P' := fun _ => False) (fun x hx => h0 x hx)
+    ⟨⟨h.1.links, h.1.release, fun S => h.1.refills S (fun _ h => h.elim), h.1.yield, h.1.live⟩,
+      h.2⟩
+  obtain ⟨x, hx, hxb⟩ := Option.map_eq_some_iff.mp (hXB hInv)
+  unfold resumeContext
+  rw [hx]
+  dsimp only
+  rw [hxb]
+  cases hs : tcb.schedContextBinding.scId? with
+  | none => exact close0 fun y hy => by rw [hHeld y hy] at hs; cases hs
+  | some s =>
+    dsimp only
+    have hEq : ∀ y, SystemState.HeldBy st tid y → y = s := fun y hy => by
+      have h := hHeld y hy; rw [hs] at h; exact (Option.some.inj h).symm
+    cases hc : X.getSchedContext? s with
+    | none =>
+      exact close0 fun y hy => by
+        have e := hEq y hy; subst e
+        obtain ⟨sc, h1, _⟩ := hy
+        rw [← hXS hInv, hc] at h1; cases h1
+    | some a =>
+      dsimp only
+      refine SchedContextOps.settleReturnedContext_runQueueStage
+        ((hF.mono hEq).trans (updateSchedContext_runQueueFrameStage X s
+          (fun sc => sc.refillUnblockCheck X.machine.timer) (fun sc => ⟨sc.refillUnblockCheck_releaseNextCode _,
+            sc.refillUnblockCheck_releaseCoreCode _, sc.refillUnblockCheck_releaseAt _⟩))) ?_
+      intro S hS hI hSnd _ b hb
+      rw [SystemState.updateSchedContext_getSchedContext?_self _ _ _ (hXI hI), hc] at hb
+      cases hb
+      exact refillUnblockCheck_preserves_schedContextWellFormed _ _
+        (hSnd.1 s a hS (by rw [← hXS hI]; exact hc))
+
+/-- WS-ZA ZA6.33: the resume of a context is a frame stage off every context:
+the refill-unblock check in place, then the settle's purge and placement. -/
+theorem resumeContext_runQueueFrameStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (home : Concurrency.CoreId) :
+    SystemState.RunQueueFrameStage (fun _ => True) st (resumeContext st tid home) := by
+  rcases resumeContext_cases st tid home with e | ⟨s, e⟩ <;> rw [e]
+  · exact (RunQueueStage.refl _).toFrame _
+  · refine ((updateSchedContext_runQueueFrameStage st s
+      (fun sc => sc.refillUnblockCheck st.machine.timer) (fun sc => ⟨sc.refillUnblockCheck_releaseNextCode _,
+        sc.refillUnblockCheck_releaseCoreCode _, sc.refillUnblockCheck_releaseAt _⟩)).mono
+      fun _ _ => trivial).trans ?_
+    rcases SchedContextOps.settleReturnedContext_cases
+      (st.updateSchedContext s fun sc => sc.refillUnblockCheck st.machine.timer) home s with
+      e' | e' <;> rw [e']
+    · exact (SchedContextOps.purgeReplenishment_runQueueFrameStage _ s).mono fun _ _ => trivial
+    · exact ((SchedContextOps.purgeReplenishment_runQueueFrameStage _ s).trans
+        (SchedContextOps.releasePlace_runQueueFrameStage' _ home s)).mono fun _ _ => trivial
+
+/-- The thread resume: the ready mark and the key hook — a frame stage off the
+contexts the thread holds — closed by its context's resume (seL4-MCS's
+`refill_unblock_check` and `schedContext_resume`), then, when the thread is
+schedulable, the wake on the home core and the local scheduling point.  The
+resumed thread was suspended, so between scheduling points no core runs it; the
+ready mark makes it active. -/
 theorem resumeThreadOnCore_runQueueEntryStage {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId} {executingCore : Concurrency.CoreId}
     {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (hH : holdersNameTheirContexts st)
     (h : resumeThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
     SystemState.RunQueueEntryStage st st' := by
   unfold resumeThreadOnCore at h
@@ -744,41 +1038,58 @@ theorem resumeThreadOnCore_runQueueEntryStage {st st' : SystemState}
     split at h
     · cases h
     · rename_i hIn
-      have hS2 := (resumeReadyMidState_runQueueStage st vtid.val).trans
-        (markKeyChangeFrom_runQueueStage st (resumeReadyMidState st vtid.val) vtid.val)
+      have hIn' : tcb.threadState = .Inactive := by simpa using hIn
+      have hFA : SystemState.RunQueueFrameStage (SystemState.HeldBy st vtid.val) st
+          (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) :=
+        (resumeReadyMidState_runQueueFrameStage st vtid.val).trans
+          ((markKeyChangeFrom_runQueueStage _ _ _).toFrame _)
+      have hAI : st.objects.invExt →
+          (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val).objects.invExt :=
+        fun hInv => by
+          rw [markKeyChangeFrom_objects]
+          exact PriorityInheritance.resumeReadyMidState_objects_invExt st _ hInv
+      have hSB := resumeContext_runQueueStage (determineTargetCore st vtid.val) hFA hH hT hAI
+        (fun hInv => by
+          rw [markKeyChangeFrom_getTcb?, resumeReadyMidState_binding st _ hInv, hT]; rfl)
+        (fun hInv s => by
+          rw [markKeyChangeFrom_getSchedContext?, resumeReadyMidState_getSchedContext? st _ hInv])
       have hS : SystemState.RunQueueEntryStage st (enqueueRunnableOnCore
-          (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
+          (resumeContext (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
+            vtid.val (determineTargetCore st vtid.val))
           (determineTargetCore st vtid.val) vtid.val) := by
         refine SystemState.RunQueueEntryStage.of_inv
-          (hS2.1.trans (enqueueRunnableOnCore_runQueueLinkStage _ _ _)) fun hInv _ d => ?_
-        have hIn' : tcb.threadState = .Inactive := by simpa using hIn
-        refine (hS2.trans (enqueueRunnableOnCore_runQueueStage _ _ _ (fun c hc => ?_) ?_
+          (hSB.1.trans (enqueueRunnableOnCore_runQueueLinkStage _ _ _)) fun hInv _ d => ?_
+        have hBT : ∀ x, (resumeContext (markKeyChangeFrom st (resumeReadyMidState st vtid.val)
+            vtid.val) vtid.val (determineTargetCore st vtid.val)).getTcb? x =
+            (resumeReadyMidState st vtid.val).getTcb? x := fun x => by
+          rw [resumeContext_getTcb? _ _ _ (hAI hInv), markKeyChangeFrom_getTcb?]
+        refine (hSB.trans (enqueueRunnableOnCore_runQueueStage _ _ _ (fun c hc => ?_) ?_
           (fun x hx => ?_))).entry
         rotate_left 2
         · obtain ⟨tm, htm, ha⟩ :=
             PriorityInheritance.resumeReadyMidState_getTcb?_affinity st _ tcb hT hInv
-          have hx' : (resumeReadyMidState st vtid.val).getTcb? vtid.val = some x := by
-            unfold SystemState.getTcb? at hx ⊢; rw [markKeyChangeFrom_objects] at hx; exact hx
-          rw [htm] at hx'; cases hx'
+          rw [hBT, htm] at hx; cases hx
           rw [ha]; exact homedOn_determineTargetCore st _ tcb hT
-        · rw [markKeyChangeFrom_currentOnCore] at hc
+        · rw [resumeContext_currentOnCore, markKeyChangeFrom_currentOnCore] at hc
           have hc' : st.scheduler.currentOnCore c = some vtid.val := by
             unfold SchedulerState.currentOnCore at hc ⊢
             rw [PriorityInheritance.resumeReadyMidState_scheduler_eq] at hc; exact hc
           obtain ⟨x, hx, ha⟩ := d.currentActive c _ hc'
           rw [hT] at hx; cases hx
           exact ha hIn'
-        · obtain ⟨tm, htm, hr⟩ := PriorityInheritance.resumeReadyMidState_getTcb?_ready st _ tcb hT hInv
+        · obtain ⟨tm, htm, hr⟩ :=
+            PriorityInheritance.resumeReadyMidState_getTcb?_ready st _ tcb hT hInv
           refine ⟨tm, ?_, by unfold TCB.Active; rw [hr]; decide⟩
-          unfold SystemState.getTcb? at htm ⊢
-          rw [markKeyChangeFrom_objects]; exact htm
+          rw [hBT]; exact htm
       split at h
       · split at h
-        · rename_i hH
-          rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]
-          exact hS.trans (handleRescheduleSgiOnCore_runQueueEntryStage hH)
-        · cases h
-      · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact hS
+        · split at h
+          · rename_i hR
+            rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]
+            exact hS.trans (handleRescheduleSgiOnCore_runQueueEntryStage hR)
+          · cases h
+        · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact hS
+      · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact hSB.entry
   · cases h
 
 /-- The priority ops' preemption seam: the reschedule on the executing core or nothing. -/
@@ -864,10 +1175,14 @@ run-queue fields, whatever it writes to its state fields and affinity. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueLinkStage.rewriteObject_tcb {st : SystemState}
     {tid : SeLe4n.ThreadId} {t t' : TCB} (h : st.getTcb? tid = some t)
     (hL : ∀ c, t'.runLinkOn c = t.runLinkOn c) (hA : st.rewriteAdmissible tid.toObjId (.tcb t'))
-    (hY : t'.yieldToCode = t.yieldToCode := by first | rfl | simp_all) :
+    (hY : t'.yieldToCode = t.yieldToCode := by first | rfl | simp_all)
+    (hTS : t'.threadState = t.threadState := by first | rfl | simp_all) :
     SystemState.RunQueueLinkStage st (st.rewriteObject tid.toObjId (.tcb t') hA) :=
   SystemState.RunQueueLinkStage.insert (st' := st.rewriteObject tid.toObjId (.tcb t') hA) rfl rfl rfl
     (fun c => by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; exact hL c)
+    (hV := by
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]
+      simp only [objRefillView, tcbRefillView, hTS])
     (hY := by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; simp only [objYieldCodes, hY])
 
 /-- The affinity migration moves a thread from the queue that holds it to its

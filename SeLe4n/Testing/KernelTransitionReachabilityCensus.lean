@@ -1084,6 +1084,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyOnCore
   , `SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyWithWake
   , `SeLe4n.Kernel.Lifecycle.Suspend.resumeThread
+  , `SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadReady
   , `SeLe4n.Kernel.Lifecycle.Suspend.suspendThread
   , `SeLe4n.Kernel.Liveness.CanonicalDeploymentProgress.exitState
   , `SeLe4n.Kernel.Liveness.CanonicalDeploymentProgressOnCore.exitState
@@ -1093,6 +1094,9 @@ def nonExecutedTransitionsPlain : List Name :=
   -- re-key — the reference state the boost's object frames are proven
   -- against (`updatePipBoostOnCore_objectsAgreeOffRunLinks`).
   , `SeLe4n.Kernel.PriorityInheritance.pipBoostWrite
+  -- WS-ZA ZA6.33: the state the cross-core resume wake hands its
+  -- schedulability gate, named for the wake's proofs.
+  , `SeLe4n.Kernel.PriorityInheritance.resumeWakeMidState
   , `SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCoreState
   , `SeLe4n.Kernel.PriorityInheritance.propagatePriorityInheritance
   -- KSC-1 PR C (`v0.36.55`): the two-state form, kept as the statement the

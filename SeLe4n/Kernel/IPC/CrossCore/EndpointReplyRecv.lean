@@ -140,9 +140,8 @@ def replyRecvPopDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
             match returnDonatedSchedContextResolved st holder oldScId recipient with
             | .error e => .error e
             | .ok st1' =>
-                .ok (some (oldScId, holder), migrateSchedContextReplenishment st1' oldScId
-                  (determineTargetCore st holder)
-                  (determineTargetCore st recipient))
+                .ok (some (oldScId, holder), SchedContextOps.settleReturnedContext st1'
+                  (determineTargetCore st recipient) oldScId)
         | _, _ => .error .invalidArgument
     | none => .ok (none, st)
 

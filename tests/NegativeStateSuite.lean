@@ -1497,7 +1497,7 @@ private def runReplyNextLinkReciprocalChecks : IO Unit := do
     (failing.length == 1 && failing.all (fun l => l.startsWith
       s!"reply next link reciprocal: oid={lower.toObjId}")) true
   -- (3) the live removal of the bottom frame.
-  match SeLe4n.Kernel.spliceReplyFrameOut stPair lower with
+  match SeLe4n.Kernel.cutReplyFrameOut stPair lower with
   | .error e => throw <| IO.userError s!"reply next link: the bottom splice refused: {reprStr e}"
   | .ok stCut =>
       expectBool "the bottom splice leaves no dangling upward link" (check stCut) true

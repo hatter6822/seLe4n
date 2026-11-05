@@ -680,33 +680,33 @@ theorem consumeReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
 
 open SeLe4n.Model.SystemState in
 /-- **WS-HP HP6.4** step congruence for the removal's composed store step: two
-states agreeing off the scheduler take the same branch of `spliceFrameBelow?` —
+states agreeing off the scheduler take the same branch of `cutFrameBelow?` —
 it reads `getReply?` and nothing else — and each of the two or three `storeObject`
 writes carries the relation. -/
-theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
+theorem cutReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply}
     (hRel : OffSchedulerAgrees s1 s2)
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
-    (h1 : spliceReplyFrameStores s1 rid above r a = .ok t1)
-    (h2 : spliceReplyFrameStores s2 rid above r a = .ok t2) :
+    (h1 : cutReplyFrameStores s1 rid above r a = .ok t1)
+    (h2 : cutReplyFrameStores s2 rid above r a = .ok t2) :
     OffSchedulerAgrees t1 t2 := by
   have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
     fun q => hRel.objects.getReply? q
-  have hBelow : spliceFrameBelow? s2 rid r above = spliceFrameBelow? s1 rid r above := by
-    unfold spliceFrameBelow?
+  have hBelow : cutFrameBelow? s2 rid r above = cutFrameBelow? s1 rid r above := by
+    unfold cutFrameBelow?
     cases hP : r.prev with
     | none => rfl
     | some below => simp only []; rw [hGR below]
-  rcases spliceReplyFrameStores_cases h1 with ⟨m1, hB1, hSa1, hSb1⟩ |
+  rcases cutReplyFrameStores_cases h1 with ⟨m1, hB1, hSa1, hSb1⟩ |
     ⟨below, b, m1, n1, hB1, hSa1, hSb1, hSc1⟩
-  · rcases spliceReplyFrameStores_cases h2 with ⟨m2, _, hSa2, hSb2⟩ |
+  · rcases cutReplyFrameStores_cases h2 with ⟨m2, _, hSa2, hSb2⟩ |
       ⟨_, _, _, _, hB2, _, _, _⟩
     · exact storeObject_offSchedulerAgrees _ _
         (storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2)
         (SeLe4n.Model.storeObject_preserves_objects_invExt s1 m1 _ _ hInv1 hSa1)
         (SeLe4n.Model.storeObject_preserves_objects_invExt s2 m2 _ _ hInv2 hSa2) hSb1 hSb2
     · rw [hBelow, hB1] at hB2; cases hB2
-  · rcases spliceReplyFrameStores_cases h2 with ⟨_, hB2, _⟩ |
+  · rcases cutReplyFrameStores_cases h2 with ⟨_, hB2, _⟩ |
       ⟨below', b', m2, n2, hB2, hSa2, hSb2, hSc2⟩
     · rw [hBelow] at hB2; rw [hB1] at hB2; cases hB2
     · rw [hBelow, hB1, Option.some.injEq, Prod.mk.injEq] at hB2
@@ -723,21 +723,21 @@ theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)** step congruence: the removal's *splice* leg maps
 off-scheduler-agreeing inputs to off-scheduler-agreeing outputs.  Its decision is
-read off `getReply?` alone (`spliceReplyFrameOutOrSelf_decision`), so agreeing
+read off `getReply?` alone (`cutReplyFrameOutOrSelf_decision`), so agreeing
 object stores take the same branch; its writes are `storeObject`s, whose
 congruence carries every other field. -/
-theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
+theorem cutReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
     (rid : SeLe4n.ReplyId)
     (hRel : OffSchedulerAgrees s1 s2)
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt) :
-    OffSchedulerAgrees (spliceReplyFrameOutOrSelf s1 rid)
-      (spliceReplyFrameOutOrSelf s2 rid) := by
+    OffSchedulerAgrees (cutReplyFrameOutOrSelf s1 rid)
+      (cutReplyFrameOutOrSelf s2 rid) := by
   have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
     fun q => hRel.objects.getReply? q
-  rcases spliceReplyFrameOutOrSelf_decision s1 rid with
+  rcases cutReplyFrameOutOrSelf_decision s1 rid with
     ⟨r1, above, a, hR1, hN1, hA1, hP1, hS1⟩ |
       ⟨r1, below, b, hR1, hN1, hPv1, hB1, hBn1, hS1⟩ | ⟨hId1, hNo1, hNoS1⟩
-  · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
+  · rcases cutReplyFrameOutOrSelf_decision s2 rid with
       ⟨r2, above', a', hR2, hN2, hA2, _hP2, hS2⟩ |
         ⟨r2, _, _, hR2, hN2, _, _, _, _⟩ | ⟨_, hNo2, _⟩
     · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
@@ -746,11 +746,11 @@ theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
       subst hAb
       have hAe : a' = a := Option.some.inj (hA2.symm.trans ((hGR above).trans hA1))
       subst hAe
-      exact spliceReplyFrameStores_offSchedulerAgrees hRel hInv1 hInv2 hS1 hS2
+      exact cutReplyFrameStores_offSchedulerAgrees hRel hInv1 hInv2 hS1 hS2
     · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
       subst hRe; rw [hN1] at hN2; cases hN2
     · exact absurd hP1 (hNo2 r1 above a ((hGR rid).trans hR1) hN1 ((hGR above).trans hA1))
-  · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
+  · rcases cutReplyFrameOutOrSelf_decision s2 rid with
       ⟨r2, _, _, hR2, hN2, _, _, _⟩ |
         ⟨r2, below', b', hR2, hN2, hPv2, hB2, _, hS2⟩ | ⟨_, _, hNoS2⟩
     · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
@@ -767,7 +767,7 @@ theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
         (SeLe4n.Model.storeObject_preserves_objects_invExt s1 m1 _ _ hInv1 hSa1)
         (SeLe4n.Model.storeObject_preserves_objects_invExt s2 m2 _ _ hInv2 hSa2) hSb1 hSb2
     · exact absurd hBn1 (hNoS2 r1 below b ((hGR rid).trans hR1) hN1 hPv1 ((hGR below).trans hB1))
-  · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
+  · rcases cutReplyFrameOutOrSelf_decision s2 rid with
       ⟨r2, above, a, hR2, hN2, hA2, hP2, _⟩ |
         ⟨r2, below, b, hR2, hN2, hPv2, hB2, hBn2, _⟩ | ⟨hId2, _, _⟩
     · exact absurd hP2 (hNo1 r2 above a ((hGR rid).symm.trans hR2) hN2
@@ -850,9 +850,9 @@ theorem removeCallerReplyFrame_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     OffSchedulerAgrees r1 r2 := by
   rw [removeCallerReplyFrame_eq] at h1 h2
   exact consumeCallerReply_offSchedulerAgrees caller rid
-    (spliceReplyFrameOutOrSelf_offSchedulerAgrees rid hRel hInv1 hInv2)
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt s1 rid hInv1)
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt s2 rid hInv2) h1 h2
+    (cutReplyFrameOutOrSelf_offSchedulerAgrees rid hRel hInv1 hInv2)
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt s1 rid hInv1)
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt s2 rid hInv2) h1 h2
 
 -- ============================================================================
 -- §5  Read-view agreement: transports for transitions that rewrite only

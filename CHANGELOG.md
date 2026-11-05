@@ -31,6 +31,185 @@ be the aarch64 lane's build of the same commit.
   drifted.  The nightly still runs the trace twice and diffs the two runs.
 - **Docs.**  `docs/CI_POLICY.md` §2 lists the archive step.
 
+## v0.36.199 — WS-ZA ZA6.33: the suspend is total, and is seL4's
+
+`.tcbSuspend` now admits every thread it can be handed, and what it does is
+seL4-MCS's `suspend`: `cancelIPC`, `tcbSchedDequeue`, `tcbReleaseRemove`,
+`schedContext_cancelYieldTo`, then `Inactive`.  It unbinds no scheduling
+context and returns no loan.  `.tcbResume` follows seL4's `restart` and
+`schedContext_resume`.
+
+- **The admission** (`SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean`).
+  `suspendAdmitted` asks, before any write, that the target is a thread not
+  already `.Inactive`.  For a thread blocked on a notification it also asks
+  that the thread's slot is found in place and that the notification exists,
+  so the wait is cancelled in its slots (`storeNotificationBlockedCancelled`).
+  Every other arm is admitted, because once these checks pass the
+  specification commits.  The perform (`suspendPerform`) runs the teardown
+  (`suspendTeardownState`: the in-place notification cancel, or
+  `suspendCancelRevert`, which is `cancelIpcKeepingContexts` followed by the
+  priority-inheritance revert walk), the deschedule, the pending-state clear,
+  `.Inactive`, `releaseRemoveThread`, `cancelYieldTo` and the local scheduling
+  point.  `suspendThreadOnCore_of_admitted` proves it is the specification's
+  state.  No arm keeps a copy of the store for a possible refusal any more.
+- **No unbind and no loan return.**  The suspend's binding step
+  (`suspendBindingState`) and its release perform are deleted.  A thread
+  keeps a context it holds, bound or on loan.  The context leaves the release
+  queues through `releaseRemoveThread`, keyed on `releaseEntryOf?`.
+- **The IPC cancel** (`cancelIpcKeepingContexts`, `SeLe4n/Kernel/Lifecycle/Suspend.lean`).
+  On an endpoint the cancel is seL4's `tcbEPDequeue`: the thread leaves the one
+  endpoint its state names (`removeFromBlockingEndpoint`), not a sweep of the
+  store.  On a reply the cancel is seL4's `reply_remove_tcb`.  A frame that
+  heads a context's stack is cut off it (`cutCancelledCallerHead`,
+  `cutHeadFrameKeepingContext`), and the server makes the context its own.  A
+  frame in the middle of a stack breaks the chain there, as seL4's
+  `reply_remove` does (the earlier splice is reversed into a sever).
+- **The resume** (`resumePerform`).  The thread's context runs
+  `refillUnblockCheck`, and a context whose refill is not yet due is
+  postponed onto the release queue (`resumeContext`, settled through
+  `settleReturnedContext`).  The thread is enqueued only if it is then
+  schedulable (`resumeSchedulable`).
+- **Returns settle.**  A context that comes back to a thread is settled where
+  it lands: in `finaliseReply`'s head pop, in `cancelIpcBlockingMigrated` and
+  in the reply sites.  `cleanupPreReceiveDonationMigrated` still migrates.
+- **The refill exemption** keys on the context's holder being active, not on
+  a quiescence flag.  The quiescence field is removed.  Donation preservation
+  takes a donor-active hypothesis from outside.
+- **Compiled shapes.**
+  - `releaseCoreOf` is inlined.
+  - `releaseEntryOf?` compares the bound-thread code.
+  - `resumeContext` reads the timer before its write.
+  - `refillUnblockCheck`'s compiled form (`refillUnblockCheck_eq_impl`,
+    `@[csimp]`) chooses the head's start through a scalar helper, so the
+    context is written in its slot.
+
+  Each of these fixes removes an allocation on the bound resume.
+- **The exerciser** (`rust/sele4n-hal/src/smp_exercisers.rs`,
+  `scripts/qemu_exerciser_lib.sh`).  New scenarios suspend the partner while
+  it is blocked on an endpoint receive, an endpoint send, a notification wait
+  and a reply.  They also cover a reply on which the partner's context is
+  donated, a bound suspend and resume, and a resume postponed on a refill not
+  yet due.  The postpone and donated scenarios run inside the
+  scheduling-context scenario, after the real `SchedContext_Unbind`.
+
+  The donation chain adds a nested donating call (`chain-root-calls-server`),
+  a cross-core donation (`cross-core-partner-calls`, the root task homed on
+  core 1 by `cross-core-home-root`), the server's reply-receive
+  (`chain-server-reply-recv`) and the root task's reply
+  (`chain-root-replies`).  The partner restarts the root task before it
+  suspends itself.  Core 1 is held in its agent handler (`COMMAND_HOLD`)
+  across the cross-core steps, so it never runs the root task woken on its
+  home.  `tcb-set-affinity-running` measures the affinity change of a
+  thread running on core 1: a carved thread, bound to a context of its own,
+  resumes at a page of real code (`b .`, mapped user-executable at the user
+  window's first page and published with the instruction-cache unify), runs
+  there at EL0, and the root task homes it back while it runs, which vacates
+  core 1 and stalls it until it has saved the thread.  It reads 0.
+
+  These read 0 at first call and in steady state: the notification-wait,
+  bound, release-queued and postponed suspends, and the bound and postponed
+  resumes.
+
+  So do the receive-blocked, send-blocked, reply-blocked and donated-reply
+  suspends, the donating call that sets up the donated scenario, and the
+  yieldTo requeue's first call, which now follows these scenarios.  Every pin
+  this change adds or touches is 0, first call and steady state.
+- **The endpoint and reply arms write in place.**
+  - `removeFromBlockingEndpoint` and `spliceOutMidQueueNode` have compiled
+    forms (`removeFromBlockingEndpointImpl`, `spliceOutMidQueueNodeImpl`,
+    `@[csimp]`) that write the neighbours' link words and the endpoint's end
+    codes over their own records, read as codes.
+  - The reply arm (`cancelIpcBlocking`'s `.blockedOnReply` case) and the
+    donated-head cut have compiled forms (`cancelIpcBlocking_eq_impl`,
+    `cutHeadFrameKeepingContext_eq_impl`).  The frame's links, the context's
+    head and the holder's binding are written over their own records, and
+    the key hook reads the holder's key before the writes.  The reply-frame
+    in-place forms move to `IPC/Operations/ReplyFrameInPlace.lean`.
+- **The donating call writes in place** (`IPC/Operations/DonationInPlace.lean`,
+  `IPC/CrossCore/EndpointCallDonatingInPlace.lean`).  The donating call read
+  124 because it ran the general arm.  A call whose rendezvous and donation
+  checks all pass on the pre-state (`callDonatesInPlace`), with donor and
+  server on one home core, now runs `performCallDonating`.  That is the
+  rendezvous, then `schedContext_donate` and `reply_push` each in its slot
+  (`donateSchedContextInPlace`), then the priority walk.  A message of at most
+  four words is written straight into the server's registers.
+  `callDispatchChecked_donating_inPlace` proves it is the specification's
+  dispatch.  A nested donating call, with the context still on loan, pushes
+  onto the stack the caller's reply already heads, the frame below rewritten
+  in its slot.  A donation whose donor and server live on different home
+  cores runs the same route: the migration moves the context's release link
+  in its slot (`migrateReplenishmentWrite`, `migrateSchedContextReplenishment_eq_impl`,
+  `@[csimp]`), the two homes read in the arm before its first write.
+- **A donated reply and reply-receive write in place**
+  (`IPC/CrossCore/EndpointReplyDonatedInPlace.lean`,
+  `IPC/CrossCore/EndpointReplyRecvDonatedInPlace.lean`).  A reply whose frame
+  heads the stack of the context its server holds on loan runs seL4's
+  `reply_pop` in place: the context handed back down the stack, the popped
+  frame's links cleared and the frame below re-headed
+  (`returnDonatedSchedContextInPlace`; the recorded origin is asked only at
+  the bottom of the stack, `replyDonationRecipient_eq_self_of_head`), the context settled on its new
+  holder's home (`popDonationSettledInPlace`) and the holder taken off its
+  core.  The reply arm checks it on the pre-state (`replyPopsInPlace`, one
+  out-of-line call, `replyDonatedAdmits`) and writes
+  `performReplyDonatedDelivered` (`replyTransferChecked_donated_inPlace`).
+  The reply-receive runs the pop between its legs and then blocks the
+  server, its receive's checks read on the pre-state and carried across the
+  pop, which writes only a binding, a reply's stack links and a context
+  (`popFrame`, `popDonationSettled_receiveGuard`).  It writes
+  `performReplyRecvDonatedDelivered` (`replyRecvOnCore_donated_delivered`),
+  routed from `replyRecvResolvedR`.  `Reply.consumed` has a compiled form
+  (`consumed_eq_impl`, `@[csimp]`) that writes a head in its cell; the
+  specification's head arm copied the record.  The reply-stack write census
+  registers the in-place pop with its chain result
+  (`returnDonatedSchedContextInPlace_preserves_donationChainWellFormed`).
+- **Every resume resumes the context it runs on.**  The single-core resume
+  (`resumeThread`) restored the thread and enqueued it without the per-core
+  resume's `resumeContext`, so a suspend then resume left a used-up context
+  on no release queue and its thread unschedulable for good.  It now runs
+  `restart`'s `refill_unblock_check` and `schedContext_resume` through the
+  per-core helpers and enqueues only a schedulable thread
+  (`resumeSchedulable`); `restoreToReadyWithWake` and the frozen
+  `frozenResumeThread` follow it.  `SuspendResumeSuite` SR-055 and SR-056
+  round-trip a used-up context, live and frozen.
+- **The affinity change reads codes.**  `runsOnCoreCode`,
+  `vacateForAffinityChangeImpl` and `setAffinityPerformImpl` (`@[csimp]`)
+  test the old core's current thread by its code, so the change builds
+  nothing, and moving a thread off the core it runs on writes that core's
+  scheduler in its cell (`vacatedScheduler`); the compiled update had
+  copied the scheduler record.  `tcb-set-affinity-running` pins that branch
+  at 0.
+- **Carved cells.**  The push stores links that name the objects' own ids, so
+  each object is carved with them: a thread's `idCell`, a reply's `idCell` and
+  `frameLinkCell`, and a context's `headLinkCell`.  Each is proof-carrying
+  (`*_eq`), and the push shares them through `SeLe4n.reuseSome` and
+  `ReplyStackLink.reuseHead` / `reuseFrame`.  The retype pins rise by what the
+  carve now builds:
+  - a reply 12 → 15;
+  - a thread 25 → 26;
+  - a context 14/13 → 16/15.
+- **The resume enqueues a schedulable thread.**  `resumeSchedulable` reads
+  the head refill's budget alone, as `hasSufficientBudget` does.  It no longer
+  reads `isActive`, which an unbind clears and a bind does not set.
+- **Debt.**  The `docs/REGISTERED_DEBT.md` row for the suspend's general path
+  is closed.
+- **Fixture.**  `tests/fixtures/main_trace_smoke.expected` changes one line, and
+  its checksum is refreshed.  `[SCO-023]` reported `threadReady=true`, because
+  the timeout abort set the thread `.Ready`.  The abort now leaves the thread
+  state as it was, as every IPC restore does (`TCB.restoredToReady`), so it
+  never makes a suspended thread runnable: seL4's timeout reaches a thread
+  through `cancelIPC`.  The line now reports `threadStateKept=true`.
+- **Suites.**  The suites now check seL4's behaviour:
+  - the suspend keeps the bound or donated context, and takes it off the
+    release queues;
+  - a middle reply's removal severs the stack (`FrozenOpsSuite` FO-043, the
+    final-delete scenario);
+  - a resume enqueues only a schedulable thread;
+  - a returned context is settled only on an active holder.
+
+  The fixtures' threads are made live where they stood in for running threads.
+  The runtime stranded-refill check reads `heldReleaseKey?`, as the invariant
+  does.
+
 ## v0.36.198 — Dead code removed: 123 definitions and four FFI exports nothing calls
 
 Every definition in the library that no constant names — no kernel code, no

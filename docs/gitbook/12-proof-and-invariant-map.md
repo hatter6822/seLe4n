@@ -420,7 +420,7 @@ the original owner — the transitive form of
 `donationAccountingPreserved_atCallDepthThree`.  What the cut *measured* changes what
 §3.23 is evidence for: a token-preserving mutation of the splice's **store shape**
 does not fail the suite, it **fails to elaborate**, because
-`spliceReplyFrameStores_cases` pins the three stores as a theorem.  So the shape needs
+`cutReplyFrameStores_cases` pins the three stores as a theorem.  So the shape needs
 no witness and §3.23's subject is the composition; the witness says so rather than
 implying a mutation-verification that is not available.  HP9 also moved the three
 upstream facts this workstream rests on — the non-head branch's write, the pop's

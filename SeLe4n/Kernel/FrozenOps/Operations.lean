@@ -1053,10 +1053,10 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                             -- .endpointReplyToBlockedCaller = true` forbids.
                             -- Where the cut frame is the *bottom* of its stack
                             -- the two write the same value at the frame above
-                            -- (`frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below`),
+                            -- (`frozenCutReplyFrameStores_eq_sever_of_no_frame_below`),
                             -- which is why every scenario this surface carried
                             -- before HP8 answers as it did.
-                            let st' := frozenSpliceReplyFrameOutOrSelf st'' replyId
+                            let st' := frozenCutReplyFrameOutOrSelf st'' replyId
                             -- ...and the record stored is **`Reply.consumed`**, the
                             -- live function, not an inline caller clear.  It is a
                             -- pure function on a `Reply`, and this surface stores
@@ -1805,37 +1805,6 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
 -- D1: Frozen thread suspension and resumption
 -- ============================================================================
 
-/-- **The frozen mirror of the suspend's reservation step** (the live
-suspend's G3, `cancelDonationArmOnCore`'s three arms).  A context bound to the
-thread is released as `suspendReleasePerform` releases it: the context unbound,
-made inactive and its reservation origin cleared, and the thread's two binding
-codes cleared.  A context the thread holds on loan is handed back to its lender
-as the live `cleanupDonatedSchedContext` hands it (`returnDonatedSchedContextResolved`,
-mirrored by `frozenReturnDonatedSchedContextResolved`), with its refusals.  The
-frozen surface keeps no release-queue links, so the live purge and the
-replenishment migration have nothing to write here. -/
-def frozenSuspendDonation (st : FrozenSystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    Except KernelError FrozenSystemState :=
-  match tcb.schedContextBinding with
-  | .unbound => .ok st
-  | .bound scId =>
-    let released : Except KernelError FrozenSystemState :=
-      match st.getSchedContext? scId with
-      | some sc =>
-        frozenWithObjectStored st scId.toObjId (.schedContext
-          { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
-      | none => .ok st
-    match released with
-    | .error e => .error e
-    | .ok st1 =>
-      match frozenLookupTcb st1 tid with
-      | some t =>
-        frozenWithObjectStored st1 tid.toObjId (.tcb
-          { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
-      | none => .ok st1
-  | .donated scId originalOwner =>
-    frozenReturnDonatedSchedContextResolved st tid scId originalOwner
-
 /-- D1: Frozen thread suspend — transition a thread from any non-Inactive state
 to Inactive. Mirrors `suspendThread` in frozen state.
 
@@ -1846,14 +1815,13 @@ which is the field `frozenChooseThread` actually selects from.  So a suspended
 thread stayed in its bucket carrying `ipcState := .ready` and the frozen
 scheduler would still pick it: suspended in name, runnable in fact.
 
-WS-ZA ZA6.6: **and its reservation and yield link go as the live suspend's
-do**.  The context bound to it is released and a context it holds on loan is
-handed back (`frozenSuspendDonation`, the live G3), and the suspend ends as
-seL4-MCS's `suspend` ends, with the thread's yield cancelled
+WS-ZA ZA6.6: **and its yield link goes as the live suspend's does**: the
+suspend ends as seL4-MCS's `suspend` ends, with the thread's yield cancelled
 (`schedContext_cancelYieldTo`, the live `cancelYieldTo`): the context it names
-forgets its yielder and the thread its context.  The thread's record is read
-again after the reservation step, so the binding codes that step clears are not
-written back. -/
+forgets its yielder and the thread its context.  WS-ZA ZA6.33: **no reservation
+ends**: a context bound to the thread stays bound and one it holds on loan stays
+with it, as seL4-MCS's `suspend` keeps `tcbSchedContext`; the frozen surface
+keeps no release queue, so `tcbReleaseRemove` has nothing to write here. -/
 def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1861,34 +1829,52 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
     | some tcb =>
       if tcb.threadState == .Inactive then .error .illegalState
       else
-        match frozenSuspendDonation st tid tcb with
+        let tcb' := (TCB.setIpcState { tcb with
+          threadState := .Inactive
+          pendingMessage := none
+          timeoutBudget := none
+          queuePrevCode := 0
+          queueNextCode := 0
+          queuePPrevCode := 0
+          yieldToCode := 0 } .ready)
+        let cleared : Except KernelError FrozenSystemState :=
+          match tcb.yieldToCode with
+          | 0 => .ok st
+          | k + 1 =>
+            let scId : SeLe4n.SchedContextId := ⟨k⟩
+            match st.getObject? scId.toObjId with
+            | some (.schedContext sc) =>
+              frozenWithObjectStored st scId.toObjId
+                (.schedContext { sc with yieldFromCode := 0 })
+            | _ => .ok st
+        match cleared with
         | .error e => .error e
-        | .ok st0 =>
-          let tcb0 := (frozenLookupTcb st0 tid).getD tcb
-          let tcb' := (TCB.setIpcState { tcb0 with
-            threadState := .Inactive
-            pendingMessage := none
-            timeoutBudget := none
-            queuePrevCode := 0
-            queueNextCode := 0
-            queuePPrevCode := 0
-            yieldToCode := 0 } .ready)
-          let cleared : Except KernelError FrozenSystemState :=
-            match tcb0.yieldToCode with
-            | 0 => .ok st0
-            | k + 1 =>
-              let scId : SeLe4n.SchedContextId := ⟨k⟩
-              match st0.getObject? scId.toObjId with
-              | some (.schedContext sc) =>
-                frozenWithObjectStored st0 scId.toObjId
-                  (.schedContext { sc with yieldFromCode := 0 })
-              | _ => .ok st0
-          match cleared with
+        | .ok st1 =>
+          match frozenWithObjectStored st1 tid.toObjId (.tcb tcb') with
+          | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
           | .error e => .error e
-          | .ok st1 =>
-            match frozenWithObjectStored st1 tid.toObjId (.tcb tcb') with
-            | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
-            | .error e => .error e
+
+/-- WS-ZA ZA6.33: **the frozen mirror of the resume's context step**
+(`Lifecycle.Suspend.resumeContext`, seL4-MCS's `refill_unblock_check` then
+`schedContext_resume`), on the resumed thread's record `t`, with the live
+`resumeSchedulable` answer beside it.  The context the thread runs on has its
+ready head moved to now (`SchedContext.refillUnblockCheck`); the frozen surface
+keeps no release queue, so the placement has nothing to write.  An unbound
+thread is schedulable on its own time slice; one on a context is schedulable when
+the context's head has budget now, and one naming a context the store does not
+hold is not. -/
+def frozenResumeContext (st : FrozenSystemState) (t : TCB) :
+    Except KernelError (Bool × FrozenSystemState) :=
+  match t.schedContextBinding.scId? with
+  | none => .ok (true, st)
+  | some s =>
+    match st.getSchedContext? s with
+    | none => .ok (false, st)
+    | some sc =>
+      let sc' := sc.refillUnblockCheck st.machine.timer
+      match frozenWithObjectStored st s.toObjId (.schedContext sc') with
+      | .ok st' => .ok (sc'.budgetRemaining.isPositive, st')
+      | .error e => .error e
 
 /-- D1: Frozen thread resume — transition a thread from Inactive to Ready.
 Mirrors `resumeThread` in frozen state.
@@ -1939,7 +1925,12 @@ schedule: dispatch here is `current := some tid` with the thread left in its
 bucket, so clearing it makes the outgoing thread selectable again, exactly as
 `frozenHandleYield` documents.  The enqueue runs after the comparison where live
 runs it before; the order is immaterial, because the enqueue touches only
-`byPriority` and the comparison reads only the two TCBs. -/
+`byPriority` and the comparison reads only the two TCBs.
+
+WS-ZA ZA6.33: **and the context is resumed before either** (`frozenResumeContext`):
+the live resume runs `resumeContext` and then enqueues only a schedulable thread,
+so a thread whose context has no budget now is left out of every bucket, with
+neither a comparison nor an enqueue. -/
 def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1958,7 +1949,14 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
                           pipBoostCode := SeLe4n.Priority.optCode (frozenComputeMaxWaiterPriority stCleared tid) }
           match frozenWithObjectStored stCleared tid.toObjId (.tcb tcb') with
           | .ok stored =>
-            -- (3) preemption on the EFFECTIVE priority, off the record just
+            -- (3) WS-ZA ZA6.33: the context resumed (`frozenResumeContext`, the
+            -- live `resumeContext`'s refill-unblock check); only a schedulable
+            -- thread goes on, as the live resume's `resumeSchedulable` gate.
+            match frozenResumeContext stored tcb' with
+            | .error e => .error e
+            | .ok (false, stCtx) => .ok ((), stCtx)
+            | .ok (true, stored) =>
+            -- (4) preemption on the EFFECTIVE priority, off the record just
             -- stored, so the refreshed boost is the one compared.
             let st' := match (stored.scheduler.current) with
               | some curTid =>

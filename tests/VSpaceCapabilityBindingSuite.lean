@@ -2338,7 +2338,13 @@ private def runThreadFinaliseChecks : IO Unit := do
     let resumeSc : SyscallDecodeResult :=
       { capAddr := SeLe4n.CPtr.ofNat 12, msgInfo := { length := 0, extraCaps := 0, label := 0 },
         syscallId := .tcbResume, msgRegs := #[] }
-    match runAll st [resumeSc] with
+    -- A carved context holds no budget until it is configured, and seL4's
+    -- resume enqueues a thread only when its context is schedulable
+    -- (`schedContext_resume`, WS-ZA ZA6.33), so the context is given a budget
+    -- in place of the configure this suite does not drive.
+    let stBudget := st.updateSchedContext (SeLe4n.SchedContextId.ofNat 961) fun sc =>
+      { sc with budget := ⟨10⟩, period := ⟨100⟩, budgetRemaining := ⟨10⟩, isActive := true }
+    match runAll stBudget [resumeSc] with
     | .error e => assertBool s!"resuming the bound thread succeeds (got {repr e})" false
     | .ok stR => do
       assertBool "setup: the resumed bound thread is queued on some core"
@@ -3020,13 +3026,13 @@ private def runContextlessStackChecks : IO Unit := do
             (!storedAt st1 965 && !recordsChildAt st1 carveUt 965)
 
 /-- A three-reply stack whose middle reply loses its last capability: the
-removal splices it out (the frame above links down to the frame below, which
-links back up), so the stack stays whole and the removed reply is retired.
+removal severs it out (the frame above and the frame below each lose their link
+to it, as seL4-MCS's `reply_remove` writes), and the removed reply is retired.
 With `runContextlessStackChecks` this runs both writing arms of the compiled
-splice (`spliceReplyFrameStoresInPlace`, `severReplyFrameBelowStoresInPlace`)
+removal (`cutReplyFrameStoresInPlace`, `severReplyFrameBelowStoresInPlace`)
 through the final delete's `@[csimp]` form. -/
 private def runMiddleReplyFinaliseChecks : IO Unit := do
-  IO.println "-- §5o a reply stack's middle reply is spliced out and retired on its final delete (WS-ZA ZA5.4 part 25)"
+  IO.println "-- §5o a reply stack's middle reply is severed out and retired on its final delete (WS-ZA ZA5.4 part 25)"
   match runAll carveScenario
       [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 11,
        decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 12,
@@ -3054,9 +3060,11 @@ private def runMiddleReplyFinaliseChecks : IO Unit := do
       | .ok st1 =>
         assertBool "deleting a middle reply's last capability ends its caller"
           (waiterEnded st1 964)
-        assertBool "the frames either side of the removed reply link to each other"
-          ((replyAt st1 961).map (·.next == some (.frame ⟨967⟩)) == some true &&
-            (replyAt st1 967).map (fun r => r.prev == some ⟨961⟩ &&
+        -- WS-ZA ZA6.33: seL4-MCS's `reply_remove` breaks the stack at a middle
+        -- reply: the frame below loses its `next`, the frame above its `prev`.
+        assertBool "the frames either side of the removed reply are severed from it"
+          ((replyAt st1 961).map (·.next == none) == some true &&
+            (replyAt st1 967).map (fun r => r.prev == none &&
               r.next == some (.head ⟨963⟩)) == some true)
         assertBool "deleting a middle reply's last capability retires it"
           (!storedAt st1 965 && !recordsChildAt st1 carveUt 965)

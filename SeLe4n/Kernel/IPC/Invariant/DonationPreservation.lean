@@ -1511,27 +1511,20 @@ theorem donateSchedContext_releaseStateAgree
   have a5 : SystemState.releaseStateAgree st' s4 := .of_objects_eq (by rw [hEq]) (by rw [hEq]; rfl)
   exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
 
-/-- WS-ZA ZA6.4: the donation keeps every context's refill view: the context is
-rebound (bound to the client before, to the server after) with its budget and
-refills kept, the frame push writes no context, and the threads are stored over
-threads. -/
-theorem donateSchedContext_refillViewsKept
+/-- WS-ZA ZA6.33: the donation keeps every context's refill view but the
+donated one's, which it rebinds (bound to the client before, to the server
+after) with its refills kept; the frame push writes no context, the threads are
+stored over threads, and no queue moves. -/
+theorem donateSchedContext_refillsKeptOff
     (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
     (clientScId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
-    RefillViewsKept st' st := by
+    SystemState.RefillsKeptOff (· = clientScId) st' st := by
   obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
-    hSc, hBound, _, hFrame, hS1, hS2, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, hFrame, hS1, hS2, hL1, hS3, hL2, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have hScRaw := (SystemState.getSchedContext?_eq_some_iff st clientScId sc).mp hSc
-  have a1 : RefillViewsKept s1 st := .storeObject hObjInv hS1 (by
-    rw [hScRaw]; simp only [objRefillView, Option.some.injEq]
-    unfold SchedContext.boundThread at hBound
-    unfold SchedContext.refillView
-    rcases hc : sc.boundThreadCode with _ | k
-    · rw [hc] at hBound; cases hBound
-    · simp only [SeLe4n.ThreadId.optCode]
-      rw [show min (serverTid.val + 1) 1 = 1 by omega, show min (k + 1) 1 = 1 by omega])
+  have a1 : SystemState.RefillsKeptOff (· = clientScId) s1 st := .storeObject hObjInv hS1
   have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   obtain ⟨_, hRepPre, _, _, _⟩ := donationPushFrame?_ok st donorTcb pushRid pushReply hFrame
   have hRep1 : s1.getReply? pushRid = some pushReply := by
@@ -1545,6 +1538,7 @@ theorem donateSchedContext_refillViewsKept
     exact hRepPre
   have a2 : RefillViewsKept s2 s1 :=
     .of_getSchedContext?_eq (storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2)
+      (fun t => by rw [storeDonationFramePush_getTcb?_eq hInv1 hRep1 hS2])
   have hInv2 := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have a3 : RefillViewsKept s3 s2 := .storeObject hInv2 hS3 (by
     rw [lookupTcb_some_objects s2 clientTid clientTcb hL1]; rfl)
@@ -1552,7 +1546,61 @@ theorem donateSchedContext_refillViewsKept
   have a4 : RefillViewsKept s4 s3 := .storeObject hInv3 hS4 (by
     rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; rfl)
   have a5 : RefillViewsKept st' s4 := .of_objects_eq (by rw [hEq])
-  exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
+  have hQ : ∀ c, (st'.scheduler.replenishQueueOnCore c).entries =
+      (s1.scheduler.replenishQueueOnCore c).entries := fun c => by
+    rw [storeObject_scheduler_eq st s1 _ _ hS1]
+    unfold SchedulerState.replenishQueueOnCore
+    rw [donateSchedContext_scheduler_eq st st' clientTid serverTid clientScId h]
+  exact (SystemState.RefillsKeptOff.of_kept (a5.trans (a4.trans (a3.trans a2))) hQ).trans a1
+
+/-- WS-ZA ZA6.33: the donated context before and after: bound to the client,
+then to the server, its refills kept. -/
+theorem donateSchedContext_rebinds
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    ∃ b a, st.getSchedContext? clientScId = some b ∧ b.boundThread = some clientTid ∧
+      st'.getSchedContext? clientScId = some a ∧ a.boundThread = some serverTid ∧
+      a.refillsView = b.refillsView := by
+  obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
+      hObj, hBound, _, hFrame, hS1, hS2, hLC, hS3, hL, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have hRepPre : st.getReply? pushRid = some pushReply :=
+    (donationPushFrame?_ok st donorTcb pushRid pushReply hFrame).2.1
+  have hRepRaw := (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
+  have hKeyNe := getReply?_getSchedContext?_key_ne st pushRid clientScId pushReply sc
+    hRepPre hObj
+  have hRep1 : s1.getReply? pushRid = some pushReply := by
+    rw [SystemState.getReply?_eq_some_iff,
+      storeObject_objects_ne st s1 clientScId.toObjId pushRid.toObjId _ hKeyNe hObjInv hS1]
+    exact hRepRaw
+  have hRaw1 : s2.getTcb? clientTid = some clientTcb :=
+    getTcb?_of_lookupTcb s2 clientTid clientTcb hLC
+  have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
+    getTcb?_of_lookupTcb s3 serverTid serverTcb hL
+  have e1 : s1.getSchedContext? clientScId
+      = some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
+                       donationOrigin :=
+                         if donationFirstPush donorTcb clientScId then some clientTid
+                         else sc.donationOrigin } := by
+    rw [SystemState.getSchedContext?_eq_some_iff,
+      storeObject_objects_eq st s1 clientScId.toObjId _ hObjInv hS1]
+  have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 clientScId
+  have e3 := storeObject_tcbAt_getSchedContext?_eq_donation s2 s3 clientTid clientTcb
+    _ hRaw1 hInv2 hS3 clientScId
+  have e4 := storeObject_tcbAt_getSchedContext?_eq_donation s3 s4 serverTid serverTcb
+    { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }
+    hRaw2 hInv3 hS4 clientScId
+  have hA : st'.getSchedContext? clientScId = s1.getSchedContext? clientScId := by
+    rw [hEq]
+    show s4.getSchedContext? clientScId = _
+    rw [e4, e3, e2]
+  rw [e1] at hA
+  refine ⟨sc, _, hObj, hBound, hA, ?_, rfl⟩
+  simp [SchedContext.boundThread, SeLe4n.ThreadId.optCode, SeLe4n.ThreadId.ofOptCode]
 
 /-- WS-ZA ZA6.6: the donation keeps every yield code: the context is rebound,
 the frame push writes no thread or context, and the threads are stored over
@@ -1906,7 +1954,11 @@ theorem applyReplyDonation_ok_decompose
       -- `replyDonationRecipient_eq_of_no_origin`.
       returnDonatedSchedContext st holderVtid.val scId
         (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
-      st'' = removeRunnable st' holderVtid.val := by
+      -- **WS-ZA ZA6.33**: the returned context settles (seL4's
+      -- `schedContext_donate`): purged, and re-placed only under an active holder.
+      st'' = removeRunnable
+        (SchedContextOps.settleReturnedContext st' Concurrency.bootCoreId scId)
+        holderVtid.val := by
   rw [applyReplyDonation_characterisation] at h
   cases hRet : replyFrameHeadHolder? st rid with
   | none => rw [hRet] at h; exact Or.inl ⟨rfl, (Except.ok.inj h).symm⟩
@@ -2174,7 +2226,10 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
             (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
     rw [hEq]
     exact ipcInvariantFull_of_objectsAgreeOffRunLinks
-      (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val) hFull'
+      (removeRunnable_objectsAgreeOffRunLinks _ holderVtid.val)
+      (ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+        (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree st'
+          Concurrency.bootCoreId scId)) hFull')
 
 
 /-- WS-RR RR3.12: `replyDonationReturn?` reads only the thread's
@@ -2283,7 +2338,10 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
               (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
       rw [hEq]
       exact ipcInvariantFull_of_objectsAgreeOffRunLinks
-        (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val) hFull'
+        (removeRunnable_objectsAgreeOffRunLinks _ holderVtid.val)
+        (ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+          (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree st'
+            Concurrency.bootCoreId scId)) hFull')
   · -- Nothing is donated by the woken thread, so the relaxation is empty.
     exact applyReplyDonation_preserves_ipcInvariantFull st st'' rid targetVtid hObjInv
       (ipcInvariantFull_of_exceptDonationOwner hInv
@@ -2304,8 +2362,9 @@ theorem applyReplyDonation_preserves_objects_invExt
   · rw [hEq]; exact hObjInv
   · rw [hEq]
     refine removeRunnable_objects_invExt _ _ ?_
-    exact returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
-      (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hR
+    exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _
+      (returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
+        (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hR)
 
 
 -- ============================================================================
@@ -3771,64 +3830,47 @@ theorem applyCallDonationOnCore_donated_caller_migrates_and_preserves_affinity
       callerVtid receiverVtid _ _ hObjInv hCons rfl rfl h⟩
 
 -- ============================================================================
--- WS-HP HP6.8 — the pop's effect at a spliced cut
+-- WS-ZA ZA6.33 — the pop's effect at a severed cut
 -- ============================================================================
 
-/-- **WS-HP HP6.8: the live pop implements `spliceOutTheCut`, proved.**
+/-- **WS-ZA ZA6.33: the live pop implements `severAtCut`, proved.**
 
-The policy's *effect*, not merely the resolver's answer.  Cancelling a **middle**
-caller — or answering one through a delegated reply capability — splices its frame
-out of the stack (`removeCallerReplyFrame`, `spliceThreadReplyFrameOut`), so the
-frame above the cut is left linking down to the frame **below** it, which is the
-shape this theorem takes as its hypothesis (`hCut`, `hBelow`, `hRecip`,
-`hCaller`).  On it the pop
+Cancelling a **middle** caller — or answering one through a delegated reply
+capability — breaks the chain at its frame (`removeCallerReplyFrame`,
+`cutThreadReplyFrameOut`, seL4's `reply_remove`), so the frame above the cut
+is left linking down to nothing, which is this theorem's hypothesis (`hCut`).  On
+it the pop
 
-* binds the innermost live caller `.donated scId outer`, so the reservation goes
-  on travelling outward to the caller the surviving stack names, rather than
-  settling on the thread immediately above the cut; and
-* leaves **every other thread's TCB unchanged**, which is exactly what
-  `reclaimToCancelledThread` would not do: that policy would rewrite a binding
-  below the cut.
+* binds the answered caller `.bound scId`: the reservation settles on the thread
+  immediately above the cut, as it does in seL4-MCS; and
+* leaves **every other thread's TCB unchanged**.
 
-The second clause is the one that makes this a decision rather than a
-description.  A statement that only exhibited the target's new binding would be
-true of both policies at the target and silent about the difference between
-them.  That the removal *produces* `hCut` and `hRecip` together is
-`removeCallerReplyFrame_splices_reciprocally`
-(`Lifecycle/Invariant/CancellationReplyShape.lean`), stated where the removal is.
-
-Up to `v0.35.44` this was `cancelledMiddleCaller_severs_at_cut`: `hCut : r.prev =
-none` and `.bound scId` at the target.  The sever's conclusion was true of the
-policy then in force and is false of this one, so the theorem is **renamed rather
-than kept beside** its successor — two theorems claiming to name "the policy's
-effect" would be one question with two answers, and only one of them live. -/
-theorem cancelledMiddleCaller_splices_at_cut
+That the removal *produces* `hCut` is `removeCallerReplyFrame_breaks_chain`.
+From `v0.35.45` to `v0.36.196` this was `cancelledMiddleCaller_splices_at_cut`,
+whose conclusion is false of the policy now in force, so it is retired rather
+than kept beside this one. -/
+theorem cancelledMiddleCaller_severs_at_cut
     (st st' : SystemState) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
-    (rid : SeLe4n.ReplyId) (r : Reply) (below : SeLe4n.ReplyId) (b : Reply)
-    (serverTid originalOwner outer : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (r : Reply)
+    (serverTid originalOwner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hNe : originalOwner ≠ serverTid)
     (hSc : st.getSchedContext? scId = some sc)
     (hHead : donationHeadOf? st scId sc = .ok (some (rid, r)))
-    (hCut : r.prev = some below)
-    (hBelow : st.getReply? below = some b)
-    (hRecip : b.next = some (.frame rid))
-    (hCaller : b.caller = some outer)
+    (hCut : r.prev = none)
     (hPop : returnDonatedSchedContextResolved st serverTid scId originalOwner = .ok st') :
-    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.spliceOutTheCut ∧
+    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.severAtCut ∧
     (∃ ownerTcb, st.getTcb? originalOwner = some ownerTcb ∧
       st'.getTcb? originalOwner =
-        some { ownerTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId outer), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId outer) }) ∧
+        some { ownerTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }) ∧
     (∀ tid, tid ≠ originalOwner → tid ≠ serverTid → st'.getTcb? tid = st.getTcb? tid) := by
-  have hRes : replyStackOuterCaller? st scId = .ok (some outer) :=
-    (replyStackOuterCaller?_follows_policy st scId sc rid r below b outer hSc hHead hCut
-      hBelow hRecip hCaller).2
-  have hPopSome : returnDonatedSchedContext st serverTid scId originalOwner (some outer)
-      = .ok st' := by
+  have hRes : replyStackOuterCaller? st scId = .ok none :=
+    (replyStackOuterCaller?_follows_policy st scId sc rid r hSc hHead hCut).2
+  have hPopNone : returnDonatedSchedContext st serverTid scId originalOwner none = .ok st' := by
     rw [← returnDonatedSchedContextResolved_of_resolved hRes]; exact hPop
   obtain ⟨⟨ownerTcb, hPre, hPost⟩, _, hOther⟩ :=
     returnDonatedSchedContext_getTcb?_char st st' serverTid scId originalOwner hObjInv hNe
-      (some outer) hPopSome
+      none hPopNone
   exact ⟨rfl, ⟨ownerTcb, hPre, by simpa [donationReturnBinding] using hPost⟩, hOther⟩
 
 -- ============================================================================
@@ -3912,104 +3954,50 @@ theorem passiveServerHoldsDonatedContext_onCore
   · rw [← hBound]; exact SchedContext.proj_eq_of_withoutRelease_eq (·.boundThread) hW
 
 -- ============================================================================
--- WS-HP HP6.9 — the accounting the splice buys, at reply-stack depth three
+-- WS-ZA ZA6.33 — a middle removal at reply-stack depth three breaks the chain
 -- ============================================================================
 
-/-- **WS-HP HP6.9: a middle removal at reply-stack depth ≥ 3 leaves the
-reservation owed OUTWARD, and the pop that follows delivers it to the caller the
-surviving stack names.**
-
-The theorem WS-HP exists to make true, and — like OD6.1 — not the preservation of
-something that was already so but the making-true of something that was false.
-
-Under `severAtCut` the frame above the cut was left with no `prev`, so every frame
-*below* the cut left the context's stack: the later pop read the remaining stack as
-bottomed out, bound the thread immediately above the cut `.bound scId`, and the
-client that **owned** the reservation was left `.unbound` for good — two hops
-outside the cut at depth three.  A callee that delegated its caller's reply
-capability to a confederate could therefore capture that caller's CBS reservation.
-`tests/SmpIpcSuite.lean` §3.22 measured that as a cost; since HP6.8 it measures
-this as a payoff.
-
-**Three frames is the shallowest stack on which this is visible at all.**  At depth
-two the frame below the cut *is* the stack's bottom, so `severAtCut` and
-`spliceOutTheCut` write the same value (`none`) into the frame above and no witness
-can tell them apart — which is also why the splice provably does not reach the
-depth-2 loss.  That residue needs the reservation's **origin** recorded on the
-`SchedContext` rather than derived from stack reachability, and is closed by WS-HP
-HP10.9's `donationAccountingPreserved_atCallDepthTwo` below.
-
-**What is derived rather than assumed.**  `outer` is read off the *pre-state* frame
-below the cut, so no hypothesis hands the conclusion over; the removal's two
-reciprocal writes come from `removeCallerReplyFrame_splices_reciprocally`; and the
-head is resolved on the *post-removal* state against the **pre-state** context
-record, which is sound because the removal moves no scheduling context
-(`removeCallerReplyFrame_getSchedContext?_eq`) and `donationHeadOf?` reads only the
-Reply out of the state.
-
-**This is an improvement on seL4-MCS, not parity with it.**  `reply_remove`'s
-non-head branch writes zero into the frame above — re-verified at `v0.35.40` against
-upstream at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 — so upstream strands the
-reservation at depth ≥ 3 too.  See `CancelledMiddleCallerPolicy.severAtCut`. -/
-theorem donationAccountingPreserved_atCallDepthThree
-    (st st' st'' : SystemState)
+/-- **WS-ZA ZA6.33: a middle removal at reply-stack depth ≥ 3 breaks the chain at
+the cut**, as seL4-MCS's `reply_remove` does: the frame above the cut keeps its
+head and links down to nothing, so the stack the context carries bottoms out
+there and the pop that later reaches it answers `none`
+(`cancelledMiddleCaller_severs_at_cut`).  The frames below the cut leave the
+context's stack.  From `v0.35.45` to `v0.36.196` the removal cut the out
+instead and this was `donationAccountingPreserved_atCallDepthThree`, a property
+of the splice that upstream does not have; `tests/SmpIpcSuite.lean` §3.22
+measures the sever. -/
+theorem middleRemoval_atCallDepthThree_severs
+    (st st' : SystemState)
     (caller : SeLe4n.ThreadId)
     (rid top bottom : SeLe4n.ReplyId) (r t bm : Reply)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext)
-    (serverTid targetTid outer : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (hNe : targetTid ≠ serverTid)
-    -- The three-frame stack, top to bottom: `top` heads the context, the cut
-    -- frame `rid` sits below it, and `bottom` below that carries the
-    -- reservation's owner as its caller.
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame top))
     (hT : st.getReply? top = some t) (hTP : t.prev = some rid)
     (hTHead : t.next = some (.head scId))
     (hSc : st.getSchedContext? scId = some sc) (hScReply : sc.scReply = some top)
-    (hBelow : spliceFrameBelow? st rid r top = some (bottom, bm))
-    (hOuter : bm.caller = some outer)
-    -- The middle removal, and the pop that later reaches the head.
-    (hRemove : removeCallerReplyFrame caller rid st = .ok ((), st'))
-    (hPop : returnDonatedSchedContextResolved st' serverTid scId targetTid = .ok st'') :
-    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.spliceOutTheCut ∧
-      replyStackOuterCaller? st' scId = .ok (some outer) ∧
-      (∃ tcb, st'.getTcb? targetTid = some tcb ∧
-        st''.getTcb? targetTid
-          = some { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId outer), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId outer) }) := by
-  -- The removal's two reciprocal writes.
+    (hBelow : cutFrameBelow? st rid r top = some (bottom, bm))
+    (hRemove : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.severAtCut ∧
+      st'.getReply? top = some { t with prev := none } ∧
+      st'.getReply? bottom = some { bm with next := none } ∧
+      replyStackOuterCaller? st' scId = .ok none := by
   obtain ⟨hTopPost, hBottomPost⟩ :=
-    removeCallerReplyFrame_splices_reciprocally st st' caller rid top bottom r t bm hObjInv
+    removeCallerReplyFrame_breaks_chain st st' caller rid top bottom r t bm hObjInv
       hR hN hT hTP hBelow hRemove
-  -- The context survives, and still heads `top`.
+  have hU : t.unlinkedFrom rid = { t with prev := none } :=
+    Reply.unlinkedFrom_of_next_ne (by rw [hTHead]; simp)
+  rw [hU] at hTopPost
   have hSc' : st'.getSchedContext? scId = some sc := by
     rw [removeCallerReplyFrame_getSchedContext?_eq st st' caller rid hObjInv hRemove scId]
     exact hSc
   have hHead' : donationHeadOf? st' scId sc
-      = .ok (some (top, { t with prev := some bottom })) := by
+      = .ok (some (top, { t with prev := none })) := by
     unfold donationHeadOf?
     simp only [hScReply, hTopPost, hTHead, bne_self_eq_false, Bool.false_eq_true, if_false]
-  -- ...and the frame below it is the one the splice re-linked, which still names
-  -- the reservation's owner: the consume cleared the CUT frame's caller, not this
-  -- one's.
-  have hCallerBelow : ({ bm with next := some (.frame top) } : Reply).caller = some outer :=
-    hOuter
-  exact ⟨rfl,
-    (replyStackOuterCaller?_follows_policy st' scId sc top { t with prev := some bottom }
-      bottom { bm with next := some (.frame top) } outer hSc' hHead' rfl hBottomPost rfl
-      hCallerBelow).2,
-    by
-      obtain ⟨⟨tcb, hPre, hPost⟩, _, _⟩ :=
-        returnDonatedSchedContext_getTcb?_char st' st'' serverTid scId targetTid
-          (removeCallerReplyFrame_preserves_objects_invExt st st' caller rid hObjInv hRemove)
-          hNe (some outer)
-          (by
-            rw [← returnDonatedSchedContextResolved_of_resolved
-              (replyStackOuterCaller?_follows_policy st' scId sc top
-                { t with prev := some bottom } bottom
-                { bm with next := some (.frame top) } outer hSc' hHead' rfl hBottomPost rfl
-                hCallerBelow).2]
-            exact hPop)
-      exact ⟨tcb, hPre, by simpa [donationReturnBinding] using hPost⟩⟩
+  exact ⟨rfl, hTopPost, hBottomPost,
+    (replyStackOuterCaller?_follows_policy st' scId sc top { t with prev := none } hSc' hHead'
+      rfl).2⟩
 
 
 -- ============================================================================
@@ -4025,7 +4013,7 @@ was already so but the making-true of something that was false.
 
 **Why the splice cannot reach this.**  At depth two the frame the removal takes
 off the stack *is* the stack's bottom, so there is nothing below it to reconnect:
-`spliceFrameBelow?` answers `none`, the splice degenerates to the sever
+`cutFrameBelow?` answers `none`, the splice degenerates to the sever
 (`removeCallerReplyFrame_clears_prev_of_bottom_frame`), and
 `cancelledMiddleCallerPolicy` — whichever value it holds — writes the same `none`
 into the frame above.  The sentence that explains why `tests/SmpIpcSuite.lean`
