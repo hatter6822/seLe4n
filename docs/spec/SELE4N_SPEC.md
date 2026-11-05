@@ -4830,7 +4830,11 @@ bytes per slot — must not exceed it.  Otherwise the carve is refused with
 `untypedRegionExhausted` before any read of what the caller named and before
 any write (`untypedRetypeObject_heapRefused`), answered in the state it was
 handed (`untypedRetypeObject_heapRefused_stateUnchanged`,
-`untypedRetypeOfChecked_heapRefused`).  Witnesses:
+`untypedRetypeOfChecked_heapRefused`).  The routed arm
+(`dispatchInvocationByR`) answers that refusal itself, before the split carve,
+and a refused syscall crosses the boundary as scalar words
+(`Platform.FFI.errorOutcomeWords`, `errorOutcomeWords_eq`), so the refusal
+allocates nothing.  Witnesses:
 `tests/NegativeStateSuite.lean` (`runRetypeHeapCapacityChecks`), and the QEMU
 exerciser's `untyped-retype-heap-refused`, where the exerciser image's hook
 caps the free bytes the kernel is told at one page and the refused carve is

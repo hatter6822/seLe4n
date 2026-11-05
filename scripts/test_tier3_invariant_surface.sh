@@ -3921,6 +3921,12 @@ run_check "INVARIANT" rg -n -U '^@\[inline\] def untypedRetypeAdmittedAt [^\n]*\
 run_check "INVARIANT" rg -n -U '^def CarveRequest\.heapAdmitted \(st : SystemState\) \(req : CarveRequest\) : Bool :=\n  decide \(req\.heapBytes st ≤ st\.machine\.kernelHeapFreeBytes\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_heapRefused_stateUnchanged($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeOfChecked_heapRefused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
+# The routed retype arm answers the heap refusal itself, before the split carve,
+# so the general path it would fall back to (a second decode) never runs; and a
+# refusal crosses the boundary as scalar words, building no frame or outcome.
+run_check "INVARIANT" rg -n -U '^              \(fun srcCnode srcSlot dstCnode dstSlot =>\n([ \t]*(--[^\n]*)?\n)*                if !req\.heapAdmitted st then \.error \(\.untypedRegionExhausted, st\) else\n                RefusalCarrying\.ofChecked$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem errorOutcomeWords_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'fun ke s => \(\(Architecture\.SyscallOutcome\.returns \(Architecture\.errorFrame ke\)\)\.words' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextVSpaceRoot[^\n]*\n  \{ asid := asid, mappings := \{\}, tableBase := some \(untypedNextFrame ut idx\)\.base \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedNextVSpaceRoot_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -5134,7 +5140,7 @@ run_check "INVARIANT" rg -n '^  pstate : UInt64 := 0$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^  rf\.pstate % 16 == 0$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 # PR #904 (v0.36.41): the syscall entry's save rewinds a vacated core's frame to
 # its SVC, so the resident thread re-issues the syscall its deschedule interrupted.
-run_check "INVARIANT" rg -n '^          \(Architecture\.saveCapturedSyscallFrame st execCore frame\) wordBytes wordCount\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^            \(Architecture\.saveCapturedSyscallFrame st execCore frame\) wordBytes wordCount\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st execCore frame' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # WS-BP BP7.8: the sender's overflow words are read from RAM and synced into the
 # model before the decode, at the seam and in its structural marker.  WS-ZA

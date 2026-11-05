@@ -24,6 +24,15 @@ first, as seL4's `Untyped_Retype` answers `seL4_NotEnoughMemory`.
   insert would resize at 75% load — the object table, the index set, the type
   table, and the ASID table for a VSpace root.  A refusal is
   `untypedRegionExhausted` (code 20).
+- **A refusal that allocates nothing.**  The routed retype arm
+  (`dispatchInvocationByR`) answers the heap refusal itself, in the state it
+  was handed, before the split carve, so the general path the split falls back
+  to (a second decode of the invocation, 8 cells) never runs for it;
+  `dispatchInvocationByR_eq` covers the new branch.  A refused syscall's
+  boundary words are now built as scalars (`Platform.FFI.errorOutcomeWords`,
+  equal by `rfl` to the error frame's outcome's words, `errorOutcomeWords_eq`),
+  where the words form built the error frame and its outcome (2 cells) for
+  every refusal.  Traced with the allocator's callers under QEMU.
 - **Proofs.**  `untypedRetypeObject_heapRefused`,
   `untypedRetypeObject_heapRefused_stateUnchanged` (the refusal is answered in
   the state it was handed), `untypedRetypeObject_ok_heapAdmitted`,
