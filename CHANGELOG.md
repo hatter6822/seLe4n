@@ -64,7 +64,9 @@ context and returns no loan.  `.tcbResume` follows seL4's `restart` and
   core 1 by `cross-core-home-root`), the server's reply-receive
   (`chain-server-reply-recv`) and the root task's reply
   (`chain-root-replies`).  The partner restarts the root task before it
-  suspends itself.
+  suspends itself.  Core 1 is held in its agent handler (`COMMAND_HOLD`)
+  across the cross-core steps, so it never runs the root task woken on its
+  home.
 
   These read 0 at first call and in steady state: the notification-wait,
   bound, release-queued and postponed suspends, and the bound and postponed
