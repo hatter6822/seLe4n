@@ -279,6 +279,75 @@ theorem removeFromAllEndpointQueues_preserves_objects_invExt
         · exact hAcc
       · exact hAcc)
 
+-- ============================================================================
+-- WS-ZA ZA6.33: the targeted dequeue (`removeFromBlockingEndpoint`, seL4's
+-- `tcbEPDequeue`) — the splice, then at most one endpoint rewrite
+-- ============================================================================
+
+/-- **The targeted dequeue is the splice, or the splice with one endpoint
+rewritten**, at the endpoint named, to the boundary-advanced endpoint. -/
+theorem removeFromBlockingEndpoint_cases (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) :
+    removeFromBlockingEndpoint st tid e = spliceOutMidQueueNode st tid ∨
+      ∃ ep hEp, (spliceOutMidQueueNode st tid).objects[e]? = some (.endpoint ep) ∧
+        removeFromBlockingEndpoint st tid e =
+          (spliceOutMidQueueNode st tid).rewriteObject e
+            (.endpoint ((ep.withSendQ (removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid)).withReceiveQ
+              (removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid))) hEp := by
+  unfold removeFromBlockingEndpoint
+  dsimp only
+  split
+  · rename_i ep hEp hW
+    split
+    · refine Or.inr ⟨ep, SystemState.rewriteAdmissible_endpoint hEp _, ?_, rfl⟩
+      exact (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
+    · exact Or.inl rfl
+  · exact Or.inl rfl
+
+/-- **A property the splice has and every rewrite keeps, the targeted dequeue
+has.** -/
+theorem removeFromBlockingEndpoint_preserves_of (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (P : SystemState → Prop) (hS : P (spliceOutMidQueueNode st tid))
+    (hR : ∀ s k o h, P s → P (SystemState.rewriteObject s k o h)) :
+    P (removeFromBlockingEndpoint st tid e) := by
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨_, _, _, h⟩ <;> rw [h]
+  · exact hS
+  · exact hR _ _ _ _ hS
+
+theorem removeFromBlockingEndpoint_preserves (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) :
+    (removeFromBlockingEndpoint st tid e).scheduler = st.scheduler ∧
+    (removeFromBlockingEndpoint st tid e).lifecycle = st.lifecycle :=
+  removeFromBlockingEndpoint_preserves_of st tid e
+    (fun s => s.scheduler = st.scheduler ∧ s.lifecycle = st.lifecycle)
+    (spliceOutMidQueueNode_preserves st tid) (fun _ _ _ _ h => h)
+
+theorem removeFromBlockingEndpoint_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) : (removeFromBlockingEndpoint st tid e).scheduler = st.scheduler :=
+  (removeFromBlockingEndpoint_preserves st tid e).1
+
+theorem removeFromBlockingEndpoint_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) : (removeFromBlockingEndpoint st tid e).lifecycle = st.lifecycle :=
+  (removeFromBlockingEndpoint_preserves st tid e).2
+
+theorem removeFromBlockingEndpoint_tlbShootdown_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) :
+    (removeFromBlockingEndpoint st tid e).tlbShootdown = st.tlbShootdown :=
+  removeFromBlockingEndpoint_preserves_of st tid e (fun s => s.tlbShootdown = st.tlbShootdown)
+    (spliceOutMidQueueNode_tlbShootdown_eq st tid) (fun _ _ _ _ h => h)
+
+theorem removeFromBlockingEndpoint_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) : (removeFromBlockingEndpoint st tid e).machine = st.machine :=
+  removeFromBlockingEndpoint_preserves_of st tid e (fun s => s.machine = st.machine)
+    (spliceOutMidQueueNode_machine_eq st tid) (fun _ _ _ _ h => h)
+
+theorem removeFromBlockingEndpoint_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (hInv : st.objects.invExt) :
+    (removeFromBlockingEndpoint st tid e).objects.invExt :=
+  removeFromBlockingEndpoint_preserves_of st tid e (fun s => s.objects.invExt)
+    (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+    (fun _ _ _ _ h => SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ h)
+
 /-- **WS-RR RR7.22 (residual)**: `a` is `b` with (only) its three intrusive-queue
 links rewritten.
 
@@ -1297,7 +1366,7 @@ theorem cancelDonatedDonationOnCore_preserves_objects_invExt
     · cases h
     · injection h with h
       subst h
-      exact migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _
+      exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _
         (cleanupDonatedSchedContext_preserves_objects_invExt _ _ _ hInv (by assumption))
   · cases h
 
@@ -1318,8 +1387,8 @@ theorem cancelDonatedDonationOnCore_runQueue_current_eq
       subst h
       rename_i st1 hClean
       have hS := cleanupDonatedSchedContext_scheduler_eq st st1 tid hClean
-      obtain ⟨hRQ, hCur⟩ := migrateSchedContextReplenishment_runQueue_current_eq
-        st1 _ (determineTargetCore st tid) _ c
+      obtain ⟨hRQ, hCur⟩ := SchedContextOps.settleReturnedContext_runQueue_current_eq
+        st1 _ _ c
       constructor
       · rw [hRQ, hS]; rfl
       · rw [hCur, hS]; rfl
@@ -1339,7 +1408,7 @@ theorem cancelDonatedDonationOnCore_machine_eq
     · injection h with h
       subst h
       rename_i st1 hClean
-      rw [migrateSchedContextReplenishment_machine]
+      rw [SchedContextOps.settleReturnedContext_machine]
       exact cleanupDonatedSchedContext_machine_eq st st1 tid hClean
   · cases h
 
@@ -1355,7 +1424,7 @@ theorem cancelDonatedDonationOnCore_tlbShootdown_eq
     · injection h with h
       subst h
       rename_i st1 hClean
-      rw [migrateSchedContextReplenishment_tlbShootdown]
+      rw [SchedContextOps.settleReturnedContext_tlbShootdown]
       exact cleanupDonatedSchedContext_tlbShootdown_eq st st1 tid hClean
   · cases h
 
@@ -1554,26 +1623,76 @@ theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (fun _ => rfl) hInv (SchedContextOps.purgeReplenishment_objects_invExt _ _ hInv1) hSub
     (SchedContextOps.purgeReplenishment_agree _ _) hCons
 
+/-- WS-ZA ZA6.33: on refined release queues the purge leaves no entry of the
+purged context on any core: every entry sits on the core its link names, and
+that is the core the purge edits. -/
+theorem purgeReplenishment_entries_absent {st : SystemState} (hR : st.releaseQueueRefined)
+    (s : SeLe4n.SchedContextId) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (e : SeLe4n.SchedContextId × Nat)
+    (he : e ∈ ((SchedContextOps.purgeReplenishment st s).scheduler.replenishQueueOnCore c).entries)
+    (hs : e.1 = s) : False := by
+  have hm := SchedContextOps.purgeReplenishment_entries_subset st s c e he
+  refine SchedContextOps.purgeReplenishment_entries_self st s c e he hs
+    (SystemState.releaseCoreOf_of_queuedOn (((hR c).queued s).mpr ?_))
+  rw [← hs]; exact List.mem_map_of_mem hm
+
+/-- WS-ZA ZA6.33: **the settle keeps replenish-queue affinity** -- given it off
+the settled context and a destination that is the home of whatever the context
+is bound to: the purge leaves none of its entries (refined queues), and the
+placement adds one on the destination alone. -/
+theorem settleReturnedContext_preserves_affinityConsistent_smp (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (hR : st.releaseQueueRefined)
+    (hTarget : ∀ sc, st.getSchedContext? s = some sc → ∀ t, sc.boundThread = some t →
+      determineTargetCore st t = c)
+    (hCons : ∀ c' s0 t0, s0 ≠ s → (s0, t0) ∈ (st.scheduler.replenishQueueOnCore c').entries →
+      ∀ sc, st.getSchedContext? s0 = some sc → ∀ tid, sc.boundThread = some tid →
+        determineTargetCore st tid = c') :
+    replenishQueueAffinityConsistent_smp (SchedContextOps.settleReturnedContext st c s) := by
+  intro c' s0 t0 hMem sc hSc tid hB
+  rw [SchedContextOps.settleReturnedContext_determineTargetCore]
+  have hBt := SchedContextOps.settleReturnedContext_boundThread st c s s0
+  rw [hSc] at hBt
+  cases hst : st.getSchedContext? s0 with
+  | none => rw [hst] at hBt; cases hBt
+  | some sc0 =>
+    rw [hst] at hBt
+    have hB0 : sc0.boundThread = some tid := by
+      simp only [Option.map_some, Option.some.injEq] at hBt; rw [← hBt, hB]
+    have hOld : (s0, t0) ∈ ((SchedContextOps.purgeReplenishment st s).scheduler.replenishQueueOnCore c').entries
+        ∨ (s0 = s ∧ c' = c) := by
+      rcases SchedContextOps.settleReturnedContext_cases st c s with e | e <;> rw [e] at hMem
+      · exact .inl hMem
+      · by_cases hc : c' = c
+        · rcases SystemState.releasePlace_entries_provenance _ c s c' _ hMem with h | h
+          · exact .inl h
+          · exact .inr ⟨h, hc⟩
+        · rw [SystemState.releasePlace_replenishQueueOnCore_ne _ c s c' hc] at hMem
+          exact .inl hMem
+    rcases hOld with h | ⟨rfl, rfl⟩
+    · by_cases hs : s0 = s
+      · exact (purgeReplenishment_entries_absent hR s c' _ h hs).elim
+      · exact hCons c' s0 t0 hs (SchedContextOps.purgeReplenishment_entries_subset st s c' _ h)
+          sc0 hst tid hB0
+    · exact hTarget sc0 hst tid hB0
+
 /-- **`v0.35.164`: the donated arm preserves replenish-queue affinity** -- the
-return then the migration, which is exactly the pair
-`migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp` is
-stated for: the pop wrote no replenish queue, no *other* SchedContext and no
-home core, and its success witnesses that the context was bound to the holder,
-so the invariant homed its replenishments on the holder's core -- the
-migration's source.  The arm's destination is the recorded owner's post-return
-home, which is `replenishHomeOfSchedContext` of the post-return state because
-the pop bound the context to that owner
+return then the settle (`settleReturnedContext_preserves_affinityConsistent_smp`,
+WS-ZA ZA6.33): the pop wrote no replenish queue, no *other* SchedContext and no
+home core, so the invariant holds off the returned context; the settle purges
+that context's entries (refined queues hold them on the core its link names)
+and places it on the recorded owner's home, the thread the pop bound it to
 (`returnDonatedSchedContext_post_boundThread`).
 
 `hTcb` is what makes the arm's argument the thread the return re-reads: the
 return resolves the binding through `lookupTcb` on its own, and an argument
-naming a binding the store does not hold would migrate a context the return
+naming a binding the store does not hold would settle a context the return
 never touched.  Both callers pass the stored record (the suspend's G3 through
 its re-lookup, the destroy path through the object it is retyping). -/
 theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : lookupTcb st tid = some tcb)
-    (hInv : st.objects.invExt)
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
     replenishQueueAffinityConsistent_smp st' := by
@@ -1587,25 +1706,28 @@ theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_s
       rename_i st1 hClean
       simp only [cleanupDonatedSchedContext, hTcb, hBind] at hClean
       obtain ⟨newOwner?, _, hRet⟩ := returnDonatedSchedContextResolved_ok_decompose hClean
-      obtain ⟨scPre, hScPre, hScPreBound⟩ :=
-        returnDonatedSchedContext_ok_implies_sc_bound st st1 tid scId originalOwner newOwner? hRet
       obtain ⟨scPost, hScPost, hScPostBound⟩ :=
         returnDonatedSchedContext_post_boundThread st st1 tid scId originalOwner hInv
           newOwner? hRet
       have hSched : st1.scheduler =
           { st.scheduler with reschedulePending := st1.scheduler.reschedulePending } :=
         returnDonatedSchedContext_scheduler_eq st st1 tid scId originalOwner newOwner? hRet
-      rw [← replenishHomeOfSchedContext_eq_of_bound st1 scId (determineTargetCore st tid)
-        scPost originalOwner hScPost hScPostBound]
-      exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp st st1
-        scId (determineTargetCore st tid) scPre tid
-        (fun c => by rw [hSched]; rfl)
-        (fun scId₀ hne => returnDonatedSchedContext_getSchedContext?_ne st st1 tid scId scId₀
-          originalOwner hne hInv newOwner? hRet)
-        (fun x => determineTargetCore_congr st st1 x
-          (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st st1 tid scId originalOwner hInv
-            newOwner? hRet x)))
-        hScPre hScPreBound rfl hCons
+      have hDet : ∀ x, determineTargetCore st1 x = determineTargetCore st x := fun x =>
+        determineTargetCore_congr st st1 x
+          (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st st1
+            tid scId originalOwner hInv newOwner? hRet x))
+      refine settleReturnedContext_preserves_affinityConsistent_smp st1 _ scId
+        ((returnDonatedSchedContext_releaseStateAgree hInv hRet).refined hRef)
+        (fun sc hSc t hB => ?_) (fun c' s0 t0 hs hMem sc hSc t hB => ?_)
+      · rw [hScPost] at hSc; cases hSc
+        rw [hScPostBound] at hB; cases hB; rfl
+      · have hQ : st1.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
+          rw [hSched]; rfl
+        rw [hQ] at hMem
+        rw [returnDonatedSchedContext_getSchedContext?_ne st st1 tid scId s0 originalOwner hs hInv
+          newOwner? hRet] at hSc
+        rw [hDet]
+        exact hCons c' s0 t0 hMem sc hSc t hB
   · cases h
 
 /-- **`v0.35.164`: the dispatcher preserves replenish-queue affinity on every
@@ -1616,7 +1738,7 @@ falsify the invariant) and the suspend pipeline's G3, which had never had one. -
 theorem cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : lookupTcb st tid = some tcb)
-    (hInv : st.objects.invExt)
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (h : cancelDonationArmOnCore st tid tcb = .ok st') :
     replenishQueueAffinityConsistent_smp st' := by
@@ -1626,7 +1748,7 @@ theorem cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
   · exact cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
       _ _ _ _ hInv hCons h
   · exact cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
-      _ _ _ _ hTcb hInv hCons h
+      _ _ _ _ hTcb hInv hRef hCons h
 
 /-- **`v0.35.165`: the binding release leaves the replenish queues where the
 bound threads are.**
@@ -3311,15 +3433,16 @@ theorem migrateSchedContextReplenishment_runQueueStage (st : SystemState)
     (fun _ _ h s => migrateSchedContextReplenishment_refillsSoundExcept h scId fromCore toCore s)
 
 /-- The donation hand-back rebinds a context and two threads' bindings: no run
-queue, no placement field. -/
-theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
+queue, no placement field.  WS-ZA ZA6.33: a frame off the returned context,
+whose refill rule reads its holder. -/
+theorem returnDonatedSchedContext_runQueueFrameStage {st st' : SystemState}
     {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
     {originalOwner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
-    SystemState.RunQueueStage st st' :=
+    SystemState.RunQueueFrameStage (· = scId) st st' :=
   have hS := returnDonatedSchedContext_scheduler_eq st st' serverTid scId originalOwner
     newOwner? h
-  SystemState.RunQueueStage.of_placement
+  SystemState.RunQueueFrameStage.of_placement
     (fun hInv => returnDonatedSchedContext_preserves_objects_invExt st st' serverTid scId
       originalOwner hInv newOwner? h)
     (by rw [hS]) (by rw [hS])
@@ -3329,41 +3452,117 @@ theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
       (returnDonatedSchedContext_getTcb?_stateFields_eq st st' serverTid scId originalOwner
         hInv newOwner? h))
     (fun hInv => returnDonatedSchedContext_releaseStateAgree hInv h)
-    (fun hInv => returnDonatedSchedContext_refillViewsKept hInv h)
+    (fun hInv => returnDonatedSchedContext_refillsKeptOff hInv h)
     (fun hInv => returnDonatedSchedContext_yieldLinksKept hInv h)
     (by rw [hS])
     (by rw [returnDonatedSchedContext_machine_eq st st' serverTid scId originalOwner newOwner? h])
 
+/-- WS-ZA ZA6.33: the returned context before and after: bound to the server,
+then to the original owner, its refills kept. -/
+theorem returnDonatedSchedContext_rebinds {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {originalOwner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    ∃ b a, st.getSchedContext? scId = some b ∧ b.boundThread = some serverTid ∧
+      st'.getSchedContext? scId = some a ∧ a.boundThread = some originalOwner ∧
+      a.refillsView = b.refillsView := by
+  obtain ⟨sc, head?, hSc, hSc'⟩ := returnDonatedSchedContext_post_getSchedContext? st st'
+    serverTid scId originalOwner hObjInv newOwner? h
+  obtain ⟨sc0, hSc0, hB⟩ := returnDonatedSchedContext_ok_implies_sc_bound st st' serverTid
+    scId originalOwner newOwner? h
+  rw [hSc] at hSc0; cases hSc0
+  refine ⟨sc, _, hSc, hB, hSc', ?_, rfl⟩
+  simp [donationReturnSchedContext, SchedContext.boundThread, SeLe4n.ThreadId.optCode,
+    SeLe4n.ThreadId.ofOptCode]
+
+/-- The hand-back from a server that is not suspended is a stage: the context's
+holder is not suspended after unless it was not before
+(`refillsSoundExcept_rebind`).  seL4's reply from the running server. -/
+theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {originalOwner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
+    (hA : st.activeAt serverTid)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    SystemState.RunQueueStage st st' :=
+  (returnDonatedSchedContext_runQueueFrameStage h).withRefills
+    fun S _ hInv _ _ _ hQ' hSnd _ => by
+      obtain ⟨b, a, hb, hbB, ha, haB, hv⟩ := returnDonatedSchedContext_rebinds hInv h
+      refine SystemState.refillsSoundExcept_rebind (returnDonatedSchedContext_refillsKeptOff hInv h)
+        hQ' (fun c => by
+          unfold SchedulerState.replenishQueueOnCore
+          rw [returnDonatedSchedContext_scheduler_eq st st' serverTid scId originalOwner
+            newOwner? h]) ha hb hv (by rw [haB]; rfl) (fun _ => ?_) hSnd
+      obtain ⟨x, hx, hX⟩ := hA
+      unfold SystemState.holderActive
+      rw [hbB]
+      simp only [hx, Option.any_some, bne_iff_ne, ne_eq]
+      exact hX
+
 theorem returnDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
     {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
-    {originalOwner : SeLe4n.ThreadId}
+    {originalOwner : SeLe4n.ThreadId} (hA : st.activeAt serverTid)
     (h : returnDonatedSchedContextResolved st serverTid scId originalOwner = .ok st') :
     SystemState.RunQueueStage st st' :=
   let ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-  returnDonatedSchedContext_runQueueStage hPop
+  returnDonatedSchedContext_runQueueStage hA hPop
 
-theorem cleanupDonatedSchedContext_runQueueStage {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} (h : cleanupDonatedSchedContext st tid = .ok st') :
-    SystemState.RunQueueStage st st' := by
-  unfold cleanupDonatedSchedContext at h
-  split at h
-  · cases h; exact .refl st
-  · split at h
-    · exact returnDonatedSchedContextResolved_runQueueStage h
-    · cases h; exact .refl st
+theorem returnDonatedSchedContextResolved_runQueueFrameStage {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {originalOwner : SeLe4n.ThreadId}
+    (h : returnDonatedSchedContextResolved st serverTid scId originalOwner = .ok st') :
+    SystemState.RunQueueFrameStage (· = scId) st st' :=
+  let ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+  returnDonatedSchedContext_runQueueFrameStage hPop
 
-/-- The migrating donation cancel: the hand-back, then the replenishment move. -/
+/-- WS-ZA ZA6.33: the returned context is well formed after the hand-back when
+it was before: the hand-back keeps its refills. -/
+theorem returnDonatedSchedContextResolved_wellFormed {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {originalOwner : SeLe4n.ThreadId} {S : SeLe4n.SchedContextId → Prop}
+    (hInv : st.objects.invExt)
+    (h : returnDonatedSchedContextResolved st serverTid scId originalOwner = .ok st')
+    (hs : ¬ S scId) (hS : st.refillsSoundExcept S) :
+    ∀ a, st'.getSchedContext? scId = some a → schedContextWellFormed a := by
+  intro a ha
+  obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+  obtain ⟨b, a', hb, _, ha', _, hv⟩ := returnDonatedSchedContext_rebinds hInv hPop
+  rw [ha'] at ha; cases ha
+  exact schedContextWellFormed_of_refillsView hv (hS.1 scId b hs hb)
+
+/-- The donation cancel of a destroyed or retyped holder: the hand-back, then
+seL4's `schedContext_donate` settle of the context (`settleReturnedContext`):
+off every release queue, and placed again when its new holder is not
+suspended. -/
 theorem cancelDonatedDonationOnCore_runQueueStage {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hT : st.getTcb? tid = some tcb)
+    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
     SystemState.RunQueueStage st st' := by
   unfold cancelDonatedDonationOnCore at h
   split at h
-  · split at h
+  · rename_i scId _ hBd
+    split at h
     · cases h
     · rename_i s1 h1
       cases h
-      exact (cleanupDonatedSchedContext_runQueueStage h1).trans
-        (migrateSchedContextReplenishment_runQueueStage _ _ _ _)
+      have hW : ∀ S : SeLe4n.SchedContextId → Prop, ¬ S scId → st.objects.invExt →
+          st.refillsSoundExcept S → ∀ a, st.getSchedContext? scId = some a →
+            schedContextWellFormed a := fun S hs _ hS a ha => hS.1 scId a hs ha
+      unfold cleanupDonatedSchedContext at h1
+      split at h1
+      · cases h1
+        exact SchedContextOps.settleReturnedContext_runQueueStage
+          ((SystemState.RunQueueStage.refl st).toFrame _) (fun S hs hI hS _ => hW S hs hI hS)
+      · rename_i tcb' hL
+        have hG : st.getTcb? tid = some tcb' := by
+          unfold lookupTcb at hL; split at hL
+          · cases hL
+          · exact hL
+        rw [hT] at hG; cases hG
+        rw [hBd] at h1
+        exact SchedContextOps.settleReturnedContext_runQueueStage
+          (returnDonatedSchedContextResolved_runQueueFrameStage h1)
+          (fun S hs hI hS _ => returnDonatedSchedContextResolved_wellFormed hI h1 hs hS)
   · cases h
 
 /-- The in-place unbind: a context write, two scheduler-side writes the
@@ -3415,13 +3614,14 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
 /-- The retype's donation arm: the identity, the in-place unbind, or the
 migrating return. -/
 theorem cancelDonationArmOnCore_runQueueStage {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} (h : cancelDonationArmOnCore st tid tcb = .ok st') :
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hT : st.getTcb? tid = some tcb)
+    (h : cancelDonationArmOnCore st tid tcb = .ok st') :
     SystemState.RunQueueStage st st' := by
   unfold cancelDonationArmOnCore at h
   split at h
   · cases h; exact .refl st
   · exact cancelBoundDonationOnCore_runQueueStage h
-  · exact cancelDonatedDonationOnCore_runQueueStage h
+  · exact cancelDonatedDonationOnCore_runQueueStage hT h
 
 /-- The migrating donation cancel moves no thread's run-queue core: the
 hand-back rewrites bindings and the migration writes replenish queues. -/
@@ -3435,7 +3635,7 @@ theorem cancelDonatedDonationOnCore_runCoresAgree {st st' : SystemState}
     · rename_i s1 h1
       cases h
       exact SystemState.RunCoresAgree.trans
-        (fun y => by rw [migrateSchedContextReplenishment_getTcb?])
+        (fun y => by rw [SchedContextOps.settleReturnedContext_getTcb?])
         (cleanupDonatedSchedContext_runCoresAgree st s1 tid hInv h1)
   · cases h
 
@@ -3472,5 +3672,232 @@ theorem cancelDonationArmOnCore_runCoresAgree {st st' : SystemState}
   · cases h; exact SystemState.RunCoresAgree.refl _
   · exact cancelBoundDonationOnCore_runCoresAgree hInv h
   · exact cancelDonatedDonationOnCore_runCoresAgree hInv h
+
+-- ============================================================================
+-- WS-ZA ZA6.33: the targeted dequeue's TCB and IPC frames
+-- ============================================================================
+
+/-- **A TCB before the targeted dequeue is a TCB after it, at the same
+placement**: the splice rewrites only queue links, and the one endpoint rewrite
+lands on an endpoint key, which holds no TCB. -/
+theorem removeFromBlockingEndpoint_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    (removeFromBlockingEndpoint st tid e).objects.invExt
+    ∧ ∃ t' : TCB,
+      (removeFromBlockingEndpoint st tid e).objects[k]? = some (.tcb t')
+      ∧ t'.placement = t0.placement := by
+  obtain ⟨t₁, hL1, hRw1⟩ := spliceOutMidQueueNode_tcb_lookup st tid k t0 hInv hPre
+  have hAff1 : t₁.placement = t0.placement :=
+    hRw1.field TCB.placement (fun _ _ _ _ _ _ => rfl)
+  have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  · exact ⟨hInvS, t₁, hL1, hAff1⟩
+  · have hNe : e ≠ k := fun hek => by
+      subst hek; rw [hL1] at hE; cases hE
+    exact ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInvS, t₁,
+      (SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hInvS).trans hL1, hAff1⟩
+
+/-- **A key holding no TCB before the targeted dequeue holds none after it.** -/
+theorem removeFromBlockingEndpoint_no_tcb
+    (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId)
+    (hInv : st.objects.invExt)
+    (hNo : ∀ t : TCB, st.objects[tid.toObjId]? ≠ some (.tcb t)) :
+    (removeFromBlockingEndpoint st tid e).objects.invExt
+    ∧ ∀ t : TCB,
+      (removeFromBlockingEndpoint st tid e).objects[tid.toObjId]? ≠ some (.tcb t) := by
+  have hSplice : spliceOutMidQueueNode st tid = st :=
+    spliceOutMidQueueNode_eq_self_of_lookupTcb_none st tid
+      (lookupTcb_eq_none_of_no_tcb st tid hNo)
+  have hObj : (spliceOutMidQueueNode st tid).objects = st.objects := by rw [hSplice]
+  have hInvS : (spliceOutMidQueueNode st tid).objects.invExt := by rw [hObj]; exact hInv
+  have hNoS : ∀ t : TCB, (spliceOutMidQueueNode st tid).objects[tid.toObjId]? ≠ some (.tcb t) := by
+    rw [hObj]; exact hNo
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  · exact ⟨hInvS, hNoS⟩
+  · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInvS, fun t ht => ?_⟩
+    by_cases hx : e = tid.toObjId
+    · subst hx
+      have hclash := (SystemState.rewriteObject_objects_self _ tid.toObjId _ _ hInvS).symm.trans ht
+      cases hclash
+    · exact hNoS t ((SystemState.rewriteObject_objects_ne _ e tid.toObjId _ _ hx hInvS).symm.trans ht)
+
+/-- **The targeted dequeue preserves `ipcInvariant`**: the splice writes TCBs and
+the one rewrite is an endpoint. -/
+theorem removeFromBlockingEndpoint_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (removeFromBlockingEndpoint st tid e) := by
+  have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  have hIpcS := spliceOutMidQueueNode_preserves_ipcInvariant st tid hInv hIpc
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  · exact hIpcS
+  · exact ipcInvariant_insert_endpoint _ _ _ hInvS hIpcS
+
+/-- **No endpoint other than `e` names `tid` at a boundary of either queue** —
+the condition under which the store sweep and the targeted dequeue agree.  Under
+`queueHeadBlockedConsistent` and `endpointQueueTailBlockedConsistent` it holds
+of every thread blocked on `e` (`endpointBoundariesOnly_of_blocked`). -/
+def endpointBoundariesOnly (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) :
+    Prop :=
+  ∀ k ep, k ≠ e → st.objects[k]? = some (.endpoint ep) →
+    ep.sendQ.head ≠ some tid ∧ ep.sendQ.tail ≠ some tid ∧
+      ep.receiveQ.head ≠ some tid ∧ ep.receiveQ.tail ≠ some tid
+
+/-- The sweep's body is the identity at a key `k ≠ e` whose accumulator value is
+the spliced state's, when no endpoint but `e` names the thread. -/
+theorem endpointSweepBody_id_off (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) (hOnly : endpointBoundariesOnly st tid e)
+    (acc : SystemState) (k : SeLe4n.ObjId) (v : KernelObject) (hk : k ≠ e)
+    (hAcc : ∀ ep, acc.objects[k]? = some (.endpoint ep) →
+      (spliceOutMidQueueNode st tid).objects[k]? = some (.endpoint ep)) :
+    endpointSweepBody (spliceOutMidQueueNode st tid) tid acc k v = acc := by
+  unfold endpointSweepBody
+  cases v with
+  | endpoint _ =>
+    dsimp only
+    split
+    · rename_i ep hEp _
+      have hA := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
+      have hSt := (spliceOutMidQueueNode_nonTcb st tid hInv k _ (fun _ h => by cases h)).mp (hAcc ep hA)
+      obtain ⟨h1, h2, h3, h4⟩ := hOnly k ep hk hSt
+      have hG : (ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+          || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid) = false := by
+        simp only [Bool.or_eq_false_iff, beq_eq_false_iff_ne]; exact ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩
+      rw [if_neg (by rw [hG]; exact Bool.false_ne_true)]
+    · rfl
+  | _ => rfl
+
+/-- **The store sweep is the targeted dequeue** when no endpoint but `e` names
+the thread at a boundary (seL4's `tcbEPDequeue` is the sweep restricted to the
+one endpoint a blocked thread can be a boundary of). -/
+theorem removeFromAllEndpointQueues_eq_blocking (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hInv : st.objects.invExt) (hOnly : endpointBoundariesOnly st tid e) :
+    removeFromAllEndpointQueues st tid = removeFromBlockingEndpoint st tid e := by
+  rw [removeFromAllEndpointQueues_eq_fold]
+  have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  -- The targeted dequeue is the body run once at `e` on the spliced state.
+  have hT : ∀ x, removeFromBlockingEndpoint st tid e =
+      endpointSweepBody (spliceOutMidQueueNode st tid) tid (spliceOutMidQueueNode st tid) e
+        (.endpoint x) := by
+    intro x; unfold removeFromBlockingEndpoint endpointSweepBody; dsimp only
+    split <;> rename_i h <;> simp only [h]
+  cases hE : (spliceOutMidQueueNode st tid).objects[e]? with
+  | some o =>
+    cases o with
+    | endpoint ep0 =>
+      -- A rewrite at `e` keeps every other key, so the spliced state's values.
+      have hOffT : ∀ k, k ≠ e → ∀ ep,
+          (removeFromBlockingEndpoint st tid e).objects[k]? = some (.endpoint ep) →
+          (spliceOutMidQueueNode st tid).objects[k]? = some (.endpoint ep) := by
+        intro k hk ep h
+        rcases removeFromBlockingEndpoint_cases st tid e with hc | ⟨_, _, _, hc⟩ <;> rw [hc] at h
+        · exact h
+        · rwa [SystemState.rewriteObject_objects_ne _ _ _ _ _ (fun h' => hk h'.symm) hInvS] at h
+      have hQ := SeLe4n.Kernel.RobinHood.RHTable.fold_pointwise (spliceOutMidQueueNode st tid).objects
+        (spliceOutMidQueueNode st tid) (endpointSweepBody (spliceOutMidQueueNode st tid) tid)
+        (fun j acc => j = e → acc = spliceOutMidQueueNode st tid)
+        (fun j acc => j = e → acc = removeFromBlockingEndpoint st tid e) hInvS
+        (fun _ _ => rfl)
+        (fun acc k k' v' hne hPre hk => by
+          subst hk
+          rw [hPre rfl]
+          exact endpointSweepBody_id_off st tid k hInv hOnly _ k' v' (fun h => hne h.symm)
+            (fun _ h => h))
+        (fun acc k v hv hPre hk => by
+          subst hk
+          rw [hPre rfl]
+          rw [← RHTable_getElem?_eq_get?, hE] at hv
+          cases hv
+          exact (hT ep0).symm)
+        (fun acc k k' v' hne hQ hk => by
+          subst hk
+          rw [hQ rfl]
+          exact endpointSweepBody_id_off st tid k hInv hOnly _ k' v' (fun h => hne h.symm)
+            (hOffT k' (fun h => hne h.symm)))
+        e (.endpoint ep0) (by rw [← RHTable_getElem?_eq_get?]; exact hE)
+      exact hQ rfl
+    | _ =>
+      all_goals
+      have hNone : (spliceOutMidQueueNode st tid).getEndpoint? e = none := by
+        cases hG : (spliceOutMidQueueNode st tid).getEndpoint? e with
+        | none => rfl
+        | some ep =>
+          have := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hG
+          rw [hE] at this; cases this
+      have hTS : removeFromBlockingEndpoint st tid e = spliceOutMidQueueNode st tid := by
+        unfold removeFromBlockingEndpoint; dsimp only
+        rw [SystemState.getEndpointWitnessed?_eq_none hNone]
+      rw [hTS]
+      refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode st tid).objects
+        (spliceOutMidQueueNode st tid) _ (fun acc => acc = spliceOutMidQueueNode st tid) hInvS rfl
+        (fun acc k v hv hAcc => ?_)
+      subst hAcc
+      by_cases hk : k = e
+      · subst hk
+        rw [← RHTable_getElem?_eq_get?, hE] at hv
+        cases hv
+        unfold endpointSweepBody; rfl
+      · exact endpointSweepBody_id_off st tid e hInv hOnly _ k v hk (fun _ h => h)
+  | none =>
+    have hNone : (spliceOutMidQueueNode st tid).getEndpoint? e = none := by
+      cases hG : (spliceOutMidQueueNode st tid).getEndpoint? e with
+      | none => rfl
+      | some ep =>
+        have := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hG
+        rw [hE] at this; cases this
+    have hTS : removeFromBlockingEndpoint st tid e = spliceOutMidQueueNode st tid := by
+      unfold removeFromBlockingEndpoint; dsimp only
+      rw [SystemState.getEndpointWitnessed?_eq_none hNone]
+    rw [hTS]
+    refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode st tid).objects
+      (spliceOutMidQueueNode st tid) _ (fun acc => acc = spliceOutMidQueueNode st tid) hInvS rfl
+      (fun acc k v hv hAcc => ?_)
+    subst hAcc
+    by_cases hk : k = e
+    · subst hk
+      rw [← RHTable_getElem?_eq_get?, hE] at hv
+      cases hv
+    · exact endpointSweepBody_id_off st tid e hInv hOnly _ k v hk (fun _ h => h)
+
+/-- The targeted dequeue writes TCBs only through the splice: every TCB the
+splice leaves survives verbatim. -/
+theorem removeFromBlockingEndpoint_tcb_frame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (t0 : TCB)
+    (h : (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t0)) :
+    (removeFromBlockingEndpoint st tid e).objects[k]? = some (.tcb t0) := by
+  rcases removeFromBlockingEndpoint_cases st tid e with hc | ⟨ep, hA, hE, hc⟩ <;> rw [hc]
+  · exact h
+  · have hNe : e ≠ k := fun hek => by subst hek; rw [h] at hE; cases hE
+    rw [SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hExt]; exact h
+
+/-- A TCB reading after the targeted dequeue is the splice's. -/
+theorem removeFromBlockingEndpoint_tcb_source (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (t' : TCB)
+    (h : (removeFromBlockingEndpoint st tid e).objects[k]? = some (.tcb t')) :
+    (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t') := by
+  rcases removeFromBlockingEndpoint_cases st tid e with hc | ⟨ep, hA, hE, hc⟩ <;> rw [hc] at h
+  · exact h
+  · by_cases hNe : e = k
+    · subst hNe
+      have := (SystemState.rewriteObject_objects_self _ e _ _ hExt).symm.trans h
+      cases this
+    · rwa [SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hExt] at h
+
+/-- An endpoint reading after the targeted dequeue had an endpoint at the same
+key before it. -/
+theorem removeFromBlockingEndpoint_endpoint_source (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (ep : Endpoint)
+    (h : (removeFromBlockingEndpoint st tid e).objects[k]? = some (.endpoint ep)) :
+    ∃ ep0, (spliceOutMidQueueNode st tid).objects[k]? = some (.endpoint ep0) := by
+  rcases removeFromBlockingEndpoint_cases st tid e with hc | ⟨ep1, hA, hE, hc⟩ <;> rw [hc] at h
+  · exact ⟨ep, h⟩
+  · by_cases hNe : e = k
+    · subst hNe; exact ⟨ep1, hE⟩
+    · rw [SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hExt] at h; exact ⟨ep, h⟩
 
 end SeLe4n.Kernel

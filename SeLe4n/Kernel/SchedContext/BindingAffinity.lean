@@ -171,6 +171,31 @@ theorem replenishOnCore_preserves_replenishQueueEntriesBoundOnCore
     subst hS
     exact bound_transfer (hBt scId₀) hBound
 
+/-- WS-ZA ZA6.33: the settle of a returned context preserves orphan-freedom on
+every core: the purge only removes entries, and the placement fires only for a
+context whose holder is not suspended, which is bound. -/
+theorem settleReturnedContext_preserves_replenishQueueEntriesBound_smp
+    (st : SystemState) (c : CoreId) (scId : SchedContextId)
+    (hCons : replenishQueueEntriesBound_smp st) :
+    replenishQueueEntriesBound_smp (settleReturnedContext st c scId) := by
+  intro c'
+  have hP : ∀ c'', replenishQueueEntriesBoundOnCore (purgeReplenishment st scId) c'' :=
+    fun c'' => purgeReplenishment_preserves_replenishQueueEntriesBoundOnCore st scId c'' (hCons c'')
+  unfold settleReturnedContext
+  dsimp only
+  split
+  · rename_i hAct
+    refine replenishOnCore_preserves_replenishQueueEntriesBoundOnCore _ c c' scId (hP c') ?_
+    unfold contextHolderActive at hAct
+    cases hS : (purgeReplenishment st scId).getSchedContext? scId with
+    | none => rw [hS] at hAct; cases hAct
+    | some sc =>
+      rw [hS] at hAct
+      have hB := SystemState.holderActive_bound (by simpa using hAct)
+      obtain ⟨tid, ht⟩ := Option.isSome_iff_exists.mp hB
+      exact ⟨sc, rfl, tid, ht⟩
+  · exact hP c'
+
 /-- The SM5.H.4 migration preserves orphan-freedom on every core,
 unconditionally: it moves entries that already existed (the provenance
 decomposition) and writes no context's bound thread. -/

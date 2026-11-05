@@ -706,6 +706,30 @@ moved to `t`, and the pending refills it now overlaps merge into it. -/
     SchedContext.mergeOverlapping maxReplenishments { sc with periodStart := t }
   else sc
 
+/-- Whether `refill_unblock_check` moves the head: it holds budget and starts by
+`t`.  A scalar helper kept out of line so that the compiled check is one
+straight-line record update. -/
+@[noinline] def refillUnblockDue (budget periodStart t : Nat) : Bool :=
+  decide (0 < budget ∧ periodStart ≤ t)
+
+/-- The compiled `SchedContext.refillUnblockCheck`: the head's start is chosen
+by a scalar helper, so the update has no branch around it and Lean writes the
+context in place when it holds the only reference (the branch around the update
+makes the context shared at the write, and the write then allocates a copy). -/
+@[inline] def SchedContext.refillUnblockCheckImpl (sc : SchedContext) (t : Nat) :
+    SchedContext :=
+  let c := refillUnblockDue sc.budgetRemaining.val sc.periodStart t
+  let sc' := { sc with periodStart := refillSlotSelect c t sc.periodStart }
+  if c then SchedContext.mergeOverlapping maxReplenishments sc' else sc'
+
+/-- The compiled check is the check. -/
+@[csimp] theorem SchedContext.refillUnblockCheck_eq_impl :
+    @SchedContext.refillUnblockCheck = @SchedContext.refillUnblockCheckImpl := by
+  funext sc t
+  unfold SchedContext.refillUnblockCheck SchedContext.refillUnblockCheckImpl
+    refillUnblockDue refillSlotSelect
+  by_cases h : 0 < sc.budgetRemaining.val ∧ sc.periodStart ≤ t <;> simp [h]
+
 /-- WS-ZA ZA6.4: the charge: `usage` run from `start` to `now`.  The head is
 made ready at the run's start (`refill_unblock_check`, as seL4-MCS runs it when
 the context is switched to), charged (`refill_budget_check`), and, when used up,
@@ -864,6 +888,33 @@ theorem SchedContext.refillUnblockCheck_refillsErased (sc : SchedContext) (t : N
   split
   · rw [SchedContext.mergeOverlapping_refillsErased]; rfl
   · rfl
+
+/-- WS-ZA ZA6.33: **the unblock check writes no release link**: the resume's
+settle reads the link it finds. -/
+theorem SchedContext.refillUnblockCheck_releaseCoreCode (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).releaseCoreCode = sc.releaseCoreCode :=
+  by have h := congrArg (fun x : SchedContext => x.releaseCoreCode) (sc.refillUnblockCheck_refillsErased t)
+     exact h
+
+theorem SchedContext.refillUnblockCheck_releaseNextCode (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).releaseNextCode = sc.releaseNextCode :=
+  by have h := congrArg (fun x : SchedContext => x.releaseNextCode) (sc.refillUnblockCheck_refillsErased t)
+     exact h
+
+theorem SchedContext.refillUnblockCheck_releaseAt (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).releaseAt = sc.releaseAt :=
+  by have h := congrArg (fun x : SchedContext => x.releaseAt) (sc.refillUnblockCheck_refillsErased t)
+     exact h
+
+theorem SchedContext.refillUnblockCheck_boundThread (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).boundThread = sc.boundThread :=
+  by have h := congrArg (fun x : SchedContext => x.boundThread) (sc.refillUnblockCheck_refillsErased t)
+     exact h
+
+theorem SchedContext.refillUnblockCheck_deadline (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).deadline = sc.deadline :=
+  by have h := congrArg (fun x : SchedContext => x.deadline) (sc.refillUnblockCheck_refillsErased t)
+     exact h
 
 /-- **The charge writes the refills alone.** -/
 theorem SchedContext.chargeBudget_refillsErased (sc : SchedContext) (start usage now : Nat) :
@@ -1510,6 +1561,22 @@ theorem SchedContext.refillUnblockCheck_head (sc : SchedContext) (t : Nat)
   unfold SchedContext.refillUnblockCheck
   rw [if_pos ⟨hB, hT⟩]
   exact SchedContext.mergeOverlapping_fields _ { sc with periodStart := t }
+
+/-- WS-ZA ZA6.33: the check runs only on a head with budget, which it only
+grows, so whether the context has budget does not change. -/
+theorem SchedContext.refillUnblockCheck_budgetPositive (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).budgetRemaining.isPositive = sc.budgetRemaining.isPositive := by
+  unfold SchedContext.refillUnblockCheck
+  split
+  · rename_i h
+    obtain ⟨-, -, -, h4⟩ := SchedContext.mergeOverlapping_fields maxReplenishments
+      { sc with periodStart := t }
+    have h4' : sc.budgetRemaining.val ≤
+        (SchedContext.mergeOverlapping maxReplenishments
+          { sc with periodStart := t }).budgetRemaining.val := h4
+    simp only [Budget.isPositive, decide_eq_decide]
+    omega
+  · rfl
 
 theorem SchedContext.refillUnblockCheck_period (sc : SchedContext) (t : Nat) :
     (sc.refillUnblockCheck t).period = sc.period ∧ (sc.refillUnblockCheck t).budget = sc.budget := by

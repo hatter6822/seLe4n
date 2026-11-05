@@ -362,12 +362,12 @@ theorem endpointReplyOnCore_mappingStage {replier target : SeLe4n.ThreadId} {msg
         (fun h => endpointReply_kindPreservingWrite _ _ _ _ _ h hS) hA hInv
 
 theorem applyReplyDonationOnCore_mappingStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    {targetVtid : SeLe4n.ValidThreadId} {holderHome ownerHome : CoreId}
-    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st') :
+    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId}
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     MappingStage st st' := by
   refine MappingStage.of_kindPreservingWrite
-    (fun hI => applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hI h) fun hI => ?_
-  rcases applyReplyDonationOnCore_objects_frame _ _ _ _ _ _ h with ⟨-, hO⟩ | ⟨_, _, _, s, hR, hA⟩
+    (fun hI => applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hI h) fun hI => ?_
+  rcases applyReplyDonationOnCore_objects_frame _ _ _ _ _ h with ⟨-, hO⟩ | ⟨_, _, _, s, hR, hA⟩
   · exact kindPreservingWrite.of_objects_eq hO
   · exact (returnDonatedSchedContext_kindPreservingWrite hI hR).trans hA.kindPreserving
 
@@ -568,7 +568,10 @@ theorem replyRecvPopDonation_mappingStage {rid : SeLe4n.ReplyId} {target : SeLe4
       · rename_i st1 hRet
         cases h
         exact (returnDonatedSchedContextResolved_mappingStage hRet).trans
-          (migrateSchedContextReplenishment_mappingStage _ _ _ _)
+          (MappingStage.of_kindPreservingWrite
+            (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
+            fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+              (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)
     · cases h
   · cases h; exact MappingStage.refl _
 

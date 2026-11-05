@@ -2332,11 +2332,14 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     match stTimeout.getTcb? tid1 with
     | some tcbAfter =>
       let stateReady := tcbAfter.ipcState == .ready
-      let threadReady := tcbAfter.threadState == .Ready
+      -- WS-ZA ZA6.33: the abort ends the IPC block and leaves the thread state
+      -- as it was (seL4's timeout reaches the thread through `cancelIPC`, which
+      -- never makes an `Inactive` thread runnable).
+      let threadStateKept := tcbAfter.threadState == tcb1.threadState
       let budgetCleared := tcbAfter.timeoutBudget == none
       let timedOutSet := tcbAfter.timedOut  -- AG8-A: explicit timedOut flag
       let linksCleared := tcbAfter.queuePrev == none && tcbAfter.queueNext == none
-      IO.println s!"[SCO-023] timeoutThread blocked: ready={stateReady} threadReady={threadReady} budgetCleared={budgetCleared} errCode={timedOutSet} linksCleared={linksCleared}"
+      IO.println s!"[SCO-023] timeoutThread blocked: ready={stateReady} threadStateKept={threadStateKept} budgetCleared={budgetCleared} errCode={timedOutSet} linksCleared={linksCleared}"
     | none => IO.println s!"[SCO-023] timeoutThread blocked: tcb not found after timeout"
 
   -- SCO-024: timeoutThread — thread not found returns error

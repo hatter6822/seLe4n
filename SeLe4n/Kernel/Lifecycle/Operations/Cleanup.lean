@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.Operations
 import SeLe4n.Kernel.Service.Registry
+import SeLe4n.Kernel.IPC.DualQueue.RemoveInPlace
 -- `v0.35.164`: the per-core donation-cancellation arms live here now (they were
 -- in `IPC/CrossCore/Cancellation.lean`, which the destroy path cannot import),
 -- and the `.donated` arm's replenishment migration is the scheduler's
@@ -326,6 +327,56 @@ def spliceOutMidQueueNode (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
         | _ => objs
     { st with objects := objs }
 
+
+/-- **The interior splice, each write in its slot**: the predecessor's next
+link and the successor's back links rewritten where they stand
+(`SystemState.updateTcb`), from the removed thread's three link words read
+once.  It is `spliceOutMidQueueNode` (`spliceOutMidQueueNode_eq_impl`). -/
+@[inline] def spliceOutMidQueueNodeImpl (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState :=
+  match lookupTcb st tid with
+  | none => st
+  | some tcb =>
+    let nextC := tcb.queueNextCode
+    let prevC := tcb.queuePrevCode
+    let pprevC := tcb.queuePPrevCode
+    let s1 := match SeLe4n.ThreadId.ofOptCode prevC with
+      | some p => st.updateTcb p (fun t => { t with queueNextCode := nextC })
+      | none => st
+    match SeLe4n.ThreadId.ofOptCode nextC with
+    | some n => s1.updateTcb n (fun t => { t with queuePrevCode := prevC, queuePPrevCode := pprevC })
+    | none => s1
+
+/-- A patch of a table at a key that holds a TCB, and no write elsewhere, is
+`updateTcb` at that key on the state holding the table: the splice's patches,
+each of the table the one before it left. -/
+private theorem objectsTcbPatch_eq_updateTcb (s : SystemState)
+    (objs : RobinHood.RHTable SeLe4n.ObjId KernelObject) (p : SeLe4n.ThreadId)
+    (f : TCB → TCB) :
+    { s with objects := match objs[p.toObjId]? with
+        | some (.tcb t) => objs.insert p.toObjId (.tcb (f t))
+        | _ => objs } = ({ s with objects := objs } : SystemState).updateTcb p f := by
+  cases hx : objs[p.toObjId]? with
+  | none =>
+    rw [SystemState.updateTcb_eq_self_of_none (by simp [SystemState.getTcb?, hx])]
+  | some o =>
+    cases o with
+    | tcb t => rw [SystemState.updateTcb_eq_of_some (t := t) (by simp [SystemState.getTcb?, hx])]
+    | _ => rw [SystemState.updateTcb_eq_self_of_none (by simp [SystemState.getTcb?, hx])]
+
+@[csimp] theorem spliceOutMidQueueNode_eq_impl :
+    @spliceOutMidQueueNode = @spliceOutMidQueueNodeImpl := by
+  funext st tid
+  unfold spliceOutMidQueueNode spliceOutMidQueueNodeImpl
+  cases lookupTcb st tid with
+  | none => rfl
+  | some tcb =>
+    simp only [TCB.queuePrev, TCB.queueNext]
+    generalize SeLe4n.ThreadId.ofOptCode tcb.queuePrevCode = op
+    generalize SeLe4n.ThreadId.ofOptCode tcb.queueNextCode = on
+    cases op <;> cases on <;> dsimp only <;>
+      simp only [objectsTcbPatch_eq_updateTcb] <;> rfl
+
 /-- R4-A.1 (M-12) + T5-E (M-LCS-1): Remove a ThreadId from all endpoint send/receive
     queues. First splices the mid-queue node out by patching predecessor/successor
     links, then adjusts head/tail pointers in each endpoint queue.
@@ -363,6 +414,115 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
         else acc
       | none => acc
     | _ => acc
+
+/-- **Dequeue a thread from the one endpoint it waits on** (seL4's
+`tcbEPDequeue`, which `cancelIPC` runs on the endpoint the thread state names):
+the thread's interior queue links are spliced out (`spliceOutMidQueueNode`), and
+when the thread is a boundary of that endpoint's send or receive queue the
+endpoint's head or tail moves to its neighbour, as one rewrite of that one
+endpoint.  This is `removeFromAllEndpointQueues` with the sweep over the store
+replaced by the one endpoint a blocked thread can be a boundary of; the two agree
+on every state where no other endpoint names the thread at a boundary.  It
+writes the thread's two neighbours and that endpoint, nothing else. -/
+def removeFromBlockingEndpoint (st : SystemState) (tid : SeLe4n.ThreadId)
+    (endpointId : SeLe4n.ObjId) : SystemState :=
+  let stSpliced := spliceOutMidQueueNode st tid
+  match stSpliced.getEndpointWitnessed? endpointId with
+  | some ⟨ep, hEp⟩ =>
+    if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+        || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
+      let ep' : Endpoint := (ep.withSendQ (removeThreadFromQueue stSpliced ep.sendQ tid)).withReceiveQ (removeThreadFromQueue stSpliced ep.receiveQ tid)
+      stSpliced.rewriteObject endpointId (.endpoint ep') (SystemState.rewriteAdmissible_endpoint hEp ep')
+    else stSpliced
+  | none => stSpliced
+
+/-- **The endpoint with each queue end that names the removed thread moved to
+its neighbour** (`tidCode` the thread's code): a head to `nextCode`, a tail to
+`prevCode` (`removedEndCode`, which is `queueRemoveBoundary` on codes), the
+other ends kept. -/
+@[inline] def endpointEndsRemoved (tidCode nextCode prevCode : Nat) :
+    KernelObject → KernelObject
+  | .endpoint e => .endpoint { e with
+      sendHeadCode := removedEndCode e.sendHeadCode tidCode nextCode,
+      sendTailCode := removedEndCode e.sendTailCode tidCode prevCode,
+      recvHeadCode := removedEndCode e.recvHeadCode tidCode nextCode,
+      recvTailCode := removedEndCode e.recvTailCode tidCode prevCode }
+  | o => o
+
+/-- **`removeFromBlockingEndpoint`, each write in its slot**: the neighbours'
+link words (`spliceOutMidQueueNodeImpl`), then, when one of the endpoint's four
+ends names the thread, the endpoint's ends rewritten where it stands
+(`endpointEndsRemoved`, through `RHTable.modify`).  The guard and the ends are
+read as codes, so no queue record and no `some` cell is built. -/
+@[inline] def removeFromBlockingEndpointImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (endpointId : SeLe4n.ObjId) : SystemState :=
+  let s := spliceOutMidQueueNodeImpl st tid
+  match s.getEndpoint? endpointId with
+  | some ep =>
+    let k := tid.val + 1
+    if ep.sendHeadCode == k || ep.sendTailCode == k || ep.recvHeadCode == k
+        || ep.recvTailCode == k then
+      match lookupTcb s tid with
+      | some t => s.modifyObject endpointId (endpointEndsRemoved k t.queueNextCode t.queuePrevCode)
+      | none => s.modifyObject endpointId (endpointEndsRemoved k 0 0)
+    else s
+  | none => s
+
+/-- A queue end read through its code, compared with a thread, is its code
+compared with the thread's. -/
+private theorem ofOptCode_beq_some (c : Nat) (tid : SeLe4n.ThreadId) :
+    (SeLe4n.ThreadId.ofOptCode c == some tid) = (c == tid.val + 1) := by
+  cases c with
+  | zero => simp [SeLe4n.ThreadId.ofOptCode]
+  | succ k =>
+    rw [Bool.eq_iff_iff]
+    simp only [SeLe4n.ThreadId.ofOptCode, beq_iff_eq, Option.some.injEq]
+    cases tid; simp
+
+/-- The code of the end a removal leaves, read back from its views. -/
+private theorem optCode_removedEnd (c n : Nat) (tid : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId.optCode
+        (if SeLe4n.ThreadId.ofOptCode c = some tid then SeLe4n.ThreadId.ofOptCode n
+         else SeLe4n.ThreadId.ofOptCode c) = removedEndCode c (tid.val + 1) n := by
+  unfold removedEndCode
+  by_cases h : c = tid.val + 1 <;> simp [h]
+
+/-- The code of the end a removal with no thread to inherit from leaves. -/
+private theorem optCode_clearedEnd (c : Nat) (tid : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId.optCode
+        (if SeLe4n.ThreadId.ofOptCode c = some tid then none else SeLe4n.ThreadId.ofOptCode c) =
+      removedEndCode c (tid.val + 1) 0 := by
+  unfold removedEndCode
+  by_cases h : c = tid.val + 1 <;> simp [h]
+
+@[csimp] theorem removeFromBlockingEndpoint_eq_impl :
+    @removeFromBlockingEndpoint = @removeFromBlockingEndpointImpl := by
+  funext st tid endpointId
+  unfold removeFromBlockingEndpoint removeFromBlockingEndpointImpl
+  rw [spliceOutMidQueueNode_eq_impl]
+  generalize spliceOutMidQueueNodeImpl st tid = s
+  dsimp only
+  obtain ⟨o, hE⟩ : ∃ o, s.getEndpoint? endpointId = o := ⟨_, rfl⟩
+  cases o with
+  | none => simp only [SystemState.getEndpointWitnessed?_eq_none hE, hE]
+  | some ep =>
+    simp only [SystemState.getEndpointWitnessed?_eq_some hE, hE]
+    have hEo := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE
+    simp only [Endpoint.sendQ, Endpoint.receiveQ, ofOptCode_beq_some]
+    split
+    · unfold removeThreadFromQueue SystemState.rewriteObject SystemState.modifyObject
+      cases lookupTcb s tid with
+      | some t =>
+        simp only [queueRemoveBoundary, TCB.queueNext, TCB.queuePrev, Endpoint.withSendQ,
+          Endpoint.withReceiveQ, optCode_removedEnd]
+        rw [RobinHood.RHTable.modify_of_get? hEo]
+        rfl
+      | none =>
+        simp only [Endpoint.withSendQ, Endpoint.withReceiveQ, optCode_clearedEnd]
+        rw [RobinHood.RHTable.modify_of_get? hEo]
+        rfl
+    · rfl
+
 
 /-- R4-A.2 (M-12), WS-ZA ZA4.4: Remove a thread from the notification wait queue
 it is linked into.
@@ -840,27 +1000,26 @@ theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent
         rw [hTNe y hYT]; exact hT0'
 
 /-- WS-SM SM6.E.3 (donated arm across cores): cancel a donated SchedContext
-binding **and migrate its pending replenishments home**.
+binding **and settle the returned context** (WS-ZA ZA6.33).
 
 The R5.A `cancelDonatedDonation` return (`cleanupDonatedSchedContext` →
-`returnDonatedSchedContext`, object writes only) followed by the
-replenishment migration from the **victim's** home core (where per-core ticks
-enqueued them while the server ran on the donated budget) to the **original
+`returnDonatedSchedContext`, object writes only) followed by seL4's
+`schedContext_donate` shape (`SchedContextOps.settleReturnedContext`): the
+context comes off whichever release queue its own link names
+(`tcbReleaseRemove` of the old holder), and is placed again on the **original
 owner's** home core — the SC's post-return bound thread, whose home core the
-SM5.H affinity invariant names as the entries' required residence.  The
-victim's home is pre-resolved from the pre-state (the return never touches
-`cpuAffinity`); the owner's home is read post-return.  Self-migration —
-shared home core, and in particular every single-core configuration — is a
-definitional no-op (`migrateSchedContextReplenishment_noop`), recovering
-the single-core arm exactly (`cancelDonatedDonationOnCore_eq_of_sharedHome`,
-`IPC/CrossCore/Cancellation.lean`).
+SM5.H affinity invariant names as the entries' required residence — when that
+owner is not suspended.  The destroyed or retyped holder may itself be
+suspended, and a suspend takes its context off the release queue, so the
+settle is what puts an active owner's pending refill back on a queue; a
+suspended owner's context stays off until its resume re-places it.
 
 The destination is read off the **post-return** state and the recorded owner
 rather than through `replenishHomeOfSchedContext` (WS-RR RR8.11's rule for a
-step that can refuse) because the migration runs only in the return's `.ok`
+step that can refuse) because the settle runs only in the return's `.ok`
 continuation, where the context is bound to that owner
-(`cancelDonatedDonationOnCore_migrates_to_recorded_owner`); on a refusal
-nothing migrates.
+(`cancelDonatedDonationOnCore_settles_on_recorded_owner`); on a refusal
+nothing moves.
 
 Returns `.error .illegalState` on a non-`.donated` binding, exactly like the
 single-core arm.  Relocated from `Cancellation.lean` at `v0.35.164` so the
@@ -872,8 +1031,8 @@ def cancelDonatedDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
       match cleanupDonatedSchedContext st tid with
       | .error e => .error e
       | .ok st' =>
-          .ok (migrateSchedContextReplenishment st' scId
-                (determineTargetCore st tid) (determineTargetCore st' originalOwner))
+          .ok (SchedContextOps.settleReturnedContext st'
+                (determineTargetCore st' originalOwner) scId)
   | _ => .error .illegalState
 
 /-- **`v0.35.164`: the per-core donation-cancellation arm, `Except`-shaped** — the
@@ -882,7 +1041,7 @@ three-way binding match the suspend pipeline's G3 spells inline
 `suspendDonationArm_eq_cancelDonationArmOnCore`), named, so that the destroy
 path runs the same step: `.unbound` is the identity, `.bound` is the in-place
 unbind with the replenish purge on the thread's **home** core, `.donated` is
-the return plus the replenishment migration to the owner's home.
+the return plus the settle of the returned context on the owner's home.
 
 Two spellings of one dispatcher exist deliberately, and one is defined through
 the other: `cancelDonationOnCore` (`IPC/CrossCore/Cancellation.lean`) is this
@@ -917,7 +1076,7 @@ theorem cancelDonationArmOnCore_of_bound (st : SystemState) (tid : SeLe4n.Thread
       = cancelBoundDonationOnCore st tid tcb := by
   simp only [cancelDonationArmOnCore, h]
 
-/-- The `.donated` arm is the migrating return. -/
+/-- The `.donated` arm is the settling return. -/
 theorem cancelDonationArmOnCore_of_donated (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
     (h : tcb.schedContextBinding = .donated scId owner) :

@@ -127,10 +127,10 @@ theorem removeCallerReplyFrame_preserves_capabilityInvariantBundle
     capabilityInvariantBundle st' := by
   have hObjInv : st.objects.invExt := hInv.2.2.2.2.1
   refine consumeCallerReply_preserves_capabilityInvariantBundle
-    (spliceReplyFrameOutOrSelf st rid) st' caller rid ?_ hStep
-  exact capabilityInvariantBundle_of_kindPreserving hInv (spliceReplyFrameOutOrSelf_cdt_eq st rid)
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv)
-    (spliceReplyFrameOutOrSelf_kindPreservingWrite st rid hObjInv)
+    (cutReplyFrameOutOrSelf st rid) st' caller rid ?_ hStep
+  exact capabilityInvariantBundle_of_kindPreserving hInv (cutReplyFrameOutOrSelf_cdt_eq st rid)
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv)
+    (cutReplyFrameOutOrSelf_kindPreservingWrite st rid hObjInv)
 
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
 Reply stores a TCB with message (not a CNode), so CSpace invariants are preserved.

@@ -2444,10 +2444,10 @@ theorem removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
     objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
   rw [removeCallerReplyFrame_eq] at hStep
   refine consumeCallerReply_preserves_objectIndexSetComplete_and_invExt _ st' caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) ?_
-    (spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) ?_
+    (cutReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
       hComplete) hStep
-  obtain ⟨m1, m2, h1, h2, h3⟩ := spliceReplyFrameOutOrSelf_store_cases st rid hObjInv
+  obtain ⟨m1, m2, h1, h2, h3⟩ := cutReplyFrameOutOrSelf_store_cases st rid hObjInv
   have hM1 : m1.objectIndexSet.table.invExt := by
     rcases h1 with rfl | ⟨k, _, _, _, hS⟩
     · exact hObjSetInv
@@ -4280,6 +4280,21 @@ theorem migrateSchedContextReplenishment_preserves_projection
   projectState_of_releaseOnlyWrite ctx observer
     (migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore)
     (releaseWriteAt.migrateSchedContextReplenishment st scId fromCore toCore) hS
+
+/-- WS-ZA ZA6.33 (NI): the settle of a non-observable returned context
+preserves the projection: a purge and a placement, both release edits of it. -/
+theorem settleReturnedContext_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SeLe4n.SchedContextId)
+    (hS : objectObservable ctx observer scId.toObjId = false) :
+    projectState ctx observer (SchedContextOps.settleReturnedContext st c scId)
+      = projectState ctx observer st :=
+  projectState_of_releaseOnlyWrite ctx observer
+    (SchedContextOps.settleReturnedContext_releaseOnlyWrite st c scId) (by
+      rcases SchedContextOps.settleReturnedContext_cases st c scId with e | e <;> rw [e]
+      · exact releaseWriteAt.releaseRemoveAnywhere st scId
+      · exact (releaseWriteAt.releasePlace _ c scId).trans
+          (releaseWriteAt.releaseRemoveAnywhere st scId)) hS
 
 /-- WS-ZA ZA6.3 / ZA6.30 (NI): **every release-queue edit of a non-observable
 context preserves the projection** — the insert, the remove, the requeue

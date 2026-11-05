@@ -92,7 +92,7 @@ def an10_b_getTcb_empty : IO Bool := do
 /-- AN10-B.2 — `getTcb?` returns the stored TCB on a populated state. -/
 def an10_b_getTcb_populated : IO Bool := do
   let tid : ThreadId := ThreadId.ofNat 100
-  let tcb : TCB := { mkTcb 100 with tid := tid }
+  let tcb : TCB := { mkTcb 100 with tid := tid, idCell := some tid, idCell_eq := rfl }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
   match st.getTcb? tid with

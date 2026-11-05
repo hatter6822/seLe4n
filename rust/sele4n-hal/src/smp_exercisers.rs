@@ -81,7 +81,7 @@
 //! `tlbi_for_sharing`).
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::shootdown::{ShootdownAckSlot, ShootdownOp, ShootdownOpMailbox};
 use crate::smp::MAX_SECONDARY_CORES;
@@ -125,6 +125,18 @@ pub const COMMAND_ROUND: u32 = 6;
 /// the gate refused the return to EL0, `1` when the gate let it return, and
 /// `2` when the request did not find the core in the kernel.
 pub const COMMAND_EXIT_GATE: u32 = 7;
+/// Hold this core in its agent handler, its IRQs masked, until the boot core
+/// releases it ([`HOLD_RELEASED`]) or two seconds pass.  The handler raises
+/// [`HOLD_ENTERED`] first, so once the boot core sees it no kernel entry of
+/// this core (a reschedule SGI, a tick) runs before the release: a thread the
+/// boot core wakes on this core's home stays queued and is never run here.
+/// The result is `1` when released, `0` on the timeout.
+pub const COMMAND_HOLD: u32 = 8;
+
+/// Raised by a core entering [`COMMAND_HOLD`]'s wait.
+pub static HOLD_ENTERED: AtomicBool = AtomicBool::new(false);
+/// Raised by the boot core to end [`COMMAND_HOLD`]'s wait.
+pub static HOLD_RELEASED: AtomicBool = AtomicBool::new(false);
 
 /// One core's command slot: one cache line, written by the issuer (the boot
 /// core, or a secondary acknowledging a ping into slot 0) and by the servicing
@@ -752,6 +764,20 @@ fn execute(core: usize, source_cpu: u8, command: u32, arg: u64) -> u64 {
             // This core is in an interrupt handler, not at EL0.
             crate::remote_stall::note_kernel_entry();
             u64::from(allowed)
+        }
+        COMMAND_HOLD => {
+            HOLD_ENTERED.store(true, Ordering::Release);
+            let start = crate::timer::read_counter();
+            let timeout = command_timeout_ticks();
+            loop {
+                if HOLD_RELEASED.load(Ordering::Acquire) {
+                    return 1;
+                }
+                if crate::timer::read_counter().saturating_sub(start) >= timeout {
+                    return u64::from(HOLD_RELEASED.load(Ordering::Acquire));
+                }
+                core::hint::spin_loop();
+            }
         }
         _ => u64::MAX,
     }
@@ -1616,6 +1642,49 @@ const TIMER_TICK_STEP: u64 = u64::MAX;
 const MASK_TICKS_STEP: u64 = u64::MAX - 1;
 #[cfg(feature = "hw_target")]
 const UNMASK_TICKS_STEP: u64 = u64::MAX - 2;
+/// The second core held in its agent handler ([`COMMAND_HOLD`]) and released:
+/// the steps between wake a thread homed there, which the second core must
+/// not run, since a round-trip thread's frame starts at address 0.  Neither is
+/// measured nor printed.
+#[cfg(feature = "hw_target")]
+const HOLD_SECOND_CORE_STEP: u64 = u64::MAX - 3;
+#[cfg(feature = "hw_target")]
+const RELEASE_SECOND_CORE_STEP: u64 = u64::MAX - 4;
+
+/// Hold `core` in its agent handler ([`COMMAND_HOLD`]); the sequence to await
+/// at the release, once the core has entered the wait.
+#[cfg(feature = "hw_target")]
+fn hold_core(core: usize) -> Option<u64> {
+    HOLD_RELEASED.store(false, Ordering::Release);
+    HOLD_ENTERED.store(false, Ordering::Release);
+    let sequence = agent_issue_in(&AGENTS, core, COMMAND_HOLD, 0);
+    crate::gic::send_sgi(1u8 << core, AGENT_SGI_INTID);
+    let start = crate::timer::read_counter();
+    let timeout = command_timeout_ticks();
+    loop {
+        if HOLD_ENTERED.load(Ordering::Acquire) {
+            return Some(sequence);
+        }
+        if crate::timer::read_counter().saturating_sub(start) >= timeout {
+            HOLD_RELEASED.store(true, Ordering::Release);
+            return HOLD_ENTERED.load(Ordering::Acquire).then_some(sequence);
+        }
+        core::hint::spin_loop();
+    }
+}
+
+/// Release the core [`hold_core`] held; whether it reports the release.
+#[cfg(feature = "hw_target")]
+fn release_core(core: usize, sequence: u64) -> bool {
+    HOLD_RELEASED.store(true, Ordering::Release);
+    agent_await_in(
+        &AGENTS,
+        core,
+        sequence,
+        command_timeout_ticks(),
+        crate::timer::read_counter,
+    ) == Some(1)
+}
 
 /// A scenario step of kind `syscall`, one of the three above.
 #[cfg(feature = "hw_target")]
@@ -1725,9 +1794,31 @@ const IRQ_BOUND_HANDLER_SLOT: u64 = 24;
 #[cfg(feature = "hw_target")]
 const IRQ_UNBOUND_HANDLER_SLOT: u64 = 25;
 
+/// The free slots the donation-chain scenario (WS-ZA ZA6.33) carves its
+/// server thread, its reply object and that reply's capability into.
+#[cfg(feature = "hw_target")]
+const CHAIN_TCB_SLOT: u64 = 22;
+#[cfg(feature = "hw_target")]
+const CHAIN_REPLY_OBJECT_SLOT: u64 = 23;
+#[cfg(feature = "hw_target")]
+const CHAIN_REPLY_CAP_SLOT: u64 = 26;
+/// The boot-domain ids that scenario carves its thread and reply at.
+#[cfg(feature = "hw_target")]
+const CHAIN_CHILD_IDS: [u64; 2] = [33, 34];
+/// The second core (`TCB_SetAffinity`'s word for core 1) and the word that
+/// clears an affinity (`affinityUnbindMarker`, the core count).
+#[cfg(feature = "hw_target")]
+const SECOND_CORE_AFFINITY: u64 = 1;
+#[cfg(feature = "hw_target")]
+const AFFINITY_UNBIND: u64 = 4;
+
 /// The capability addresses of those slots.
 #[cfg(feature = "hw_target")]
 const ROOT_TCB_CAP: u64 = cap_address(ROOT_TCB_SLOT);
+#[cfg(feature = "hw_target")]
+const CHAIN_TCB_CAP: u64 = cap_address(CHAIN_TCB_SLOT);
+#[cfg(feature = "hw_target")]
+const CHAIN_REPLY_CAP: u64 = cap_address(CHAIN_REPLY_CAP_SLOT);
 #[cfg(feature = "hw_target")]
 const CNODE_CAP: u64 = cap_address(CNODE_SLOT);
 #[cfg(feature = "hw_target")]
@@ -2245,11 +2336,12 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   kernel-entered timer ticks (the timer masked across them) and unbound;
 ///   then configured (its fifth word read from that buffer), bound to the
 ///   suspended partner and unbound, then bound again and held while the partner is resumed and
-///   suspended, which releases it.  A service is registered on the image's
+///   suspended, which leaves it bound (seL4's suspend unbinds nothing), and
+///   unbound.  A service is registered on the image's
 ///   endpoint against the interface the boot installs (its fifth word read
 ///   from that buffer), queried and revoked.
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
     &[
         invocation(
             "cspace-copy",
@@ -2449,6 +2541,141 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             CNODE_CAP,
             [MINT_SLOT, 0, 0, 0],
         ),
+    ],
+    // WS-ZA ZA6.33: seL4's suspend of a blocked thread (`cancelIPC`, then
+    // `tcbSchedDequeue`, `tcbReleaseRemove`, `schedContext_cancelYieldTo` and
+    // `Inactive`), run as the root task: the partner resumed, the root task's
+    // receive that blocks so the partner runs, the partner's send that wakes
+    // it, and the partner's own blocking step, which leaves the root task
+    // current; then the suspend.  Each arm's cancel writes its queue and the
+    // partner's links in their slots, so the second run finds the state the
+    // first did.  The timer is masked across the sequence, so no tick
+    // switches the two threads between steps and the roles stay fixed.  The
+    // partner blocked on a receive:
+    &[
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        invocation("suspend-recv-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "suspend-recv-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-recv-wake-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+        partner_step(
+            "suspend-recv-partner-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-receive-blocked",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // ...on a send:
+        invocation("suspend-send-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "suspend-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-send-wake-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+        partner_step(
+            "suspend-send-partner-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x88, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-send-blocked",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // ...on the notification wait:
+        invocation("suspend-wait-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "suspend-wait-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-wait-wake-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+        partner_step(
+            "suspend-wait-partner-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-wait-blocked",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // ...and on the reply, its call taken by the root task's receive through
+        // the reply capability: the suspend's reply arm is seL4's
+        // `reply_remove_tcb`, which unlinks the reply from the caller.
+        invocation("suspend-reply-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "suspend-reply-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-reply-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x66, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-reply-blocked",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
     ],
     &[
         invocation(
@@ -2686,6 +2913,299 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
         yield_to("sched-context-yield-to"),
         invocation("tcb-resume-bound", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("tcb-suspend-bound", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        // WS-ZA ZA6.33: seL4's suspend leaves the context bound to the
+        // suspended thread, so the context's own unbind releases it.
+        invocation(
+            "sched-context-unbind-suspended",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        // WS-ZA ZA6.33: the release-queued and donated suspends run here, where
+        // both threads' IPC buffers are set (a configure reads its fifth word
+        // from the root task's) and the context is configured and unbound.  The
+        // postpone runs first, so the donated suspend's configure leaves the
+        // context as the yieldTo setup below expects it.
+        // seL4's resume of a thread whose context's refill is not yet due
+        // (`restart`, `schedContext_resume`: `refill_unblock_check`, then the
+        // postpone onto the release queue).  The partner, bound to the context
+        // configured to a one-tick budget every two ticks, resumed and run (the
+        // root task's receive blocks, the partner's send wakes it); its yield
+        // forfeits the budget and queues its refill two ticks on, which leaves the
+        // root task current.  The suspend of the release-queued partner takes the
+        // context off the release queue; the resume finds the refill not due and
+        // postpones the context, which is not placed on a run queue; then the
+        // partner is suspended again and the context unbound.  No tick may come
+        // between the forfeit and the resume, so the timer is masked throughout.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "postpone-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                REFILL_BUDGET,
+                REFILL_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "postpone-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "postpone-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "postpone-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "postpone-wake-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+        kernel_step("postpone-partner-yield", YIELD),
+        invocation(
+            "tcb-suspend-release-queued",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation("tcb-resume-postpone", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        invocation("postpone-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        invocation(
+            "postpone-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // The same with the partner holding the image's scheduling context, so its
+        // call donates the context to the root task: the suspend's reply arm takes
+        // the reply off the context's reply stack and leaves the context with the
+        // server, now its bound holder (seL4 returns no loan on a suspend).  The
+        // context's real unbind then takes it from the root task.  The timer is
+        // masked across the sequence, so no tick switches the threads between steps.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "suspend-donated-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "suspend-donated-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "suspend-donated-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "suspend-donated-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "suspend-donated-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x66, 0],
+            true,
+        ),
+        invocation(
+            "tcb-suspend-reply-donated",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "suspend-donated-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        // WS-ZA ZA6.33: a donation across two home cores, then a donation down
+        // a chain.  A server thread and its reply are carved; the partner,
+        // holding the context, and the server are resumed; the root task's
+        // receive blocks and the partner runs.  Core 1 is held in its agent
+        // handler while the partner homes the blocked root task on core 1 and
+        // calls it: the context is donated from core 0's home to core 1's and
+        // its replenishment migrated with it, and the server runs on core 0
+        // and homes the root task back (moving the context back) before core
+        // 1 is released, so core 1 never runs the woken root task, whose
+        // frame starts at address 0.  The server receives, so the root task
+        // runs.  The root task,
+        // the context still on loan, calls the server: the donation pushes the
+        // server's reply onto a stack that already holds the root task's.
+        // The server answers and receives again, the root task answers the
+        // partner, and everything is taken down.  The timer is still masked.
+        invocation(
+            "untyped-retype-chain-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ),
+        invocation(
+            "chain-tcb-set-space",
+            TCB_SET_SPACE,
+            CHAIN_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "chain-tcb-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-chain-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+        ),
+        invocation(
+            "chain-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "chain-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "chain-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation("chain-resume-partner", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        invocation("chain-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
+        partner_step(
+            "chain-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        kernel_step("hold-second-core", HOLD_SECOND_CORE_STEP),
+        invocation(
+            "cross-core-home-root",
+            TCB_SET_AFFINITY,
+            ROOT_TCB_CAP,
+            [SECOND_CORE_AFFINITY, 0, 0, 0],
+        ),
+        partner_step(
+            "cross-core-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x66, 0],
+            true,
+        ),
+        invocation(
+            "cross-core-home-root-back",
+            TCB_SET_AFFINITY,
+            ROOT_TCB_CAP,
+            [AFFINITY_UNBIND, 0, 0, 0],
+        ),
+        kernel_step("release-second-core", RELEASE_SECOND_CORE_STEP),
+        partner_step(
+            "chain-server-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [CHAIN_REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "chain-root-calls-server",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x67, 0],
+            true,
+        ),
+        partner_step(
+            "chain-server-reply-recv",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            2,
+            [CHAIN_REPLY_CAP, 0x98],
+            true,
+        ),
+        partner_step("chain-root-replies", REPLY, REPLY_CAP, 1, [0x77, 0], false),
+        invocation("chain-suspend-server", TCB_SUSPEND, CHAIN_TCB_CAP, [0; 4]),
+        // The root task's reply handed the context back and took it off its
+        // core (seL4's `schedContext_donate`), so the partner restarts it
+        // before suspending itself: the root task runs the teardown.
+        invocation("chain-suspend-root", TCB_SUSPEND, ROOT_TCB_CAP, [0; 4]),
+        invocation("chain-resume-root", TCB_RESUME, ROOT_TCB_CAP, [0; 4]),
+        invocation(
+            "chain-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "chain-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "chain-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "chain-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "chain-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         invocation(
             "vspace-unmap",
             VSPACE_UNMAP,
@@ -3152,6 +3672,24 @@ const YIELD_TO_PARTNER_BLOCKS: RoundTrip = partner_step(
     [0, 0],
     true,
 );
+/// **The suspend of a blocked partner** (WS-ZA ZA6.33): the partner, blocked on
+/// the notification wait and holding the bound context, suspended by the root
+/// task.  The suspend cancels the wait (the notification's queue and the
+/// partner's own links, each in its slot) and sets the partner inactive; as in
+/// seL4 the context stays bound to it, so the context's unbind follows
+/// ([`UNBIND_SUSPENDED_PARTNER`]) and the second run finds the state the first
+/// did.
+#[cfg(feature = "hw_target")]
+const SUSPEND_WAITING_PARTNER: RoundTrip =
+    invocation("tcb-suspend-waiting", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]);
+/// The context's unbind from the suspended partner, measured.
+#[cfg(feature = "hw_target")]
+const UNBIND_SUSPENDED_PARTNER: RoundTrip = invocation(
+    "sched-context-unbind-waiting",
+    SCHED_CONTEXT_UNBIND,
+    SCHED_CONTEXT_CAP,
+    [0; 4],
+);
 /// The link cleared: a caller with a pending yield is refused, so a second
 /// yieldTo (the partner blocked, so not schedulable) succeeds only if the
 /// activation cleared the root task's end of the link.  Unmeasured.
@@ -3434,8 +3972,32 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         for first in [true, false] {
             let which = if first { " (first call)" } else { "" };
             let mut masked = None;
+            let mut held = None;
             for step in scenario.iter() {
                 let ok = match step.syscall {
+                    HOLD_SECOND_CORE_STEP => {
+                        held = hold_core(1);
+                        if held.is_none() {
+                            crate::kprintln!(
+                                "[smp-test] FAIL: heap-allocations-per-syscall: {}: core 1 was not held",
+                                step.name
+                            );
+                        }
+                        held.is_some()
+                    }
+                    RELEASE_SECOND_CORE_STEP => match held.take() {
+                        Some(sequence) => {
+                            let released = release_core(1, sequence);
+                            if !released {
+                                crate::kprintln!(
+                                    "[smp-test] FAIL: heap-allocations-per-syscall: {}: core 1 did not report its release",
+                                    step.name
+                                );
+                            }
+                            released
+                        }
+                        None => false,
+                    },
                     MASK_TICKS_STEP => {
                         masked = Some(crate::interrupts::disable_interrupts());
                         true
@@ -3456,6 +4018,9 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                     _ => heap_allocations_round_trip(step, which) == Some(true),
                 };
                 if !ok {
+                    if let Some(sequence) = held.take() {
+                        let _released = release_core(1, sequence);
+                    }
                     if let Some(saved) = masked.take() {
                         crate::interrupts::restore_interrupts(saved);
                     }
@@ -3463,6 +4028,14 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                 }
             }
         }
+    }
+    // WS-ZA ZA6.33: the affinity change of a thread running on core 1, the
+    // timer masked across the whole section.
+    let saved = crate::interrupts::disable_interrupts();
+    let ok = affinity_move_running();
+    crate::interrupts::restore_interrupts(saved);
+    if ok != Some(true) {
+        return Some(false);
     }
     // WS-ZA ZA6.29's requeue and linked branches (added at ZA6.30), twice,
     // the timer masked across each run.
@@ -4367,11 +4940,22 @@ fn fault_entries() -> Option<bool> {
 /// it did neither of the two things a round trip may do), and the two readings.
 #[cfg(feature = "hw_target")]
 fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64>, [u64; 6]) {
+    dispatch_round_trip_at(trip, 0)
+}
+
+/// [`dispatch_round_trip`] with the frame's return address `pc`: the address
+/// the issuing thread resumes at, saved into its TCB when the syscall switches
+/// it out.
+#[cfg(feature = "hw_target")]
+fn dispatch_round_trip_at(
+    trip: &RoundTrip,
+    pc: u64,
+) -> (Dispatched, Option<u64>, Option<u64>, [u64; 6]) {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let mut frame = crate::trap::TrapFrame {
         gprs: [0; 31],
         sp_el0: 0,
-        elr_el1: 0,
+        elr_el1: pc,
         spsr_el1: ROUND_TRIP_SPSR,
         esr_el1: ROUND_TRIP_ESR,
         far_el1: 0,
@@ -4456,8 +5040,9 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
 
 /// **WS-ZA ZA6.29's requeue and linked branches**: the setup, the measured
 /// requeue, the partner raised, the measured linked round trip, the link's
-/// clearing checked, and the partner suspended (which releases the context),
-/// so the second run finds the state the first did.
+/// clearing checked, and the partner, blocked on the notification wait,
+/// suspended and the context unbound from it (each measured), so the second
+/// run finds the state the first did.
 #[cfg(feature = "hw_target")]
 fn yield_to_branches(which: &str) -> Option<bool> {
     for step in YIELD_TO_SETUP.iter() {
@@ -4480,16 +5065,426 @@ fn yield_to_branches(which: &str) -> Option<bool> {
     ) {
         return Some(false);
     }
-    let suspend = invocation(
-        "yield-to-suspend-partner",
-        TCB_SUSPEND,
-        PARTNER_TCB_CAP,
-        [0; 4],
-    );
-    if !unmeasured(&suspend, "the partner was not suspended") {
+    // WS-ZA ZA6.33: the partner, blocked on the notification wait and holding
+    // the bound context, is suspended through the routed arm (its wait
+    // cancelled in place, the context left bound), then the context unbound,
+    // each measured.
+    if heap_allocations_round_trip(&SUSPEND_WAITING_PARTNER, which) != Some(true) {
+        return Some(false);
+    }
+    if heap_allocations_round_trip(&UNBIND_SUSPENDED_PARTNER, which) != Some(true) {
         return Some(false);
     }
     Some(true)
+}
+
+/// **WS-ZA ZA6.33: an affinity change that moves a thread off the core it is
+/// running on** (seL4's `remoteTCBStall` before the thread is migrated).  A
+/// thread carved for it, bound to a scheduling context of
+/// its own (the image context's tenth of the processor, which the thread
+/// spends only in core 1's ticks and does not use up across the section) below
+/// the root task's priority, resumes at a frame of real code: one page holding
+/// `b .`, mapped user-executable at the user window's first page.  Homed on
+/// core 1 it runs there at EL0, and the root task's affinity change homes it
+/// back while it runs, which vacates core 1 (its current slot cleared, a
+/// reschedule raised) and stalls core 1 until it has left the thread and saved
+/// it.  Each call is measured; the thread is homed on core 1 again between
+/// them, unmeasured.  The carved objects reuse the frame scenarios' ids and
+/// slots and the chain's thread id and slot, all free again by here.
+#[cfg(feature = "hw_target")]
+const MOVE_SC_ID: u64 = 35;
+#[cfg(feature = "hw_target")]
+const MOVE_SC_SLOT: u64 = 27;
+#[cfg(feature = "hw_target")]
+const MOVE_SC_CAP: u64 = cap_address(MOVE_SC_SLOT);
+/// The moved thread's priority (its context's): below the root task's, so the
+/// root task keeps core 0 whenever both are ready there.
+#[cfg(feature = "hw_target")]
+const MOVE_PRIORITY: u64 = 100;
+/// Read, execute, user and cacheable (`PagePermissions.ofNat`).
+#[cfg(feature = "hw_target")]
+const CODE_PERMS: u64 = 0b11101;
+/// Two `b .` instructions, the word the code page starts with.
+#[cfg(feature = "hw_target")]
+const SPIN_CODE_WORD: u64 = 0x1400_0000_1400_0000;
+/// The word the moved thread's send carries, which the root task's receive
+/// returns in `x2` once the thread's receive switches core 0 back to it.
+#[cfg(feature = "hw_target")]
+const MOVE_MARKER: u64 = 0x6d6f_7665;
+/// The thread's setup, once the code page is mapped: the context carved,
+/// configured and bound to the carved thread, whose space is the root task's.
+#[cfg(feature = "hw_target")]
+const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
+    invocation(
+        "move-retype-sched-context",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [SCHED_CONTEXT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+    ),
+    configure(
+        "move-configure",
+        [
+            MOVE_SC_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+            MOVE_PRIORITY,
+        ],
+    ),
+    invocation(
+        "move-retype-tcb",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+    ),
+    invocation(
+        "move-tcb-set-space",
+        TCB_SET_SPACE,
+        CHAIN_TCB_CAP,
+        [CNODE_CAP, VSPACE_CAP, 0, 0],
+    ),
+    invocation(
+        "move-bind",
+        SCHED_CONTEXT_BIND,
+        MOVE_SC_CAP,
+        [CHAIN_TCB_CAP, 0, 0, 0],
+    ),
+];
+/// The code page: three tables completing the walk to the user window's
+/// first page, a frame carved and mapped there user-executable.
+#[cfg(feature = "hw_target")]
+const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
+    invocation(
+        "move-retype-page-table-1",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[0],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[0],
+        ],
+    ),
+    invocation(
+        "move-page-table-map-1",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[0],
+        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "move-retype-page-table-2",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[1],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[1],
+        ],
+    ),
+    invocation(
+        "move-page-table-map-2",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[1],
+        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "move-retype-page-table-3",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[2],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[2],
+        ],
+    ),
+    invocation(
+        "move-page-table-map-3",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[2],
+        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "move-retype-frame",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+    ),
+];
+/// The frame mapped user-executable, after its code is written.
+#[cfg(feature = "hw_target")]
+const MOVE_MAP_CODE: RoundTrip = invocation(
+    "move-map-code",
+    VSPACE_MAP,
+    VSPACE_CAP,
+    [ROOT_ASID, FRAME_VADDR, FRAME_CAP, CODE_PERMS],
+);
+/// The written code published to instruction fetch.
+#[cfg(feature = "hw_target")]
+const MOVE_UNIFY: RoundTrip = invocation(
+    "move-unify-instruction",
+    VSPACE_UNIFY_INSTRUCTION,
+    VSPACE_CAP,
+    [ROOT_ASID, FRAME_VADDR, 0, 0],
+);
+/// The thread resumed (ready on core 0, below the root task); the root task's
+/// receive, which blocks and switches core 0 to the thread; the thread's send,
+/// which readies the root task and continues the thread; and the thread's
+/// receive from the code page's address, which blocks it there and switches
+/// core 0 back to the root task.  Homed on core 1, the thread is then woken by
+/// the root task's send and runs on core 1 from that address.
+#[cfg(feature = "hw_target")]
+const MOVE_RESUME: RoundTrip = invocation("move-resume", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]);
+#[cfg(feature = "hw_target")]
+const MOVE_ROOT_RECEIVES: RoundTrip =
+    partner_step("move-root-receives", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true);
+#[cfg(feature = "hw_target")]
+const MOVE_THREAD_SENDS: RoundTrip = partner_step(
+    "move-thread-sends",
+    SEND,
+    ENDPOINT_CAP,
+    1,
+    [MOVE_MARKER, 0],
+    false,
+);
+#[cfg(feature = "hw_target")]
+const MOVE_THREAD_RECEIVES: RoundTrip = partner_step(
+    "move-thread-receives",
+    RECEIVE,
+    ENDPOINT_CAP,
+    0,
+    [0, 0],
+    true,
+);
+#[cfg(feature = "hw_target")]
+const MOVE_ROOT_WAKES: RoundTrip =
+    partner_step("move-root-wakes", SEND, ENDPOINT_CAP, 1, [0, 0], false);
+/// The thread homed on core 1, where it runs; and the measured change that
+/// homes it back while it runs there.
+#[cfg(feature = "hw_target")]
+const MOVE_HOME_SECOND: RoundTrip = invocation(
+    "move-home-second-core",
+    TCB_SET_AFFINITY,
+    CHAIN_TCB_CAP,
+    [SECOND_CORE_AFFINITY, 0, 0, 0],
+);
+#[cfg(feature = "hw_target")]
+const MOVE_RUNNING: RoundTrip = invocation(
+    "tcb-set-affinity-running",
+    TCB_SET_AFFINITY,
+    CHAIN_TCB_CAP,
+    [AFFINITY_UNBIND, 0, 0, 0],
+);
+/// Everything taken down again: the thread suspended (on core 0's run queue
+/// by then), the context unbound, both deleted, the page unmapped and deleted,
+/// and the tables taken out deepest first and deleted.
+#[cfg(feature = "hw_target")]
+const MOVE_TEARDOWN: [RoundTrip; 12] = [
+    invocation("move-suspend", TCB_SUSPEND, CHAIN_TCB_CAP, [0; 4]),
+    invocation("move-unbind", SCHED_CONTEXT_UNBIND, MOVE_SC_CAP, [0; 4]),
+    invocation(
+        "move-sc-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SC_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "move-tcb-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [CHAIN_TCB_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "move-unmap-code",
+        VSPACE_UNMAP,
+        VSPACE_CAP,
+        [ROOT_ASID, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "move-frame-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "move-page-table-unmap-3",
+        PAGE_TABLE_UNMAP,
+        PAGE_TABLE_CAPS[2],
+        [0; 4],
+    ),
+    invocation(
+        "move-page-table-delete-3",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[2], 0, 0, 0],
+    ),
+    invocation(
+        "move-page-table-unmap-2",
+        PAGE_TABLE_UNMAP,
+        PAGE_TABLE_CAPS[1],
+        [0; 4],
+    ),
+    invocation(
+        "move-page-table-delete-2",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[1], 0, 0, 0],
+    ),
+    invocation(
+        "move-page-table-unmap-1",
+        PAGE_TABLE_UNMAP,
+        PAGE_TABLE_CAPS[0],
+        [0; 4],
+    ),
+    invocation(
+        "move-page-table-delete-1",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[0], 0, 0, 0],
+    ),
+];
+
+/// The physical page the root task's address space maps at `vaddr`, read off
+/// the hardware tables the kernel wrote (four levels from the root's table in
+/// the boot pool), or `None` where a level holds no valid descriptor.
+#[cfg(feature = "hw_target")]
+fn root_user_page(vaddr: u64) -> Option<u64> {
+    const OUTPUT_ADDRESS: u64 = 0x0000_FFFF_FFFF_F000;
+    let mut table = crate::mmu::BOOT_TABLE_POOL_BASE;
+    for level in 0..4u64 {
+        let index = (vaddr >> (39 - 9 * level)) & 0x1FF;
+        // SAFETY: `table` is the root's pool page or a table page a valid
+        // descriptor names, RAM under the kernel's identity map; one aligned
+        // 64-bit load of one of its 512 entries.
+        let descriptor = unsafe { core::ptr::read_volatile((table + index * 8) as *const u64) };
+        if descriptor & 0b11 != 0b11 {
+            return None;
+        }
+        table = descriptor & OUTPUT_ADDRESS;
+    }
+    Some(table)
+}
+
+/// Wait, bounded by the command timeout, for `ready` to hold.
+#[cfg(feature = "hw_target")]
+fn wait_until(mut ready: impl FnMut() -> bool) -> bool {
+    let start = crate::timer::read_counter();
+    let timeout = command_timeout_ticks();
+    loop {
+        if ready() {
+            return true;
+        }
+        if crate::timer::read_counter().saturating_sub(start) >= timeout {
+            return ready();
+        }
+        core::hint::spin_loop();
+    }
+}
+
+/// Whether core 1 is running a thread at EL0, seen twice a millisecond apart
+/// (a tick on core 1 between the two returns it to the same thread).
+#[cfg(feature = "hw_target")]
+fn second_core_at_user() -> bool {
+    let at_user = || crate::remote_stall::AT_USER[1].load(Ordering::SeqCst);
+    if !wait_until(at_user) {
+        return false;
+    }
+    let settle = crate::timer::read_counter()
+        .saturating_add(u64::from(crate::timer::read_frequency()) / 1000);
+    while crate::timer::read_counter() < settle {
+        core::hint::spin_loop();
+    }
+    wait_until(at_user)
+}
+
+/// Whether core 1 has left EL0 for good: not at user, seen twice a
+/// millisecond apart.
+#[cfg(feature = "hw_target")]
+fn second_core_left_user() -> bool {
+    let left = || !crate::remote_stall::AT_USER[1].load(Ordering::SeqCst);
+    if !wait_until(left) {
+        return false;
+    }
+    let settle = crate::timer::read_counter()
+        .saturating_add(u64::from(crate::timer::read_frequency()) / 1000);
+    while crate::timer::read_counter() < settle {
+        core::hint::spin_loop();
+    }
+    left()
+}
+
+/// Run `steps` unmeasured, naming `why` on the first that fails.
+#[cfg(feature = "hw_target")]
+fn unmeasured_all(steps: &[RoundTrip], why: &str) -> bool {
+    steps.iter().all(|step| unmeasured(step, why))
+}
+
+/// Report `why` for the running-thread move and fail.
+#[cfg(feature = "hw_target")]
+fn move_failed(why: &str) -> Option<bool> {
+    crate::kprintln!(
+        "[smp-test] FAIL: heap-allocations-per-syscall: tcb-set-affinity-running: {why}"
+    );
+    Some(false)
+}
+
+/// The affinity change of a thread running on core 1, first call and steady
+/// state ([`MOVE_RUNNING`]); the timer masked by the caller.
+#[cfg(feature = "hw_target")]
+fn affinity_move_running() -> Option<bool> {
+    // The page first: mapped at the root task's IPC buffer address, it is also
+    // the buffer the configure reads its fifth word from.
+    if !unmeasured_all(&MOVE_SETUP_PAGE, "the code page's setup failed")
+        || !unmeasured(&MOVE_MAP_CODE, "the code page was not mapped")
+        || !unmeasured_all(&MOVE_SETUP_THREAD, "the moved thread's setup failed")
+    {
+        return Some(false);
+    }
+    let Some(page) = root_user_page(FRAME_VADDR) else {
+        return move_failed("the code page has no translation");
+    };
+    if page < crate::mmu::KERNEL_RESERVED_END || !page.is_multiple_of(4096) {
+        return move_failed("the code page's translation names no frame");
+    }
+    // SAFETY: `page` is the frame the root task's tables map at the code
+    // address, RAM past the kernel's extent under the identity map, which no
+    // thread runs yet; one aligned 64-bit store.
+    unsafe { core::ptr::write_volatile(page as *mut u64, SPIN_CODE_WORD) };
+    core::sync::atomic::fence(Ordering::SeqCst);
+    if !unmeasured(&MOVE_UNIFY, "the code page was not unified")
+        || !unmeasured(&MOVE_RESUME, "the moved thread was not resumed")
+        || !unmeasured(&MOVE_ROOT_RECEIVES, "the root task's receive did not block")
+    {
+        return Some(false);
+    }
+    if !unmeasured(&MOVE_THREAD_SENDS, "the thread's send failed") {
+        return Some(false);
+    }
+    let (received, _, _, resumed) = dispatch_round_trip_at(&MOVE_THREAD_RECEIVES, FRAME_VADDR);
+    if !matches!(received, Dispatched::Blocked) || resumed[2] != MOVE_MARKER {
+        return move_failed("the thread's receive did not switch core 0 back to the root task");
+    }
+    if !unmeasured(&MOVE_HOME_SECOND, "the thread was not homed on core 1")
+        || !unmeasured(&MOVE_ROOT_WAKES, "the root task's send failed")
+    {
+        return Some(false);
+    }
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !first && !unmeasured(&MOVE_HOME_SECOND, "the thread was not homed on core 1") {
+            return Some(false);
+        }
+        if !second_core_at_user() {
+            return move_failed("core 1 did not run the thread at EL0");
+        }
+        if heap_allocations_round_trip(&MOVE_RUNNING, which) != Some(true) {
+            return Some(false);
+        }
+        if !second_core_left_user() {
+            return move_failed("core 1 still runs the thread");
+        }
+    }
+    Some(unmeasured_all(&MOVE_TEARDOWN, "the move's teardown failed"))
 }
 
 /// **The linked yieldTo, measured across its whole round trip**: the root

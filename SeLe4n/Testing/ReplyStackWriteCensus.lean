@@ -128,25 +128,25 @@ def chainWritePrimitives : List Name :=
     -- `prev`, the frame below's `next`, and the cut frame's own unlink), the
     -- validated operation over it, and its total fold.  The store step is a
     -- primitive for the same reason the pop's two component stores are: it
-    -- performs the writes with none of `spliceReplyFrameOut`'s resolution or
+    -- performs the writes with none of `cutReplyFrameOut`'s resolution or
     -- validation, so a transition reaching for it directly is a site.
-  , `SeLe4n.Kernel.spliceReplyFrameStores
+  , `SeLe4n.Kernel.cutReplyFrameStores
     -- The cut of a contextless stack top from the frame below (`v0.36.136`,
     -- seL4's `reply_remove` `prev->replyNext = 0`): that frame's `next` and the
     -- cut frame's `prev`, a primitive for the store step's reason.
   , `SeLe4n.Kernel.severReplyFrameBelowStores
-  , `SeLe4n.Kernel.spliceReplyFrameOut
-  , `SeLe4n.Kernel.spliceReplyFrameOutOrSelf
+  , `SeLe4n.Kernel.cutReplyFrameOut
+  , `SeLe4n.Kernel.cutReplyFrameOutOrSelf
     -- ...and the frozen surface's counterparts, which write the same field of
     -- the same `SeLe4n.Kernel.Reply` record in `FrozenSystemState.objects`.
     -- **WS-HP HP8.1** renamed these for the operation they became: the frozen
-    -- removal splices rather than severing, so the store step is a third entry
-    -- beside the two it composes, exactly as the live `spliceReplyFrameStores`
+    -- removal cuts the frame out in three stores, so the store step is a third entry
+    -- beside the two it composes, exactly as the live `cutReplyFrameStores`
     -- is.
-  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores
+  , `SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameStores
   , `SeLe4n.Kernel.FrozenOps.frozenSeverReplyFrameBelowStores
-  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut
-  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf
+  , `SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOut
+  , `SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOutOrSelf
     -- The push: the new head's two links, and the old head's `next`.
   , `SeLe4n.Kernel.storeDonationFramePush
     -- The pop: the head's two links, the frame below re-headed, and the pair.
@@ -309,9 +309,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.setYieldLink,
       "`{ sc with yieldFromCode := _ }` on the context, then the caller's `yieldToCode`; `scReply` is untouched")
   , (`SeLe4n.Kernel.FrozenOps.frozenSuspendThread,
-      "the frozen twin of the suspend's `cancelYieldTo`: `{ sc with yieldFromCode := 0 }` on the context the thread yielded to, then the thread's own record; `scReply` is untouched (the reservation step is `frozenSuspendDonation`'s)")
-  , (`SeLe4n.Kernel.FrozenOps.frozenSuspendDonation,
-      "the frozen twin of the suspend's G3: `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` on a bound context, then the thread's binding codes; a loaned context goes back through `frozenReturnDonatedSchedContextResolved`, the registered chain writer, whose pop is its own; `scReply` is not in either assignment list")
+      "the frozen twin of the suspend's `cancelYieldTo`: `{ sc with yieldFromCode := 0 }` on the context the thread yielded to, then the thread's own record; `scReply` is untouched (WS-ZA ZA6.33: the suspend ends no reservation)")
     -- `v0.35.99`: `frozenSetPriority` LEFT this list, and that is the
     -- reconciliation working rather than an exemption going missing.  Its
     -- `{ sc with priority := _ }` moved into the shared `frozenWriteBasePriority`
@@ -325,6 +323,10 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ tcb with maxControlledPriority := _ }`, then the capped base priority through `frozenWriteBasePriority`; no chain field in either")
   , (`SeLe4n.Kernel.FrozenOps.frozenTimerTickBudget,
       "rebuilds a SchedContext for its budget accounting; `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenResumeContext,
+      "stores the context `SchedContext.refillUnblockCheck` returns (its head's start and its merged refills); `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenResumeThread,
+      "the resumed thread's own record, then its context's refill-unblock check through `frozenResumeContext`; no chain field in either")
   , (`SeLe4n.Kernel.spendBudgetOnCore,
       "rebuilds a SchedContext for its budget accounting (`SchedContext.chargeBudget`, `cbsUpdateDeadline`); `scReply` is untouched")
     -- ---------------------------------------------------------------------
@@ -370,6 +372,8 @@ def chainNeutralConstructors : List (Name × String) :=
     -- release links are not chain data: `scReply` is in no assignment list.
   , (`SeLe4n.Kernel.setAffinityPerform,
       "the TCB's `cpuAffinity`, the vacate and requeue (scheduler slots), and the replenishment migration's release-link writes; `scReply` is untouched")
+  , (`SeLe4n.Kernel.setAffinityPerformImpl,
+      "the compiled form of the same affinity change (`setAffinityPerform_eq_impl`); same reason")
   , (`SeLe4n.Kernel.releaseSchedContextBinding,
       "the TCB's binding codes and the purge's release-link writes (`purgeReplenishment`); `scReply` is untouched")
   , (`SeLe4n.Kernel.cancelDonationArmReplenishCores,
@@ -403,10 +407,12 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` and the TCB's binding codes; `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbindPerformImpl,
       "the compiled form of the same unbind; same reason")
-  , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendReleasePerform,
-      "the bound release proven equal to `cancelBoundDonationOnCore` (exempt below): `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.resumeContext,
+      "WS-ZA ZA6.33: `refillUnblockCheck` on the bound context (a refill-list rewrite) and its settle (release links and the run queue); `scReply` is untouched")
+  , (`SeLe4n.Kernel.suspendThreadReplenishCores,
+      "a footprint: builds the suspend's intermediate states only to read the cores the release removal purges from, and returns those cores; stores nothing")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendPerform,
-      "the admitted suspend: `suspendReleasePerform`, the deschedule and the TCB's state; a victim blocked on nothing holds no reply link to consume")
+      "the admitted suspend: the notification wait's cancel in its slots or the specification's cancel and revert (`suspendCancelRevert`, through `cancelIpcKeepingContexts`, whose reply arm's chain writes are the registered head cut and frame cut), the deschedule, the TCB's state, `tcbReleaseRemove`'s purge (release links alone) and the yield cancel; its own body builds no chain-bearing record")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,
       "`{ sc with priority := _ }` or `{ tcb with priority := _ }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.dispatchInvocationByR,
@@ -766,7 +772,7 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Model.SystemState.consumeCallerReplyLink,
       .states [`SeLe4n.Kernel.consumeCallerReplyLink_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept])
-    -- seL4's `reply_remove`: the splice, then the unlink.  This is the step both
+    -- seL4's `reply_remove`: the cut, then the unlink.  This is the step both
     -- reply spines run, and the one a new reply path must call rather than
     -- reaching for the consume.
   , (`SeLe4n.Kernel.removeCallerReplyFrame,
@@ -794,23 +800,23 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- theoretical — `frozenEndpointReply` cleared a caller's Reply bare, which
     -- is WS-RM's own defect, surviving on the surface nothing was looking at.
     --
-    -- **WS-HP HP8**: the three splice entries below are the two the sever had
+    -- **WS-HP HP8**: the three cut entries below are the two the sever had
     -- plus its store step, and each `mirrors` the live counterpart of the same
     -- shape.  The store step is registered rather than folded into the removal
     -- for the reason the live one is: it performs the writes with none of the
     -- removal's resolution or validation, so a transition reaching for it
-    -- directly is a site.  It mirrors `spliceReplyFrameStores`, which is itself
+    -- directly is a site.  It mirrors `cutReplyFrameStores`, which is itself
     -- a `.halfStep` of the live removal — so the chain from here terminates in a
     -- stating entry two hops out rather than one, which the registry's own
     -- closure check follows.
-  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores,
-      .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameStores,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
   , (`SeLe4n.Kernel.FrozenOps.frozenSeverReplyFrameBelowStores,
       .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
-  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut,
-      .mirrors `SeLe4n.Kernel.spliceReplyFrameOut)
-  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf,
-      .mirrors `SeLe4n.Kernel.spliceReplyFrameOutOrSelf)
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOut,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameOut)
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOutOrSelf,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameOutOrSelf)
     -- The frozen reply, which runs the removal before the consume in the order
     -- the live one does.  `FO-031` is the differential scenario that exercises
     -- the agreement.
@@ -827,48 +833,57 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.FrozenOps.frozenReturnDonatedSchedContext,
       .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
-    -- The splice itself, its total fold, and the thread-keyed wrapper the
+    -- The cut itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
     -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation
     -- that validates it.  It cannot state a chain result of its own: given only
     -- `above` and the two records, nothing says the frame above the cut is the
     -- one whose `prev` names `rid`, and the three reciprocal links it writes are
-    -- coherent only under the resolution `spliceReplyFrameOut` performs.  That
+    -- coherent only under the resolution `cutReplyFrameOut` performs.  That
     -- resolution is exactly what the operation adds, and it is where the chain
     -- result is stated.
-  , (`SeLe4n.Kernel.spliceReplyFrameStores,
-      .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
+  , (`SeLe4n.Kernel.cutReplyFrameStores,
+      .halfStep `SeLe4n.Kernel.cutReplyFrameOut)
     -- The cut from below is a half-step for the same reason: given only the two
     -- records, nothing says the frame below links up to the cut frame or that
     -- the cut frame heads nothing, which is the resolution the operation adds.
   , (`SeLe4n.Kernel.severReplyFrameBelowStores,
-      .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
-  , (`SeLe4n.Kernel.spliceReplyFrameOut,
-      .states [`SeLe4n.Kernel.spliceReplyFrameOut_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.spliceReplyFrameOutOrSelf,
-      .states [`SeLe4n.Kernel.spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed])
+      .halfStep `SeLe4n.Kernel.cutReplyFrameOut)
+  , (`SeLe4n.Kernel.cutReplyFrameOut,
+      .states [`SeLe4n.Kernel.cutReplyFrameOut_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.cutReplyFrameOutOrSelf,
+      .states [`SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_donationChainWellFormed])
     -- The compiled forms a final delete runs (`@[csimp]` through
     -- `finaliseReply_eq_impl`): each equals its spec form, and states the
     -- chain through that equality.
-    -- The compiled splice writes through its two compiled store steps, each
-    -- proven equal to the specification's (`spliceReplyFrameStoresInPlace_eq`,
+    -- The compiled cut writes through its two compiled store steps, each
+    -- proven equal to the specification's (`cutReplyFrameStoresInPlace_eq`,
     -- `severReplyFrameBelowStoresInPlace_eq`), so each mirrors that step; the
-    -- fold over them states the chain through `spliceReplyFrameOutOrSelfInPlace_eq`
-    -- (`spliceReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed`).
-  , (`SeLe4n.Kernel.spliceReplyFrameStoresInPlace,
-      .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+    -- fold over them states the chain through `cutReplyFrameOutOrSelfInPlace_eq`
+    -- (`cutReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed`).
+  , (`SeLe4n.Kernel.cutReplyFrameStoresInPlace,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
   , (`SeLe4n.Kernel.severReplyFrameBelowStoresInPlace,
       .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
       .states [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.spliceThreadReplyFrameOut,
-      .states [`SeLe4n.Kernel.spliceThreadReplyFrameOut_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.cutThreadReplyFrameOut,
+      .states [`SeLe4n.Kernel.cutThreadReplyFrameOut_preserves_donationChainWellFormed])
     -- The cancellation path's teardown: the projection above under the victim's
     -- own `replyObject`.  Until WS-RR RR8.5 this was a raw-insert twin of the
     -- pair (`clearTcbReplyObject` then `clearReplyObjectCaller`) with its own
     -- chain proof; it is a corollary now.
   , (`SeLe4n.Kernel.Lifecycle.Suspend.consumeReplyLink,
       .states [`SeLe4n.Kernel.consumeReplyLink_preserves_donationChainWellFormed])
+    -- WS-ZA ZA6.33: the suspend's reply arm (seL4-MCS's `reply_remove_tcb` on
+    -- a head): the frame's upward link and the context's head cleared, the
+    -- context kept by the thread it is bound to.
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.cutHeadFrameKeepingContext,
+      .states [`SeLe4n.Kernel.cutHeadFrameKeepingContext_preserves_donationChainWellFormed])
+    -- Its compiled form, each object written in its slot, is the same cut
+    -- (`cutHeadFrameKeepingContext_eq_impl`) and states the chain through it.
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.cutHeadFrameKeepingContextImpl,
+      .states [`SeLe4n.Kernel.cutHeadFrameKeepingContextImpl_preserves_donationChainWellFormed])
     -- WS-ZA ZA5.4 part 25: a finalised scheduling context lets go of the
     -- stack it heads (seL4's `schedContext_unbindReply`): the head's upward
     -- link cleared, then the context's head.
@@ -880,6 +895,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.storeDonationFramePush, .halfStep `SeLe4n.Kernel.donateSchedContext)
   , (`SeLe4n.Kernel.donateSchedContext,
       .states [`SeLe4n.Kernel.donateSchedContext_preserves_donationChainWellFormed])
+    -- The push with each object rewritten in its slot: on the states whose
+    -- checks pass it is `donateSchedContext`'s state, so it carries that result.
+  , (`SeLe4n.Kernel.donateSchedContextInPlace,
+      .states [`SeLe4n.Kernel.donateSchedContextInPlace_preserves_donationChainWellFormed])
     -- The pop's three stores, and the pair that composes the first two.
   , (`SeLe4n.Kernel.storeDonationHeadClear, .halfStep `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.storeReplyReHead, .halfStep `SeLe4n.Kernel.storeDonationHeadPop)
@@ -887,6 +906,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.returnDonatedSchedContext,
       .states [`SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed_of_except])
+    -- WS-ZA ZA6.33: the pop with each object rewritten in its slot: on the
+    -- states whose checks pass it is the resolved pop's state, so it carries
+    -- that pop's result.
+  , (`SeLe4n.Kernel.returnDonatedSchedContextInPlace,
+      .states [`SeLe4n.Kernel.returnDonatedSchedContextInPlace_preserves_donationChainWellFormed])
     -- ---------------------------------------------------------------------
     -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
     -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects
@@ -1004,7 +1028,7 @@ entries are.  The derived half is exercised in place — unlike the export censu
 planting a write site here costs nothing, since a `def` emits no symbol. -/
 
 /-- **The bare consume the plan asks this gate to catch**: a transition that
-clears a caller's Reply link with no splice anywhere in it.  This is WS-RM's own
+clears a caller's Reply link with no frame cut anywhere in it.  This is WS-RM's own
 defect, in miniature. -/
 private def censusWitnessBareConsume (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
     SeLe4n.Model.Kernel Unit :=

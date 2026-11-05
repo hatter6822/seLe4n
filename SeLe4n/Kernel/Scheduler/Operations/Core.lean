@@ -3753,6 +3753,42 @@ def migrateSchedContextReplenishment (st : SystemState) (scId : SchedContextId)
       toCore toQ'
     { st₁ with scheduler := sched }
 
+/-- WS-ZA ZA6.33: `migrateSchedContextReplenishment`'s writes, handed whether the
+source queues the context and the release time it holds there: the link moved,
+then the abstract queues (ghost: the entries the spec filters and folds are
+erased, so nothing is built).  A call, so both readings are taken off the
+pre-state before its first write, and the context is not held across the move
+(read after the unlink, the context's cell is shared and the link writes copy
+it). -/
+@[noinline] def migrateReplenishmentWrite (st : SystemState) (scId : SchedContextId)
+    (fromCore toCore : CoreId) (queued : Bool) (t : Nat) : SystemState :=
+  let st₁ := if queued then
+      (st.releaseRemoveOn fromCore scId).releaseInsertOn toCore scId t
+    else st
+  let fromQ := st.scheduler.replenishQueueOnCore fromCore
+  let toQ := st.scheduler.replenishQueueOnCore toCore
+  let moved := fromQ.entries.filter (fun e => e.1 == scId)
+  let toQ' := moved.foldl (fun q e => q.insert scId e.2) toQ
+  let sched := (st₁.scheduler.setReplenishQueueOnCore fromCore (fromQ.remove scId)).setReplenishQueueOnCore
+    toCore toQ'
+  { st₁ with scheduler := sched }
+
+/-- WS-ZA ZA6.33: the compiled `migrateSchedContextReplenishment`: the source
+link read, then the move written by one call (`migrateReplenishmentWrite`).
+Proven equal (`migrateSchedContextReplenishment_eq_impl`). -/
+def migrateSchedContextReplenishmentImpl (st : SystemState) (scId : SchedContextId)
+    (fromCore toCore : CoreId) : SystemState :=
+  if fromCore = toCore then st
+  else migrateReplenishmentWrite st scId fromCore toCore (st.releaseQueuedOn fromCore scId)
+    (st.releaseAtOn fromCore scId)
+
+@[csimp] theorem migrateSchedContextReplenishment_eq_impl :
+    @migrateSchedContextReplenishment = @migrateSchedContextReplenishmentImpl := by
+  funext st scId fromCore toCore
+  unfold migrateSchedContextReplenishment migrateSchedContextReplenishmentImpl
+    migrateReplenishmentWrite
+  split <;> rfl
+
 /-- WS-ZA ZA4.5: moving a thread between two cores' queues through its TCB
 links writes the two queues as the abstract remove and insert, and each core's
 ends. -/
@@ -4165,6 +4201,74 @@ def setAffinityPerform (st : SystemState) (tid : SeLe4n.ThreadId)
       | none => st1
     requeueVacatedOnNewHome (migrateRunQueueOnAffinityChange st2 tid oldCore newCore) tid
       newCore vacated
+
+/-- Whether core `c` runs `tid`, read off the core's thread code, so the test
+builds no `some` and no equality closure (`runsOnCoreCode_iff`). -/
+@[inline] def runsOnCoreCode (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  st.scheduler.currentCode.get c == tid.val + 1
+
+theorem runsOnCoreCode_iff (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    runsOnCoreCode st c tid = true ↔ st.scheduler.currentOnCore c = some tid := by
+  unfold runsOnCoreCode
+  rw [← currentOnCore_beq_some, beq_iff_eq]
+
+/-- The vacate's test on codes: the home moves and its old core runs the thread. -/
+theorem vacateTest_iff (st : SystemState) (tid : SeLe4n.ThreadId) (oldCore newCore : CoreId) :
+    (oldCore != newCore && runsOnCoreCode st oldCore tid) = true ↔
+      (oldCore ≠ newCore ∧ st.scheduler.currentOnCore oldCore = some tid) := by
+  rw [Bool.and_eq_true, bne_iff_ne, runsOnCoreCode_iff]
+
+/-- The old core's scheduler once the thread it ran leaves it: no current thread
+and a reschedule pending on it.  Out of
+line, so the caller hands over the scheduler it owns and both writes land in
+its cells. -/
+@[noinline] def vacatedScheduler (sch : SchedulerState) (oldCore : CoreId) : SchedulerState :=
+  (sch.setCurrentOnCore oldCore none).markReschedulePendingOnCore oldCore
+
+/-- The compiled `vacateForAffinityChange`: its test on the core's thread code,
+and the scheduler written through `vacatedScheduler`, so the state's record and
+the scheduler's are each written in their cells. -/
+def vacateForAffinityChangeImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oldCore newCore : CoreId) : SystemState :=
+  if oldCore != newCore && runsOnCoreCode st oldCore tid then
+    { st with scheduler := vacatedScheduler st.scheduler oldCore }
+  else st
+
+@[csimp] theorem vacateForAffinityChange_eq_impl :
+    @vacateForAffinityChange = @vacateForAffinityChangeImpl := by
+  funext st tid oldCore newCore
+  unfold vacateForAffinityChange vacateForAffinityChangeImpl vacatedScheduler
+  by_cases hc : oldCore ≠ newCore ∧ st.scheduler.currentOnCore oldCore = some tid
+  · rw [if_pos hc, if_pos ((vacateTest_iff st tid oldCore newCore).mpr hc)]
+  · rw [if_neg hc, if_neg (fun x => hc ((vacateTest_iff st tid oldCore newCore).mp x))]
+
+/-- The compiled `setAffinityPerform`: whether the thread is vacated read on
+codes (`vacateTest_iff`), so the change builds nothing to ask it. -/
+def setAffinityPerformImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (affinity : Option CoreId) : SystemState :=
+  let oldCore := determineTargetCore st tid
+  let newCore := affinity.getD bootCoreId
+  match st.getTcb? tid with
+  | none => st
+  | some tcb =>
+    let vacated := oldCore != newCore && runsOnCoreCode st oldCore tid
+    let st1 := (vacateForAffinityChange st tid oldCore newCore).updateTcb tid
+      (fun t => { t with cpuAffinity := affinity })
+    let st2 := match tcb.schedContextBinding.scId? with
+      | some scId => migrateSchedContextReplenishment st1 scId oldCore newCore
+      | none => st1
+    requeueVacatedOnNewHome (migrateRunQueueOnAffinityChange st2 tid oldCore newCore) tid
+      newCore vacated
+
+@[csimp] theorem setAffinityPerform_eq_impl : @setAffinityPerform = @setAffinityPerformImpl := by
+  funext st tid affinity
+  unfold setAffinityPerform setAffinityPerformImpl
+  have hv : decide (determineTargetCore st tid ≠ affinity.getD bootCoreId ∧
+      st.scheduler.currentOnCore (determineTargetCore st tid) = some tid) =
+      (determineTargetCore st tid != affinity.getD bootCoreId &&
+        runsOnCoreCode st (determineTargetCore st tid) tid) :=
+    Bool.eq_iff_iff.mpr (by rw [decide_eq_true_iff]; exact (vacateTest_iff _ _ _ _).symm)
+  simp only [hv]
 
 /-- The vacate writes the scheduler alone. -/
 @[simp] theorem vacateForAffinityChange_objects (st : SystemState) (tid : SeLe4n.ThreadId)

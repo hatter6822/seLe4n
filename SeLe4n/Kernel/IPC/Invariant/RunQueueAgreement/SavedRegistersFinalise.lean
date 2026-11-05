@@ -463,10 +463,10 @@ theorem of_map {pre post : SystemState}
     savedRegsKeptExcept W pre post := fun t _ => h t
 
 /-- The endpoint-queue removal writes queue links alone. -/
-theorem of_removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : savedRegsKeptExcept W st (removeFromAllEndpointQueues st tid) :=
+theorem of_removeFromBlockingEndpoint (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) : savedRegsKeptExcept W st (removeFromBlockingEndpoint st tid e) :=
   of_map fun x => by
-    rw [removeFromAllEndpointQueues_getTcb?_eq_splice st tid hInv x]
+    rw [removeFromBlockingEndpoint_getTcb?_eq_splice st tid e hInv x]
     exact spliceOutMidQueueNode_tcbField_frame TCB.registerContext (fun _ _ _ _ _ _ => rfl) st tid
       hInv x
 
@@ -497,10 +497,10 @@ theorem of_returnDonationToCancelledCaller (st : SystemState) (v : SeLe4n.Thread
           exact returnDonatedSchedContext_getTcb?_map_eq TCB.registerContext (fun _ _ _ => rfl) _
             st' holder scId v hInv newOwner? hPop x
 
-/-- The reply-frame splice writes replies and contexts alone. -/
-theorem of_spliceThreadReplyFrameOut (st : SystemState) (tcb : TCB) (hInv : st.objects.invExt) :
-    savedRegsKeptExcept W st (spliceThreadReplyFrameOut st tcb) :=
-  of_map fun x => by rw [spliceThreadReplyFrameOut_getTcb?_eq _ tcb hInv x]
+/-- The reply-frame cut writes replies and contexts alone. -/
+theorem of_cutThreadReplyFrameOut (st : SystemState) (tcb : TCB) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept W st (cutThreadReplyFrameOut st tcb) :=
+  of_map fun x => by rw [cutThreadReplyFrameOut_getTcb?_eq _ tcb hInv x]
 
 /-- The reply-link teardown clears one TCB field and consumes one reply. -/
 theorem of_consumeReplyLink (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -537,7 +537,7 @@ theorem of_propagatePipChainCrossCore (st : SystemState) (tid : SeLe4n.ThreadId)
 end savedRegsKeptExcept
 
 /-- **A cancellation writes the cancelled thread alone**: every arm removes it
-from its queue, returns its loan, splices its reply frame and consumes its
+from its queue, returns its loan, cuts its reply frame and consumes its
 reply link — none a saved register — and restores it, which stages the
 cancellation frame in its own context. -/
 theorem cancelIpcBlocking_savedRegsKeptExcept (st : SystemState) (v : SeLe4n.ThreadId) (tcb : TCB)
@@ -549,24 +549,24 @@ theorem cancelIpcBlocking_savedRegsKeptExcept (st : SystemState) (v : SeLe4n.Thr
       (some Architecture.cancelledIpcFrame) hs rfl
   cases tcb.ipcState with
   | ready => exact .refl _
-  | blockedOnSend _ =>
-    exact (savedRegsKeptExcept.of_removeFromAllEndpointQueues st v hInv).trans
-      (hQ _ (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv))
-  | blockedOnReceive _ =>
-    exact (savedRegsKeptExcept.of_removeFromAllEndpointQueues st v hInv).trans
-      (hQ _ (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv))
-  | blockedOnCall _ =>
-    exact (savedRegsKeptExcept.of_removeFromAllEndpointQueues st v hInv).trans
-      (hQ _ (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv))
+  | blockedOnSend e =>
+    exact (savedRegsKeptExcept.of_removeFromBlockingEndpoint st v e hInv).trans
+      (hQ _ (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv))
+  | blockedOnReceive e =>
+    exact (savedRegsKeptExcept.of_removeFromBlockingEndpoint st v e hInv).trans
+      (hQ _ (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv))
+  | blockedOnCall e =>
+    exact (savedRegsKeptExcept.of_removeFromBlockingEndpoint st v e hInv).trans
+      (hQ _ (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv))
   | blockedOnNotification _ =>
     exact (savedRegsKeptExcept.of_removeFromNotificationWaitQueue st v hInv).trans
       (hQ _ (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv))
   | blockedOnReply _ _ =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcb hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hR
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt _ tcb hR
     have hT := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v (some Architecture.cancelledIpcFrame) hS
     exact ((((savedRegsKeptExcept.of_returnDonationToCancelledCaller st v tcb hInv).trans
-      (savedRegsKeptExcept.of_spliceThreadReplyFrameOut _ tcb hR)).trans (hQ _ hS)).trans
+      (savedRegsKeptExcept.of_cutThreadReplyFrameOut _ tcb hR)).trans (hQ _ hS)).trans
       (savedRegsKeptExcept.of_consumeReplyLink _ v tcb hT)).trans
       (savedRegsKeptExcept.of_replyLinks
         (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ v _))
@@ -703,7 +703,8 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
       (cancelBoundDonationOnCore_savedRegsKeptExcept L.2.1 hOk) none
   · intro s n t tcb nt h hT hI hN hC
     have R := h.1; have L := h.2.1
-    exact step h (readyEntry_stage R (cancelIpcBlocking_runQueueStage s t tcb))
+    exact step h (readyEntry_stage R (cancelIpcBlocking_runQueueStage s t tcb
+        (by unfold Lifecycle.Suspend.cancelledCallerDonation?; rw [hI])))
       (L.of_frame (finaliseNotificationCancelStep_keepsIpcInvariantFull s n t tcb nt ⟨L.1, L.2.1⟩ hT
         hI hN hC).1 (FinaliseFrame.notificationCancel s t tcb n L.2.1 hI))
       (cancelIpcBlocking_savedRegsKeptExcept s t tcb L.2.1)

@@ -1603,6 +1603,13 @@ theorem purgeReplenishment_preserves_ipcInvariantFull (st : SystemState)
   ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
     (.of_releaseLinks (SchedContextOps.purgeReplenishment_agree st scId)) hInv
 
+/-- WS-ZA ZA6.33: the settle of a returned context writes release links alone. -/
+theorem settleReturnedContext_preserves_ipcInvariantFull (st : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (SchedContextOps.settleReturnedContext st c scId) :=
+  ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+    (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree st c scId)) hInv
+
 /-- `storeObject` form of the SchedContext-content bundle lever. -/
 theorem storeObject_schedContextContentUpdate_preserves_ipcInvariantFull
     (st st1 : SystemState) (oid : SeLe4n.ObjId)
@@ -4933,6 +4940,26 @@ private theorem resumeReadyMidState_getTcb_ready
       rw [hEq tid.toObjId] at hPre1
       exact hQ.ready t ((SystemState.getTcb?_eq_some_iff st tid t).mpr hPre1)
 
+/-- WS-ZA ZA6.33: the resume of a thread's context keeps the bundle: the
+refill-unblock check keeps the context's bound thread, and the settle writes
+release links alone. -/
+theorem resumeContext_preserves_ipcInvariantFull (st : SystemState) (tid : SeLe4n.ThreadId)
+    (home : CoreId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (Lifecycle.Suspend.resumeContext st tid home) := by
+  rcases Lifecycle.Suspend.resumeContext_cases st tid home with e | ⟨sc, e⟩ <;> rw [e]
+  · exact hInv
+  · have hU : ipcInvariantFull (st.updateSchedContext sc
+        fun x => x.refillUnblockCheck st.machine.timer) := by
+      cases hS : st.getSchedContext? sc with
+      | none => rw [SystemState.updateSchedContext_eq_self_of_none hS]; exact hInv
+      | some x =>
+        rw [SystemState.updateSchedContext_eq_of_some hS]
+        exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull _ sc x _
+          hObjInv hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS)
+          (SchedContext.boundThread_of_refillsErased (x.refillUnblockCheck_refillsErased _))
+    exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+      (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ home sc)) hU
+
 /-- The full per-core resume (live once the context-restore seam flips). -/
 theorem resumeThreadOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
@@ -4952,31 +4979,38 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
       dsimp only [] at hStep
       split at hStep
       · cases hStep
-      · have hMid := markKeyChangeFrom_preserves_ipcInvariantFull st _ vtid.val
+      · have hMid0 := markKeyChangeFrom_preserves_ipcInvariantFull st _ vtid.val
           (resumeReadyMidState_preserves_ipcInvariantFull st vtid.val hObjInv hQ hNoFault hInv)
-        have hMidInv : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
+        have hMidInv0 : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
             vtid.val).objects.invExt := by
           rw [markKeyChangeFrom_objects]; exact resumeReadyMidState_objects_invExt st vtid.val hObjInv
-        have hEnq := enqueueRunnableOnCore_preserves_ipcInvariantFull
-          (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
-          (determineTargetCore st vtid.val) vtid.val hMidInv
-          (by rw [markKeyChangeFrom_getTcb?]
-              exact resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ hNoFault) hMid
-        have hEnqInv := enqueueRunnableOnCore_preserves_objects_invExt
-          (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
-          (determineTargetCore st vtid.val) vtid.val hMidInv
+        generalize hS2 : Lifecycle.Suspend.resumeContext (markKeyChangeFrom st
+          (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val) vtid.val
+          (determineTargetCore st vtid.val) = s2 at hStep
+        have hMid : ipcInvariantFull s2 := by
+          rw [← hS2]; exact resumeContext_preserves_ipcInvariantFull _ _ _ hMidInv0 hMid0
+        have hMidInv : s2.objects.invExt := by
+          rw [← hS2]; exact Lifecycle.Suspend.resumeContext_objects_invExt _ _ _ hMidInv0
+        have hReady : ∀ t : TCB, s2.getTcb? vtid.val = some t → t.ipcState = .ready := by
+          rw [← hS2, Lifecycle.Suspend.resumeContext_getTcb? _ _ _ hMidInv0, markKeyChangeFrom_getTcb?]
+          exact resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ hNoFault
         split at hStep
-        · cases hRes : handleRescheduleSgiOnCore (enqueueRunnableOnCore
-              (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
-              (determineTargetCore st vtid.val) vtid.val) ec with
-          | ok st4 =>
-              rw [hRes] at hStep
-              cases hStep
-              exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull _ ec _
-                hEnqInv hEnq hRes
-          | error e => rw [hRes] at hStep; cases hStep
-        · cases hStep
-          exact hEnq
+        · have hEnq := enqueueRunnableOnCore_preserves_ipcInvariantFull s2
+            (determineTargetCore st vtid.val) vtid.val hMidInv hReady hMid
+          have hEnqInv := enqueueRunnableOnCore_preserves_objects_invExt s2
+            (determineTargetCore st vtid.val) vtid.val hMidInv
+          split at hStep
+          · cases hRes : handleRescheduleSgiOnCore (enqueueRunnableOnCore s2
+                (determineTargetCore st vtid.val) vtid.val) ec with
+            | ok st4 =>
+                rw [hRes] at hStep
+                cases hStep
+                exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull _ ec _
+                  hEnqInv hEnq hRes
+            | error e => rw [hRes] at hStep; cases hStep
+          · cases hStep
+            exact hEnq
+        · cases hStep; exact hMid
 
 /-- Review round (PR #887): **retiring a pending fault on resume preserves
 the bundle** — it is `applyFaultRestart` (a one-TCB rewrite of registers and
@@ -5441,7 +5475,7 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
           rw [hCl] at hStep
           dsimp only [] at hStep
           cases hStep
-          refine migrateSchedContextReplenishment_preserves_ipcInvariantFull st1 _ _ _ ?_
+          refine settleReturnedContext_preserves_ipcInvariantFull st1 _ _ ?_
           unfold cleanupDonatedSchedContext at hCl
           simp only [hLk, hB] at hCl
           obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hCl
@@ -5540,7 +5574,7 @@ private theorem cancelDonatedDonationOnCore_victim_shape
           cases hStep
           intro tcbX hX
           have hX1 : st1.getTcb? tval = some tcbX := by
-            rw [← (migrateSchedContextReplenishment_agree _ _ _ _).getTcb?]; exact hX
+            rw [← (SchedContextOps.settleReturnedContext_agree _ _ _).getTcb?]; exact hX
           unfold cleanupDonatedSchedContext at hCl
           simp only [hLk, hB] at hCl
           obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hCl
@@ -5799,10 +5833,12 @@ theorem schedContextYieldToOnCore_preserves_ipcInvariantFull {s : SeLe4n.SchedCo
         · exact hC _ hO2 hI2
 
 /-- `.tcbSuspend` (dispatch arm): the whole per-core suspension pipeline —
-cancel (inert on a quiescent victim), PIP revert (empty for a `.ready`
-victim), donation cancel (all three binding arms), the placement deschedule,
-pending-state clear, deactivation store, and the local scheduling point —
-preserves `ipcInvariantFull`.
+the IPC cancel (inert on a quiescent victim), PIP revert (empty for a `.ready`
+victim), the placement deschedule, pending-state clear, deactivation store, the
+release removal (release links alone), the yield-link cancel and the local
+scheduling point — preserves `ipcInvariantFull`.  WS-ZA ZA6.33: seL4's
+`suspend` neither unbinds the victim's context nor returns a loan, so no binding
+arm is asked of it.
 
 The victim-quiescence pack confines the bundle to victims not blocked in an
 IPC queue (the post-suspend shape, and the shape the runtime cancel guards
@@ -5813,13 +5849,7 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
     (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt)
     (hQ : threadIpcFieldsQuiescent st vtid.val)
-    (hBidir : schedContextBindingBidirectional st)
     (hInv : ipcInvariantFull st)
-    -- **WS-OD OD4.4**: suspending a thread that holds a donation hands the
-    -- context back through the reply-stack resolver; this is the obligation that
-    -- resolution carries.
-    (hStackValid : ∀ scId serverTid originalOwner,
-        replyStackOuterCallerValid st scId serverTid originalOwner)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
   unfold Lifecycle.Suspend.suspendThreadOnCore at hStep
@@ -5832,112 +5862,35 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
       split at hStep
       · cases hStep
       · have hReady := hQ.ready tcb hLk
-        have hPre := (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLk
-        rw [cancelIpcBlockingReclaimed_ready_id st vtid.val tcb hReady] at hStep
+        have hC : Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb = st := by
+          rw [Lifecycle.Suspend.cancelIpcKeepingContexts_of_not_reply _ _ _
+            (by rw [hReady]; intro _ _ h; cases h)]
+          exact cancelIpcBlocking_ready_id st vtid.val tcb hReady
+        rw [hC] at hStep
         have hBS : PriorityInheritance.blockingServer st vtid.val = none := by
-          -- `blockingServer` reads `getTcb?`, which is what `hLk` already says;
-          -- the raw restatement `hPre` is no longer the vocabulary it needs.
           unfold PriorityInheritance.blockingServer
           simp [hLk, hReady]
         rw [hBS] at hStep
         dsimp only [] at hStep
-        rw [hLk] at hStep
-        simp only [Option.getD_some] at hStep
         unfold Lifecycle.Suspend.clearPendingStateValid at hStep
-        have hShapeOf : ∀ (stD : SystemState),
-            (∀ tcbX : TCB, stD.getTcb? vtid.val = some tcbX →
-              tcbX.ipcState = tcb.ipcState ∧ tcbX.pendingMessage = tcb.pendingMessage ∧
-              tcbX.timeoutBudget = tcb.timeoutBudget ∧ tcbX.queuePrev = tcb.queuePrev ∧
-              tcbX.queueNext = tcb.queueNext ∧ tcbX.queuePPrev = tcb.queuePPrev) →
-            (∀ tcbX : TCB, stD.getTcb? vtid.val = some tcbX →
-              tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
-              tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
-              tcbX.queueNext = none ∧ tcbX.queuePPrev = none) := by
-          intro stD hSh tcbX hX
-          obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hSh tcbX hX
-          exact ⟨h1.trans hReady, h2.trans (hQ.noPendingMsg tcb hLk),
-            h3.trans (hQ.noBudget tcb hLk), h4.trans (hQ.noPrev tcb hLk),
-            h5.trans (hQ.noNext tcb hLk), h6.trans (hQ.noPPrev tcb hLk)⟩
-        have hTail : ∀ (stD : SystemState),
-            stD.objects.invExt → ipcInvariantFull stD →
-            (∀ tcbX : TCB, stD.getTcb? vtid.val = some tcbX →
-              tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
-              tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
-              tcbX.queueNext = none ∧ tcbX.queuePPrev = none) →
-            ∀ (stR2 : SystemState), stR2.objects.invExt → ipcInvariantFull stR2 →
-            (∀ tcbX : TCB, stR2.getTcb? vtid.val = some tcbX →
-              tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
-              tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
-              tcbX.queueNext = none ∧ tcbX.queuePPrev = none) →
-            ∀ (c2 ecX : CoreId) (wc ld : Bool) (stO : SystemState)
-              (sgiO : Option (CoreId × Concurrency.SgiKind)),
-            Lifecycle.Suspend.suspendRescheduleOnCore
-              (cancelYieldTo ((Lifecycle.Suspend.clearPendingState stR2 vtid.val).updateTcb vtid.val
-                fun t => { t with threadState := .Inactive }) vtid.val)
-              c2 ecX wc ld = .ok (stO, sgiO) →
-            ipcInvariantFull stO := by
-          intro stD _ _ _ stR2 hObjInvR hInvR hShapeR c2 ecX wc ld stO sgiO hStepO
-          obtain ⟨hInvI, hObjInvI⟩ :=
-            suspendClearStore_preserves_ipcInvariantFull stR2 vtid.val hObjInvR hShapeR hInvR
-          exact suspendRescheduleOnCore_preserves_ipcInvariantFull _ stO c2 ecX wc ld sgiO
-            (SystemState.cancelYieldTo_preserves_objects_invExt _ _ hObjInvI)
-            (cancelYieldTo_preserves_ipcInvariantFull _ _ hObjInvI hInvI) hStepO
-        cases hB : tcb.schedContextBinding with
-        | unbound =>
-            simp only [hB] at hStep
-            have hShapeD : ∀ tcbX : TCB, st.getTcb? vtid.val = some tcbX →
-                tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
-                tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
-                tcbX.queueNext = none ∧ tcbX.queuePPrev = none :=
-              hShapeOf st (fun tcbX hX => by
-                rw [hLk] at hX
-                obtain rfl : tcb = tcbX := Option.some.inj hX
-                exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
-            obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape st vtid.val
-              (placedCoreOf? st vtid.val) hObjInv hShapeD hInv
-            exact hTail st hObjInv hInv hShapeD _ hObjInv2 hInv2 hShape2
-              _ ec _ _ st' sgi hStep
-        | bound scId =>
-            simp only [hB] at hStep
-            cases hDon : cancelBoundDonationOnCore st vtid.val tcb
-                with
-            | error e => rw [hDon] at hStep; cases hStep
-            | ok stD =>
-                rw [hDon] at hStep
-                dsimp only [] at hStep
-                have hInvD := cancelBoundDonationOnCore_preserves_ipcInvariantFull st stD
-                  vtid.val tcb hObjInv hInv hPre
-                  (fun s hb => hBidir _ tcb s hPre (by rw [hb]; rfl)) hDon
-                have hObjInvD := cancelBoundDonationOnCore_preserves_objects_invExt st stD
-                  vtid.val tcb hObjInv
-                  hDon
-                have hShapeD := hShapeOf stD
-                  (cancelBoundDonationOnCore_victim_shape st stD vtid.val tcb
-                    hObjInv hPre
-                    hDon)
-                obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
-                  vtid.val (placedCoreOf? st vtid.val) hObjInvD hShapeD hInvD
-                exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
-                  _ ec _ _ st' sgi hStep
-        | donated scId owner =>
-            simp only [hB] at hStep
-            cases hDon : cancelDonatedDonationOnCore st vtid.val tcb with
-            | error e => rw [hDon] at hStep; cases hStep
-            | ok stD =>
-                rw [hDon] at hStep
-                dsimp only [] at hStep
-                have hInvD := cancelDonatedDonationOnCore_preserves_ipcInvariantFull st stD
-                  vtid tcb hObjInv hInv hLk hStackValid hDon
-                have hObjInvD := cancelDonatedDonationOnCore_preserves_objects_invExt st stD
-                  vtid.val tcb hObjInv hDon
-                have hShapeD := hShapeOf stD
-                  (cancelDonatedDonationOnCore_victim_shape st stD vtid tcb hObjInv hLk
-                    hDon)
-
-                obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
-                  vtid.val (placedCoreOf? st vtid.val) hObjInvD hShapeD hInvD
-                exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
-                  _ ec _ _ st' sgi hStep
+        have hShapeD : ∀ tcbX : TCB, st.getTcb? vtid.val = some tcbX →
+            tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
+            tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
+            tcbX.queueNext = none ∧ tcbX.queuePPrev = none := fun tcbX hX => by
+          rw [hLk] at hX
+          obtain rfl : tcb = tcbX := Option.some.inj hX
+          exact ⟨hReady, hQ.noPendingMsg tcb hLk, hQ.noBudget tcb hLk, hQ.noPrev tcb hLk,
+            hQ.noNext tcb hLk, hQ.noPPrev tcb hLk⟩
+        obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape st vtid.val
+          (placedCoreOf? st vtid.val) hObjInv hShapeD hInv
+        obtain ⟨hInvI, hObjInvI⟩ := suspendClearStore_preserves_ipcInvariantFull _ vtid.val
+          hObjInv2 hShape2 hInv2
+        have hInvR := ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+          (.of_releaseLinks (Lifecycle.Suspend.releaseRemoveThread_agree _ vtid.val)) hInvI
+        have hObjInvR := Lifecycle.Suspend.releaseRemoveThread_objects_invExt _ vtid.val hObjInvI
+        exact suspendRescheduleOnCore_preserves_ipcInvariantFull _ st' _ ec _ _ sgi
+          (SystemState.cancelYieldTo_preserves_objects_invExt _ _ hObjInvR)
+          (cancelYieldTo_preserves_ipcInvariantFull _ _ hObjInvR hInvR) hStep
 
 -- ============================================================================
 -- §16  Return-frame staging composites (`Architecture.stage*`)

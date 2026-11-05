@@ -467,7 +467,12 @@ private def runCompositeScenarios : IO Unit := do
   -- composite is just the affinity write + run-queue migration.
   let stUnbound : SystemState :=
     let base := (BootstrapBuilder.empty.withObject (ThreadId.ofNat 300).toObjId
-      (.tcb { tcb0 with tid := ThreadId.ofNat 300, scBindingScCode := 0, scBindingOwnerCode := 0 })).build
+      (.tcb { tcb0 with
+        tid := ThreadId.ofNat 300
+        idCell := some (ThreadId.ofNat 300)
+        idCell_eq := rfl
+        scBindingScCode := 0
+        scBindingOwnerCode := 0 })).build
     base
   assertBool "composite on an unbound thread succeeds (affinity + run-queue write only)"
     (match setThreadCpuAffinityWithMigration stUnbound (ThreadId.ofNat 300) (some bootCoreId) core1 with
@@ -1361,12 +1366,19 @@ private def runRefillStrandedWitness : IO Unit := do
   assertBool "a runnable bound context holds no pending refill: nothing to check"
     (strandedOk stCbsRunnable)
   assertBool "a used-up head queued at its release time passes" (strandedOk stCbs)
-  let stOff := stCbsRunnable.updateSchedContext scId0 fun sc =>
-    { sc with budgetRemaining := ⟨0⟩, refillHeadPresent := true,
-              refillHeadAmount := sc.budget.val, refillHeadEligibleAt := 5000 }
+  -- WS-ZA ZA6.33: the check covers a context whose holder is active; a
+  -- suspended holder's context is off every queue (seL4's `tcbReleaseRemove`).
+  let holder := ((stCbsRunnable.getSchedContext? scId0).bind (·.boundThread)).getD tid0
+  let stOffAt (ts : ThreadState) : SystemState :=
+    (stCbsRunnable.updateTcb holder fun t => { t with threadState := ts }).updateSchedContext
+      scId0 fun sc =>
+        { sc with budgetRemaining := ⟨0⟩, refillHeadPresent := true,
+                  refillHeadAmount := sc.budget.val, refillHeadEligibleAt := 5000 }
+  let stOff := stOffAt .Ready
   assertBool "a used-up head on no release queue is refused" (!strandedOk stOff)
-  let stMoved := stCbs.updateSchedContext scId0 fun sc =>
-    { sc with refillHeadEligibleAt := 6000 }
+  assertBool "...and passes when its holder is suspended" (strandedOk (stOffAt .Inactive))
+  let stMoved := (stCbs.updateTcb holder fun t => { t with threadState := .Ready }).updateSchedContext
+    scId0 fun sc => { sc with refillHeadEligibleAt := 6000 }
   assertBool "a context queued at a time its head no longer holds is refused"
     (!strandedOk stMoved)
   assertBool "placing it again restores the relation"

@@ -28,7 +28,7 @@ caller and the authority to reply to it:
   which is what makes taking a frame out of the *middle* of a stack an `O(1)`
   operation on three objects (seL4's `reply_remove_tcb`) rather than a walk
   over every frame below it.  Written by the donation push, rewritten by the
-  pop and by the middle-frame splice (WS-OD; a sever until WS-HP HP6.3); the
+  pop and by the middle-frame cut (WS-OD; a sever until WS-HP HP6.3); the
   stack they form is constrained by
   `donationChainWellFormed` (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`), whose
   head is `SchedContext.scReply`.
@@ -37,49 +37,6 @@ caller and the authority to reply to it:
 -/
 
 namespace SeLe4n.Kernel
-
-/-- WS-OD (`v0.35.4`): **the upward link of a reply-stack frame** — seL4's
-`replyNext`, a `call_stack_t` whose `isHead` bit says whether the pointer names
-the frame pushed above this one or the scheduling context whose stack this frame
-heads.  A sum type rather than two fields, so "head", "has a frame above" and
-"off every stack" (`none`) are three states of one value and no object can claim
-two of them at once.
-
-Only the head carries the context.  That is the whole point of the encoding: a
-frame taken out of the middle of a stack repairs its two neighbours and nothing
-else (`spliceReplyFrameOut` above the cut, `Reply.consumed` at the frame
-itself), where a per-frame context field would have to be
-cleared on every frame below the cut — an `O(depth)` walk, or, left undone, a
-frame that names a context forever and can never be retyped or linked again. -/
-inductive ReplyStackLink where
-  /-- The frame pushed **above** this one on the same stack. -/
-  | frame (above : SeLe4n.ReplyId)
-  /-- This frame **heads** the stack of the named scheduling context. -/
-  | head (sc : SeLe4n.SchedContextId)
-deriving DecidableEq, Repr, Inhabited
-
-namespace ReplyStackLink
-
-/-- The reply id a `.frame` link names, if it is one. -/
-@[inline] def frame? : ReplyStackLink → Option SeLe4n.ReplyId
-  | .frame above => some above
-  | .head _ => none
-
-/-- The scheduling context a `.head` link names, if it is one. -/
-@[inline] def head? : ReplyStackLink → Option SeLe4n.SchedContextId
-  | .frame _ => none
-  | .head sc => some sc
-
-@[simp] theorem frame?_frame (above : SeLe4n.ReplyId) :
-    (ReplyStackLink.frame above).frame? = some above := rfl
-@[simp] theorem frame?_head (sc : SeLe4n.SchedContextId) :
-    (ReplyStackLink.head sc).frame? = none := rfl
-@[simp] theorem head?_frame (above : SeLe4n.ReplyId) :
-    (ReplyStackLink.frame above).head? = none := rfl
-@[simp] theorem head?_head (sc : SeLe4n.SchedContextId) :
-    (ReplyStackLink.head sc).head? = some sc := rfl
-
-end ReplyStackLink
 
 /-- WS-SM SM6.D: first-class Reply kernel object.  See the module docstring. -/
 structure Reply where
@@ -105,6 +62,16 @@ structure Reply where
   mint shares it instead of building one (`CapTarget.ofReplyObject`). -/
   capTarget : SeLe4n.Model.CapTarget       := .replyCap replyId
   capTarget_eq : capTarget = .replyCap replyId := by rfl
+  /-- WS-ZA ZA6.33: the two cells a donation push writes naming this frame,
+  built once with the object as `capTarget` is, so the push shares them
+  (`SeLe4n.reuseSome`) rather than building them on every donating call:
+  `some replyId`, the head the lending context records
+  (`SchedContext.scReply`), and `some (.frame replyId)`, the upward link of the
+  frame below.  Read by the compiled push alone; no specification reads them. -/
+  idCell : Option SeLe4n.ReplyId := some replyId
+  frameLinkCell : Option ReplyStackLink := some (.frame replyId)
+  idCell_eq : idCell = some replyId := by rfl
+  frameLinkCell_eq : frameLinkCell = some (.frame replyId) := by rfl
 deriving Repr
 
 namespace Reply
@@ -116,8 +83,10 @@ Written as `callerCode := SeLe4n.ThreadId.optCode c`. -/
   SeLe4n.ThreadId.ofOptCode r.callerCode
 
 @[simp] theorem caller_mk (rid : SeLe4n.ReplyId) (c : Nat) (p : Option SeLe4n.ReplyId)
-    (n : Option ReplyStackLink) (s : Nat) (t : SeLe4n.Model.CapTarget) (ht : t = .replyCap rid) :
-    (Reply.mk rid c p n s t ht).caller = SeLe4n.ThreadId.ofOptCode c :=
+    (n : Option ReplyStackLink) (s : Nat) (t : SeLe4n.Model.CapTarget) (ht : t = .replyCap rid)
+    (ic : Option SeLe4n.ReplyId) (fc : Option ReplyStackLink) (hic : ic = some rid)
+    (hfc : fc = some (.frame rid)) :
+    (Reply.mk rid c p n s t ht ic fc hic hfc).caller = SeLe4n.ThreadId.ofOptCode c :=
   rfl
 
 /-- Default Reply: the given id, no caller, no stack links, lock unheld.  Used by
@@ -146,7 +115,7 @@ The pop at the head clears the popped frame's two links in its own store
 (`storeDonationHeadClear`), *before* the caller link is consumed; a frame cut out
 of the middle loses both of its own links in the very record that clears its
 caller (`Reply.consumed`, which is not the head arm), while the neighbour above
-it is repaired first by `spliceReplyFrameOut`.  Either way a Reply whose
+it is repaired first by `cutReplyFrameOut`.  Either way a Reply whose
 `caller` is `none` carries no link, and conversely a Reply that carries a link
 has a caller still blocked on it.  That is what makes
 `Reply.isFree` — no caller, no links — the exact `O(1)` test for "this object may
@@ -202,7 +171,7 @@ consumption is where it leaves the structure.
 (`v0.35.45`).**  The removal writes `below.next := some (.frame above)` in the same
 step that writes `above.prev := some below`, so the pair either side of the cut
 reciprocates and the frames below stay on the context's stack
-(`removeCallerReplyFrame_splices_reciprocally`).  That is what this record's own
+(`removeCallerReplyFrame_breaks_chain`).  That is what this record's own
 caller does, not what this function does — see the precondition below.
 
 The stack relation is stated **both ways**
@@ -221,29 +190,19 @@ links **down** to this one (`above.prev = some rid`), clearing this frame's
 walks to it refuses (fail-closed, `.invalidArgument`) rather than returning the
 context.  So a removal path must take the frame above off this one *before*
 consuming.  Which value it writes into that frame's `prev` is the
-`cancelledMiddleCallerPolicy` decision: since WS-HP HP6.8 (`v0.35.45`) this kernel
-writes **this frame's own `prev`** (`spliceOutTheCut`), so the frames below the cut
-stay on the stack and the reservation goes on travelling outward to the caller that
-owns it.  The removal also clears **this** frame's `prev` and `next` in the same
-step — seL4's `reply_remove` unlink — which is why `donationChainWellFormed`
-survives the removal outright rather than transiently.
+`cancelledMiddleCallerPolicy` decision, and since WS-ZA ZA6.33 it is seL4's:
+`none` (`severAtCut`), which is what `reply_remove` writes there --
+`REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)`.  The chain BREAKS at
+the cut: the frame above stops linking down, the frame below stops linking up, and
+the frames below the cut leave the context's stack.  From WS-HP HP6.8 (`v0.35.45`)
+to `v0.36.196` this kernel wrote this frame's own `prev` instead
+(`spliceOutTheCut`), keeping the frames below on the stack; that divergence from
+seL4 is retired (`middleRemoval_atCallDepthThree_severs`, measured at reply-stack
+depth three and four in `tests/SmpIpcSuite.lean`).
 
-Up to `v0.35.44` it wrote `none` (`severAtCut`), which is what seL4-MCS writes
-there: `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)`, re-verified at
-`v0.35.40` against master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 (`v0.35.14` claimed
-upstream splices and cited a line that is in no release).  So the splice is an
-**improvement on upstream** rather than an adoption of it, measured at reply-stack
-depth three in `tests/SmpIpcSuite.lean` §3.22 and stated as
-`donationAccountingPreserved_atCallDepthThree`.  What it provably cannot reach is
-the depth-**two** loss, where the cut frame is its stack's bottom so both policies
-write `none`: that needs the reservation's *origin* on the `SchedContext` rather
-than stack reachability, and is closed at `v0.35.53` by WS-HP HP10.9
-(`donationAccountingPreserved_atCallDepthTwo`), so the accounting holds at every
-depth.
-
-**Both paths do.**  The cancellation path runs `spliceThreadReplyFrameOut`
+**Both paths do.**  The cancellation path runs `cutThreadReplyFrameOut`
 immediately before `consumeReplyLink`, and the reply path runs
-`removeCallerReplyFrame` — the splice and the consume as one step, called by
+`removeCallerReplyFrame` — the cut and the consume as one step, called by
 `endpointReplyOnCore` and by both single-core spines.  Until WS-RM the reply path
 did not: it relied on the answered frame being the head, which every reply of the
 nested Call pattern satisfies but which a *delegated* reply capability answering
@@ -300,6 +259,30 @@ consumes below the first cut-off part. -/
 theorem consumed_of_unlinked (r : Reply) (hPrev : r.prev = none) (hNext : r.next = none) :
     r.consumed = { r with callerCode := 0 } := by
   unfold consumed; rw [hNext]; simp [hPrev]
+
+/-- A head's consumption: its caller cleared, in the record's cell.  Out of
+line, so the compiler sees one record written and nothing matched on it. -/
+@[noinline] def callerClearedForConsume (r : Reply) : Reply := { r with callerCode := 0 }
+
+/-- Consumption off a head: the caller and the links cleared, in the record's
+cell. -/
+@[noinline] def clearedForConsume (r : Reply) : Reply :=
+  { r with callerCode := 0, prev := none, next := none }
+
+/-- WS-ZA ZA6.33: the compiled `consumed`: whether the links go is read before
+the record is written, then the caller cleared and, off a head, the links, in
+the record's own cell.  The specification's head arm rebuilds the record
+beside the one it matched on, so a head was copied on every reply that pops a
+donation.  Proven equal (`consumed_eq_impl`). -/
+def consumedImpl (r : Reply) : Reply :=
+  if r.consumedIsFree then clearedForConsume r else callerClearedForConsume r
+
+@[csimp] theorem consumed_eq_impl : @consumed = @consumedImpl := by
+  funext r
+  unfold consumed consumedImpl consumedIsFree clearedForConsume callerClearedForConsume
+  cases r.next with
+  | none => rfl
+  | some l => cases l <;> rfl
 
 /-- A consumed Reply that is not a head is well formed and free. -/
 theorem consumed_isFree_of_not_head (r : Reply) (h : ∀ sc, r.next ≠ some (.head sc)) :

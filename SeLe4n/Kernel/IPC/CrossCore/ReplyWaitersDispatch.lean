@@ -263,11 +263,11 @@ theorem applyReceiveLegPipHandoff_replyViews_eq (st : SystemState) (r d w : SeLe
     · exact applyReceiverPipHandoff_replyViews_eq _ _ _ hInv
     · rfl
 
-/-- The reply path's donation return: the context goes back, its replenishments
-migrate, the holder is descheduled — no reply-view field. -/
+/-- The reply path's donation return: the context goes back and settles, the
+holder is descheduled — no reply-view field. -/
 theorem applyReplyDonationOnCore_replyViews_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    {t : SeLe4n.ValidThreadId} {a b : CoreId} (hInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st rid t a b = .ok st') : st'.replyViews = st.replyViews := by
+    {t : SeLe4n.ValidThreadId} {b : CoreId} (hInv : st.objects.invExt)
+    (h : applyReplyDonationOnCore st rid t b = .ok st') : st'.replyViews = st.replyViews := by
   unfold applyReplyDonationOnCore at h
   dsimp only at h
   split at h
@@ -277,7 +277,7 @@ theorem applyReplyDonationOnCore_replyViews_eq {st st' : SystemState} {rid : SeL
       · cases h
       · rename_i s1 h1
         cases h
-        rw [descheduleAtPlacement_replyViews_eq, migrateSchedContextReplenishment_replyViews_eq,
+        rw [descheduleAtPlacement_replyViews_eq, settleReturnedContext_replyViews_eq,
           returnDonatedSchedContextResolved_replyViews_eq hInv h1]
     · cases h
 
@@ -400,7 +400,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent
         | (rename_i hD
            exact replyWaitersConsistent.of_views
             ((propagatePipChainCrossCore_replyViews_eq _ _ _ _
-              (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hI hD)).trans
+              (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hI hD)).trans
               (applyReplyDonationOnCore_replyViews_eq hI hD)) hB)
 
 /-- **Fault delivery keeps the reply-waiter queues consistent**: it is the live
@@ -487,7 +487,7 @@ theorem replyRecvPopDonation_replyViews_eq {rid : SeLe4n.ReplyId} {t : SeLe4n.Th
       · cases h
       · rename_i s1 h1
         cases h
-        rw [migrateSchedContextReplenishment_replyViews_eq,
+        rw [settleReturnedContext_replyViews_eq,
           returnDonatedSchedContextResolved_replyViews_eq hInv h1]
     · cases h
   · cases h; rfl

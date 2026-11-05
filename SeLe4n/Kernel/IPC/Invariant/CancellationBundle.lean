@@ -86,7 +86,8 @@ teardown: the victim leaves the cancellation able to run, and that is
 *established* here rather than assumed at each call site.
 
 Each arm for its own reason.  `.ready` commits no write at all, so the victim's
-stored TCB is the one the caller looked up.  The three endpoint states and the
+stored TCB carries the IPC state the caller read (WS-ZA ZA6.33: read off any
+TCB with that state, so a step before the teardown may rewrite other fields).  The three endpoint states and the
 notification state end in `restoreToReadyCancelled` over a queue removal, whose
 write at the victim's key is `restoredTcb` (`ipcState := .ready` by
 construction).  The reply arm's restore sits over the reclaim and the splice —
@@ -94,13 +95,12 @@ neither of which moves a TCB's `ipcState`, and the splice moves no TCB at all �
 and its trailing `consumeReplyLink` clears `replyObject` and copies every other
 field, which is what `SystemState.consumeCallerReply_tcb_caller` states field by
 field. -/
-theorem cancelIpcBlocking_victim_ready
-    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
-    (hObjInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV) :
+theorem cancelIpcBlocking_victim_ready_of_ipcState
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV x : TCB)
+    (hObjInv : st.objects.invExt) (hAt : st.objects[v.toObjId]? = some (.tcb x))
+    (hNR : ¬ v.isReserved) (hX : x.ipcState = tcbV.ipcState) :
     ∀ t', (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[v.toObjId]? = some (.tcb t') →
       t'.ipcState = ThreadIpcState.ready := by
-  have hAt : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
-  have hNR : ¬ v.isReserved := lookupTcb_some_not_reserved st v tcbV hLookup
   cases hIp : tcbV.ipcState with
   | ready =>
     rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV = st by
@@ -108,27 +108,33 @@ theorem cancelIpcBlocking_victim_ready
     intro t' h
     rw [hAt] at h
     cases h
-    exact hIp
+    rw [hX]; exact hIp
   | blockedOnSend ep =>
-    rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV ep (Or.inl hIp)]
-    unfold sweptAndRestored
-    obtain ⟨hI1, t1, hL1, _⟩ := removeFromAllEndpointQueues_tcb_lookup st v v.toObjId tcbV hObjInv hAt
+    rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+        Lifecycle.Suspend.restoreToReadyCancelled (removeFromBlockingEndpoint st v ep) v by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
+    unfold Lifecycle.Suspend.restoreToReadyCancelled
+    obtain ⟨hI1, t1, hL1, _⟩ := removeFromBlockingEndpoint_tcb_lookup st v ep v.toObjId x hObjInv hAt
     exact restoreVictimReady v _ t1 _ hI1 (lookupTcb_of_objects_of_not_reserved _ v t1 hL1 hNR)
   | blockedOnReceive ep =>
-    rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV ep (Or.inr (Or.inl hIp))]
-    unfold sweptAndRestored
-    obtain ⟨hI1, t1, hL1, _⟩ := removeFromAllEndpointQueues_tcb_lookup st v v.toObjId tcbV hObjInv hAt
+    rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+        Lifecycle.Suspend.restoreToReadyCancelled (removeFromBlockingEndpoint st v ep) v by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
+    unfold Lifecycle.Suspend.restoreToReadyCancelled
+    obtain ⟨hI1, t1, hL1, _⟩ := removeFromBlockingEndpoint_tcb_lookup st v ep v.toObjId x hObjInv hAt
     exact restoreVictimReady v _ t1 _ hI1 (lookupTcb_of_objects_of_not_reserved _ v t1 hL1 hNR)
   | blockedOnCall ep =>
-    rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV ep (Or.inr (Or.inr hIp))]
-    unfold sweptAndRestored
-    obtain ⟨hI1, t1, hL1, _⟩ := removeFromAllEndpointQueues_tcb_lookup st v v.toObjId tcbV hObjInv hAt
+    rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+        Lifecycle.Suspend.restoreToReadyCancelled (removeFromBlockingEndpoint st v ep) v by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
+    unfold Lifecycle.Suspend.restoreToReadyCancelled
+    obtain ⟨hI1, t1, hL1, _⟩ := removeFromBlockingEndpoint_tcb_lookup st v ep v.toObjId x hObjInv hAt
     exact restoreVictimReady v _ t1 _ hI1 (lookupTcb_of_objects_of_not_reserved _ v t1 hL1 hNR)
   | blockedOnNotification nId =>
     rw [cancelIpcBlocking_notification_arm_eq st v tcbV nId hIp]
     unfold purgedAndRestored
     obtain ⟨hI1, t1, hL1, _⟩ :=
-      removeFromNotificationWaitQueue_tcb_lookup st v v.toObjId tcbV hObjInv hAt
+      removeFromNotificationWaitQueue_tcb_lookup st v v.toObjId x hObjInv hAt
     exact restoreVictimReady v _ t1 _ hI1 (lookupTcb_of_objects_of_not_reserved _ v t1 hL1 hNR)
   | blockedOnReply ep rt =>
     rw [cancelIpcBlocking_reply_arm_eq st v tcbV ep rt hIp]
@@ -137,13 +143,13 @@ theorem cancelIpcBlocking_victim_ready
       Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hObjInv
     obtain ⟨tR, hAtR, _⟩ :=
       Lifecycle.Suspend.returnDonationToCancelledCaller_tcb_lookup st v tcbV hObjInv
-        v.toObjId tcbV hAt
-    have hIX : (spliceThreadReplyFrameOut
+        v.toObjId x hAt
+    have hIX : (cutThreadReplyFrameOut
         (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV).objects.invExt :=
-      spliceThreadReplyFrameOut_preserves_objects_invExt _ tcbV hIR
-    have hAtX := spliceThreadReplyFrameOut_tcb_eq _ tcbV hIR v.toObjId tR hAtR
+      cutThreadReplyFrameOut_preserves_objects_invExt _ tcbV hIR
+    have hAtX := cutThreadReplyFrameOut_tcb_eq _ tcbV hIR v.toObjId tR hAtR
     unfold restoredAndConsumed
-    have hGetX : (spliceThreadReplyFrameOut
+    have hGetX : (cutThreadReplyFrameOut
         (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV).getTcb? v = some tR :=
       (SystemState.getTcb?_eq_some_iff _ v tR).mpr hAtX
     have hAtY := restoreToReadyStaging_objects_self _ v (some Architecture.cancelledIpcFrame) tR
@@ -169,7 +175,7 @@ theorem cancelIpcBlocking_victim_ready
       rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState e]
       rw [Lifecycle.Suspend.consumeReplyLink_some _ v tcbV rid hRO] at h
       have hIY : (Lifecycle.Suspend.restoreToReadyStaging
-          (spliceThreadReplyFrameOut
+          (cutThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v
           (some Architecture.cancelledIpcFrame)).objects.invExt :=
         Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hIX
@@ -178,6 +184,15 @@ theorem cancelIpcBlocking_victim_ready
       rw [hPost] at h
       cases h
       exact hReadyY
+
+/-- ...read off the victim's own TCB. -/
+theorem cancelIpcBlocking_victim_ready
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hObjInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV) :
+    ∀ t', (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[v.toObjId]? = some (.tcb t') →
+      t'.ipcState = ThreadIpcState.ready :=
+  cancelIpcBlocking_victim_ready_of_ipcState st v tcbV tcbV hObjInv
+    (lookupTcb_some_objects st v tcbV hLookup) (lookupTcb_some_not_reserved st v tcbV hLookup) rfl
 
 -- ============================================================================
 -- §2  The four-arm composite over the pure teardown
@@ -351,14 +366,14 @@ theorem restoreToReadyStaging_getSchedContext?_eq (st : SystemState)
         SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId
           scId.toObjId _ (by simpa using Ne.symm hk) hInv]
 
-/-- WS-RR RR8.11: the frame splice writes Reply objects only. -/
-theorem spliceThreadReplyFrameOut_getSchedContext?_eq (st : SystemState)
+/-- WS-RR RR8.11: the frame cut writes Reply objects only. -/
+theorem cutThreadReplyFrameOut_getSchedContext?_eq (st : SystemState)
     (tcb : TCB) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
-    (spliceThreadReplyFrameOut st tcb).getSchedContext? scId = st.getSchedContext? scId := by
-  unfold spliceThreadReplyFrameOut
+    (cutThreadReplyFrameOut st tcb).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold cutThreadReplyFrameOut
   cases tcb.replyObject with
   | none => rfl
-  | some rid => exact spliceReplyFrameOutOrSelf_getSchedContext?_eq st rid hInv scId
+  | some rid => exact cutReplyFrameOutOrSelf_getSchedContext?_eq st rid hInv scId
 
 /-- WS-RR RR8.11: the reply-link teardown writes a TCB and a Reply, so it writes
 no scheduling context — RR8.5's projection of the reply path's own consume, whose
@@ -424,18 +439,18 @@ theorem cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame (st : SystemState
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => rfl
-  | blockedOnSend _ =>
+  | blockedOnSend e =>
     rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-      removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
-  | blockedOnReceive _ =>
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
+      removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv]
+  | blockedOnReceive e =>
     rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-      removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
-  | blockedOnCall _ =>
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
+      removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv]
+  | blockedOnCall e =>
     rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-      removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
+      removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv]
   | blockedOnNotification _ =>
     rw [restoreToReadyStaging_getSchedContext?_eq _ v _
         (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv),
@@ -443,14 +458,14 @@ theorem cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame (st : SystemState
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     dsimp only
     rw [(SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).getSchedContext?,
       consumeReplyLink_getSchedContext?_eq _ v tcbV
         (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS),
       restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
-      spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR, hReclaim]
+      cutThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR, hReclaim]
 
 /-- **WS-RR RR8.11: the teardown writes at most ONE scheduling context** — the one
 the reclaim hands back to the cancelled caller — so every other context reads
@@ -516,19 +531,19 @@ theorem cancelIpcBlocking_releaseStateAgree (st : SystemState) (v : SeLe4n.Threa
     (tcbV : TCB) (hInv : st.objects.invExt) :
     SystemState.releaseStateAgree (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
   refine ⟨?_, by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq st v tcbV]; rfl⟩
-  have hEp : ∀ s, (Lifecycle.Suspend.restoreToReadyStaging
-      (removeFromAllEndpointQueues st v) v
+  have hEp : ∀ e s, (Lifecycle.Suspend.restoreToReadyStaging
+      (removeFromBlockingEndpoint st v e) v
       (some Architecture.cancelledIpcFrame)).getSchedContext? s = st.getSchedContext? s :=
-    fun s => by
+    fun e s => by
       rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-          (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-        removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+          (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
+        removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv]
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => exact .refl _
-  | blockedOnSend _ => exact .of_getSchedContext? hEp
-  | blockedOnReceive _ => exact .of_getSchedContext? hEp
-  | blockedOnCall _ => exact .of_getSchedContext? hEp
+  | blockedOnSend e => exact .of_getSchedContext? (hEp e)
+  | blockedOnReceive e => exact .of_getSchedContext? (hEp e)
+  | blockedOnCall e => exact .of_getSchedContext? (hEp e)
   | blockedOnNotification _ =>
     exact .of_getSchedContext? fun s => by
       rw [restoreToReadyStaging_getSchedContext?_eq _ v _
@@ -537,7 +552,7 @@ theorem cancelIpcBlocking_releaseStateAgree (st : SystemState) (v : SeLe4n.Threa
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     dsimp only
     refine SystemState.ReleaseLinksAgree.trans (.of_getSchedContext? fun s => ?_)
@@ -546,66 +561,126 @@ theorem cancelIpcBlocking_releaseStateAgree (st : SystemState) (v : SeLe4n.Threa
       consumeReplyLink_getSchedContext?_eq _ v tcbV
         (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS),
       restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
-      spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
+      cutThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
 
-/-- WS-ZA ZA6.4: the cancelled caller's donation return keeps every context's
-refill view (`returnDonatedSchedContext_refillViewsKept`). -/
-theorem returnDonationToCancelledCaller_refillViewsKept (st : SystemState)
-    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) :
-    RefillViewsKept (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) st := by
+/-- WS-ZA ZA6.33: a thread's refill view reads its suspension alone. -/
+theorem tcbRefillView_bind_of_threadState {a b : SystemState} {t : SeLe4n.ThreadId}
+    (h : (a.getTcb? t).map TCB.threadState = (b.getTcb? t).map TCB.threadState) :
+    (a.getTcb? t).bind tcbRefillView = (b.getTcb? t).bind tcbRefillView := by
+  revert h
+  cases a.getTcb? t <;> cases b.getTcb? t <;> intro h
+  · rfl
+  · cases h
+  · cases h
+  · simp only [Option.map_some, Option.some.injEq] at h
+    simp only [Option.bind_some, tcbRefillView, h]
+
+/-- WS-ZA ZA6.33: the restore keeps every refill view: it writes one thread and
+leaves its suspension alone. -/
+theorem restoreToReadyStaging_refillViewsKept (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
+    RefillViewsKept (Lifecycle.Suspend.restoreToReadyStaging st tid frame) st := by
+  unfold Lifecycle.Suspend.restoreToReadyStaging
+  exact .updateTcb _ _ _ hInv (fun x h => by cases frame <;> exact h)
+
+/-- WS-ZA ZA6.33: the cancelled caller's donation return keeps every context's
+refills off the returned one (`returnDonatedSchedContext_refillsKeptOff`). -/
+theorem returnDonationToCancelledCaller_refillsKeptOff (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt)
+    (P : SeLe4n.SchedContextId → Prop)
+    (hP : ∀ p, Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some p → P p.1) :
+    SystemState.RefillsKeptOff P (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) st := by
   cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
   | none =>
-    rw [Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hD]; exact .refl st
+    rw [Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hD]
+    exact .refl P st
   | some p =>
     obtain ⟨scId, holder⟩ := p
+    have hS : P scId := hP _ hD
     unfold Lifecycle.Suspend.returnDonationToCancelledCaller
     rw [hD]
     cases hT : st.getTcb? v with
-    | none => exact .refl st
+    | none => exact .refl P st
     | some _ =>
       dsimp only
       cases hRet : returnDonatedSchedContextResolved st holder scId v with
-      | error _ => exact .refl st
+      | error _ => exact .refl P st
       | ok st' =>
         obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_refillViewsKept hInv hPop
+        exact (returnDonatedSchedContext_refillsKeptOff hInv hPop).mono fun x hx => by subst hx; exact hS
 
-/-- WS-ZA ZA6.4: **the teardown keeps every context's refill view** — it writes
-a context only through the donation return, which keeps it. -/
-theorem cancelIpcBlocking_refillViewsKept (st : SystemState) (v : SeLe4n.ThreadId)
+/-- WS-ZA ZA6.33: **everything the teardown does but the return keeps every
+refill view** — the queue removals and the frame cut write no context and no
+suspension, the restore and the reply-link consume rewrite no suspension. -/
+theorem cancelIpcBlocking_refillViewsKept_of_return (st : SystemState) (v : SeLe4n.ThreadId)
     (tcbV : TCB) (hInv : st.objects.invExt) :
-    RefillViewsKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
-  have hEp : ∀ s, (Lifecycle.Suspend.restoreToReadyStaging
-      (removeFromAllEndpointQueues st v) v
-      (some Architecture.cancelledIpcFrame)).getSchedContext? s = st.getSchedContext? s :=
-    fun s => by
-      rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-          (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-        removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+    RefillViewsKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV)
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
+  have hNone : ∀ (h : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = none),
+      Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV = st :=
+    Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV
+  have hEp : ∀ e, RefillViewsKept (Lifecycle.Suspend.restoreToReadyStaging
+      (removeFromBlockingEndpoint st v e) v (some Architecture.cancelledIpcFrame)) st :=
+    fun e => (restoreToReadyStaging_refillViewsKept _ v _
+      (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv)).trans
+      (.of_getSchedContext?_eq (removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv)
+        fun t => tcbRefillView_bind_of_threadState (by
+          rw [removeFromBlockingEndpoint_getTcb?_eq_splice st v e hInv t]
+          exact spliceOutMidQueueNode_tcbField_frame TCB.threadState
+            (fun _ _ _ _ _ _ => rfl) st v hInv t))
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
-  | ready => exact .refl _
-  | blockedOnSend _ => exact .of_getSchedContext?_eq hEp
-  | blockedOnReceive _ => exact .of_getSchedContext?_eq hEp
-  | blockedOnCall _ => exact .of_getSchedContext?_eq hEp
+  | ready =>
+    rw [hNone (Lifecycle.Suspend.cancelledCallerDonation?_of_ready st v tcbV hIp)]; exact .refl _
+  | blockedOnSend e | blockedOnReceive e | blockedOnCall e =>
+    rw [hNone (by unfold Lifecycle.Suspend.cancelledCallerDonation?; rw [hIp])]; exact hEp e
   | blockedOnNotification _ =>
-    exact .of_getSchedContext?_eq fun s => by
-      rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-          (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv),
-        removeFromNotificationWaitQueue_getSchedContext?_eq st v hInv]
+    rw [hNone (by unfold Lifecycle.Suspend.cancelledCallerDonation?; rw [hIp])]
+    exact (restoreToReadyStaging_refillViewsKept _ v _
+      (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv)).trans
+      (.of_getSchedContext?_eq (removeFromNotificationWaitQueue_getSchedContext?_eq st v hInv)
+        fun t => tcbRefillView_bind_of_threadState
+          (removeFromNotificationWaitQueue_tcbField_frame TCB.threadState
+            (fun _ _ _ _ _ _ => rfl) st v hInv t))
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
+    have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v
+      (some Architecture.cancelledIpcFrame) hS
     dsimp only
-    refine RefillViewsKept.trans (.of_getSchedContext?_eq fun s => ?_)
-      (returnDonationToCancelledCaller_refillViewsKept st v tcbV hInv)
-    rw [(SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).getSchedContext?,
-      consumeReplyLink_getSchedContext?_eq _ v tcbV
-        (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS),
-      restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
-      spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
+    refine (RefillViewsKept.of_agreeOffRunLinks
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _)).trans ?_
+    refine (RefillViewsKept.of_getSchedContext?_eq
+      (consumeReplyLink_getSchedContext?_eq _ v tcbV hU)
+      fun t => tcbRefillView_bind_of_threadState
+        (consumeReplyLink_map_frame TCB.threadState (fun _ => rfl) _ v tcbV hU t)).trans ?_
+    refine (restoreToReadyStaging_refillViewsKept _ v _ hS).trans ?_
+    exact .of_getSchedContext?_eq (cutThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR)
+      fun t => by rw [cutThreadReplyFrameOut_getTcb?_eq _ tcbV hR]
+
+/-- WS-ZA ZA6.4: **the teardown with nothing to return keeps every context's
+refill view**. -/
+theorem cancelIpcBlocking_refillViewsKept (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (hInv : st.objects.invExt)
+    (hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = none) :
+    RefillViewsKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
+  have h := cancelIpcBlocking_refillViewsKept_of_return st v tcbV hInv
+  rwa [Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hD] at h
+
+/-- WS-ZA ZA6.33: **the teardown keeps every context's refills off the one it
+returns**. -/
+theorem cancelIpcBlocking_refillsKeptOff (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (hInv : st.objects.invExt) (P : SeLe4n.SchedContextId → Prop)
+    (hP : ∀ p, Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some p → P p.1) :
+    SystemState.RefillsKeptOff P (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st :=
+  (SystemState.RefillsKeptOff.of_kept (cancelIpcBlocking_refillViewsKept_of_return st v tcbV hInv)
+    fun c => by
+      unfold SchedulerState.replenishQueueOnCore
+      rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq,
+        Lifecycle.Suspend.returnDonationToCancelledCaller_scheduler_eq]).trans
+    (returnDonationToCancelledCaller_refillsKeptOff st v tcbV hInv P hP)
 
 /-- WS-ZA ZA6.6: the restore writes one thread's IPC fields and frame, not its
 yield code. -/
@@ -642,20 +717,20 @@ links, IPC fields, bindings and the reply link, never a yield end. -/
 theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId)
     (tcbV : TCB) (hInv : st.objects.invExt) :
     YieldLinksKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
-  have hEp : YieldLinksKept (removeFromAllEndpointQueues st v) st :=
+  have hEp : ∀ e, YieldLinksKept (removeFromBlockingEndpoint st v e) st := fun e =>
     .of_tcbMap (fun t => by
-        rw [removeFromAllEndpointQueues_getTcb?_eq_splice st v hInv t]
+        rw [removeFromBlockingEndpoint_getTcb?_eq_splice st v e hInv t]
         exact spliceOutMidQueueNode_tcbField_frame TCB.yieldToCode
           (fun _ _ _ _ _ _ => rfl) st v hInv t)
-      (removeFromAllEndpointQueues_getSchedContext?_eq st v hInv)
-  have hEpR := (restoreToReadyStaging_yieldLinksKept _ v (some Architecture.cancelledIpcFrame)
-    (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv)).trans hEp
+      (removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv)
+  have hEpR := fun e => (restoreToReadyStaging_yieldLinksKept _ v (some Architecture.cancelledIpcFrame)
+    (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv)).trans (hEp e)
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => exact .refl _
-  | blockedOnSend _ => exact hEpR
-  | blockedOnReceive _ => exact hEpR
-  | blockedOnCall _ => exact hEpR
+  | blockedOnSend e => exact hEpR e
+  | blockedOnReceive e => exact hEpR e
+  | blockedOnCall e => exact hEpR e
   | blockedOnNotification _ =>
     exact (restoreToReadyStaging_yieldLinksKept _ v _
       (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv)).trans
@@ -665,7 +740,7 @@ theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v
       (some Architecture.cancelledIpcFrame) hS
@@ -677,8 +752,8 @@ theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId
       (consumeReplyLink_map_frame TCB.yieldToCode (fun _ => rfl) _ v tcbV hU)
       (consumeReplyLink_getSchedContext?_eq _ v tcbV hU)) ?_
     refine YieldLinksKept.trans (restoreToReadyStaging_yieldLinksKept _ v _ hS) ?_
-    exact (YieldLinksKept.of_getTcb?_eq (spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR)
-      (spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR)).trans
+    exact (YieldLinksKept.of_getTcb?_eq (cutThreadReplyFrameOut_getTcb?_eq _ tcbV hR)
+      (cutThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR)).trans
       (returnDonationToCancelledCaller_yieldLinksKept st v tcbV hInv)
 
 /-- WS-SM SM6.E (resolution frame) / **WS-RR RR8.11**: the teardown never moves
@@ -707,6 +782,17 @@ theorem spliceOutMidQueueNode_tableReferenceFrame (st : SystemState) (tid : SeLe
   SystemState.TableReferenceFrame.of_offTcb
     (fun k o hNot => spliceOutMidQueueNode_nonTcb st tid hInv k o hNot)
     (spliceOutMidQueueNode_sameTaintWords st tid hInv)
+
+/-- WS-ZA ZA6.33: the targeted dequeue rewrites one endpoint's queue ends only,
+so it keeps every endpoint's registration flag. -/
+theorem removeFromBlockingEndpoint_tableReferenceFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (removeFromBlockingEndpoint st tid e) := by
+  have hS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  refine (spliceOutMidQueueNode_tableReferenceFrame st tid hInv).trans ?_
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  · exact .refl _
+  · exact SystemState.TableReferenceFrame.rewriteObject _ hS (by rw [hE]; rfl)
 
 /-- The endpoint sweep rewrites queue ends only, so it keeps every endpoint's
 registration flag. -/
@@ -819,18 +905,18 @@ theorem consumeReplyLink_tableReferenceFrame (st : SystemState) (tid : SeLe4n.Th
   · next rid _ =>
     exact consumeCallerReply_tableReferenceFrame hInv (SystemState.consumeCallerReply_eq_link _ tid rid)
 
-/-- The cancelled caller's reply-frame splice rewrites replies only. -/
-theorem spliceThreadReplyFrameOut_tableReferenceFrame (st : SystemState) (tcb : TCB)
+/-- The cancelled caller's reply-frame cut rewrites replies only. -/
+theorem cutThreadReplyFrameOut_tableReferenceFrame (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) :
-    SystemState.TableReferenceFrame st (spliceThreadReplyFrameOut st tcb) := by
-  unfold spliceThreadReplyFrameOut
+    SystemState.TableReferenceFrame st (cutThreadReplyFrameOut st tcb) := by
+  unfold cutThreadReplyFrameOut
   split
   · exact .refl _
   · next rid _ =>
-    rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    rcases cutReplyFrameOutOrSelf_cases st rid with h | h
     · rw [h]; exact .refl _
     · exact fun oid => by
-        rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+        rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
         · rw [e]
         · rw [h1, h2]; rfl
 
@@ -870,10 +956,10 @@ theorem cancelIpcBlocking_tableReferenceFrame (st : SystemState) (victim : SeLe4
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases tcb.ipcState with
   | ready => exact .refl _
-  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    exact (removeFromAllEndpointQueues_tableReferenceFrame st victim hInv).trans
+  | blockedOnSend e | blockedOnReceive e | blockedOnCall e =>
+    exact (removeFromBlockingEndpoint_tableReferenceFrame st victim e hInv).trans
       (restoreToReadyStaging_tableReferenceFrame _ victim _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st victim hInv))
+        (removeFromBlockingEndpoint_preserves_objects_invExt st victim e hInv))
   | blockedOnNotification _ =>
     exact (removeFromNotificationWaitQueue_tableReferenceFrame st victim hInv).trans
       (restoreToReadyStaging_tableReferenceFrame _ victim _
@@ -881,13 +967,13 @@ theorem cancelIpcBlocking_tableReferenceFrame (st : SystemState) (victim : SeLe4
   | blockedOnReply _ _ =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st victim tcb hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb hR
     have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ victim
       (some Architecture.cancelledIpcFrame) hS
     dsimp only
     have f3 := ((returnDonationToCancelledCaller_tableReferenceFrame st victim tcb hInv).trans
-      (spliceThreadReplyFrameOut_tableReferenceFrame _ tcb hR)).trans
+      (cutThreadReplyFrameOut_tableReferenceFrame _ tcb hR)).trans
       (restoreToReadyStaging_tableReferenceFrame _ victim (some Architecture.cancelledIpcFrame) hS)
     have f4 := f3.trans (consumeReplyLink_tableReferenceFrame _ victim tcb hU)
     exact f4.trans (.of_agreeOffRunLinks
@@ -895,9 +981,28 @@ theorem cancelIpcBlocking_tableReferenceFrame (st : SystemState) (victim : SeLe4
 
 /-- **WS-ZA ZA4.5: the teardown keeps the run queues in agreement with the
 links** — it writes no scheduler slot (`cancelIpcBlocking_scheduler_eq`) and moves
-no thread (`cancelIpcBlocking_placement_frame`). -/
+no thread (`cancelIpcBlocking_placement_frame`).  WS-ZA ZA6.33: a frame stage off
+the context it returns, whose holder changes. -/
+theorem cancelIpcBlocking_runQueueFrameStage (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (P : SeLe4n.SchedContextId → Prop)
+    (hP : ∀ p, Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some p → P p.1) :
+    SystemState.RunQueueFrameStage P st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
+  have hS := Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq st victim tcb
+  SystemState.RunQueueFrameStage.of_placement
+    (fun hInv => Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st victim tcb hInv)
+    (by rw [hS]) (by rw [hS])
+    (fun hInv x => cancelIpcBlocking_placement_frame st victim tcb hInv x)
+    (fun hInv => cancelIpcBlocking_stateMono st victim tcb hInv)
+    (fun hInv => cancelIpcBlocking_releaseStateAgree st victim tcb hInv)
+    (fun hInv => cancelIpcBlocking_refillsKeptOff st victim tcb hInv P hP)
+    (fun hInv => cancelIpcBlocking_yieldLinksKept st victim tcb hInv)
+    (hRes := by rw [Lifecycle.Suspend.cancelIpcBlocking_machine_eq st victim tcb])
+
+/-- ...and a stage when it returns nothing: every arm but a reply arm whose
+caller had donated. -/
 theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)
-    (tcb : TCB) : SystemState.RunQueueStage st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
+    (tcb : TCB) (hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
+    SystemState.RunQueueStage st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
   have hS := Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq st victim tcb
   SystemState.RunQueueStage.of_placement
     (fun hInv => Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st victim tcb hInv)
@@ -905,18 +1010,61 @@ theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.Thre
     (fun hInv x => cancelIpcBlocking_placement_frame st victim tcb hInv x)
     (fun hInv => cancelIpcBlocking_stateMono st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_releaseStateAgree st victim tcb hInv)
-    (fun hInv => cancelIpcBlocking_refillViewsKept st victim tcb hInv)
+    (fun hInv => cancelIpcBlocking_refillViewsKept st victim tcb hInv hD)
     (fun hInv => cancelIpcBlocking_yieldLinksKept st victim tcb hInv)
     (hRes := by rw [Lifecycle.Suspend.cancelIpcBlocking_machine_eq st victim tcb])
 
-/-- ...and so does the teardown with its replenishment migration. -/
+/-- WS-ZA ZA6.33: the context the teardown returns is well formed after it
+wherever it was before: the return rebinds it and keeps its refills. -/
+theorem cancelIpcBlocking_returned_refillsView (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) (a : SchedContext)
+    (ha : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).getSchedContext? scId = some a) :
+    ∃ b, st.getSchedContext? scId = some b ∧ a.refillsView = b.refillsView := by
+  obtain ⟨b1, hb1, hv1⟩ :=
+    (cancelIpcBlocking_refillViewsKept_of_return st victim tcb hInv).getSchedContext? ha
+  have hR : ∀ c, (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb).getSchedContext?
+      scId = some c → ∃ b, st.getSchedContext? scId = some b ∧ c.refillsView = b.refillsView := by
+    intro c hc
+    unfold Lifecycle.Suspend.returnDonationToCancelledCaller at hc
+    split at hc
+    · rename_i s0 holder _ _ _
+      split at hc
+      · rename_i st' hRet
+        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+        by_cases hs : scId = s0
+        · subst hs
+          obtain ⟨b, a', hb, -, ha', -, hv⟩ := returnDonatedSchedContext_rebinds hInv hPop
+          rw [ha'] at hc; cases hc; exact ⟨b, hb, hv⟩
+        · obtain ⟨b, hb, hv⟩ := (returnDonatedSchedContext_refillsKeptOff hInv hPop).1 scId c hs hc
+          exact ⟨b, hb, by
+            show ({ c.refillView with boundThreadCode := 0 } : SchedContext) =
+              { b.refillView with boundThreadCode := 0 }
+            rw [hv]⟩
+      · exact ⟨c, hc, rfl⟩
+    · exact ⟨c, hc, rfl⟩
+  obtain ⟨b, hb, hv⟩ := hR b1 hb1
+  refine ⟨b, hb, ?_⟩
+  rw [← hv]
+  show ({ a.refillView with boundThreadCode := 0 } : SchedContext) =
+    { b1.refillView with boundThreadCode := 0 }
+  rw [hv1]
+
+/-- ...and so does the teardown with its returned context settled
+(`settleReturnedContext_runQueueStage`, WS-ZA ZA6.33). -/
 theorem cancelIpcBlockingMigrated_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState.RunQueueStage st (cancelIpcBlockingMigrated victim tcb st) := by
   unfold cancelIpcBlockingMigrated
-  split
-  · exact (cancelIpcBlocking_runQueueStage st victim tcb).trans
-      (migrateSchedContextReplenishment_runQueueStage _ _ _ _)
-  · exact cancelIpcBlocking_runQueueStage st victim tcb
+  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
+  | none => exact cancelIpcBlocking_runQueueStage st victim tcb hD
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    dsimp only
+    refine SchedContextOps.settleReturnedContext_runQueueStage
+      (cancelIpcBlocking_runQueueFrameStage st victim tcb (· = scId)
+        (fun p h => by rw [hD] at h; cases h; rfl)) ?_
+    intro S hs hI hSnd _ a ha
+    obtain ⟨b, hb, hv⟩ := cancelIpcBlocking_returned_refillsView st victim tcb hI scId a ha
+    exact schedContextWellFormed_of_refillsView hv (hSnd.1 scId b hs hb)
 
 /-- ...and so does the reclaim-complete teardown: its last step is a dequeue. -/
 theorem cancelIpcBlockingReclaimed_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)
@@ -927,28 +1075,21 @@ theorem cancelIpcBlockingReclaimed_runQueueStage (st : SystemState) (victim : Se
   · exact .refl _
   · exact descheduleAt_runQueueStage _ _ _
 
-/-- **WS-RR RR8.11: the migrated teardown establishes the SM5.H replenish-affinity
-invariant** — the second half of the obligation `cancelIpcBlockingMigrated`'s
-docstring registered, and it takes **no** hypothesis beyond the object-store
-invariant and the pre-state invariant itself.
+/-- **WS-RR RR8.11: the settled teardown establishes the SM5.H replenish-affinity
+invariant** (WS-ZA ZA6.33: the settle, `settleReturnedContext_preserves_affinityConsistent_smp`).
 
-That is what the destination fix buys.  With the destination read off the
-post-teardown binding (`replenishHomeOfSchedContext`) the "the destination is
-right" obligation is `replenishHomeOfSchedContext_spec`, which is free; with the
-victim's pre-state home in that position it was **false** on a refused reclaim, and
-no hypothesis short of "the reclaim committed" could have rescued it.
-
-The three remaining obligations are the teardown's own frames: it writes no
-scheduler slot (`cancelIpcBlocking_scheduler_eq`), no scheduling context but the
-one the reclaim hands back (`cancelIpcBlocking_getSchedContext?_ne`), and no
-thread's `cpuAffinity` (`cancelIpcBlocking_determineTargetCore_eq`).  The
-migration's *source* is the pre-state bound thread's home, which
-`cancelledCallerDonation?_some` supplies: the resolver reads the context off the
-victim's own reply frame head, and that context's `boundThread` **is** the holder
-the resolver names. -/
+The destination is read off the post-teardown binding
+(`replenishHomeOfSchedContext`), so "the destination is right" is
+`replenishHomeOfSchedContext_spec`, free on a refused reclaim and a committed
+one alike.  The rest are the teardown's own frames: it writes no scheduler slot
+(`cancelIpcBlocking_scheduler_eq`), no scheduling context but the one the reclaim
+hands back (`cancelIpcBlocking_getSchedContext?_ne`), and no thread's
+`cpuAffinity` (`cancelIpcBlocking_determineTargetCore_eq`); and it keeps the
+release queues refined (`cancelIpcBlocking_releaseStateAgree`), which is what
+lets the settle's purge take every entry of the returned context. -/
 theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp
     (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState)
-    (hInv : st.objects.invExt)
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hCons : replenishQueueAffinityConsistent_smp st) :
     replenishQueueAffinityConsistent_smp (cancelIpcBlockingMigrated victim tcb st) := by
   unfold cancelIpcBlockingMigrated
@@ -961,16 +1102,19 @@ theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_s
       (fun tid => cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv tid)).mpr hCons
   | some p =>
     obtain ⟨scId, holder⟩ := p
-    obtain ⟨-, rid, r, sc, -, -, -, hSc, -, hBound⟩ :=
-      cancelledCallerDonation?_some st victim tcb scId holder hD
-    exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp
-      st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
-      (determineTargetCore st holder) sc holder
-      (fun c => by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl)
-      (fun scId₀ hne => cancelIpcBlocking_getSchedContext?_ne st victim tcb hInv scId₀
-        (fun s h hD' => by rw [hD] at hD'; cases hD'; exact hne))
-      (fun tid => cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv tid)
-      hSc hBound rfl hCons
+    dsimp only
+    refine settleReturnedContext_preserves_affinityConsistent_smp _ _ scId
+      ((cancelIpcBlocking_releaseStateAgree st victim tcb hInv).refined hRef)
+      (replenishHomeOfSchedContext_spec _ scId _) ?_
+    intro c' s0 t0 hs hMem sc hSc tid hB
+    have hQ : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).scheduler.replenishQueueOnCore c'
+        = st.scheduler.replenishQueueOnCore c' := by
+      rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl
+    rw [hQ] at hMem
+    rw [cancelIpcBlocking_getSchedContext?_ne st victim tcb hInv s0
+      (fun s h hD' => by rw [hD] at hD'; cases hD'; exact hs)] at hSc
+    rw [cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv tid]
+    exact hCons c' s0 t0 hMem sc hSc tid hB
 
 -- `v0.35.158`: `enqueueAbortedHolderOnCore_replenishQueueOnCore` and
 -- `wakeAbortedDonationHolder_replenishQueueOnCore` are retired with the wake;
@@ -981,18 +1125,18 @@ theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_s
 replenish-affinity invariant.**
 
 The lift adds nothing, for the same reason RR8.10's bundle lift adds no premise:
-the two scheduler steps the composite performs over the migrated teardown — the
+the two scheduler steps the composite performs over the settled teardown — the
 reclaim's holder deschedule and the victim's placement removal — write run queues
 and current slots, which the invariant does not read, and no object at all, so
-all three of its readings are the migrated teardown's. -/
+all three of its readings are the settled teardown's. -/
 theorem cancelIpcBlockingOnCore_establishes_replenishQueueAffinityConsistent_smp
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId) (st : SystemState)
-    (hInv : st.objects.invExt)
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hCons : replenishQueueAffinityConsistent_smp st) :
     replenishQueueAffinityConsistent_smp
       (cancelIpcBlockingOnCore victim tcb executingCore st).1 := by
   have hBase := cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp
-    victim tcb st hInv hCons
+    victim tcb st hInv hRef hCons
   rw [cancelIpcBlockingOnCore_state_eq]
   unfold cancelIpcBlockingReclaimed
   refine (replenishQueueAffinityConsistent_smp_congr (fun c => ?_) (fun scId₀ => ?_)
@@ -1004,64 +1148,6 @@ theorem cancelIpcBlockingOnCore_establishes_replenishQueueAffinityConsistent_smp
   · rw [descheduleAtPlacement_determineTargetCore,
       descheduleUnboundHolder_determineTargetCore]
 
-/-- **WS-RR RR8.11: a refused reclaim migrates nothing.**
-
-This is the defect the destination fix closed, stated.  The reclaim's guards are
-fail-closed — the outer-caller check, HP4.6's recipient guard and the head
-validation all refuse — and on a refusal `returnDonationToCancelledCaller` returns
-its own input with `scId` still bound to the holder.  With the destination read
-off the post-teardown binding the migration's source and destination then coincide,
-so `migrateSchedContextReplenishment_noop` collapses it to the identity; with the
-victim's pre-state home in that position it moved `scId`'s replenishments to a core
-no thread bound to `scId` is homed on, which is
-`replenishQueueAffinityConsistentOnCore`'s own negation. -/
-theorem cancelIpcBlockingMigrated_eq_teardown_of_reclaim_inert
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (hInv : st.objects.invExt)
-    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder))
-    (hInert : Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb = st) :
-    cancelIpcBlockingMigrated victim tcb st
-      = Lifecycle.Suspend.cancelIpcBlocking st victim tcb := by
-  obtain ⟨-, rid, r, sc, -, -, -, hSc, -, hBound⟩ :=
-    cancelledCallerDonation?_some st victim tcb scId holder hD
-  have hPost : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).getSchedContext? scId
-      = some sc := by
-    rw [cancelIpcBlocking_getSchedContext?_eq_of_reclaim_inert st victim tcb hInv hInert scId,
-      hSc]
-  have hDest : replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
-      scId (determineTargetCore st holder) = determineTargetCore st holder := by
-    rw [replenishHomeOfSchedContext_eq_of_bound _ scId _ sc holder hPost hBound,
-      cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv holder]
-  unfold cancelIpcBlockingMigrated
-  rw [hD]
-  dsimp only
-  rw [hDest, migrateSchedContextReplenishment_noop]
-
-/-- **WS-RR RR8.11: a committed reclaim migrates exactly where it did before the
-fix.**
-
-The other half of the measurement: where the reclaim commits, the post-teardown
-binding names the cancelled caller, so the destination the resolver reads *is* the
-victim's home — the pre-fix expression, since the teardown writes no `cpuAffinity`.
-So the fix is a no-op on every state the tree's stated coherence facts admit, which
-is why the golden trace is byte-identical. -/
-theorem cancelIpcBlockingMigrated_eq_victim_home_of_committed
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (hInv : st.objects.invExt)
-    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder))
-    (scPost : SeLe4n.Kernel.SchedContext)
-    (hPost : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).getSchedContext? scId
-      = some scPost)
-    (hBoundPost : scPost.boundThread = some victim) :
-    cancelIpcBlockingMigrated victim tcb st
-      = migrateSchedContextReplenishment (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
-          scId (determineTargetCore st holder) (determineTargetCore st victim) := by
-  unfold cancelIpcBlockingMigrated
-  rw [hD]
-  dsimp only
-  rw [replenishHomeOfSchedContext_eq_of_bound _ scId _ scPost victim hPost hBoundPost,
-    cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv victim]
-
 /-- WS-ZA ZA6.6: the yield-link cancel places and unplaces no thread. -/
 theorem cancelYieldTo_threadPlacedOnSomeCore (st : SystemState) (tid u : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
@@ -1072,46 +1158,6 @@ theorem cancelYieldTo_threadPlacedOnSomeCore (st : SystemState) (tid u : SeLe4n.
 section SuspendPayoff
 open SeLe4n.Kernel.Concurrency
 open SeLe4n.Kernel.Lifecycle.Suspend
-
-/-- WS-ZA ZA4.5: the suspend's donation-cancellation dispatcher keeps the run
-queues in agreement with the links, on the arm that succeeds. -/
-theorem cancelSuspendDonation_runQueueStage (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hStep : (match tcb.schedContextBinding with
-              | .unbound => (Except.ok st : Except KernelError SystemState)
-              | .bound _ => cancelBoundDonationOnCore st tid tcb
-              | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
-    SystemState.RunQueueStage st st' := by
-  revert hStep
-  cases tcb.schedContextBinding with
-  | unbound => intro hStep; cases hStep; exact .refl st
-  | bound _ => exact cancelBoundDonationOnCore_runQueueStage
-  | donated _ _ => exact cancelDonatedDonationOnCore_runQueueStage
-
-/-- The suspend's donation-cancellation dispatcher moves no thread between
-scheduler slots: both arms write no current slot and keep every thread's run
-core, so every thread's placement is the pre-state's. -/
-theorem cancelSuspendDonation_placedCoreOf? (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (u : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt)
-    (hStep : (match tcb.schedContextBinding with
-              | .unbound => (Except.ok st : Except KernelError SystemState)
-              | .bound _ => cancelBoundDonationOnCore st tid tcb
-              | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
-    placedCoreOf? st' u = placedCoreOf? st u := by
-  revert hStep
-  cases tcb.schedContextBinding with
-  | unbound => intro hStep; cases hStep; rfl
-  | bound _ =>
-    intro hStep
-    exact placedCoreOf?_congr_of_runCores_current_eq u
-      (cancelBoundDonationOnCore_runCoresAgree hInv hStep)
-      (fun c => (cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb c hStep).2)
-  | donated _ _ =>
-    intro hStep
-    exact placedCoreOf?_congr_of_runCores_current_eq u
-      (cancelDonatedDonationOnCore_runCoresAgree hInv hStep)
-      (fun c => (cancelDonatedDonationOnCore_runQueue_current_eq st st' tid tcb c hStep).2)
 
 /-- The suspend's teardown leaves an active victim runnable: the cancellation
 makes it `.ready` (`cancelIpcBlocking_victim_ready`) and blocks or suspends no
@@ -1127,156 +1173,6 @@ theorem cancelIpcBlockingReclaimed_victim_runnable (st : SystemState) (v : SeLe4
   exact (SystemState.StateMono.of_agreeOffRunLinks
     (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks v tcbV st)).runnable
     ⟨z, by rw [cancelIpcBlockingMigrated_getTcb?]; exact hz, hzR, hzA⟩
-
-/-- **`v0.35.158` — the payoff: a `.tcbSuspend` of a client does not hand the
-server it called the CPU on nobody's budget.**
-
-`descheduleUnboundHolder_holder_unplaced` says the reclaim leaves the holder it
-unbound on no scheduler slot.  That is a statement about the state **G2**
-leaves, and the live `.tcbSuspend` runs six more stages after it — so until this
-theorem the user-visible guarantee would rest on
-`tests/SmpCancellationSuite.lean` §3.26 *measuring* the whole transition rather
-than on a proof of it.  This is that lift, and it is a composition of frames
-rather than a new argument: the chain revert re-buckets inside the queue a
-thread already sits in, both donation arms wake and deschedule nothing, the
-placement removal is about the **victim**, the pending-state clear and the
-`.Inactive` write touch objects alone, and the scheduling point dispatches only
-a thread the executing core's run queue holds.
-
-**Three hypotheses are load-bearing rather than bookkeeping.**  `holder ≠ victim`
-is not assumed — it is `cancelUnboundHolder?_ne_victim`, structural in the
-trigger, which is what licenses G4 to leave the holder alone.  Single placement
-of the holder (`hUnique`) is what makes one removal a removal from *every* core;
-the scheduler maintains it by construction (`enqueueRunnableOnCore`'s global
-guard, dequeue-on-dispatch, `currentThreadUniqueAcrossCores`), and the statement
-takes the fact rather than a bundle that entails it, so a caller holding only the
-scheduler invariant can discharge it.  And the run queues agree with the
-threads' links (`hR`, WS-ZA ZA4.5), carried through every stage
-(`SystemState.RunQueueStage`), because the chooser walks the links and its
-membership fact — the dispatched thread is *in* the queue, hence not the holder —
-is stated under the agreement; the object-store invariant rides beside it because
-each stage needs its predecessor's to state its own.  A scheduling point places a
-thread only by dispatching it, so the holder's TCB is never consulted. -/
-theorem suspendThreadOnCore_holder_unplaced
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi? : Option (CoreId × SgiKind)) (tcb : TCB) (holder : SeLe4n.ThreadId)
-    (hTcb : st.getTcb? vtid.val = some tcb)
-    (hW : cancelUnboundHolder? st (cancelIpcBlockingMigrated vtid.val tcb st)
-            vtid.val tcb = some holder)
-    (hUnique : ∀ c c' : CoreId,
-        (holder ∈ st.scheduler.runQueueOnCore c
-          ∨ st.scheduler.currentOnCore c = some holder) →
-        (holder ∈ st.scheduler.runQueueOnCore c'
-          ∨ st.scheduler.currentOnCore c' = some holder) →
-        c = c')
-    (hInv : st.objects.invExt) (hR : st.runQueueRefined)
-    (hStep : suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
-    threadPlacedOnSomeCore st' holder = false := by
-  have hNe : holder ≠ vtid.val :=
-    cancelUnboundHolder?_ne_victim st _ vtid.val tcb holder hW
-  -- Single placement transports across the migrated teardown, which writes no
-  -- run queue and no current slot.
-  have hUniqueM : ∀ c c' : CoreId,
-      ((cancelIpcBlockingMigrated vtid.val tcb st).queuedOn c holder = true
-        ∨ (cancelIpcBlockingMigrated vtid.val tcb st).scheduler.currentOnCore c
-            = some holder) →
-      ((cancelIpcBlockingMigrated vtid.val tcb st).queuedOn c' holder = true
-        ∨ (cancelIpcBlockingMigrated vtid.val tcb st).scheduler.currentOnCore c'
-            = some holder) →
-      c = c' := by
-    have hRM := ((cancelIpcBlockingMigrated_runQueueStage st vtid.val tcb).1 hInv hR).2
-    intro c c' hc hc'
-    replace hc := hc.imp_left (SystemState.mem_runQueueOnCore_of_queuedOn hRM)
-    replace hc' := hc'.imp_left (SystemState.mem_runQueueOnCore_of_queuedOn hRM)
-    rw [cancelIpcBlockingMigrated_runQueueOnCore, cancelIpcBlockingMigrated_currentOnCore,
-      cancelIpcBlocking_scheduler_eq] at hc hc'
-    exact hUnique c c' hc hc'
-  -- G2 — the reclaim, where the deschedule's payoff lands.
-  have hP1 : threadPlacedOnSomeCore (cancelIpcBlockingReclaimed vtid.val tcb st) holder
-      = false := by
-    rw [threadPlacedOnSomeCore_eq_isSome_placedCoreOf?]
-    unfold cancelIpcBlockingReclaimed
-    rw [descheduleUnboundHolder_holder_unplaced st _ vtid.val tcb holder hW hUniqueM]
-    rfl
-  -- The agreement, carried stage by stage to the scheduling point.
-  have hS1 := cancelIpcBlockingReclaimed_runQueueStage st vtid.val tcb
-  simp only [suspendThreadOnCore] at hStep
-  split at hStep
-  case h_2 => exact absurd hStep (by simp)
-  case h_1 tcb0 hTcb0 =>
-    obtain rfl : tcb = tcb0 := by rw [hTcb] at hTcb0; exact Option.some.inj hTcb0
-    split at hStep
-    case isTrue => exact absurd hStep (by simp)
-    case isFalse =>
-      -- G2b — the cross-core priority-inheritance revert.
-      have hP2 : threadPlacedOnSomeCore
-          (match PriorityInheritance.blockingServer st vtid.val with
-           | some serverId => (PriorityInheritance.propagatePipChainCrossCore
-               (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore).1
-           | none => cancelIpcBlockingReclaimed vtid.val tcb st) holder = false := by
-        cases PriorityInheritance.blockingServer st vtid.val with
-        | none => exact hP1
-        | some serverId =>
-            rw [propagatePipChainCrossCore_threadPlacedOnSomeCore _ _ _ _ _ (hS1.1 hInv hR).1]
-            exact hP1
-      have hS2 : SystemState.RunQueueStage st
-          (match PriorityInheritance.blockingServer st vtid.val with
-           | some serverId => (PriorityInheritance.propagatePipChainCrossCore
-               (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore).1
-           | none => cancelIpcBlockingReclaimed vtid.val tcb st) := by
-        cases PriorityInheritance.blockingServer st vtid.val with
-        | none => exact hS1
-        | some serverId =>
-            exact hS1.trans (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
-      -- G3 onwards, on the post-revert state.
-      revert hStep
-      split
-      · intro hStep; exact absurd hStep (by simp)
-      · next s3 hDon =>
-        intro hStep
-        -- G3 — the donation arm.
-        have hP3 : threadPlacedOnSomeCore s3 holder = false := by
-          rw [cancelSuspendDonation_threadPlacedOnSomeCore _ s3 vtid.val _ holder (hS2.1 hInv hR).1 hDon]
-          exact hP2
-        have hS3 := hS2.trans (cancelSuspendDonation_runQueueStage _ s3 vtid.val _ hDon)
-        -- G4 — the placement removal, which is about the VICTIM.
-        have hP4 : threadPlacedOnSomeCore
-            (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) holder = false := by
-          rw [descheduleAt_threadPlacedOnSomeCore_ne s3 vtid.val holder _ hNe]; exact hP3
-        have hS4 := hS3.trans (descheduleAt_runQueueStage s3 vtid.val (placedCoreOf? st vtid.val))
-        -- G5 / G6 — two object writes, both scheduler-free.
-        have hP6 : threadPlacedOnSomeCore
-            ((Lifecycle.Suspend.clearPendingState
-              (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) vtid.val).updateTcb
-                vtid.val (fun t => { t with threadState := .Inactive })) holder = false := by
-          have hInv4 := (hS4.1 hInv hR).1
-          rw [threadPlacedOnSomeCore_updateTcb _ _ _ (fun t => { t with threadState := .Inactive })
-              (fun _ => rfl)
-              (by unfold Lifecycle.Suspend.clearPendingState
-                  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv4),
-            Lifecycle.Suspend.clearPendingState,
-            threadPlacedOnSomeCore_updateTcb _ _ _ (fun tcb => { tcb with
-              pendingMessage := none, timeoutBudget := none, queuePrevCode := 0,
-              queueNextCode := 0, queuePPrevCode := 0 }) (fun _ => rfl) hInv4]
-          exact hP4
-        have hS6 : SystemState.RunQueueLinkStage st
-            ((clearPendingStateValid (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val))
-              vtid).updateTcb vtid.val (fun t => { t with threadState := .Inactive })) :=
-          (hS4.1.trans (by
-            unfold clearPendingStateValid clearPendingState
-            exact SystemState.RunQueueLinkStage.updateTcb _ vtid.val (fun _ _ => rfl))).trans
-          (SystemState.RunQueueLinkStage.updateTcb _ vtid.val (fun _ _ => rfl))
-        -- G6b — the yield-link cancel, which writes no placement.
-        have hInv6 := (hS6 hInv hR).1
-        have hP6b : threadPlacedOnSomeCore (cancelYieldTo
-            ((clearPendingStateValid (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val))
-              vtid).updateTcb vtid.val (fun t => { t with threadState := .Inactive })) vtid.val)
-            holder = false := by
-          rw [cancelYieldTo_threadPlacedOnSomeCore _ _ _ hInv6]; exact hP6
-        have hS6b := hS6.trans (SystemState.cancelYieldTo_runQueueStage _ vtid.val).1
-        -- G7 — the local scheduling point.
-        exact suspendRescheduleOnCore_preserves_unplaced _ st' _ executingCore
-          _ _ sgi? holder (hS6b hInv hR).1 ((hS6b hInv hR).2 executingCore) hStep hP6b
 
 end SuspendPayoff
 

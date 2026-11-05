@@ -58,18 +58,18 @@ theorem loanWriteOff.of_storeObject {c : SeLe4n.ThreadId} {st st' : SystemState}
 
 /-- **The splice keeps every stack head**: it rewrites replies alone, the frame
 above the cut keeping its upward link and the frame below moving from one frame
-link to another (`spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink`). -/
-theorem loanWrite.of_spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
-    (hInv : st.objects.invExt) : loanWrite st (spliceReplyFrameOutOrSelf st rid) := by
+link to another (`cutReplyFrameOutOrSelf_preserves_reply_caller_and_headLink`). -/
+theorem loanWrite.of_cutReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) : loanWrite st (cutReplyFrameOutOrSelf st rid) := by
   intro oid
-  rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hInv oid with e | ⟨r, r', hr, hr', -⟩
+  rcases cutReplyFrameOutOrSelf_objects_rewrite st rid hInv oid with e | ⟨r, r', hr, hr', -⟩
   · exact Or.inl e
   · refine Or.inr ⟨.reply r, .reply r', hr, hr', fun _ e => (by cases e), fun r0 s e hn => ?_⟩
     cases e
-    have hq : (spliceReplyFrameOutOrSelf st rid).getReply? ⟨oid.val⟩ = some r' := by
+    have hq : (cutReplyFrameOutOrSelf st rid).getReply? ⟨oid.val⟩ = some r' := by
       rw [SystemState.getReply?_eq_some_iff]; exact hr'
     obtain ⟨rp, hp, -, hN⟩ :=
-      spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink st rid hInv _ r' hq
+      cutReplyFrameOutOrSelf_preserves_reply_caller_and_headLink st rid hInv _ r' hq
     rw [SystemState.getReply?_eq_some_iff,
       show (⟨oid.val⟩ : SeLe4n.ReplyId).toObjId = oid from rfl, hr] at hp
     cases hp
@@ -77,13 +77,13 @@ theorem loanWrite.of_spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.
     · exact ⟨r', rfl, e.trans hn⟩
     · rw [hn] at ha; cases ha
 
-/-- ...and so does a thread's frame spliced off its stack. -/
-theorem loanWrite.of_spliceThreadReplyFrameOut (st : SystemState) (t : TCB)
-    (hInv : st.objects.invExt) : loanWrite st (spliceThreadReplyFrameOut st t) := by
-  unfold spliceThreadReplyFrameOut
+/-- ...and so does a thread's frame cut off its stack. -/
+theorem loanWrite.of_cutThreadReplyFrameOut (st : SystemState) (t : TCB)
+    (hInv : st.objects.invExt) : loanWrite st (cutThreadReplyFrameOut st t) := by
+  unfold cutThreadReplyFrameOut
   cases t.replyObject with
   | none => exact .refl st
-  | some rid => exact loanWrite.of_spliceReplyFrameOutOrSelf st rid hInv
+  | some rid => exact loanWrite.of_cutReplyFrameOutOrSelf st rid hInv
 
 /-- **The consume lets go of the caller's reply link alone**: the reply's
 consumed record keeps a stack head's link (`Reply.consumed`), and the caller's
@@ -477,9 +477,9 @@ theorem finaliseReplyStep_keepsLentContextHeads {s : SystemState} {x : SeLe4n.Ob
   have hCancel : loanWriteOff c (Lifecycle.Suspend.returnDonationToCancelledCaller s c t)
       (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
     rw [cancelIpcBlocking_replyArm_unfold s c t hB]
-    have f1 := loanWrite.of_spliceThreadReplyFrameOut _ t i0
-    have i1 := (FinaliseFrameAny.spliceThreadReplyFrameOut _ t i0).invExt
-    generalize spliceThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller s c t)
+    have f1 := loanWrite.of_cutThreadReplyFrameOut _ t i0
+    have i1 := (FinaliseFrameAny.cutThreadReplyFrameOut _ t i0).invExt
+    generalize cutThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller s c t)
       t = s1 at f1 i1
     have F2 : FinaliseFrame s1 (Lifecycle.Suspend.restoreToReadyCancelled s1 c) := by
       unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging

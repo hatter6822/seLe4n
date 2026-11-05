@@ -129,6 +129,86 @@ instance : BEq ReplenishmentEntry where
 -- Z1-F: SchedContext structure (core)
 -- ============================================================================
 
+/-- WS-OD (`v0.35.4`): **the upward link of a reply-stack frame** — seL4's
+`replyNext`, a `call_stack_t` whose `isHead` bit says whether the pointer names
+the frame pushed above this one or the scheduling context whose stack this frame
+heads.  A sum type rather than two fields, so "head", "has a frame above" and
+"off every stack" (`none`) are three states of one value and no object can claim
+two of them at once.
+
+Only the head carries the context.  That is the whole point of the encoding: a
+frame taken out of the middle of a stack repairs its two neighbours and nothing
+else (`cutReplyFrameOut` above the cut, `Reply.consumed` at the frame
+itself), where a per-frame context field would have to be
+cleared on every frame below the cut — an `O(depth)` walk, or, left undone, a
+frame that names a context forever and can never be retyped or linked again. -/
+inductive ReplyStackLink where
+  /-- The frame pushed **above** this one on the same stack. -/
+  | frame (above : SeLe4n.ReplyId)
+  /-- This frame **heads** the stack of the named scheduling context. -/
+  | head (sc : SeLe4n.SchedContextId)
+deriving DecidableEq, Repr, Inhabited
+
+namespace ReplyStackLink
+
+/-- The reply id a `.frame` link names, if it is one. -/
+@[inline] def frame? : ReplyStackLink → Option SeLe4n.ReplyId
+  | .frame above => some above
+  | .head _ => none
+
+/-- The scheduling context a `.head` link names, if it is one. -/
+@[inline] def head? : ReplyStackLink → Option SeLe4n.SchedContextId
+  | .frame _ => none
+  | .head sc => some sc
+
+@[simp] theorem frame?_frame (above : SeLe4n.ReplyId) :
+    (ReplyStackLink.frame above).frame? = some above := rfl
+@[simp] theorem frame?_head (sc : SeLe4n.SchedContextId) :
+    (ReplyStackLink.head sc).frame? = none := rfl
+@[simp] theorem head?_frame (above : SeLe4n.ReplyId) :
+    (ReplyStackLink.frame above).head? = none := rfl
+@[simp] theorem head?_head (sc : SeLe4n.SchedContextId) :
+    (ReplyStackLink.head sc).head? = some sc := rfl
+
+/-- WS-ZA ZA6.33: `some (.head sc)`, as the cell `c` when it already holds it
+(`SchedContext.headLinkCell`), read without building the link it is compared
+with. -/
+@[inline] def reuseHead (c : Option ReplyStackLink) (sc : SeLe4n.SchedContextId) :
+    Option ReplyStackLink :=
+  match c with
+  | some (.head s) => if s = sc then c else some (.head sc)
+  | _ => some (.head sc)
+
+@[simp] theorem reuseHead_eq (c : Option ReplyStackLink) (sc : SeLe4n.SchedContextId) :
+    reuseHead c sc = some (.head sc) := by
+  unfold reuseHead
+  split
+  · next s =>
+    by_cases h : s = sc
+    · simp only [h, ↓reduceIte]
+    · simp only [h, ↓reduceIte]
+  · rfl
+
+/-- WS-ZA ZA6.33: `some (.frame r)`, as the cell `c` when it already holds it
+(`Reply.frameLinkCell`), read without building the link it is compared with. -/
+@[inline] def reuseFrame (c : Option ReplyStackLink) (r : SeLe4n.ReplyId) :
+    Option ReplyStackLink :=
+  match c with
+  | some (.frame x) => if x = r then c else some (.frame r)
+  | _ => some (.frame r)
+
+@[simp] theorem reuseFrame_eq (c : Option ReplyStackLink) (r : SeLe4n.ReplyId) :
+    reuseFrame c r = some (.frame r) := by
+  unfold reuseFrame
+  split
+  · next x =>
+    by_cases h : x = r
+    · simp only [h, ↓reduceIte]
+    · simp only [h, ↓reduceIte]
+  · rfl
+
+end ReplyStackLink
+
 /-- First-class scheduling context object for CBS scheduling.
 
 - `budget`: configured CBS budget — the amount replenished each period.
@@ -277,6 +357,13 @@ structure SchedContext where
       (`SystemState.yieldLinksAgree`).  A plain number in the context's own
       slot, as `boundThreadCode` holds a binding.  Outside the refill view. -/
   yieldFromCode : Nat := 0
+  /-- WS-ZA ZA6.33: **the head link a donation push writes** into the frame it
+      pushes, `some (.head scId)`, built once with the context so the push
+      shares it (`SeLe4n.reuseSome`) rather than building two cells on every
+      donating call.  Read by the compiled push alone; no specification reads
+      it. -/
+  headLinkCell : Option ReplyStackLink := some (.head scId)
+  headLinkCell_eq : headLinkCell = some (.head scId) := by rfl
 deriving Repr
 
 /-- WS-ZA ZA5.2: the thread this context is bound to, read from its code.
@@ -387,8 +474,9 @@ list. -/
     (budgetRemaining : Budget) (periodStart : Nat) (boundThreadCode : Nat)
     (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
     (isActive : Bool) (releaseNextCode : Nat)
-    (releaseCoreCode : Nat) (releaseAt : Nat) (consumed : Nat) (yieldFromCode : Nat) :
-    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed yieldFromCode).replenishments = sc.replenishments := rfl
+    (releaseCoreCode : Nat) (releaseAt : Nat) (consumed : Nat) (yieldFromCode : Nat)
+    (headLinkCell : Option ReplyStackLink) (hHead : headLinkCell = some (.head scId)) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed yieldFromCode headLinkCell hHead).replenishments = sc.replenishments := rfl
 
 /-- WS-ZA ZA6.3: a context with a first entry reads it first. -/
 @[simp] theorem SchedContext.replenishments_of_present {sc : SchedContext}

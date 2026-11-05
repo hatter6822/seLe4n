@@ -35,7 +35,10 @@ open SeLe4n.Model
 
 /-- WS-ZA ZA6.4: the fields of a context its refill invariants read — the
 budget, the period, the remaining budget and period start, the refills, and
-whether a thread is bound — with every other field erased. -/
+the thread bound to it — with every other field erased.  WS-ZA ZA6.33: the
+bound thread is kept whole rather than as a bit, because the refill rule
+exempts a context whose holder is suspended (`releaseNoRefillStranded`), so it
+reads which thread that is. -/
 def SchedContext.refillView (sc : SchedContext) : SchedContext :=
   { scId := ⟨0⟩
     budget := sc.budget
@@ -63,7 +66,7 @@ def SchedContext.refillView (sc : SchedContext) : SchedContext :=
     refillSlot6EligibleAt := sc.refillSlot6EligibleAt
     refillSlot7Amount := sc.refillSlot7Amount
     refillSlot7EligibleAt := sc.refillSlot7EligibleAt
-    boundThreadCode := min sc.boundThreadCode 1 }
+    boundThreadCode := sc.boundThreadCode }
 
 /-- WS-ZA ZA6.4: a context the retype creates is well formed: no budget, no
 refills, the default period. -/
@@ -84,13 +87,13 @@ theorem schedContextWellFormed_refillView (sc : SchedContext) :
 theorem SchedContext.releaseKey?_refillView (sc : SchedContext) :
     sc.refillView.releaseKey? = sc.releaseKey? := rfl
 
+/-- The thread bound reads the refill view. -/
+theorem SchedContext.boundThread_refillView (sc : SchedContext) :
+    sc.refillView.boundThread = sc.boundThread := rfl
+
 /-- Whether a thread is bound reads the refill view. -/
 theorem SchedContext.boundThread_isSome_refillView (sc : SchedContext) :
-    sc.refillView.boundThread.isSome = sc.boundThread.isSome := by
-  unfold SchedContext.refillView SchedContext.boundThread
-  rcases sc.boundThreadCode with _ | k
-  · rfl
-  · simp [SeLe4n.ThreadId.ofOptCode]
+    sc.refillView.boundThread.isSome = sc.boundThread.isSome := rfl
 
 /-- A context's place while bound reads the refill view. -/
 theorem SchedContext.boundReleaseKey?_refillView (sc : SchedContext) :
@@ -119,10 +122,34 @@ theorem SchedContext.chargeBudget_refillView (sc : SchedContext) (start usage no
       (((sc.refillUnblockCheck start).refillBudgetCheck usage).releaseReadyHead now).refillView :=
   rfl
 
-/-- A slot's refill view: a context's, none for any other object or an empty
-slot. -/
+/-- WS-ZA ZA6.33: what the refill invariants read of a thread: whether it is
+suspended — nothing for a suspended thread, a fixed marker for any other.  The
+marker's identifier is `1`, and every context's refill view has identifier `0`,
+so a thread's view is never a context's (`tcbRefillView_ne_refillView`). -/
+def tcbRefillView (t : TCB) : Option SchedContext :=
+  if t.threadState = .Inactive then none else some (SchedContext.empty ⟨1⟩)
+
+/-- A thread's view is never a context's. -/
+theorem tcbRefillView_ne_refillView (t : TCB) (sc : SchedContext) :
+    tcbRefillView t ≠ some sc.refillView := by
+  unfold tcbRefillView
+  split
+  · exact fun h => by cases h
+  · intro h
+    have := congrArg (Option.map SchedContext.scId) h
+    simp [SchedContext.empty, SchedContext.refillView] at this
+
+/-- A thread's view is some exactly when it is not suspended. -/
+theorem tcbRefillView_isSome (t : TCB) :
+    (tcbRefillView t).isSome = (t.threadState != .Inactive) := by
+  unfold tcbRefillView
+  by_cases h : t.threadState = .Inactive <;> simp [h]
+
+/-- A slot's refill view: a context's, a thread's (`tcbRefillView`), none for
+any other object or an empty slot. -/
 def objRefillView : Option KernelObject → Option SchedContext
   | some (.schedContext sc) => some sc.refillView
+  | some (.tcb t) => tcbRefillView t
   | _ => none
 
 /-- WS-ZA ZA6.4 (moved below the scheduler's bundle, which reads it): every
@@ -139,12 +166,13 @@ def RefillViewsKept (st' st : SystemState) : Prop :=
   ∀ (k : SeLe4n.ObjId) (v : SchedContext),
     objRefillView st'.objects[k]? = some v → objRefillView st.objects[k]? = some v
 
-/-- A slot's view is its context's, read by the context's identifier. -/
+/-- A slot's view is its context's, or its thread's, read by the identifiers. -/
 theorem objRefillView_eq_getSchedContext? (st : SystemState) (k : SeLe4n.ObjId) :
     objRefillView st.objects[k]? =
-      (st.getSchedContext? (SeLe4n.SchedContextId.ofObjId k)).map SchedContext.refillView := by
-  unfold SystemState.getSchedContext?
-  rw [SeLe4n.SchedContextId.toObjId_ofObjId]
+      ((st.getSchedContext? (SeLe4n.SchedContextId.ofObjId k)).map SchedContext.refillView).orElse
+        fun _ => (st.getTcb? (SeLe4n.ThreadId.ofObjId k)).bind tcbRefillView := by
+  unfold SystemState.getSchedContext? SystemState.getTcb?
+  rw [SeLe4n.SchedContextId.toObjId_ofObjId, SeLe4n.ThreadId.toObjId_ofObjId]
   rcases st.objects[k]? with _ | o
   · rfl
   · cases o <;> rfl
@@ -158,6 +186,65 @@ theorem objRefillView_addConsumed (sc : SchedContext) (t : Nat) :
 theorem objRefillView_updateConsumed (sc : SchedContext) :
     objRefillView (some (.schedContext sc.updateConsumed)) =
       objRefillView (some (.schedContext sc)) := rfl
+
+/-- WS-ZA ZA6.33: **no thread becomes unsuspended** between two states: every
+thread not suspended in `st'` was a thread not suspended in `st`. -/
+def ActiveBackward (st' st : SystemState) : Prop :=
+  ∀ (t : SeLe4n.ThreadId) (x : TCB), st'.getTcb? t = some x → x.threadState ≠ .Inactive →
+    ∃ y, st.getTcb? t = some y ∧ y.threadState ≠ .Inactive
+
+/-- A context keeping its view keeps its holder unsuspended, read backward,
+across a step that unsuspends no thread. -/
+theorem SystemState.holderActive_of_backward {st st' : SystemState} (h : ActiveBackward st' st)
+    {a b : SchedContext} (hv : b.refillView = a.refillView)
+    (hA : st'.holderActive a = true) : st.holderActive b = true := by
+  have hb : b.boundThread = a.boundThread := by
+    rw [← SchedContext.boundThread_refillView b, hv, SchedContext.boundThread_refillView]
+  revert hA
+  show (match a.boundThread with
+      | some t => (st'.getTcb? t).any fun x => x.threadState != .Inactive
+      | none => false) = true →
+    (match b.boundThread with
+      | some t => (st.getTcb? t).any fun x => x.threadState != .Inactive
+      | none => false) = true
+  rw [hb]
+  generalize a.boundThread = o
+  cases o with
+  | none => intro h; cases h
+  | some t =>
+    intro hA
+    dsimp only at hA ⊢
+    cases ex : st'.getTcb? t with
+    | none => rw [ex] at hA; cases hA
+    | some x =>
+      rw [ex] at hA
+      have hxA : x.threadState ≠ .Inactive := by simpa using hA
+      obtain ⟨y, hy, hyA⟩ := h t x ex hxA
+      simp only [hy, Option.any_some]
+      simpa using hyA
+
+/-- ...and its held place. -/
+theorem SystemState.heldReleaseKey?_of_backward {st st' : SystemState} (h : ActiveBackward st' st)
+    {a b : SchedContext} (hv : b.refillView = a.refillView) {t : Nat}
+    (hk : st'.heldReleaseKey? a = some t) : st.heldReleaseKey? b = some t := by
+  unfold SystemState.heldReleaseKey? at hk ⊢
+  split at hk
+  · rw [if_pos (SystemState.holderActive_of_backward h hv ‹_›), ← SchedContext.releaseKey?_refillView,
+      hv, SchedContext.releaseKey?_refillView]
+    exact hk
+  · cases hk
+
+/-- Two states with the same threads unsuspend none. -/
+theorem ActiveBackward.of_getTcb? {st st' : SystemState} (h : ∀ t, st'.getTcb? t = st.getTcb? t) :
+    ActiveBackward st' st := fun t x hx hA => ⟨x, by rw [← h t]; exact hx, hA⟩
+
+theorem ActiveBackward.refl (st : SystemState) : ActiveBackward st st :=
+  fun _ x hx hA => ⟨x, hx, hA⟩
+
+theorem ActiveBackward.trans {a b d : SystemState} (h₁ : ActiveBackward a b)
+    (h₂ : ActiveBackward b d) : ActiveBackward a d := fun t x hx hA => by
+  obtain ⟨y, hy, hyA⟩ := h₁ t x hx hA
+  exact h₂ t y hy hyA
 
 namespace RefillViewsKept
 
@@ -174,16 +261,61 @@ theorem of_eq {st st' : SystemState}
 theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
     RefillViewsKept st' st := .of_eq fun k => by rw [h]
 
-/-- Two states whose every context reads alike in view keep the views. -/
+/-- Two states whose every context reads alike in view, and every thread alike
+in its suspension, keep the views. -/
 theorem of_getSchedContext? {st st' : SystemState}
     (h : ∀ s, (st'.getSchedContext? s).map SchedContext.refillView =
-      (st.getSchedContext? s).map SchedContext.refillView) : RefillViewsKept st' st :=
-  .of_eq fun k => by rw [objRefillView_eq_getSchedContext?, objRefillView_eq_getSchedContext?]; exact h _
+      (st.getSchedContext? s).map SchedContext.refillView)
+    (hT : ∀ t, (st'.getTcb? t).bind tcbRefillView = (st.getTcb? t).bind tcbRefillView) :
+    RefillViewsKept st' st :=
+  .of_eq fun k => by
+    rw [objRefillView_eq_getSchedContext?, objRefillView_eq_getSchedContext?, h, hT]
 
-/-- Two states whose every context reads alike keep the views. -/
+/-- Two states whose every context reads alike in view, with every thread not
+suspended after not suspended before, keep the views. -/
+theorem of_getSchedContext?_le {st st' : SystemState}
+    (h : ∀ s, (st'.getSchedContext? s).map SchedContext.refillView =
+      (st.getSchedContext? s).map SchedContext.refillView)
+    (hT : ∀ t v, (st'.getTcb? t).bind tcbRefillView = some v →
+      (st.getTcb? t).bind tcbRefillView = some v) :
+    RefillViewsKept st' st := fun k v hk => by
+  rw [objRefillView_eq_getSchedContext?] at hk ⊢
+  rw [h] at hk
+  cases e : (st.getSchedContext? (SeLe4n.SchedContextId.ofObjId k)).map SchedContext.refillView with
+  | some w => rw [e] at hk; exact hk
+  | none => rw [e] at hk; exact hT _ v hk
+
+/-- WS-ZA ZA6.33: **a thread write that unsuspends no thread keeps the views**:
+it writes a thread, which holds no context, and a thread not suspended after it
+was not suspended before. -/
+theorem updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt)
+    (hA : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
+    RefillViewsKept (st.updateTcb tid f) st :=
+  .of_getSchedContext?_le (fun s => by rw [SystemState.updateTcb_getSchedContext? st tid f hInv])
+    (fun t v hv => by
+      by_cases ht : tid.toObjId = t.toObjId
+      · have := SeLe4n.ThreadId.toObjId_injective _ _ ht
+        subst this
+        rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv] at hv
+        cases e : st.getTcb? tid with
+        | none => rw [e] at hv; cases hv
+        | some x =>
+          rw [e] at hv
+          simp only [Option.map_some, Option.bind_some] at hv ⊢
+          unfold tcbRefillView at hv ⊢
+          split at hv
+          · cases hv
+          · rw [if_neg (hA x ‹_›)]; exact hv
+      · rwa [SystemState.updateTcb_getTcb?_ne _ _ _ hInv _ ht] at hv)
+
+/-- Two states whose every context and every thread reads alike keep the views. -/
 theorem of_getSchedContext?_eq {st st' : SystemState}
-    (h : ∀ s, st'.getSchedContext? s = st.getSchedContext? s) : RefillViewsKept st' st :=
-  .of_getSchedContext? fun s => by rw [h s]
+    (h : ∀ s, st'.getSchedContext? s = st.getSchedContext? s)
+    (hT : ∀ t, (st'.getTcb? t).bind tcbRefillView = (st.getTcb? t).bind tcbRefillView) :
+    RefillViewsKept st' st :=
+  .of_getSchedContext? (fun s => by rw [h s]) hT
 
 /-- Two stores agreeing up to a rewrite that keeps every object's refill view
 keep the views. -/
@@ -222,14 +354,26 @@ theorem insert {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
 keeps the views. -/
 theorem of_schedContexts_backward {st st' : SystemState}
     (hB : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
-      st'.objects[oid]? = some (.schedContext sc) → st.objects[oid]? = some (.schedContext sc)) :
+      st'.objects[oid]? = some (.schedContext sc) → st.objects[oid]? = some (.schedContext sc))
+    (hT : ∀ (oid : SeLe4n.ObjId) (t : TCB), st'.objects[oid]? = some (.tcb t) →
+      t.threadState ≠ .Inactive →
+      ∃ t0, st.objects[oid]? = some (.tcb t0) ∧ t0.threadState ≠ .Inactive) :
     RefillViewsKept st' st := fun k v h => by
   revert h
   cases e : st'.objects[k]? with
   | none => intro h; cases h
   | some o =>
-    cases o <;> intro h <;> simp only [objRefillView, reduceCtorEq] at h
-    rw [hB k _ e]; exact h
+    cases o with
+    | schedContext sc => intro h; rw [hB k _ e]; exact h
+    | tcb t =>
+      intro h
+      have hA : t.threadState ≠ .Inactive := fun hI => by
+        simp only [objRefillView, tcbRefillView, hI, if_true] at h; cases h
+      obtain ⟨t0, h0, hA0⟩ := hT k t e hA
+      rw [h0]
+      simp only [objRefillView, tcbRefillView, if_neg hA, if_neg hA0] at h ⊢
+      exact h
+    | _ => intro h; simp only [objRefillView, reduceCtorEq] at h
 
 /-- A store whose object gives its slot's refill view keeps the views. -/
 theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
@@ -242,7 +386,8 @@ theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
 theorem mapSchedContextInPlace (st : SystemState) (s : SeLe4n.SchedContextId)
     (g : SchedContext → SchedContext) (hg : ∀ sc, (g sc).refillView = sc.refillView) :
     RefillViewsKept (st.mapSchedContextInPlace s g) st := by
-  refine .of_getSchedContext? fun y => ?_
+  refine .of_getSchedContext? (fun y => ?_)
+    (fun t => by rw [SystemState.mapSchedContextInPlace_getTcb?])
   by_cases hy : y = s
   · subst hy
     rw [SystemState.mapSchedContextInPlace_getSchedContext?_self, Option.map_map]
@@ -262,7 +407,10 @@ theorem getSchedContext? {st st' : SystemState} (h : RefillViewsKept st' st)
   revert e
   rcases st.objects[s.toObjId]? with _ | o
   · intro e; cases e
-  · cases o <;> intro e <;> simp only [objRefillView, reduceCtorEq, Option.some.injEq] at e
+  · cases o <;> intro e <;>
+      first
+        | exact absurd e (tcbRefillView_ne_refillView _ _)
+        | simp only [objRefillView, reduceCtorEq, Option.some.injEq] at e
     exact ⟨_, rfl, e⟩
 
 /-- A context update keeping the context's refill view keeps the views. -/
@@ -270,7 +418,8 @@ theorem updateSchedContext (st : SystemState) (s : SeLe4n.SchedContextId)
     (g : SchedContext → SchedContext) (hInv : st.objects.invExt)
     (hg : ∀ sc, (g sc).refillView = sc.refillView) :
     RefillViewsKept (st.updateSchedContext s g) st := by
-  refine .of_getSchedContext? fun y => ?_
+  refine .of_getSchedContext? (fun y => ?_)
+    (fun t => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])
   by_cases hy : s.toObjId = y.toObjId
   · have := SeLe4n.SchedContextId.toObjId_injective _ _ hy
     subst this
@@ -284,6 +433,44 @@ theorem updateSchedContext (st : SystemState) (s : SeLe4n.SchedContextId)
 theorem of_agreeOffReleaseLinks {st st' : SystemState}
     (h : SystemState.objectsAgreeOffReleaseLinks st' st) : RefillViewsKept st' st :=
   .of_map KernelObject.withoutRelease (fun o => by cases o <;> rfl) h
+
+/-- WS-ZA ZA6.33: **no thread becomes unsuspended**: a thread not suspended
+in the post-state was a thread not suspended in the pre-state. -/
+theorem activeBackward {st st' : SystemState} (h : RefillViewsKept st' st)
+    {t : SeLe4n.ThreadId} {x : TCB} (hx : st'.getTcb? t = some x)
+    (hA : x.threadState ≠ .Inactive) :
+    ∃ y, st.getTcb? t = some y ∧ y.threadState ≠ .Inactive := by
+  have e := h t.toObjId (SchedContext.empty ⟨1⟩) (by
+    rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hx]
+    simp only [objRefillView, tcbRefillView, if_neg hA])
+  unfold SystemState.getTcb?
+  revert e
+  rcases st.objects[t.toObjId]? with _ | o
+  · intro e; cases e
+  · cases o with
+    | tcb y =>
+      intro e
+      refine ⟨y, rfl, fun hI => ?_⟩
+      simp only [objRefillView, tcbRefillView, hI, if_true] at e; cases e
+    | schedContext sc =>
+      intro e
+      simp only [objRefillView, Option.some.injEq] at e
+      have := congrArg SchedContext.scId e
+      simp [SchedContext.empty, SchedContext.refillView] at this
+    | _ => intro e; simp only [objRefillView, reduceCtorEq] at e
+
+/-- ...so a context keeping its view keeps its holder unsuspended, read
+backward. -/
+theorem holderActive {st st' : SystemState} (h : RefillViewsKept st' st)
+    {a b : SchedContext} (hv : b.refillView = a.refillView)
+    (hA : st'.holderActive a = true) : st.holderActive b = true :=
+  SystemState.holderActive_of_backward (fun _ _ hx hA => h.activeBackward hx hA) hv hA
+
+/-- ...and its held place. -/
+theorem heldReleaseKey? {st st' : SystemState} (h : RefillViewsKept st' st)
+    {a b : SchedContext} (hv : b.refillView = a.refillView) {t : Nat}
+    (hk : st'.heldReleaseKey? a = some t) : st.heldReleaseKey? b = some t :=
+  SystemState.heldReleaseKey?_of_backward (fun _ _ hx hA => h.activeBackward hx hA) hv hk
 
 end RefillViewsKept
 
@@ -301,7 +488,10 @@ theorem schedContextsWellFormed_of_kept {st st' : SystemState} (hK : RefillViews
   revert e
   rcases hk : st.objects[oid]? with _ | o
   · intro e; cases e
-  · cases o <;> intro e <;> simp only [objRefillView, reduceCtorEq, Option.some.injEq] at e
+  · cases o <;> intro e <;>
+      first
+        | exact absurd e (tcbRefillView_ne_refillView _ _)
+        | simp only [objRefillView, reduceCtorEq, Option.some.injEq] at e
     rename_i sc₀
     rw [← schedContextWellFormed_refillView, ← e, schedContextWellFormed_refillView]
     exact h oid sc₀ hk
@@ -317,11 +507,8 @@ theorem releaseNoRefillStranded_of_kept {st st' : SystemState} (hK : RefillViews
   | some a =>
     rw [e'] at hk
     obtain ⟨b, hb, hv⟩ := hK.getSchedContext? e'
-    have hk' : (st.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t := by
-      rw [hb]
-      simp only [Option.bind_some] at hk ⊢
-      rw [← SchedContext.boundReleaseKey?_refillView, hv, SchedContext.boundReleaseKey?_refillView]
-      exact hk
+    have hk' : (st.getSchedContext? s).bind st.heldReleaseKey? = some t := by
+      rw [hb]; exact hK.heldReleaseKey? hv hk
     obtain ⟨c, hc⟩ := h s t hk'
     exact ⟨c, by rw [hQ c]; exact hc⟩
 
@@ -419,7 +606,7 @@ with the stages around it and is closed once at its end
 (`refillsSoundExcept_close`). -/
 def refillsSoundExcept (S : SeLe4n.SchedContextId → Prop) (st : SystemState) : Prop :=
   (∀ s sc, ¬ S s → st.getSchedContext? s = some sc → schedContextWellFormed sc) ∧
-  (∀ s t, ¬ S s → (st.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t →
+  (∀ s t, ¬ S s → (st.getSchedContext? s).bind st.heldReleaseKey? = some t →
     ∃ c, (s, t) ∈ (st.scheduler.replenishQueueOnCore c).entries) ∧
   (∀ c e, ¬ S e.1 → e ∈ (st.scheduler.replenishQueueOnCore c).entries →
     ∃ sc, st.getSchedContext? e.1 = some sc ∧ sc.boundThread.isSome = true)
@@ -451,7 +638,8 @@ def RefillsKeptOff (P : SeLe4n.SchedContextId → Prop) (st' st : SystemState) :
   (∀ s' a, ¬ P s' → st'.getSchedContext? s' = some a →
     ∃ b, st.getSchedContext? s' = some b ∧ b.refillView = a.refillView) ∧
   (∀ c e, ¬ P e.1 → (e ∈ (st'.scheduler.replenishQueueOnCore c).entries ↔
-    e ∈ (st.scheduler.replenishQueueOnCore c).entries))
+    e ∈ (st.scheduler.replenishQueueOnCore c).entries)) ∧
+  ActiveBackward st' st
 
 /-- **Keeping the contexts off `P` keeps the state sound off any `S ⊇ P`.** -/
 theorem refillsSoundExcept_of_keptOff {P S : SeLe4n.SchedContextId → Prop} {st st' : SystemState}
@@ -467,18 +655,14 @@ theorem refillsSoundExcept_of_keptOff {P S : SeLe4n.SchedContextId → Prop} {st
     | some a =>
       rw [e'] at hk
       obtain ⟨b, hb, hv⟩ := hK.1 s a (fun h => hs (hPS s h)) e'
-      have hk' : (st.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t := by
-        rw [hb]
-        simp only [Option.bind_some] at hk ⊢
-        rw [← SchedContext.boundReleaseKey?_refillView, hv,
-          SchedContext.boundReleaseKey?_refillView]
-        exact hk
+      have hk' : (st.getSchedContext? s).bind st.heldReleaseKey? = some t := by
+        rw [hb]; exact SystemState.heldReleaseKey?_of_backward hK.2.2 hv hk
       obtain ⟨c, hc⟩ := hN s t hs hk'
-      exact ⟨c, (hK.2 c (s, t) (fun h => hs (hPS s h))).mpr hc⟩
+      exact ⟨c, (hK.2.1 c (s, t) (fun h => hs (hPS s h))).mpr hc⟩
   · have hp : ¬ P e.1 := fun h => hs (hPS _ h)
     obtain ⟨a, ha⟩ := releaseQueueRefined_getSchedContext?_of_mem hR' he
     obtain ⟨b, hb, hv⟩ := hK.1 e.1 a hp ha
-    obtain ⟨sc, hsc, hbd⟩ := hQB c e hs ((hK.2 c e hp).mp he)
+    obtain ⟨sc, hsc, hbd⟩ := hQB c e hs ((hK.2.1 c e hp).mp he)
     rw [hb] at hsc; cases hsc
     refine ⟨a, ha, ?_⟩
     rw [← SchedContext.boundThread_isSome_refillView, ← hv,
@@ -491,7 +675,7 @@ sound off `S`. -/
 theorem refillsSoundExcept_close {S : SeLe4n.SchedContextId → Prop} {s : SeLe4n.SchedContextId}
     {st : SystemState} (h : st.refillsSoundExcept (fun x => S x ∨ x = s))
     (hWF : ∀ a, st.getSchedContext? s = some a → schedContextWellFormed a)
-    (hS : ∀ t, (st.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t →
+    (hS : ∀ t, (st.getSchedContext? s).bind st.heldReleaseKey? = some t →
       ∃ c, (s, t) ∈ (st.scheduler.replenishQueueOnCore c).entries)
     (hB : ∀ c e, e ∈ (st.scheduler.replenishQueueOnCore c).entries → e.1 = s →
       ∃ a, st.getSchedContext? e.1 = some a ∧ a.boundThread.isSome = true) :
@@ -507,10 +691,62 @@ theorem refillsSoundExcept_close {S : SeLe4n.SchedContextId → Prop} {s : SeLe4
     · exact hB c e he e'
     · exact h.2.2 c e (fun h' => h'.elim hx e') he
 
+/-- WS-ZA ZA6.33: a context's refills without its holder — its refill view
+with the bound thread erased.  A rebinding (the donation, the return) keeps
+it. -/
+def _root_.SeLe4n.Kernel.SchedContext.refillsView (sc : SchedContext) : SchedContext :=
+  { sc.refillView with boundThreadCode := 0 }
+
+theorem _root_.SeLe4n.Kernel.schedContextWellFormed_of_refillsView {a b : SchedContext}
+    (h : a.refillsView = b.refillsView) (hb : schedContextWellFormed b) :
+    schedContextWellFormed a := by
+  have e : schedContextWellFormed a.refillsView ↔ schedContextWellFormed a := Iff.rfl
+  have e' : schedContextWellFormed b.refillsView ↔ schedContextWellFormed b := Iff.rfl
+  exact e.mp (h ▸ e'.mpr hb)
+
+theorem _root_.SeLe4n.Kernel.SchedContext.releaseKey?_of_refillsView {a b : SchedContext}
+    (h : a.refillsView = b.refillsView) : a.releaseKey? = b.releaseKey? := by
+  have e : a.refillsView.releaseKey? = a.releaseKey? := rfl
+  have e' : b.refillsView.releaseKey? = b.releaseKey? := rfl
+  rw [← e, ← e', h]
+
+/-- **Closing a rebinding of `s`**: a step keeping every context off `s` and
+every queue's entries, which moves `s` to a holder that is not suspended only
+from a holder that was not either, keeping its refills and leaving it bound,
+keeps the state sound off every `S` (seL4's `schedContext_donate`, whose
+caller donates from a running or blocked thread). -/
+theorem refillsSoundExcept_rebind {S : SeLe4n.SchedContextId → Prop} {s : SeLe4n.SchedContextId}
+    {st st' : SystemState} {a b : SchedContext}
+    (hK : RefillsKeptOff (· = s) st' st) (hR' : st'.releaseQueueRefined)
+    (hQ : ∀ c, (st'.scheduler.replenishQueueOnCore c).entries =
+      (st.scheduler.replenishQueueOnCore c).entries)
+    (hA : st'.getSchedContext? s = some a) (hB : st.getSchedContext? s = some b)
+    (hv : a.refillsView = b.refillsView) (hBd : a.boundThread.isSome = true)
+    (hH : st'.holderActive a = true → st.holderActive b = true)
+    (h : st.refillsSoundExcept S) : st'.refillsSoundExcept S := by
+  by_cases hs : S s
+  · exact refillsSoundExcept_of_keptOff hK (fun x hx => hx ▸ hs) hR' h
+  refine refillsSoundExcept_close
+    (refillsSoundExcept_of_keptOff hK (fun x hx => Or.inr hx) hR' (h.mono fun x hx => Or.inl hx))
+    (fun a' ha' => ?_) (fun t ht => ?_) (fun c e _ he => ⟨a, he ▸ hA, hBd⟩)
+  · rw [hA] at ha'; cases ha'
+    exact schedContextWellFormed_of_refillsView hv (h.1 s b hs hB)
+  · rw [hA] at ht
+    simp only [Option.bind_some, SystemState.heldReleaseKey?] at ht
+    split at ht
+    · rename_i hAct
+      have hk : (st.getSchedContext? s).bind st.heldReleaseKey? = some t := by
+        rw [hB]
+        simp only [Option.bind_some, SystemState.heldReleaseKey?, hH hAct, if_true]
+        rw [← SchedContext.releaseKey?_of_refillsView hv]; exact ht
+      obtain ⟨c, hc⟩ := h.2.1 s t hs hk
+      exact ⟨c, by rw [hQ c]; exact hc⟩
+    · cases ht
+
 namespace RefillsKeptOff
 
 theorem refl (P : SeLe4n.SchedContextId → Prop) (st : SystemState) : RefillsKeptOff P st st :=
-  ⟨fun _ a _ h => ⟨a, h, rfl⟩, fun _ _ _ => Iff.rfl⟩
+  ⟨fun _ a _ h => ⟨a, h, rfl⟩, fun _ _ _ => Iff.rfl, .refl st⟩
 
 theorem trans {P : SeLe4n.SchedContextId → Prop} {a b d : SystemState}
     (h₁ : RefillsKeptOff P a b) (h₂ : RefillsKeptOff P b d) : RefillsKeptOff P a d :=
@@ -518,18 +754,20 @@ theorem trans {P : SeLe4n.SchedContextId → Prop} {a b d : SystemState}
     obtain ⟨y, hy, hv⟩ := h₁.1 s' x hs hx
     obtain ⟨z, hz, hv'⟩ := h₂.1 s' y hs hy
     exact ⟨z, hz, hv'.trans hv⟩,
-   fun c e he => (h₁.2 c e he).trans (h₂.2 c e he)⟩
+   fun c e he => (h₁.2.1 c e he).trans (h₂.2.1 c e he), h₁.2.2.trans h₂.2.2⟩
 
 theorem mono {P P' : SeLe4n.SchedContextId → Prop} {st st' : SystemState}
     (hP : ∀ x, P x → P' x) (h : RefillsKeptOff P st' st) : RefillsKeptOff P' st' st :=
-  ⟨fun s' a hs => h.1 s' a (fun h' => hs (hP s' h')), fun c e he => h.2 c e (fun h' => he (hP _ h'))⟩
+  ⟨fun s' a hs => h.1 s' a (fun h' => hs (hP s' h')), fun c e he => h.2.1 c e (fun h' => he (hP _ h')),
+    h.2.2⟩
 
 /-- A step keeping every refill view and every queue's entries. -/
 theorem of_kept {P : SeLe4n.SchedContextId → Prop} {st st' : SystemState}
     (hK : RefillViewsKept st' st)
     (hQ : ∀ c, (st'.scheduler.replenishQueueOnCore c).entries =
       (st.scheduler.replenishQueueOnCore c).entries) : RefillsKeptOff P st' st :=
-  ⟨fun _ _ _ ha => hK.getSchedContext? ha, fun c e _ => by rw [hQ c]⟩
+  ⟨fun _ _ _ ha => hK.getSchedContext? ha, fun c e _ => by rw [hQ c],
+    fun _ _ hx hA => hK.activeBackward hx hA⟩
 
 /-- A step keeping every refill view and the release-queue slots. -/
 theorem of_releaseSlots {P : SeLe4n.SchedContextId → Prop} {st st' : SystemState}
@@ -543,23 +781,53 @@ theorem of_releaseSlots {P : SeLe4n.SchedContextId → Prop} {st st' : SystemSta
 theorem of_insert {s : SeLe4n.SchedContextId} {st st' : SystemState} {o : KernelObject}
     (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert s.toObjId o)
     (hQ : ∀ c, (st'.scheduler.replenishQueueOnCore c).entries =
-      (st.scheduler.replenishQueueOnCore c).entries) :
+      (st.scheduler.replenishQueueOnCore c).entries)
+    (hT : ∀ x, o = .tcb x → x.threadState ≠ .Inactive →
+      ∃ y, st.objects[s.toObjId]? = some (.tcb y) ∧ y.threadState ≠ .Inactive := by
+      intro _ h; cases h) :
     RefillsKeptOff (· = s) st' st := by
-  refine ⟨fun s' a hs ha => ⟨a, ?_, rfl⟩, fun c e _ => by rw [hQ c]⟩
-  have hne : s'.toObjId ≠ s.toObjId := fun h => hs (SeLe4n.SchedContextId.toObjId_injective _ _ h)
-  rw [getSchedContext?_eq_some_iff] at ha ⊢
-  rw [hO] at ha
-  have e : (st.objects.insert s.toObjId o)[s'.toObjId]? = st.objects[s'.toObjId]? :=
-    RobinHood.RHTable.getElem?_insert_ne st.objects s.toObjId s'.toObjId o
-      (by intro h'; exact hne (eq_of_beq h').symm) hInv
-  rw [e] at ha; exact ha
+  refine ⟨fun s' a hs ha => ⟨a, ?g, rfl⟩, fun c e _ => by rw [hQ c], fun t x hx hA => ?a⟩
+  case a =>
+    rw [getTcb?_eq_some_iff] at hx
+    rw [hO] at hx
+    by_cases hk : t.toObjId = s.toObjId
+    · have e : (st.objects.insert s.toObjId o)[s.toObjId]? = some o :=
+        RobinHood.RHTable.getElem?_insert_self st.objects s.toObjId o hInv
+      rw [hk, e] at hx
+      cases hx
+      obtain ⟨y, hy, hyA⟩ := hT x rfl hA
+      exact ⟨y, by rw [getTcb?_eq_some_iff, hk]; exact hy, hyA⟩
+    · have e : (st.objects.insert s.toObjId o)[t.toObjId]? = st.objects[t.toObjId]? :=
+        RobinHood.RHTable.getElem?_insert_ne st.objects s.toObjId t.toObjId o
+          (by intro h'; exact hk (eq_of_beq h').symm) hInv
+      rw [e] at hx
+      exact ⟨x, (getTcb?_eq_some_iff _ _ _).mpr hx, hA⟩
+  case g =>
+    have hne : s'.toObjId ≠ s.toObjId := fun h => hs (SeLe4n.SchedContextId.toObjId_injective _ _ h)
+    rw [getSchedContext?_eq_some_iff] at ha ⊢
+    rw [hO] at ha
+    have e : (st.objects.insert s.toObjId o)[s'.toObjId]? = st.objects[s'.toObjId]? :=
+      RobinHood.RHTable.getElem?_insert_ne st.objects s.toObjId s'.toObjId o
+        (by intro h'; exact hne (eq_of_beq h').symm) hInv
+    rw [e] at ha; exact ha
+
+/-- A store to `s`'s slot. -/
+theorem storeObject {s : SeLe4n.SchedContextId} {st st' : SystemState} {o : KernelObject}
+    (hInv : st.objects.invExt) (hS : SeLe4n.Model.storeObject s.toObjId o st = .ok ((), st'))
+    (hT : ∀ x, o = .tcb x → x.threadState ≠ .Inactive →
+      ∃ y, st.objects[s.toObjId]? = some (.tcb y) ∧ y.threadState ≠ .Inactive := by
+      intro _ h; cases h) :
+    RefillsKeptOff (· = s) st' st := by
+  unfold SeLe4n.Model.storeObject at hS; cases hS
+  exact .of_insert hInv rfl (fun _ => rfl) hT
 
 /-- A context update of `s` alone, writing no queue. -/
 theorem updateSchedContext (st : SystemState) (s : SeLe4n.SchedContextId)
     (g : SchedContext → SchedContext) (hInv : st.objects.invExt) :
     RefillsKeptOff (· = s) (st.updateSchedContext s g) st := by
   refine ⟨fun s' a hs ha => ⟨a, ?_, rfl⟩, fun c e _ => by
-    rw [SystemState.updateSchedContext_scheduler]⟩
+    rw [SystemState.updateSchedContext_scheduler],
+    .of_getTcb? (SystemState.updateSchedContext_getTcb? _ _ _ hInv)⟩
   have hne : s.toObjId ≠ s'.toObjId := fun h =>
     hs (SeLe4n.SchedContextId.toObjId_injective _ _ h).symm
   rwa [SystemState.updateSchedContext_getSchedContext?_ne _ _ _ hInv _ hne] at ha
@@ -569,7 +837,8 @@ theorem of_releaseWrite {P : SeLe4n.SchedContextId → Prop} {st st' : SystemSta
     (hA : objectsAgreeOffReleaseLinks st' st)
     (hQ : ∀ c e, ¬ P e.1 → (e ∈ (st'.scheduler.replenishQueueOnCore c).entries ↔
       e ∈ (st.scheduler.replenishQueueOnCore c).entries)) : RefillsKeptOff P st' st :=
-  ⟨fun _ _ _ ha => (RefillViewsKept.of_agreeOffReleaseLinks hA).getSchedContext? ha, hQ⟩
+  ⟨fun _ _ _ ha => (RefillViewsKept.of_agreeOffReleaseLinks hA).getSchedContext? ha, hQ,
+    .of_getTcb? hA.getTcb?⟩
 
 end RefillsKeptOff
 
@@ -617,10 +886,12 @@ theorem refillsSoundExcept_close_unbound {S : SeLe4n.SchedContextId → Prop}
     | some a =>
       rw [e] at ht
       simp only [Option.bind_some] at ht
-      rw [← SchedContext.boundReleaseKey?_refillView, hView a e,
-        SchedContext.boundReleaseKey?_refillView] at ht
-      unfold SchedContext.boundReleaseKey? at ht
-      rw [hU] at ht; cases ht
+      have hU' : a.boundThread.isSome = false := by
+        rw [← SchedContext.boundThread_isSome_refillView, hView a e,
+          SchedContext.boundThread_isSome_refillView]; exact hU
+      have := SystemState.heldReleaseKey?_bound ht
+      unfold SchedContext.boundReleaseKey? at this
+      rw [hU'] at this; cases this
 
 /-- On refined queues, a context linked on no queue is named by no entry. -/
 theorem not_mem_entries_of_not_queued {st : SystemState} (hR : st.releaseQueueRefined)
@@ -693,7 +964,7 @@ theorem releasePlace_refillsSoundExcept {S : SeLe4n.SchedContextId → Prop} {st
       | some a =>
         rw [e'] at ht
         obtain ⟨b, hb, hv⟩ := hK.getSchedContext? e'
-        simp only [Option.bind_some, SchedContext.boundReleaseKey?] at ht
+        simp only [Option.bind_some, SystemState.heldReleaseKey?] at ht
         split at ht
         · refine releaseKeyOf_eq_some.mpr ⟨b, hb, ?_⟩
           rw [← SchedContext.releaseKey?_refillView, hv, SchedContext.releaseKey?_refillView]
@@ -756,7 +1027,7 @@ theorem releasePlace_close {S : SeLe4n.SchedContextId → Prop} {st : SystemStat
     | some a =>
       rw [e'] at ht
       obtain ⟨b, hb, hv⟩ := hK.getSchedContext? e'
-      simp only [Option.bind_some, SchedContext.boundReleaseKey?] at ht
+      simp only [Option.bind_some, SystemState.heldReleaseKey?] at ht
       split at ht
       · refine releaseKeyOf_eq_some.mpr ⟨b, hb, ?_⟩
         rw [← SchedContext.releaseKey?_refillView, hv, SchedContext.releaseKey?_refillView]
@@ -793,7 +1064,7 @@ theorem closePlace_facts {X Y : SystemState} {s : SeLe4n.SchedContextId} {u : Sc
       (∀ c e, e ∈ (X.scheduler.replenishQueueOnCore c).entries → e.1 = s →
         ∃ a, X.getSchedContext? e.1 = some a ∧ a.boundThread.isSome = true) := by
   have hNX : ∀ c e, e ∈ (X.scheduler.replenishQueueOnCore c).entries → e.1 ≠ s :=
-    fun c e he => hN c e ((hK.2 c e id).mp he)
+    fun c e he => hN c e ((hK.2.1 c e id).mp he)
   have hView : ∀ a, X.getSchedContext? s = some a → a.refillView = u.refillView := by
     intro a ha
     obtain ⟨b, hb, hv⟩ := hK.1 s a id ha
@@ -808,14 +1079,15 @@ theorem closePlace_facts {X Y : SystemState} {s : SeLe4n.SchedContextId} {u : Sc
 
 /-- **A release-only write that loses no entry and makes none up keeps the
 state sound off every `S`**: every context keeps its refill view, every entry
-is still on some core's queue unless its context is no longer bound and pending
-at its time, and every entry was on some core's queue before — a move between
-queues (the migration), or a removal of a context with nothing pending. -/
-theorem refillsSoundExcept_of_releaseMove {S : SeLe4n.SchedContextId → Prop}
+is still on some core's queue unless its context's held place
+(`heldReleaseKey?`) is not its time, and every entry was on some core's queue
+before — a move between queues (the migration), or a removal of a context with
+nothing pending or whose holder is suspended. -/
+theorem refillsSoundExcept_of_releaseMoveHeld {S : SeLe4n.SchedContextId → Prop}
     {st st' : SystemState} (hK : RefillViewsKept st' st)
     (hIn : ∀ c e, ¬ S e.1 → e ∈ (st.scheduler.replenishQueueOnCore c).entries →
       (∃ c', e ∈ (st'.scheduler.replenishQueueOnCore c').entries) ∨
-        (st.getSchedContext? e.1).bind SchedContext.boundReleaseKey? ≠ some e.2)
+        (st.getSchedContext? e.1).bind st.heldReleaseKey? ≠ some e.2)
     (hOut : ∀ c' e, e ∈ (st'.scheduler.replenishQueueOnCore c').entries →
       ∃ c, e ∈ (st.scheduler.replenishQueueOnCore c).entries)
     (hR' : st'.releaseQueueRefined) (h : st.refillsSoundExcept S) :
@@ -830,12 +1102,8 @@ theorem refillsSoundExcept_of_releaseMove {S : SeLe4n.SchedContextId → Prop}
     | some a =>
       rw [e'] at hk
       obtain ⟨b, hb, hv⟩ := hK.getSchedContext? e'
-      have hk' : (st.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t := by
-        rw [hb]
-        simp only [Option.bind_some] at hk ⊢
-        rw [← SchedContext.boundReleaseKey?_refillView, hv,
-          SchedContext.boundReleaseKey?_refillView]
-        exact hk
+      have hk' : (st.getSchedContext? s).bind st.heldReleaseKey? = some t := by
+        rw [hb]; exact hK.heldReleaseKey? hv hk
       obtain ⟨c, hc⟩ := hN s t hs hk'
       rcases hIn c (s, t) hs hc with h1 | h2
       · exact h1
@@ -849,6 +1117,20 @@ theorem refillsSoundExcept_of_releaseMove {S : SeLe4n.SchedContextId → Prop}
     rw [← SchedContext.boundThread_isSome_refillView, ← hv,
       SchedContext.boundThread_isSome_refillView]
     exact hbd
+
+/-- ...and so does one whose dropped entries name contexts with nothing pending
+while bound: a bound place is the only held one. -/
+theorem refillsSoundExcept_of_releaseMove {S : SeLe4n.SchedContextId → Prop}
+    {st st' : SystemState} (hK : RefillViewsKept st' st)
+    (hIn : ∀ c e, ¬ S e.1 → e ∈ (st.scheduler.replenishQueueOnCore c).entries →
+      (∃ c', e ∈ (st'.scheduler.replenishQueueOnCore c').entries) ∨
+        (st.getSchedContext? e.1).bind SchedContext.boundReleaseKey? ≠ some e.2)
+    (hOut : ∀ c' e, e ∈ (st'.scheduler.replenishQueueOnCore c').entries →
+      ∃ c, e ∈ (st.scheduler.replenishQueueOnCore c).entries)
+    (hR' : st'.releaseQueueRefined) (h : st.refillsSoundExcept S) :
+    st'.refillsSoundExcept S :=
+  refillsSoundExcept_of_releaseMoveHeld hK (fun c e hs he => (hIn c e hs he).imp id
+    fun h2 h3 => h2 (SystemState.bind_heldReleaseKey?_bound h3)) hOut hR' h
 
 /-- WS-ZA ZA6.4: **closing a write that leaves context `s` with no place**: a
 write to `s` that keeps every queue, leaves `s` well formed, holding budget in
@@ -866,7 +1148,7 @@ theorem refillsSoundExcept_close_keyless {S : SeLe4n.SchedContextId → Prop}
   refine refillsSoundExcept_close h (fun a' ha' => ?_) (fun t ht => ?_) (fun c e he hes => ?_)
   · rw [ha] at ha'; cases ha'; exact hWF
   · rw [ha] at ht
-    simp only [Option.bind_some, SchedContext.boundReleaseKey?, hK] at ht
+    simp only [Option.bind_some, SystemState.heldReleaseKey?, hK] at ht
     split at ht <;> cases ht
   · obtain ⟨sc0, h1, h2⟩ := h0.2.2 c e (by rw [hes]; exact hs) (by rw [← hQ c]; exact he)
     rw [hes] at h1 ⊢
@@ -904,7 +1186,8 @@ theorem refillsSound_of_empty {st : SystemState}
   | some sc =>
     rw [e] at hk
     have hb := (hW _ sc ((getSchedContext?_eq_some_iff _ _ _).mp e)).2
-    simp [SchedContext.boundReleaseKey?, hb] at hk
+    have := SystemState.heldReleaseKey?_bound hk
+    simp [SchedContext.boundReleaseKey?, hb] at this
 
 /-- The empty state is sound: it holds no context and queues nothing. -/
 theorem default_refillsSound : (default : SystemState).refillsSound :=
@@ -926,7 +1209,9 @@ theorem refillsSound_of_objects_scheduler_eq {st st' : SystemState}
   have hG : ∀ s, st'.getSchedContext? s = st.getSchedContext? s := fun s => by
     unfold getSchedContext?; rw [hO]
   refine ⟨fun oid sc e => hW oid sc (hO ▸ e), fun s t hk => ?_, fun c e he => ?_⟩
-  · rw [hG] at hk
+  · have hT : ∀ t, st'.getTcb? t = st.getTcb? t := fun t => by
+      unfold getTcb?; rw [hO]
+    rw [hG, funext (heldReleaseKey?_of_getTcb? hT)] at hk
     obtain ⟨c, hc⟩ := hN s t hk
     exact ⟨c, by rw [hS]; exact hc⟩
   · rw [hS] at he

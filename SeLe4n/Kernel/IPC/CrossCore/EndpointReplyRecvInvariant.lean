@@ -107,20 +107,20 @@ theorem replyRecvPopDonation_holder_eq_frameHead (rid : SeLe4n.ReplyId)
           exact hPair
 
 /-- **WS-RR RR8.12 Cut C2 (`v0.35.162`)**: a pop that hands a context back **is** the
-resolved return followed by the SM5.H migration between the holder's home and the
-recipient's, both read off the pop's own pre-state — the decomposition the
+resolved return followed by the settle of the returned context on the recipient's
+home (WS-ZA ZA6.33), read off the pop's own pre-state — the decomposition the
 scheduler-domain footprint's coverage theorem
 (`schedLockSet_endpointReplyRecvOnCore_covers_pop`) consumes.  The recipient is
 `replyDonationRecipient` (WS-HP HP10.7), the one answer to which thread receives the
-context, so the migration's destination and the footprint's cannot differ. -/
+context, so the settle's destination and the footprint's cannot differ. -/
 theorem replyRecvPopDonation_ok_some_decompose (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId) (st st' : SystemState)
     (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     (h : replyRecvPopDonation rid target st = .ok (some (scId, holder), st')) :
     ∃ st1', returnDonatedSchedContextResolved st holder scId
         (replyDonationRecipient st scId target) = .ok st1' ∧
-      st' = migrateSchedContextReplenishment st1' scId (determineTargetCore st holder)
-        (determineTargetCore st (replyDonationRecipient st scId target)) := by
+      st' = SchedContextOps.settleReturnedContext st1'
+        (determineTargetCore st (replyDonationRecipient st scId target)) scId := by
   have hHead := replyRecvPopDonation_holder_eq_frameHead rid target st st' scId holder h
   unfold replyRecvPopDonation at h
   rw [hHead] at h
@@ -181,11 +181,12 @@ owner).
 
 Two branches, both the pop's own.  A frame that heads no context returns nothing,
 so the pop is the identity; one that does is the resolved return — a store chain,
-so scheduler-silent — followed by the SM5.H migration between exactly the two cores
-`replyDonationReturnReplenishCores_of_head` names. -/
+so scheduler-silent, keeping every release link — followed by the settle, which
+writes exactly the cores `replyDonationReturnReplenishCores_of_head` names. -/
 theorem replyRecvPopDonation_replenishQueueOnCore_ne (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId) (st st' : SystemState)
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (c : Concurrency.CoreId)
+    (hObjInv : st.objects.invExt)
     (hne : c ∉ replyDonationReturnReplenishCores st rid target)
     (h : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
@@ -198,15 +199,15 @@ theorem replyRecvPopDonation_replenishQueueOnCore_ne (rid : SeLe4n.ReplyId)
     subst hRet
     have hHead := replyRecvPopDonation_holder_eq_frameHead rid target st st' scId holder h
     rw [replyDonationReturnReplenishCores_of_head st rid target scId holder hHead] at hne
-    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+    simp only [List.mem_append, List.mem_singleton, not_or] at hne
     obtain ⟨hFrom, hTo⟩ := hne
     obtain ⟨st1', hResolved, hEq⟩ :=
       replyRecvPopDonation_ok_some_decompose rid target st st' scId holder h
     obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hResolved
-    rw [hEq, migrateSchedContextReplenishment_replenishQueueOnCore_other st1' scId
-      (determineTargetCore st holder)
-      (determineTargetCore st (replyDonationRecipient st scId target)) c
-      (Ne.symm hFrom) (Ne.symm hTo),
+    have hP : c ∉ SchedContextOps.purgeReplenishCores st1' scId := by
+      rw [returnDonatedSchedContext_purgeReplenishCores hObjInv hPop]; exact hFrom
+    rw [hEq, SchedContextOps.settleReturnedContext_replenishQueueOnCore_ne st1'
+      (determineTargetCore st (replyDonationRecipient st scId target)) scId c hP hTo,
       returnDonatedSchedContext_scheduler_eq st st1' holder scId
         (replyDonationRecipient st scId target) newOwner? hPop]
     rfl
@@ -244,8 +245,7 @@ theorem replyRecvPopDonation_ok_none_frameHead (rid : SeLe4n.ReplyId) (target : 
           exact absurd (Prod.mk.inj (Except.ok.inj h)).1 (by simp)
 
 /-- **WS-RM (`v0.35.6`)**: the pop preserves object-store integrity — the return
-is a store chain over existing keys and the replenishment migration writes no
-object at all. -/
+is a store chain over existing keys and the settle writes release links alone. -/
 theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId)
     (st st' : SystemState) (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
@@ -275,12 +275,12 @@ theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
         | ok st1' =>
           rw [hRet] at hStep
           obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-          have hEq : migrateSchedContextReplenishment st1' oldScId
-              (determineTargetCore st holder)
-                (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
+          have hEq : SchedContextOps.settleReturnedContext st1'
+                (determineTargetCore st (replyDonationRecipient st oldScId target)) oldScId
+              = st' :=
             (by simpa using hStep : some (oldScId, holder) = returned? ∧ _).2
           rw [← hEq]
-          exact migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _
+          exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _
             (returnDonatedSchedContext_preserves_objects_invExt st st1' _ _ _ hObjInv n hPopN)
 
 /-- **WS-RR RR2.20 / WS-RM (`v0.35.6`): the pop restores replenish-queue affinity
@@ -289,13 +289,14 @@ consistency on every core.**
 The return rebinds the SchedContext from the recorded server to its original
 owner, and the SM5.H invariant `replenishQueueAffinityConsistentOnCore` says a
 context's CBS replenishments sit on its bound thread's home core — so the return
-falsifies it from the instant it commits unless the replenishment migrates with
-the binding, which is exactly what this step's second half does.  A same-core
-hand-off costs nothing (`migrateSchedContextReplenishment_noop`). -/
+falsifies it from the instant it commits unless the replenishment follows the
+binding, which is exactly what this step's second half does: the settle purges it
+off the core its link names and re-places it on the recipient's home (WS-ZA
+ZA6.33). -/
 theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
     (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) (st st' : SystemState)
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
-    (hObjInv : st.objects.invExt)
+    (hObjInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (h : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     replenishQueueAffinityConsistent_smp st' := by
@@ -326,14 +327,14 @@ theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
             rw [hRet] at h
             simp only [] at h
             obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-            have hEq : migrateSchedContextReplenishment st1' oldScId
-                (determineTargetCore st holder)
-                (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
+            have hEq : SchedContextOps.settleReturnedContext st1'
+                  (determineTargetCore st (replyDonationRecipient st oldScId target)) oldScId
+                = st' :=
               (by simpa using h : some (oldScId, holder) = returned? ∧ _).2
             rw [← hEq]
-            exact returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
-              st st1' holder oldScId (replyDonationRecipient st oldScId target) _ _
-              hObjInv hCons rfl rfl n hPopN
+            exact returnDonatedSchedContext_settle_preserves_replenishQueueAffinityConsistent_smp
+              st st1' holder oldScId (replyDonationRecipient st oldScId target) _
+              hObjInv hRef hCons rfl n hPopN
 
 /-- **WS-RR RR2.20 / WS-RM (`v0.35.6`): the post-receive half restores it too.**
 Its re-donation is the third live hand-off, and it migrates its own
@@ -462,22 +463,15 @@ inductive PerCoreDonationStep (st st' : SystemState) : Prop
       (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st')
   /-- The reply returns a donated SchedContext to the caller it answers.
 
-  **WS-HP HP4.4**: the two home hypotheses swap conditionality with the trigger
-  flip -- the answered caller is the operation's own argument and so the
-  *destination*, while the *source* is the holder the head-driven trigger
-  resolves.  See `applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp`
-  for why getting this backwards typechecks and migrates the wrong queue. -/
+  **WS-HP HP10.7**: the destination is the REDIRECTED recipient, so `hOwnerHome`
+  is quantified over the head-driven trigger's answer.  The settle (WS-ZA ZA6.33)
+  purges off the context's own link, so the source needs no hypothesis.  See
+  `applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp`. -/
   | reply (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
-      (holderHome ownerHome : Concurrency.CoreId)
-      (hHolderHome : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
-          determineTargetCore st holder = holderHome)
-      -- **WS-HP HP10.7**: the destination is the REDIRECTED recipient, so this is
-      -- quantified over the trigger's answer exactly as `hHolderHome` is.  HP4.3
-      -- made the two swap conditionality; the redirect makes both conditional,
-      -- because the thread that gains the reservation is no longer the argument.
+      (ownerHome : Concurrency.CoreId)
       (hOwnerHome : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
           determineTargetCore st (replyDonationRecipient st scId targetVtid.val) = ownerHome)
-      (hStep : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome
+      (hStep : applyReplyDonationOnCore st rid targetVtid ownerHome
           = .ok st')
   /-- `.replyRecv` returns the answered client's context before its receive leg.
 
@@ -509,16 +503,18 @@ bound threads are.**
 `replenishQueueAffinityConsistent_smp` says a SchedContext's CBS replenishments
 sit on its bound thread's home core.  A donation rebinds `boundThread`, so a
 cross-core hand-off falsifies it from the instant it commits unless the
-replenishment migrates with the binding — which is why every live path calls
-`migrateSchedContextReplenishment`, and why a same-core hand-off costs nothing
-(`migrateSchedContextReplenishment_noop`).
+replenishment follows the binding — which is why every live path moves it: the
+call-side hand-offs migrate it (`migrateSchedContextReplenishment`, a same-core
+hand-off costing nothing), and the reply-side returns settle it
+(`settleReturnedContext`, WS-ZA ZA6.33), which reads the release queues and so
+needs them refined.
 
 This is the catalogued statement over every path.  Its proof is the per-path
 theorems and nothing else: the aggregation is the content, since a reader
 looking for "the donation theorem" found several names and no claim about the
 family. -/
 theorem donation_perCore_consistent (st st' : SystemState)
-    (hObjInv : st.objects.invExt)
+    (hObjInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (hStep : PerCoreDonationStep st st') :
     replenishQueueAffinityConsistent_smp st' := by
@@ -526,13 +522,12 @@ theorem donation_perCore_consistent (st st' : SystemState)
   | call callerVtid receiverVtid donorHome doneeHome hDonorHome hDoneeHome h =>
       exact applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
         st st' callerVtid receiverVtid donorHome doneeHome hObjInv hCons hDonorHome hDoneeHome h
-  | reply rid targetVtid holderHome ownerHome hHolderHome hOwnerHome h =>
+  | reply rid targetVtid ownerHome hOwnerHome h =>
       exact applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
-        st st' rid targetVtid holderHome ownerHome hObjInv hCons hHolderHome
-        hOwnerHome h
+        st st' rid targetVtid ownerHome hObjInv hRef hCons hOwnerHome h
   | replyRecvPop rid target returned? h =>
       exact replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
-        rid target st st' returned? hObjInv hCons h
+        rid target st st' returned? hObjInv hRef hCons h
   | replyRecvPostReceive tid recordedServer nextThread serverCore returned? u h =>
       exact replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_smp
         tid recordedServer nextThread serverCore returned? st st' u hObjInv hCons h
@@ -653,12 +648,11 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
                     n
                     (donationReturnOuterValid_of_stackValid
                       (hStackValid oldScId holderV.val o) hResN) hRetV
-            -- The migration is invisible to every bundle reading.
-            have hInvM : ipcInvariantFull (migrateSchedContextReplenishment st1' oldScId
-                (determineTargetCore st holder)
-                (determineTargetCore st (replyDonationRecipient st oldScId target))) :=
+            -- The settle is invisible to every bundle reading.
+            have hInvM : ipcInvariantFull (SchedContextOps.settleReturnedContext st1'
+                (determineTargetCore st (replyDonationRecipient st oldScId target)) oldScId) :=
               ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
-                (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _)) hInv1'
+                (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ _ _)) hInv1'
             exact h.2 ▸ hInvM
 
 @[simp] theorem replyRecvPostPopState_eq_of_ok (rid : SeLe4n.ReplyId)
@@ -892,13 +886,13 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_receiveLeg
   exact Or.inr (Or.inl hc)
 
 /-- **WS-RR RR8.12 Cut C2 (coverage, the pop)**: the `.replyRecv` footprint covers the
-pop's migration footprint member for member — at the two cores the pop's migration
-is actually stated at (`replyRecvPopDonation_ok_some_decompose`, read through the
-frame the pop resolves, `replyRecvPopDonation_holder_eq_frameHead`), on the reply
-leg's post-state, which is the state the pop runs on.  A `withLockSet` bracket over this
-footprint therefore holds both slots the pop migrates between.  Conditioned on the
-pop having handed a context back, because that is the only shape on which there is
-a migration to cover. -/
+replenish-queue write lock of every core the pop's settle writes (WS-ZA ZA6.33) —
+the purge's core and the recipient's home, `replyDonationReturnReplenishCores` at
+the frame the pop resolves (`replyRecvPopDonation_holder_eq_frameHead`), on the
+reply leg's post-state, which is the state the pop runs on.  A `withLockSet`
+bracket over this footprint therefore holds every slot the settle writes.
+Conditioned on the pop having handed a context back, because that is the only
+shape on which there is a settle to cover. -/
 theorem schedLockSet_endpointReplyRecvOnCore_covers_pop
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
@@ -907,21 +901,16 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_pop
     (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (some (scId, holder), st1p)) :
-    ∀ p ∈ migrateSchedContextReplenishmentLockSet (determineTargetCore st1 holder)
-             (determineTargetCore st1 (replyDonationRecipient st1 scId prevCaller)),
-      p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
+    ∀ c ∈ replyDonationReturnReplenishCores st1 replyId prevCaller,
+      (LockKey.replenishQueue c, Concurrency.AccessMode.write)
+        ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
             receiverCspaceRoot receiverSlotBase executingCore st := by
-  intro p hp
-  simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil,
-    or_false] at hp
+  intro c hc
   have hSeg := replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg
     receiverCspaceRoot receiverSlotBase executingCore st st1 st1p sgi _ hReply hPop
-  have hPair := replyDonationReturnReplenishCores_of_head st1 replyId prevCaller scId holder
-    (replyRecvPopDonation_holder_eq_frameHead replyId prevCaller st1 st1p scId holder hPop)
-  rcases hp with h | h <;> subst h <;>
-  · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
-    rw [hSeg, hPair]
-    simp
+  refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
+  rw [hSeg]
+  exact List.mem_append_left _ hc
 
 /-- **WS-RR RR8.12 Cut C2 (coverage, the block path)**: on a receive leg that blocks
 holding a loan, the footprint covers the pre-receive return's migration footprint
@@ -1389,7 +1378,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
             have hR1p : st1p.scheduler.replenishQueueOnCore c
                 = st1.scheduler.replenishQueueOnCore c :=
               replyRecvPopDonation_replenishQueueOnCore_ne replyId prevCaller st1 st1p returned? c
-                hnePop hPop
+                hInv1 hnePop hPop
             have hR2 : st2.scheduler.replenishQueueOnCore c
                 = st1p.scheduler.replenishQueueOnCore c :=
               endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne endpointId receiver

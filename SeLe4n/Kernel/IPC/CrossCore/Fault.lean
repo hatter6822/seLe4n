@@ -1181,7 +1181,7 @@ outcomes — a restart writes a register context and an abandon deschedules — 
 the whole claim is the dispatch's own `_ne` frame at the empty message. -/
 theorem faultReplyOnCore_replenishQueueOnCore_ne (replier faulted : SeLe4n.ThreadId)
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (executingCore : CoreId)
-    (st : SystemState) (c : CoreId)
+    (st : SystemState) (c : CoreId) (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointReplyDispatchReplenishCores replier faulted IpcMessage.empty
       executingCore st) :
     (faultReplyOnCore replier faulted mi regs executingCore
@@ -1203,7 +1203,7 @@ theorem faultReplyOnCore_replenishQueueOnCore_ne (replier faulted : SeLe4n.Threa
         | ok sgi? =>
           simp only [faultReplyApplyOnCore_replenishQueueOnCore]
           have h0 := endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne replier faulted
-            IpcMessage.empty executingCore st c hne
+            IpcMessage.empty executingCore st c hObjInv hne
           rw [hDisp] at h0
           exact h0
 
@@ -1219,6 +1219,7 @@ branch at `msg`, with the delivered-message staging writing registers only. -/
 theorem replyTransferOnCore_replenishQueueOnCore_ne (replier callerTid : SeLe4n.ThreadId)
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
     (executingCore : CoreId) (st stOut : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
     (hne : c ∉ replyTransferReplenishCores replier callerTid msg executingCore st)
     (hStep : replyTransferOnCore replier callerTid mi regs msg executingCore st
       = .ok ((), stOut)) :
@@ -1234,7 +1235,7 @@ theorem replyTransferOnCore_replenishQueueOnCore_ne (replier callerTid : SeLe4n.
       | ok _ =>
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
         have h0 := faultReplyOnCore_replenishQueueOnCore_ne replier callerTid mi regs
-          executingCore st c hne
+          executingCore st c hObjInv hne
         rw [hFR] at h0
         rw [← hStep.2]
         exact h0
@@ -1248,7 +1249,7 @@ theorem replyTransferOnCore_replenishQueueOnCore_ne (replier callerTid : SeLe4n.
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
         rw [← hStep.2, Architecture.stageDeliveredMessage_scheduler_eq]
         have h0 := endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne replier callerTid msg
-          executingCore st c hne
+          executingCore st c hObjInv hne
         rw [hDisp] at h0
         exact h0
 

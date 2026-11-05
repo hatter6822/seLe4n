@@ -3019,7 +3019,7 @@ a thread is owed a scheduling context by the pop that reaches its frame.
 link was reachable before the chain invariant refused it
 (`donationChainWellFormed.nextLinkReciprocal`), and the test stays fail-closed on
 a state the invariant does not hold of: the splice's below side *degenerates* to
-the sever when the frame below does not reciprocate (`spliceFrameBelow?` answers
+the sever when the frame below does not reciprocate (`cutFrameBelow?` answers
 `none`), and the sever left the frame below the cut with an upward link nothing
 answered — under
 `severAtCut`, live until WS-HP HP6.8, cancelling the middle caller of `B → M → H`
@@ -3031,7 +3031,7 @@ context above answers this frame.
 
 That is the same question `donationChainWalk` validates on the way down — a link
 is validated by the target's own upward link, never by its `caller`, because a
-re-linked Reply carries no answer back — and the one `spliceReplyFrameOut`
+re-linked Reply carries no answer back — and the one `cutReplyFrameOut`
 checks before it writes.  Asking it one step is **exact** rather than
 approximate: under `donationChainWellFormed`, `prevLinkReciprocal` and
 `headTerminates` make a reciprocated link a link to a frame that is itself on the
@@ -3044,7 +3044,7 @@ question of the reservation's recorded origin (`donationOriginRebindable`) and
 the endpoint operations cannot import the SchedContext module.  Its `.head` arm
 is `replyFrameHeadContext?`'s own reciprocity test (defined further down, where the
 reply-stack resolvers live; `replyFrameOnLiveStack_of_head` beside it is the tie),
-and its `.frame` arm is the reciprocity `spliceFrameBelow?` checks before it writes.
+and its `.frame` arm is the reciprocity `cutFrameBelow?` checks before it writes.
 It sits here, ahead of `donationOriginRebindable`, because that guard reads it. -/
 def replyFrameOnLiveStack (st : SystemState) (tcb : TCB) : Bool :=
   match tcb.replyObject with
@@ -3375,7 +3375,7 @@ linked it was the second `.ok none` state — a cancelled middle caller's frame,
 which nothing could then remove — and the pop bound the target outright with
 that dead frame still heading the context, pinning both objects against every
 retype.  The removal is carried out by the *splice* at the cancellation
-(`spliceReplyFrameOut` — `severAtCut` until WS-HP HP6.8, `spliceOutTheCut` since
+(`cutReplyFrameOut` — `severAtCut` until WS-HP HP6.8, `spliceOutTheCut` since
 `v0.35.45`), so a linked frame always has a blocked caller (`Reply.wellFormed`); a frame that validates and has none
 is an invariant violation and is refused on the same fail-closed terms as a link
 that does not validate.
@@ -3511,7 +3511,7 @@ resolver answer `none`, and the pop bound the target outright with that dead
 frame still heading the stack: the `severAtCut` policy implemented by *leaving a
 frame behind*, which pinned the frame's Reply object and the context forever
 (neither could be retyped, the Reply could never be linked again).  The removal
-is implemented by the splice (`spliceReplyFrameOut`; the policy it carries out was
+is implemented by the splice (`cutReplyFrameOut`; the policy it carries out was
 `severAtCut` until WS-HP HP6.8 and is `spliceOutTheCut` since `v0.35.45`), which
 takes the cancelled frame off the stack at the cancellation, so a linked frame
 always has a blocked caller (`Reply.wellFormed`).  A frame that validates and has
@@ -4746,15 +4746,15 @@ the cut frame (`b.next = some (.frame rid)`).
 
 **Four arms decline, and declining is not a refusal.**  That is the plan's
 finding 2, and it is load-bearing rather than a convenience.
-`spliceReplyFrameOutOrSelf` folds a *refusal* to the identity, and its whole
+`cutReplyFrameOutOrSelf` folds a *refusal* to the identity, and its whole
 soundness argument is that a refusal means nothing links down to the cut frame,
 so the `consumeCallerReply` that follows breaks no reciprocity
-(`spliceReplyFrameOutOrSelf_unreferenced`).  A below-side **refusal** folded to
+(`cutReplyFrameOutOrSelf_unreferenced`).  A below-side **refusal** folded to
 the identity would leave a reciprocating frame above still naming the cut frame
 while the caller clears its links — the wedge WS-RM exists to prevent.  So the
 below side answers an `Option`: not named, naming the frame above, not resolving,
 or not reciprocating all mean *not followed*, the removal degenerates to
-`severAtCut` there (`spliceReplyFrameOut_eq_sever_of_no_frame_below`), and this
+`severAtCut` there (`cutReplyFrameOut_eq_sever_of_no_frame_below`), and this
 operation's refusal set is therefore **exactly** the sever's — every refusal
 theorem carries verbatim.
 
@@ -4770,15 +4770,15 @@ frame — a self-referential frame no walk can leave.  Declining there severs, w
 is what the pre-WS-HP kernel produced.  Under `donationChainWellFormed` the arm is
 unreachable (it entails a two-frame cycle), so nothing this kernel reaches takes
 it; checking it is what makes the splice branch's **pairwise** distinctness of its
-three written keys a theorem (`spliceFrameBelow?_ne_above`,
-`spliceFrameBelow?_ne_cut`, `spliceFrameBelow?_above_ne_cut`) rather than an
+three written keys a theorem (`cutFrameBelow?_ne_above`,
+`cutFrameBelow?_ne_cut`, `cutFrameBelow?_above_ne_cut`) rather than an
 invariant obligation on every caller.
 
 The cut frame's record is an **argument** rather than re-read from `st`: the one
 caller has already resolved it and read the `next` that named `above`, so reading
 it again would answer one question twice and give the two answers a way to
 disagree. -/
-def spliceFrameBelow? (st : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
+def cutFrameBelow? (st : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
     (above : SeLe4n.ReplyId) : Option (SeLe4n.ReplyId × Reply) :=
   match r.prev with
   | none => none
@@ -4792,11 +4792,11 @@ def spliceFrameBelow? (st : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
 /-- **WS-HP HP6.3: the resolver, characterised** — a `some` answer is the cut
 frame's own `prev`, distinct from the frame above, resolving, and reciprocating.
 The four facts the splice's algebra reads; nothing else may be assumed of it. -/
-theorem spliceFrameBelow?_eq_some {st : SystemState} {rid above below : SeLe4n.ReplyId}
-    {r b : Reply} (h : spliceFrameBelow? st rid r above = some (below, b)) :
+theorem cutFrameBelow?_eq_some {st : SystemState} {rid above below : SeLe4n.ReplyId}
+    {r b : Reply} (h : cutFrameBelow? st rid r above = some (below, b)) :
     r.prev = some below ∧ below ≠ above ∧ st.getReply? below = some b ∧
       b.next = some (.frame rid) := by
-  unfold spliceFrameBelow? at h
+  unfold cutFrameBelow? at h
   revert h
   cases hP : r.prev with
   | none => intro h; cases h
@@ -4821,19 +4821,19 @@ theorem spliceFrameBelow?_eq_some {st : SystemState} {rid above below : SeLe4n.R
           exact ⟨rfl, by simpa using hE, hB, by simpa using hN⟩
 
 /-- The frame below is not the frame above — the explicit check, read back. -/
-theorem spliceFrameBelow?_ne_above {st : SystemState} {rid above below : SeLe4n.ReplyId}
-    {r b : Reply} (h : spliceFrameBelow? st rid r above = some (below, b)) :
-    below ≠ above := (spliceFrameBelow?_eq_some h).2.1
+theorem cutFrameBelow?_ne_above {st : SystemState} {rid above below : SeLe4n.ReplyId}
+    {r b : Reply} (h : cutFrameBelow? st rid r above = some (below, b)) :
+    below ≠ above := (cutFrameBelow?_eq_some h).2.1
 
 /-- **The frame below is not the cut frame itself**, and that is derived rather
 than checked: the frame below reciprocates (`b.next = some (.frame rid)`) while
 the cut frame's `next` names `above`, so `below = rid` would force `above = rid`
 and hence `above = below`, which the check refuses. -/
-theorem spliceFrameBelow?_ne_cut {st : SystemState} {rid above below : SeLe4n.ReplyId}
+theorem cutFrameBelow?_ne_cut {st : SystemState} {rid above below : SeLe4n.ReplyId}
     {r b : Reply} (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
-    (h : spliceFrameBelow? st rid r above = some (below, b)) :
+    (h : cutFrameBelow? st rid r above = some (below, b)) :
     below ≠ rid := by
-  obtain ⟨_, hNe, hB, hBN⟩ := spliceFrameBelow?_eq_some h
+  obtain ⟨_, hNe, hB, hBN⟩ := cutFrameBelow?_eq_some h
   intro hEq
   subst hEq
   rw [hR] at hB
@@ -4845,12 +4845,12 @@ theorem spliceFrameBelow?_ne_cut {st : SystemState} {rid above below : SeLe4n.Re
 the frame below *is* the frame above, which the check refuses.  With the two
 lemmas above, the three keys the splice writes are pairwise distinct, which is
 what lets its post-state be read off key by key. -/
-theorem spliceFrameBelow?_above_ne_cut {st : SystemState} {rid above below : SeLe4n.ReplyId}
+theorem cutFrameBelow?_above_ne_cut {st : SystemState} {rid above below : SeLe4n.ReplyId}
     {r a b : Reply} (hR : st.getReply? rid = some r) (hA : st.getReply? above = some a)
     (hP : a.prev = some rid)
-    (h : spliceFrameBelow? st rid r above = some (below, b)) :
+    (h : cutFrameBelow? st rid r above = some (below, b)) :
     above ≠ rid := by
-  obtain ⟨hPrev, hNe, _, _⟩ := spliceFrameBelow?_eq_some h
+  obtain ⟨hPrev, hNe, _, _⟩ := cutFrameBelow?_eq_some h
   intro hEq
   subst hEq
   rw [hR] at hA
@@ -4861,7 +4861,7 @@ theorem spliceFrameBelow?_above_ne_cut {st : SystemState} {rid above below : SeL
 there is nothing to splice to, three where there is.
 
 Composed rather than split into named operations, and that is the plan's
-finding 3: 47 sites in the tree destructure `spliceReplyFrameOut_cases`, 37 of
+finding 3: 47 sites in the tree destructure `cutReplyFrameOut_cases`, 37 of
 them in this module, so a per-store case analysis would change the pattern at all
 47 where a composed step leaves the arity alone and proves the multi-store
 analysis **once**, here.
@@ -4893,14 +4893,14 @@ of both reply footprints (`replyId`) and of the cancellation footprint
 (`consumedReplyId`).
 
 `b` is read from the **pre**-state and stored after the first store, and `r` after
-the last, which is sound because `spliceFrameBelow?` and the frame above's own
+the last, which is sound because `cutFrameBelow?` and the frame above's own
 validation establish that the keys are pairwise distinct
-(`spliceReplyFrameStores_splice_values`).  Re-reading either from an intermediate
+(`cutReplyFrameStores_break_values`).  Re-reading either from an intermediate
 state would answer one question twice and give the two answers a way to
 disagree. -/
-def spliceReplyFrameStores (st : SystemState) (rid above : SeLe4n.ReplyId)
+def cutReplyFrameStores (st : SystemState) (rid above : SeLe4n.ReplyId)
     (r a : Reply) : Except KernelError SystemState :=
-  match spliceFrameBelow? st rid r above with
+  match cutFrameBelow? st rid r above with
   | none =>
     match storeObject above.toObjId (.reply (a.unlinkedFrom rid)) st with
     | .error e => .error e
@@ -4909,10 +4909,10 @@ def spliceReplyFrameStores (st : SystemState) (rid above : SeLe4n.ReplyId)
       | .error e => .error e
       | .ok ((), st') => .ok st'
   | some (below, b) =>
-    match storeObject above.toObjId (.reply { a with prev := some below }) st with
+    match storeObject above.toObjId (.reply (a.unlinkedFrom rid)) st with
     | .error e => .error e
     | .ok ((), s1) =>
-      match storeObject below.toObjId (.reply { b with next := some (.frame above) }) s1 with
+      match storeObject below.toObjId (.reply { b with next := none }) s1 with
       | .error e => .error e
       | .ok ((), s2) =>
         match storeObject rid.toObjId (.reply { r with prev := none, next := none }) s2 with
@@ -4921,25 +4921,25 @@ def spliceReplyFrameStores (st : SystemState) (rid above : SeLe4n.ReplyId)
 
 /-- **WS-HP HP6.3: the composed step, decomposed** — either nothing below to
 splice to and the single sever store, or the reciprocal pair and the cut frame's
-own unlink, in order.  Every `spliceReplyFrameStores_*` fact below is a two-way
+own unlink, in order.  Every `cutReplyFrameStores_*` fact below is a two-way
 split on this, which is why none of the 47 sites that destructure the removal has
 to know how many stores there are. -/
-theorem spliceReplyFrameStores_cases {st st' : SystemState} {rid above : SeLe4n.ReplyId}
-    {r a : Reply} (h : spliceReplyFrameStores st rid above r a = .ok st') :
-    (∃ s1 : SystemState, spliceFrameBelow? st rid r above = none ∧
+theorem cutReplyFrameStores_cases {st st' : SystemState} {rid above : SeLe4n.ReplyId}
+    {r a : Reply} (h : cutReplyFrameStores st rid above r a = .ok st') :
+    (∃ s1 : SystemState, cutFrameBelow? st rid r above = none ∧
         storeObject above.toObjId (.reply (a.unlinkedFrom rid)) st = .ok ((), s1) ∧
         storeObject rid.toObjId (.reply { r with prev := none, next := none }) s1
           = .ok ((), st')) ∨
       ∃ (below : SeLe4n.ReplyId) (b : Reply) (s1 s2 : SystemState),
-        spliceFrameBelow? st rid r above = some (below, b) ∧
-        storeObject above.toObjId (.reply { a with prev := some below }) st = .ok ((), s1) ∧
-        storeObject below.toObjId (.reply { b with next := some (.frame above) }) s1
+        cutFrameBelow? st rid r above = some (below, b) ∧
+        storeObject above.toObjId (.reply (a.unlinkedFrom rid)) st = .ok ((), s1) ∧
+        storeObject below.toObjId (.reply { b with next := none }) s1
           = .ok ((), s2) ∧
         storeObject rid.toObjId (.reply { r with prev := none, next := none }) s2
           = .ok ((), st') := by
-  unfold spliceReplyFrameStores at h
+  unfold cutReplyFrameStores at h
   revert h
-  cases hBelow : spliceFrameBelow? st rid r above with
+  cases hBelow : cutFrameBelow? st rid r above with
   | none =>
     simp only []
     cases hS : storeObject above.toObjId (.reply (a.unlinkedFrom rid)) st with
@@ -4956,13 +4956,13 @@ theorem spliceReplyFrameStores_cases {st st' : SystemState} {rid above : SeLe4n.
   | some pair =>
     obtain ⟨below, b⟩ := pair
     simp only []
-    cases hS1 : storeObject above.toObjId (.reply { a with prev := some below }) st with
+    cases hS1 : storeObject above.toObjId (.reply (a.unlinkedFrom rid)) st with
     | error _ => intro h; cases h
     | ok pr1 =>
       obtain ⟨u1, s1⟩ := pr1; cases u1
       simp only []
       cases hS2 : storeObject below.toObjId
-          (.reply { b with next := some (.frame above) }) s1 with
+          (.reply { b with next := none }) s1 with
       | error _ => intro h; cases h
       | ok pr2 =>
         obtain ⟨u2, s2⟩ := pr2; cases u2
@@ -4973,15 +4973,15 @@ theorem spliceReplyFrameStores_cases {st st' : SystemState} {rid above : SeLe4n.
         | ok pr3 =>
           obtain ⟨u3, s3⟩ := pr3; cases u3
           intro h; cases h
-          exact Or.inr ⟨below, b, s1, s2, rfl, hS1, hS2, hS3⟩
+          exact Or.inr ⟨below, b, s1, s2, rfl, (by first | exact hS1 | rfl), hS2, hS3⟩
 
 /-- **WS-HP HP6.4: the composed step is total** — `storeObject` never fails, so
 the removal's only refusals are the two the frame **above** can produce, which is
 what makes this operation's refusal set exactly the sever's. -/
-theorem spliceReplyFrameStores_isOk (st : SystemState) (rid above : SeLe4n.ReplyId)
-    (r a : Reply) : ∃ st', spliceReplyFrameStores st rid above r a = .ok st' := by
-  unfold spliceReplyFrameStores storeObject
-  cases spliceFrameBelow? st rid r above with
+theorem cutReplyFrameStores_isOk (st : SystemState) (rid above : SeLe4n.ReplyId)
+    (r a : Reply) : ∃ st', cutReplyFrameStores st rid above r a = .ok st' := by
+  unfold cutReplyFrameStores storeObject
+  cases cutFrameBelow? st rid r above with
   | none => exact ⟨_, rfl⟩
   | some pair => obtain ⟨below, b⟩ := pair; exact ⟨_, rfl⟩
 
@@ -4989,12 +4989,12 @@ theorem spliceReplyFrameStores_isOk (st : SystemState) (rid above : SeLe4n.Reply
 -- WS-HP HP6.4: the composed store step's read/write algebra
 -- ----------------------------------------------------------------------------
 --
--- Every entry below is a two-way split on `spliceFrameBelow?` and then one or
+-- Every entry below is a two-way split on `cutFrameBelow?` and then one or
 -- three `storeObject` facts, and all of them are corollaries of the first two:
 -- the removal writes Replies and nothing else, so a consumer that reads a TCB, an
 -- endpoint, a notification or a SchedContext sees nothing, and a consumer that
 -- reads a Reply sees at most its stack links moved.  That is what keeps the
--- eighteen `spliceReplyFrameOut_*` statements below — and the projection and
+-- eighteen `cutReplyFrameOut_*` statements below — and the projection and
 -- `ipcInvariantFull` surfaces outside this module — one-symbol repairs rather
 -- than fresh case analyses over three stores.
 
@@ -5002,24 +5002,24 @@ theorem spliceReplyFrameStores_isOk (st : SystemState) (rid above : SeLe4n.Reply
 written keys are pairwise distinct — the frame above, the frame below, and the cut
 frame — so each holds exactly what its own store wrote and every other key is
 untouched.  The master fact of this section; the general frame below reads it. -/
-theorem spliceReplyFrameStores_splice_values {st st' : SystemState}
+theorem cutReplyFrameStores_break_values {st st' : SystemState}
     {rid above below : SeLe4n.ReplyId} {r a b : Reply} (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid)
-    (hBelow : spliceFrameBelow? st rid r above = some (below, b))
-    (h : spliceReplyFrameStores st rid above r a = .ok st') :
-    st'.getReply? above = some { a with prev := some below } ∧
-      st'.getReply? below = some { b with next := some (.frame above) } ∧
+    (hBelow : cutFrameBelow? st rid r above = some (below, b))
+    (h : cutReplyFrameStores st rid above r a = .ok st') :
+    st'.getReply? above = some (a.unlinkedFrom rid) ∧
+      st'.getReply? below = some { b with next := none } ∧
       st'.getReply? rid = some { r with prev := none, next := none } ∧
       ∀ k : SeLe4n.ObjId, k ≠ above.toObjId → k ≠ below.toObjId → k ≠ rid.toObjId →
         st'.objects[k]? = st.objects[k]? := by
-  rcases spliceReplyFrameStores_cases h with ⟨_, hNone, _⟩ | ⟨below', b', s1, s2, hB', hS1, hS2, hS3⟩
+  rcases cutReplyFrameStores_cases h with ⟨_, hNone, _⟩ | ⟨below', b', s1, s2, hB', hS1, hS2, hS3⟩
   · rw [hNone] at hBelow; cases hBelow
   · rw [hBelow, Option.some.injEq, Prod.mk.injEq] at hB'
     obtain ⟨rfl, rfl⟩ := hB'
-    have hNeBA : below ≠ above := spliceFrameBelow?_ne_above hBelow
-    have hNeBR : below ≠ rid := spliceFrameBelow?_ne_cut hR hN hBelow
-    have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP hBelow
+    have hNeBA : below ≠ above := cutFrameBelow?_ne_above hBelow
+    have hNeBR : below ≠ rid := cutFrameBelow?_ne_cut hR hN hBelow
+    have hNeAR : above ≠ rid := cutFrameBelow?_above_ne_cut hR hA hP hBelow
     have hAB : above.toObjId ≠ below.toObjId :=
       fun hx => hNeBA (SeLe4n.ReplyId.toObjId_injective _ _ hx).symm
     have hAR : above.toObjId ≠ rid.toObjId :=
@@ -5048,15 +5048,15 @@ to, so the frame above loses its `prev` and the cut frame loses both links.  The
 cut frame is written last, so it holds its cleared record even where the frame
 above *is* the cut frame (a frame linked to itself, which no clause of the chain
 invariant refuses); every other key is untouched. -/
-theorem spliceReplyFrameStores_sever_values {st st' : SystemState}
+theorem cutReplyFrameStores_sever_values {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
-    (hBelow : spliceFrameBelow? st rid r above = none)
-    (h : spliceReplyFrameStores st rid above r a = .ok st') :
+    (hBelow : cutFrameBelow? st rid r above = none)
+    (h : cutReplyFrameStores st rid above r a = .ok st') :
     st'.getReply? rid = some { r with prev := none, next := none } ∧
       (above ≠ rid → st'.getReply? above = some (a.unlinkedFrom rid)) ∧
       ∀ k : SeLe4n.ObjId, k ≠ above.toObjId → k ≠ rid.toObjId →
         st'.objects[k]? = st.objects[k]? := by
-  rcases spliceReplyFrameStores_cases h with ⟨s1, _, hS1, hS2⟩ | ⟨_, _, _, _, hB', _, _, _⟩
+  rcases cutReplyFrameStores_cases h with ⟨s1, _, hS1, hS2⟩ | ⟨_, _, _, _, hB', _, _, _⟩
   · have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
     refine ⟨?_, ?_, ?_⟩
     · rw [SystemState.getReply?_eq_some_iff]
@@ -5076,7 +5076,7 @@ theorem spliceReplyFrameStores_sever_values {st st' : SystemState}
 pre-state record, or — where the frame above is the cut frame itself — that record
 as the first store rewrote it.  Either way the same `caller` and stasher,
 which is all a per-store transport asks of it. -/
-theorem spliceReplyFrameStores_sever_cut_read {st s1 : SystemState}
+theorem cutReplyFrameStores_sever_cut_read {st s1 : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hA : st.getReply? above = some a)
     (hS1 : storeObject above.toObjId (.reply (a.unlinkedFrom rid)) st = .ok ((), s1)) :
@@ -5096,17 +5096,17 @@ theorem spliceReplyFrameStores_sever_cut_read {st s1 : SystemState}
 untouched, or it held a Reply that survives with at most its stack links
 rewritten.  Proved once, by the two-way split; everything else in this section
 reads it. -/
-theorem spliceReplyFrameStores_objects_rewrite {st st' : SystemState}
+theorem cutReplyFrameStores_objects_rewrite {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid)
-    (h : spliceReplyFrameStores st rid above r a = .ok st') (k : SeLe4n.ObjId) :
+    (h : cutReplyFrameStores st rid above r a = .ok st') (k : SeLe4n.ObjId) :
     st'.objects[k]? = st.objects[k]? ∨
       ∃ o o', st.objects[k]? = some (.reply o) ∧ st'.objects[k]? = some (.reply o') ∧
         replyStackRewrite o' o := by
-  cases hBelow : spliceFrameBelow? st rid r above with
+  cases hBelow : cutFrameBelow? st rid r above with
   | none =>
-    obtain ⟨hCut, hAbove, hFrame⟩ := spliceReplyFrameStores_sever_values hObjInv hBelow h
+    obtain ⟨hCut, hAbove, hFrame⟩ := cutReplyFrameStores_sever_values hObjInv hBelow h
     by_cases hkR : k = rid.toObjId
     · subst hkR
       exact Or.inr ⟨r, { r with prev := none, next := none },
@@ -5122,19 +5122,19 @@ theorem spliceReplyFrameStores_objects_rewrite {st st' : SystemState}
   | some pair =>
     obtain ⟨below, b⟩ := pair
     obtain ⟨hAbove, hBelowVal, hCut, hFrame⟩ :=
-      spliceReplyFrameStores_splice_values hObjInv hR hN hA hP hBelow h
-    obtain ⟨_, _, hB, _⟩ := spliceFrameBelow?_eq_some hBelow
+      cutReplyFrameStores_break_values hObjInv hR hN hA hP hBelow h
+    obtain ⟨_, _, hB, _⟩ := cutFrameBelow?_eq_some hBelow
     by_cases hkA : k = above.toObjId
     · subst hkA
-      exact Or.inr ⟨a, { a with prev := some below },
+      exact Or.inr ⟨a, (a.unlinkedFrom rid),
         (SystemState.getReply?_eq_some_iff _ _ _).mp hA,
-        (SystemState.getReply?_eq_some_iff _ _ _).mp hAbove, ⟨some below, a.next, rfl⟩⟩
+        (SystemState.getReply?_eq_some_iff _ _ _).mp hAbove, ⟨none, _, Reply.unlinkedFrom_eq a rid⟩⟩
     · by_cases hkB : k = below.toObjId
       · subst hkB
-        exact Or.inr ⟨b, { b with next := some (.frame above) },
+        exact Or.inr ⟨b, { b with next := none },
           (SystemState.getReply?_eq_some_iff _ _ _).mp hB,
           (SystemState.getReply?_eq_some_iff _ _ _).mp hBelowVal,
-          ⟨b.prev, some (.frame above), rfl⟩⟩
+          ⟨b.prev, none, rfl⟩⟩
       · by_cases hkR : k = rid.toObjId
         · subst hkR
           exact Or.inr ⟨r, { r with prev := none, next := none },
@@ -5144,63 +5144,63 @@ theorem spliceReplyFrameStores_objects_rewrite {st st' : SystemState}
 
 /-- The composed step preserves the object table's extension invariant — one
 store or three. -/
-theorem spliceReplyFrameStores_preserves_objects_invExt {st st' : SystemState}
+theorem cutReplyFrameStores_preserves_objects_invExt {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameStores st rid above r a = .ok st') : st'.objects.invExt := by
-  rcases spliceReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
+    (h : cutReplyFrameStores st rid above r a = .ok st') : st'.objects.invExt := by
+  rcases cutReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
   · exact storeObject_preserves_objects_invExt t1 st' _ _
       (storeObject_preserves_objects_invExt st t1 _ _ hObjInv hT1) hT2
   · exact storeObject_preserves_objects_invExt s2 st' _ _
       (storeObject_preserves_objects_invExt s1 s2 _ _
         (storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1) hS2) hS3
 
-theorem spliceReplyFrameStores_scheduler_eq {st st' : SystemState}
+theorem cutReplyFrameStores_scheduler_eq {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply}
-    (h : spliceReplyFrameStores st rid above r a = .ok st') :
+    (h : cutReplyFrameStores st rid above r a = .ok st') :
     st'.scheduler = st.scheduler := by
-  rcases spliceReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
+  rcases cutReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
   · exact (storeObject_scheduler_eq t1 st' _ _ hT2).trans (storeObject_scheduler_eq st t1 _ _ hT1)
   · exact ((storeObject_scheduler_eq s2 st' _ _ hS3).trans
       (storeObject_scheduler_eq s1 s2 _ _ hS2)).trans (storeObject_scheduler_eq st s1 _ _ hS1)
 
-theorem spliceReplyFrameStores_machine_eq {st st' : SystemState}
+theorem cutReplyFrameStores_machine_eq {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply}
-    (h : spliceReplyFrameStores st rid above r a = .ok st') :
+    (h : cutReplyFrameStores st rid above r a = .ok st') :
     st'.machine = st.machine := by
-  rcases spliceReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
+  rcases cutReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
   · unfold storeObject at hT1 hT2; cases hT1; cases hT2; rfl
   · unfold storeObject at hS1 hS2 hS3; cases hS1; cases hS2; cases hS3; rfl
 
-theorem spliceReplyFrameStores_cdt_eq {st st' : SystemState}
+theorem cutReplyFrameStores_cdt_eq {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply}
-    (h : spliceReplyFrameStores st rid above r a = .ok st') : st'.cdt = st.cdt := by
-  rcases spliceReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
+    (h : cutReplyFrameStores st rid above r a = .ok st') : st'.cdt = st.cdt := by
+  rcases cutReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
   · exact (storeObject_cdt_eq t1 st' _ _ hT2).trans (storeObject_cdt_eq st t1 _ _ hT1)
   · exact ((storeObject_cdt_eq s2 st' _ _ hS3).trans
       (storeObject_cdt_eq s1 s2 _ _ hS2)).trans (storeObject_cdt_eq st s1 _ _ hS1)
 
 /-- A key holding no Reply is untouched. -/
-theorem spliceReplyFrameStores_non_reply_eq {st st' : SystemState}
+theorem cutReplyFrameStores_non_reply_eq {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid)
-    (h : spliceReplyFrameStores st rid above r a = .ok st')
+    (h : cutReplyFrameStores st rid above r a = .ok st')
     (k : SeLe4n.ObjId) (hNotReply : ∀ o : Reply, st.objects[k]? ≠ some (.reply o)) :
     st'.objects[k]? = st.objects[k]? := by
-  rcases spliceReplyFrameStores_objects_rewrite hObjInv hR hN hA hP h k with
+  rcases cutReplyFrameStores_objects_rewrite hObjInv hR hN hA hP h k with
     hEq | ⟨o, _, hPre, _, _⟩
   · exact hEq
   · exact absurd hPre (hNotReply o)
 
 /-- Every Reply survives the composed step with at most its stack links moved. -/
-theorem spliceReplyFrameStores_reply_rewrite {st st' : SystemState}
+theorem cutReplyFrameStores_reply_rewrite {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid)
-    (h : spliceReplyFrameStores st rid above r a = .ok st')
+    (h : cutReplyFrameStores st rid above r a = .ok st')
     (oid : SeLe4n.ObjId) (o : Reply) (hReply : st.objects[oid]? = some (.reply o)) :
     ∃ o', st'.objects[oid]? = some (.reply o') ∧ replyStackRewrite o' o := by
-  rcases spliceReplyFrameStores_objects_rewrite hObjInv hR hN hA hP h oid with
+  rcases cutReplyFrameStores_objects_rewrite hObjInv hR hN hA hP h oid with
     hEq | ⟨o0, o', hPre, hPost, hRw⟩
   · exact ⟨o, by rw [hEq]; exact hReply, replyStackRewrite.refl o⟩
   · have hEq2 : o = o0 := KernelObject.reply.inj (Option.some.inj (hReply.symm.trans hPre))
@@ -5209,72 +5209,65 @@ theorem spliceReplyFrameStores_reply_rewrite {st st' : SystemState}
 
 /-- A key that is none of the three the removal can write is untouched.  The
 `below` exclusion is stated over the cut frame's own `prev`, which
-over-approximates `spliceFrameBelow?` — so a caller need not know whether the link
+over-approximates `cutFrameBelow?` — so a caller need not know whether the link
 validated. -/
-theorem spliceReplyFrameStores_objects_ne {st st' : SystemState}
+theorem cutReplyFrameStores_objects_ne {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameStores st rid above r a = .ok st')
+    (h : cutReplyFrameStores st rid above r a = .ok st')
     (k : SeLe4n.ObjId) (hkAbove : k ≠ above.toObjId)
     (hkBelow : ∀ below : SeLe4n.ReplyId, r.prev = some below → k ≠ below.toObjId)
     (hkCut : k ≠ rid.toObjId) :
     st'.objects[k]? = st.objects[k]? := by
-  rcases spliceReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ |
+  rcases cutReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ |
       ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
   · rw [storeObject_objects_ne t1 st' rid.toObjId k _ hkCut
       (storeObject_preserves_objects_invExt st t1 _ _ hObjInv hT1) hT2]
     exact storeObject_objects_ne st t1 above.toObjId k _ hkAbove hObjInv hT1
-  · obtain ⟨hPrev, _, _, _⟩ := spliceFrameBelow?_eq_some hBelow
+  · obtain ⟨hPrev, _, _, _⟩ := cutFrameBelow?_eq_some hBelow
     have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
     have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
     rw [storeObject_objects_ne s2 st' rid.toObjId k _ hkCut hInv2 hS3,
       storeObject_objects_ne s1 s2 below.toObjId k _ (hkBelow below hPrev) hInv1 hS2,
       storeObject_objects_ne st s1 above.toObjId k _ hkAbove hObjInv hS1]
 
-/-- **The frame above holds `a` with its `prev` pointing at whatever the removal
-resolved below the cut** — `some below` where the splice ran, and where nothing
-validated `a.unlinkedFrom rid`: `prev` cleared, and `next` too where it named the
-cut frame.  One statement over both branches, which is what makes the splice's
-post-state readable without a case split. -/
-theorem spliceReplyFrameStores_getReply?_above {st st' : SystemState}
+/-- **The frame above holds `a.unlinkedFrom rid`** — its `prev` cleared, and its
+`next` too where it named the cut frame — whether or not a frame below was cut
+as well: seL4's `reply_remove` breaks the chain on both sides. -/
+theorem cutReplyFrameStores_getReply?_above {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid) (hNe : above ≠ rid)
-    (h : spliceReplyFrameStores st rid above r a = .ok st') :
-    st'.getReply? above
-      = some (match spliceFrameBelow? st rid r above with
-          | none => a.unlinkedFrom rid
-          | some (below, _) => { a with prev := some below }) := by
-  rcases spliceReplyFrameStores_cases h with ⟨_, hBelow, _, _⟩ | ⟨below, b, _, _, hBelow, _, _, _⟩
-  · rw [hBelow]
-    exact (spliceReplyFrameStores_sever_values hObjInv hBelow h).2.1 hNe
-  · rw [hBelow]
-    exact (spliceReplyFrameStores_splice_values hObjInv hR hN hA hP hBelow h).1
+    (h : cutReplyFrameStores st rid above r a = .ok st') :
+    st'.getReply? above = some (a.unlinkedFrom rid) := by
+  rcases cutReplyFrameStores_cases h with ⟨_, hBelow, _, _⟩ | ⟨below, b, _, _, hBelow, _, _, _⟩
+  · exact (cutReplyFrameStores_sever_values hObjInv hBelow h).2.1 hNe
+  · exact (cutReplyFrameStores_break_values hObjInv hR hN hA hP hBelow h).1
 
 /-- **And the frame below holds `b` linking up to the frame above** — the other
 half of the reciprocal pair, written in the same step. -/
-theorem spliceReplyFrameStores_getReply?_below {st st' : SystemState}
+theorem cutReplyFrameStores_getReply?_below {st st' : SystemState}
     {rid above below : SeLe4n.ReplyId} {r a b : Reply} (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid)
-    (hBelow : spliceFrameBelow? st rid r above = some (below, b))
-    (h : spliceReplyFrameStores st rid above r a = .ok st') :
-    st'.getReply? below = some { b with next := some (.frame above) } :=
-  (spliceReplyFrameStores_splice_values hObjInv hR hN hA hP hBelow h).2.1
+    (hBelow : cutFrameBelow? st rid r above = some (below, b))
+    (h : cutReplyFrameStores st rid above r a = .ok st') :
+    st'.getReply? below = some { b with next := none } :=
+  (cutReplyFrameStores_break_values hObjInv hR hN hA hP hBelow h).2.1
 
 /-- **And the cut frame loses both links** — seL4's `reply_remove`, which is what
 leaves no stack link either way at a frame nothing on the stack names any more.
 On both branches: the cut frame is the last key written. -/
-theorem spliceReplyFrameStores_getReply?_cut {st st' : SystemState}
+theorem cutReplyFrameStores_getReply?_cut {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid)
-    (h : spliceReplyFrameStores st rid above r a = .ok st') :
+    (h : cutReplyFrameStores st rid above r a = .ok st') :
     st'.getReply? rid = some { r with prev := none, next := none } := by
-  cases hBelow : spliceFrameBelow? st rid r above with
-  | none => exact (spliceReplyFrameStores_sever_values hObjInv hBelow h).1
+  cases hBelow : cutFrameBelow? st rid r above with
+  | none => exact (cutReplyFrameStores_sever_values hObjInv hBelow h).1
   | some pair =>
     obtain ⟨below, b⟩ := pair
-    exact (spliceReplyFrameStores_splice_values hObjInv hR hN hA hP hBelow h).2.2.1
+    exact (cutReplyFrameStores_break_values hObjInv hR hN hA hP hBelow h).2.2.1
 
 /-- **WS-HP HP6.4: the composed step moves no Reply's `caller`, and moves a
 `next` only off a `.frame` link, never onto a `.head`.**  Sharper than
@@ -5288,47 +5281,44 @@ from `.frame rid` to `.frame above`, and the **cut** frame moves from
 `.frame above` to `none`.  So a frame heading a context still heads
 that context and a frame heading none still heads none, which is all any consumer
 reads. -/
-theorem spliceReplyFrameStores_reply_caller_and_headLink {st st' : SystemState}
+theorem cutReplyFrameStores_reply_caller_and_headLink {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply} (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid)
-    (h : spliceReplyFrameStores st rid above r a = .ok st')
+    (h : cutReplyFrameStores st rid above r a = .ok st')
     (q : SeLe4n.ReplyId) (rq : Reply) (hq : st'.getReply? q = some rq) :
     ∃ rp, st.getReply? q = some rp ∧ rq.caller = rp.caller ∧
       (rq.next = rp.next ∨
         ∃ x : SeLe4n.ReplyId, rp.next = some (.frame x) ∧ ∀ s, rq.next ≠ some (.head s)) := by
   by_cases hkR : q = rid
   · subst hkR
-    rw [spliceReplyFrameStores_getReply?_cut hObjInv hR hN hA hP h] at hq
+    rw [cutReplyFrameStores_getReply?_cut hObjInv hR hN hA hP h] at hq
     cases hq
     exact ⟨r, hR, rfl, Or.inr ⟨above, hN, fun s e => by cases e⟩⟩
   · have hkR' : q.toObjId ≠ rid.toObjId :=
       fun hEq => hkR (SeLe4n.ReplyId.toObjId_injective _ _ hEq)
     by_cases hkA : q = above
     · subst hkA
-      rw [spliceReplyFrameStores_getReply?_above hObjInv hR hN hA hP hkR h] at hq
-      split at hq
-      · cases hq
-        refine ⟨a, hA, Reply.unlinkedFrom_caller a rid, ?_⟩
-        rcases Reply.unlinkedFrom_next a rid with e | ⟨e, e'⟩
-        · exact Or.inl e
-        · exact Or.inr ⟨rid, e, fun s h => by rw [e'] at h; cases h⟩
-      · cases hq
-        exact ⟨a, hA, rfl, Or.inl rfl⟩
+      rw [cutReplyFrameStores_getReply?_above hObjInv hR hN hA hP hkR h] at hq
+      cases hq
+      refine ⟨a, hA, Reply.unlinkedFrom_caller a rid, ?_⟩
+      rcases Reply.unlinkedFrom_next a rid with e | ⟨e, e'⟩
+      · exact Or.inl e
+      · exact Or.inr ⟨rid, e, fun s h => by rw [e'] at h; cases h⟩
     · have hkA' : q.toObjId ≠ above.toObjId :=
         fun hEq => hkA (SeLe4n.ReplyId.toObjId_injective _ _ hEq)
-      cases hBelow : spliceFrameBelow? st rid r above with
+      cases hBelow : cutFrameBelow? st rid r above with
       | none =>
-        obtain ⟨-, -, hFrame⟩ := spliceReplyFrameStores_sever_values hObjInv hBelow h
+        obtain ⟨-, -, hFrame⟩ := cutReplyFrameStores_sever_values hObjInv hBelow h
         refine ⟨rq, ?_, rfl, Or.inl rfl⟩
         rw [SystemState.getReply?_eq_some_iff] at hq ⊢
         rw [← hFrame q.toObjId hkA' hkR']
         exact hq
       | some pair =>
         obtain ⟨below, b⟩ := pair
-        obtain ⟨-, -, hB, hBN⟩ := spliceFrameBelow?_eq_some hBelow
+        obtain ⟨-, -, hB, hBN⟩ := cutFrameBelow?_eq_some hBelow
         obtain ⟨_, hBelowVal, _, hFrame⟩ :=
-          spliceReplyFrameStores_splice_values hObjInv hR hN hA hP hBelow h
+          cutReplyFrameStores_break_values hObjInv hR hN hA hP hBelow h
         by_cases hkB : q = below
         · subst hkB
           rw [hBelowVal] at hq
@@ -5481,7 +5471,7 @@ theorem severReplyFrameBelowStores_objects_ne {st st' : SystemState}
 
 /-- **The cut's store chain, once, for any predicate a stack-link `.reply` store
 carries**: two caller-preserving Reply stores, the second at a key the first
-left alone.  The sever arm's half of `spliceReplyFrameOut_transport`. -/
+left alone.  The sever arm's half of `cutReplyFrameOut_transport`. -/
 theorem severReplyFrameBelowStores_transport {P : SystemState → Prop}
     (hStore : ∀ {s s' : SystemState} {q : SeLe4n.ReplyId} {x x' : Reply},
       s.objects.invExt → P s → s.getReply? q = some x → x'.caller = x.caller →
@@ -5508,7 +5498,7 @@ theorem severReplyFrameBelowStores_transport {P : SystemState → Prop}
 and links down to the frame *below* it instead (`above.prev := some below`), and
 that frame links up to the frame above (`below.next := some (.frame above)`).  The
 two reciprocal links are written **together** in one composed step
-(`spliceReplyFrameStores`), so the pair the removal repairs is never transiently
+(`cutReplyFrameStores`), so the pair the removal repairs is never transiently
 inconsistent.  The step's last store clears the cut frame's own links, so no
 state it leaves has a link either way at a frame nothing on the stack names; the
 `Reply.consumed` that follows on every removal path writes the same two fields.
@@ -5517,7 +5507,7 @@ state it leaves has a link either way at a frame nothing on the stack names; the
 carried in the name: a cut frame with no `prev`, or one whose `prev` does not
 resolve, does not reciprocate, or names the frame above, leaves the frame above
 with `prev := none` exactly as the pre-WS-HP kernel did, and the cut frame with
-no links (`spliceReplyFrameOut_eq_sever_of_no_frame_below`).  Every state this kernel
+no links (`cutReplyFrameOut_eq_sever_of_no_frame_below`).  Every state this kernel
 reaches takes the splice branch or has nothing below the cut, because
 `donationChainWellFormed.prevLinkReciprocal` answers every `prev` link and the
 `below = above` arm entails a two-frame cycle.
@@ -5558,7 +5548,7 @@ stale upward link, which is exactly the trust `Reply.consumed` withholds from su
 links.  **Resolution and validation of the frame above are unchanged from the
 sever**, so this operation's refusal set is exactly the sever's and every refusal
 theorem carries verbatim. -/
-def spliceReplyFrameOut (st : SystemState) (rid : SeLe4n.ReplyId) :
+def cutReplyFrameOut (st : SystemState) (rid : SeLe4n.ReplyId) :
     Except KernelError SystemState :=
   match st.getReply? rid with
   | none => .ok st
@@ -5569,7 +5559,7 @@ def spliceReplyFrameOut (st : SystemState) (rid : SeLe4n.ReplyId) :
       | none => .error .objectNotFound
       | some a =>
         if a.prev != some rid then .error .invalidArgument
-        else spliceReplyFrameStores st rid above r a
+        else cutReplyFrameStores st rid above r a
     | some (.head _) => .ok st
     | none =>
       match r.prev with
@@ -5584,19 +5574,19 @@ def spliceReplyFrameOut (st : SystemState) (rid : SeLe4n.ReplyId) :
 /-- The removal, decomposed: the identity, the composed store step at the frame
 above, or, at a top with nothing above whose frame below still links up to it,
 the cut from that frame (`severReplyFrameBelowStores`).  **Stated at the sever's
-arity** (WS-HP HP6.4) on its first two answers; `spliceReplyFrameStores_cases`
+arity** (WS-HP HP6.4) on its first two answers; `cutReplyFrameStores_cases`
 splits the second once. -/
-theorem spliceReplyFrameOut_cases {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    (h : spliceReplyFrameOut st rid = .ok st') :
+theorem cutReplyFrameOut_cases {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (h : cutReplyFrameOut st rid = .ok st') :
     st' = st ∨ (∃ (r : Reply) (above : SeLe4n.ReplyId) (a : Reply),
       st.getReply? rid = some r ∧ r.next = some (.frame above) ∧
       st.getReply? above = some a ∧ a.prev = some rid ∧
-      spliceReplyFrameStores st rid above r a = .ok st') ∨
+      cutReplyFrameStores st rid above r a = .ok st') ∨
     ∃ (r : Reply) (below : SeLe4n.ReplyId) (b : Reply),
       st.getReply? rid = some r ∧ r.next = none ∧ r.prev = some below ∧
       st.getReply? below = some b ∧ b.next = some (.frame rid) ∧
       severReplyFrameBelowStores st rid below r b = .ok st' := by
-  unfold spliceReplyFrameOut at h
+  unfold cutReplyFrameOut at h
   revert h
   cases hR : st.getReply? rid with
   | none => intro h; exact Or.inl (Except.ok.inj h).symm
@@ -5642,16 +5632,16 @@ pre-WS-HP kernel's sever wrote it (and its `next` where that names the cut frame
 `Reply.consumed` that follows on every caller writes the same two fields).  The
 statement that the frames below a *bottom* cut frame are unaffected — which is why
 §3.20's depth-two shapes are byte-identical across this cut. -/
-theorem spliceReplyFrameOut_eq_sever_of_no_frame_below {st st' : SystemState}
+theorem cutReplyFrameOut_eq_sever_of_no_frame_below {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply}
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid)
-    (hBelow : spliceFrameBelow? st rid r above = none) :
-    spliceReplyFrameOut st rid = .ok st' ↔
+    (hBelow : cutFrameBelow? st rid r above = none) :
+    cutReplyFrameOut st rid = .ok st' ↔
       ∃ s1, storeObject above.toObjId (.reply (a.unlinkedFrom rid)) st = .ok ((), s1) ∧
         storeObject rid.toObjId (.reply { r with prev := none, next := none }) s1
           = .ok ((), st') := by
-  unfold spliceReplyFrameOut spliceReplyFrameStores
+  unfold cutReplyFrameOut cutReplyFrameStores
   rw [hR]
   simp only [hN, hA, hP, bne_self_eq_false, Bool.false_eq_true, if_false, hBelow]
   cases hS : storeObject above.toObjId (.reply (a.unlinkedFrom rid)) st with
@@ -5665,27 +5655,27 @@ theorem spliceReplyFrameOut_eq_sever_of_no_frame_below {st st' : SystemState}
       simp [hS2]
 
 /-- The splice is the identity on a head frame. -/
-theorem spliceReplyFrameOut_of_head (st : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
+theorem cutReplyFrameOut_of_head (st : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
     (sc : SeLe4n.SchedContextId) (hR : st.getReply? rid = some r)
     (hHead : r.next = some (.head sc)) :
-    spliceReplyFrameOut st rid = .ok st := by
-  unfold spliceReplyFrameOut; rw [hR]; simp only [hHead]
+    cutReplyFrameOut st rid = .ok st := by
+  unfold cutReplyFrameOut; rw [hR]; simp only [hHead]
 
 /-- The splice is the identity on a frame linked to nothing either way. -/
-theorem spliceReplyFrameOut_of_no_frame_above (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOut_of_no_frame_above (st : SystemState) (rid : SeLe4n.ReplyId)
     (r : Reply) (hR : st.getReply? rid = some r) (hNext : r.next = none)
     (hPrev : r.prev = none) :
-    spliceReplyFrameOut st rid = .ok st := by
-  unfold spliceReplyFrameOut; rw [hR]; simp only [hNext, hPrev]
+    cutReplyFrameOut st rid = .ok st := by
+  unfold cutReplyFrameOut; rw [hR]; simp only [hNext, hPrev]
 
 /-- ...and on one linked to nothing above whose frame below does not link up to
 it. -/
-theorem spliceReplyFrameOut_of_unreciprocated_below (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOut_of_unreciprocated_below (st : SystemState) (rid : SeLe4n.ReplyId)
     (r : Reply) (hR : st.getReply? rid = some r) (hNext : r.next = none)
     (hBelow : ∀ below b, r.prev = some below → st.getReply? below = some b →
       b.next ≠ some (.frame rid)) :
-    spliceReplyFrameOut st rid = .ok st := by
-  unfold spliceReplyFrameOut; rw [hR]; simp only [hNext]
+    cutReplyFrameOut st rid = .ok st := by
+  unfold cutReplyFrameOut; rw [hR]; simp only [hNext]
   cases hPv : r.prev with
   | none => rfl
   | some below =>
@@ -5697,7 +5687,7 @@ theorem spliceReplyFrameOut_of_unreciprocated_below (st : SystemState) (rid : Se
       simp [this]
 
 /-- WS-OD (`v0.35.4`): **the frame above `rid`**, if `rid` resolves and its
-`next` names one -- the object `spliceReplyFrameOut` writes.  Resolved from
+`next` names one -- the object `cutReplyFrameOut` writes.  Resolved from
 the same two fields the splice reads, so the member a cancellation declares for
 the splice (`cancelSplicedFrameAbove?`) and the object the splice stores cannot
 disagree: `replyFrameAbove?_of_splice_store` is the relation. -/
@@ -5712,18 +5702,18 @@ def replyFrameAbove? (st : SystemState) (rid : SeLe4n.ReplyId) : Option SeLe4n.R
 /-- The removal either commits nothing or runs its composed store step at exactly
 the frame `replyFrameAbove?` names — which, when there is a link below the cut to
 splice to, also writes the frame `replyFrameBelow?` names
-(`spliceReplyFrameStores_getReply?_below`). -/
+(`cutReplyFrameStores_getReply?_below`). -/
 theorem replyFrameAbove?_of_splice_store {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    (h : spliceReplyFrameOut st rid = .ok st') :
+    (h : cutReplyFrameOut st rid = .ok st') :
     st' = st ∨ (∃ (above : SeLe4n.ReplyId) (r a : Reply),
       replyFrameAbove? st rid = some above ∧ st.getReply? rid = some r ∧
       st.getReply? above = some a ∧
-      spliceReplyFrameStores st rid above r a = .ok st') ∨
+      cutReplyFrameStores st rid above r a = .ok st') ∨
     ∃ (below : SeLe4n.ReplyId) (r b : Reply),
       replyFrameAbove? st rid = none ∧ st.getReply? rid = some r ∧ r.prev = some below ∧
       st.getReply? below = some b ∧
       severReplyFrameBelowStores st rid below r b = .ok st' := by
-  rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, hR, hN, hA, _, hS⟩ |
+  rcases cutReplyFrameOut_cases h with hEq | ⟨r, above, a, hR, hN, hA, _, hS⟩ |
       ⟨r, below, b, hR, hN, hP, hB, _, hS⟩
   · exact Or.inl hEq
   · refine Or.inr (Or.inl ⟨above, r, a, ?_, hR, hA, hS⟩)
@@ -5764,129 +5754,129 @@ theorem replyFrameAbove?_of_unlinked (st : SystemState) (rid : SeLe4n.ReplyId) (
     replyFrameAbove? st rid = none := by
   simp [replyFrameAbove?, hR, hNext]
 
-theorem spliceReplyFrameOut_of_absent (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOut_of_absent (st : SystemState) (rid : SeLe4n.ReplyId)
     (hR : st.getReply? rid = none) :
-    spliceReplyFrameOut st rid = .ok st := by
-  unfold spliceReplyFrameOut; rw [hR]
+    cutReplyFrameOut st rid = .ok st := by
+  unfold cutReplyFrameOut; rw [hR]
 
 /-- **WS-HP HP6.4: the removal's frame, at every key** — the primitive's instance
-of `spliceReplyFrameStores_objects_rewrite`, and what makes every read lemma
+of `cutReplyFrameStores_objects_rewrite`, and what makes every read lemma
 below a one-line consequence rather than a second analysis of the two stores. -/
-theorem spliceReplyFrameOut_objects_rewrite {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    (hObjInv : st.objects.invExt) (h : spliceReplyFrameOut st rid = .ok st')
+theorem cutReplyFrameOut_objects_rewrite {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (hObjInv : st.objects.invExt) (h : cutReplyFrameOut st rid = .ok st')
     (k : SeLe4n.ObjId) :
     st'.objects[k]? = st.objects[k]? ∨
       ∃ o o', st.objects[k]? = some (.reply o) ∧ st'.objects[k]? = some (.reply o') ∧
         replyStackRewrite o' o := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP, hS⟩ |
+  rcases cutReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP, hS⟩ |
       ⟨r, below, b, hR, hN, -, hB, hBn, hS⟩
   · exact Or.inl rfl
-  · exact spliceReplyFrameStores_objects_rewrite hObjInv hR hN hA hP hS k
+  · exact cutReplyFrameStores_objects_rewrite hObjInv hR hN hA hP hS k
   · exact severReplyFrameBelowStores_objects_rewrite hObjInv hR hN hB hBn hS k
 
-theorem spliceReplyFrameOut_preserves_objects_invExt {st st' : SystemState}
+theorem cutReplyFrameOut_preserves_objects_invExt {st st' : SystemState}
     {rid : SeLe4n.ReplyId} (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameOut st rid = .ok st') : st'.objects.invExt := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
+    (h : cutReplyFrameOut st rid = .ok st') : st'.objects.invExt := by
+  rcases cutReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
       ⟨_, _, _, _, _, _, _, _, hS⟩
   · exact hObjInv
-  · exact spliceReplyFrameStores_preserves_objects_invExt hObjInv hS
+  · exact cutReplyFrameStores_preserves_objects_invExt hObjInv hS
   · exact severReplyFrameBelowStores_preserves_objects_invExt hObjInv hS
 
-theorem spliceReplyFrameOut_scheduler_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    (h : spliceReplyFrameOut st rid = .ok st') : st'.scheduler = st.scheduler := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
+theorem cutReplyFrameOut_scheduler_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (h : cutReplyFrameOut st rid = .ok st') : st'.scheduler = st.scheduler := by
+  rcases cutReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
       ⟨_, _, _, _, _, _, _, _, hS⟩
   · rfl
-  · exact spliceReplyFrameStores_scheduler_eq hS
+  · exact cutReplyFrameStores_scheduler_eq hS
   · exact severReplyFrameBelowStores_scheduler_eq hS
 
-theorem spliceReplyFrameOut_machine_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    (h : spliceReplyFrameOut st rid = .ok st') : st'.machine = st.machine := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
+theorem cutReplyFrameOut_machine_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (h : cutReplyFrameOut st rid = .ok st') : st'.machine = st.machine := by
+  rcases cutReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
       ⟨_, _, _, _, _, _, _, _, hS⟩
   · rfl
-  · exact spliceReplyFrameStores_machine_eq hS
+  · exact cutReplyFrameStores_machine_eq hS
   · exact severReplyFrameBelowStores_machine_eq hS
 
 /-- The splice writes only Reply objects, so a notification in the post-state was
 one in the pre-state. -/
-theorem spliceReplyFrameOut_notification_backward {st st' : SystemState}
+theorem cutReplyFrameOut_notification_backward {st st' : SystemState}
     {rid : SeLe4n.ReplyId} (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameOut st rid = .ok st')
+    (h : cutReplyFrameOut st rid = .ok st')
     (oid : SeLe4n.ObjId) (ntfn : Notification)
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
-  rcases spliceReplyFrameOut_objects_rewrite hObjInv h oid with hEq | ⟨_, _, _, hPost, _⟩
+  rcases cutReplyFrameOut_objects_rewrite hObjInv h oid with hEq | ⟨_, _, _, hPost, _⟩
   · rw [← hEq]; exact hNtfn
   · rw [hNtfn] at hPost; cases hPost
 
 /-- The splice is invisible to every typed TCB read. -/
-theorem spliceReplyFrameOut_getTcb?_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+theorem cutReplyFrameOut_getTcb?_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameOut st rid = .ok st') (tid : SeLe4n.ThreadId) :
+    (h : cutReplyFrameOut st rid = .ok st') (tid : SeLe4n.ThreadId) :
     st'.getTcb? tid = st.getTcb? tid := by
   unfold SystemState.getTcb?
-  rcases spliceReplyFrameOut_objects_rewrite hObjInv h tid.toObjId with hEq | ⟨_, _, hPre, hPost, _⟩
+  rcases cutReplyFrameOut_objects_rewrite hObjInv h tid.toObjId with hEq | ⟨_, _, hPre, hPost, _⟩
   · rw [hEq]
   · rw [hPre, hPost]
 
 /-- The removal writes at most the frame above the cut, the frame below it, and
 the cut frame itself; every other key is untouched.  The `below` exclusion is
 stated over the cut frame's own `prev`, which over-approximates
-`spliceFrameBelow?` — so a caller need not know whether the link validated — and
+`cutFrameBelow?` — so a caller need not know whether the link validated — and
 the cut-frame exclusion is unconditional, which the one consumer has for free
 (the removal's frame theorem already excludes the consumed Reply).  WS-HP HP6.4. -/
-theorem spliceReplyFrameOut_objects_ne {st st' : SystemState} {rid : SeLe4n.ReplyId}
+theorem cutReplyFrameOut_objects_ne {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameOut st rid = .ok st') (k : SeLe4n.ObjId)
+    (h : cutReplyFrameOut st rid = .ok st') (k : SeLe4n.ObjId)
     (hk : ∀ (r : Reply) (above : SeLe4n.ReplyId), st.getReply? rid = some r →
       r.next = some (.frame above) → k ≠ above.toObjId)
     (hkBelow : ∀ (r : Reply) (below : SeLe4n.ReplyId), st.getReply? rid = some r →
       (∀ s, r.next ≠ some (.head s)) → r.prev = some below → k ≠ below.toObjId)
     (hkCut : k ≠ rid.toObjId) :
     st'.objects[k]? = st.objects[k]? := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, _, _, hS⟩ |
+  rcases cutReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, _, _, hS⟩ |
       ⟨r, below, b, hR, hN, hP, _, _, hS⟩
   · rfl
-  · exact spliceReplyFrameStores_objects_ne hObjInv hS k (hk r above hR hN)
+  · exact cutReplyFrameStores_objects_ne hObjInv hS k (hk r above hR hN)
       (fun below hPrev => hkBelow r below hR (fun s e => by rw [hN] at e; cases e) hPrev) hkCut
   · exact severReplyFrameBelowStores_objects_ne hObjInv hS k
       (hkBelow r below hR (fun s e => by rw [hN] at e; cases e) hP) hkCut
 
-theorem spliceReplyFrameOut_tcb_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+theorem cutReplyFrameOut_tcb_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameOut st rid = .ok st')
+    (h : cutReplyFrameOut st rid = .ok st')
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
     st'.objects[k]? = some (.tcb t0) := by
-  rcases spliceReplyFrameOut_objects_rewrite hObjInv h k with hEq | ⟨_, _, hPre, _, _⟩
+  rcases cutReplyFrameOut_objects_rewrite hObjInv h k with hEq | ⟨_, _, hPre, _, _⟩
   · rw [hEq]; exact hk
   · rw [hk] at hPre; cases hPre
 
-theorem spliceReplyFrameOut_tcb_backward {st st' : SystemState} {rid : SeLe4n.ReplyId}
+theorem cutReplyFrameOut_tcb_backward {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameOut st rid = .ok st')
+    (h : cutReplyFrameOut st rid = .ok st')
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st'.objects[k]? = some (.tcb t0)) :
     st.objects[k]? = some (.tcb t0) := by
-  rcases spliceReplyFrameOut_objects_rewrite hObjInv h k with hEq | ⟨_, _, _, hPost, _⟩
+  rcases cutReplyFrameOut_objects_rewrite hObjInv h k with hEq | ⟨_, _, _, hPost, _⟩
   · rw [← hEq]; exact hk
   · rw [hk] at hPost; cases hPost
 
-theorem spliceReplyFrameOut_non_reply_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+theorem cutReplyFrameOut_non_reply_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameOut st rid = .ok st')
+    (h : cutReplyFrameOut st rid = .ok st')
     (k : SeLe4n.ObjId) (hNotReply : ∀ r : Reply, st.objects[k]? ≠ some (.reply r)) :
     st'.objects[k]? = st.objects[k]? := by
-  rcases spliceReplyFrameOut_objects_rewrite hObjInv h k with hEq | ⟨o, _, hPre, _, _⟩
+  rcases cutReplyFrameOut_objects_rewrite hObjInv h k with hEq | ⟨o, _, hPre, _, _⟩
   · exact hEq
   · exact absurd hPre (hNotReply o)
 
-theorem spliceReplyFrameOut_reply_rewrite {st st' : SystemState} {rid : SeLe4n.ReplyId}
+theorem cutReplyFrameOut_reply_rewrite {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameOut st rid = .ok st')
+    (h : cutReplyFrameOut st rid = .ok st')
     (oid : SeLe4n.ObjId) (r : Reply) (hReply : st.objects[oid]? = some (.reply r)) :
     ∃ r', st'.objects[oid]? = some (.reply r') ∧ replyStackRewrite r' r := by
-  rcases spliceReplyFrameOut_objects_rewrite hObjInv h oid with hEq | ⟨o0, o', hPre, hPost, hRw⟩
+  rcases cutReplyFrameOut_objects_rewrite hObjInv h oid with hEq | ⟨o0, o', hPre, hPost, hRw⟩
   · exact ⟨r, by rw [hEq]; exact hReply, replyStackRewrite.refl r⟩
   · have hEq2 : r = o0 := KernelObject.reply.inj (Option.some.inj (hReply.symm.trans hPre))
     subst hEq2
@@ -5896,7 +5886,7 @@ theorem spliceReplyFrameOut_reply_rewrite {st st' : SystemState} {rid : SeLe4n.R
 **splice** writes, and the member both reply footprints declare for it.
 
 Declared ahead of the code that writes it, which is the numbering rule: HP6
-replaces `spliceReplyFrameOutOrSelf` with the splice, and a footprint that
+replaces `cutReplyFrameOutOrSelf` with the splice, and a footprint that
 omits a written object is *false*.  The splice itself is HP6's, not HP1's, for
 the reason `ReplyStackWriteCensus` gives: a reply-stack write site owes a chain
 result, and the splice's is `prevLinkReciprocal` broken at the cut frame until
@@ -5969,7 +5959,7 @@ theorem replyFrameBelow?_eq_some {st : SystemState} {rid below : SeLe4n.ReplyId}
 /-- **WS-HP HP6.6: the object the splice writes below the cut is the one the
 footprint declares.**
 
-`replyFrameBelow?` is the *declared* member and `spliceFrameBelow?` is what the
+`replyFrameBelow?` is the *declared* member and `cutFrameBelow?` is what the
 operation resolves, and the two ask the same question with different strictness:
 the declaration stops at "there is a frame above, and this is the cut frame's
 `prev`", while the operation additionally refuses a `prev` naming the frame above
@@ -5981,15 +5971,15 @@ declared-but-unwritten lock costs contention alone.
 Stated rather than left to be re-derived at each footprint: the containment is
 what `lockSet_endpointReplyOnCore_covers_splicedFrameBelow` and its three siblings
 rest on, and nothing said it. -/
-theorem spliceFrameBelow?_mem_replyFrameBelow? {st : SystemState}
+theorem cutFrameBelow?_mem_replyFrameBelow? {st : SystemState}
     {rid above below : SeLe4n.ReplyId} {r b : Reply}
     (hR : st.getReply? rid = some r) (hAbove : replyFrameAbove? st rid = some above)
-    (h : spliceFrameBelow? st rid r above = some (below, b)) :
+    (h : cutFrameBelow? st rid r above = some (below, b)) :
     replyFrameBelow? st rid = some below := by
   obtain ⟨r', hR', hN⟩ := replyFrameAbove?_eq_some hAbove
   rw [hR] at hR'; cases hR'
   rw [replyFrameBelow?_of_not_head st rid r hR (by rw [hN]; exact fun _ e => by cases e)]
-  exact (spliceFrameBelow?_eq_some h).1
+  exact (cutFrameBelow?_eq_some h).1
 
 /-- **...and the sever arm's write is declared too**: a contextless stack top
 (`next = none`) whose `prev` names `below` declares `below`, which is the object
@@ -6401,25 +6391,25 @@ alone".  Both removal paths need it and neither may fail on it, so it is defined
 once here rather than answered separately at each.
 
 The fold is sound because a refusal *is* the statement that nothing references
-this frame.  `spliceReplyFrameOut` refuses exactly when the frame `next` names
+this frame.  `cutReplyFrameOut` refuses exactly when the frame `next` names
 either does not resolve or does not point back; under
 `donationChainWellFormed.prevLinkReciprocal` the only frame whose `prev` can name
 `rid` is the one `rid`'s own `next` names, so in either refusal no stored Reply
 links down to `rid` and clearing its links breaks no reciprocity
-(`spliceReplyFrameOutOrSelf_unreferenced`).  Committing nothing there is also
+(`cutReplyFrameOutOrSelf_unreferenced`).  Committing nothing there is also
 the trust the structure withholds from a stale upward link: rewriting a frame
 that does not point back would be acting on one. -/
-def spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId) : SystemState :=
-  match spliceReplyFrameOut st rid with
+def cutReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId) : SystemState :=
+  match cutReplyFrameOut st rid with
   | .ok st' => st'
   | .error _ => st
 
-/-- The fold, decomposed: the identity, or a `spliceReplyFrameOut` that ran.
+/-- The fold, decomposed: the identity, or a `cutReplyFrameOut` that ran.
 Stable across HP6.3: it says nothing about what the primitive wrote. -/
-theorem spliceReplyFrameOutOrSelf_cases (st : SystemState) (rid : SeLe4n.ReplyId) :
-    spliceReplyFrameOutOrSelf st rid = st ∨
-      spliceReplyFrameOut st rid = .ok (spliceReplyFrameOutOrSelf st rid) := by
-  unfold spliceReplyFrameOutOrSelf
+theorem cutReplyFrameOutOrSelf_cases (st : SystemState) (rid : SeLe4n.ReplyId) :
+    cutReplyFrameOutOrSelf st rid = st ∨
+      cutReplyFrameOut st rid = .ok (cutReplyFrameOutOrSelf st rid) := by
+  unfold cutReplyFrameOutOrSelf
   split
   · rename_i st' h; exact Or.inr h
   · exact Or.inl rfl
@@ -6427,7 +6417,7 @@ theorem spliceReplyFrameOutOrSelf_cases (st : SystemState) (rid : SeLe4n.ReplyId
 /-- WS-RM (`v0.35.6`): **take a thread's reply frame off its stack** — seL4's
 `reply_remove_tcb`, non-head arm, keyed on the thread's own forward link.
 
-This is the TCB-keyed wrapper over `spliceReplyFrameOutOrSelf`; the removal
+This is the TCB-keyed wrapper over `cutReplyFrameOutOrSelf`; the removal
 paths that hold a `ReplyId` directly (the reply leg, `removeCallerReplyFrame`)
 call that fold, so there is exactly one answer to "what does this removal do when
 it cannot repair the frame above".  What the wrapper inherits from the fold is
@@ -6437,14 +6427,14 @@ body by HP6.1's decision (recorded in `CLAUDE.md`).
 
 **Order.**  On the cancellation path this runs after the donation reclaim, on
 whose success the frame is already unlinked and this is the identity
-(`spliceReplyFrameOut_of_no_frame_above`); on a head it is the identity too,
+(`cutReplyFrameOut_of_no_frame_above`); on a head it is the identity too,
 deliberately — a head is popped by the reclaim, never removed this way, and a
 reclaim that *declined* on a head is an invariant violation this step must not
 paper over by dropping a stack. -/
-def spliceThreadReplyFrameOut (st : SystemState) (tcb : TCB) : SystemState :=
+def cutThreadReplyFrameOut (st : SystemState) (tcb : TCB) : SystemState :=
   match tcb.replyObject with
   | none => st
-  | some rid => spliceReplyFrameOutOrSelf st rid
+  | some rid => cutReplyFrameOutOrSelf st rid
 
 /-- **WS-RM (`v0.35.6`), restated for the splice at WS-HP HP6.4: the fold,
 decomposed as at most three `.reply` stores** — each at a key that already holds a
@@ -6455,14 +6445,14 @@ about how many stores there are.
 The two intermediate states are exposed because there are genuinely three writes:
 the frame above the cut, the frame below it, then the cut frame's own unlink.  A
 consumer that only asks whether a key holds a Reply on both sides should reach for
-`spliceReplyFrameOutOrSelf_objects_rewrite`, which answers at every key in one
+`cutReplyFrameOutOrSelf_objects_rewrite`, which answers at every key in one
 statement and needs no iteration.
 
 The three steps are spelled out rather than named as a relation, deliberately: a
 `Prop`-valued relation whose body mentions `storeObject` is reported by
 `ReplyStackWriteCensus`'s store frontier, and registering a relation as a
 reply-stack write site is not an option — it writes nothing. -/
-theorem spliceReplyFrameOutOrSelf_store_cases (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf_store_cases (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) :
     ∃ m1 m2 : SystemState,
       (m1 = st ∨ ∃ (k : SeLe4n.ReplyId) (o o' : Reply),
@@ -6471,16 +6461,16 @@ theorem spliceReplyFrameOutOrSelf_store_cases (st : SystemState) (rid : SeLe4n.R
       (m2 = m1 ∨ ∃ (k : SeLe4n.ReplyId) (o o' : Reply),
           m1.objects[k.toObjId]? = some (.reply o) ∧
           storeObject k.toObjId (.reply o') m1 = .ok ((), m2)) ∧
-      (spliceReplyFrameOutOrSelf st rid = m2 ∨ ∃ (k : SeLe4n.ReplyId) (o o' : Reply),
+      (cutReplyFrameOutOrSelf st rid = m2 ∨ ∃ (k : SeLe4n.ReplyId) (o o' : Reply),
           m2.objects[k.toObjId]? = some (.reply o) ∧
           storeObject k.toObjId (.reply o') m2
-            = .ok ((), spliceReplyFrameOutOrSelf st rid)) := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+            = .ok ((), cutReplyFrameOutOrSelf st rid)) := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · exact ⟨st, st, Or.inl rfl, Or.inl rfl, Or.inl h⟩
-  · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, hR, hN, hA, hP, hS⟩ |
+  · rcases cutReplyFrameOut_cases h with hEq | ⟨r, above, a, hR, hN, hA, hP, hS⟩ |
         ⟨r, below, b, hR, hN, _, hB, hBn, hS⟩
     · exact ⟨st, st, Or.inl rfl, Or.inl rfl, Or.inl hEq⟩
-    · rcases spliceReplyFrameStores_cases hS with
+    · rcases cutReplyFrameStores_cases hS with
         ⟨t1, _, hT1, hT2⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
       · have hR1 : ∃ o, t1.objects[rid.toObjId]? = some (.reply o) := by
           by_cases hAR : above.toObjId = rid.toObjId
@@ -6488,13 +6478,13 @@ theorem spliceReplyFrameOutOrSelf_store_cases (st : SystemState) (rid : SeLe4n.R
           · rw [storeObject_objects_ne st t1 above.toObjId rid.toObjId _ (Ne.symm hAR) hInv hT1]
             exact ⟨r, (SystemState.getReply?_eq_some_iff _ _ _).mp hR⟩
         obtain ⟨o1, hO1⟩ := hR1
-        exact ⟨t1, spliceReplyFrameOutOrSelf st rid,
+        exact ⟨t1, cutReplyFrameOutOrSelf st rid,
           Or.inr ⟨above, a, (a.unlinkedFrom rid),
             (SystemState.getReply?_eq_some_iff _ _ _).mp hA, hT1⟩,
           Or.inr ⟨rid, o1, { r with prev := none, next := none }, hO1, hT2⟩, Or.inl rfl⟩
-      · obtain ⟨_, hNe, hB, _⟩ := spliceFrameBelow?_eq_some hBelow
-        have hNeBR : below ≠ rid := spliceFrameBelow?_ne_cut hR hN hBelow
-        have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP hBelow
+      · obtain ⟨_, hNe, hB, _⟩ := cutFrameBelow?_eq_some hBelow
+        have hNeBR : below ≠ rid := cutFrameBelow?_ne_cut hR hN hBelow
+        have hNeAR : above ≠ rid := cutFrameBelow?_above_ne_cut hR hA hP hBelow
         have hInv1 : s1.objects.invExt :=
           storeObject_preserves_objects_invExt st s1 _ _ hInv hS1
         have hInv2 : s2.objects.invExt :=
@@ -6510,16 +6500,16 @@ theorem spliceReplyFrameOutOrSelf_store_cases (st : SystemState) (rid : SeLe4n.R
               (fun hEq => hNeAR (SeLe4n.ReplyId.toObjId_injective _ _ hEq).symm) hInv hS1]
           exact (SystemState.getReply?_eq_some_iff _ _ _).mp hR
         exact ⟨s1, s2,
-          Or.inr ⟨above, a, { a with prev := some below },
+          Or.inr ⟨above, a, (a.unlinkedFrom rid),
             (SystemState.getReply?_eq_some_iff _ _ _).mp hA, hS1⟩,
-          Or.inr ⟨below, b, { b with next := some (.frame above) }, hB1, hS2⟩,
+          Or.inr ⟨below, b, { b with next := none }, hB1, hS2⟩,
           Or.inr ⟨rid, r, { r with prev := none, next := none }, hR2, hS3⟩⟩
     · obtain ⟨s1, hS1, hS2⟩ := severReplyFrameBelowStores_cases hS
       have hBR := severReplyFrameBelow_ne hR hN hB hBn
       have hR1 : s1.objects[rid.toObjId]? = some (.reply r) := by
         rw [storeObject_objects_ne st s1 below.toObjId rid.toObjId _ (Ne.symm hBR) hInv hS1]
         exact (SystemState.getReply?_eq_some_iff _ _ _).mp hR
-      exact ⟨s1, spliceReplyFrameOutOrSelf st rid,
+      exact ⟨s1, cutReplyFrameOutOrSelf st rid,
         Or.inr ⟨below, b, { b with next := none },
           (SystemState.getReply?_eq_some_iff _ _ _).mp hB, hS1⟩,
         Or.inr ⟨rid, r, { r with prev := none }, hR1, hS2⟩, Or.inl rfl⟩
@@ -6532,20 +6522,20 @@ Restated for the splice (WS-HP HP6.4): the frame **above** the cut keeps its
 and the cut frame drops its `.frame` link, so a `.head` link is preserved exactly
 and a `.frame` link never becomes a `.head`.  That is what a removal path reads when it establishes `hNotHead` on the
 pre-state; it was `rq.next = rp.next` while the sever wrote only a `prev`. -/
-theorem spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink
+theorem cutReplyFrameOutOrSelf_preserves_reply_caller_and_headLink
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) (q : SeLe4n.ReplyId) (rq : Reply)
-    (hq : (spliceReplyFrameOutOrSelf st rid).getReply? q = some rq) :
+    (hq : (cutReplyFrameOutOrSelf st rid).getReply? q = some rq) :
     ∃ rp, st.getReply? q = some rp ∧ rq.caller = rp.caller ∧
       (rq.next = rp.next ∨
         ∃ x : SeLe4n.ReplyId, rp.next = some (.frame x) ∧ ∀ s, rq.next ≠ some (.head s)) := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · exact ⟨rq, by rw [← h]; exact hq, rfl, Or.inl rfl⟩
-  · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, hR, hN, hA, hP, hS⟩ |
+  · rcases cutReplyFrameOut_cases h with hEq | ⟨r, above, a, hR, hN, hA, hP, hS⟩ |
         ⟨r, below, b, hR, hN, _, hB, hBn, hS⟩
     · exact ⟨rq, by rw [← hEq]; exact hq, rfl, Or.inl rfl⟩
     · obtain ⟨rp, hp, hc, hn⟩ :=
-        spliceReplyFrameStores_reply_caller_and_headLink hInv hR hN hA hP hS q rq hq
+        cutReplyFrameStores_reply_caller_and_headLink hInv hR hN hA hP hS q rq hq
       exact ⟨rp, hp, hc, hn⟩
     · obtain ⟨hBv, hRv, hFrame⟩ := severReplyFrameBelowStores_values hInv hR hN hB hBn hS
       by_cases hqB : q = below
@@ -6568,85 +6558,85 @@ theorem spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink
 -- ----------------------------------------------------------------------------
 
 /-- `v0.35.4`: the splice, decomposed — the identity (no reply link, no frame
-above, or a refused repair), or one `spliceReplyFrameOut` that succeeded. -/
-theorem spliceThreadReplyFrameOut_cases (st : SystemState) (tcb : TCB) :
-    spliceThreadReplyFrameOut st tcb = st ∨
+above, or a refused repair), or one `cutReplyFrameOut` that succeeded. -/
+theorem cutThreadReplyFrameOut_cases (st : SystemState) (tcb : TCB) :
+    cutThreadReplyFrameOut st tcb = st ∨
     ∃ rid, tcb.replyObject = some rid ∧
-      spliceReplyFrameOut st rid = .ok (spliceThreadReplyFrameOut st tcb) := by
-  unfold spliceThreadReplyFrameOut
+      cutReplyFrameOut st rid = .ok (cutThreadReplyFrameOut st tcb) := by
+  unfold cutThreadReplyFrameOut
   split
   · exact Or.inl rfl
   · rename_i rid hRid
-    rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    rcases cutReplyFrameOutOrSelf_cases st rid with h | h
     · exact Or.inl h
     · exact Or.inr ⟨rid, hRid, h⟩
 
 /-- `v0.35.4`: the splice is the identity on a frame with nothing above it — the
 shape every cancellation of a head or bottom frame, and every successful reclaim,
 leaves. -/
-theorem spliceThreadReplyFrameOut_eq_self_of_no_frame_above (st : SystemState) (tcb : TCB)
+theorem cutThreadReplyFrameOut_eq_self_of_no_frame_above (st : SystemState) (tcb : TCB)
     (hNoFrameAbove : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (above : SeLe4n.ReplyId),
       tcb.replyObject = some rid → st.getReply? rid = some r →
       r.next ≠ some (.frame above))
     (hNoFrameBelow : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (below : SeLe4n.ReplyId) (b : Reply),
       tcb.replyObject = some rid → st.getReply? rid = some r → r.next = none →
       r.prev = some below → st.getReply? below = some b → b.next ≠ some (.frame rid)) :
-    spliceThreadReplyFrameOut st tcb = st := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨rid, hRid, h⟩
+    cutThreadReplyFrameOut st tcb = st := by
+  rcases cutThreadReplyFrameOut_cases st tcb with h | ⟨rid, hRid, h⟩
   · exact h
-  · rcases spliceReplyFrameOut_cases h with h' | ⟨r, above, _, hR, hN, _, _, _⟩ |
+  · rcases cutReplyFrameOut_cases h with h' | ⟨r, above, _, hR, hN, _, _, _⟩ |
         ⟨r, below, b, hR, hN, hP, hB, hBn, _⟩
     · exact h'
     · exact absurd hN (hNoFrameAbove rid r above hRid hR)
     · exact absurd hBn (hNoFrameBelow rid r below b hRid hR hN hP hB)
 
-theorem spliceThreadReplyFrameOut_scheduler_eq (st : SystemState) (tcb : TCB) :
-    (spliceThreadReplyFrameOut st tcb).scheduler = st.scheduler := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
+theorem cutThreadReplyFrameOut_scheduler_eq (st : SystemState) (tcb : TCB) :
+    (cutThreadReplyFrameOut st tcb).scheduler = st.scheduler := by
+  rcases cutThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]
-  · exact spliceReplyFrameOut_scheduler_eq h
+  · exact cutReplyFrameOut_scheduler_eq h
 
-theorem spliceThreadReplyFrameOut_machine_eq (st : SystemState) (tcb : TCB) :
-    (spliceThreadReplyFrameOut st tcb).machine = st.machine := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
+theorem cutThreadReplyFrameOut_machine_eq (st : SystemState) (tcb : TCB) :
+    (cutThreadReplyFrameOut st tcb).machine = st.machine := by
+  rcases cutThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]
-  · exact spliceReplyFrameOut_machine_eq h
+  · exact cutReplyFrameOut_machine_eq h
 
-theorem spliceThreadReplyFrameOut_preserves_objects_invExt (st : SystemState) (tcb : TCB)
-    (hInv : st.objects.invExt) : (spliceThreadReplyFrameOut st tcb).objects.invExt := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
+theorem cutThreadReplyFrameOut_preserves_objects_invExt (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) : (cutThreadReplyFrameOut st tcb).objects.invExt := by
+  rcases cutThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]; exact hInv
-  · exact spliceReplyFrameOut_preserves_objects_invExt hInv h
+  · exact cutReplyFrameOut_preserves_objects_invExt hInv h
 
 /-- The splice writes only Reply objects, so every stored TCB is where it was. -/
-theorem spliceThreadReplyFrameOut_tcb_eq (st : SystemState) (tcb : TCB)
+theorem cutThreadReplyFrameOut_tcb_eq (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
     (hk : st.objects[k]? = some (.tcb t0)) :
-    (spliceThreadReplyFrameOut st tcb).objects[k]? = some (.tcb t0) := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
+    (cutThreadReplyFrameOut st tcb).objects[k]? = some (.tcb t0) := by
+  rcases cutThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]; exact hk
-  · exact spliceReplyFrameOut_tcb_eq hInv h k t0 hk
+  · exact cutReplyFrameOut_tcb_eq hInv h k t0 hk
 
-theorem spliceThreadReplyFrameOut_tcb_backward (st : SystemState) (tcb : TCB)
+theorem cutThreadReplyFrameOut_tcb_backward (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
-    (hk : (spliceThreadReplyFrameOut st tcb).objects[k]? = some (.tcb t0)) :
+    (hk : (cutThreadReplyFrameOut st tcb).objects[k]? = some (.tcb t0)) :
     st.objects[k]? = some (.tcb t0) := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
+  rcases cutThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h] at hk; exact hk
-  · exact spliceReplyFrameOut_tcb_backward hInv h k t0 hk
+  · exact cutReplyFrameOut_tcb_backward hInv h k t0 hk
 
-theorem spliceThreadReplyFrameOut_getTcb?_eq (st : SystemState) (tcb : TCB)
+theorem cutThreadReplyFrameOut_getTcb?_eq (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
-    (spliceThreadReplyFrameOut st tcb).getTcb? tid = st.getTcb? tid := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
+    (cutThreadReplyFrameOut st tcb).getTcb? tid = st.getTcb? tid := by
+  rcases cutThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]
-  · exact spliceReplyFrameOut_getTcb?_eq hInv h tid
+  · exact cutReplyFrameOut_getTcb?_eq hInv h tid
 
 /-- WS-RM (`v0.35.6`): **take a caller's reply frame off its stack and consume its
 caller link** — seL4's `reply_remove`, with the middle case **spliced** rather
 than severed (WS-HP HP6.3): upstream's non-head branch clears the frame above's
 `replyPrev`; this removal links the frame above down to the frame below and that
-frame back up (`spliceReplyFrameStores`), and then `reply_unlink` severs the
+frame back up (`cutReplyFrameStores`), and then `reply_unlink` severs the
 caller↔Reply pair.
 
 The removal runs **first** and the consume second, and that order is the whole
@@ -6654,7 +6644,7 @@ point: `Reply.consumed` clears both stack links on a frame that is not a head, s
 a frame still named by the `prev` of the frame above it would falsify
 `donationChainWellFormed.prevLinkReciprocal` there — a wedge the later pop
 refuses fail-closed.  Removing first is what leaves nothing pointing down at the
-frame being consumed (`spliceReplyFrameOutOrSelf_unreferenced`).
+frame being consumed (`cutReplyFrameOutOrSelf_unreferenced`).
 
 It is deliberately **not** folded into `consumeCallerReply`: that operation's
 two-key frame (`consumeCallerReply_objects_frame`) is what the whole IPC
@@ -6668,73 +6658,73 @@ identity and this **is** `consumeCallerReply`, definitionally
 (`removeCallerReplyFrame_eq_consume_of_no_frame_above`). -/
 def removeCallerReplyFrame (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
     Kernel Unit :=
-  fun st => SystemState.consumeCallerReply caller rid (spliceReplyFrameOutOrSelf st rid)
+  fun st => SystemState.consumeCallerReply caller rid (cutReplyFrameOutOrSelf st rid)
 
 -- ----------------------------------------------------------------------------
 -- WS-RM (`v0.35.6`): the folded splice's read/write algebra
 -- ----------------------------------------------------------------------------
 --
 -- Each entry is the identity on the refusal arm and the corresponding
--- `spliceReplyFrameOut` fact on the other, so nothing new is argued here: the
+-- `cutReplyFrameOut` fact on the other, so nothing new is argued here: the
 -- fold inherits the primitive's algebra verbatim.
 
 /-- The `cdt` is not an object-store field, so the splice leaves it alone. -/
-theorem spliceReplyFrameOut_cdt_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    (h : spliceReplyFrameOut st rid = .ok st') : st'.cdt = st.cdt := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
+theorem cutReplyFrameOut_cdt_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (h : cutReplyFrameOut st rid = .ok st') : st'.cdt = st.cdt := by
+  rcases cutReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
       ⟨_, _, _, _, _, _, _, _, hS⟩
   · rfl
-  · exact spliceReplyFrameStores_cdt_eq hS
+  · exact cutReplyFrameStores_cdt_eq hS
   · exact severReplyFrameBelowStores_cdt_eq hS
 
 /-- The splice writes only where there is a frame above to repair or a frame
 below to sever, so a `rid` with neither is the identity on either arm. -/
-theorem spliceReplyFrameOutOrSelf_eq_self_of_no_frame_above (st : SystemState)
+theorem cutReplyFrameOutOrSelf_eq_self_of_no_frame_above (st : SystemState)
     (rid : SeLe4n.ReplyId) (hNone : replyFrameAbove? st rid = none)
     (hNoBelow : replyFrameBelow? st rid = none) :
-    spliceReplyFrameOutOrSelf st rid = st := by
-  have hDet : spliceReplyFrameOut st rid = .ok st := by
+    cutReplyFrameOutOrSelf st rid = st := by
+  have hDet : cutReplyFrameOut st rid = .ok st := by
     cases hR : st.getReply? rid with
-    | none => exact spliceReplyFrameOut_of_absent st rid hR
+    | none => exact cutReplyFrameOut_of_absent st rid hR
     | some r =>
       cases hN : r.next with
       | none =>
-        refine spliceReplyFrameOut_of_no_frame_above st rid r hR hN ?_
+        refine cutReplyFrameOut_of_no_frame_above st rid r hR hN ?_
         rw [replyFrameBelow?_of_not_head st rid r hR (by rw [hN]; exact fun _ e => by cases e)]
           at hNoBelow
         exact hNoBelow
       | some l =>
         cases l with
-        | head sc => exact spliceReplyFrameOut_of_head st rid r sc hR hN
+        | head sc => exact cutReplyFrameOut_of_head st rid r sc hR hN
         | frame above =>
           exact absurd (show replyFrameAbove? st rid = some above by
             simp [replyFrameAbove?, hR, hN]) (by rw [hNone]; exact fun h => by cases h)
-  unfold spliceReplyFrameOutOrSelf; rw [hDet]
+  unfold cutReplyFrameOutOrSelf; rw [hDet]
 
-theorem spliceReplyFrameOutOrSelf_scheduler_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
-    (spliceReplyFrameOutOrSelf st rid).scheduler = st.scheduler := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+theorem cutReplyFrameOutOrSelf_scheduler_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (cutReplyFrameOutOrSelf st rid).scheduler = st.scheduler := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · exact spliceReplyFrameOut_scheduler_eq h
+  · exact cutReplyFrameOut_scheduler_eq h
 
-theorem spliceReplyFrameOutOrSelf_machine_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
-    (spliceReplyFrameOutOrSelf st rid).machine = st.machine := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+theorem cutReplyFrameOutOrSelf_machine_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (cutReplyFrameOutOrSelf st rid).machine = st.machine := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · exact spliceReplyFrameOut_machine_eq h
+  · exact cutReplyFrameOut_machine_eq h
 
-theorem spliceReplyFrameOutOrSelf_cdt_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
-    (spliceReplyFrameOutOrSelf st rid).cdt = st.cdt := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+theorem cutReplyFrameOutOrSelf_cdt_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (cutReplyFrameOutOrSelf st rid).cdt = st.cdt := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · exact spliceReplyFrameOut_cdt_eq h
+  · exact cutReplyFrameOut_cdt_eq h
 
-theorem spliceReplyFrameOutOrSelf_preserves_objects_invExt (st : SystemState)
+theorem cutReplyFrameOutOrSelf_preserves_objects_invExt (st : SystemState)
     (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
-    (spliceReplyFrameOutOrSelf st rid).objects.invExt := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    (cutReplyFrameOutOrSelf st rid).objects.invExt := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hInv
-  · exact spliceReplyFrameOut_preserves_objects_invExt hInv h
+  · exact cutReplyFrameOut_preserves_objects_invExt hInv h
 
 /-- **WS-RM (`v0.35.6`): the fold's frame at *every* key.**  A key is either
 untouched, or it held a Reply that survives with only its stack links rewritten.
@@ -6746,95 +6736,95 @@ Reply's `caller` rather than its `prev` / `next`, which is all of them.
 
 It reads the primitive's own frame (WS-HP HP6.4), so a consumer never iterates the
 two stores the splice performs. -/
-theorem spliceReplyFrameOutOrSelf_objects_rewrite (st : SystemState)
+theorem cutReplyFrameOutOrSelf_objects_rewrite (st : SystemState)
     (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (x : SeLe4n.ObjId) :
-    (spliceReplyFrameOutOrSelf st rid).objects[x]? = st.objects[x]? ∨
+    (cutReplyFrameOutOrSelf st rid).objects[x]? = st.objects[x]? ∨
       ∃ r r', st.objects[x]? = some (.reply r) ∧
-        (spliceReplyFrameOutOrSelf st rid).objects[x]? = some (.reply r') ∧
+        (cutReplyFrameOutOrSelf st rid).objects[x]? = some (.reply r') ∧
         replyStackRewrite r' r := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · exact Or.inl (by rw [h])
-  · exact spliceReplyFrameOut_objects_rewrite hInv h x
+  · exact cutReplyFrameOut_objects_rewrite hInv h x
 
 /-- The fold writes at most the frame `replyFrameAbove?` names, the frame
 `replyFrameBelow?` names, and the cut frame itself (WS-HP HP6.4 — the splice
 writes all three). -/
-theorem spliceReplyFrameOutOrSelf_objects_ne (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf_objects_ne (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) (k : SeLe4n.ObjId)
     (hk : ∀ above, replyFrameAbove? st rid = some above → k ≠ above.toObjId)
     (hkBelow : ∀ below, replyFrameBelow? st rid = some below → k ≠ below.toObjId)
     (hkCut : k ≠ rid.toObjId) :
-    (spliceReplyFrameOutOrSelf st rid).objects[k]? = st.objects[k]? := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    (cutReplyFrameOutOrSelf st rid).objects[k]? = st.objects[k]? := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · refine spliceReplyFrameOut_objects_ne hInv h k ?_ ?_ hkCut
+  · refine cutReplyFrameOut_objects_ne hInv h k ?_ ?_ hkCut
     · intro r above hR hN
       exact hk above (by simp [replyFrameAbove?, hR, hN])
     · intro r below hR hNotHead hPrev
       exact hkBelow below (by rw [replyFrameBelow?_of_not_head st rid r hR hNotHead]; exact hPrev)
 
-theorem spliceReplyFrameOutOrSelf_tcb_eq (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf_tcb_eq (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
     (hk : st.objects[k]? = some (.tcb t0)) :
-    (spliceReplyFrameOutOrSelf st rid).objects[k]? = some (.tcb t0) := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    (cutReplyFrameOutOrSelf st rid).objects[k]? = some (.tcb t0) := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hk
-  · exact spliceReplyFrameOut_tcb_eq hInv h k t0 hk
+  · exact cutReplyFrameOut_tcb_eq hInv h k t0 hk
 
-theorem spliceReplyFrameOutOrSelf_tcb_backward (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf_tcb_backward (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
-    (hk : (spliceReplyFrameOutOrSelf st rid).objects[k]? = some (.tcb t0)) :
+    (hk : (cutReplyFrameOutOrSelf st rid).objects[k]? = some (.tcb t0)) :
     st.objects[k]? = some (.tcb t0) := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h] at hk; exact hk
-  · exact spliceReplyFrameOut_tcb_backward hInv h k t0 hk
+  · exact cutReplyFrameOut_tcb_backward hInv h k t0 hk
 
-theorem spliceReplyFrameOutOrSelf_getTcb?_eq (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf_getTcb?_eq (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
-    (spliceReplyFrameOutOrSelf st rid).getTcb? tid = st.getTcb? tid := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    (cutReplyFrameOutOrSelf st rid).getTcb? tid = st.getTcb? tid := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · exact spliceReplyFrameOut_getTcb?_eq hInv h tid
+  · exact cutReplyFrameOut_getTcb?_eq hInv h tid
 
-theorem spliceReplyFrameOutOrSelf_non_reply_eq (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf_non_reply_eq (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) (k : SeLe4n.ObjId)
     (hNotReply : ∀ r : Reply, st.objects[k]? ≠ some (.reply r)) :
-    (spliceReplyFrameOutOrSelf st rid).objects[k]? = st.objects[k]? := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    (cutReplyFrameOutOrSelf st rid).objects[k]? = st.objects[k]? := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · exact spliceReplyFrameOut_non_reply_eq hInv h k hNotReply
+  · exact cutReplyFrameOut_non_reply_eq hInv h k hNotReply
 
 /-- A key the fold rewrites holds a Reply on **both** sides, so a read whose value
 is not a Reply crosses the fold unchanged in either direction — the iff form
 `consumeCallerReply_nonTcbNonReply_agree` composes with. -/
-theorem spliceReplyFrameOutOrSelf_non_reply_agree (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf_non_reply_agree (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) (s : SeLe4n.ObjId) (k : KernelObject)
     (hkR : ∀ rr, k ≠ .reply rr) :
-    ((spliceReplyFrameOutOrSelf st rid).objects[s]? = some k ↔ st.objects[s]? = some k) := by
-  rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hInv s with hEq | ⟨o, o', hPre, hPost, _⟩
+    ((cutReplyFrameOutOrSelf st rid).objects[s]? = some k ↔ st.objects[s]? = some k) := by
+  rcases cutReplyFrameOutOrSelf_objects_rewrite st rid hInv s with hEq | ⟨o, o', hPre, hPost, _⟩
   · rw [hEq]
   · refine iff_of_false ?_ ?_
     · rw [hPost]; intro hx; exact hkR o' (Option.some.inj hx).symm
     · rw [hPre]; intro hx; exact hkR o (Option.some.inj hx).symm
 
-theorem spliceReplyFrameOutOrSelf_notification_backward (st : SystemState)
+theorem cutReplyFrameOutOrSelf_notification_backward (st : SystemState)
     (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
     (oid : SeLe4n.ObjId) (ntfn : Notification)
-    (hNtfn : (spliceReplyFrameOutOrSelf st rid).objects[oid]? = some (.notification ntfn)) :
+    (hNtfn : (cutReplyFrameOutOrSelf st rid).objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h] at hNtfn; exact hNtfn
-  · exact spliceReplyFrameOut_notification_backward hInv h oid ntfn hNtfn
+  · exact cutReplyFrameOut_notification_backward hInv h oid ntfn hNtfn
 
 /-- Every Reply survives the fold, with at most its stack links rewritten. -/
-theorem spliceReplyFrameOutOrSelf_reply_rewrite (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf_reply_rewrite (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (r : Reply)
     (hReply : st.objects[oid]? = some (.reply r)) :
-    ∃ r', (spliceReplyFrameOutOrSelf st rid).objects[oid]? = some (.reply r') ∧
+    ∃ r', (cutReplyFrameOutOrSelf st rid).objects[oid]? = some (.reply r') ∧
       replyStackRewrite r' r := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · exact ⟨r, by rw [h]; exact hReply, replyStackRewrite.refl r⟩
-  · exact spliceReplyFrameOut_reply_rewrite hInv h oid r hReply
+  · exact cutReplyFrameOut_reply_rewrite hInv h oid r hReply
 
 /-- **WS-RM (`v0.35.6`): the fold's *decision*, read off the object store.**
 Either the cut frame resolves and names a frame above that resolves and
@@ -6849,16 +6839,16 @@ The cut frame's own record is exposed (WS-HP HP6.4) because the composed step
 reads its `prev` to decide whether to splice, so a congruence must compare that
 record too — and it comes from the same `getReply?` the branch condition reads,
 so nothing new has to agree. -/
-theorem spliceReplyFrameOutOrSelf_decision (st : SystemState) (rid : SeLe4n.ReplyId) :
+theorem cutReplyFrameOutOrSelf_decision (st : SystemState) (rid : SeLe4n.ReplyId) :
     (∃ (r : Reply) (above : SeLe4n.ReplyId) (a : Reply),
         st.getReply? rid = some r ∧ r.next = some (.frame above) ∧
         st.getReply? above = some a ∧ a.prev = some rid ∧
-        spliceReplyFrameStores st rid above r a = .ok (spliceReplyFrameOutOrSelf st rid)) ∨
+        cutReplyFrameStores st rid above r a = .ok (cutReplyFrameOutOrSelf st rid)) ∨
       (∃ (r : Reply) (below : SeLe4n.ReplyId) (b : Reply),
         st.getReply? rid = some r ∧ r.next = none ∧ r.prev = some below ∧
         st.getReply? below = some b ∧ b.next = some (.frame rid) ∧
-        severReplyFrameBelowStores st rid below r b = .ok (spliceReplyFrameOutOrSelf st rid)) ∨
-      (spliceReplyFrameOutOrSelf st rid = st ∧
+        severReplyFrameBelowStores st rid below r b = .ok (cutReplyFrameOutOrSelf st rid)) ∨
+      (cutReplyFrameOutOrSelf st rid = st ∧
         (∀ (r : Reply) (above : SeLe4n.ReplyId) (a : Reply),
           st.getReply? rid = some r → r.next = some (.frame above) →
           st.getReply? above = some a → a.prev ≠ some rid) ∧
@@ -6869,32 +6859,32 @@ theorem spliceReplyFrameOutOrSelf_decision (st : SystemState) (rid : SeLe4n.Repl
       st.getReply? rid = some r ∧ r.next = some (.frame above) ∧
       st.getReply? above = some a ∧ a.prev = some rid
   · obtain ⟨r, above, a, hR, hN, hA, hP⟩ := hEx
-    obtain ⟨s', hS⟩ := spliceReplyFrameStores_isOk st rid above r a
-    have hOut : spliceReplyFrameOut st rid = .ok s' := by
-      unfold spliceReplyFrameOut
+    obtain ⟨s', hS⟩ := cutReplyFrameStores_isOk st rid above r a
+    have hOut : cutReplyFrameOut st rid = .ok s' := by
+      unfold cutReplyFrameOut
       rw [hR]
       simp only [hN, hA, hP, bne_self_eq_false, Bool.false_eq_true, if_false]
       exact hS
-    have hFold : spliceReplyFrameOutOrSelf st rid = s' := by
-      unfold spliceReplyFrameOutOrSelf; rw [hOut]
+    have hFold : cutReplyFrameOutOrSelf st rid = s' := by
+      unfold cutReplyFrameOutOrSelf; rw [hOut]
     exact Or.inl ⟨r, above, a, hR, hN, hA, hP, by rw [hFold]; exact hS⟩
   · by_cases hSv : ∃ (r : Reply) (below : SeLe4n.ReplyId) (b : Reply),
         st.getReply? rid = some r ∧ r.next = none ∧ r.prev = some below ∧
         st.getReply? below = some b ∧ b.next = some (.frame rid)
     · obtain ⟨r, below, b, hR, hN, hP, hB, hBn⟩ := hSv
       obtain ⟨s', hS⟩ := severReplyFrameBelowStores_isOk st rid below r b
-      have hOut : spliceReplyFrameOut st rid = .ok s' := by
-        unfold spliceReplyFrameOut
+      have hOut : cutReplyFrameOut st rid = .ok s' := by
+        unfold cutReplyFrameOut
         rw [hR]
         simp only [hN, hP, hB, hBn, bne_self_eq_false, Bool.false_eq_true, if_false]
         exact hS
-      have hFold : spliceReplyFrameOutOrSelf st rid = s' := by
-        unfold spliceReplyFrameOutOrSelf; rw [hOut]
+      have hFold : cutReplyFrameOutOrSelf st rid = s' := by
+        unfold cutReplyFrameOutOrSelf; rw [hOut]
       exact Or.inr (Or.inl ⟨r, below, b, hR, hN, hP, hB, hBn, by rw [hFold]; exact hS⟩)
     · refine Or.inr (Or.inr ⟨?_, ?_, ?_⟩)
-      · rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+      · rcases cutReplyFrameOutOrSelf_cases st rid with h | h
         · exact h
-        · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, hR, hN, hA, hP, _⟩ |
+        · rcases cutReplyFrameOut_cases h with hEq | ⟨r, above, a, hR, hN, hA, hP, _⟩ |
               ⟨r, below, b, hR, hN, hP, hB, hBn, _⟩
           · exact hEq
           · exact absurd ⟨r, above, a, hR, hN, hA, hP⟩ hEx
@@ -6915,7 +6905,7 @@ theorem spliceReplyFrameOutOrSelf_decision (st : SystemState) (rid : SeLe4n.Repl
 theorem removeCallerReplyFrame_eq (st : SystemState) (caller : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) :
     removeCallerReplyFrame caller rid st
-      = SystemState.consumeCallerReply caller rid (spliceReplyFrameOutOrSelf st rid) := rfl
+      = SystemState.consumeCallerReply caller rid (cutReplyFrameOutOrSelf st rid) := rfl
 
 /-- **WS-RM (`v0.35.6`): on a frame with nothing above it the removal *is* the
 consume**, definitionally -- and on one with no frame below to sever either.
@@ -6928,7 +6918,7 @@ theorem removeCallerReplyFrame_eq_consume_of_no_frame_above (st : SystemState)
     (hNone : replyFrameAbove? st rid = none) (hNoBelow : replyFrameBelow? st rid = none) :
     removeCallerReplyFrame caller rid st = SystemState.consumeCallerReply caller rid st := by
   rw [removeCallerReplyFrame_eq,
-    spliceReplyFrameOutOrSelf_eq_self_of_no_frame_above st rid hNone hNoBelow]
+    cutReplyFrameOutOrSelf_eq_self_of_no_frame_above st rid hNone hNoBelow]
 
 /-- The removal is **total**: both legs are. -/
 theorem removeCallerReplyFrame_isOk (st : SystemState) (caller : SeLe4n.ThreadId)
@@ -6943,7 +6933,7 @@ theorem removeCallerReplyFrame_scheduler_eq (st st' : SystemState)
     st'.scheduler = st.scheduler := by
   rw [removeCallerReplyFrame_eq] at hStep
   exact (SystemState.consumeCallerReply_scheduler_eq _ st' caller rid hStep).trans
-    (spliceReplyFrameOutOrSelf_scheduler_eq st rid)
+    (cutReplyFrameOutOrSelf_scheduler_eq st rid)
 
 theorem removeCallerReplyFrame_machine_eq (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -6951,7 +6941,7 @@ theorem removeCallerReplyFrame_machine_eq (st st' : SystemState)
     st'.machine = st.machine := by
   rw [removeCallerReplyFrame_eq] at hStep
   exact (SystemState.consumeCallerReply_machine_eq _ st' caller rid hStep).trans
-    (spliceReplyFrameOutOrSelf_machine_eq st rid)
+    (cutReplyFrameOutOrSelf_machine_eq st rid)
 
 theorem removeCallerReplyFrame_cdt_eq (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -6959,16 +6949,16 @@ theorem removeCallerReplyFrame_cdt_eq (st st' : SystemState)
     st'.cdt = st.cdt := by
   rw [removeCallerReplyFrame_eq] at hStep
   exact (SystemState.consumeCallerReply_cdt_eq _ st' caller rid hStep).trans
-    (spliceReplyFrameOutOrSelf_cdt_eq st rid)
+    (cutReplyFrameOutOrSelf_cdt_eq st rid)
 
 /-- **WS-RR RR8.16** (`v0.35.199`): the splice is a `kindPreservingWrite` — it
 rewrites the stack links of up to three Reply objects and touches nothing else,
 so every key it writes held a Reply and still holds one. -/
-theorem spliceReplyFrameOutOrSelf_kindPreservingWrite (st : SystemState)
+theorem cutReplyFrameOutOrSelf_kindPreservingWrite (st : SystemState)
     (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
-    kindPreservingWrite st (spliceReplyFrameOutOrSelf st rid) := by
+    kindPreservingWrite st (cutReplyFrameOutOrSelf st rid) := by
   intro k
-  rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hObjInv k with h | ⟨r, r', hr, hr', _⟩
+  rcases cutReplyFrameOutOrSelf_objects_rewrite st rid hObjInv k with h | ⟨r, r', hr, hr', _⟩
   · exact Or.inl h
   · exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?, KernelObject.bindingCodes,
       KernelObject.tableBackLinks, KernelObject.mappingView]⟩
@@ -6985,9 +6975,9 @@ theorem removeCallerReplyFrame_kindPreservingWrite (st st' : SystemState)
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
     kindPreservingWrite st st' := by
   rw [removeCallerReplyFrame_eq] at hStep
-  exact (spliceReplyFrameOutOrSelf_kindPreservingWrite st rid hObjInv).trans
+  exact (cutReplyFrameOutOrSelf_kindPreservingWrite st rid hObjInv).trans
     (SystemState.consumeCallerReply_kindPreservingWrite _ st' caller rid
-      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep)
+      (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep)
 
 theorem removeCallerReplyFrame_preserves_objects_invExt (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
@@ -6995,7 +6985,7 @@ theorem removeCallerReplyFrame_preserves_objects_invExt (st st' : SystemState)
     st'.objects.invExt := by
   rw [removeCallerReplyFrame_eq] at hStep
   exact SystemState.consumeCallerReply_preserves_objects_invExt _ st' caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep
 
 theorem removeCallerReplyFrame_nonTcbNonReply_agree (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
@@ -7006,8 +6996,8 @@ theorem removeCallerReplyFrame_nonTcbNonReply_agree (st st' : SystemState)
   intro s k hkT hkR
   rw [removeCallerReplyFrame_eq] at hStep
   rw [SystemState.consumeCallerReply_nonTcbNonReply_agree _ st' caller rid
-      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep s k hkT hkR]
-  exact spliceReplyFrameOutOrSelf_non_reply_agree st rid hObjInv s k hkR
+      (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep s k hkT hkR]
+  exact cutReplyFrameOutOrSelf_non_reply_agree st rid hObjInv s k hkR
 
 /-- Every stored TCB survives the removal, with only the answered caller's
 `replyObject` cleared: the splice writes no TCB and the consume's TCB rewrite
@@ -7024,8 +7014,8 @@ theorem removeCallerReplyFrame_tcb_forward (st st' : SystemState)
   intro s tx hx
   rw [removeCallerReplyFrame_eq] at hStep
   obtain ⟨ty, hy, hFields⟩ := SystemState.consumeCallerReply_tcb_forward _ st' caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep s tx hx
-  exact ⟨ty, spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv s ty hy, hFields⟩
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep s tx hx
+  exact ⟨ty, cutReplyFrameOutOrSelf_tcb_backward st rid hObjInv s ty hy, hFields⟩
 
 theorem removeCallerReplyFrame_tcb_backward (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
@@ -7039,8 +7029,8 @@ theorem removeCallerReplyFrame_tcb_backward (st st' : SystemState)
   intro s ty hy
   rw [removeCallerReplyFrame_eq] at hStep
   exact SystemState.consumeCallerReply_tcb_backward _ st' caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep s ty
-    (spliceReplyFrameOutOrSelf_tcb_eq st rid hObjInv s ty hy)
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep s ty
+    (cutReplyFrameOutOrSelf_tcb_eq st rid hObjInv s ty hy)
 
 /-- The answered caller's forward link is gone after the removal. -/
 theorem removeCallerReplyFrame_replyObject_none (st : SystemState)
@@ -7050,7 +7040,7 @@ theorem removeCallerReplyFrame_replyObject_none (st : SystemState)
   intro result tcb' hRun hGetT
   rw [removeCallerReplyFrame_eq] at hRun
   exact SystemState.consumeCallerReply_replyObject_none _ caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) result tcb' hRun hGetT
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) result tcb' hRun hGetT
 
 /-- The consumed Reply reads back as `Reply.consumed` of the record the *splice*
 left — which is the pre-state record whenever the consumed frame is not itself
@@ -7059,19 +7049,19 @@ the frame above (it never is: a frame is not above itself under
 theorem removeCallerReplyFrame_getReply?_caller_none (st : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r : Reply)
     (hObjInv : st.objects.invExt)
-    (hGet : (spliceReplyFrameOutOrSelf st rid).getReply? rid = some r) :
+    (hGet : (cutReplyFrameOutOrSelf st rid).getReply? rid = some r) :
     ∀ result, removeCallerReplyFrame caller rid st = .ok ((), result) →
       result.getReply? rid = some r.consumed := by
   intro result hRun
   rw [removeCallerReplyFrame_eq] at hRun
   exact SystemState.consumeCallerReply_getReply?_caller_none _ caller rid r
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hGet result hRun
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hGet result hRun
 
 /-- **WS-RM (`v0.35.6`): the removal frees the consumed Reply**, stated on the
 *pre-state's* Reply.  The splice rewrites `rid`'s own frame whenever it writes
 (its last store clears the cut frame's `prev` and `next`, seL4's
 `reply_remove`), so the record the consume acts on is the pre-state
-record with at most its stack links moved (`spliceReplyFrameOutOrSelf_reply_rewrite`);
+record with at most its stack links moved (`cutReplyFrameOutOrSelf_reply_rewrite`);
 the existential is stated over that record, and `caller = none` — the only
 projection the linkage conjuncts read here — is the same either way. -/
 theorem removeCallerReplyFrame_getReply?_free (st : SystemState)
@@ -7081,7 +7071,7 @@ theorem removeCallerReplyFrame_getReply?_free (st : SystemState)
     ∀ result, removeCallerReplyFrame caller rid st = .ok ((), result) →
       ∃ r', result.getReply? rid = some r' ∧ r'.caller = none := by
   intro result hRun
-  obtain ⟨rd, hrd, _⟩ := spliceReplyFrameOutOrSelf_reply_rewrite st rid hObjInv rid.toObjId r
+  obtain ⟨rd, hrd, _⟩ := cutReplyFrameOutOrSelf_reply_rewrite st rid hObjInv rid.toObjId r
     ((SystemState.getReply?_eq_some_iff st rid r).mp hGet)
   exact ⟨rd.consumed,
     removeCallerReplyFrame_getReply?_caller_none st caller rid rd hObjInv
@@ -7100,8 +7090,8 @@ theorem removeCallerReplyFrame_head_getReply?_next (st : SystemState)
     (hR : st.getReply? rid = some r) (hHead : r.next = some (.head scId))
     (st' : SystemState) (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
     ∃ r', st'.getReply? rid = some r' ∧ r'.next = some (.head scId) := by
-  have hFold : spliceReplyFrameOutOrSelf st rid = st :=
-    spliceReplyFrameOutOrSelf_eq_self_of_no_frame_above st rid
+  have hFold : cutReplyFrameOutOrSelf st rid = st :=
+    cutReplyFrameOutOrSelf_eq_self_of_no_frame_above st rid
       (replyFrameAbove?_of_head st rid r scId hR hHead)
       (replyFrameBelow?_of_head st rid r scId hR hHead)
   refine ⟨r.consumed,
@@ -7118,19 +7108,19 @@ theorem removeCallerReplyFrame_objects_isSome (st st' : SystemState)
   intro x hSome
   rw [removeCallerReplyFrame_eq] at hStep
   refine SystemState.consumeCallerReply_objects_isSome _ st' caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep x ?_
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep x ?_
   intro hNone
   cases hPre : st.objects[x]? with
   | none => exact hSome hPre
   | some k =>
     cases k with
     | reply r0 =>
-      obtain ⟨r1, hr1, _⟩ := spliceReplyFrameOutOrSelf_reply_rewrite st rid hObjInv x r0 hPre
+      obtain ⟨r1, hr1, _⟩ := cutReplyFrameOutOrSelf_reply_rewrite st rid hObjInv x r0 hPre
       rw [hr1] at hNone; cases hNone
     | tcb t0 =>
-      rw [spliceReplyFrameOutOrSelf_tcb_eq st rid hObjInv x t0 hPre] at hNone; cases hNone
+      rw [cutReplyFrameOutOrSelf_tcb_eq st rid hObjInv x t0 hPre] at hNone; cases hNone
     | _ =>
-      rw [spliceReplyFrameOutOrSelf_non_reply_eq st rid hObjInv x (by intro r hr; cases hPre.symm.trans hr), hPre] at hNone
+      rw [cutReplyFrameOutOrSelf_non_reply_eq st rid hObjInv x (by intro r hr; cases hPre.symm.trans hr), hPre] at hNone
       cases hNone
 
 /-- Every Reply present before the removal is still a Reply after it. -/
@@ -7141,10 +7131,10 @@ theorem removeCallerReplyFrame_getReply?_isSome (st st' : SystemState)
       ∃ r'', st'.getReply? rid' = some r'' := by
   intro rid' r' hGet'
   rw [removeCallerReplyFrame_eq] at hStep
-  obtain ⟨r1, hr1, _⟩ := spliceReplyFrameOutOrSelf_reply_rewrite st rid hObjInv rid'.toObjId r'
+  obtain ⟨r1, hr1, _⟩ := cutReplyFrameOutOrSelf_reply_rewrite st rid hObjInv rid'.toObjId r'
     ((SystemState.getReply?_eq_some_iff _ _ _).mp hGet')
   exact SystemState.consumeCallerReply_getReply?_isSome _ st' caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep rid' r1
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep rid' r1
     ((SystemState.getReply?_eq_some_iff _ _ _).mpr hr1)
 
 /-- Z7-C2: Return a donated SchedContext from a server back to the thread that

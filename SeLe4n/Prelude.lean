@@ -54,6 +54,25 @@ predicates (defined below at `machineWordMax := 2^64`) must be enforced at every
 ABI entry point. The `CPtr.isWord64Bounded` and `Slot.isWord64Bounded` methods
 provide this check for capability pointers and slot indices. -/
 
+/-- WS-ZA ZA6.33: **`some a`, as the cell `c` when `c` already holds `a`.**  A
+record field built once with its object (a `some` of the object's own id) is
+shared this way by a write that stores the same value, so the write builds no
+cell; any other `c` builds it (`reuseSome_eq`). -/
+@[inline] def reuseSome {α : Type _} [DecidableEq α] (c : Option α) (a : α) : Option α :=
+  match c with
+  | some x => if x = a then c else some a
+  | none => some a
+
+@[simp] theorem reuseSome_eq {α : Type _} [DecidableEq α] (c : Option α) (a : α) :
+    reuseSome c a = some a := by
+  unfold reuseSome
+  cases c with
+  | none => rfl
+  | some x =>
+    by_cases h : x = a
+    · simp only [h, ↓reduceIte]
+    · simp only [h, ↓reduceIte]
+
 /-- Identifier for objects in the global kernel object store.
     Value 0 is reserved as sentinel (H-06/WS-E3). -/
 structure ObjId where

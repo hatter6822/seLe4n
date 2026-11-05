@@ -1605,12 +1605,12 @@ theorem finaliseReplyCallerCancel_unstacked_loanKept (st : SystemState) (hInv : 
   have hRo : st.objects[rid.toObjId]? = some (.reply r) := hR
   have hGR : st.getReply? rid = some r := (SystemState.getReply?_eq_some_iff _ _ _).mpr hRo
   -- The splice: the identity, or the cut from the frame below.
-  have K0 : replyContextKeptBy (offCallerReply rid) st (spliceThreadReplyFrameOut st t) ∧
-      ∃ r0, (spliceThreadReplyFrameOut st t).objects[rid.toObjId]? = some (.reply r0) := by
-    rcases spliceThreadReplyFrameOut_cases st t with h | ⟨rid', hr', h⟩
+  have K0 : replyContextKeptBy (offCallerReply rid) st (cutThreadReplyFrameOut st t) ∧
+      ∃ r0, (cutThreadReplyFrameOut st t).objects[rid.toObjId]? = some (.reply r0) := by
+    rcases cutThreadReplyFrameOut_cases st t with h | ⟨rid', hr', h⟩
     · rw [h]; exact ⟨fun _ _ h _ => h, r, hRo⟩
     rw [hRO] at hr'; cases hr'
-    rcases spliceReplyFrameOut_cases h with h' | ⟨r1, above, _, hR1, hN1, _, _, _⟩ |
+    rcases cutReplyFrameOut_cases h with h' | ⟨r1, above, _, hR1, hN1, _, _, _⟩ |
         ⟨r1, below, b, hR1, hN1, _, hB', hBn, hS⟩
     · rw [h']; exact ⟨fun _ _ h _ => h, r, hRo⟩
     · rw [hGR] at hR1; cases hR1; rw [hN] at hN1; cases hN1
@@ -1632,12 +1632,12 @@ theorem finaliseReplyCallerCancel_unstacked_loanKept (st : SystemState) (hInv : 
       · cases e
     rw [hFrame k hkB hkR]; exact ho
   obtain ⟨K0, r0, hR0⟩ := K0
-  have hI0 := spliceThreadReplyFrameOut_preserves_objects_invExt st t hInv
-  have hT0 : (spliceThreadReplyFrameOut st t).getTcb? c = some t := by
-    rw [spliceThreadReplyFrameOut_getTcb?_eq st t hInv]; exact hT
+  have hI0 := cutThreadReplyFrameOut_preserves_objects_invExt st t hInv
+  have hT0 : (cutThreadReplyFrameOut st t).getTcb? c = some t := by
+    rw [cutThreadReplyFrameOut_getTcb?_eq st t hInv]; exact hT
   have hInvC : (SystemState.unlinkReplyWaiterOpt
       (Lifecycle.Suspend.consumeReplyLink
-        (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+        (Lifecycle.Suspend.restoreToReadyCancelled (cutThreadReplyFrameOut st t) c) c t)
       c t.blockingServer?).objects.invExt := by
     rw [← cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
     exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st c t hInv
@@ -1647,28 +1647,28 @@ theorem finaliseReplyCallerCancel_unstacked_loanKept (st : SystemState) (hInv : 
 up to its `prev`: it writes the frame above (its `prev` alone, or its links cut
 from the spliced reply), the frame below (linked up to the frame above, so
 linking up to a frame before and after), and the spliced reply itself. -/
-theorem spliceThreadReplyFrameOut_framed_cancelFrame (st : SystemState) (hInv : st.objects.invExt)
+theorem cutThreadReplyFrameOut_framed_cancelFrame (st : SystemState) (hInv : st.objects.invExt)
     {c : SeLe4n.ThreadId} {t : TCB} {r : Reply} {rid : SeLe4n.ReplyId}
     (hRO : t.replyObject = some rid) (hRo : st.objects[rid.toObjId]? = some (.reply r))
     (hC : r.callerCode = c.val + 1) :
-    CancelFrame st (spliceThreadReplyFrameOut st t) c ∧
-      ∃ r0, (spliceThreadReplyFrameOut st t).objects[rid.toObjId]? = some (.reply r0) ∧
+    CancelFrame st (cutThreadReplyFrameOut st t) c ∧
+      ∃ r0, (cutThreadReplyFrameOut st t).objects[rid.toObjId]? = some (.reply r0) ∧
         r0.callerCode = r.callerCode := by
   have hGR : st.getReply? rid = some r := (SystemState.getReply?_eq_some_iff _ _ _).mpr hRo
-  have hTcb := spliceThreadReplyFrameOut_getTcb?_eq st t hInv
+  have hTcb := cutThreadReplyFrameOut_getTcb?_eq st t hInv
   have hT : ∀ (v : SeLe4n.ThreadId) (tv : TCB),
-      (spliceThreadReplyFrameOut st t).getTcb? v = some tv ↔ st.getTcb? v = some tv := fun v tv => by
+      (cutThreadReplyFrameOut st t).getTcb? v = some tv ↔ st.getTcb? v = some tv := fun v tv => by
     rw [hTcb]
   have mk : (∀ (k : SeLe4n.ObjId) (r' : Reply), st.objects[k]? = some (.reply r') → r'.next = none →
-      r'.callerCode ≠ c.val + 1 → ∃ r'', (spliceThreadReplyFrameOut st t).objects[k]? =
+      r'.callerCode ≠ c.val + 1 → ∃ r'', (cutThreadReplyFrameOut st t).objects[k]? =
         some (.reply r'') ∧ r''.callerCode = r'.callerCode ∧ r''.next = none) →
-      CancelFrame st (spliceThreadReplyFrameOut st t) c := fun hRep =>
+      CancelFrame st (cutThreadReplyFrameOut st t) c := fun hRep =>
     ⟨fun v tv _ hv => ⟨tv, (hT v tv).mpr hv, .refl tv⟩, fun v tv _ hv => ⟨tv, (hT v tv).mp hv, rfl, rfl⟩,
       fun k r' hk hn hc => by unfold SystemState.getObject? at hk ⊢; exact hRep k r' hk hn hc⟩
-  rcases spliceThreadReplyFrameOut_cases st t with h | ⟨rid', hr', h⟩
+  rcases cutThreadReplyFrameOut_cases st t with h | ⟨rid', hr', h⟩
   · rw [h]; exact ⟨.refl st c, r, hRo, rfl⟩
   rw [hRO] at hr'; cases hr'
-  rcases spliceReplyFrameOut_cases h with h' | ⟨r1, above, a, hR1, hN1, hA, hP, hS⟩ |
+  rcases cutReplyFrameOut_cases h with h' | ⟨r1, above, a, hR1, hN1, hA, hP, hS⟩ |
       ⟨r1, below, b, hR1, hN1, hPv, hB', hBn, hS⟩
   · rw [h']; exact ⟨.refl st c, r, hRo, rfl⟩
   · rw [hGR] at hR1; cases hR1
@@ -1676,9 +1676,9 @@ theorem spliceThreadReplyFrameOut_framed_cancelFrame (st : SystemState) (hInv : 
     have hkR : ∀ (k : SeLe4n.ObjId) (r' : Reply), st.objects[k]? = some (.reply r') →
         r'.callerCode ≠ c.val + 1 → k ≠ rid.toObjId := fun k r' hk hc e => by
       subst e; rw [hRo] at hk; cases hk; exact hc hC
-    cases hBelow : spliceFrameBelow? st rid r above with
+    cases hBelow : cutFrameBelow? st rid r above with
     | none =>
-      obtain ⟨hCut, hAbove, hFrame⟩ := spliceReplyFrameStores_sever_values hInv hBelow hS
+      obtain ⟨hCut, hAbove, hFrame⟩ := cutReplyFrameStores_sever_values hInv hBelow hS
       refine ⟨mk (fun k r' hk hn hc => ?_), _, (SystemState.getReply?_eq_some_iff _ _ _).mp hCut, rfl⟩
       have hk1 := hkR k r' hk hc
       by_cases hkA : k = above.toObjId
@@ -1691,8 +1691,8 @@ theorem spliceThreadReplyFrameOut_framed_cancelFrame (st : SystemState) (hInv : 
       · exact ⟨r', by rw [hFrame k hkA hk1]; exact hk, rfl, hn⟩
     | some pair =>
       obtain ⟨below, b⟩ := pair
-      obtain ⟨-, -, hBb, hBn⟩ := spliceFrameBelow?_eq_some hBelow
-      obtain ⟨hAv, hBv, hCut, hFrame⟩ := spliceReplyFrameStores_splice_values hInv hGR hN1 hA hP
+      obtain ⟨-, -, hBb, hBn⟩ := cutFrameBelow?_eq_some hBelow
+      obtain ⟨hAv, hBv, hCut, hFrame⟩ := cutReplyFrameStores_break_values hInv hGR hN1 hA hP
         hBelow hS
       have hBO := (SystemState.getReply?_eq_some_iff _ _ _).mp hBb
       refine ⟨mk (fun k r' hk hn hc => ?_), _, (SystemState.getReply?_eq_some_iff _ _ _).mp hCut, rfl⟩
@@ -1702,7 +1702,9 @@ theorem spliceThreadReplyFrameOut_framed_cancelFrame (st : SystemState) (hInv : 
       by_cases hkA : k = above.toObjId
       · subst hkA
         rw [hAO] at hk; cases hk
-        exact ⟨_, (SystemState.getReply?_eq_some_iff _ _ _).mp hAv, rfl, hn⟩
+        refine ⟨_, (SystemState.getReply?_eq_some_iff _ _ _).mp hAv, ?_, ?_⟩ <;>
+          rw [Reply.unlinkedFrom_of_next_ne (by rw [hn]; exact fun e => by cases e)]
+        all_goals first | rfl | exact hn
       · exact ⟨r', by rw [hFrame k hkA hkB hk1]; exact hk, rfl, hn⟩
   · rw [hGR] at hR1; cases hR1
     obtain ⟨-, hRv, hFrame⟩ := severReplyFrameBelowStores_values hInv hGR hN1 hB' hBn hS
@@ -1715,7 +1717,7 @@ theorem spliceThreadReplyFrameOut_framed_cancelFrame (st : SystemState) (hInv : 
     exact ⟨r', by rw [hFrame k hkB hkR]; exact hk, rfl, hn⟩
 
 /-- **The cancel of a framed reply keeps every other plain waiter**
-(`CancelFrame`): the splice (`spliceThreadReplyFrameOut_framed_cancelFrame`), then
+(`CancelFrame`): the splice (`cutThreadReplyFrameOut_framed_cancelFrame`), then
 the restore, the consume, the unlink and the revert, which keep every other
 thread and every other reply (`WaiterFrame`). -/
 theorem finaliseReplyCallerCancel_noHead_cancelFrame (st : SystemState) (hInv : st.objects.invExt)
@@ -1727,17 +1729,17 @@ theorem finaliseReplyCallerCancel_noHead_cancelFrame (st : SystemState) (hInv : 
   rw [hEq]
   let rid : SeLe4n.ReplyId := ⟨t.replyObjectCode - 1⟩
   have hRo : st.objects[rid.toObjId]? = some (.reply r) := hR
-  obtain ⟨C0, r1, hr1, hc1⟩ := spliceThreadReplyFrameOut_framed_cancelFrame st hInv hRO hRo hC
-  have I1 := spliceThreadReplyFrameOut_preserves_objects_invExt st t hInv
-  have hT1 : (spliceThreadReplyFrameOut st t).getTcb? c = some t := by
-    rw [spliceThreadReplyFrameOut_getTcb?_eq st t hInv]; exact hT
+  obtain ⟨C0, r1, hr1, hc1⟩ := cutThreadReplyFrameOut_framed_cancelFrame st hInv hRO hRo hC
+  have I1 := cutThreadReplyFrameOut_preserves_objects_invExt st t hInv
+  have hT1 : (cutThreadReplyFrameOut st t).getTcb? c = some t := by
+    rw [cutThreadReplyFrameOut_getTcb?_eq st t hInv]; exact hT
   have hInvC : (SystemState.unlinkReplyWaiterOpt
       (Lifecycle.Suspend.consumeReplyLink
-        (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+        (Lifecycle.Suspend.restoreToReadyCancelled (cutThreadReplyFrameOut st t) c) c t)
       c t.blockingServer?).objects.invExt := by
     rw [← cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
     exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st c t hInv
-  generalize spliceThreadReplyFrameOut st t = s1 at C0 hr1 I1 hT1 hInvC
+  generalize cutThreadReplyFrameOut st t = s1 at C0 hr1 I1 hT1 hInvC
   have f1 : WaiterFrame s1 (Lifecycle.Suspend.restoreToReadyCancelled s1 c) (· = c) := by
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
     exact WaiterFrame.updateTcb s1 c _ I1
