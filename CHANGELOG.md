@@ -63,23 +63,44 @@ context and returns no loan.  `.tcbResume` follows seL4's `restart` and
   bound, release-queued and postponed suspends, and the bound and postponed
   resumes.
 
-  The endpoint and reply arms are pinned at what the specification's writes
-  read today, which rebuild the neighbours', the endpoint's and the reply's
-  records:
-
-  | Arm | Reading |
-  |---|---|
-  | receive-blocked | 14 |
-  | send-blocked | 12 |
-  | reply-blocked | 11 |
-  | donated reply | 25 |
-
-  ZA6.35 brings them to zero.
-
-  Two other pins come from this change.  The donating call that sets up the
-  donated scenario reads 124: that is the call's donation leg, measured here
-  for the first time.  The yieldTo requeue's first call reads 3, because it
-  now follows these scenarios.
+  So do the receive-blocked, send-blocked, reply-blocked and donated-reply
+  suspends, the donating call that sets up the donated scenario, and the
+  yieldTo requeue's first call, which now follows these scenarios.  Every pin
+  this change adds or touches is 0, first call and steady state.
+- **The endpoint and reply arms write in place.**
+  - `removeFromBlockingEndpoint` and `spliceOutMidQueueNode` have compiled
+    forms (`removeFromBlockingEndpointImpl`, `spliceOutMidQueueNodeImpl`,
+    `@[csimp]`) that write the neighbours' link words and the endpoint's end
+    codes over their own records, read as codes.
+  - The reply arm (`cancelIpcBlocking`'s `.blockedOnReply` case) and the
+    donated-head cut have compiled forms (`cancelIpcBlocking_eq_impl`,
+    `cutHeadFrameKeepingContext_eq_impl`).  The frame's links, the context's
+    head and the holder's binding are written over their own records, and
+    the key hook reads the holder's key before the writes.  The reply-frame
+    in-place forms move to `IPC/Operations/ReplyFrameInPlace.lean`.
+- **The donating call writes in place** (`IPC/Operations/DonationInPlace.lean`,
+  `IPC/CrossCore/EndpointCallDonatingInPlace.lean`).  The donating call read
+  124 because it ran the general arm.  A call whose rendezvous and donation
+  checks all pass on the pre-state (`callDonatesInPlace`), with donor and
+  server on one home core, now runs `performCallDonating`.  That is the
+  rendezvous, then `schedContext_donate` and `reply_push` each in its slot
+  (`donateSchedContextInPlace`), then the priority walk.  A message of at most
+  four words is written straight into the server's registers.
+  `callDispatchChecked_donating_inPlace` proves it is the specification's
+  dispatch.  A donation that migrates replenishments between cores still takes
+  the general arm.
+- **Carved cells.**  The push stores links that name the objects' own ids, so
+  each object is carved with them: a thread's `idCell`, a reply's `idCell` and
+  `frameLinkCell`, and a context's `headLinkCell`.  Each is proof-carrying
+  (`*_eq`), and the push shares them through `SeLe4n.reuseSome` and
+  `ReplyStackLink.reuseHead` / `reuseFrame`.  The retype pins rise by what the
+  carve now builds:
+  - a reply 12 → 15;
+  - a thread 25 → 26;
+  - a context 14/13 → 16/15.
+- **The resume enqueues a schedulable thread.**  `resumeSchedulable` reads
+  the head refill's budget alone, as `hasSufficientBudget` does.  It no longer
+  reads `isActive`, which an unbind clears and a bind does not set.
 - **Debt.**  The `docs/REGISTERED_DEBT.md` row for the suspend's general path
   is closed.
 - **Fixture.**  `tests/fixtures/main_trace_smoke.expected` changes one line, and

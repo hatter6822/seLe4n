@@ -443,11 +443,14 @@ for driver in drivers:
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
             # Since v0.36.139 a CNode carries its occupancy link array
-            # (`CNode.occ`), one cell of its own: 30.
-            "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (30, 30),
+            # (`CNode.occ`), one cell of its own: 30.  WS-ZA ZA6.33: a reply
+            # is carved with the cells a donation's push links it by, its id
+            # (`Reply.idCell`) and its frame link (`Reply.frameLinkCell`, a
+            # link and its `some`), so the push builds none: 15.
+            "untyped-retype-reply": (15, 15), "untyped-retype-cnode": (30, 30),
             # WS-ZA ZA5.4 part 25: the busy and the stashed reply's carves,
             # at the passive reply's id once that reply is retired.
-            "untyped-retype-busy-reply": (12, 12), "untyped-retype-stashed-reply": (12, 12),
+            "untyped-retype-busy-reply": (15, 15), "untyped-retype-stashed-reply": (15, 15),
             # WS-ZA ZA5.4 part 24: a thread's and a scheduling context's carve
             # (same trace).  Past the store's 9, a thread adds its TCB cell and
             # two 16-byte cells built with it (`CarveRequest.objectImpl`, 3)
@@ -458,16 +461,20 @@ for driver in drivers:
             # spare record, its `some` cell and its object target for each of
             # the two space slots (6), the thread's own slot, link and spare
             # arrays (3), its own register file (1) and, since WS-ZA ZA6.31,
-            # its own FP/SIMD context (1): 25.  seL4 likewise allocates a
+            # its own FP/SIMD context (1): 25, and since WS-ZA ZA6.33 its id
+            # cell (`TCB.idCell`, the donation origin a push records): 26.
+            # seL4 likewise allocates a
             # thread's FPU state with its TCB; the FP/SIMD trap then captures
             # into that cell rather than building one.  Each is the new
             # thread's own; its first space set then writes over them.
             # A scheduling context adds its record (`SchedContext.empty`), its
             # object cell and the request and decode (4): 13, and 14 on its
             # first call, which also builds the capability's target record
-            # (`CapTarget.objectOver`).
-            "untyped-retype-tcb": (25, 25), "untyped-retype-bound-tcb": (25, 25),
-            "untyped-retype-queued-tcb": (25, 25), "untyped-retype-shared-tcb": (25, 25),
+            # (`CapTarget.objectOver`).  Since WS-ZA ZA6.33 it is carved with
+            # the head link a donation's push stores (`SchedContext.headLinkCell`,
+            # a link and its `some`): 15 and 16.
+            "untyped-retype-tcb": (26, 26), "untyped-retype-bound-tcb": (26, 26),
+            "untyped-retype-queued-tcb": (26, 26), "untyped-retype-shared-tcb": (26, 26),
             # The first resume of a carved thread enqueues a run-queue key no
             # thread has held (a QEMU trace of lean_alloc_small's callers):
             # the run queue's membership table builds the new key's entry
@@ -475,7 +482,7 @@ for driver in drivers:
             # the queue's ends record its new priority bucket
             # (`RunQueueEnds.appendImpl`, 1).  The steady state reuses both.
             "resume-carved-tcb": (3, 0),
-            "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (25, 25),
+            "untyped-retype-sched-context": (16, 15), "untyped-retype-sc-thread": (26, 26),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
             "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),
@@ -492,9 +499,10 @@ for driver in drivers:
             # shares it), so `CapTarget.objectOver` builds the new one).  The
             # carved thread's first space set writes over the records the
             # carve made, and the thread's cell in place (0).  The spaced
-            # thread's carve also makes its FP/SIMD context (25).
+            # thread's carve also makes its FP/SIMD context (25) and, since
+            # WS-ZA ZA6.33, its id cell (26).
             "untyped-retype-populated-cnode": (30, 30), "untyped-retype-into-cnode": (11, 11),
-            "untyped-retype-spaced-tcb": (25, 25), "untyped-retype-space-cnode": (31, 31),
+            "untyped-retype-spaced-tcb": (26, 26), "untyped-retype-space-cnode": (31, 31),
             # The reset is seL4's (WS-ZA ZA5.4 part 36, `v0.36.149`; 30 before):
             # every refusal precedes its one write, the in-place rewind of the
             # invoked capability's free index, so its dispatch runs through
@@ -507,23 +515,26 @@ for driver in drivers:
             # registration (`dispatchServiceRegisterByR_eq_impl`).
             "service-register": (0, 0),
             # WS-ZA ZA6.33: the suspend no longer takes the general path (no
-            # copy of the store is held for a refusal), and its endpoint arm
-            # dequeues from the one endpoint the thread state names; what the
-            # endpoint and reply arms still read is the specification's own
-            # writes, which rebuild the neighbours', the endpoint's and the
-            # reply's records (`removeFromBlockingEndpoint`,
-            # `cutThreadReplyFrameOut`, `consumeReplyLink`).  ZA6.35 brings
-            # them to zero.
-            "tcb-suspend-receive-blocked": (14, 14),
-            "tcb-suspend-send-blocked": (12, 12),
-            "tcb-suspend-reply-blocked": (11, 11),
-            "tcb-suspend-reply-donated": (25, 25),
+            # copy of the store is held for a refusal), its endpoint arm
+            # dequeues from the one endpoint the thread state names, and each
+            # arm writes the neighbours' links, the endpoint's ends, the reply
+            # and the victim over their own records
+            # (`removeFromBlockingEndpointImpl`, `cancelIpcBlockingImpl`,
+            # `cutHeadFrameKeepingContextImpl`, each proven equal to the
+            # specification's): 0.
+            "tcb-suspend-receive-blocked": (0, 0),
+            "tcb-suspend-send-blocked": (0, 0),
+            "tcb-suspend-reply-blocked": (0, 0),
+            "tcb-suspend-reply-donated": (0, 0),
             # The call that donates the partner's context to the root task:
-            # the call's donation leg, first measured here.
-            "suspend-donated-partner-calls": (124, 124),
+            # the rendezvous, `schedContext_donate` and `reply_push` each in
+            # its slot, the links the push stores the cells its objects were
+            # carved with (`performCallDonating`,
+            # `callDispatchChecked_donating_inPlace`): 0.
+            "suspend-donated-partner-calls": (0, 0),
             # The requeue's first call follows the suspend and resume
-            # scenarios, and copies what they leave shared once.
-            "sched-context-yield-to-requeue": (3, 0),
+            # scenarios, which now leave nothing shared: 0.
+            "sched-context-yield-to-requeue": (0, 0),
         })
         # WS-ZA ZA6.31: the fault entries (each fault kind with no handler, a
         # VM fault queued on a handler not yet waiting, each kind delivered to

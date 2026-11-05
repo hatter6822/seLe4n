@@ -434,8 +434,12 @@ suspend adds it there.  The suspend admits every arm and is seL4-MCS's: it unbin
 and returns no loan, and a context leaves the release queues through
 `releaseRemoveThread`.  New suspend or resume code must keep that shape, and
 any context returned to a thread is settled where it lands
-(`settleReturnedContext`).  The endpoint and reply arms' pins are non-zero
-until ZA6.35.  Since `v0.36.164` (ZA6.1) the timer tick, the reschedule SGI and
+(`settleReturnedContext`).  Its endpoint and reply arms, and a donating
+call on one home core (`callDonatesInPlace`, `performCallDonating`), write
+each object over its own record, so new code that adds a link a donation
+stores names a cell the object is carved with (`TCB.idCell`, `Reply.idCell`,
+`Reply.frameLinkCell`, `SchedContext.headLinkCell`) rather than building one.
+Since `v0.36.164` (ZA6.1) the timer tick, the reschedule SGI and
 each core's first entry allocate nothing: the tick's dispatch and domain
 accounting never refuse (`scheduleEffectiveOnCore_eq_state`,
 `scheduleDomainOnCore_eq_state`), and new per-core state built from a
