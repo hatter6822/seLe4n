@@ -1278,6 +1278,10 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.scheduleOrIdleOnCore
   , `SeLe4n.Kernel.setLockAt
   , `SeLe4n.Kernel.setThreadCpuAffinityOp
+  -- WS-ZA ZA6.34: the enqueue's store statement over an `Option` tail, proven
+  -- equal to the code form the block paths run (`storeEndpointEnqueueCode_eq`),
+  -- which decodes the tail by a match and builds no cell for it.
+  , `SeLe4n.Kernel.storeEndpointEnqueue
   , `SeLe4n.Kernel.storeTcbIpcState_fromTcb
   , `SeLe4n.Kernel.storeTcbPendingMessage
   , `SeLe4n.Kernel.sweptAndRestored
