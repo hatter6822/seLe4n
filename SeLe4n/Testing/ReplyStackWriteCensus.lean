@@ -874,6 +874,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- context kept by the thread it is bound to.
   , (`SeLe4n.Kernel.Lifecycle.Suspend.cutHeadFrameKeepingContext,
       .states [`SeLe4n.Kernel.cutHeadFrameKeepingContext_preserves_donationChainWellFormed])
+    -- Its compiled form, each object written in its slot, is the same cut
+    -- (`cutHeadFrameKeepingContext_eq_impl`) and states the chain through it.
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.cutHeadFrameKeepingContextImpl,
+      .states [`SeLe4n.Kernel.cutHeadFrameKeepingContextImpl_preserves_donationChainWellFormed])
     -- WS-ZA ZA5.4 part 25: a finalised scheduling context lets go of the
     -- stack it heads (seL4's `schedContext_unbindReply`): the head's upward
     -- link cleared, then the context's head.

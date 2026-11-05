@@ -1617,6 +1617,14 @@ theorem cutHeadFrameKeepingContext_preserves_donationChainWellFormed (st : Syste
       fun k => by rw [markKeyChangeFrom_objects]; exact hFr.stackHeads k,
       fun k r' hR hc => hFr.callerKept k r' (by rw [markKeyChangeFrom_objects] at hR; exact hR) hc⟩
 
+/-- The compiled head cut, each object written in its slot, keeps the donation
+chains: it is the specification's cut (`cutHeadFrameKeepingContext_eq_impl`). -/
+theorem cutHeadFrameKeepingContextImpl_preserves_donationChainWellFormed (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hC : donationChainWellFormed st) :
+    donationChainWellFormed (Lifecycle.Suspend.cutHeadFrameKeepingContextImpl st rid) := by
+  rw [← Lifecycle.Suspend.cutHeadFrameKeepingContext_eq_impl]
+  exact cutHeadFrameKeepingContext_preserves_donationChainWellFormed st rid hInv hC
+
 /-- **A scheduling context's unstack keeps the donation chains** (seL4's
 `schedContext_unbindReply`): the stack it let go of is no context's, so every
 remaining context's walk reads what it read before. -/

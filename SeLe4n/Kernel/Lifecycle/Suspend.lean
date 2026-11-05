@@ -15,6 +15,7 @@ import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 import SeLe4n.Kernel.Scheduler.SchedulerLinkFrame
 import SeLe4n.Kernel.SchedContext.YieldLink
+import SeLe4n.Kernel.IPC.Operations.ReplyFrameInPlace
 
 /-! # D1: Thread Suspension & Resumption
 
@@ -989,6 +990,64 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
   | .blockedOnNotification _ =>
     restoreToReadyCancelled (removeFromNotificationWaitQueue st tid) tid
 
+/-- **A reply-blocked caller's cancel with nothing to give back, as compiled**:
+the splice, the restore, the consume and the reply-waiter unlink of
+`cancelIpcBlocking`'s reply arm, read from the caller's reply code and its
+server's code, each object written in its slot. -/
+@[inline] def cancelReplyArmInPlace (st : SystemState) (c : SeLe4n.ThreadId) (code : Nat)
+    (serverCode : Nat) : SystemState :=
+  let st1 := match code with
+    | 0 => st
+    | k + 1 => cutReplyFrameOutOrSelfInPlace st ⟨k⟩
+  let st2 := restoreToReadyCancelled st1 c
+  let st3 := match code with
+    | 0 => st2
+    | k + 1 => consumeCallerReplyInPlace st2 c ⟨k⟩
+  st3.unlinkReplyWaiterOpt c (SeLe4n.ThreadId.ofOptCode serverCode)
+
+theorem cancelReplyArmInPlace_eq (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) :
+    cancelReplyArmInPlace st c t.replyObjectCode (replyCallerServerCode t) =
+      SystemState.unlinkReplyWaiterOpt
+        (consumeReplyLink (restoreToReadyCancelled (cutThreadReplyFrameOut st t) c) c t)
+        c t.blockingServer? := by
+  unfold cancelReplyArmInPlace cutThreadReplyFrameOut consumeReplyLink
+  rw [ofOptCode_replyCallerServerCode]
+  unfold TCB.replyObject
+  cases t.replyObjectCode with
+  | zero => rfl
+  | succ k =>
+    simp only [SeLe4n.ReplyId.ofOptCode, cutReplyFrameOutOrSelfInPlace_eq,
+      consumeCallerReplyInPlace_eq]
+
+/-- **`cancelIpcBlocking`, as compiled**: the reply arm reads the caller's
+reply and server codes before its first write and writes each object in its
+slot (`cancelReplyArmInPlace`), so the caller's thread record is held by its
+slot alone when the restore and the consume write it; the endpoint arms dequeue
+in place through `removeFromBlockingEndpoint`'s compiled form. -/
+def cancelIpcBlockingImpl (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    SystemState :=
+  match tcb.ipcState with
+  | .ready => st
+  | .blockedOnSend ep | .blockedOnReceive ep | .blockedOnCall ep =>
+    restoreToReadyCancelled (removeFromBlockingEndpoint st tid ep) tid
+  | .blockedOnReply _ _ =>
+    let code := tcb.replyObjectCode
+    let serverCode := replyCallerServerCode tcb
+    cancelReplyArmInPlace (returnDonationToCancelledCaller st tid tcb) tid code serverCode
+  | .blockedOnNotification _ =>
+    restoreToReadyCancelled (removeFromNotificationWaitQueue st tid) tid
+
+@[csimp] theorem cancelIpcBlocking_eq_impl : @cancelIpcBlocking = @cancelIpcBlockingImpl := by
+  funext st tid tcb
+  unfold cancelIpcBlocking cancelIpcBlockingImpl
+  split
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+  · exact (cancelReplyArmInPlace_eq _ _ _).symm
+  · rfl
+
 -- ============================================================================
 -- WS-ZA ZA6.33: the suspend's IPC cancel — seL4-MCS's `cancelIPC`
 -- ============================================================================
@@ -1029,6 +1088,132 @@ def cutHeadFrameKeepingContext (st : SystemState) (rid : SeLe4n.ReplyId) : Syste
                   (st2.updateTcb holder fun t => { t with scBindingOwnerCode := 0 }) holder
               else st2
             | _ => st2
+
+/-- **The context a reply frame heads, as a code** (`0` for none, `s + 1` for
+the context `s`): `replyFrameHeadContext?` read with no `some` cell built. -/
+@[inline] def replyFrameHeadContextCode (st : SystemState) (rid : SeLe4n.ReplyId) : Nat :=
+  match st.getReply? rid with
+  | none => 0
+  | some r =>
+    match r.next with
+    | some (.head scId) =>
+      match st.getSchedContext? scId with
+      | none => 0
+      | some sc =>
+        match sc.scReply with
+        | some x => if x == rid then scId.val + 1 else 0
+        | none => 0
+    | _ => 0
+
+theorem ofOptCode_replyFrameHeadContextCode (st : SystemState) (rid : SeLe4n.ReplyId) :
+    SeLe4n.SchedContextId.ofOptCode (replyFrameHeadContextCode st rid) =
+      replyFrameHeadContext? st rid := by
+  unfold replyFrameHeadContextCode replyFrameHeadContext?
+  cases st.getReply? rid with
+  | none => rfl
+  | some r =>
+    dsimp only
+    cases r.next with
+    | none => rfl
+    | some l =>
+      cases l with
+      | head s =>
+        dsimp only
+        cases st.getSchedContext? s with
+        | none => rfl
+        | some sc =>
+          dsimp only
+          cases sc.scReply with
+          | none => rfl
+          | some x => by_cases h : x = rid <;> simp [h, SeLe4n.SchedContextId.ofOptCode]
+      | _ => rfl
+
+/-- A frame heading a context is a stored reply. -/
+theorem replyFrameHeadContextCode_reply {st : SystemState} {rid : SeLe4n.ReplyId} {k : Nat}
+    (h : replyFrameHeadContextCode st rid = k + 1) : ∃ r, st.getReply? rid = some r := by
+  unfold replyFrameHeadContextCode at h
+  cases hR : st.getReply? rid with
+  | none => rw [hR] at h; cases h
+  | some r => exact ⟨r, rfl⟩
+
+/-- **`cutHeadFrameKeepingContext`, each write in its slot**: the head read as
+a code, the frame's upward link and the context's head and origin rewritten
+where they stand (`SystemState.storeReplyWith`, `SystemState.updateSchedContext`),
+the holder read from the context's code, and the holder's old key read as its
+parts before its binding is written, so neither the state nor a record is held
+across a write (`cutHeadFrameKeepingContext_eq_impl`). -/
+@[inline] def cutHeadFrameKeepingContextImpl (st : SystemState) (rid : SeLe4n.ReplyId) :
+    SystemState :=
+  match replyFrameHeadContextCode st rid with
+  | 0 => st
+  | k + 1 =>
+    let scId : SeLe4n.SchedContextId := ⟨k⟩
+    let st1 := st.storeReplyWith rid.toObjId fun r => { r with next := none }
+    let st2 := st1.updateSchedContext scId fun sc =>
+      { sc with scReply := none, donationOrigin := none }
+    match st2.getSchedContext? scId with
+    | none => st2
+    | some sc =>
+      match sc.boundThreadCode with
+      | 0 => st2
+      | h + 1 =>
+        let holder : SeLe4n.ThreadId := ⟨h⟩
+        match st2.getTcb? holder with
+        | none => st2
+        | some ht =>
+          match ht.schedContextBinding with
+          | .donated s _ =>
+            if s = scId then
+              let p0 := ht.boostedPriority
+              let d0 := effectiveDeadline st2 ht
+              let dom0 := ht.domain
+              let e0 := hasSufficientBudget st2 ht
+              markKeyChangeParts
+                (markCandidacyGainFor
+                  (st2.updateTcb holder fun t => { t with scBindingOwnerCode := 0 }) holder e0)
+                holder p0 d0 dom0
+            else st2
+          | _ => st2
+
+@[csimp] theorem cutHeadFrameKeepingContext_eq_impl :
+    @cutHeadFrameKeepingContext = @cutHeadFrameKeepingContextImpl := by
+  funext st rid
+  unfold cutHeadFrameKeepingContext cutHeadFrameKeepingContextImpl
+  rw [← ofOptCode_replyFrameHeadContextCode]
+  cases hc : replyFrameHeadContextCode st rid with
+  | zero => rfl
+  | succ k =>
+    obtain ⟨r, hR⟩ := replyFrameHeadContextCode_reply hc
+    simp only [SeLe4n.SchedContextId.ofOptCode, hR]
+    have hS := SystemState.storeObject_reply_eq_storeReplyWith
+      ((SystemState.getReply?_eq_some_iff _ _ _).mp hR) (fun r => { r with next := none })
+    simp only [] at hS
+    rw [hS]
+    dsimp only
+    generalize (st.storeReplyWith rid.toObjId fun r => { r with next := none }).updateSchedContext
+      ⟨k⟩ (fun sc => { sc with scReply := none, donationOrigin := none }) = st2
+    cases st2.getSchedContext? ⟨k⟩ with
+    | none => rfl
+    | some sc =>
+      simp only [Option.bind_some, SchedContext.boundThread]
+      cases sc.boundThreadCode with
+      | zero => rfl
+      | succ h =>
+        simp only [SeLe4n.ThreadId.ofOptCode]
+        cases hT : st2.getTcb? ⟨h⟩ with
+        | none => rfl
+        | some ht =>
+          dsimp only
+          cases ht.schedContextBinding with
+          | donated s o =>
+            dsimp only
+            split
+            · unfold markKeyChangeFrom
+              rw [hT]
+              dsimp only
+              rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
+            · rfl
+          | _ => rfl
 
 /-- WS-ZA ZA6.33: the head cut keyed on a thread's own reply object. -/
 def cutThreadHeadFrameKeepingContext (st : SystemState) (tcb : TCB) : SystemState :=
