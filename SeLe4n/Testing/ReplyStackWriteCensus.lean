@@ -323,6 +323,10 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ tcb with maxControlledPriority := _ }`, then the capped base priority through `frozenWriteBasePriority`; no chain field in either")
   , (`SeLe4n.Kernel.FrozenOps.frozenTimerTickBudget,
       "rebuilds a SchedContext for its budget accounting; `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenResumeContext,
+      "stores the context `SchedContext.refillUnblockCheck` returns (its head's start and its merged refills); `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenResumeThread,
+      "the resumed thread's own record, then its context's refill-unblock check through `frozenResumeContext`; no chain field in either")
   , (`SeLe4n.Kernel.spendBudgetOnCore,
       "rebuilds a SchedContext for its budget accounting (`SchedContext.chargeBudget`, `cbsUpdateDeadline`); `scReply` is untouched")
     -- ---------------------------------------------------------------------

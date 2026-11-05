@@ -2962,7 +2962,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContextChecked \(st :
 run_check "INVARIANT" bash -lc 'rg -U -n "^def preemptCurrentOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? prevTid with" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def preemptCurrentOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject prevTid\.toObjId" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadCpuAffinity \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? targetTid with" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def resumeThread \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def resumeThreadReady \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def resumeThread \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*resumeThreadReady st tid tcb" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # NEGATIVE, per declaration: none of the five scheduler sites carries a raw
 # store write.  The file is not the scope yet -- `enqueueRunnableOnCore` and
 # the tick family are the next cut -- so each negative is bounded to its own
@@ -20864,6 +20865,14 @@ run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t]
 # (3) AND ITS PREEMPTION TEST READS THE EFFECTIVE PRIORITY, not the two bases.
 run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".boostedPriority.val > curTcb.boostedPriority.val"'
 run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".priority.val > curTcb.priority.val"'
+# WS-ZA ZA6.33: every resume resumes the context the thread runs on (seL4-MCS
+# `restart` -> `schedContext_resume`) and enqueues only a schedulable thread:
+# the single-core reference, the cross-core wake, and the frozen mirror.
+run_check "INVARIANT" bash -lc 'rg -n -U "^noncomputable def resumeThread [^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "let st := resumeContext st tid bootCoreId"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^noncomputable def resumeThread [^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "if !resumeSchedulable st tid then .ok st"'
+run_check "INVARIANT" bash -lc 'rg -n "^theorem resumeThread_eq_of_unschedulable" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyWithWake[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "if resumeSchedulable st2 tid then"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F "match frozenResumeContext stored tcb"'
 # (4) THE SHARED READINGS ARE THEOREMS, so a cut that sends either side back to
 # consulting a SchedContext fails to elaborate rather than diverging silently.
 run_check "INVARIANT" rg -F -n 'theorem effectiveSchedParams_fst_eq_boostedPriority' SeLe4n/Kernel/Scheduler/Operations/Selection.lean

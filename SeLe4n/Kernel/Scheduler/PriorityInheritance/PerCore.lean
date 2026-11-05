@@ -62,7 +62,7 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
 open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyStaging
   restoreToReadyOnCore restoreToReadyMidState restoreToReadyWithWake
-  resumeReadyMidState resumeThreadOnCore)
+  resumeReadyMidState resumeThreadOnCore resumeContext resumeSchedulable)
 
 -- ============================================================================
 -- §1  SM5.F.2 — updatePipBoostOnCore: bridge, frame, invariant preservation
@@ -451,31 +451,44 @@ theorem restoreToReadyOnCore_pipBoost_recomputed (st : SystemState) (c : CoreId)
 
 -- §5b  SM5.F.6 — restoreToReadyWithWake (cross-core resume wake)
 
+/-- WS-ZA ZA6.33: the state `restoreToReadyWithWake` hands its gate: the ready
+mid-state ended in the key hook, with the context resumed on the home core. -/
+abbrev resumeWakeMidState (st : SystemState) (tid : ThreadId) : SystemState :=
+  resumeContext (markKeyChangeFrom st (resumeReadyMidState st tid) tid) tid
+    (determineTargetCore st tid)
+
 /-- WS-SM SM5.F.6: `restoreToReadyWithWake`'s state component sets the resumed thread
-`.Ready` (via `resumeReadyMidState`, PR #811 P2-3) and enqueues it on its home core. -/
-@[simp] theorem restoreToReadyWithWake_state (st : SystemState) (tid : ThreadId) (ec : CoreId) :
-    (restoreToReadyWithWake st tid ec).1
-      = enqueueRunnableOnCore (resumeReadyMidState st tid) (determineTargetCore st tid) tid := rfl
+`.Ready` (via `resumeReadyMidState`, PR #811 P2-3), resumes its context, and
+enqueues it on its home core when it is schedulable (WS-ZA ZA6.33). -/
+theorem restoreToReadyWithWake_state (st : SystemState) (tid : ThreadId) (ec : CoreId) :
+    (restoreToReadyWithWake st tid ec).1 =
+      if resumeSchedulable (resumeWakeMidState st tid) tid then
+        enqueueRunnableOnCore (resumeWakeMidState st tid) (determineTargetCore st tid) tid
+      else resumeWakeMidState st tid := by
+  unfold restoreToReadyWithWake; dsimp only; split <;> rfl
 
 /-- WS-SM SM5.F.6: a LOCAL resume (home = executing core) emits no SGI. -/
 theorem restoreToReadyWithWake_no_sgi_if_local (st : SystemState) (tid : ThreadId) (ec : CoreId)
     (hLocal : determineTargetCore st tid = ec) :
     (restoreToReadyWithWake st tid ec).2 = none := by
-  simp [restoreToReadyWithWake, hLocal]
+  unfold restoreToReadyWithWake; dsimp only; split <;> simp [hLocal]
 
-/-- WS-SM SM5.F.6: a REMOTE resume of a real thread emits a `.reschedule` SGI to its
-home core — the resumed thread newly enters that core's run queue, so the core
-must re-evaluate.  Unlike `pipBoostWithWake` there is no materiality guard: resume
-genuinely makes the thread runnable. -/
+/-- WS-SM SM5.F.6: a REMOTE resume of a real, schedulable thread emits a
+`.reschedule` SGI to its home core — the resumed thread newly enters that core's
+run queue, so the core must re-evaluate.  Unlike `pipBoostWithWake` there is no
+materiality guard: a schedulable resume genuinely makes the thread runnable. -/
 theorem restoreToReadyWithWake_emits_sgi_if_remote (st : SystemState) (tid : ThreadId)
     (ec : CoreId) (tcb : TCB)
-    (hRemote : determineTargetCore st tid ≠ ec) (hTcb : st.getTcb? tid = some tcb) :
+    (hRemote : determineTargetCore st tid ≠ ec) (hTcb : st.getTcb? tid = some tcb)
+    (hSched : resumeSchedulable (resumeWakeMidState st tid) tid = true) :
     (restoreToReadyWithWake st tid ec).2 = some (determineTargetCore st tid, SgiKind.reschedule) := by
   have hRem : (determineTargetCore st tid == ec) = false := by
     cases h : (determineTargetCore st tid == ec) with
     | false => rfl
     | true => exact absurd (eq_of_beq h) hRemote
-  simp [restoreToReadyWithWake, hRem, hTcb]
+  unfold restoreToReadyWithWake; dsimp only
+  rw [if_pos hSched]
+  simp [hRem, hTcb]
 
 /-- WS-SM SM5.F.6: any SGI `restoreToReadyWithWake` emits is a `.reschedule` to the
 resumed thread's home core. -/
@@ -483,25 +496,49 @@ theorem restoreToReadyWithWake_sgi_is_reschedule (st : SystemState) (tid : Threa
     (tgt : CoreId) (k : SgiKind)
     (hSgi : (restoreToReadyWithWake st tid ec).2 = some (tgt, k)) :
     tgt = determineTargetCore st tid ∧ k = SgiKind.reschedule := by
-  simp only [restoreToReadyWithWake] at hSgi
+  unfold restoreToReadyWithWake at hSgi; dsimp only at hSgi
   split at hSgi
-  · simp at hSgi
-  · split at hSgi
+  · dsimp only at hSgi
+    split at hSgi
     · simp at hSgi
-    · simp only [Option.some.injEq, Prod.mk.injEq] at hSgi
-      exact ⟨hSgi.1.symm, hSgi.2.symm⟩
+    · split at hSgi
+      · simp at hSgi
+      · simp only [Option.some.injEq, Prod.mk.injEq] at hSgi
+        exact ⟨hSgi.1.symm, hSgi.2.symm⟩
+  · cases hSgi
+
+/-- WS-ZA ZA6.33: the gate's state keeps the object-store invariant. -/
+theorem resumeWakeMidState_objects_invExt (st : SystemState) (tid : ThreadId)
+    (hInv : st.objects.invExt) : (resumeWakeMidState st tid).objects.invExt := by
+  unfold resumeWakeMidState
+  apply Lifecycle.Suspend.resumeContext_objects_invExt
+  rw [markKeyChangeFrom_objects]
+  unfold resumeReadyMidState
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+    (restoreToReady_objects_invExt st tid hInv)
+
+/-- WS-ZA ZA6.33: the gate's state reads every thread as the ready mid-state does. -/
+theorem resumeWakeMidState_getTcb? (st : SystemState) (tid : ThreadId)
+    (hInv : st.objects.invExt) (x : ThreadId) :
+    (resumeWakeMidState st tid).getTcb? x = (resumeReadyMidState st tid).getTcb? x := by
+  have hK : (markKeyChangeFrom st (resumeReadyMidState st tid) tid).objects.invExt := by
+    rw [markKeyChangeFrom_objects]; unfold resumeReadyMidState
+    exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+      (restoreToReady_objects_invExt st tid hInv)
+  rw [resumeWakeMidState, Lifecycle.Suspend.resumeContext_getTcb? _ _ _ hK]
+  exact SystemState.getTcb?_congr_at (by rw [markKeyChangeFrom_objects])
 
 /-- WS-SM SM5.F.6: `restoreToReadyWithWake` preserves the object-store invariant —
-both `resumeReadyMidState` (a single TCB `insert`) and the per-core enqueue preserve it. -/
+the ready mid-state (a single TCB `insert`), the context resume, and the per-core
+enqueue each preserve it. -/
 theorem restoreToReadyWithWake_preserves_objects_invExt (st : SystemState) (tid : ThreadId)
     (ec : CoreId) (hInv : st.objects.invExt) :
     (restoreToReadyWithWake st tid ec).1.objects.invExt := by
   rw [restoreToReadyWithWake_state]
-  apply enqueueRunnableOnCore_preserves_objects_invExt
-  -- (resumeReadyMidState st tid).objects.invExt
-  have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
-  unfold resumeReadyMidState
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hst1Inv
+  split
+  · exact enqueueRunnableOnCore_preserves_objects_invExt _ _ _
+      (resumeWakeMidState_objects_invExt st tid hInv)
+  · exact resumeWakeMidState_objects_invExt st tid hInv
 
 -- ============================================================================
 -- §6  SM5.F.7 / SM5.F.8 — per-core blocking graph (slice + acyclicity)
@@ -1201,15 +1238,19 @@ theorem restoreToReadyWithWake_sets_threadState (st : SystemState) (tid : Thread
     (tcb : TCB) (hGet : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
     ∃ t', (restoreToReadyWithWake st tid ec).1.getTcb? tid = some t' ∧ t'.threadState = .Ready := by
   rw [restoreToReadyWithWake_state]
-  obtain ⟨tm, hmid, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st tid tcb hGet hInv
-  have hmidInv : (resumeReadyMidState st tid).objects.invExt :=
-    resumeReadyMidState_objects_invExt st tid hInv
-  by_cases hRun : wakeDeclines (resumeReadyMidState st tid) (determineTargetCore st tid) tid = true
-  · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
-    exact ⟨tm, hmid, hmidReady⟩
-  · have hFresh : wakeDeclines (resumeReadyMidState st tid) (determineTargetCore st tid) tid = false := by simpa using hRun
-    obtain ⟨t', h', ht⟩ := SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh
-    exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht).trans hmidReady⟩
+  obtain ⟨tm, hmid0, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st tid tcb hGet hInv
+  have hmid : (resumeWakeMidState st tid).getTcb? tid = some tm :=
+    (resumeWakeMidState_getTcb? st tid hInv tid).trans hmid0
+  have hmidInv := resumeWakeMidState_objects_invExt st tid hInv
+  split
+  · by_cases hRun : wakeDeclines (resumeWakeMidState st tid) (determineTargetCore st tid) tid = true
+    · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
+      exact ⟨tm, hmid, hmidReady⟩
+    · have hFresh : wakeDeclines (resumeWakeMidState st tid) (determineTargetCore st tid) tid = false := by
+        simpa using hRun
+      obtain ⟨t', h', ht⟩ := SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh
+      exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht).trans hmidReady⟩
+  · exact ⟨tm, hmid, hmidReady⟩
 
 -- ============================================================================
 -- §12  SM5.F.4 — cross-core wake dispatch (the SM6 runtime firing layer)

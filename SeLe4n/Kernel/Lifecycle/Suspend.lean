@@ -294,36 +294,6 @@ def resumeReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState
     PriorityInheritance.computeMaxWaiterPriority st1 tid
   st1.updateTcb tid fun t => { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
 
-/-- WS-SM SM5.F.6 (plan §3.6, resume cross-core wake): restore `tid` to **Ready** on
-its home core and, if that core is remote (≠ `executingCore`), return the
-`.reschedule` SGI it must receive.
-
-The cross-core resume wake, mirroring `wakeThread` / `pipBoostWithWake`: a thread
-resumed onto a remote core lands runnable there at its PIP-correct bucket, but that
-core is not running the resume, so it must be poked to re-evaluate (the resumed
-thread may outrank its current).  A local resume (home = executing) needs no SGI.
-
-PR #811 P2-3: the state path goes through `resumeReadyMidState` (which sets
-`threadState := .Ready` and recomputes the GLOBAL `pipBoost`) *before* the per-core
-enqueue — so a remote resume never pokes a core to dispatch a run-queue entry whose
-TCB is still `.Inactive`.  This makes the state effect identical to the validated
-complete resume `resumeThreadOnCore` (this pure form simply omits the `.Inactive`
-precondition check, returning the state + optional SGI for SM5.I's runtime dispatch
-to fire after the state write is visible — the BKL ordering). -/
-def restoreToReadyWithWake (st : SystemState) (tid : SeLe4n.ThreadId)
-    (executingCore : CoreId) : SystemState × Option (CoreId × SgiKind) :=
-  let target := determineTargetCore st tid
-  let st' := enqueueRunnableOnCore (resumeReadyMidState st tid) target tid
-  let sgi : Option (CoreId × SgiKind) :=
-    -- Resume genuinely makes `tid` runnable, so unlike the materiality-guarded
-    -- `pipBoostWithWake` the only guard is remoteness: a remote resume always
-    -- warrants a `.reschedule`.  `getTcb?` guards against a non-TCB `tid` (no-op).
-    if target == executingCore then none
-    else match st.getTcb? tid with
-         | none => none
-         | some _ => some (target, SgiKind.reschedule)
-  (st', sgi)
-
 /-- WS-ZA ZA6.33: **seL4-MCS's `refill_unblock_check` then `schedContext_resume`
 for a resumed thread**, on its home core `home`: the context it runs on has a
 head released by now moved to now and the pending refills it overlaps merged in
@@ -515,6 +485,46 @@ def resumeSchedulable (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
       match st.getSchedContext? s with
       | none => false
       | some sc => sc.budgetRemaining.isPositive
+
+/-- WS-SM SM5.F.6 (plan §3.6, resume cross-core wake): restore `tid` to **Ready** on
+its home core and, if that core is remote (≠ `executingCore`), return the
+`.reschedule` SGI it must receive.
+
+The cross-core resume wake, mirroring `wakeThread` / `pipBoostWithWake`: a thread
+resumed onto a remote core lands runnable there at its PIP-correct bucket, but that
+core is not running the resume, so it must be poked to re-evaluate (the resumed
+thread may outrank its current).  A local resume (home = executing) needs no SGI.
+
+PR #811 P2-3: the state path goes through `resumeReadyMidState` (which sets
+`threadState := .Ready` and recomputes the GLOBAL `pipBoost`) *before* the per-core
+enqueue — so a remote resume never pokes a core to dispatch a run-queue entry whose
+TCB is still `.Inactive`.  This makes the state effect identical to the validated
+complete resume `resumeThreadOnCore` (this pure form simply omits the `.Inactive`
+precondition check, returning the state + optional SGI for SM5.I's runtime dispatch
+to fire after the state write is visible — the BKL ordering).  WS-ZA ZA6.33: so it
+takes the complete resume's context step too (`resumeContext`, seL4-MCS's
+`refill_unblock_check` and `schedContext_resume`), and a thread that is not
+schedulable (`resumeSchedulable`) is neither enqueued nor announced: its context
+is postponed, and the release that makes its refill ready enqueues it. -/
+def restoreToReadyWithWake (st : SystemState) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : SystemState × Option (CoreId × SgiKind) :=
+  let target := determineTargetCore st tid
+  -- The complete resume's H3 (`resumeThreadOnCore`): the ready mid-state, ended in
+  -- the key hook, then (WS-ZA ZA6.33) the context resumed (`resumeContext`); the
+  -- thread is enqueued only when schedulable (`resumeSchedulable`).
+  let st2 := resumeContext (markKeyChangeFrom st (resumeReadyMidState st tid) tid) tid target
+  if resumeSchedulable st2 tid then
+    let st' := enqueueRunnableOnCore st2 target tid
+    let sgi : Option (CoreId × SgiKind) :=
+      -- A schedulable resume makes `tid` runnable, so unlike the materiality-guarded
+      -- `pipBoostWithWake` the only guard is remoteness: a remote resume always
+      -- warrants a `.reschedule`.  `getTcb?` guards against a non-TCB `tid` (no-op).
+      if target == executingCore then none
+      else match st.getTcb? tid with
+           | none => none
+           | some _ => some (target, SgiKind.reschedule)
+    (st', sgi)
+  else (st2, none)
 
 /-- WS-SM SM5.F.6 (plan §3.6, resume H1–H5 per-core): the **complete** per-core
 resume — the per-core analogue of `resumeThread`.  Unlike `restoreToReadyOnCore`
@@ -2532,6 +2542,49 @@ noncomputable def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
 -- D1-H: resumeThread
 -- ============================================================================
 
+/-- H3a–H3c of the single-core `resumeThread`, given the target's record `tcb`:
+the IPC transients cleared, the boost re-derived, and the record set `.Ready`;
+the record written and the state it is written in. -/
+def resumeThreadReady (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    TCB × SystemState :=
+  -- H3a: R5.D — clear IPC-state transients via shared `restoreToReady`
+  -- helper.  Sets `ipcState := .ready` and zeroes the three intrusive-
+  -- queue link fields (`queuePrev`, `queueNext`, `queuePPrev`).  Under
+  -- suspend's `clearPendingState` (G5) these were already cleared, so
+  -- this acts as defense-in-depth and ensures the post-resume TCB
+  -- shape is locally observable without the implicit suspend-side
+  -- invariant.
+  let st := restoreToReady st tid
+  -- H3b: R5.B (DEEP-SUSP-01) — re-derive `pipBoost` from the post-
+  -- suspend blocking graph.  While the resumed thread was `.Inactive`,
+  -- other threads may have acquired or released locks that involve
+  -- this thread as a holder, so its `pipBoost` carried over from the
+  -- pre-suspend state can be stale.  `computeMaxWaiterPriority`
+  -- aggregates the effective priorities of every thread currently
+  -- waiting on `tid`'s reply slot; passing this value into
+  -- `tcb.pipBoost` re-establishes the H4 PIP-readiness invariant
+  -- before the thread re-enters the run queue.
+  let newPipBoost : Option SeLe4n.Priority :=
+    PriorityInheritance.computeMaxWaiterPriority st tid
+  -- H3c: Set threadState := .Ready and refresh pipBoost on the
+  -- (now IPC-cleared) TCB.  Read through the typed `getTcb?` helper
+  -- so the post-`restoreToReady` TCB is observed via the
+  -- variant-aware lookup that already returns `none` on
+  -- non-TCB / absent.
+  -- One witnessed lookup: it is the in-place rewrite's witness on the arm
+  -- that finds the TCB `restoreToReady` just rewrote.  The other arm is
+  -- unreachable on a well-formed table and total regardless: a key found
+  -- holding no TCB is written as a *store*, with its bookkeeping
+  -- (`withObjectStored`).
+  match st.getTcbWitnessed? tid with
+  | some ⟨t, h⟩ =>
+      let t' : TCB := { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
+      (t', st.rewriteObject tid.toObjId (.tcb t') (SystemState.rewriteAdmissible_tcb h t'))
+  | none =>
+      let t' : TCB :=
+        (TCB.setIpcState { tcb with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost } .ready)
+      (t', st.withObjectStored tid.toObjId (.tcb t'))
+
 /-- D1-H: Resume a suspended thread — transition from Inactive to Ready.
 
 Validates the target is a TCB in Inactive state, sets threadState to Ready
@@ -2540,6 +2593,13 @@ and triggers a reschedule if the resumed thread has higher priority than
 the current thread.
 
 Returns `invalidArgument` if not a TCB, `invalidState` if not Inactive.
+
+WS-ZA ZA6.33: **the context is resumed as the per-core resume resumes it**
+(`resumeContext`, seL4-MCS's `restart` → `refill_unblock_check` and
+`schedContext_resume`), and the thread enters the run queue only when it is
+schedulable (`resumeSchedulable`).  The suspend takes the context off the
+release queue and keeps it bound, so without this an exhausted context came
+back on no release queue and its thread could never be scheduled again.
 
 **WS-AL AL8 (cascades AK7-E) — Type-level validity discipline**: the
 `tid` parameter has type `ValidThreadId`, not raw `ThreadId`. The Lean
@@ -2558,79 +2618,68 @@ noncomputable def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     -- H2: State validation — must be Inactive
     if tcb.threadState != .Inactive then .error .illegalState
     else
-      -- H3a: R5.D — clear IPC-state transients via shared `restoreToReady`
-      -- helper.  Sets `ipcState := .ready` and zeroes the three intrusive-
-      -- queue link fields (`queuePrev`, `queueNext`, `queuePPrev`).  Under
-      -- suspend's `clearPendingState` (G5) these were already cleared, so
-      -- this acts as defense-in-depth and ensures the post-resume TCB
-      -- shape is locally observable without the implicit suspend-side
-      -- invariant.
-      let st := restoreToReady st tid
-      -- H3b: R5.B (DEEP-SUSP-01) — re-derive `pipBoost` from the post-
-      -- suspend blocking graph.  While the resumed thread was `.Inactive`,
-      -- other threads may have acquired or released locks that involve
-      -- this thread as a holder, so its `pipBoost` carried over from the
-      -- pre-suspend state can be stale.  `computeMaxWaiterPriority`
-      -- aggregates the effective priorities of every thread currently
-      -- waiting on `tid`'s reply slot; passing this value into
-      -- `tcb.pipBoost` re-establishes the H4 PIP-readiness invariant
-      -- before the thread re-enters the run queue.
-      let newPipBoost : Option SeLe4n.Priority :=
-        PriorityInheritance.computeMaxWaiterPriority st tid
-      -- H3c: Set threadState := .Ready and refresh pipBoost on the
-      -- (now IPC-cleared) TCB.  Read through the typed `getTcb?` helper
-      -- so the post-`restoreToReady` TCB is observed via the
-      -- variant-aware lookup that already returns `none` on
-      -- non-TCB / absent.
-      -- One witnessed lookup: it is the in-place rewrite's witness on the arm
-      -- that finds the TCB `restoreToReady` just rewrote.  The other arm is
-      -- unreachable on a well-formed table and total regardless: a key found
-      -- holding no TCB is written as a *store*, with its bookkeeping
-      -- (`withObjectStored`).
-      let (tcb', st) : TCB × SystemState :=
-        match st.getTcbWitnessed? tid with
-        | some ⟨t, h⟩ =>
-            let t' : TCB := { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
-            (t', st.rewriteObject tid.toObjId (.tcb t') (SystemState.rewriteAdmissible_tcb h t'))
-        | none =>
-            let t' : TCB :=
-              (TCB.setIpcState { tcb with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost } .ready)
-            (t', st.withObjectStored tid.toObjId (.tcb t'))
-      -- H4: Insert into run queue at effective priority
-      let st := ensureRunnable st tid
-      -- H5: Conditional preemption check (AE3-D/U-16: use effective priority)
-      -- If the resumed thread has higher effective priority than current, reschedule
-      let needsReschedule : Bool := match (st.scheduler.currentOnCore bootCoreId) with
-        | some curTid =>
-          match st.getTcb? curTid with
-          | some curTcb =>
-            let resumedEffective := (resolveEffectivePrioDeadline st tcb').1
-            let curEffective := (resolveEffectivePrioDeadline st curTcb).1
-            resumedEffective.val > curEffective.val
-          | none => true  -- No valid current → always reschedule
-        | none => false  -- No current thread → no preemption needed
-      if needsReschedule then
-        -- Re-enqueue the current (outgoing) thread BEFORE rescheduling, so the
-        -- higher-priority resumed thread PREEMPTS it rather than orphaning it.
-        -- `schedule` uses dequeue-on-dispatch and relies on its caller to have
-        -- re-enqueued the outgoing thread if that thread should stay runnable
-        -- (exactly as `handleYield` / `timerTick` / `switchDomain` do); seL4's
-        -- `schedule()` re-enqueues a runnable current thread before switching.
-        -- Pre-fix, `resumeThread` skipped this step, so a lower-priority caller
-        -- that resumed a higher-priority thread was silently dropped from
-        -- scheduling (saved-but-not-enqueued: never current, never runnable).
-        -- `ensureRunnable` inserts the current thread at its effective priority
-        -- and is a no-op if it is somehow already queued (no duplicate), so this
-        -- cannot violate run-queue uniqueness.
-        let st := match st.scheduler.currentOnCore bootCoreId with
-          | some curTid => ensureRunnable st curTid
-          | none => st
-        match schedule st with
-        | .ok ((), st') => .ok st'
-        | .error e => .error e
+      let (tcb', st) : TCB × SystemState := resumeThreadReady st tid tcb
+      -- H3d (WS-ZA ZA6.33): seL4-MCS's `restart` → `refill_unblock_check` and
+      -- `schedContext_resume`, the per-core resume's own step (`resumeContext`) on
+      -- the boot core: the context the thread runs on has its ready head moved
+      -- to now and, while its head refill is not ready, is placed back on the
+      -- release queue the suspend took it off (G6a).  An unbound thread has no
+      -- context and is left as it is.
+      let st := resumeContext st tid bootCoreId
+      -- H4: only a schedulable thread enters the run queue (seL4's
+      -- `if (isSchedulable(target)) possibleSwitchTo(target)`, the per-core
+      -- resume's `resumeSchedulable`); a postponed one is enqueued by the release
+      -- that makes its refill ready, and nothing is rescheduled.
+      if !resumeSchedulable st tid then .ok st
       else
-        .ok st
+        -- Insert into run queue at effective priority
+        let st := ensureRunnable st tid
+        -- H5: Conditional preemption check (AE3-D/U-16: use effective priority)
+        -- If the resumed thread has higher effective priority than current, reschedule
+        let needsReschedule : Bool := match (st.scheduler.currentOnCore bootCoreId) with
+          | some curTid =>
+            match st.getTcb? curTid with
+            | some curTcb =>
+              let resumedEffective := (resolveEffectivePrioDeadline st tcb').1
+              let curEffective := (resolveEffectivePrioDeadline st curTcb).1
+              resumedEffective.val > curEffective.val
+            | none => true  -- No valid current → always reschedule
+          | none => false  -- No current thread → no preemption needed
+        if needsReschedule then
+          -- Re-enqueue the current (outgoing) thread BEFORE rescheduling, so the
+          -- higher-priority resumed thread PREEMPTS it rather than orphaning it.
+          -- `schedule` uses dequeue-on-dispatch and relies on its caller to have
+          -- re-enqueued the outgoing thread if that thread should stay runnable
+          -- (exactly as `handleYield` / `timerTick` / `switchDomain` do); seL4's
+          -- `schedule()` re-enqueues a runnable current thread before switching.
+          -- Pre-fix, `resumeThread` skipped this step, so a lower-priority caller
+          -- that resumed a higher-priority thread was silently dropped from
+          -- scheduling (saved-but-not-enqueued: never current, never runnable).
+          -- `ensureRunnable` inserts the current thread at its effective priority
+          -- and is a no-op if it is somehow already queued (no duplicate), so this
+          -- cannot violate run-queue uniqueness.
+          let st := match st.scheduler.currentOnCore bootCoreId with
+            | some curTid => ensureRunnable st curTid
+            | none => st
+          match schedule st with
+          | .ok ((), st') => .ok st'
+          | .error e => .error e
+        else
+          .ok st
   | none => .error .invalidArgument
+
+/-- WS-ZA ZA6.33: **the single-core resume resumes the context**: an `.Inactive`
+thread whose context is not schedulable once resumed ends in the state
+`resumeContext` leaves (its context postponed on the boot core's release queue
+when its head refill is not ready), not in the run queue. -/
+theorem resumeThread_eq_of_unschedulable (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (tcb : TCB) (hT : st.getTcb? vtid.val = some tcb) (hI : tcb.threadState = .Inactive)
+    (hS : resumeSchedulable
+      (resumeContext (resumeThreadReady st vtid.val tcb).2 vtid.val bootCoreId) vtid.val = false) :
+    resumeThread st vtid =
+      .ok (resumeContext (resumeThreadReady st vtid.val tcb).2 vtid.val bootCoreId) := by
+  unfold resumeThread
+  simp only [hT, hI, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, hS, Bool.not_false]
 
 -- ============================================================================
 -- AN9-D (DEF-C-M04 — RESOLVED): suspendThread atomicity under FFI bracket

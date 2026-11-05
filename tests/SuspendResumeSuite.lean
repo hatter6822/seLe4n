@@ -1441,6 +1441,64 @@ private def sr054_yieldToReturnsNow : IO Unit := do
     expect "SR-054 the lower-priority target stays queued" (st'.queuedOn core ⟨2⟩)
   | .error e => throw <| IO.userError s!"SR-054 yieldTo should succeed, got {repr e}"
 
+
+/-- A thread bound to a context whose head refill is used up, its next refill
+released at 5000; the timer reads 0. -/
+private def exhaustedBoundParts (state : ThreadState) : TCB × SeLe4n.Kernel.SchedContext :=
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 50
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨0⟩, refillHeadPresent := true, refillHeadAmount := 1000,
+    refillHeadEligibleAt := 5000, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩) }
+  let tcb := { mkTcb 1 state with
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+    scBindingOwnerCode := 0 }
+  (tcb, sc)
+
+/-- SR-055 (WS-ZA ZA6.33): **suspend then resume of a thread on a used-up
+context**: the suspend takes the context off the release queue and keeps it
+bound; the resume (seL4-MCS's `restart` → `schedContext_resume`) puts it back on
+the boot core's release queue at its refill's release time and leaves the thread
+off the run queue, since it is not schedulable until the refill comes due. -/
+private def sr055_exhaustedContextRoundTrip : IO Unit := do
+  let core := SeLe4n.Kernel.Concurrency.bootCoreId
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 50
+  let (tcb, sc) := exhaustedBoundParts .Ready
+  let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext sc)]
+  match bootSuspendThread st ⟨tid, by decide⟩ with
+  | .error e => throw <| IO.userError s!"SR-055 suspend should succeed, got {repr e}"
+  | .ok st1 =>
+    expect "SR-055 the suspend takes the context off the release queue"
+      (!st1.releaseQueuedOn core scId)
+    match bootResumeThread st1 ⟨tid, by decide⟩ with
+    | .error e => throw <| IO.userError s!"SR-055 resume should succeed, got {repr e}"
+    | .ok st2 =>
+      expect "SR-055 the resume puts the context back on the release queue"
+        (st2.releaseQueuedOn core scId)
+      expect "SR-055 at its refill's release time" (st2.releaseAtOn core scId == 5000)
+      expect "SR-055 the thread is Ready"
+        ((st2.getTcb? tid).any (·.threadState == .Ready))
+      expect "SR-055 and stays off the run queue until the refill is due"
+        (!st2.queuedOn core tid)
+
+/-- SR-056 (WS-ZA ZA6.33): **the frozen round trip of a thread on a used-up
+context** mirrors the live one: the suspend takes the thread out of its bucket,
+and the resume leaves it Ready and in no bucket. -/
+private def sr056_frozenExhaustedContextRoundTrip : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let (tcb, sc) := exhaustedBoundParts .Ready
+  match frozenSuspendThread tid (mkFrozenState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext sc)]) with
+  | .error e => throw <| IO.userError s!"SR-056 frozen suspend should succeed, got {repr e}"
+  | .ok ((), fst1) =>
+    match frozenResumeThread tid fst1 with
+    | .error e => throw <| IO.userError s!"SR-056 frozen resume should succeed, got {repr e}"
+    | .ok ((), fst') =>
+      expect "SR-056 the frozen thread is Ready"
+        ((fst'.getTcb? tid).any (·.threadState == .Ready))
+      expect "SR-056 and in no bucket" (!frozenQueuedAnywhere fst' tid)
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -1522,4 +1580,7 @@ def main : IO Unit := do
   sr052_yieldToCompletedByDelete
   sr053_yieldToRefusals
   sr054_yieldToReturnsNow
+  IO.println "--- ZA6.33: the resume resumes the context ---"
+  sr055_exhaustedContextRoundTrip
+  sr056_frozenExhaustedContextRoundTrip
   IO.println "=== All D1 suspend/resume tests passed (56 tests) ==="

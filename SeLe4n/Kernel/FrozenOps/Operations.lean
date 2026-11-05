@@ -1854,6 +1854,28 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
           | .error e => .error e
 
+/-- WS-ZA ZA6.33: **the frozen mirror of the resume's context step**
+(`Lifecycle.Suspend.resumeContext`, seL4-MCS's `refill_unblock_check` then
+`schedContext_resume`), on the resumed thread's record `t`, with the live
+`resumeSchedulable` answer beside it.  The context the thread runs on has its
+ready head moved to now (`SchedContext.refillUnblockCheck`); the frozen surface
+keeps no release queue, so the placement has nothing to write.  An unbound
+thread is schedulable on its own time slice; one on a context is schedulable when
+the context's head has budget now, and one naming a context the store does not
+hold is not. -/
+def frozenResumeContext (st : FrozenSystemState) (t : TCB) :
+    Except KernelError (Bool × FrozenSystemState) :=
+  match t.schedContextBinding.scId? with
+  | none => .ok (true, st)
+  | some s =>
+    match st.getSchedContext? s with
+    | none => .ok (false, st)
+    | some sc =>
+      let sc' := sc.refillUnblockCheck st.machine.timer
+      match frozenWithObjectStored st s.toObjId (.schedContext sc') with
+      | .ok st' => .ok (sc'.budgetRemaining.isPositive, st')
+      | .error e => .error e
+
 /-- D1: Frozen thread resume — transition a thread from Inactive to Ready.
 Mirrors `resumeThread` in frozen state.
 
@@ -1903,7 +1925,12 @@ schedule: dispatch here is `current := some tid` with the thread left in its
 bucket, so clearing it makes the outgoing thread selectable again, exactly as
 `frozenHandleYield` documents.  The enqueue runs after the comparison where live
 runs it before; the order is immaterial, because the enqueue touches only
-`byPriority` and the comparison reads only the two TCBs. -/
+`byPriority` and the comparison reads only the two TCBs.
+
+WS-ZA ZA6.33: **and the context is resumed before either** (`frozenResumeContext`):
+the live resume runs `resumeContext` and then enqueues only a schedulable thread,
+so a thread whose context has no budget now is left out of every bucket, with
+neither a comparison nor an enqueue. -/
 def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1922,7 +1949,14 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
                           pipBoostCode := SeLe4n.Priority.optCode (frozenComputeMaxWaiterPriority stCleared tid) }
           match frozenWithObjectStored stCleared tid.toObjId (.tcb tcb') with
           | .ok stored =>
-            -- (3) preemption on the EFFECTIVE priority, off the record just
+            -- (3) WS-ZA ZA6.33: the context resumed (`frozenResumeContext`, the
+            -- live `resumeContext`'s refill-unblock check); only a schedulable
+            -- thread goes on, as the live resume's `resumeSchedulable` gate.
+            match frozenResumeContext stored tcb' with
+            | .error e => .error e
+            | .ok (false, stCtx) => .ok ((), stCtx)
+            | .ok (true, stored) =>
+            -- (4) preemption on the EFFECTIVE priority, off the record just
             -- stored, so the refreshed boost is the one compared.
             let st' := match (stored.scheduler.current) with
               | some curTid =>
