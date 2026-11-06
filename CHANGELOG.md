@@ -35,6 +35,16 @@ now names its `docs/REGISTERED_DEBT.md` row rather than a workstream ID.
     core comes from the capability and the context from `MR0`.  Q18 is
     decided.
   - §7.1 adds the zero-allocation table.
+  - The scenarios and theorems are restated to the adopted refills:
+    - S3, S9 and S12 now follow `refill_unblock_check` and `refill_update`,
+      so S9's reconfigure leaves 1 unit, not 3.
+    - D17 now reads "only the SchedControl holder replenishes by
+      reconfiguring".  A context in use keeps its head through
+      `refillUpdate`; any other context, every server included, takes
+      `refillNew`, as seL4's `invokeSchedControl_ConfigureFlags` does.
+    - S13 and CB5.6 follow D17, and T17 is marked landed in D17's sense.
+    - T14 and T15 gain H11, which says no root is configured inside the
+      interval.  Q19 records the unconditional form as an open choice.
 - **`LOCK_STATE_SEPARATION_PLAN.md`.**  The LS3.3 and LS3.4 citations are
   restated, with a zero-allocation note.
 - **`SMP_FINE_LOCK_MIGRATION_PLAN.md`.**  Track D is restated against WS-LS's
