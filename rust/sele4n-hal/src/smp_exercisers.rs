@@ -3393,6 +3393,146 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
+        // WS-ZA ZA6.34: a second orphan, answered by a reply-receive.  The
+        // server is carved again with a reply, and the root task waits, so the
+        // server runs (the partner is `Inactive`): it resumes the partner and
+        // receives, the partner's call lends it the context, and it wakes the
+        // root task and waits.  The root task deletes it, orphaning the
+        // partner on the carved reply, which heads the context with no holder.
+        // The root task's reply-receive through that reply's capability
+        // answers the partner (`doReplyTransfer`, then `reply_pop`: the
+        // context to the partner, which holds none) and blocks it on the
+        // endpoint; the partner's send wakes it and the partner waits.  The
+        // root task suspends the partner and deletes the reply, leaving the
+        // state the first orphan left.
+        invocation(
+            "untyped-retype-orphan-recv-server",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ),
+        invocation(
+            "orphan-recv-server-set-space",
+            TCB_SET_SPACE,
+            CHAIN_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "orphan-recv-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-orphan-recv-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+        ),
+        invocation(
+            "orphan-recv-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        invocation(
+            "orphan-recv-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "orphan-recv-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "orphan-recv-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "orphan-recv-server-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [CHAIN_REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "orphan-recv-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x72, 0],
+            true,
+        ),
+        signal("orphan-recv-server-wakes-root", 0x17),
+        partner_step(
+            "orphan-recv-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "orphan-recv-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        partner_step(
+            "orphan-reply-recv",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            2,
+            [CHAIN_REPLY_CAP, 0x73],
+            true,
+        ),
+        partner_step(
+            "orphan-recv-partner-wakes-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x74, 0],
+            false,
+        ),
+        partner_step(
+            "orphan-recv-partner-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "orphan-recv-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "orphan-recv-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "orphan-recv-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
         invocation(
             "third-unbind",
             SCHED_CONTEXT_UNBIND,

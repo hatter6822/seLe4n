@@ -422,6 +422,11 @@ theorem replyUnheldPopsInPlace_pop (st : SystemState) (c : SeLe4n.ThreadId)
       st.objects.findsInPlace c.toObjId = true ∧
       storeLeavesIndexAndTypes st rid.toObjId .reply = true ∧
       st.objects.findsInPlace rid.toObjId = true ∧
+      replyRecvPopDonation rid c ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) =
+        .ok (none, SchedContextOps.settleReturnedContext
+          (returnUnheldSchedContextInPlace
+            ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) c scId)
+          (determineTargetCore st c) scId) ∧
       (∀ cv : SeLe4n.ValidThreadId, cv.val = c →
         applyReplyDonationOnCore
             ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) rid cv
@@ -543,15 +548,23 @@ theorem replyUnheldPopsInPlace_pop (st : SystemState) (c : SeLe4n.ThreadId)
     show (match tc1.cpuAffinity with | some c' => c' | none => bootCoreId) = _
     rw [e]
     rfl
+  have hPopT : popUnheldReplyHead T rid c (determineTargetCore T c) =
+      .ok (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace T c scId)
+        (determineTargetCore st c) scId) := by
+    rw [hDT, popUnheldReplyHead_eq_impl]
+    unfold popUnheldReplyHeadImpl
+    rw [hCtx]
+    simp only [hUT, ↓reduceIte]
+  refine ⟨?_, ?_⟩
+  · unfold replyRecvPopDonation
+    rw [hHolder]
+    simp only [hPopT]
   intro cv hcv
   subst hcv
   unfold applyReplyDonationOnCore replyDonationRecipientHome
   rw [hHolder]
   simp only []
-  rw [hDT, popUnheldReplyHead_eq_impl]
-  unfold popUnheldReplyHeadImpl
-  rw [hCtx]
-  simp only [hUT, ↓reduceIte]
+  exact hPopT
 
 /-- **The reply to a caller recording no server, delivered**: the caller woken
 without the message, its reply object consumed, the context its reply object
@@ -593,7 +606,7 @@ theorem replyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : System
       .ok ((), performReplyUnheldDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) layout rf len badgeWord badged) := by
   replace hMsg := hMsg.symm
-  obtain ⟨rp, scId, hRp, hN, hCode, hCRes, hNo, hLC, hFC, hLR, hFR, hPop⟩ :=
+  obtain ⟨rp, scId, hRp, hN, hCode, hCRes, hNo, hLC, hFC, hLR, hFR, -, hPop⟩ :=
     replyUnheldPopsInPlace_pop st c rid msg ct hT hG
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
     rw [hCode]; rfl

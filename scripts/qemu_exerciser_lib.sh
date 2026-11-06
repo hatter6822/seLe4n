@@ -343,7 +343,20 @@ for driver in drivers:
             "waited-reply-cap-mint", "waited-wake-server", "waited-root-waits", "waited-server-resumes-partner",
             "waited-server-receives", "waited-partner-calls", "waited-server-wakes-root",
             "waited-server-waits", "waited-server-delete", "orphan-reply-cap-delete",
-            "orphan-head-reply-delete", "third-unbind",
+            "orphan-head-reply-delete",
+            # A second orphan, answered by a reply-receive (WS-ZA ZA6.34): the
+            # server carved again and lent the context by the partner's call,
+            # then deleted; the root task's reply-receive through the orphan's
+            # reply (the head popped, the context to the orphan) blocking it on
+            # the endpoint, the orphan's send waking it; the orphan suspended
+            # and its reply deleted.
+            "orphan-recv-server-set-space", "orphan-recv-server-set-priority",
+            "orphan-recv-reply-cap-mint", "orphan-recv-resume-server", "orphan-recv-root-waits",
+            "orphan-recv-server-resumes-partner", "orphan-recv-server-receives",
+            "orphan-recv-partner-calls", "orphan-recv-server-wakes-root", "orphan-recv-server-waits",
+            "orphan-recv-server-delete", "orphan-reply-recv", "orphan-recv-partner-wakes-root",
+            "orphan-recv-partner-waits", "orphan-recv-suspend-partner", "orphan-recv-reply-cap-delete",
+            "orphan-recv-reply-delete", "third-unbind",
             # A reply stack three frames deep (the partner's context lent to the
             # root task, on to the server, on to a fourth thread), its middle
             # reply's final delete issued by the fourth thread (the stack
@@ -647,6 +660,9 @@ for driver in drivers:
             # thread carved again, the same carves.
             "untyped-retype-orphan-server-reply": (15, 15),
             "untyped-retype-orphan-top-reply": (15, 15), "untyped-retype-orphan-top": (26, 26),
+            # and the reply-receive orphan's server and reply, the same carves.
+            "untyped-retype-orphan-recv-server": (26, 26),
+            "untyped-retype-orphan-recv-reply": (15, 15),
             # and a context's: 15 on both calls, `untyped-retype-sched-context`'s
             # steady state, the capability's target record already built.
             "untyped-retype-stack-context": (15, 15),
