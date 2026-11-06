@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/za54-part87",
-      "commit_sha": "05c097007f0cbf51d64301d9aa3beded9578c34f",
-      "tree_sha": "af3017b06629ee97997a046b5879ddabbbacf72c",
-      "committed_at_utc": "2026-11-06T14:02:53+00:00"
+      "commit_sha": "ac47788893e0346580a1101cafe7944a4f1568cd",
+      "tree_sha": "be6879165e653683978637fe2181fab17c4091be",
+      "committed_at_utc": "2026-11-06T15:14:01+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "70db45b4c769283a4f95117f0368240e0626afb56d8c715c7817867619da9d1d"
+    "source_digest": "17d3ede717660d4a8080b5b41d12e98638725b2e8aefd167b6139c4e4b0cbd50"
   },
   "summary": {
     "module_count": 627,
-    "declaration_count": 34223
+    "declaration_count": 34231
   },
   "readme_sync": {
     "version": "0.36.204",
     "lean_toolchain": "v4.28.0",
     "production_files": 557,
-    "production_loc": 588656,
+    "production_loc": 588791,
     "test_files": 70,
     "test_loc": 88753,
-    "proved_theorem_lemma_decls": 22531,
+    "proved_theorem_lemma_decls": 22536,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -52808,7 +52808,7 @@
           "kind": "def",
           "name": "cspaceMintPerformWords",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformWords",
-          "line": 2139,
+          "line": 2141,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -52824,7 +52824,7 @@
           "kind": "def",
           "name": "cspaceMintPerformImpl",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformImpl",
-          "line": 2151,
+          "line": 2154,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.ofOption",
@@ -52838,12 +52838,13 @@
           "kind": "theorem",
           "name": "cspaceMintPerform_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceMintPerform_eq_impl",
-          "line": 2155,
+          "line": 2158,
           "called": [
             "SeLe4n.Kernel.cspaceInstallPerform",
             "SeLe4n.Kernel.cspaceMintPerform",
             "SeLe4n.Kernel.cspaceMintPerformImpl",
             "SeLe4n.Kernel.cspaceMintPerformWords",
+            "SeLe4n.Model.CNode.insertDerivedFields_eq",
             "SeLe4n.Model.CNode.insertFields_eq_insert"
           ]
         },
@@ -52851,7 +52852,7 @@
           "kind": "theorem",
           "name": "cspaceMintWithCdt_of_admitted",
           "full_name": "SeLe4n.Kernel.cspaceMintWithCdt_of_admitted",
-          "line": 2161,
+          "line": 2176,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -52877,7 +52878,7 @@
           "kind": "def",
           "name": "mintedReplyCap",
           "full_name": "SeLe4n.Kernel.mintedReplyCap",
-          "line": 2183,
+          "line": 2198,
           "called": [
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.Capability",
@@ -52888,7 +52889,7 @@
           "kind": "def",
           "name": "mintReplyCapAdmitted",
           "full_name": "SeLe4n.Kernel.mintReplyCapAdmitted",
-          "line": 2189,
+          "line": 2204,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceDstAdmitted",
@@ -52902,7 +52903,7 @@
           "kind": "def",
           "name": "mintReplyCapPerform",
           "full_name": "SeLe4n.Kernel.mintReplyCapPerform",
-          "line": 2199,
+          "line": 2214,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceInstallPerform",
@@ -52916,7 +52917,7 @@
           "kind": "def",
           "name": "replyCapTargetBuilt",
           "full_name": "SeLe4n.Kernel.replyCapTargetBuilt",
-          "line": 2210,
+          "line": 2225,
           "called": [
             "SeLe4n.Model.CapTarget",
             "SeLe4n.ReplyId"
@@ -52926,7 +52927,7 @@
           "kind": "def",
           "name": "replyCapTargetIn",
           "full_name": "SeLe4n.Kernel.replyCapTargetIn",
-          "line": 2218,
+          "line": 2233,
           "called": [
             "SeLe4n.Kernel.replyCapTargetBuilt",
             "SeLe4n.Model.CapTarget",
@@ -52939,7 +52940,7 @@
           "kind": "theorem",
           "name": "replyCapTargetIn_eq",
           "full_name": "SeLe4n.Kernel.replyCapTargetIn_eq",
-          "line": 2223,
+          "line": 2238,
           "called": [
             "SeLe4n.Kernel.replyCapTargetBuilt",
             "SeLe4n.Kernel.replyCapTargetIn",
@@ -52951,7 +52952,7 @@
           "kind": "def",
           "name": "mintReplyCapPerformImpl",
           "full_name": "SeLe4n.Kernel.mintReplyCapPerformImpl",
-          "line": 2241,
+          "line": 2256,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -52968,7 +52969,7 @@
           "kind": "theorem",
           "name": "mintReplyCapPerform_eq_impl",
           "full_name": "SeLe4n.Kernel.mintReplyCapPerform_eq_impl",
-          "line": 2253,
+          "line": 2268,
           "called": [
             "SeLe4n.Kernel.cspaceInstallPerform",
             "SeLe4n.Kernel.mintReplyCapPerform",
@@ -52981,7 +52982,7 @@
           "kind": "theorem",
           "name": "mintReplyCapWithCdt_of_admitted",
           "full_name": "SeLe4n.Kernel.mintReplyCapWithCdt_of_admitted",
-          "line": 2259,
+          "line": 2274,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceInsertSlot_of_admitted",
@@ -52998,7 +52999,7 @@
           "kind": "def",
           "name": "cspaceCopyAdmitted",
           "full_name": "SeLe4n.Kernel.cspaceCopyAdmitted",
-          "line": 2282,
+          "line": 2297,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceDstAdmitted",
@@ -53011,7 +53012,7 @@
           "kind": "def",
           "name": "cspaceCopyPerform",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerform",
-          "line": 2290,
+          "line": 2305,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceInstallPerform",
@@ -53024,7 +53025,7 @@
           "kind": "def",
           "name": "cspaceCopyPerformImpl",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerformImpl",
-          "line": 2299,
+          "line": 2315,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.untypedSourceSetFull",
@@ -53038,11 +53039,12 @@
           "kind": "theorem",
           "name": "cspaceCopyPerform_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerform_eq_impl",
-          "line": 2308,
+          "line": 2325,
           "called": [
             "SeLe4n.Kernel.cspaceCopyPerform",
             "SeLe4n.Kernel.cspaceCopyPerformImpl",
             "SeLe4n.Kernel.cspaceInstallPerform",
+            "SeLe4n.Model.CNode.insertDerivedFields_eq",
             "SeLe4n.Model.CNode.insertFields_eq_insert"
           ]
         },
@@ -53050,7 +53052,7 @@
           "kind": "theorem",
           "name": "cspaceCopyPerform_scheduler",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerform_scheduler",
-          "line": 2314,
+          "line": 2343,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceCopyPerform",
@@ -53065,7 +53067,7 @@
           "kind": "theorem",
           "name": "cspaceCopyPerform_machine",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerform_machine",
-          "line": 2323,
+          "line": 2352,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceCopyPerform",
@@ -53080,7 +53082,7 @@
           "kind": "theorem",
           "name": "cspaceCopy_of_admitted",
           "full_name": "SeLe4n.Kernel.cspaceCopy_of_admitted",
-          "line": 2332,
+          "line": 2361,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceCopy",
@@ -53098,7 +53100,7 @@
           "kind": "def",
           "name": "cspaceMoveAdmitted",
           "full_name": "SeLe4n.Kernel.cspaceMoveAdmitted",
-          "line": 2352,
+          "line": 2381,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace",
@@ -53111,7 +53113,7 @@
           "kind": "def",
           "name": "cspaceMovePerform",
           "full_name": "SeLe4n.Kernel.cspaceMovePerform",
-          "line": 2363,
+          "line": 2392,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.SystemState",
@@ -53124,7 +53126,7 @@
           "kind": "theorem",
           "name": "cspaceMove_of_admitted",
           "full_name": "SeLe4n.Kernel.cspaceMove_of_admitted",
-          "line": 2371,
+          "line": 2400,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
@@ -53154,7 +53156,7 @@
           "kind": "def",
           "name": "cspaceMintAdmittedAt",
           "full_name": "SeLe4n.Kernel.cspaceMintAdmittedAt",
-          "line": 2435,
+          "line": 2464,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.cspaceMintAdmitted",
@@ -53168,7 +53170,7 @@
           "kind": "def",
           "name": "cspaceMintAdmittedAtImpl",
           "full_name": "SeLe4n.Kernel.cspaceMintAdmittedAtImpl",
-          "line": 2443,
+          "line": 2472,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.cspaceMintAdmitted",
@@ -53182,7 +53184,7 @@
           "kind": "theorem",
           "name": "cspaceMintAdmittedAt_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceMintAdmittedAt_eq_impl",
-          "line": 2447,
+          "line": 2476,
           "called": [
             "SeLe4n.Kernel.cspaceMintAdmittedAt",
             "SeLe4n.Kernel.cspaceMintAdmittedAtImpl"
@@ -53192,7 +53194,7 @@
           "kind": "def",
           "name": "cspaceMintPerformAt",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformAt",
-          "line": 2453,
+          "line": 2482,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.cspaceMintPerform",
@@ -53206,7 +53208,7 @@
           "kind": "def",
           "name": "cspaceMintPerformAtImpl",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformAtImpl",
-          "line": 2461,
+          "line": 2490,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.cspaceMintPerformWords",
@@ -53220,7 +53222,7 @@
           "kind": "theorem",
           "name": "cspaceMintPerformAt_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformAt_eq_impl",
-          "line": 2465,
+          "line": 2494,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.eq_zero_of_val_eq_zero",
@@ -53236,7 +53238,7 @@
           "kind": "def",
           "name": "mintReplyCapAdmittedAt",
           "full_name": "SeLe4n.Kernel.mintReplyCapAdmittedAt",
-          "line": 2478,
+          "line": 2507,
           "called": [
             "SeLe4n.Kernel.mintReplyCapAdmitted",
             "SeLe4n.Model.SystemState",
@@ -53248,7 +53250,7 @@
           "kind": "def",
           "name": "mintReplyCapPerformAt",
           "full_name": "SeLe4n.Kernel.mintReplyCapPerformAt",
-          "line": 2483,
+          "line": 2512,
           "called": [
             "SeLe4n.Kernel.mintReplyCapPerform",
             "SeLe4n.Model.SystemState",
@@ -53260,7 +53262,7 @@
           "kind": "def",
           "name": "cspaceCopyAdmittedAt",
           "full_name": "SeLe4n.Kernel.cspaceCopyAdmittedAt",
-          "line": 2488,
+          "line": 2517,
           "called": [
             "SeLe4n.Kernel.cspaceCopyAdmitted",
             "SeLe4n.Model.SystemState",
@@ -53272,7 +53274,7 @@
           "kind": "def",
           "name": "cspaceCopyPerformAt",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerformAt",
-          "line": 2493,
+          "line": 2522,
           "called": [
             "SeLe4n.Kernel.cspaceCopyPerform",
             "SeLe4n.Model.SystemState",
@@ -53284,7 +53286,7 @@
           "kind": "def",
           "name": "cspaceMoveAdmittedAt",
           "full_name": "SeLe4n.Kernel.cspaceMoveAdmittedAt",
-          "line": 2498,
+          "line": 2527,
           "called": [
             "SeLe4n.Kernel.cspaceMoveAdmitted",
             "SeLe4n.Model.SystemState",
@@ -53296,7 +53298,7 @@
           "kind": "def",
           "name": "cspaceMovePerformAt",
           "full_name": "SeLe4n.Kernel.cspaceMovePerformAt",
-          "line": 2503,
+          "line": 2532,
           "called": [
             "SeLe4n.Kernel.cspaceMovePerform",
             "SeLe4n.Model.SystemState",
@@ -53308,7 +53310,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_mintAdmitted",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_mintAdmitted",
-          "line": 2510,
+          "line": 2539,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -53323,7 +53325,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_copyAdmitted",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_copyAdmitted",
-          "line": 2516,
+          "line": 2545,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cnodeInvoked",
@@ -53336,7 +53338,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_moveAdmitted",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_moveAdmitted",
-          "line": 2521,
+          "line": 2550,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cnodeInvoked",
@@ -53349,7 +53351,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_mintReplyCapAdmitted",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_mintReplyCapAdmitted",
-          "line": 2527,
+          "line": 2556,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cnodeInvoked",
@@ -53362,7 +53364,7 @@
           "kind": "def",
           "name": "capabilityMappedPage",
           "full_name": "SeLe4n.Kernel.capabilityMappedPage",
-          "line": 2548,
+          "line": 2577,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Capability.mapping",
@@ -53375,7 +53377,7 @@
           "kind": "def",
           "name": "slotMappedPages",
           "full_name": "SeLe4n.Kernel.slotMappedPages",
-          "line": 2557,
+          "line": 2586,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.capabilityMappedPage",
@@ -53388,7 +53390,7 @@
           "kind": "def",
           "name": "cspaceRecordFrameMapping",
           "full_name": "SeLe4n.Kernel.cspaceRecordFrameMapping",
-          "line": 2568,
+          "line": 2597,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.FrameMapping",
@@ -53400,7 +53402,7 @@
           "kind": "def",
           "name": "cspaceRecordFrameMappingImpl",
           "full_name": "SeLe4n.Kernel.cspaceRecordFrameMappingImpl",
-          "line": 2580,
+          "line": 2609,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.FrameMapping",
@@ -53411,7 +53413,7 @@
           "kind": "theorem",
           "name": "cspaceRecordFrameMapping_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceRecordFrameMapping_eq_impl",
-          "line": 2590,
+          "line": 2619,
           "called": [
             "SeLe4n.Kernel.cspaceRecordFrameMapping",
             "SeLe4n.Kernel.cspaceRecordFrameMappingImpl",
@@ -53429,7 +53431,7 @@
           "kind": "theorem",
           "name": "cspaceRecordFrameMapping_ok_decompose",
           "full_name": "SeLe4n.Kernel.cspaceRecordFrameMapping_ok_decompose",
-          "line": 2610,
+          "line": 2639,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceRecordFrameMapping",
@@ -53446,7 +53448,7 @@
           "kind": "theorem",
           "name": "setCapFreeIndex_preserves_dstAdmitted",
           "full_name": "SeLe4n.Kernel.setCapFreeIndex_preserves_dstAdmitted",
-          "line": 2630,
+          "line": 2659,
           "called": [
             "SeLe4n.Kernel.CNode.lookup_setFreeIndex_none",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -53466,7 +53468,7 @@
           "kind": "def",
           "name": "cdtNodeIsRevocable",
           "full_name": "SeLe4n.Kernel.cdtNodeIsRevocable",
-          "line": 2669,
+          "line": 2698,
           "called": [
             "SeLe4n.Model.SlotRef",
             "SeLe4n.Model.SystemState",
@@ -53477,7 +53479,7 @@
           "kind": "theorem",
           "name": "cspaceRevoke_ok_implies_slot_occupied",
           "full_name": "SeLe4n.Kernel.cspaceRevoke_ok_implies_slot_occupied",
-          "line": 2678,
+          "line": 2707,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceLookupSlot",
@@ -53491,7 +53493,7 @@
           "kind": "def",
           "name": "ipcTransferSingleCap",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap",
-          "line": 2712,
+          "line": 2741,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cdtNodeIsRevocable",
@@ -53511,7 +53513,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_ok_cases",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_ok_cases",
-          "line": 2793,
+          "line": 2822,
           "called": [
             "SeLe4n.Kernel.cdtNodeIsRevocable",
             "SeLe4n.Kernel.cspaceInsertSlot",
@@ -53533,7 +53535,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_stays_cnode",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_receiverRoot_stays_cnode",
-          "line": 2843,
+          "line": 2872,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cspaceInsertSlot_ok_decompose",
@@ -53556,7 +53558,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_installed_implies_revocable_source",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_installed_implies_revocable_source",
-          "line": 2879,
+          "line": 2908,
           "called": [
             "SeLe4n.Kernel.cdtNodeIsRevocable",
             "SeLe4n.Kernel.ipcTransferSingleCap",
@@ -53572,7 +53574,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_sourceRevoked_preserves_state",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_sourceRevoked_preserves_state",
-          "line": 2894,
+          "line": 2923,
           "called": [
             "SeLe4n.Kernel.ipcTransferSingleCap",
             "SeLe4n.Kernel.ipcTransferSingleCap_ok_cases",
@@ -53587,7 +53589,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_scheduler",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_scheduler",
-          "line": 2905,
+          "line": 2934,
           "called": [
             "SeLe4n.Kernel.cspaceInsertSlot_preserves_scheduler",
             "SeLe4n.Kernel.ipcTransferSingleCap",
@@ -53606,7 +53608,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_machine",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_machine",
-          "line": 2924,
+          "line": 2953,
           "called": [
             "SeLe4n.Kernel.cspaceInsertSlot_preserves_machine",
             "SeLe4n.Kernel.ipcTransferSingleCap",
@@ -53625,7 +53627,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_ne",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_objects_ne",
-          "line": 2940,
+          "line": 2969,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cspaceInsertSlot_preserves_objects_invExt",
@@ -53649,7 +53651,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_objects_invExt",
-          "line": 2962,
+          "line": 2991,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cspaceInsertSlot_preserves_objects_invExt",
@@ -53669,7 +53671,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ntfn_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_ntfn_objects",
-          "line": 2980,
+          "line": 3009,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.ipcTransferSingleCap",
@@ -53687,7 +53689,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_not_ntfn",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_receiverRoot_not_ntfn",
-          "line": 3007,
+          "line": 3036,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.ipcTransferSingleCap",
@@ -53704,7 +53706,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ep_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_ep_objects",
-          "line": 3024,
+          "line": 3053,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.ipcTransferSingleCap",
@@ -53722,7 +53724,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_tcb_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_tcb_objects",
-          "line": 3052,
+          "line": 3081,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.ipcTransferSingleCap",
@@ -53742,7 +53744,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_schedContext_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_schedContext_objects",
-          "line": 3079,
+          "line": 3108,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.SchedContext",
@@ -53760,7 +53762,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_reply_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_reply_objects",
-          "line": 3105,
+          "line": 3134,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -53778,7 +53780,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_ok_implies_cnode_at_root",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_ok_implies_cnode_at_root",
-          "line": 3130,
+          "line": 3159,
           "called": [
             "SeLe4n.Kernel.ipcTransferSingleCap",
             "SeLe4n.Model.CapTransferResult",
@@ -414331,7 +414333,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 370,
+      "declaration_count": 378,
       "declarations": [
         {
           "kind": "structure",
@@ -415982,9 +415984,43 @@
         },
         {
           "kind": "def",
+          "name": "insertCellOf",
+          "full_name": "SeLe4n.Model.CNode.insertCellOf",
+          "line": 1564,
+          "called": [
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.CNode.fillHeadOf",
+            "SeLe4n.Model.CNode.fillOccOf",
+            "SeLe4n.Model.CNode.insert",
+            "SeLe4n.Model.CNode.insert_slots_agree",
+            "SeLe4n.Model.CNode.occ_agree_fill",
+            "SeLe4n.Model.CNode.occupiedAt",
+            "SeLe4n.Model.CNode.size_fillOcc",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Slot",
+            "SeLe4n.Slot.toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertCellOf_eq",
+          "full_name": "SeLe4n.Model.CNode.insertCellOf_eq",
+          "line": 1578,
+          "called": [
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.CNode.ext_of_fields",
+            "SeLe4n.Model.CNode.insert",
+            "SeLe4n.Model.CNode.insertCellOf",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Slot",
+            "SeLe4n.Slot.toNat"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "insertCellSharedOf",
           "full_name": "SeLe4n.Model.CNode.insertCellSharedOf",
-          "line": 1561,
+          "line": 1588,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Badge",
@@ -416000,7 +416036,7 @@
           "kind": "def",
           "name": "insertCellFrom",
           "full_name": "SeLe4n.Model.CNode.insertCellFrom",
-          "line": 1572,
+          "line": 1599,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insertCellSharedOf",
@@ -416018,7 +416054,7 @@
           "kind": "theorem",
           "name": "insertCellFrom_eq",
           "full_name": "SeLe4n.Model.CNode.insertCellFrom_eq",
-          "line": 1587,
+          "line": 1614,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -416035,7 +416071,7 @@
           "kind": "def",
           "name": "insertCell",
           "full_name": "SeLe4n.Model.CNode.insertCell",
-          "line": 1599,
+          "line": 1626,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insertCellFrom",
@@ -416049,7 +416085,7 @@
           "kind": "theorem",
           "name": "insertCell_eq_insert",
           "full_name": "SeLe4n.Model.CNode.insertCell_eq_insert",
-          "line": 1605,
+          "line": 1632,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -416063,7 +416099,7 @@
           "kind": "def",
           "name": "unchanged",
           "full_name": "SeLe4n.Model.CNode.unchanged",
-          "line": 1617,
+          "line": 1644,
           "called": [
             "SeLe4n.Model.CNode"
           ]
@@ -416072,7 +416108,7 @@
           "kind": "def",
           "name": "insertObjectCap",
           "full_name": "SeLe4n.Model.CNode.insertObjectCap",
-          "line": 1623,
+          "line": 1650,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Model.AccessRightSet",
@@ -416091,7 +416127,7 @@
           "kind": "theorem",
           "name": "insertObjectCap_eq_insert",
           "full_name": "SeLe4n.Model.CNode.insertObjectCap_eq_insert",
-          "line": 1633,
+          "line": 1660,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Model.AccessRightSet",
@@ -416108,7 +416144,7 @@
           "kind": "def",
           "name": "insertIrqHandlerCap",
           "full_name": "SeLe4n.Model.CNode.insertIrqHandlerCap",
-          "line": 1648,
+          "line": 1675,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Model.AccessRightSet",
@@ -416126,7 +416162,7 @@
           "kind": "theorem",
           "name": "insertIrqHandlerCap_eq_insert",
           "full_name": "SeLe4n.Model.CNode.insertIrqHandlerCap_eq_insert",
-          "line": 1659,
+          "line": 1686,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Model.AccessRightSet",
@@ -416142,7 +416178,7 @@
           "kind": "def",
           "name": "insertImpl",
           "full_name": "SeLe4n.Model.CNode.insertImpl",
-          "line": 1672,
+          "line": 1699,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insertCell",
@@ -416154,7 +416190,7 @@
           "kind": "theorem",
           "name": "insert_eq_impl",
           "full_name": "SeLe4n.Model.CNode.insert_eq_impl",
-          "line": 1675,
+          "line": 1702,
           "called": [
             "SeLe4n.Model.CNode.insert",
             "SeLe4n.Model.CNode.insertCell_eq_insert",
@@ -416165,7 +416201,7 @@
           "kind": "def",
           "name": "insertFields",
           "full_name": "SeLe4n.Model.CNode.insertFields",
-          "line": 1683,
+          "line": 1710,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Model.AccessRightSet",
@@ -416179,7 +416215,7 @@
           "kind": "theorem",
           "name": "insertFields_eq_insert",
           "full_name": "SeLe4n.Model.CNode.insertFields_eq_insert",
-          "line": 1687,
+          "line": 1714,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Model.AccessRightSet",
@@ -416194,10 +416230,107 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "derivesUnchanged",
+          "full_name": "SeLe4n.Model.CNode.derivesUnchanged",
+          "line": 1723,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.CapTarget.isFieldless",
+            "SeLe4n.Model.Capability"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "derivesUnchanged_eq",
+          "full_name": "SeLe4n.Model.CNode.derivesUnchanged_eq",
+          "line": 1729,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.CNode.derivesUnchanged",
+            "SeLe4n.Model.Capability"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertFields_eq_insertFields",
+          "full_name": "SeLe4n.Model.CNode.insertFields_eq_insertFields",
+          "line": 1738,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.CNode.insert",
+            "SeLe4n.Model.CNode.insertCell_eq_insert",
+            "SeLe4n.Model.CNode.insertFields",
+            "SeLe4n.Model.CapTarget",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertCellOf_eq_insertFields",
+          "full_name": "SeLe4n.Model.CNode.insertCellOf_eq_insertFields",
+          "line": 1746,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.CNode.derivesUnchanged",
+            "SeLe4n.Model.CNode.derivesUnchanged_eq",
+            "SeLe4n.Model.CNode.insert",
+            "SeLe4n.Model.CNode.insertCellOf",
+            "SeLe4n.Model.CNode.insertCellOf_eq",
+            "SeLe4n.Model.CNode.insertFields",
+            "SeLe4n.Model.CNode.insertFields_eq_insertFields",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "insertDerivedFields",
+          "full_name": "SeLe4n.Model.CNode.insertDerivedFields",
+          "line": 1764,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.CNode.derivesUnchanged",
+            "SeLe4n.Model.CNode.insertCellOf",
+            "SeLe4n.Model.CNode.insertCellOf_eq_insertFields",
+            "SeLe4n.Model.CNode.insertFields",
+            "SeLe4n.Model.CNode.unchanged",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertDerivedFields_eq",
+          "full_name": "SeLe4n.Model.CNode.insertDerivedFields_eq",
+          "line": 1780,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.CNode.insert",
+            "SeLe4n.Model.CNode.insertCellOf_eq_insertFields",
+            "SeLe4n.Model.CNode.insertDerivedFields",
+            "SeLe4n.Model.CNode.insertFields",
+            "SeLe4n.Model.CNode.insertFields_eq_insertFields",
+            "SeLe4n.Model.CNode.unchanged",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "slotArrayGet_modify",
           "full_name": "SeLe4n.Model.CNode.slotArrayGet_modify",
-          "line": 1695,
+          "line": 1801,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.slotArrayGet",
@@ -416209,7 +416342,7 @@
           "kind": "theorem",
           "name": "occupied_modify",
           "full_name": "SeLe4n.Model.CNode.occupied_modify",
-          "line": 1706,
+          "line": 1812,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SlotOccupancy.occupied"
@@ -416219,7 +416352,7 @@
           "kind": "def",
           "name": "recordMapping",
           "full_name": "SeLe4n.Model.CNode.recordMapping",
-          "line": 1718,
+          "line": 1824,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -416232,7 +416365,7 @@
           "kind": "def",
           "name": "cellWithMapping",
           "full_name": "SeLe4n.Model.CNode.cellWithMapping",
-          "line": 1724,
+          "line": 1830,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Model.Capability",
@@ -416244,7 +416377,7 @@
           "kind": "def",
           "name": "slotsWithMapping",
           "full_name": "SeLe4n.Model.CNode.slotsWithMapping",
-          "line": 1730,
+          "line": 1836,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Model.Capability",
@@ -416259,7 +416392,7 @@
           "kind": "def",
           "name": "recordMappingCells",
           "full_name": "SeLe4n.Model.CNode.recordMappingCells",
-          "line": 1739,
+          "line": 1845,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Erased.out_map",
@@ -416278,7 +416411,7 @@
           "kind": "theorem",
           "name": "recordMappingCells_eq",
           "full_name": "SeLe4n.Model.CNode.recordMappingCells_eq",
-          "line": 1764,
+          "line": 1870,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Erased.ext",
@@ -416304,7 +416437,7 @@
           "kind": "def",
           "name": "setFreeIndex",
           "full_name": "SeLe4n.Model.CNode.setFreeIndex",
-          "line": 1818,
+          "line": 1924,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -416316,7 +416449,7 @@
           "kind": "def",
           "name": "cellWithFreeIndex",
           "full_name": "SeLe4n.Model.CNode.cellWithFreeIndex",
-          "line": 1824,
+          "line": 1930,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Capability.withFreeIndex"
@@ -416326,7 +416459,7 @@
           "kind": "def",
           "name": "slotsWithFreeIndex",
           "full_name": "SeLe4n.Model.CNode.slotsWithFreeIndex",
-          "line": 1829,
+          "line": 1935,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Capability.withFreeIndex",
@@ -416339,7 +416472,7 @@
           "kind": "def",
           "name": "setFreeIndexCells",
           "full_name": "SeLe4n.Model.CNode.setFreeIndexCells",
-          "line": 1838,
+          "line": 1944,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CNode",
@@ -416356,7 +416489,7 @@
           "kind": "theorem",
           "name": "setFreeIndexCells_eq",
           "full_name": "SeLe4n.Model.CNode.setFreeIndexCells_eq",
-          "line": 1862,
+          "line": 1968,
           "called": [
             "SeLe4n.Erased.ext",
             "SeLe4n.Erased.out_map",
@@ -416380,7 +416513,7 @@
           "kind": "def",
           "name": "ofList",
           "full_name": "SeLe4n.Model.CNode.ofList",
-          "line": 1914,
+          "line": 2020,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -416393,7 +416526,7 @@
           "kind": "def",
           "name": "remove",
           "full_name": "SeLe4n.Model.CNode.remove",
-          "line": 1919,
+          "line": 2025,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CNode",
@@ -416412,7 +416545,7 @@
           "kind": "def",
           "name": "removeImpl",
           "full_name": "SeLe4n.Model.CNode.removeImpl",
-          "line": 1939,
+          "line": 2045,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.emptyHeadOf",
@@ -416429,7 +416562,7 @@
           "kind": "theorem",
           "name": "remove_eq_impl",
           "full_name": "SeLe4n.Model.CNode.remove_eq_impl",
-          "line": 1958,
+          "line": 2064,
           "called": [
             "SeLe4n.Model.CNode.ext_of_fields",
             "SeLe4n.Model.CNode.remove",
@@ -416440,7 +416573,7 @@
           "kind": "theorem",
           "name": "slots_remove",
           "full_name": "SeLe4n.Model.CNode.slots_remove",
-          "line": 1967,
+          "line": 2073,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CNode",
@@ -416454,7 +416587,7 @@
           "kind": "def",
           "name": "findFirstEmptySlot",
           "full_name": "SeLe4n.Model.CNode.findFirstEmptySlot",
-          "line": 1986,
+          "line": 2092,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.lookup",
@@ -416467,7 +416600,7 @@
           "kind": "def",
           "name": "findFirstEmptySlotChecked",
           "full_name": "SeLe4n.Model.CNode.findFirstEmptySlotChecked",
-          "line": 2007,
+          "line": 2113,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.findFirstEmptySlot",
@@ -416479,7 +416612,7 @@
           "kind": "theorem",
           "name": "findFirstEmptySlot_bounded",
           "full_name": "SeLe4n.Model.CNode.findFirstEmptySlot_bounded",
-          "line": 2015,
+          "line": 2121,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.findFirstEmptySlot",
@@ -416493,7 +416626,7 @@
           "kind": "theorem",
           "name": "findFirstEmptySlotChecked_within_radix",
           "full_name": "SeLe4n.Model.CNode.findFirstEmptySlotChecked_within_radix",
-          "line": 2033,
+          "line": 2139,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.findFirstEmptySlotChecked",
@@ -416506,7 +416639,7 @@
           "kind": "theorem",
           "name": "findFirstEmptySlot_spec",
           "full_name": "SeLe4n.Model.CNode.findFirstEmptySlot_spec",
-          "line": 2048,
+          "line": 2154,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.findFirstEmptySlot",
@@ -416518,7 +416651,7 @@
           "kind": "theorem",
           "name": "findFirstEmptySlot_zero",
           "full_name": "SeLe4n.Model.CNode.findFirstEmptySlot_zero",
-          "line": 2063,
+          "line": 2169,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.findFirstEmptySlot",
@@ -416529,7 +416662,7 @@
           "kind": "theorem",
           "name": "findFirstEmptySlot_none_iff",
           "full_name": "SeLe4n.Model.CNode.findFirstEmptySlot_none_iff",
-          "line": 2068,
+          "line": 2174,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.findFirstEmptySlot",
@@ -416545,7 +416678,7 @@
           "kind": "def",
           "name": "holdsFrameMappingRecord",
           "full_name": "SeLe4n.Model.CNode.holdsFrameMappingRecord",
-          "line": 2097,
+          "line": 2203,
           "called": [
             "SeLe4n.Model.CNode"
           ]
@@ -416554,7 +416687,7 @@
           "kind": "abbrev",
           "name": "revokeTargetLocalKeeps",
           "full_name": "SeLe4n.Model.CNode.revokeTargetLocalKeeps",
-          "line": 2103,
+          "line": 2209,
           "called": [
             "SeLe4n.Model.CapTarget",
             "SeLe4n.Model.Capability",
@@ -416565,7 +416698,7 @@
           "kind": "def",
           "name": "filterSlots",
           "full_name": "SeLe4n.Model.CNode.filterSlots",
-          "line": 2110,
+          "line": 2216,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CNode",
@@ -416588,7 +416721,7 @@
           "kind": "def",
           "name": "withoutLinks",
           "full_name": "SeLe4n.Model.CNode.withoutLinks",
-          "line": 2136,
+          "line": 2242,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.slotLinkWords"
@@ -416598,7 +416731,7 @@
           "kind": "theorem",
           "name": "slots_withoutLinks",
           "full_name": "SeLe4n.Model.CNode.slots_withoutLinks",
-          "line": 2141,
+          "line": 2247,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.slots",
@@ -416609,7 +416742,7 @@
           "kind": "theorem",
           "name": "insert_links",
           "full_name": "SeLe4n.Model.CNode.insert_links",
-          "line": 2145,
+          "line": 2251,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -416621,7 +416754,7 @@
           "kind": "theorem",
           "name": "remove_links",
           "full_name": "SeLe4n.Model.CNode.remove_links",
-          "line": 2149,
+          "line": 2255,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.remove",
@@ -416632,7 +416765,7 @@
           "kind": "theorem",
           "name": "filterSlots_links",
           "full_name": "SeLe4n.Model.CNode.filterSlots_links",
-          "line": 2152,
+          "line": 2258,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.filterSlots",
@@ -416644,7 +416777,7 @@
           "kind": "theorem",
           "name": "cells_withoutLinks",
           "full_name": "SeLe4n.Model.CNode.cells_withoutLinks",
-          "line": 2154,
+          "line": 2260,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.withoutLinks"
@@ -416654,7 +416787,7 @@
           "kind": "theorem",
           "name": "depth_withoutLinks",
           "full_name": "SeLe4n.Model.CNode.depth_withoutLinks",
-          "line": 2155,
+          "line": 2261,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.withoutLinks"
@@ -416664,7 +416797,7 @@
           "kind": "theorem",
           "name": "guardWidth_withoutLinks",
           "full_name": "SeLe4n.Model.CNode.guardWidth_withoutLinks",
-          "line": 2156,
+          "line": 2262,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.withoutLinks"
@@ -416674,7 +416807,7 @@
           "kind": "theorem",
           "name": "guardValue_withoutLinks",
           "full_name": "SeLe4n.Model.CNode.guardValue_withoutLinks",
-          "line": 2158,
+          "line": 2264,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.withoutLinks"
@@ -416684,7 +416817,7 @@
           "kind": "theorem",
           "name": "radixWidth_withoutLinks",
           "full_name": "SeLe4n.Model.CNode.radixWidth_withoutLinks",
-          "line": 2160,
+          "line": 2266,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.withoutLinks"
@@ -416694,7 +416827,7 @@
           "kind": "theorem",
           "name": "lookup_withoutLinks",
           "full_name": "SeLe4n.Model.CNode.lookup_withoutLinks",
-          "line": 2162,
+          "line": 2268,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.lookup",
@@ -416706,7 +416839,7 @@
           "kind": "theorem",
           "name": "slots_filterSlots",
           "full_name": "SeLe4n.Model.CNode.slots_filterSlots",
-          "line": 2166,
+          "line": 2272,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CNode",
@@ -416721,7 +416854,7 @@
           "kind": "def",
           "name": "revokeTargetLocal",
           "full_name": "SeLe4n.Model.CNode.revokeTargetLocal",
-          "line": 2184,
+          "line": 2290,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.filterSlots",
@@ -416734,7 +416867,7 @@
           "kind": "def",
           "name": "slotsUnique",
           "full_name": "SeLe4n.Model.CNode.slotsUnique",
-          "line": 2203,
+          "line": 2309,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
             "SeLe4n.Model.CNode",
@@ -416746,7 +416879,7 @@
           "kind": "theorem",
           "name": "slotsUnique_holds",
           "full_name": "SeLe4n.Model.CNode.slotsUnique_holds",
-          "line": 2207,
+          "line": 2313,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.slots",
@@ -416758,7 +416891,7 @@
           "kind": "theorem",
           "name": "cnode_slots_unique",
           "full_name": "SeLe4n.Model.CNode.cnode_slots_unique",
-          "line": 2214,
+          "line": 2320,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.slotsUnique",
@@ -416769,7 +416902,7 @@
           "kind": "theorem",
           "name": "lookup_remove_eq_none",
           "full_name": "SeLe4n.Model.CNode.lookup_remove_eq_none",
-          "line": 2220,
+          "line": 2326,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self",
             "SeLe4n.Model.CNode",
@@ -416786,7 +416919,7 @@
           "kind": "theorem",
           "name": "lookup_mem_of_some",
           "full_name": "SeLe4n.Model.CNode.lookup_mem_of_some",
-          "line": 2229,
+          "line": 2335,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.mem_iff_isSome_getElem?",
             "SeLe4n.Model.CNode",
@@ -416800,7 +416933,7 @@
           "kind": "theorem",
           "name": "resolveSlot_depthMismatch",
           "full_name": "SeLe4n.Model.CNode.resolveSlot_depthMismatch",
-          "line": 2234,
+          "line": 2340,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Model.CNode",
@@ -416812,7 +416945,7 @@
           "kind": "theorem",
           "name": "resolveSlot_guardMismatch_of_not_guardBounded",
           "full_name": "SeLe4n.Model.CNode.resolveSlot_guardMismatch_of_not_guardBounded",
-          "line": 2252,
+          "line": 2358,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.guardBits_lt",
@@ -416826,7 +416959,7 @@
           "kind": "theorem",
           "name": "lookup_revokeTargetLocal_source_eq_lookup",
           "full_name": "SeLe4n.Model.CNode.lookup_revokeTargetLocal_source_eq_lookup",
-          "line": 2280,
+          "line": 2386,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.filter_preserves_key",
             "SeLe4n.Model.CNode",
@@ -416844,7 +416977,7 @@
           "kind": "theorem",
           "name": "lookup_revokeTargetLocal_sub",
           "full_name": "SeLe4n.Model.CNode.lookup_revokeTargetLocal_sub",
-          "line": 2295,
+          "line": 2401,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.filter_get_subset",
             "SeLe4n.Model.CNode",
@@ -416863,7 +416996,7 @@
           "kind": "theorem",
           "name": "lookup_revokeTargetLocal_of_not_keeps",
           "full_name": "SeLe4n.Model.CNode.lookup_revokeTargetLocal_of_not_keeps",
-          "line": 2309,
+          "line": 2415,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.filter_getElem?_iff",
             "SeLe4n.Model.CNode",
@@ -416884,7 +417017,7 @@
           "kind": "theorem",
           "name": "lookup_revokeTargetLocal_of_keeps",
           "full_name": "SeLe4n.Model.CNode.lookup_revokeTargetLocal_of_keeps",
-          "line": 2326,
+          "line": 2432,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.filter_getElem?_of_pred",
             "SeLe4n.Model.CNode",
@@ -416904,7 +417037,7 @@
           "kind": "theorem",
           "name": "empty_guardBounded",
           "full_name": "SeLe4n.Model.CNode.empty_guardBounded",
-          "line": 2338,
+          "line": 2444,
           "called": [
             "SeLe4n.Model.CNode.empty",
             "SeLe4n.Model.CNode.guardBounded"
@@ -416914,7 +417047,7 @@
           "kind": "theorem",
           "name": "empty_slotsUnique",
           "full_name": "SeLe4n.Model.CNode.empty_slotsUnique",
-          "line": 2343,
+          "line": 2449,
           "called": [
             "SeLe4n.Model.CNode.empty",
             "SeLe4n.Model.CNode.slots",
@@ -416926,7 +417059,7 @@
           "kind": "theorem",
           "name": "insert_slotsUnique",
           "full_name": "SeLe4n.Model.CNode.insert_slotsUnique",
-          "line": 2349,
+          "line": 2455,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -416941,7 +417074,7 @@
           "kind": "theorem",
           "name": "remove_slotsUnique",
           "full_name": "SeLe4n.Model.CNode.remove_slotsUnique",
-          "line": 2358,
+          "line": 2464,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.remove",
@@ -416955,7 +417088,7 @@
           "kind": "theorem",
           "name": "revokeTargetLocal_slotsUnique",
           "full_name": "SeLe4n.Model.CNode.revokeTargetLocal_slotsUnique",
-          "line": 2367,
+          "line": 2473,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.revokeTargetLocal",
@@ -416970,7 +417103,7 @@
           "kind": "def",
           "name": "slotCountBounded",
           "full_name": "SeLe4n.Model.CNode.slotCountBounded",
-          "line": 2384,
+          "line": 2490,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.slotCount",
@@ -416982,7 +417115,7 @@
           "kind": "theorem",
           "name": "slots_get?_bounded",
           "full_name": "SeLe4n.Model.CNode.slots_get?_bounded",
-          "line": 2389,
+          "line": 2495,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
             "SeLe4n.Model.CNode",
@@ -416997,7 +417130,7 @@
           "kind": "theorem",
           "name": "slotCountBounded_holds",
           "full_name": "SeLe4n.Model.CNode.slotCountBounded_holds",
-          "line": 2403,
+          "line": 2509,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.size_le_length_of_keys_mem",
             "SeLe4n.Model.CNode",
@@ -417014,7 +417147,7 @@
           "kind": "def",
           "name": "slotAddressable",
           "full_name": "SeLe4n.Model.CNode.slotAddressable",
-          "line": 2421,
+          "line": 2527,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.slotCount",
@@ -417026,7 +417159,7 @@
           "kind": "theorem",
           "name": "slotAddressable_iff_lt_cells",
           "full_name": "SeLe4n.Model.CNode.slotAddressable_iff_lt_cells",
-          "line": 2426,
+          "line": 2532,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.slotAddressable",
@@ -417039,7 +417172,7 @@
           "kind": "theorem",
           "name": "slotAddressable_of_lookup",
           "full_name": "SeLe4n.Model.CNode.slotAddressable_of_lookup",
-          "line": 2432,
+          "line": 2538,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.lookup",
@@ -417056,7 +417189,7 @@
           "kind": "theorem",
           "name": "slotAddressable_of_lookup_insert",
           "full_name": "SeLe4n.Model.CNode.slotAddressable_of_lookup_insert",
-          "line": 2443,
+          "line": 2549,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -417072,7 +417205,7 @@
           "kind": "theorem",
           "name": "insert_slots_of_addressable",
           "full_name": "SeLe4n.Model.CNode.insert_slots_of_addressable",
-          "line": 2450,
+          "line": 2556,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CNode",
@@ -417089,7 +417222,7 @@
           "kind": "theorem",
           "name": "insert_eq_self_of_not_addressable",
           "full_name": "SeLe4n.Model.CNode.insert_eq_self_of_not_addressable",
-          "line": 2456,
+          "line": 2562,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -417103,7 +417236,7 @@
           "kind": "theorem",
           "name": "insert_radixWidth",
           "full_name": "SeLe4n.Model.CNode.insert_radixWidth",
-          "line": 2460,
+          "line": 2566,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -417115,7 +417248,7 @@
           "kind": "theorem",
           "name": "insert_depth",
           "full_name": "SeLe4n.Model.CNode.insert_depth",
-          "line": 2464,
+          "line": 2570,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -417127,7 +417260,7 @@
           "kind": "theorem",
           "name": "insert_guardWidth",
           "full_name": "SeLe4n.Model.CNode.insert_guardWidth",
-          "line": 2468,
+          "line": 2574,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -417139,7 +417272,7 @@
           "kind": "theorem",
           "name": "insert_guardValue",
           "full_name": "SeLe4n.Model.CNode.insert_guardValue",
-          "line": 2472,
+          "line": 2578,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -417151,7 +417284,7 @@
           "kind": "theorem",
           "name": "findFirstEmptySlotChecked_slotAddressable",
           "full_name": "SeLe4n.Model.CNode.findFirstEmptySlotChecked_slotAddressable",
-          "line": 2480,
+          "line": 2586,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.findFirstEmptySlotChecked",
@@ -417165,7 +417298,7 @@
           "kind": "theorem",
           "name": "resolveSlot_slotAddressable",
           "full_name": "SeLe4n.Model.CNode.resolveSlot_slotAddressable",
-          "line": 2490,
+          "line": 2596,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.guardBits",
@@ -417184,7 +417317,7 @@
           "kind": "theorem",
           "name": "mem_lookup_of_slotsUnique",
           "full_name": "SeLe4n.Model.CNode.mem_lookup_of_slotsUnique",
-          "line": 2513,
+          "line": 2619,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.mem_iff_isSome_getElem?",
             "SeLe4n.Model.CNode",
@@ -417197,7 +417330,7 @@
           "kind": "theorem",
           "name": "lookup_insert_eq",
           "full_name": "SeLe4n.Model.CNode.lookup_insert_eq",
-          "line": 2523,
+          "line": 2629,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self",
             "SeLe4n.Model.CNode",
@@ -417213,7 +417346,7 @@
           "kind": "theorem",
           "name": "lookup_insert_ne",
           "full_name": "SeLe4n.Model.CNode.lookup_insert_ne",
-          "line": 2533,
+          "line": 2639,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne",
             "SeLe4n.Model.CNode",
@@ -417230,7 +417363,7 @@
           "kind": "theorem",
           "name": "lookup_remove_ne",
           "full_name": "SeLe4n.Model.CNode.lookup_remove_ne",
-          "line": 2547,
+          "line": 2653,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K",
             "SeLe4n.Model.CNode",
@@ -417245,7 +417378,7 @@
           "kind": "theorem",
           "name": "lookup_insert_ne_none",
           "full_name": "SeLe4n.Model.CNode.lookup_insert_ne_none",
-          "line": 2559,
+          "line": 2665,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.insert",
@@ -417263,7 +417396,7 @@
           "kind": "instance",
           "name": "instBEqCNode",
           "full_name": "SeLe4n.Model.instBEqCNode",
-          "line": 2576,
+          "line": 2682,
           "called": [
             "SeLe4n.Model.CNode"
           ]
@@ -417272,7 +417405,7 @@
           "kind": "theorem",
           "name": "CNode.beq_sound",
           "full_name": "SeLe4n.Model.CNode.beq_sound",
-          "line": 2588,
+          "line": 2694,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.lookup",
@@ -417284,7 +417417,7 @@
           "kind": "theorem",
           "name": "CNode.empty_not_wellFormed",
           "full_name": "SeLe4n.Model.CNode.empty_not_wellFormed",
-          "line": 2603,
+          "line": 2709,
           "called": [
             "SeLe4n.Model.CNode.bitsConsumed",
             "SeLe4n.Model.CNode.empty",
@@ -417295,14 +417428,14 @@
           "kind": "inductive",
           "name": "DerivationOp",
           "full_name": "SeLe4n.Model.DerivationOp",
-          "line": 2612,
+          "line": 2718,
           "called": []
         },
         {
           "kind": "structure",
           "name": "CapDerivationEdge",
           "full_name": "SeLe4n.Model.CapDerivationEdge",
-          "line": 2632,
+          "line": 2738,
           "called": [
             "SeLe4n.Model.DerivationOp",
             "SeLe4n.Model.SlotRef"
@@ -417312,7 +417445,7 @@
           "kind": "def",
           "name": "isChildOf",
           "full_name": "SeLe4n.Model.CapDerivationEdge.isChildOf",
-          "line": 2640,
+          "line": 2746,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.SlotRef"
@@ -417322,7 +417455,7 @@
           "kind": "def",
           "name": "isParentOf",
           "full_name": "SeLe4n.Model.CapDerivationEdge.isParentOf",
-          "line": 2643,
+          "line": 2749,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.SlotRef"
@@ -417332,7 +417465,7 @@
           "kind": "structure",
           "name": "CapDerivationTree",
           "full_name": "SeLe4n.Model.CapDerivationTree",
-          "line": 2662,
+          "line": 2768,
           "called": [
             "SeLe4n.Erased",
             "SeLe4n.InterruptLineSet",
@@ -417344,7 +417477,7 @@
           "kind": "def",
           "name": "edges",
           "full_name": "SeLe4n.Model.CapDerivationTree.edges",
-          "line": 2691,
+          "line": 2797,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree"
@@ -417354,7 +417487,7 @@
           "kind": "theorem",
           "name": "edges_length_le",
           "full_name": "SeLe4n.Model.CapDerivationTree.edges_length_le",
-          "line": 2694,
+          "line": 2800,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges"
@@ -417364,7 +417497,7 @@
           "kind": "def",
           "name": "rootChains",
           "full_name": "SeLe4n.Model.CapDerivationTree.rootChains",
-          "line": 2700,
+          "line": 2806,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.SlotRef"
@@ -417374,7 +417507,7 @@
           "kind": "theorem",
           "name": "ext",
           "full_name": "SeLe4n.Model.CapDerivationTree.ext",
-          "line": 2704,
+          "line": 2810,
           "called": [
             "SeLe4n.Erased.ext",
             "SeLe4n.Model.CapDerivationTree",
@@ -417386,7 +417519,7 @@
           "kind": "def",
           "name": "empty",
           "full_name": "SeLe4n.Model.CapDerivationTree.empty",
-          "line": 2714,
+          "line": 2820,
           "called": [
             "SeLe4n.Erased.mk",
             "SeLe4n.Model.CapDerivationTree"
@@ -417396,7 +417529,7 @@
           "kind": "theorem",
           "name": "empty_edges",
           "full_name": "SeLe4n.Model.CapDerivationTree.empty_edges",
-          "line": 2717,
+          "line": 2823,
           "called": [
             "SeLe4n.Model.CapDerivationTree.edges",
             "SeLe4n.Model.CapDerivationTree.empty"
@@ -417406,7 +417539,7 @@
           "kind": "def",
           "name": "withIrqLineIssued",
           "full_name": "SeLe4n.Model.CapDerivationTree.withIrqLineIssued",
-          "line": 2722,
+          "line": 2828,
           "called": [
             "SeLe4n.InterruptLineSet.set",
             "SeLe4n.Model.CapDerivationTree"
@@ -417416,7 +417549,7 @@
           "kind": "theorem",
           "name": "withIrqLineIssued_edges",
           "full_name": "SeLe4n.Model.CapDerivationTree.withIrqLineIssued_edges",
-          "line": 2727,
+          "line": 2833,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges",
@@ -417427,7 +417560,7 @@
           "kind": "theorem",
           "name": "withIrqLineIssued_edgesGhost",
           "full_name": "SeLe4n.Model.CapDerivationTree.withIrqLineIssued_edgesGhost",
-          "line": 2730,
+          "line": 2836,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.withIrqLineIssued"
@@ -417437,7 +417570,7 @@
           "kind": "theorem",
           "name": "withIrqLineIssued_rootChainsGhost",
           "full_name": "SeLe4n.Model.CapDerivationTree.withIrqLineIssued_rootChainsGhost",
-          "line": 2733,
+          "line": 2839,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.withIrqLineIssued"
@@ -417447,7 +417580,7 @@
           "kind": "theorem",
           "name": "withIrqLineIssued_edgeBound",
           "full_name": "SeLe4n.Model.CapDerivationTree.withIrqLineIssued_edgeBound",
-          "line": 2736,
+          "line": 2842,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.withIrqLineIssued"
@@ -417457,7 +417590,7 @@
           "kind": "theorem",
           "name": "withIrqLineIssued_issuedIrqLines",
           "full_name": "SeLe4n.Model.CapDerivationTree.withIrqLineIssued_issuedIrqLines",
-          "line": 2739,
+          "line": 2845,
           "called": [
             "SeLe4n.InterruptLineSet.set",
             "SeLe4n.Model.CapDerivationTree",
@@ -417468,7 +417601,7 @@
           "kind": "def",
           "name": "withFreshIrqLines",
           "full_name": "SeLe4n.Model.CapDerivationTree.withFreshIrqLines",
-          "line": 2746,
+          "line": 2852,
           "called": [
             "SeLe4n.InterruptLineSet.fresh",
             "SeLe4n.Model.CapDerivationTree"
@@ -417478,7 +417611,7 @@
           "kind": "theorem",
           "name": "withFreshIrqLines_eq",
           "full_name": "SeLe4n.Model.CapDerivationTree.withFreshIrqLines_eq",
-          "line": 2750,
+          "line": 2856,
           "called": [
             "SeLe4n.InterruptLineSet.fresh_eq",
             "SeLe4n.Model.CapDerivationTree",
@@ -417489,7 +417622,7 @@
           "kind": "theorem",
           "name": "empty_rootChains",
           "full_name": "SeLe4n.Model.CapDerivationTree.empty_rootChains",
-          "line": 2753,
+          "line": 2859,
           "called": [
             "SeLe4n.Model.CapDerivationTree.empty",
             "SeLe4n.Model.CapDerivationTree.rootChains"
@@ -417499,7 +417632,7 @@
           "kind": "def",
           "name": "addEdge",
           "full_name": "SeLe4n.Model.CapDerivationTree.addEdge",
-          "line": 2760,
+          "line": 2866,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CapDerivationTree",
@@ -417511,7 +417644,7 @@
           "kind": "theorem",
           "name": "addEdge_edges",
           "full_name": "SeLe4n.Model.CapDerivationTree.addEdge_edges",
-          "line": 2766,
+          "line": 2872,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CapDerivationTree",
@@ -417525,7 +417658,7 @@
           "kind": "theorem",
           "name": "addEdge_rootChains",
           "full_name": "SeLe4n.Model.CapDerivationTree.addEdge_rootChains",
-          "line": 2771,
+          "line": 2877,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.addEdge",
@@ -417538,7 +417671,7 @@
           "kind": "theorem",
           "name": "addEdge_edgeBound",
           "full_name": "SeLe4n.Model.CapDerivationTree.addEdge_edgeBound",
-          "line": 2774,
+          "line": 2880,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.addEdge",
@@ -417550,7 +417683,7 @@
           "kind": "theorem",
           "name": "addEdge_issuedIrqLines",
           "full_name": "SeLe4n.Model.CapDerivationTree.addEdge_issuedIrqLines",
-          "line": 2777,
+          "line": 2883,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.addEdge",
@@ -417562,7 +417695,7 @@
           "kind": "def",
           "name": "appendRoot",
           "full_name": "SeLe4n.Model.CapDerivationTree.appendRoot",
-          "line": 2784,
+          "line": 2890,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.SlotRef"
@@ -417572,7 +417705,7 @@
           "kind": "theorem",
           "name": "appendRoot_edges",
           "full_name": "SeLe4n.Model.CapDerivationTree.appendRoot_edges",
-          "line": 2791,
+          "line": 2897,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.appendRoot",
@@ -417584,7 +417717,7 @@
           "kind": "theorem",
           "name": "appendRoot_issuedIrqLines",
           "full_name": "SeLe4n.Model.CapDerivationTree.appendRoot_issuedIrqLines",
-          "line": 2794,
+          "line": 2900,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.appendRoot",
@@ -417595,7 +417728,7 @@
           "kind": "theorem",
           "name": "appendRoot_edgeBound",
           "full_name": "SeLe4n.Model.CapDerivationTree.appendRoot_edgeBound",
-          "line": 2797,
+          "line": 2903,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.appendRoot",
@@ -417606,7 +417739,7 @@
           "kind": "theorem",
           "name": "appendRoot_rootChains",
           "full_name": "SeLe4n.Model.CapDerivationTree.appendRoot_rootChains",
-          "line": 2800,
+          "line": 2906,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CapDerivationTree",
@@ -417619,7 +417752,7 @@
           "kind": "def",
           "name": "mentions",
           "full_name": "SeLe4n.Model.CapDerivationTree.mentions",
-          "line": 2809,
+          "line": 2915,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges",
@@ -417631,7 +417764,7 @@
           "kind": "theorem",
           "name": "mentions_of_edge",
           "full_name": "SeLe4n.Model.CapDerivationTree.mentions_of_edge",
-          "line": 2813,
+          "line": 2919,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree",
@@ -417644,7 +417777,7 @@
           "kind": "theorem",
           "name": "not_edge_of_not_mentions",
           "full_name": "SeLe4n.Model.CapDerivationTree.not_edge_of_not_mentions",
-          "line": 2818,
+          "line": 2924,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges",
@@ -417656,7 +417789,7 @@
           "kind": "theorem",
           "name": "not_root_of_not_mentions",
           "full_name": "SeLe4n.Model.CapDerivationTree.not_root_of_not_mentions",
-          "line": 2823,
+          "line": 2929,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.mentions",
@@ -417668,7 +417801,7 @@
           "kind": "def",
           "name": "childrenOf",
           "full_name": "SeLe4n.Model.CapDerivationTree.childrenOf",
-          "line": 2829,
+          "line": 2935,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges",
@@ -417679,7 +417812,7 @@
           "kind": "def",
           "name": "parentOf",
           "full_name": "SeLe4n.Model.CapDerivationTree.parentOf",
-          "line": 2834,
+          "line": 2940,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges",
@@ -417690,7 +417823,7 @@
           "kind": "def",
           "name": "descendantsOf",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf",
-          "line": 2856,
+          "line": 2962,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -417701,7 +417834,7 @@
           "kind": "def",
           "name": "descendantsOf.go",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf.go",
-          "line": 2860,
+          "line": 2966,
           "called": [
             "SeLe4n.Model.SlotRef"
           ]
@@ -417710,7 +417843,7 @@
           "kind": "def",
           "name": "acyclic",
           "full_name": "SeLe4n.Model.CapDerivationTree.acyclic",
-          "line": 2870,
+          "line": 2976,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.descendantsOf",
@@ -417721,7 +417854,7 @@
           "kind": "theorem",
           "name": "empty_acyclic",
           "full_name": "SeLe4n.Model.CapDerivationTree.empty_acyclic",
-          "line": 2873,
+          "line": 2979,
           "called": [
             "SeLe4n.Model.CapDerivationTree.acyclic",
             "SeLe4n.Model.CapDerivationTree.empty",
@@ -417732,7 +417865,7 @@
           "kind": "theorem",
           "name": "empty_not_mentions",
           "full_name": "SeLe4n.Model.CapDerivationTree.empty_not_mentions",
-          "line": 2878,
+          "line": 2984,
           "called": [
             "SeLe4n.Model.CapDerivationTree.empty",
             "SeLe4n.Model.CapDerivationTree.empty_edges",
@@ -417745,7 +417878,7 @@
           "kind": "def",
           "name": "edgeWellFounded",
           "full_name": "SeLe4n.Model.CapDerivationTree.edgeWellFounded",
-          "line": 2891,
+          "line": 2997,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges",
@@ -417756,7 +417889,7 @@
           "kind": "theorem",
           "name": "empty_edgeWellFounded",
           "full_name": "SeLe4n.Model.CapDerivationTree.empty_edgeWellFounded",
-          "line": 2901,
+          "line": 3007,
           "called": [
             "SeLe4n.Model.CapDerivationTree.edgeWellFounded",
             "SeLe4n.Model.CapDerivationTree.empty",
@@ -417767,7 +417900,7 @@
           "kind": "theorem",
           "name": "edgeWellFounded_sub",
           "full_name": "SeLe4n.Model.CapDerivationTree.edgeWellFounded_sub",
-          "line": 2910,
+          "line": 3016,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edgeWellFounded",
@@ -417778,7 +417911,7 @@
           "kind": "theorem",
           "name": "addEdge_preserves_edgeWellFounded_fresh",
           "full_name": "SeLe4n.Model.CapDerivationTree.addEdge_preserves_edgeWellFounded_fresh",
-          "line": 2926,
+          "line": 3032,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree",
@@ -417794,7 +417927,7 @@
           "kind": "def",
           "name": "cdtReachable",
           "full_name": "SeLe4n.Model.CapDerivationTree.cdtReachable",
-          "line": 2993,
+          "line": 3099,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges",
@@ -417805,7 +417938,7 @@
           "kind": "theorem",
           "name": "freshChild_not_reachable",
           "full_name": "SeLe4n.Model.CapDerivationTree.freshChild_not_reachable",
-          "line": 3004,
+          "line": 3110,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.cdtReachable",
@@ -417817,7 +417950,7 @@
           "kind": "theorem",
           "name": "addEdge_preserves_edgeWellFounded_noParent",
           "full_name": "SeLe4n.Model.CapDerivationTree.addEdge_preserves_edgeWellFounded_noParent",
-          "line": 3035,
+          "line": 3141,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree",
@@ -417833,28 +417966,28 @@
           "kind": "theorem",
           "name": "transGen_of_steps",
           "full_name": "SeLe4n.Model.CapDerivationTree.transGen_of_steps",
-          "line": 3165,
+          "line": 3271,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "steps_of_transGen",
           "full_name": "SeLe4n.Model.CapDerivationTree.steps_of_transGen",
-          "line": 3184,
+          "line": 3290,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "transGen_lift",
           "full_name": "SeLe4n.Model.CapDerivationTree.transGen_lift",
-          "line": 3212,
+          "line": 3318,
           "called": []
         },
         {
           "kind": "def",
           "name": "edgeStep",
           "full_name": "SeLe4n.Model.CapDerivationTree.edgeStep",
-          "line": 3220,
+          "line": 3326,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges",
@@ -417865,7 +417998,7 @@
           "kind": "theorem",
           "name": "edgeWellFounded_of_edges_transGen",
           "full_name": "SeLe4n.Model.CapDerivationTree.edgeWellFounded_of_edges_transGen",
-          "line": 3226,
+          "line": 3332,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edgeStep",
@@ -417880,7 +418013,7 @@
           "kind": "def",
           "name": "withoutNodeEdges",
           "full_name": "SeLe4n.Model.CapDerivationTree.withoutNodeEdges",
-          "line": 3238,
+          "line": 3344,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isChildOf",
@@ -417892,7 +418025,7 @@
           "kind": "def",
           "name": "reparentEdges",
           "full_name": "SeLe4n.Model.CapDerivationTree.reparentEdges",
-          "line": 3242,
+          "line": 3348,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.SlotRef"
@@ -417902,7 +418035,7 @@
           "kind": "theorem",
           "name": "reparentEdges_length",
           "full_name": "SeLe4n.Model.CapDerivationTree.reparentEdges_length",
-          "line": 3245,
+          "line": 3351,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree.reparentEdges",
@@ -417913,7 +418046,7 @@
           "kind": "theorem",
           "name": "filter_not_and_length_add",
           "full_name": "SeLe4n.Model.CapDerivationTree.filter_not_and_length_add",
-          "line": 3248,
+          "line": 3354,
           "called": [],
           "private": true
         },
@@ -417921,7 +418054,7 @@
           "kind": "theorem",
           "name": "withoutNodeEdges_length_add",
           "full_name": "SeLe4n.Model.CapDerivationTree.withoutNodeEdges_length_add",
-          "line": 3257,
+          "line": 3363,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
@@ -417934,7 +418067,7 @@
           "kind": "def",
           "name": "replaceSlot",
           "full_name": "SeLe4n.Model.CapDerivationTree.replaceSlot",
-          "line": 3262,
+          "line": 3368,
           "called": [
             "SeLe4n.Model.SlotRef"
           ]
@@ -417943,7 +418076,7 @@
           "kind": "theorem",
           "name": "replaceSlot_of_not_mem",
           "full_name": "SeLe4n.Model.CapDerivationTree.replaceSlot_of_not_mem",
-          "line": 3265,
+          "line": 3371,
           "called": [
             "SeLe4n.Model.CapDerivationTree.replaceSlot",
             "SeLe4n.Model.SlotRef"
@@ -417953,7 +418086,7 @@
           "kind": "theorem",
           "name": "replaceSlot_append",
           "full_name": "SeLe4n.Model.CapDerivationTree.replaceSlot_append",
-          "line": 3273,
+          "line": 3379,
           "called": [
             "SeLe4n.Model.CapDerivationTree.replaceSlot",
             "SeLe4n.Model.SlotRef"
@@ -417963,7 +418096,7 @@
           "kind": "theorem",
           "name": "replaceSlot_cons_self",
           "full_name": "SeLe4n.Model.CapDerivationTree.replaceSlot_cons_self",
-          "line": 3277,
+          "line": 3383,
           "called": [
             "SeLe4n.Model.CapDerivationTree.replaceSlot",
             "SeLe4n.Model.SlotRef"
@@ -417973,7 +418106,7 @@
           "kind": "theorem",
           "name": "mem_replaceSlot",
           "full_name": "SeLe4n.Model.CapDerivationTree.mem_replaceSlot",
-          "line": 3281,
+          "line": 3387,
           "called": [
             "SeLe4n.Model.CapDerivationTree.replaceSlot",
             "SeLe4n.Model.SlotRef"
@@ -417983,7 +418116,7 @@
           "kind": "def",
           "name": "spliceEdgesFrom",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceEdgesFrom",
-          "line": 3297,
+          "line": 3403,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree.reparentEdges",
@@ -417995,7 +418128,7 @@
           "kind": "def",
           "name": "spliceEdges",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceEdges",
-          "line": 3309,
+          "line": 3415,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
@@ -418007,7 +418140,7 @@
           "kind": "theorem",
           "name": "spliceEdgesFrom_length_add",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceEdgesFrom_length_add",
-          "line": 3312,
+          "line": 3418,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
@@ -418021,7 +418154,7 @@
           "kind": "theorem",
           "name": "spliceEdges_length_le",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceEdges_length_le",
-          "line": 3331,
+          "line": 3437,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
@@ -418034,7 +418167,7 @@
           "kind": "theorem",
           "name": "spliceEdgesFrom_of_no_parent",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceEdgesFrom_of_no_parent",
-          "line": 3337,
+          "line": 3443,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isChildOf",
@@ -418048,7 +418181,7 @@
           "kind": "theorem",
           "name": "spliceEdgesFrom_split",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceEdgesFrom_split",
-          "line": 3355,
+          "line": 3461,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isChildOf",
@@ -418063,7 +418196,7 @@
           "kind": "theorem",
           "name": "mem_spliceEdgesFrom",
           "full_name": "SeLe4n.Model.CapDerivationTree.mem_spliceEdgesFrom",
-          "line": 3377,
+          "line": 3483,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isChildOf",
@@ -418077,7 +418210,7 @@
           "kind": "def",
           "name": "spliceRootChains",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceRootChains",
-          "line": 3410,
+          "line": 3516,
           "called": [
             "SeLe4n.Model.CapDerivationTree.replaceSlot",
             "SeLe4n.Model.SlotRef"
@@ -418087,7 +418220,7 @@
           "kind": "theorem",
           "name": "mem_flatten_spliceRootChains",
           "full_name": "SeLe4n.Model.CapDerivationTree.mem_flatten_spliceRootChains",
-          "line": 3417,
+          "line": 3523,
           "called": [
             "SeLe4n.Model.CapDerivationTree.mem_replaceSlot",
             "SeLe4n.Model.CapDerivationTree.spliceRootChains",
@@ -418098,7 +418231,7 @@
           "kind": "theorem",
           "name": "mem_flatten_map_replaceSlot_nil",
           "full_name": "SeLe4n.Model.CapDerivationTree.mem_flatten_map_replaceSlot_nil",
-          "line": 3437,
+          "line": 3543,
           "called": [
             "SeLe4n.Model.CapDerivationTree.mem_replaceSlot",
             "SeLe4n.Model.CapDerivationTree.replaceSlot",
@@ -418109,7 +418242,7 @@
           "kind": "def",
           "name": "hasParentEdge",
           "full_name": "SeLe4n.Model.CapDerivationTree.hasParentEdge",
-          "line": 3446,
+          "line": 3552,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isChildOf",
@@ -418120,7 +418253,7 @@
           "kind": "theorem",
           "name": "hasParentEdge_eq_false_iff",
           "full_name": "SeLe4n.Model.CapDerivationTree.hasParentEdge_eq_false_iff",
-          "line": 3449,
+          "line": 3555,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isChildOf",
@@ -418132,7 +418265,7 @@
           "kind": "def",
           "name": "spliceNode",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode",
-          "line": 3462,
+          "line": 3568,
           "called": [
             "SeLe4n.Erased.mk",
             "SeLe4n.Erased.out_map",
@@ -418152,7 +418285,7 @@
           "kind": "theorem",
           "name": "spliceNode_issuedIrqLines",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode_issuedIrqLines",
-          "line": 3470,
+          "line": 3576,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.spliceNode",
@@ -418163,7 +418296,7 @@
           "kind": "theorem",
           "name": "spliceNode_edges_eq",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode_edges_eq",
-          "line": 3473,
+          "line": 3579,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CapDerivationTree",
@@ -418177,7 +418310,7 @@
           "kind": "theorem",
           "name": "spliceNode_rootChains",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode_rootChains",
-          "line": 3477,
+          "line": 3583,
           "called": [
             "SeLe4n.Erased.out_mk",
             "SeLe4n.Model.CapDerivationTree",
@@ -418195,7 +418328,7 @@
           "kind": "theorem",
           "name": "spliceNode_edgeBound",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode_edgeBound",
-          "line": 3483,
+          "line": 3589,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.spliceNode",
@@ -418206,7 +418339,7 @@
           "kind": "def",
           "name": "renameSlot",
           "full_name": "SeLe4n.Model.CapDerivationTree.renameSlot",
-          "line": 3487,
+          "line": 3593,
           "called": [
             "SeLe4n.Model.SlotRef"
           ]
@@ -418215,7 +418348,7 @@
           "kind": "def",
           "name": "renameEdge",
           "full_name": "SeLe4n.Model.CapDerivationTree.renameEdge",
-          "line": 3490,
+          "line": 3596,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree.renameSlot",
@@ -418226,7 +418359,7 @@
           "kind": "def",
           "name": "moveEdges",
           "full_name": "SeLe4n.Model.CapDerivationTree.moveEdges",
-          "line": 3495,
+          "line": 3601,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree.renameEdge",
@@ -418237,7 +418370,7 @@
           "kind": "def",
           "name": "moveNode",
           "full_name": "SeLe4n.Model.CapDerivationTree.moveNode",
-          "line": 3506,
+          "line": 3612,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CapDerivationTree",
@@ -418250,7 +418383,7 @@
           "kind": "theorem",
           "name": "moveNode_issuedIrqLines",
           "full_name": "SeLe4n.Model.CapDerivationTree.moveNode_issuedIrqLines",
-          "line": 3511,
+          "line": 3617,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.moveNode",
@@ -418261,7 +418394,7 @@
           "kind": "theorem",
           "name": "moveNode_edges_eq",
           "full_name": "SeLe4n.Model.CapDerivationTree.moveNode_edges_eq",
-          "line": 3514,
+          "line": 3620,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CapDerivationTree",
@@ -418275,7 +418408,7 @@
           "kind": "theorem",
           "name": "moveNode_rootChains",
           "full_name": "SeLe4n.Model.CapDerivationTree.moveNode_rootChains",
-          "line": 3518,
+          "line": 3624,
           "called": [
             "SeLe4n.Erased.out_map",
             "SeLe4n.Model.CapDerivationTree",
@@ -418289,7 +418422,7 @@
           "kind": "theorem",
           "name": "moveNode_edgeBound",
           "full_name": "SeLe4n.Model.CapDerivationTree.moveNode_edgeBound",
-          "line": 3522,
+          "line": 3628,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.moveNode",
@@ -418300,7 +418433,7 @@
           "kind": "theorem",
           "name": "spliceNode_edges",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode_edges",
-          "line": 3527,
+          "line": 3633,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
@@ -418315,7 +418448,7 @@
           "kind": "theorem",
           "name": "spliceNode_edgeWellFounded",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode_edgeWellFounded",
-          "line": 3540,
+          "line": 3646,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edgeWellFounded",
@@ -418328,7 +418461,7 @@
           "kind": "theorem",
           "name": "spliceNode_rootChains_mem",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode_rootChains_mem",
-          "line": 3548,
+          "line": 3654,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418345,7 +418478,7 @@
           "kind": "theorem",
           "name": "spliceNode_mentions",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode_mentions",
-          "line": 3558,
+          "line": 3664,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418358,7 +418491,7 @@
           "kind": "theorem",
           "name": "edgeWellFounded_no_self_edge",
           "full_name": "SeLe4n.Model.CapDerivationTree.edgeWellFounded_no_self_edge",
-          "line": 3573,
+          "line": 3679,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree",
@@ -418370,7 +418503,7 @@
           "kind": "theorem",
           "name": "spliceNode_not_mentions_self",
           "full_name": "SeLe4n.Model.CapDerivationTree.spliceNode_not_mentions_self",
-          "line": 3585,
+          "line": 3691,
           "called": [
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
             "SeLe4n.Model.CapDerivationTree",
@@ -418386,7 +418519,7 @@
           "kind": "theorem",
           "name": "edgeWellFounded_of_map",
           "full_name": "SeLe4n.Model.CapDerivationTree.edgeWellFounded_of_map",
-          "line": 3604,
+          "line": 3710,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edgeWellFounded",
@@ -418398,7 +418531,7 @@
           "kind": "theorem",
           "name": "renameSlot_back",
           "full_name": "SeLe4n.Model.CapDerivationTree.renameSlot_back",
-          "line": 3618,
+          "line": 3724,
           "called": [
             "SeLe4n.Model.CapDerivationTree.renameSlot",
             "SeLe4n.Model.SlotRef"
@@ -418408,7 +418541,7 @@
           "kind": "theorem",
           "name": "moveNode_edgeWellFounded",
           "full_name": "SeLe4n.Model.CapDerivationTree.moveNode_edgeWellFounded",
-          "line": 3627,
+          "line": 3733,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edgeWellFounded",
@@ -418426,7 +418559,7 @@
           "kind": "theorem",
           "name": "moveNode_mentions",
           "full_name": "SeLe4n.Model.CapDerivationTree.moveNode_mentions",
-          "line": 3638,
+          "line": 3744,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.mentions",
@@ -418441,7 +418574,7 @@
           "kind": "theorem",
           "name": "foldl_insert_contains",
           "full_name": "SeLe4n.Model.CapDerivationTree.foldl_insert_contains",
-          "line": 3673,
+          "line": 3779,
           "called": [
             "SeLe4n.HashSet_contains_insert_iff",
             "SeLe4n.HashSet_contains_insert_self",
@@ -418453,7 +418586,7 @@
           "kind": "theorem",
           "name": "sync_after_extend",
           "full_name": "SeLe4n.Model.CapDerivationTree.sync_after_extend",
-          "line": 3696,
+          "line": 3802,
           "called": [
             "SeLe4n.Model.CapDerivationTree.foldl_insert_contains",
             "SeLe4n.Model.SlotRef"
@@ -418464,7 +418597,7 @@
           "kind": "inductive",
           "name": "CdtChildReachable",
           "full_name": "SeLe4n.Model.CapDerivationTree.CdtChildReachable",
-          "line": 3712,
+          "line": 3818,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418475,7 +418608,7 @@
           "kind": "theorem",
           "name": "descendantsOf_go_cons",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_go_cons",
-          "line": 3718,
+          "line": 3824,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418488,7 +418621,7 @@
           "kind": "theorem",
           "name": "descendantsOf_go_nil",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_go_nil",
-          "line": 3729,
+          "line": 3835,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.descendantsOf.go",
@@ -418500,7 +418633,7 @@
           "kind": "theorem",
           "name": "descendantsOf_go_acc_subset",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_go_acc_subset",
-          "line": 3736,
+          "line": 3842,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418514,7 +418647,7 @@
           "kind": "theorem",
           "name": "descendantsOf_go_children_found",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_go_children_found",
-          "line": 3755,
+          "line": 3861,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418528,7 +418661,7 @@
           "kind": "theorem",
           "name": "descendantsOf_children_subset",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_children_subset",
-          "line": 3777,
+          "line": 3883,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418543,7 +418676,7 @@
           "kind": "theorem",
           "name": "descendantsOf_go_fuel_mono",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_go_fuel_mono",
-          "line": 3791,
+          "line": 3897,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.descendantsOf.go",
@@ -418557,7 +418690,7 @@
           "kind": "theorem",
           "name": "descendantsOf_go_head_children_found",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_go_head_children_found",
-          "line": 3818,
+          "line": 3924,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418571,7 +418704,7 @@
           "kind": "theorem",
           "name": "descendantsOf_fuel_bound",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_fuel_bound",
-          "line": 3842,
+          "line": 3948,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418584,7 +418717,7 @@
           "kind": "theorem",
           "name": "descendantsOf_fuel_sufficiency",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_fuel_sufficiency",
-          "line": 3881,
+          "line": 3987,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418598,7 +418731,7 @@
           "kind": "theorem",
           "name": "descendantsOf_go_queue_pos_children_found",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_go_queue_pos_children_found",
-          "line": 3897,
+          "line": 4003,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418614,7 +418747,7 @@
           "kind": "theorem",
           "name": "list_mem_split",
           "full_name": "SeLe4n.Model.CapDerivationTree.list_mem_split",
-          "line": 3924,
+          "line": 4030,
           "called": [],
           "private": true
         },
@@ -418622,7 +418755,7 @@
           "kind": "theorem",
           "name": "descendantsOf_go_mem_children_found",
           "full_name": "SeLe4n.Model.CapDerivationTree.descendantsOf_go_mem_children_found",
-          "line": 3939,
+          "line": 4045,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
@@ -418636,7 +418769,7 @@
           "kind": "theorem",
           "name": "childrenOf_to_edge",
           "full_name": "SeLe4n.Model.CapDerivationTree.childrenOf_to_edge",
-          "line": 3957,
+          "line": 4063,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
@@ -418650,7 +418783,7 @@
           "kind": "theorem",
           "name": "mem_childrenOf",
           "full_name": "SeLe4n.Model.CapDerivationTree.mem_childrenOf",
-          "line": 3966,
+          "line": 4072,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
@@ -418665,7 +418798,7 @@
           "kind": "theorem",
           "name": "CdtChildReachable_implies_cdtReachable",
           "full_name": "SeLe4n.Model.CapDerivationTree.CdtChildReachable_implies_cdtReachable",
-          "line": 3977,
+          "line": 4083,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.CdtChildReachable",
@@ -418678,7 +418811,7 @@
           "kind": "inductive",
           "name": "KernelObject",
           "full_name": "SeLe4n.Model.KernelObject",
-          "line": 4044,
+          "line": 4150,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -418696,7 +418829,7 @@
           "kind": "instance",
           "name": "instBEqKernelObject",
           "full_name": "SeLe4n.Model.instBEqKernelObject",
-          "line": 4062,
+          "line": 4168,
           "called": [
             "SeLe4n.Model.KernelObject"
           ]
@@ -418705,14 +418838,14 @@
           "kind": "inductive",
           "name": "KernelObjectType",
           "full_name": "SeLe4n.Model.KernelObjectType",
-          "line": 4076,
+          "line": 4182,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
           "full_name": "SeLe4n.Model.KernelObjectType.toNat",
-          "line": 4093,
+          "line": 4199,
           "called": [
             "SeLe4n.Model.KernelObjectType"
           ]
@@ -418721,7 +418854,7 @@
           "kind": "def",
           "name": "ofNat?",
           "full_name": "SeLe4n.Model.KernelObjectType.ofNat?",
-          "line": 4107,
+          "line": 4213,
           "called": [
             "SeLe4n.Model.KernelObjectType"
           ]
@@ -418730,7 +418863,7 @@
           "kind": "theorem",
           "name": "ofNat_toNat",
           "full_name": "SeLe4n.Model.KernelObjectType.ofNat_toNat",
-          "line": 4121,
+          "line": 4227,
           "called": [
             "SeLe4n.Model.KernelObjectType",
             "SeLe4n.Model.KernelObjectType.ofNat?",
@@ -418741,7 +418874,7 @@
           "kind": "theorem",
           "name": "toNat_injective",
           "full_name": "SeLe4n.Model.KernelObjectType.toNat_injective",
-          "line": 4125,
+          "line": 4231,
           "called": [
             "SeLe4n.Model.KernelObjectType",
             "SeLe4n.Model.KernelObjectType.toNat"
@@ -418751,7 +418884,7 @@
           "kind": "def",
           "name": "deviceBackable",
           "full_name": "SeLe4n.Model.KernelObjectType.deviceBackable",
-          "line": 4142,
+          "line": 4248,
           "called": [
             "SeLe4n.Model.KernelObjectType"
           ]
@@ -418760,7 +418893,7 @@
           "kind": "def",
           "name": "objectType",
           "full_name": "SeLe4n.Model.KernelObject.objectType",
-          "line": 4159,
+          "line": 4265,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.KernelObjectType"
@@ -418770,7 +418903,7 @@
           "kind": "theorem",
           "name": "variants_count_exactly_ten",
           "full_name": "SeLe4n.Model.KernelObjectType.variants_count_exactly_ten",
-          "line": 4188,
+          "line": 4294,
           "called": [
             "SeLe4n.Model.KernelObjectType"
           ]
@@ -418779,7 +418912,7 @@
           "kind": "theorem",
           "name": "variants_total",
           "full_name": "SeLe4n.Model.KernelObjectType.variants_total",
-          "line": 4202,
+          "line": 4308,
           "called": [
             "SeLe4n.Model.KernelObjectType"
           ]
@@ -418788,7 +418921,7 @@
           "kind": "def",
           "name": "wellFormed",
           "full_name": "SeLe4n.Model.KernelObject.wellFormed",
-          "line": 4227,
+          "line": 4333,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Model.KernelObject",
@@ -418799,7 +418932,7 @@
           "kind": "def",
           "name": "embeddedIdentityMatches",
           "full_name": "SeLe4n.Model.KernelObject.embeddedIdentityMatches",
-          "line": 4271,
+          "line": 4377,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.ObjId"
@@ -418809,21 +418942,21 @@
           "kind": "instance",
           "name": "",
           "full_name": null,
-          "line": 4285,
+          "line": 4391,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxCdtDepth",
           "full_name": "SeLe4n.Model.maxCdtDepth",
-          "line": 4342,
+          "line": 4448,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "edgeWellFounded_no_self_reachable",
           "full_name": "SeLe4n.Model.edgeWellFounded_no_self_reachable",
-          "line": 4357,
+          "line": 4463,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.CdtChildReachable",
@@ -418835,7 +418968,7 @@
           "kind": "theorem",
           "name": "addEdge_edges_length",
           "full_name": "SeLe4n.Model.addEdge_edges_length",
-          "line": 4372,
+          "line": 4478,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.addEdge",
@@ -418849,7 +418982,7 @@
           "kind": "theorem",
           "name": "addEdge_maintains_depth_bound",
           "full_name": "SeLe4n.Model.addEdge_maintains_depth_bound",
-          "line": 4384,
+          "line": 4490,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.addEdge",
