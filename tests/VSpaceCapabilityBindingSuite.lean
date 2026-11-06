@@ -2782,11 +2782,10 @@ private def runReplyFinaliseChecks : IO Unit := do
               (st1.getTcb? ⟨962⟩).map (fun t => t.replyWaitersHeadCode == 0 && t.replyWaitersCount == 0) ==
                 some true)
   -- A reply-blocked caller lending its context to its server, its reply heading
-  -- the context's stack: its delete pops the reply (seL4's `reply_remove_tcb` →
-  -- `reply_remove` head branch, `reply_pop`) — the context back to the caller,
-  -- the server holding none — then releases the context with the caller
-  -- (`unbindFromSC`) and retires the caller; the reply heads no stack and is
-  -- linked to no caller.
+  -- the context's stack: its delete cuts the reply off the context as seL4's
+  -- `reply_remove_tcb` does (`sc->scReply = NULL`) — the server keeps the
+  -- context, now as its own — then retires the caller; the reply heads no stack
+  -- and is linked to no caller.
   match runAll carveScenario
       [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
        decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
@@ -2814,10 +2813,11 @@ private def runReplyFinaliseChecks : IO Unit := do
           match runAll stL [decodeDelete 12] with
           | .error e => assertBool s!"deleting the lending caller's last capability succeeds (got {repr e})" false
           | .ok st1 =>
-            assertBool "deleting a lending caller's last capability takes its context back, releases it and retires the caller"
+            assertBool "deleting a lending caller's last capability cuts its reply off the context, the server keeping it, and retires the caller"
               (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 &&
-                (st1.getSchedContext? ⟨963⟩).map (fun sc => sc.scReply.isNone && sc.boundThreadCode == 0) == some true &&
-                (st1.getTcb? ⟨962⟩).map (·.schedContextBinding) == some .unbound &&
+                (st1.getSchedContext? ⟨963⟩).map (fun sc =>
+                  sc.scReply.isNone && sc.boundThreadCode == 963 && sc.donationOrigin.isNone) == some true &&
+                (st1.getTcb? ⟨962⟩).map (·.schedContextBinding) == some (.bound ⟨963⟩) &&
                 (replyAt st1 961).map (fun r => r.next.isNone && r.callerCode == 0) == some true)
   -- A receiver waiting on an endpoint with a reply stashed for the call it
   -- waits for: its own delete cancels the receive (seL4's `suspend` →
