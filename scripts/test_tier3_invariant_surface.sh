@@ -4791,7 +4791,7 @@ run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_preserves_re
 run_check "INVARIANT" rg -n '^theorem timeoutBudget_isNone_of_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
 run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_check "INVARIANT" rg -n '^theorem storeNotificationBlockedCancelled_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
-run_check "INVARIANT" rg -n -U 'def schedLockSet_capabilityDestroyOnCore : List \(LockKey × Concurrency\.AccessMode\) :=\n  schedFootprintOfCores Concurrency\.allCores Concurrency\.allCores' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
+run_check "INVARIANT" rg -n -U 'def schedLockSet_capabilityDestroyOnCore \(cores : List CoreId\) :\n    List \(LockKey × Concurrency\.AccessMode\) :=\n  schedFootprintOfCores cores cores' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem popHead_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/PopInPlace.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
@@ -4801,7 +4801,16 @@ run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_projection
 # is woken on its own core; set-space deletes its old roots through the zombie
 # loop), so all three DECLARE a scheduler footprint, and the seam proves it
 # covers their writes.
-run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete \| \.cspaceRevoke \| \.tcbSetSpace\n  \| \.irqHandlerSetNotification \| \.irqHandlerClear =>\n      LockSet\.ofList\? schedLockSet_capabilityDestroyOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n      ops\.targetObject\.bind fun cnodeId =>\n        ops\.targetSlot\.bind fun slot =>\n          LockSet\.ofList\? \(schedLockSet_capabilityDestroyOnCore\n            \(cspaceDeleteSlotFinalisingCores st \{ cnode := cnodeId, slot := slot \}\)\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke \| \.tcbSetSpace\n  \| \.irqHandlerSetNotification \| \.irqHandlerClear =>\n      LockSet\.ofList\? \(schedLockSet_capabilityDestroyOnCore Concurrency\.allCores\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_cspaceDelete_isSome_iff($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_capabilityDestroyOnCore_coversWrites_of_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^def finalObjectWritesCores($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^def cspaceDeleteSlotFinalisingCores($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotZombie_of_class_zero($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem zombieSlotClass_eq_zero_of_cores_nil($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_framed_of_cores_nil($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_framed_of_quiet($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceDeleteSlotZombie_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceRevokeCdtFinalising_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 # The notification step is compiled as its in-place writes, and the walk that

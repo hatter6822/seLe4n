@@ -208,9 +208,17 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- WS-ZA ZA6.32: so are the interrupt handler's set and clear, whose
   -- finalising delete of the line's node slot may destroy the last capability
   -- to the notification it held.
-  | .cspaceDelete | .cspaceRevoke | .tcbSetSpace
+  -- WS-ZA ZA6.37: the delete reads its cores off the slot it empties
+  -- (`cspaceDeleteSlotFinalisingCores`): none when the slot's capability is not
+  -- the last to an object whose destroy writes a core.
+  | .cspaceDelete =>
+      ops.targetObject.bind fun cnodeId =>
+        ops.targetSlot.bind fun slot =>
+          LockSet.ofList? (schedLockSet_capabilityDestroyOnCore
+            (cspaceDeleteSlotFinalisingCores st { cnode := cnodeId, slot := slot }))
+  | .cspaceRevoke | .tcbSetSpace
   | .irqHandlerSetNotification | .irqHandlerClear =>
-      LockSet.ofList? schedLockSet_capabilityDestroyOnCore
+      LockSet.ofList? (schedLockSet_capabilityDestroyOnCore Concurrency.allCores)
   | .cspaceMint | .cspaceCopy | .cspaceMove
   | .untypedRetype | .untypedReset
   | .mintReplyCap
@@ -325,16 +333,25 @@ does: it reads no operand and its footprint is fixed by the executing core. -/
   simp [schedLockSetForSyscall, LockSet.ofList?, schedLockSet_yieldOnCore,
     schedFootprintOfCores_keys_nodup]
 
-/-- **WS-ZA ZA5.4 part 23**: the finalising delete and the revocation declare
-unconditionally, as `.yield` does: they read no operand, and their footprint is
-every core's run queue and replenish queue.  Part 26: and the space change,
-through the zombie delete. -/
+/-- **WS-ZA ZA5.4 part 23**: the revocation declares unconditionally, as
+`.yield` does: it reads no operand, and its footprint is every core's run queue
+and replenish queue.  Part 26: and the space change, through the zombie delete. -/
 @[simp] theorem schedLockSetForSyscall_capabilityDestroy_isSome
     (sid : SyscallId) (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
-    (h : sid = .cspaceDelete ∨ sid = .cspaceRevoke ∨ sid = .tcbSetSpace) :
+    (h : sid = .cspaceRevoke ∨ sid = .tcbSetSpace) :
     (schedLockSetForSyscall sid ops executingCore st).isSome := by
-  rcases h with rfl | rfl | rfl <;>
+  rcases h with rfl | rfl <;>
     simp [schedLockSetForSyscall, LockSet.ofList?, schedLockSet_capabilityDestroyOnCore,
+      schedFootprintOfCores_keys_nodup]
+
+/-- **WS-ZA ZA6.37**: the delete declares exactly when the CNode and the slot it
+empties are supplied. -/
+theorem schedLockSetForSyscall_cspaceDelete_isSome_iff
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
+    (schedLockSetForSyscall .cspaceDelete ops executingCore st).isSome ↔
+      ops.targetObject.isSome ∧ ops.targetSlot.isSome := by
+  cases hO : ops.targetObject <;> cases hS : ops.targetSlot <;>
+    simp [schedLockSetForSyscall, hO, hS, LockSet.ofList?, schedLockSet_capabilityDestroyOnCore,
       schedFootprintOfCores_keys_nodup]
 
 /-- The four object-directed arms declare exactly when the operand naming the
@@ -475,7 +492,11 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
     (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
   unfold schedLockSetForSyscall at hS
   cases sid <;> simp only [Option.bind_eq_some_iff, reduceCtorEq] at hS
-  case cspaceDelete | cspaceRevoke | tcbSetSpace | irqHandlerSetNotification | irqHandlerClear =>
+  case cspaceDelete =>
+    obtain ⟨_, -, _, -, hS⟩ := hS
+    rw [LockSet.ofList?_pairs hS]
+    exact schedFootprintOfCores_contains_objStore_write _ _
+  case cspaceRevoke | tcbSetSpace | irqHandlerSetNotification | irqHandlerClear =>
     rw [LockSet.ofList?_pairs hS]
     exact schedFootprintOfCores_contains_objStore_write _ _
   all_goals

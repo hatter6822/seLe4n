@@ -384,17 +384,19 @@ theorem untypedResetFromCap_crossCoreNonInterference
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23 (**the live `.cspaceDelete`
 arm, cross-core**): a finalising delete is invisible on every core outside
 `cspaceDeleteSlotFinalisingCores` — on every core when it destroys no final
-capability, since the finalisation of a final capability's endpoint or
-notification wakes the waiters it cancels on their own cores. -/
+capability or one naming an object whose destroy writes no core, since only the
+finalisation of the kinds `finalObjectWritesCores` names wakes, suspends or
+unbinds threads on their own cores. -/
 theorem cspaceDeleteSlotFinalising_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
     (addr : CSpaceAddr) (st st' : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotFinalising executingCore addr st = .ok ((), st'))
     (hne : c ∉ cspaceDeleteSlotFinalisingCores st addr)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hStep) hShared
+    (cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hInv hStep) hShared
 
 /-- WS-ZA ZA5.4 part 26 (**the live `.cspaceDelete` arm, the zombie delete,
 cross-core**): invisible on every core outside `cspaceDeleteSlotFinalisingCores`
@@ -402,12 +404,13 @@ cross-core**): invisible on every core outside `cspaceDeleteSlotFinalisingCores`
 theorem cspaceDeleteSlotZombie_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
     (addr : CSpaceAddr) (st st' : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotZombie executingCore addr st = .ok ((), st'))
     (hne : c ∉ cspaceDeleteSlotFinalisingCores st addr)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (cspaceDeleteSlotZombie_confinedToCores executingCore addr st st' hStep) hShared
+    (cspaceDeleteSlotZombie_confinedToCores executingCore addr st st' hInv hStep) hShared
 
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23 (**the live `.cspaceRevoke`
 arm, cross-core**): each delete of a finalising revocation may wake the waiters
@@ -476,11 +479,12 @@ the last capability to a notification whose finalisation wakes waiters. -/
 theorem irqHandlerClear_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
     (line : Nat) (st st' : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt)
     (hStep : irqHandlerClear executingCore line st = .ok ((), st'))
     (hne : c ∉ cspaceDeleteSlotFinalisingCores st (irqNodeAddr line))
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
-  cspaceDeleteSlotZombie_crossCoreNonInterference ctx observer executingCore _ st st' c
+  cspaceDeleteSlotZombie_crossCoreNonInterference ctx observer executingCore _ st st' c hInv
     (irqHandlerClear_ok hStep).2 hne hShared
 
 /-- WS-ZA ZA6.32 (**the live `.irqHandlerSetNotification` arm, cross-core**): the
@@ -492,7 +496,7 @@ theorem irqHandlerSetNotificationFromCap_crossCoreNonInterference
     (executingCore : CoreId) (line : Nat)
     (args? : Except KernelError Architecture.SyscallArgDecode.IrqHandlerSetNotificationArgs)
     (st st' : SystemState)
-    (c : CoreId)
+    (c : CoreId) (hInv : st.objects.invExt)
     (hStep : irqHandlerSetNotificationFromCap tid executingCore line args? st = .ok ((), st'))
     (hne : c ∉ cspaceDeleteSlotFinalisingCores st (irqNodeAddr line))
     (hShared : sharedViewUnchanged ctx observer st st') :
@@ -507,7 +511,7 @@ theorem irqHandlerSetNotificationFromCap_crossCoreNonInterference
   exact crossCoreNonInterference_ofCores ctx observer
     (by simpa using hne)
     (observableSlotsConfinedToCores_trans
-      (cspaceDeleteSlotZombie_confinedToCores executingCore _ st st1 hZ) hK) hShared
+      (cspaceDeleteSlotZombie_confinedToCores executingCore _ st st1 hInv hZ) hK) hShared
 
 -- ============================================================================
 -- §6 The non-interference instantiations

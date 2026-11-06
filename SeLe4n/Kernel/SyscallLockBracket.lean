@@ -538,6 +538,15 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                   else none
       | .schedContextUnbind, .object scId => some (.ofObjectTarget tid scId)
       | .schedContextYieldTo, .object scId => some (.ofObjectTarget tid scId)
+      -- WS-ZA ZA6.37: a delete names the CNode and the slot it empties, which
+      -- its scheduler footprint reads to decide which cores the finalisation of
+      -- the capability there may write.
+      | .cspaceDelete, .object cnodeId =>
+          match Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs decoded with
+          | .error _ => none
+          | .ok args =>
+              some { caller := tid, targetObject := some cnodeId,
+                     targetSlot := some args.targetSlot }
       | .schedContextBind, .object _ =>
           match resolveSchedContextBindThread tid
               (Architecture.SyscallArgDecode.decodeSchedContextBindArgs decoded) s with

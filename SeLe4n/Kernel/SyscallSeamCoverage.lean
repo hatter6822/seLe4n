@@ -257,14 +257,22 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
   all_goals try (simp only [schedLockSetForSyscall, reduceCtorEq] at hSched; done)
   case yield => exact absurd hId hY
   -- ---- `.cspaceDelete` / `.cspaceRevoke` (WS-ZA ZA5.4 part 23) ------------
+  -- WS-ZA ZA6.37: the delete's operands name the CNode and the slot the
+  -- dispatch empties, so its footprint is the cores that slot's delete reads.
   case cspaceDelete =>
-    simp only [schedLockSetForSyscall] at hSched
     cases hT : cap.target <;> rw [hT] at hDisp <;> simp only [reduceCtorEq] at hDisp
+    rename_i cnodeId
+    rw [hT] at hOps
     split at hDisp
     · cases hDisp
-    · split at hDisp
+    · next args hA =>
+      simp only [hA] at hOps
+      injection hOps with hOps
+      subst hOps
+      simp only [schedLockSetForSyscall, Option.bind_some] at hSched
+      split at hDisp
       · cases hDisp
-      · exact schedLockSet_cspaceDeleteSlotZombie_coversWrites e _ st st' S hSched hDisp
+      · exact schedLockSet_cspaceDeleteSlotZombie_coversWrites e _ st st' S hObjInv hSched hDisp
   case cspaceRevoke =>
     simp only [schedLockSetForSyscall] at hSched
     cases hT : cap.target <;> rw [hT] at hDisp <;> simp only [reduceCtorEq] at hDisp

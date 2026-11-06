@@ -429,17 +429,20 @@ def schedLockSet_yieldOnCore (executingCore : CoreId) :
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores [executingCore] [executingCore]
 
-/-- **WS-ZA ZA5.4 part 23**: the scheduler-domain footprint of a capability
-destroy that may finalise — the finalising delete and the revocation built from
-it.  A delete that destroys the last capability to an endpoint or a notification
+/-- **WS-ZA ZA5.4 part 23, WS-ZA ZA6.37**: the scheduler-domain footprint of a
+capability destroy that may finalise — the finalising delete, the zombie delete
+and the revocation built from them — over the cores `cores` it may write.  A
+delete that destroys the last capability to an endpoint or a notification
 cancels its waiters and wakes each on its own core (`finaliseFinalObject`), and
-which cores those are the state decides, so the footprint names every core's run
-queue.  A delete that destroys the last capability to a thread or a scheduling
-context unbinds its reservation, which purges the reservation's replenish entry
-on the core the state names, so the footprint names every core's replenish queue
-too (WS-ZA ZA5.4 part 24). -/
-def schedLockSet_capabilityDestroyOnCore : List (LockKey × Concurrency.AccessMode) :=
-  schedFootprintOfCores Concurrency.allCores Concurrency.allCores
+one that destroys the last capability to a thread or a scheduling context
+unbinds its reservation, which purges the reservation's replenish entry on the
+core the state names (WS-ZA ZA5.4 part 24), so the footprint names those cores'
+run queues and replenish queues alike.  The delete reads its set off the state
+before it runs (`cspaceDeleteSlotFinalisingCores`); the revocation, whose deletes
+the walk discovers as it runs, names every core. -/
+def schedLockSet_capabilityDestroyOnCore (cores : List CoreId) :
+    List (LockKey × Concurrency.AccessMode) :=
+  schedFootprintOfCores cores cores
 
 /-- WS-SM SM5.H.4 (lock-set): `migrateSchedContextReplenishment fromCore toCore`
 writes both cores' replenish-queue slots. -/
