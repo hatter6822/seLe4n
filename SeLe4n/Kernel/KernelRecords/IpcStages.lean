@@ -167,6 +167,16 @@ theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : 
         intro h hW; cases h
         exact hW.1.of_views (stageDeliveredMessage_replyViews_eq _ _ _ hW.2)) hK
 
+/-- **The bound signal keeps the records**: the interrupt's delivery. -/
+theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c : CoreId}
+    {st : SystemState} (hR : ipcReachable st) :
+    RecordsStage st (_root_.SeLe4n.Kernel.notificationSignalBoundOnCore nid badge c st).1 :=
+  RecordsStage.of_step (RecordsStep.notificationSignalBoundOnCore hR.objects_invExt
+    hR.notificationWaiterConsistent) fun _ =>
+    notificationSignalBoundOnCore_preserves_replyWaitersConsistent nid badge c st
+      hR.objects_invExt hR.replyWaitersConsistent
+      (fun _ _ hG hH => notificationHead_serverFree hR.notificationWaiterConsistent hG hH)
+
 /-- **The checked bound signal keeps the records.** -/
 theorem notificationSignalBoundCrossCoreDispatchChecked {ctx : LabelingContext}
     {nid : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge} {c : CoreId}

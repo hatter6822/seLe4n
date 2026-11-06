@@ -41,11 +41,6 @@ open SeLe4n.Model
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
-/-- A frame that holds on a store keeping its invariant is a records stage. -/
-theorem RecordsStage.of_invFrame {st st' : SystemState}
-    (F : st.objects.invExt → RecordsFrame st st') : RecordsStage st st' := fun h =>
-  (F (KernelRecords.objects_invExt h)).preserves h
-
 /-- A stage onto a transition's state is a stage onto the state it returns. -/
 theorem RecordsStage.of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
     (s : RecordsStage st p.1) (h : p = (st', r)) : RecordsStage st st' := by
@@ -106,7 +101,7 @@ theorem dispatchCapabilityOnly_recordsStage
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact .of_invFrame fun hI => RecordsFrame.mintReplyCapWithCdt hI hStep
+          exact .of_frameK fun hI => RecordsFrame.mintReplyCapWithCdt hI hStep
     all_goals try cases hStep
   case untypedRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -116,7 +111,7 @@ theorem dispatchCapabilityOnly_recordsStage
   case untypedReset =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      exact .of_invFrame fun hI => RecordsFrame.untypedResetFromCap hI hStep
+      exact .of_frameK fun hI => RecordsFrame.untypedResetFromCap hI hStep
     all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -152,14 +147,14 @@ theorem dispatchCapabilityOnly_recordsStage
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · exact .of_invFrame fun hI => RecordsFrame.vspaceUnifyInstructionPage hI hStep
+          · exact .of_frameK fun hI => RecordsFrame.vspaceUnifyInstructionPage hI hStep
     all_goals try cases hStep
   case serviceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
       obtain ⟨_, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hStep
-      exact .of_invFrame fun hI => RecordsFrame.revokeService hI hRev
+      exact .of_frameK fun hI => RecordsFrame.revokeService hI hRev
     all_goals try cases hStep
   case serviceQuery =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -174,7 +169,7 @@ theorem dispatchCapabilityOnly_recordsStage
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
-          exact .of_invFrame fun hI => RecordsFrame.writeReturnFrameToTcb _ _ _ hI
+          exact .of_frameK fun hI => RecordsFrame.writeReturnFrameToTcb _ _ _ hI
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -189,7 +184,7 @@ theorem dispatchCapabilityOnly_recordsStage
           | ok vScId =>
               simp only [hVal] at hStep
               split at hStep
-              · exact .of_invFrame fun hI => RecordsFrame.schedControlConfigure hI hStep
+              · exact .of_frameK fun hI => RecordsFrame.schedControlConfigure hI hStep
               · cases hStep
     all_goals try cases hStep
   case schedContextBind =>
@@ -204,7 +199,7 @@ theorem dispatchCapabilityOnly_recordsStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact .of_invFrame fun hI => RecordsFrame.schedContextBind hI hStep
+              exact .of_frameK fun hI => RecordsFrame.schedContextBind hI hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -225,7 +220,7 @@ theorem dispatchCapabilityOnly_recordsStage
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact .of_invFrame fun hI => RecordsFrame.schedContextUnbindOnCore hI hUn
+                  exact .of_frameK fun hI => RecordsFrame.schedContextUnbindOnCore hI hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -241,7 +236,7 @@ theorem dispatchCapabilityOnly_recordsStage
           | ok stC =>
               simp only [hC] at hStep
               cases hStep
-              exact .of_invFrame fun hI => RecordsFrame.schedContextConsumedOnCore hI hC
+              exact .of_frameK fun hI => RecordsFrame.schedContextConsumedOnCore hI hC
     all_goals try cases hStep
   case schedContextYieldTo =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -257,17 +252,17 @@ theorem dispatchCapabilityOnly_recordsStage
           | ok stC =>
               simp only [hC] at hStep
               cases hStep
-              exact .of_invFrame fun hI => RecordsFrame.schedContextYieldToOnCore hI hC
+              exact .of_frameK fun hI => RecordsFrame.schedContextYieldToOnCore hI hC
     all_goals try cases hStep
   case irqHandlerAck =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqHandler line =>
       rw [Architecture.irqHandlerAck_ok hStep]
-      exact .of_invFrame fun hI => RecordsFrame.of_objects_eq hI rfl rfl
+      exact .of_frameK fun hI => RecordsFrame.of_objects_eq hI rfl rfl
     all_goals try cases hStep
   case irqControlGet =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case irqControl => exact .of_invFrame fun hI => RecordsFrame.irqControlGetFromCap hI hStep
+    case irqControl => exact .of_frameK fun hI => RecordsFrame.irqControlGetFromCap hI hStep
     all_goals try cases hStep
   case irqHandlerSetNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -304,7 +299,7 @@ theorem dispatchCapabilityOnly_recordsStage
                       cases hNT : ntfnCap.target with
                       | object notifId =>
                           simp only [hNT] at hStep
-                          exact .of_invFrame fun hI => RecordsFrame.bindNotification hI hStep
+                          exact .of_frameK fun hI => RecordsFrame.bindNotification hI hStep
                       | _ => simp only [hNT] at hStep; cases hStep
     all_goals try cases hStep
   case tcbUnbindNotification =>
@@ -317,7 +312,7 @@ theorem dispatchCapabilityOnly_recordsStage
           obtain ⟨u, stU⟩ := pair; cases u
           simp only [hUn] at hStep
           cases hStep
-          exact .of_invFrame fun hI => RecordsFrame.unbindNotification hI hUn
+          exact .of_frameK fun hI => RecordsFrame.unbindNotification hI hUn
     all_goals try cases hStep
   case tcbSuspend =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -390,7 +385,7 @@ theorem dispatchCapabilityOnly_recordsStage
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hSet] at hStep
                       cases hStep
-                      exact .of_invFrame fun hI => RecordsFrame.setPriorityOnCore hI hSet
+                      exact .of_frameK fun hI => RecordsFrame.setPriorityOnCore hI hSet
     all_goals try cases hStep
   case tcbSetMCPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -416,7 +411,7 @@ theorem dispatchCapabilityOnly_recordsStage
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hSet] at hStep
                       cases hStep
-                      exact .of_invFrame fun hI => RecordsFrame.setMCPriorityOnCore hI hSet
+                      exact .of_frameK fun hI => RecordsFrame.setMCPriorityOnCore hI hSet
     all_goals try cases hStep
   case tcbSetIPCBuffer =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -436,7 +431,7 @@ theorem dispatchCapabilityOnly_recordsStage
               | ok stU =>
                   simp only [hSet] at hStep
                   cases hStep
-                  exact .of_invFrame fun hI => RecordsFrame.setIPCBufferOp hI hSet
+                  exact .of_frameK fun hI => RecordsFrame.setIPCBufferOp hI hSet
     all_goals try cases hStep
   case tcbSetAffinity =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -461,7 +456,7 @@ theorem dispatchCapabilityOnly_recordsStage
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hSet] at hStep
                       cases hStep
-                      exact .of_invFrame fun hI => RecordsFrame.setThreadCpuAffinityOnCore hI hSet
+                      exact .of_frameK fun hI => RecordsFrame.setThreadCpuAffinityOnCore hI hSet
     all_goals try cases hStep
   case tcbSetFaultHandler =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -480,7 +475,7 @@ theorem dispatchCapabilityOnly_recordsStage
               | ok stU =>
                   simp only [hSet] at hStep
                   cases hStep
-                  exact .of_invFrame fun hI => RecordsFrame.setThreadFaultHandlerOp hI hSet
+                  exact .of_frameK fun hI => RecordsFrame.setThreadFaultHandlerOp hI hSet
     all_goals try cases hStep
   case tcbSetSpace =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -543,13 +538,13 @@ theorem clearStashStage_recordsStage {st s st' : SystemState}
   · cases h
   · rename_i s3 hClr
     cases h
-    exact hS.trans ((RecordsStage.of_invFrame fun hI =>
+    exact hS.trans ((RecordsStage.of_frameK fun hI =>
       RecordsFrame.clearWokenReceiverStash woken? hI hClr).trans (hStage _))
 
 /-- A delivered-frame staging. -/
 theorem stageWokenDelivery_recordsStage (x : SystemState) (w : Option SeLe4n.ThreadId) (n : Nat) :
     RecordsStage x (Architecture.stageWokenDelivery x w n) :=
-  .of_invFrame fun hI => RecordsFrame.stageWokenDelivery x w n hI
+  .of_frameK fun hI => RecordsFrame.stageWokenDelivery x w n hI
 
 /-- The two badge stagings a signal arm ends with. -/
 theorem stageWokenDeliveryTwice_recordsStage (x : SystemState) (w p : Option SeLe4n.ThreadId) :
@@ -560,7 +555,7 @@ theorem stageWokenDeliveryTwice_recordsStage (x : SystemState) (w p : Option SeL
 /-- A return-frame write. -/
 theorem writeReturnFrameToTcb_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
     (f : Architecture.SyscallReturnFrame) : RecordsStage x (Architecture.writeReturnFrameToTcb x t f) :=
-  .of_invFrame fun hI => RecordsFrame.writeReturnFrameToTcb x t f hI
+  .of_frameK fun hI => RecordsFrame.writeReturnFrameToTcb x t f hI
 
 /-- **Every arm `dispatchWithCapChecked` routes keeps the records**, the
 capability-only arms it delegates, the IPC arms, the audit read and drain and
@@ -592,14 +587,14 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     all_goals first | (cases h; done) | skip
     rename_i hA
     cases h
-    exact (RecordsStage.of_invFrame fun hI => RecordsFrame.auditReadFromCore hI hA).trans
+    exact (RecordsStage.of_frameK fun hI => RecordsFrame.auditReadFromCore hI hA).trans
       (writeReturnFrameToTcb_recordsStage _ _ _)
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i hA
     cases h
-    exact (RecordsStage.of_invFrame fun hI => RecordsFrame.auditDrainVisiblePrefix hI hA).trans
+    exact (RecordsStage.of_frameK fun hI => RecordsFrame.auditDrainVisiblePrefix hI hA).trans
       (writeReturnFrameToTcb_recordsStage _ _ _)
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
@@ -619,9 +614,9 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     cases h
     exact (RecordsStage.of_fst_eq (RecordsStage.endpointReceiveDualWithCapsOnCore P.deletes.1 hCaller)
       hRecv).trans
-      (((RecordsStage.of_invFrame fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
-        (RecordsStage.of_invFrame fun hI => RecordsFrame.stageWokenSendCompletion _ _ hI)).trans
-        (RecordsStage.of_invFrame fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI))
+      (((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
+        (RecordsStage.of_frameK fun hI => RecordsFrame.stageWokenSendCompletion _ _ hI)).trans
+        (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI))
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -641,7 +636,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
       unfold cspaceMintChecked at h
       dsimp only at h
       split at h
-      · exact .of_invFrame fun hI => RecordsFrame.cspaceMintWithCdt hI h
+      · exact .of_frameK fun hI => RecordsFrame.cspaceMintWithCdt hI h
       · cases h
   case none.cspaceCopy.object cnodeId =>
     repeat' split at h
@@ -649,7 +644,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     unfold cspaceCopyChecked at h
     dsimp only at h
     split at h
-    · exact .of_invFrame fun hI => RecordsFrame.cspaceCopy hI h
+    · exact .of_frameK fun hI => RecordsFrame.cspaceCopy hI h
     · cases h
   case none.cspaceMove.object cnodeId =>
     repeat' split at h
@@ -657,14 +652,14 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     unfold cspaceMoveChecked at h
     dsimp only at h
     split at h
-    · exact .of_invFrame fun hI => RecordsFrame.cspaceMove hI h
+    · exact .of_frameK fun hI => RecordsFrame.cspaceMove hI h
     · cases h
   case none.serviceRegister.object epId =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
     unfold registerServiceChecked at h
     split at h
-    · exact .of_invFrame fun hI => RecordsFrame.registerService hI h
+    · exact .of_frameK fun hI => RecordsFrame.registerService hI h
     · cases h
   case none.notificationSignal.object notifId =>
     split at h
@@ -690,7 +685,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
         (RecordsStage.notificationWaitCrossCoreDispatchChecked P.deletes.1 hCaller) hW
     · cases h
   case none.declassify.object targetId =>
-    exact .of_invFrame fun hI => RecordsFrame.declassifyObjectFromCore hI h
+    exact .of_frameK fun hI => RecordsFrame.declassifyObjectFromCore hI h
   case none.declassifySignal.object notifId =>
     split at h
     · cases h
@@ -705,7 +700,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
 /-- **The taint pass keeps the records**: it writes the taint words alone. -/
 theorem applySyscallTaint_recordsStage (plan : TaintPlan) (pre post : SystemState) :
     RecordsStage post (applySyscallTaint plan pre post) :=
-  .of_invFrame fun hI => RecordsFrame.of_agreeOffTaint
+  .of_frameK fun hI => RecordsFrame.of_agreeOffTaint
     (applySyscallTaint_objectsAgreeOffTaint _ _ _) (by rw [applySyscallTaint_frame])
     (applySyscallTaint_invExt hI) (by rw [applySyscallTaint_machine])
 
@@ -729,7 +724,7 @@ theorem dispatchSyscallChecked_recordsStage (ctx : LabelingContext)
     · cases h
     · rename_i hYieldOk
       cases h
-      exact .of_invFrame fun hI => RecordsFrame.yieldOnCore hI hYieldOk
+      exact .of_frameK fun hI => RecordsFrame.yieldOnCore hI hYieldOk
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
