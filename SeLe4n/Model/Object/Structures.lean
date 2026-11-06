@@ -1556,6 +1556,33 @@ theorem insertCellShared_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capabilit
   simp only [h, dite_true]
   exact ext_of_fields rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
+/-- WS-ZA ZA6.35: `insert` of `cap`, stored as the cell `o` that holds it: the
+cell read from the slot a copy or a mint derives from, shared with that slot, and
+the destination's own record left in the spares.  So a fieldless capability
+(`CapTarget.isFieldless`) copied or minted unchanged builds neither a record nor
+its `some`. -/
+@[inline] def insertCellOf (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability)
+    (cap : Capability) (ho : o = some cap) (h : slot.toNat < node.cells.size) : CNode :=
+  let i := slot.toNat
+  let w := occupiedAt node.cells i
+  { node with
+    slotsGhost := node.slotsGhost.map (·.insert slot cap)
+    cells := node.cells.set i o h
+    cells_size := by rw [Array.size_set]; exact node.cells_size
+    slots_agree := by rw [ho]; exact insert_slots_agree node slot cap h
+    occ := fillOccOf w node.occ node.occHead i
+    occ_size := (size_fillOcc node.cells node.occ node.occHead i).trans node.occ_size
+    occHead := fillHeadOf w node.occHead i
+    occ_agree := occ_agree_fill node i h _ (by rw [ho]; rfl) }
+
+theorem insertCellOf_eq (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability)
+    (cap : Capability) (ho : o = some cap) (h : slot.toNat < node.cells.size) :
+    node.insertCellOf slot o cap ho h = node.insert slot cap := by
+  subst ho
+  unfold insertCellOf insert
+  simp only [h, dite_true]
+  exact ext_of_fields rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
 /-- `insertCellShared` of the capability with these fields, out of line, so a
 caller passing a literal builds the capability only on this branch. -/
 @[noinline] def insertCellSharedOf (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget)
@@ -1689,6 +1716,82 @@ theorem insertFields_eq_insert (node : CNode) (slot : SeLe4n.Slot) (target : Cap
     node.insertFields slot target rights badgeWord badged freeIndex =
       node.insert slot ((Capability.ofWords target rights badgeWord badged none).withFreeIndex freeIndex) :=
   insertCell_eq_insert _ _ _
+
+/-- WS-ZA ZA6.35: whether the capability `cap` derives with these rights and
+badge to itself, its target fieldless and no mapping recorded: the copy or mint
+`insertDerivedFields` stores as the cell it read. -/
+@[inline] def derivesUnchanged (cap : Capability) (rights : AccessRightSet)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) : Bool :=
+  cap.target.isFieldless && decide (rights = cap.rights) && decide (badgeWord = cap.badgeWord) &&
+    badged == cap.badged && decide (cap.mapAsid = default) && decide (cap.mapVaddr = default) &&
+    cap.mapEpoch == 0 && !cap.mapped
+
+theorem derivesUnchanged_eq {cap : Capability} {rights : AccessRightSet}
+    {badgeWord : SeLe4n.Badge} {badged : Bool} (hs : derivesUnchanged cap rights badgeWord badged = true) :
+    cap = ⟨cap.target, rights, badgeWord, badged, default, default, 0, false, cap.freeIndex⟩ := by
+  unfold derivesUnchanged at hs
+  simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq, Bool.not_eq_true'] at hs
+  obtain ⟨⟨⟨⟨⟨⟨⟨_, hR⟩, hB⟩, hD⟩, hA⟩, hV⟩, hE⟩, hM⟩ := hs
+  cases cap; simp_all
+
+/-- `insertFields` is `insert` of the capability with those fields. -/
+theorem insertFields_eq_insertFields (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget)
+    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat) :
+    node.insertFields slot target rights badgeWord badged freeIndex =
+      node.insert slot ⟨target, rights, badgeWord, badged, default, default, 0, false, freeIndex⟩ :=
+  insertCell_eq_insert _ _ _
+
+/-- A fieldless capability derived unchanged, stored as its own cell, is
+`insertFields` of its fields. -/
+theorem insertCellOf_eq_insertFields (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability)
+    (cap : Capability) (ho : o = some cap) (h : slot.toNat < node.cells.size)
+    {rights : AccessRightSet} {badgeWord : SeLe4n.Badge} {badged : Bool}
+    (hs : derivesUnchanged cap rights badgeWord badged = true) :
+    node.insertCellOf slot o cap ho h =
+      node.insertFields slot cap.target rights badgeWord badged cap.freeIndex := by
+  rw [insertCellOf_eq, insertFields_eq_insertFields]
+  exact congrArg (node.insert slot) (derivesUnchanged_eq hs)
+
+/-- WS-ZA ZA6.35: **`insertFields` of a capability derived from `cap`**, which
+the cell `o` holds (read from the source slot): its target and free index, and
+these rights and badge.  A fieldless capability derived unchanged
+(`derivesUnchanged`) into a slot that keeps a record is stored as `o` itself
+(`insertCellOf`), so the slot's record, and the target cell it owns, stay in the
+spares for the next capability written there; any other is `insertFields`. -/
+@[inline] def insertDerivedFields (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability)
+    (cap : Capability) (ho : o = some cap) (rights : AccessRightSet) (badgeWord : SeLe4n.Badge)
+    (badged : Bool) : CNode :=
+  if hs : derivesUnchanged cap rights badgeWord badged then
+    if h : slot.toNat < node.cells.size then
+      Quot.lift (fun a =>
+          if (if hi : slot.toNat < a.size then a[slot.toNat].isSome else false) then
+            node.insertCellOf slot o cap ho h
+          else node.insertFields slot cap.target rights badgeWord badged cap.freeIndex)
+        (fun a b _ => by
+          dsimp only
+          simp only [insertCellOf_eq_insertFields node slot o cap ho h hs, ite_self])
+        node.spare
+    else node.unchanged
+  else node.insertFields slot cap.target rights badgeWord badged cap.freeIndex
+
+theorem insertDerivedFields_eq (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability)
+    (cap : Capability) (ho : o = some cap) (rights : AccessRightSet) (badgeWord : SeLe4n.Badge)
+    (badged : Bool) :
+    node.insertDerivedFields slot o cap ho rights badgeWord badged =
+      node.insertFields slot cap.target rights badgeWord badged cap.freeIndex := by
+  unfold insertDerivedFields
+  split
+  · next hs =>
+    split
+    · next h =>
+      induction node.spare using Squash.ind with
+      | h a =>
+        show (if _ then _ else _) = _
+        simp only [insertCellOf_eq_insertFields node slot o cap ho h hs, ite_self]
+    · next h =>
+      rw [insertFields_eq_insertFields]
+      unfold insert unchanged; simp only [h, dite_false]
+  · rfl
 
 /-- A slot array with entry `i` rewritten by `f` (which keeps an empty entry
 empty) answers slot `s` as `f` of its old answer at `i`, and as before elsewhere. -/
