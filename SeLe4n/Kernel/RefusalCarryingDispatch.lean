@@ -78,6 +78,75 @@ theorem clearWokenReceiverStashPure_mapTcbInPlace (Y : SystemState) (r : SeLe4n.
   | none => rfl
   | some t => simp only [Option.map_some, h]
 
+/-- **A signal's bound delivery, delivered** (seL4's `sendSignal`, a bound TCB
+blocked on receive): the bound thread `t` taken off the receive queue of the
+endpoint `epId` it is blocked on and made ready without the badge message,
+woken, then the badge frame written into its saved registers
+(`signalBound_eq_writes`).  The message is built only where the thread is,
+unexpectedly, not ready. -/
+@[inline] def signalBoundWrites (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (tcb : TCB) (badge : SeLe4n.Badge)
+    (st : SystemState) : SystemState :=
+  let X := (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t receiveReadyTcb) t
+    c).1
+  writeDeliveredFrameIfReady X t (Architecture.returnFrameOfBadge badge)
+    (fun _ => holdSignalBody X t badge)
+
+/-- The specification's bound delivery, the stash drop and the staged badge, is
+the delivered form. -/
+theorem signalBound_eq_writes (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (tcb : TCB) (badge : SeLe4n.Badge)
+    (st : SystemState) (hNo : st.objects.noResizeDue) :
+    Architecture.stageWokenDelivery
+        (clearWokenReceiverStashPure (some t)
+          (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
+            (receiveCompleteTcb { IpcMessage.empty with badge := some badge })) t c).1)
+        (some t) 0 =
+      signalBoundWrites c t epId ep tcb badge st := by
+  have hNo1 := storeQueueRemove_noResizeDue st epId true t ep tcb hNo
+  have hNo2 : ((storeQueueRemove st epId true t ep tcb).mapTcbInPlace t
+      ipcReadyTcb).objects.noResizeDue := (SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr hNo1
+  unfold signalBoundWrites holdSignalBody
+  rw [receiveCompleteTcb_eq_slots, receiveReadyTcb_eq_slots,
+    SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1,
+    SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1,
+    ← SystemState.mapTcbInPlace_mapTcbInPlace, ← SystemState.mapTcbInPlace_mapTcbInPlace]
+  simp only [receiveCompleteSlots, clearMessageSlots]
+  rw [wakeThread_msg _ _ _ _ _ _ _ hNo2, wakeThread_msg _ _ _ _ _ _ _ hNo2]
+  dsimp only
+  have hD : ∀ M : IpcMessage,
+      TCB.withMessageSlots id (fun _ => some M) (fun _ : Nat => 0) =
+        holdMessage M ∘ TCB.withMessageSlots id (fun _ => none) (fun _ => 0) := fun _ => rfl
+  rw [clearWokenReceiverStashPure_mapTcbInPlace _ _ _ (fun _ => rfl),
+    hD, ← SystemState.mapTcbInPlace_mapTcbInPlace,
+    Architecture.stageWokenDelivery_some,
+    stageDeliveredMessage_holdMessage _ _ _
+      ((SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr (wakeThread_noResizeDue _ _ _ hNo2))
+      (by simp [IpcMessage.empty]),
+    returnFrameOfMessage_badge]
+
+/-- **An admitted bound signal's writes** (`signalBoundWrites`), out of line. -/
+@[noinline] def performSignalBoundDelivered (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (tcb : TCB) (badge : SeLe4n.Badge)
+    (st : SystemState) : SystemState :=
+  signalBoundWrites c t epId ep tcb badge st
+
+/-- A notification no thread waits on, whose bound thread is blocked receiving
+on the endpoint its state names, delivers to that thread. -/
+theorem boundDeliveryTarget?_of_codes (st : SystemState) (nid : SeLe4n.ObjId) (ntfn : Notification)
+    (k : Nat) (tcb : TCB) (hN : st.getNotification? nid = some ntfn) (hK0 : ntfn.waitHeadCode = 0)
+    (hB : ntfn.boundTCBCode = k + 1)
+    (hTT : st.objects[(⟨k⟩ : SeLe4n.ThreadId).toObjId]? = some (.tcb tcb))
+    (hSt : tcb.ipcStateCode = 1) :
+    boundDeliveryTarget? st nid = some (⟨k⟩, ⟨tcb.ipcObjectCode⟩) := by
+  have hBl := (blockedOnQueueSide_ipcState
+    (isReceiveQ := true) (endpointId := ⟨tcb.ipcObjectCode⟩) (t := tcb)
+    (by simp only [blockedOnQueueSide, ↓reduceIte, hSt, beq_self_eq_true,
+      Bool.and_self])).1 rfl
+  have hTg : st.getTcb? ⟨k⟩ = some tcb := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTT
+  simp only [boundDeliveryTarget?, hN, hK0, ↓reduceIte, Notification.boundTCB, hB,
+    SeLe4n.ThreadId.ofOptCode, hTg, hBl]
+
 /-- The checked cross-core signal answers a refusal with the state it was
 handed: the flow gates refuse before anything is written, and the signal
 itself returns its pre-state on every error. -/
@@ -136,7 +205,11 @@ register file builds no message array. -/
 notification's head waiter, with the flow gate passed, no bound receiver and
 every write in its slot (`signalWakesInPlace`), writes the badge frame straight
 into the waiter's saved registers (`performSignalWokenDelivered`,
-`signalWoken_eq_delivered`); any other signal takes the general arm. -/
+`signalWoken_eq_delivered`).  A signal with no waiter whose bound thread is
+blocked receiving, both flow gates passed and every write of the removal in its
+slot (`queueRemoveInPlace`), delivers the badge frame to that thread
+(`performSignalBoundDelivered`, `signalBound_eq_writes`, WS-ZA ZA6.35); any
+other signal takes the general arm. -/
 @[inline] def notificationSignalCheckedArmR (ctx : LabelingContext)
     (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
@@ -155,6 +228,28 @@ into the waiter's saved registers (`performSignalWokenDelivered`,
                       (ntfnSuccessorCode st ⟨k⟩) args.badge executingCore)
                   else notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
               | 0 => notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
+          | none => notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
+        else if securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf notifId) then
+          -- No waiter: a bound thread blocked receiving takes the badge.
+          match st.getNotification? notifId with
+          | some ntfn =>
+              match ntfn.waitHeadCode, ntfn.boundTCBCode with
+              | 0, k + 1 =>
+                  match st.objects[(⟨k⟩ : SeLe4n.ThreadId).toObjId]? with
+                  | some (.tcb tcb) =>
+                      if tcb.ipcStateCode = 1 then
+                        match st.objects[(⟨tcb.ipcObjectCode⟩ : SeLe4n.ObjId)]? with
+                        | some (.endpoint ep) =>
+                            if securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf ⟨k⟩) &&
+                                queueRemoveInPlace st ⟨tcb.ipcObjectCode⟩ true ⟨k⟩ ep tcb then
+                              .ok ((), performSignalBoundDelivered executingCore ⟨k⟩
+                                ⟨tcb.ipcObjectCode⟩ ep tcb args.badge st)
+                            else notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore
+                              cap st
+                        | _ => notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
+                      else notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
+                  | _ => notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
+              | _, _ => notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
           | none => notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
         else notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
     | _, _ => notificationSignalCheckedArmGeneralR ctx sigArgs tid executingCore cap st
@@ -198,7 +293,45 @@ theorem notificationSignalCheckedArmR_eq_general (ctx : LabelingContext)
             · rfl
           · rfl
         · rfl
-      · rfl
+      · split
+        · next hFlow =>
+          split
+          · next ntfn hN =>
+            split
+            · next k hK0 hB =>
+              split
+              · next tcb hTT =>
+                split
+                · next hSt =>
+                  split
+                  · next ep hE =>
+                    split
+                    · next hA =>
+                      simp only [Bool.and_eq_true] at hA
+                      obtain ⟨hFlow2, hG⟩ := hA
+                      have hBT := boundDeliveryTarget?_of_codes st notifId ntfn k tcb hN hK0 hB
+                        hTT hSt
+                      have hNo : st.objects.noResizeDue := by
+                        have hQ := hG
+                        unfold queueRemoveInPlace at hQ
+                        simp only [Bool.and_eq_true] at hQ
+                        obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩, -⟩ := hQ
+                        exact RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
+                      have hS := notificationSignalBoundOnCore_bound_eq notifId args.badge
+                        executingCore st ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb hBT hE hTT hG
+                      simp only [notificationSignalBoundCrossCoreDispatchChecked, hFlow, hBT,
+                        hFlow2, ↓reduceIte, hS, Option.map_some, notificationSignalWaiterCode, hN,
+                        hK0]
+                      rw [show SeLe4n.ThreadId.ofOptCode 0 = none from rfl,
+                        Architecture.stageWokenDelivery_none, signalBound_eq_writes _ _ _ _ _ _ _ hNo]
+                      rfl
+                    · rfl
+                  all_goals rfl
+                · rfl
+              all_goals rfl
+            all_goals rfl
+          · rfl
+        · rfl
   | _ => rfl
 
 theorem notificationSignalCheckedArmR_eq (ctx : LabelingContext)

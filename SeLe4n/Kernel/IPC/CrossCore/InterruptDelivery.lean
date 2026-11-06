@@ -111,10 +111,12 @@ def interruptSignalGeneral (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : Cor
 notification's head waiter, with no bound receiver and every write in its slot
 (`signalWakesInPlace`), writes the badge frame straight into the waiter's saved
 registers (`performSignalWokenDelivered`), as the `.notificationSignal`
-syscall's arm does (`notificationSignalCheckedArmR`); a signal with neither a
-bound receiver nor a waiter wakes no thread, so it clears no stash and stages
-nothing, and is the signal's own state; every other signal runs the
-specification. -/
+syscall's arm does (`notificationSignalCheckedArmR`); a signal whose bound
+thread is blocked receiving, every write of its removal in its slot
+(`queueRemoveInPlace`), delivers the badge frame to that thread
+(`performSignalBoundDelivered`); a signal with neither a bound receiver nor a
+waiter wakes no thread, so it clears no stash and stages nothing, and is the
+signal's own state; every other signal runs the specification. -/
 @[inline] def interruptSignalImpl (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st : SystemState) : SystemState :=
   if (boundDeliveryTarget? st ntfn).isNone then
@@ -127,7 +129,25 @@ specification. -/
             else interruptSignalGeneral ntfn badge c st
         | 0 => (notificationSignalBoundOnCore ntfn badge c st).1
     | none => interruptSignalGeneral ntfn badge c st
-  else interruptSignalGeneral ntfn badge c st
+  else
+    -- No waiter: a bound thread blocked receiving takes the badge.
+    match st.getNotification? ntfn with
+    | some n =>
+        match n.waitHeadCode, n.boundTCBCode with
+        | 0, k + 1 =>
+            match st.objects[(⟨k⟩ : SeLe4n.ThreadId).toObjId]? with
+            | some (.tcb tcb) =>
+                if tcb.ipcStateCode = 1 then
+                  match st.objects[(⟨tcb.ipcObjectCode⟩ : SeLe4n.ObjId)]? with
+                  | some (.endpoint ep) =>
+                      if queueRemoveInPlace st ⟨tcb.ipcObjectCode⟩ true ⟨k⟩ ep tcb then
+                        performSignalBoundDelivered c ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb badge st
+                      else interruptSignalGeneral ntfn badge c st
+                  | _ => interruptSignalGeneral ntfn badge c st
+                else interruptSignalGeneral ntfn badge c st
+            | _ => interruptSignalGeneral ntfn badge c st
+        | _, _ => interruptSignalGeneral ntfn badge c st
+    | none => interruptSignalGeneral ntfn badge c st
 
 @[csimp] theorem interruptSignal_eq_impl : @interruptSignal = @interruptSignalImpl := by
   funext ntfn badge c st
@@ -162,7 +182,41 @@ specification. -/
           Architecture.stageWokenDelivery_none]
         split <;> next h => rw [h]
     · exact hG
-  · exact hG
+  · split
+    · next n hN =>
+      split
+      · next k hK0 hB =>
+        split
+        · next tcb hTT =>
+          split
+          · next hSt =>
+            split
+            · next ep hE =>
+              split
+              · next hQ =>
+                have hBT := boundDeliveryTarget?_of_codes st ntfn n k tcb hN hK0 hB hTT hSt
+                have hNo : st.objects.noResizeDue := by
+                  have hQ' := hQ
+                  unfold queueRemoveInPlace at hQ'
+                  simp only [Bool.and_eq_true] at hQ'
+                  obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩, -⟩ := hQ'
+                  exact RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
+                have hWait := notificationSignalWaiter?_of_boundDeliveryTarget st ntfn ⟨k⟩
+                  ⟨tcb.ipcObjectCode⟩ hBT
+                rw [← hG]
+                unfold interruptSignalGeneral
+                rw [notificationSignalBoundOnCore_bound_eq ntfn badge c st ⟨k⟩ ⟨tcb.ipcObjectCode⟩
+                  ep tcb hBT hE hTT hQ]
+                simp only [hBT, Option.map_some, clearWokenReceiverStash_eq_pure, hWait,
+                  Architecture.stageWokenDelivery_none]
+                rw [signalBound_eq_writes _ _ _ _ _ _ _ hNo]
+                rfl
+              · exact hG
+            all_goals exact hG
+          · exact hG
+        all_goals exact hG
+      all_goals exact hG
+    · exact hG
 
 /-- **seL4's `handleInterrupt` on core `c`**: the bound handler's notification
 signalled (`interruptSignal`, the badge staged into the thread it wakes) and

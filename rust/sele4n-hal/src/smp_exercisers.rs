@@ -4810,7 +4810,7 @@ const DECLASSIFICATION_DENIED_AT_RECEIVER: u64 = 56;
 const REFUSAL_RING_SIZE: u64 = 32;
 /// The bound scenario's setup, unmeasured.
 #[cfg(feature = "hw_target")]
-const BOUND_SIGNAL_SETUP: [RoundTrip; 8] = [
+const BOUND_SIGNAL_SETUP: [RoundTrip; 10] = [
     invocation(
         "untyped-retype-low-thread",
         UNTYPED_RETYPE,
@@ -4858,6 +4858,18 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 8] = [
         ROOT_TCB_CAP,
         [MOVE_CAP, 0, 0, 0],
     ),
+    invocation(
+        "bound-irq-control-get",
+        IRQ_CONTROL_GET,
+        IRQ_CONTROL_CAP,
+        [IRQ_BOUND_LINE as u64, CNODE_CAP, IRQ_BOUND_HANDLER_SLOT, 0],
+    ),
+    invocation(
+        "bound-irq-handler-set-notification",
+        IRQ_HANDLER_SET_NOTIFICATION,
+        cap_address(IRQ_BOUND_HANDLER_SLOT),
+        [MOVE_CAP, 0, 0, 0],
+    ),
     invocation("low-thread-resume", TCB_RESUME, LOW_THREAD_CAP, [0; 4]),
 ];
 /// The root task's receive on the boot endpoint, which blocks and runs the
@@ -4881,6 +4893,15 @@ const DECLASSIFIED_SIGNAL_BOUND: RoundTrip = partner_step(
     [3, 0],
     false,
 );
+/// The low thread's plain signal to the root task, bound and blocked.
+#[cfg(feature = "hw_target")]
+const SIGNAL_BOUND: RoundTrip = partner_step("signal-bound", SIGNAL, MOVE_CAP, 1, [6, 0], false);
+/// The low thread's yield, which runs the woken root task, unmeasured.
+#[cfg(feature = "hw_target")]
+const LOW_THREAD_YIELDS: RoundTrip = kernel_step("low-thread-yields", YIELD);
+/// The bound line's acknowledge after its signal, unmeasured.
+#[cfg(feature = "hw_target")]
+const BOUND_IRQ_ACK: RoundTrip = irq_handler_ack("bound-irq-handler-ack", IRQ_BOUND_HANDLER_SLOT);
 /// The low thread's receive on its endpoint, which blocks and runs the root
 /// task, unmeasured.
 #[cfg(feature = "hw_target")]
@@ -4964,11 +4985,24 @@ const BOUND_REFUSAL_STATUS: RoundTrip = RoundTrip {
     blocks: false,
     returns: None,
 };
-/// The slots emptied again, unmeasured: the low thread's capability deleted
-/// (its finalisation cancels its receive and unbinds its notification), then
-/// the endpoint's and the two notifications'.
+/// The slots emptied again, unmeasured: the bound line's handler cleared and
+/// deleted, the low thread's capability deleted (its finalisation cancels its
+/// receive and unbinds its notification), then the endpoint's and the two
+/// notifications'.
 #[cfg(feature = "hw_target")]
-const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 4] = [
+const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 6] = [
+    invocation(
+        "bound-irq-handler-clear",
+        IRQ_HANDLER_CLEAR,
+        cap_address(IRQ_BOUND_HANDLER_SLOT),
+        [0; 4],
+    ),
+    invocation(
+        "bound-irq-handler-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [IRQ_BOUND_HANDLER_SLOT, 0, 0, 0],
+    ),
     invocation(
         "low-thread-delete",
         CSPACE_DELETE,
@@ -5007,7 +5041,11 @@ const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 4] = [
 /// - the root task's receive on the boot endpoint blocks, and the low thread's
 ///   declassified signal on the root task's notification delivers to it, bound
 ///   and blocked receiving (seL4's `sendSignal` bound arm: both hops ordinary
-///   flows, no record); the low thread's receive on its endpoint blocks;
+///   flows, no record); the low thread's yield runs the root task, whose
+///   receive blocks again, and the low thread's plain signal delivers the
+///   same way; once more, and the bound line's interrupt (its handler issued
+///   and bound to that notification) delivers the same way, and its
+///   acknowledge follows; the low thread's receive on its endpoint blocks;
 /// - the upper notification bound to the low thread, and the root task's
 ///   declassified signal on it delivers to the low thread, the first hop the
 ///   downgrade from the boot domain to the upper one and the second the upper
@@ -5023,19 +5061,36 @@ const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 4] = [
 ///   its slot read off the ledger's status first, its word checked to be the
 ///   low thread's id.
 ///
-/// Only the two signals and the read are measured; the setup, the refusal and
-/// the deletes that leave the slots empty again are not.
+/// Only the four deliveries and the read are measured; the setup, the switches,
+/// the refusal and the deletes that leave the slots empty again are not.
 ///
 /// One run (`which` names the first call); the caller masks the timer across
 /// it.
 #[cfg(feature = "hw_target")]
 fn bound_declassified_signals(which: &str) -> bool {
+    let irq_bound = KernelEntry {
+        name: "irq-signal-bound",
+        enter: irq_bound_line_entry,
+    };
     if !unmeasured_all(&BOUND_SIGNAL_SETUP, "the bound scenario's setup failed")
         || !unmeasured(
             &BOUND_ROOT_RECEIVES,
             "the root task's receive did not block",
         )
         || heap_allocations_round_trip(&DECLASSIFIED_SIGNAL_BOUND, which) != Some(true)
+        || !unmeasured(&LOW_THREAD_YIELDS, "the low thread's yield failed")
+        || !unmeasured(
+            &BOUND_ROOT_RECEIVES,
+            "the root task's receive did not block",
+        )
+        || heap_allocations_round_trip(&SIGNAL_BOUND, which) != Some(true)
+        || !unmeasured(&LOW_THREAD_YIELDS, "the low thread's yield failed")
+        || !unmeasured(
+            &BOUND_ROOT_RECEIVES,
+            "the root task's receive did not block",
+        )
+        || !heap_allocations_interrupt(&irq_bound, which)
+        || !unmeasured(&BOUND_IRQ_ACK, "the bound line was not acknowledged")
         || !unmeasured(
             &LOW_THREAD_RECEIVES,
             "the low thread's receive did not block",
