@@ -50,7 +50,7 @@ theorem storeReplyRendezvousReady_fields (st : SystemState) (c server : SeLe4n.T
     (rid : SeLe4n.ReplyId) (hNo : st.objects.noResizeDue) :
     (storeReplyRendezvousReady st c server rid).objectIndexSet = st.objectIndexSet ∧
       (storeReplyRendezvousReady st c server rid).lifecycle = st.lifecycle := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
@@ -73,7 +73,7 @@ theorem storeReplyRendezvousReady_agree (st : SystemState) (c server : SeLe4n.Th
     (x : SeLe4n.ObjId) (hxc : x ≠ c.toObjId) (hxr : x ≠ rid.toObjId) :
     ((storeReplyRendezvousReady st c server rid).objects[x]?).map KernelObject.withoutRunLinks =
       (st.objects[x]?).map KernelObject.withoutRunLinks := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
@@ -118,7 +118,7 @@ theorem storeReplyRendezvousReady_keepsFinds (st : SystemState) (c server : SeLe
     (rid : SeLe4n.ReplyId) (hNo : st.objects.noResizeDue)
     (hFC : st.objects.findsInPlace c.toObjId = true) :
     (storeReplyRendezvousReady st c server rid).objectsKeepFinds st := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
@@ -141,7 +141,7 @@ theorem storeReplyRendezvousReady_reply (st : SystemState) (c server : SeLe4n.Th
     (hT : st.getTcb? c = some ct) (hFC : st.objects.findsInPlace c.toObjId = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp)) (hNe : rid.toObjId ≠ c.toObjId) :
     (storeReplyRendezvousReady st c server rid).objects[rid.toObjId]? = some (.reply rp.consumed) := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
@@ -168,7 +168,7 @@ theorem storeReplyRendezvousReady_caller (st : SystemState) (c server : SeLe4n.T
     (hNe : rid.toObjId ≠ c.toObjId) :
     ∃ t, (storeReplyRendezvousReady st c server rid).objects[c.toObjId]? = some (.tcb t) ∧
       t.ipcStateCode = (receiverReady ct).ipcStateCode := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)

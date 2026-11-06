@@ -4293,6 +4293,24 @@ run_check "INVARIANT" rg -n -U '    if replyRecvDonatedAdmits epId tid c rid lay
 run_check "INVARIANT" rg -n -U '    if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then\n      \.ok \(\(\), performReplyDonatedDelivered st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Kernel\.returnDonatedSchedContextInPlace,$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem consumed_eq_impl' SeLe4n/Model/Object/Reply.lean
+# WS-ZA ZA6.34: a reply to a caller recording no server (its server finalised)
+# whose reply object heads a context no thread holds writes in place: the reply
+# leg with no reply waiters to leave, then the unheld pop, the pop's gate carried
+# across the leg, proven the specification's and routed from the arm.
+run_check "INVARIANT" rg -n '^theorem replyOnCore_eq_storeLeg($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInPlace.lean
+run_check "INVARIANT" rg -n '^theorem unheldPopsInPlace_transport($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyUnheldPopsInPlace_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_unheld_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
+run_check "INVARIANT" rg -n -U '                    \| \.blockedOnReply _ none =>\n                        match ct\.replyObject with\n                        \| some rid => endpointReplyUnheldArmR ' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '    if replyUnheldAdmits ctx layout len tid c rid cFault st then\n      \.ok \(\(\), performReplyUnheldDelivered st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Kernel\.storeReplyLeg,$' SeLe4n/Testing/ReplyStackWriteCensus.lean
+# ...and a final delete of an orphaned caller's head reply asks the unheld pop's
+# commit test through the in-place gate first, so the admission resolves no
+# outer caller as an `Except` where the gate passes.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem unheldPopCommits_eq_impl' SeLe4n/Kernel/IPC/Operations/UnheldContextPopInPlace.lean
+# NEGATIVE: the compiled commit test must not name the constant it replaces,
+# which would loop at run time.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def unheldPopCommitsImpl[^\n]*(\n([ \t][^\n]*)?)*unheldPopCommits st" SeLe4n/Kernel/IPC/Operations/UnheldContextPopInPlace.lean'
 # WS-ZA ZA6.33: a pop above the bottom of the stack hands the context to the
 # answered caller whatever origin is recorded, and the gate asks the origin
 # only at the bottom; moving a thread off the core it runs on writes the old

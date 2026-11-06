@@ -3747,6 +3747,203 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
+        // WS-ZA ZA6.34: a holder's final delete under a two-frame stack, then
+        // the orphans it leaves.  The context is bound to the partner and a
+        // reply carved for each of the server and the fourth thread; the
+        // server and the fourth thread receive, the partner's call lends the
+        // context to the server, whose call lends it on to the fourth thread,
+        // which wakes the root task and waits.  The root task deletes the
+        // fourth thread (seL4-MCS's `finaliseCap`: its wait cancelled, the
+        // context unbound, heading the stack with its two callers left
+        // blocked).  It deletes the partner's reply, the frame below the head
+        // (`reply_remove` severs the stack there and ends the partner), then
+        // answers the server through the head reply's capability
+        // (`doReplyTransfer`, then `reply_pop`: the context to the server,
+        // which holds none).  The server wakes the root task and waits; the
+        // root task suspends it, unbinds the context, deletes the head reply
+        // and carves the fourth thread again.
+        configure(
+            "orphan-stack-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "orphan-stack-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-orphan-server-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+        ),
+        invocation(
+            "orphan-server-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-orphan-top-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                STACK_TOP_CHILD_IDS[1],
+                CNODE_CAP,
+                STACK_TOP_REPLY_OBJECT_SLOT,
+            ],
+        ),
+        invocation(
+            "orphan-top-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [STACK_TOP_REPLY_OBJECT_SLOT, STACK_TOP_REPLY_CAP_SLOT, 0, 0],
+        ),
+        invocation("orphan-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
+        partner_step("orphan-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "orphan-server-resumes-top",
+            TCB_RESUME,
+            STACK_TOP_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "orphan-server-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [CHAIN_REPLY_CAP, 0],
+            true,
+        ),
+        invocation(
+            "orphan-top-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "orphan-top-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [STACK_TOP_REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "orphan-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x6f, 0],
+            true,
+        ),
+        partner_step(
+            "orphan-server-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x70, 0],
+            true,
+        ),
+        signal("orphan-top-wakes-root", 0x15),
+        partner_step("orphan-top-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "orphan-holder-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [STACK_TOP_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "orphan-middle-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "orphan-middle-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        partner_step(
+            "orphan-root-answers-server",
+            REPLY,
+            STACK_TOP_REPLY_CAP,
+            1,
+            [0x71, 0],
+            false,
+        ),
+        partner_step(
+            "orphan-root-waits-server",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("orphan-server-wakes-root", 0x16),
+        partner_step(
+            "orphan-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation("orphan-suspend-server", TCB_SUSPEND, CHAIN_TCB_CAP, [0; 4]),
+        invocation(
+            "orphan-stack-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "orphan-top-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [STACK_TOP_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "orphan-top-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [STACK_TOP_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-orphan-top",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                TCB_TYPE,
+                STACK_TOP_CHILD_IDS[0],
+                CNODE_CAP,
+                STACK_TOP_TCB_SLOT,
+            ],
+        ),
+        invocation(
+            "orphan-top-set-space",
+            TCB_SET_SPACE,
+            STACK_TOP_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "orphan-top-set-priority",
+            TCB_SET_PRIORITY,
+            STACK_TOP_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
         invocation(
             "stack-server-delete",
             CSPACE_DELETE,

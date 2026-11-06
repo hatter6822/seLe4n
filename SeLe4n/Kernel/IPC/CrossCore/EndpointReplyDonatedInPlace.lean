@@ -479,7 +479,7 @@ theorem storeReplyRendezvousReady_callerView (st : SystemState) (c server : SeLe
     (hNe : rid.toObjId ≠ c.toObjId) :
     ∃ t, (storeReplyRendezvousReady st c server rid).objects[c.toObjId]? = some (.tcb t) ∧
       t.withoutRunLinks = ({ receiverReady ct with replyObjectCode := 0 } : TCB).withoutRunLinks := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)

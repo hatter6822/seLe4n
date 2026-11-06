@@ -779,17 +779,19 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .states [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept])
     -- WS-ZA ZA4.7: the in-place reply.  `replyConsumedObject` is the consume
-    -- as an object rewrite; the store that runs it answers a caller whose reply
-    -- heads no frame, so it keeps the chain whole.
-  , (`SeLe4n.Kernel.replyConsumedObject, .halfStep `SeLe4n.Kernel.storeReplyRendezvous)
-  , (`SeLe4n.Kernel.storeReplyRendezvous,
-      .states [`SeLe4n.Kernel.storeReplyRendezvous_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.storeReplyRendezvousReady,
-      .states [`SeLe4n.Kernel.storeReplyRendezvousReady_preserves_donationChainWellFormed])
+    -- as an object rewrite; the leg that runs it (WS-ZA ZA6.34: factored out
+    -- of `storeReplyRendezvous`, which adds only the reply-waiter unlink, so
+    -- that a caller recording no server runs it alone) answers a caller whose
+    -- reply heads no frame, so it keeps the chain whole.
+  , (`SeLe4n.Kernel.replyConsumedObject, .halfStep `SeLe4n.Kernel.storeReplyLeg)
+  , (`SeLe4n.Kernel.storeReplyLeg,
+      .states [`SeLe4n.Kernel.storeReplyLeg_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.storeReplyLegReady,
+      .states [`SeLe4n.Kernel.storeReplyLegReady_preserves_donationChainWellFormed])
     -- WS-ZA ZA6.31: the fault reply's store is the reply's with no message
     -- (`storeFaultReplyRendezvous_eq`, `rfl`).
   , (`SeLe4n.Kernel.storeFaultReplyRendezvous,
-      .mirrors `SeLe4n.Kernel.storeReplyRendezvous)
+      .mirrors `SeLe4n.Kernel.storeReplyLeg)
     -- ---------------------------------------------------------------------
     -- The frozen execution surface.
     --

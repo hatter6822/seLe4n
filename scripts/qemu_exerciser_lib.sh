@@ -372,6 +372,24 @@ for driver in drivers:
             "queue-resume-top", "queue-root-waits", "queue-top-resumes-partner",
             "queue-top-receives", "queue-partner-wakes-root", "queue-partner-receives",
             "queue-endpoint-delete", "queue-suspend-top", "queue-suspend-partner",
+            # A holder's final delete under a two-frame stack (the fourth
+            # thread's wait cancelled, the context unbound and left heading
+            # the stack, its two callers blocked), the partner's reply below
+            # the head deleted (the stack severed, the partner ended), the
+            # server answered through the head reply's capability (the head
+            # popped, the context to the server), and the teardown: the
+            # server suspended, the context unbound, the head reply deleted
+            # and the fourth thread carved again.
+            "orphan-stack-configure", "orphan-stack-bind-partner", "orphan-server-reply-cap-mint",
+            "orphan-top-reply-cap-mint", "orphan-resume-server", "orphan-root-waits",
+            "orphan-server-resumes-top", "orphan-server-receives", "orphan-top-resumes-partner",
+            "orphan-top-receives", "orphan-partner-calls", "orphan-server-calls",
+            "orphan-top-wakes-root", "orphan-top-waits", "orphan-holder-delete",
+            "orphan-middle-reply-cap-delete", "orphan-middle-reply-delete",
+            "orphan-root-answers-server", "orphan-root-waits-server", "orphan-server-wakes-root",
+            "orphan-server-waits", "orphan-suspend-server", "orphan-stack-unbind",
+            "orphan-top-reply-cap-delete", "orphan-top-reply-delete", "orphan-top-set-space",
+            "orphan-top-set-priority",
             # and seL4's resume of a thread whose refill is not yet due: the
             # bound partner's yield forfeits its budget, its suspend takes the
             # context off the release queue, and the resume postpones it there
@@ -621,6 +639,10 @@ for driver in drivers:
             # and the server's reply carved again for the orphan's call
             # (WS-ZA ZA6.34), the same carve.
             "untyped-retype-waited-reply": (15, 15),
+            # and the holder's-delete scenario's: both replies and the fourth
+            # thread carved again, the same carves.
+            "untyped-retype-orphan-server-reply": (15, 15),
+            "untyped-retype-orphan-top-reply": (15, 15), "untyped-retype-orphan-top": (26, 26),
             # and a context's: 15 on both calls, `untyped-retype-sched-context`'s
             # steady state, the capability's target record already built.
             "untyped-retype-stack-context": (15, 15),

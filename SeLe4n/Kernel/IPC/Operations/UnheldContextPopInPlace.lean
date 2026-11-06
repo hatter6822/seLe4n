@@ -399,4 +399,28 @@ where the caller holds a context of its own. -/
       have hP := unheldPopsInPlace_pop st scId target hG
       simp only [donationRecipientAcceptable_of_unheldReturnCommits hP.1, hP.2, ↓reduceIte]
 
+/-- **The unheld pop's commit test, as compiled**: the in-place gate first,
+whose code reads build nothing and which implies the specification's test
+(`unheldPopsInPlace_pop`); the specification's test, written out so the
+compiled form does not name the constant it replaces, which resolves the reply
+stack's outer caller as an `Except`, only where the gate declines.  A final
+delete of an orphaned caller's head reply asks it before any write
+(`replyUnheldPopAdmitted`). -/
+@[inline] def unheldPopCommitsImpl (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (owner : SeLe4n.ThreadId) : Bool :=
+  unheldPopsInPlace st scId owner ||
+    if donationRecipientAcceptable st owner then unheldReturnCommits st scId owner
+    else unheldSeverCommits st scId
+
+@[csimp] theorem unheldPopCommits_eq_impl : @unheldPopCommits = @unheldPopCommitsImpl := by
+  funext st scId owner
+  unfold unheldPopCommitsImpl
+  unfold unheldPopCommits
+  cases hG : unheldPopsInPlace st scId owner with
+  | false => rfl
+  | true =>
+    have hP := (unheldPopsInPlace_pop st scId owner hG).1
+    simp only [Bool.true_or, donationRecipientAcceptable_of_unheldReturnCommits hP, hP,
+      ↓reduceIte]
+
 end SeLe4n.Kernel
