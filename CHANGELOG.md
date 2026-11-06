@@ -44,6 +44,38 @@ or abandoned.  The receive leg runs unchanged.
   abandon's core.  `abiEntryLockOperands` now carries the `MessageInfo` for
   `.replyRecv`.  `schedLockSet_endpointReplyRecvOnCore` is registered in the
   scheduler-footprint census as the unfaulted specialisation.
+- **The fault answer, in place, shared by both arms.**  The specification
+  path a faulted caller took builds the reply's message, its register array,
+  the decoded fault record and the outcome, so the fault handler's
+  `ReplyRecv` read 92 cells.  `performFaultAnswer` (`IPC/CrossCore/FaultInPlace.lean`)
+  is the answer from words: the caller's fault kind and saved context read off
+  its TCB on the pre-state, the reply's label and its words read from the
+  register file (`faultReplyWord`, `Architecture.regLayoutWord`), restart or
+  abandon applied in place, no fault record, message, outcome or frame built
+  (`faultReplyApplyOnCore_decode_eq_performFaultAnswer`).  The `.reply` arm
+  applies it on every fault kind (`performFaultReplyAnswer`; it restarted only
+  VM and capability faults in place before), on a donated reply
+  (`performFaultReplyDonatedAnswer`) and on a caller recording no server
+  (`performFaultReplyUnheldAnswer`).  The `.replyRecv` arm applies it after
+  its in-place legs on the blocking, donated and unheld shapes
+  (`performReplyRecvFaultAnswer`, `performReplyRecvDonatedFaultAnswer`,
+  `performReplyRecvUnheldFaultAnswer`; `replyRecvFaultArmR`).  Each is proven
+  equal to the specification's transition
+  (`faultReplyTransferChecked_inPlace`, `faultReplyTransferChecked_donated_inPlace`,
+  `faultReplyTransferChecked_unheld_inPlace`,
+  `replyRecvTransferOnCore_fault_blocks_inPlace`,
+  `replyRecvTransferOnCore_fault_donated_inPlace`,
+  `replyRecvTransferOnCore_fault_unheld_inPlace`, `replyRecvFaultArmR_eq`),
+  over the three in-place reply-receive theorems generalised to every answer
+  (`replyRecvAnsweringOnCore_blocks_inPlace`, `_donated_inPlace`,
+  `_unheld_inPlace`).
+- **Measured.**  The exerciser's five fault-handler `ReplyRecv` scenarios
+  (`*-reply`) read 0 at the first call and at steady state, and each now
+  checks the restart the answer applied: the PC, `x0` and `x1` the faulted
+  thread resumes with (the reply's word as an unknown syscall's `x0` and a user
+  exception's PC).  Five new `.reply` scenarios (`*-delivered-to-reply`,
+  `*-plain-reply`) answer each kind with `Reply` and check the same restart
+  when the handler waits again; each reads 0.
 - **Tests.**  `tests/FaultHandlingSuite.lean` §7g delivers a fault, has the
   handler answer with `ReplyRecv` through the compiled syscall entry, and
   checks that the fault record is cleared, the restart applied and the

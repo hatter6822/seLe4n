@@ -5419,6 +5419,15 @@ enum Dispatched {
     Failed,
 }
 
+/// The context a round trip's restore resumed: the thread's `x0` to `x5` and
+/// the PC it resumes at.
+#[cfg(feature = "hw_target")]
+#[derive(Clone, Copy)]
+struct Resumed {
+    regs: [u64; 6],
+    pc: u64,
+}
+
 /// Issue `trip` unmeasured, failing the driver with `why` unless it did what
 /// the trip says it does.
 #[cfg(feature = "hw_target")]
@@ -6334,6 +6343,89 @@ const FAULT_REPLIES: [&str; 5] = [
     "user-exception-reply",
 ];
 
+/// The word a fault handler's answer supplies as its first reply word: the
+/// restart PC of a user exception and the restart `x0` of an unknown syscall
+/// (seL4's `handleFaultReply`).  An EL0 address, so no restart frame of either
+/// kind could read it by accident.
+#[cfg(feature = "hw_target")]
+const FAULT_REPLY_WORD: u64 = FAULT_PC + 0x100;
+
+/// What a faulted thread restarts with once its handler answers with label 0
+/// and the one reply word [`FAULT_REPLY_WORD`]: its PC, `x0` and `x1`.
+#[cfg(feature = "hw_target")]
+#[derive(Clone, Copy)]
+struct FaultRestart {
+    pc: u64,
+    x0: u64,
+    x1: u64,
+}
+
+/// The restart of fault kind `kind`: a VM or capability fault resumes its own
+/// context whatever the reply says; an unknown syscall takes the reply's first
+/// word as `x0`; a user exception takes it as its PC.
+#[cfg(feature = "hw_target")]
+const fn fault_restart(kind: usize) -> FaultRestart {
+    let trip = fault_trip(kind, "");
+    match kind {
+        3 => FaultRestart {
+            pc: trip.elr,
+            x0: FAULT_REPLY_WORD,
+            x1: trip.x1,
+        },
+        4 => FaultRestart {
+            pc: FAULT_REPLY_WORD,
+            x0: trip.x0,
+            x1: trip.x1,
+        },
+        _ => FaultRestart {
+            pc: trip.elr,
+            x0: trip.x0,
+            x1: trip.x1,
+        },
+    }
+}
+
+/// Whether the thread a fault answer restored resumed as its restart says,
+/// printing why not.
+#[cfg(feature = "hw_target")]
+fn restarted_as(name: &str, resumed: &Resumed, expected: FaultRestart) -> bool {
+    let ok = resumed.pc == expected.pc
+        && resumed.regs[0] == expected.x0
+        && resumed.regs[1] == expected.x1;
+    if !ok {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the faulted thread resumed at \
+             pc={:#x} x0={:#x} x1={:#x}, its restart is pc={:#x} x0={:#x} x1={:#x}",
+            resumed.pc,
+            resumed.regs[0],
+            resumed.regs[1],
+            expected.pc,
+            expected.x0,
+            expected.x1
+        );
+    }
+    ok
+}
+
+/// Each kind's scenario names when the handler answers with `Reply`: the
+/// fault delivered to the waiting handler, and its reply.
+#[cfg(feature = "hw_target")]
+const FAULT_DELIVERED_TO_REPLY: [&str; 5] = [
+    "vm-fault-data-delivered-to-reply",
+    "vm-fault-instruction-delivered-to-reply",
+    "cap-fault-delivered-to-reply",
+    "unknown-syscall-delivered-to-reply",
+    "user-exception-delivered-to-reply",
+];
+#[cfg(feature = "hw_target")]
+const FAULT_PLAIN_REPLIES: [&str; 5] = [
+    "vm-fault-data-plain-reply",
+    "vm-fault-instruction-plain-reply",
+    "cap-fault-plain-reply",
+    "unknown-syscall-plain-reply",
+    "user-exception-plain-reply",
+];
+
 /// One measured trap: the frame published as an EL0 thread's, the
 /// synchronous-exception handler entered with IRQs masked, and this core's
 /// heap counter read before and after.  The handler returns only through a
@@ -6525,12 +6617,62 @@ fn fault_entries() -> Option<bool> {
                 REPLY_RECV,
                 ENDPOINT_CAP,
                 2,
-                [REPLY_CAP, 0],
+                [REPLY_CAP, FAULT_REPLY_WORD],
                 true,
             );
             if heap_allocations_trap(&fault_trip(kind, FAULT_DELIVERED[kind]), which) != Some(true)
+                || heap_allocations_round_trip_resuming(&reply, which, Some(fault_restart(kind)))
+                    != Some(true)
+            {
+                return Some(false);
+            }
+        }
+        if !unmeasured(&wake_handler, "the waiting handler was not woken") || !suspend_partner() {
+            return Some(false);
+        }
+    }
+    // The handler answers with `Reply` instead: it returns, the faulted
+    // thread restarted behind it, and its next receive blocks it and resumes
+    // that thread as its restart says.
+    let handler_waits_again = partner_step(
+        "handler-waits-again",
+        RECEIVE,
+        ENDPOINT_CAP,
+        1,
+        [REPLY_CAP, 0],
+        true,
+    );
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+            || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
+        {
+            return Some(false);
+        }
+        for kind in 0..FAULT_KINDS.len() {
+            let reply = partner_step(
+                FAULT_PLAIN_REPLIES[kind],
+                REPLY,
+                REPLY_CAP,
+                1,
+                [FAULT_REPLY_WORD, 0],
+                false,
+            );
+            if heap_allocations_trap(&fault_trip(kind, FAULT_DELIVERED_TO_REPLY[kind]), which)
+                != Some(true)
                 || heap_allocations_round_trip(&reply, which) != Some(true)
             {
+                return Some(false);
+            }
+            let (waited, _, _, resumed) = dispatch_round_trip(&handler_waits_again);
+            if !matches!(waited, Dispatched::Blocked) {
+                crate::kprintln!(
+                    "[smp-test] FAIL: heap-allocations-per-syscall: {}: the handler did not wait again",
+                    FAULT_PLAIN_REPLIES[kind]
+                );
+                return Some(false);
+            }
+            if !restarted_as(FAULT_PLAIN_REPLIES[kind], &resumed, fault_restart(kind)) {
                 return Some(false);
             }
         }
@@ -6576,7 +6718,7 @@ fn fault_entries() -> Option<bool> {
 /// this core's heap counter before and after: what it did (printing why when
 /// it did neither of the two things a round trip may do), and the two readings.
 #[cfg(feature = "hw_target")]
-fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64>, [u64; 6]) {
+fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64>, Resumed) {
     dispatch_round_trip_at(trip, 0)
 }
 
@@ -6587,7 +6729,7 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
 fn dispatch_round_trip_at(
     trip: &RoundTrip,
     pc: u64,
-) -> (Dispatched, Option<u64>, Option<u64>, [u64; 6]) {
+) -> (Dispatched, Option<u64>, Option<u64>, Resumed) {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let mut frame = crate::trap::TrapFrame {
         gprs: [0; 31],
@@ -6622,9 +6764,12 @@ fn dispatch_round_trip_at(
     };
     let after = own_heap_allocations(core);
     // The restore replaced the published frame with the resumed thread's
-    // context: its `x0` to `x5` are what that thread resumes with.
-    let mut resumed = [0u64; 6];
-    resumed.copy_from_slice(&frame.gprs[..6]);
+    // context: its `x0` to `x5` and its PC are what that thread resumes with.
+    let mut resumed = Resumed {
+        regs: [0u64; 6],
+        pc: frame.elr_el1,
+    };
+    resumed.regs.copy_from_slice(&frame.gprs[..6]);
     crate::interrupts::restore_interrupts(saved_daif);
     // The restore installed the resumed thread's translation and set the
     // FP/SIMD trap for it.  This core goes on with its bring-up, so both go
@@ -7098,7 +7243,7 @@ fn affinity_move_running() -> Option<bool> {
         return Some(false);
     }
     let (received, _, _, resumed) = dispatch_round_trip_at(&MOVE_THREAD_RECEIVES, FRAME_VADDR);
-    if !matches!(received, Dispatched::Blocked) || resumed[2] != MOVE_MARKER {
+    if !matches!(received, Dispatched::Blocked) || resumed.regs[2] != MOVE_MARKER {
         return move_failed("the thread's receive did not switch core 0 back to the root task");
     }
     if !unmeasured(&MOVE_HOME_SECOND, "the thread was not homed on core 1")
@@ -7166,17 +7311,17 @@ fn heap_allocations_yield_to_linked(which: &str) -> Option<bool> {
         );
         return Some(false);
     };
-    if resumed[1] != CONSUMED_INFO_WORD {
+    if resumed.regs[1] != CONSUMED_INFO_WORD {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the caller resumed with x1={:#x}, expected the consumed-info word {CONSUMED_INFO_WORD:#x}",
-            resumed[1]
+            resumed.regs[1]
         );
         return Some(false);
     }
     crate::kprintln!(
         "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
-        resumed[0],
-        resumed[1]
+        resumed.regs[0],
+        resumed.regs[1]
     );
     if after < before {
         crate::kprintln!(
@@ -7192,9 +7337,26 @@ fn heap_allocations_yield_to_linked(which: &str) -> Option<bool> {
 /// its printed lines.
 #[cfg(feature = "hw_target")]
 fn heap_allocations_round_trip(trip: &RoundTrip, which: &str) -> Option<bool> {
+    heap_allocations_round_trip_resuming(trip, which, None)
+}
+
+/// [`heap_allocations_round_trip`] of a round trip that blocks and resumes
+/// the other thread at `resumes`' PC with its `x0` and `x1`, when given: a
+/// fault answer's restart.
+#[cfg(feature = "hw_target")]
+fn heap_allocations_round_trip_resuming(
+    trip: &RoundTrip,
+    which: &str,
+    resumes: Option<FaultRestart>,
+) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = trip.name;
-    let (outcome, before, after, _) = dispatch_round_trip(trip);
+    let (outcome, before, after, resumed) = dispatch_round_trip(trip);
+    if let (Dispatched::Blocked, Some(expected)) = (&outcome, resumes) {
+        if !restarted_as(name, &resumed, expected) {
+            return Some(false);
+        }
+    }
     let (Some(before), Some(after)) = (before, after) else {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"

@@ -3206,8 +3206,20 @@ handler.  RR4 replaces that path with seL4's fault IPC:
   in place of the delivered-message staging; the donation pop, the receive
   leg and the post-receive donation run unchanged between.  On an unfaulted
   caller it is `endpointReplyRecvOnCore` (`replyRecvTransferOnCore_of_no_fault`).
-  The compiled arm sends a faulted caller to that transition before its
-  in-place paths (`replyRecvResolvedR`).  Before this, a `.replyRecv` answer
+  The compiled arm tests for a fault before its in-place delivery paths
+  (`replyRecvResolvedR`) and answers a faulted caller in place on the shapes
+  whose writes stay in their slots — the reply-receive that blocks, the
+  donated one and the one answering a caller recording no server
+  (`replyRecvFaultArmR`) — with the answer the `.reply` arm applies
+  (`performFaultAnswer`): the caller's fault kind and saved context read off
+  its TCB, the reply's label and words off the register file, restart or
+  abandon applied in place, nothing decoded or built
+  (`faultReplyApplyOnCore_decode_eq_performFaultAnswer`); each composite is
+  proven the transition's (`IPC/CrossCore/FaultAnswerInPlace.lean`).  The
+  `.reply` arm applies it on every fault kind and reply shape
+  (`faultReplyTransferChecked_inPlace`,
+  `faultReplyTransferChecked_donated_inPlace`,
+  `faultReplyTransferChecked_unheld_inPlace`).  Before this, a `.replyRecv` answer
   woke the faulted thread `.ready` with its fault record still set, so the
   next ordinary `.reply` it received — from any server it later called — took
   the fault branch and could set its PC.

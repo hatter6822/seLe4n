@@ -728,7 +728,8 @@ read on the pre-state and carried across the reply leg and the pop
 (`popDonationSettled_receiveGuard`), the specification's reply-receive is the
 reply's writes, the pop and its settle, the receive's block, the server taken
 off its core, its priority walk and the caller's staged message. -/
-theorem replyRecvOnCore_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
+theorem replyRecvAnsweringOnCore_donated_inPlace
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
     (root : SeLe4n.ObjId) (slot : SeLe4n.Slot) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
@@ -744,13 +745,13 @@ theorem replyRecvOnCore_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
     (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
-    endpointReplyRecvOnCore epId tid rid c msg root slot core st =
-      .ok ({ results := #[] }, Architecture.stageDeliveredMessage
+    endpointReplyRecvAnsweringOnCore answer epId tid rid c msg root slot core st =
+      .ok ({ results := #[] }, replyRecvAnswerCaller answer
         (PriorityInheritance.propagatePipChainCrossCore
           (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock
             (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
               ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) epId tid
-            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1 c 0) ∧
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1 c) ∧
       ∃ x, (removeRunnableOnCore (storeReceiveBlock
             (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
               ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) epId tid
@@ -791,10 +792,41 @@ theorem replyRecvOnCore_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     unfold rendezvousDequeuedCall lookupTcb
     simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
   refine ⟨?_, tb, hTb, hBk⟩
-  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
+  unfold endpointReplyRecvAnsweringOnCore
   simp only [hRecS, Option.getD_some, hEq, hPop, hRecv, hEp1, Option.bind_some, hS]
   simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff,
     Architecture.stageWokenSendCompletion_none]
+
+theorem replyRecvOnCore_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+    (root : SeLe4n.ObjId) (slot : SeLe4n.Slot) (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
+    (hRO : ct.replyObject = some rid)
+    (hSRes : tid.isReserved = false)
+    (hG : replyPopsInPlace st c ct.scBindingScCode tid rid = true)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : enqueueAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
+    endpointReplyRecvOnCore epId tid rid c msg root slot core st =
+      .ok ({ results := #[] }, Architecture.stageDeliveredMessage
+        (PriorityInheritance.propagatePipChainCrossCore
+          (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock
+            (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
+              ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1 c 0) ∧
+      ∃ x, (removeRunnableOnCore (storeReceiveBlock
+            (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
+              ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
+        x.ipcState = .blockedOnReceive epId :=
+  replyRecvAnsweringOnCore_donated_inPlace none st epId tid c rid msg root slot core ct ep0 rt ep rp hSz hT hIpc hRO hSRes hG hE hS hR hA hEnq
+    hRp hStash hRec
 
 end DonatedReplyRecv
 
