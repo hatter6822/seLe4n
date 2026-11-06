@@ -172,12 +172,12 @@ ROOT_NAMESPACE = "SeLe4n.Kernel"
 # BOTH directions (see `payoff_status`) so it cannot rot into a silent
 # exemption.
 #
-# It lives under `docs/planning/` rather than beside this script because it is a
-# register of deferred work, which is prose: its closure targets are workstream
-# IDs, and `check_identifier_naming.py` reads a `.txt` outside `docs/` as code.
-# Putting it where the debt register lives keeps both gates honest instead of
-# baselining a new exemption into the naming one.
-PENDING_FILE = "docs/planning/ipc_dethreading_pending.txt"
+# It lives beside this script, not under `docs/`: no gate reads `docs/`
+# (CLAUDE.md, *Writing gates and checks*), and this file decides whether the
+# gate passes.  `check_identifier_naming.py` reads it as data (`#` comments
+# blanked), so a registration's closure target cites its row of
+# `docs/REGISTERED_DEBT.md` by title rather than by workstream ID.
+PENDING_FILE = "scripts/ipc_dethreading_pending.txt"
 
 # The elaborator-backed census module.  A pin, not a derivation, like
 # `PAYOFF_NAMESPACE`: the census-closure reachability check must walk from

@@ -8,8 +8,11 @@ to their execution order.  Every remaining row that adds or changes a kernel
 entry, an object or a type now states how it keeps the zero-allocation rule
 and which exerciser scenario reads 0.  No source changes.
 `docs/planning/ipc_dethreading_pending.txt` is not a plan: it is the empty
-register `scripts/check_ipc_invariant_dethreading.py` reads, and it is left
-as it is.
+register `scripts/check_ipc_invariant_dethreading.py` reads.  Because no
+gate reads `docs/`, it moves beside its checker, to
+`scripts/ipc_dethreading_pending.txt` (`PENDING_FILE`).  The
+identifier-naming gate reads it as data, so a registration's closure target
+now names its `docs/REGISTERED_DEBT.md` row rather than a workstream ID.
 
 - **`CONTEXT_BY_VALUE_PLAN.md`.**  CV2.2 is merged into CV2.1.  CV3.5, CV4.1,
   CV4.2 and the rest of CV4.3 are recorded as landed.  The message-word
@@ -28,8 +31,10 @@ as it is.
     the word retype.
   - configureServer gains a same-core check over a live residual.
   - The three new syscall ids move to 48–50, since WS-ZA took 41–47.
-  - §7.1 adds the zero-allocation table, and Q18 records the SchedControl
-    question.
+  - configureServer becomes a SchedControl invocation, as seL4 does it: the
+    core comes from the capability and the context from `MR0`.  Q18 is
+    decided.
+  - §7.1 adds the zero-allocation table.
 - **`LOCK_STATE_SEPARATION_PLAN.md`.**  The LS3.3 and LS3.4 citations are
   restated, with a zero-allocation note.
 - **`SMP_FINE_LOCK_MIGRATION_PLAN.md`.**  Track D is restated against WS-LS's
@@ -41,10 +46,15 @@ as it is.
   `docs/agent_guide/WORKSTREAM_CONTEXT.md` follow.
 - **`SMP_MULTICORE_COMPLETION_PLAN.md`, `SMP_RELEASE_CLOSURE_PLAN.md` and
   `UNFINISHED_SMP_WORK.md`.**  Each gains a re-read note.
-- **`HARDWARE_PARTITION_ISOLATION_PLAN.md`.**  W5-G, W6-I and W6-N are
-  deleted: their predicates and the fast projection are gone.  Their
-  phases are renumbered, the retired names are restated, and a
-  zero-allocation table is added.
+- **`HARDWARE_PARTITION_ISOLATION_PLAN.md`.**  The plan now complies with
+  `CLAUDE.md`.
+  - The axiom budget is removed: `realmMemoryIsolation` is a theorem.
+  - W3-H's forward-declared `sorry` is deleted.  W6-K states and proves the
+    theorem together.
+  - W5-G, W6-I and W6-N are deleted: their predicates and the fast
+    projection are gone.
+  - W3, W5 and W6 are renumbered, the retired names are restated, and a
+    zero-allocation table is added.
 - **`ZERO_ALLOCATION_SYSCALL_PLAN.md`.**  ZA6.36 is marked as landed, and the
   plan's citations of renumbered CV rows are restated.
   `docs/REGISTERED_DEBT.md` (the WS-CB row) and

@@ -1669,7 +1669,7 @@ RR3.24/RR3.25 composed them: `dispatchCapabilityOnly_preserves_ipcInvariantFull`
 `dispatchSyscall_preserves_ipcInvariantFull`
 (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
 surface they compose), all under pre-state quiescence packs.  The pending
-register [`ipc_dethreading_pending.txt`](ipc_dethreading_pending.txt) is empty
+register [`scripts/ipc_dethreading_pending.txt`](../../scripts/ipc_dethreading_pending.txt) is empty
 and the gate, which checks it in both directions, reports **zero** conjuncts
 bound on a post-state across all **210** statements in the family, with the
 conjunct set and the bundle family both derived from the sources, and prints its

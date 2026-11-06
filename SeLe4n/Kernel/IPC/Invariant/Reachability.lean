@@ -13,7 +13,7 @@
 -- assumptions into consequences.  Staged, not experimental: its consumer is
 -- the staged payoff tier in `IPC.Invariant.DispatchPayoff` (each quiescence
 -- pack's `reachable` field, RR3.23–25; the pending register at
--- `docs/planning/ipc_dethreading_pending.txt` carries zero registrations),
+-- `scripts/ipc_dethreading_pending.txt` carries zero registrations),
 -- and nothing *production* imports it yet — the pair moves to production
 -- together when the call-chain surface promotes.
 
