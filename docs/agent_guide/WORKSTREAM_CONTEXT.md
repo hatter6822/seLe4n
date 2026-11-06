@@ -461,9 +461,10 @@ reads its request as words (`carveRequestWordsK`).  A capability with a
 fieldless target is stored shared and leaves the slot's record in the spares
 (`CNode.insertCellShared`).  A word-valued field is read off its word, not
 its `Nat` (`refusalFieldChunk`).  A scenario added for a new entry is named in
-the gate's pinned set.  Five residuals stay open on their own debt rows: the
-run-queue bucket, the shared carve target, the long send, the bound
-declassified delivery, and opcode 26.
+the gate's pinned set.  A queue removal's guard reads the endpoint's end
+codes (`dualQueueRemovalEnabledCode`), a run queue's buckets are a fixed
+array by priority (`BucketTable`), and a capability copy writes the
+destination slot's own target cell (`CapTarget.copyOver`).
 Since `v0.36.164` (ZA6.1) the timer tick, the reschedule SGI and
 each core's first entry allocate nothing: the tick's dispatch and domain
 accounting never refuse (`scheduleEffectiveOnCore_eq_state`,

@@ -4453,8 +4453,9 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// minted from the endpoint's.
 /// **WS-ZA ZA5.13: the declassification scenario**, run on the exerciser
 /// image's labeling (`SeLe4n.Platform.QemuVirt.Exerciser`): its boot domain is
-/// the top of the lattice and its one authorized downgrade is from there to
-/// the upper domain.  A notification is carved at an upper id
+/// the top of the lattice and its downgrades are from there to the upper
+/// domain and from the upper domain to the low band (WS-ZA ZA6.35, used by
+/// [`bound_declassified_signals`]).  A notification is carved at an upper id
 /// ([`UPPER_NOTIFICATION_ID`], unmeasured, into the frame slot), then, as
 /// whichever thread is current:
 /// - the notification declassified (one audit record, and the caller tagged

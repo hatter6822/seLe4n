@@ -5873,13 +5873,16 @@ Every kernel object has a decidable well-formedness predicate:
   is `predecessorTags`).  An audit read and drain walk the ring's live window
   (`auditWindowVisibleCount`, `auditWindowFindVisible`,
   `auditWindowAllVisible`, each equal to the list view) and build neither the
-  trail nor its visible view.  The declassified signal's admitted form is the
-  stored badge (no bound receiver, no waiter); the read's covers the status,
-  field and actor opcodes (0 to 9, 21 to 24).  Other cases take the
-  specification's arm.  The shipped QEMU labeling is unchanged and refuses all
+  trail nor its visible view.  The declassified signal's admitted forms are the
+  stored badge, the wake of the head waiter and the delivery to a bound
+  receiver, each writing the records its one or two downgrades owe; the read's
+  covers every opcode, 0 to 29 (since `v0.36.204`, ZA6.35).  Other cases take
+  the specification's arm.  The shipped QEMU labeling is unchanged and refuses all
   four calls (`qemuVirt_shippedLabeling_denies`); the allocation exerciser
   measures them on its own test-image entry (`exerciserKernelMain`), whose
-  labeling permits one downgrade and configures the audit monitor.  Each reads
+  labeling permits two downgrades (the boot domain to the upper partition,
+  and the upper partition to a low band in the lower trusted domain) and
+  configures the audit monitor.  Each reads
   0 allocations, and so does an IPC carrying the resulting taint.  That entry
   is a library of its own (`SeLe4nQemuVirtExerciser`, outside `SeLe4n.lean`'s
   closure) compiled into a second archive, `libsele4n_exerciser.a`, which only
@@ -6530,6 +6533,19 @@ Every kernel object has a decidable well-formedness predicate:
   waiter, an endpoint's final delete with several waiters (`cancelAllIPC`) and
   the resume of a thread callers wait on build no cell.  The
   exerciser's third and fourth threads measure each at 0.
+  Since `v0.36.204` (ZA6.35) the gate holds every kernel entry at 0 and a
+  retype's carve at exactly its object's cells (`CLAUDE.md`, *A kernel entry
+  allocates nothing*).  A core's run-queue buckets are a fixed array by
+  priority, as seL4's `ksReadyQueues` is (`BucketTable`).  A capability copy
+  writes the destination slot's own target cell (`CapTarget.copyOver`).  A
+  send of more than four words copies its overflow words from the sender's
+  IPC buffer into the receiver's in place (`sendLongRoutedArm`,
+  `performSendDeliveredLong`).  A signal, declassified signal or interrupt to
+  a notification whose bound thread is blocked receiving delivers to that
+  thread in place (`performSignalBoundDelivered`,
+  `declassifySignalBoundPerform`), its removal guard read off the queue's end
+  codes (`dualQueueRemovalEnabledCode`), and a two-hop downgrade writes both
+  records over the trail (`declassifySignalHopsRecord`).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write
