@@ -105,6 +105,7 @@ SeLe4n.Kernel.KernelRecords.Boot # infra (WS-ZA ZA6.37: the records the started 
 SeLe4n.Kernel.KernelRecords.Finalise # infra (WS-ZA ZA6.37: a final object's finalisation keeps the address-space records and every fault record parked)
 SeLe4n.Kernel.KernelRecords.Delete # infra (WS-ZA ZA6.37: the finalising, zombie and revoking deletes keep the records)
 SeLe4n.Kernel.KernelRecords.VSpace # infra (WS-ZA ZA6.37: the VSpace and page-table arms keep the records)
+SeLe4n.Kernel.KernelRecords.SetSpace # infra (WS-ZA ZA6.37: the thread-space set and the handler arms keep the records)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch # infra (WS-ZA ZA4.5: the run-queue link agreement carried through the capability-only, checked and unchecked syscall dispatch; imports the staged dispatcher reschedule-flag arms)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry # infra (WS-ZA ZA4.5: the run-queue link agreement carried through every committing entry — syscall, tick, reschedule, fault, unknown syscall, FP access, suspend; imports the staged entry reschedule-flag arms)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident # infra (WS-ZA ZA6.8: no core's current or resident thread holds a yield link, carried through every committing entry from boot; imports the staged run-queue entry stages)
