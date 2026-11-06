@@ -7,8 +7,35 @@ original v0.22.0–v0.22.9 target range predates the current tree)
 **Hardware target**: Raspberry Pi 5 successor SoCs (BCM2712 successor with ARMv9-A)
 **Prerequisite**: RPi5 hardware binding foundation (complete since WS-AG);
 post-v1.0.0 scheduling
-**Sub-task count**: 130 atomic units across 10 phases
+**Sub-task count**: the rows of §4 (127 at `v0.36.205`) across 10 phases
 **Axiom budget**: 1 (`realmMemoryIsolation` — hardware GPT guarantee)
+
+**Re-read at `v0.36.205`** (WS-ZA ZA6.36).  Written at `v0.22`; every name
+below was re-read against the tree.  Deleted as unnecessary: W5-G (its
+`machineWordBounded` is gone — machine registers are `UInt64`, bounded by
+type), W6-I and W6-N (`projectStateFast`, `computeObservableSet` and their
+lemmas are gone; `projectState`, `InformationFlow/Projection.lean:1004`, is
+the one projection), and their rows renumbered in W5 and W6.  Restated: the
+retype entry (`retypeFromUntyped`), the send wrapper's soundness theorem, the
+adapter frame operations and the bundle's conjunct count (twenty).  Two
+plan-level conflicts with `CLAUDE.md` are the owner's to decide at opening:
+the axiom budget of one (the project carries none; a tracked exception needs
+a `TPI-D*` annotation) and W3-H's tracked `sorry`, which W6-K closes — a
+proof ordered behind the definitions it states, which the numbering rules
+forbid; W3-H is restated in W6-K's place when the plan opens.
+
+**Zero allocation** (CLAUDE.md, *Key conventions*; held by the QEMU gate
+`heap-allocations-per-syscall`, `scripts/qemu_exerciser_lib.sh`).  The rows
+that change a kernel entry, an object or a type, and how each keeps it:
+
+| Row | How | Scenario that reads 0 |
+|-----|-----|-----------------------|
+| W9-A | `activeMpamPartId` stored as a code word (`0` = none), not an `Option` cell (WS-ZA ZA4.7(b4)'s pattern) | every scenario (the field is read on no path until W9-F) |
+| W9-F | the domain switch writes one register word and the code; no `Option` or list is built | `timer-tick`, `yield` |
+| W9-H | the cross-partition flush is a register sequence in the HAL, a no-op on the model; the wrappers build nothing | `send-to-receiver`, `call`, `signal-to-waiter` |
+| W9-J | the partition check reads the creating thread's domain and the contract; the carve still reads exactly the object's cells | `untyped-retype-*`, at the carve pins |
+| W4-E, W4-G | the GPT functions take a page range (base, count), never a `List PAddr`, when a kernel entry calls them | the realm entry's own scenario, added to the gate's pinned set when its syscall lands |
+| W8-E | MMIO writes from a `MpamConfig` passed by value | boot only; no syscall scenario |
 
 ## 1. Motivation
 
@@ -254,20 +281,18 @@ mechanism that makes that exclusion physically enforceable.
 | W5-D | CC-2 | **Prove `timerNonInterference`.** Statement: given `config.offsets d₁ ≠ config.offsets d₂`, the absolute values `projectDomainTimer config d₁ phys` and `projectDomainTimer config d₂ phys` differ by a constant (`config.offsets d₂ - config.offsets d₁`) regardless of `phys`. Therefore, observing one virtual counter reveals no information about the other domain's execution pattern beyond the public offset difference. Proof: unfold both, subtract, show the difference is independent of `phys`. ~20 lines | `TimerIsolation.lean` | Small |
 | W5-E | CC-2 | **Prove `timerOffsetSeparation`.** Statement: given a `PartitionBoundaryContract` with `timerOffsetDistinct` (W2-E), non-flowing domains (via `partitionCorrectness` from W3-D) have distinct timer offsets. Proof: chain W3-D (mutual non-flow → distinct partitions) with `timerOffsetDistinct` (distinct partitions → distinct offsets). ~15 lines | `TimerIsolation.lean` | Trivial |
 | W5-F | CC-2 | **Define `domainSwitchTimerUpdate`.** `domainSwitchTimerUpdate (config : TimerOffsetConfig) (oldDomain newDomain : DomainId) (ms : MachineState) : MachineState`. Models what happens on domain switch: the physical counter is unchanged, but the visible timer value becomes `projectDomainTimer config newDomain ms.timer`. In the abstract model, this is a no-op on `MachineState` (the offset is conceptual — the hardware applies it transparently). Return `ms` unchanged. ~10 lines | `TimerIsolation.lean` | Trivial |
-| W5-G | CC-2 | **Prove `domainSwitchTimerUpdate_preserves_machineWordBounded`.** Statement: `machineWordBounded ms → machineWordBounded (domainSwitchTimerUpdate config old new ms)`. Since W5-F returns `ms` unchanged, proof is `id`. ~5 lines | `TimerIsolation.lean` | Trivial |
-| W5-H | — | **Extend `RuntimeBoundaryContract` with optional timer isolation.** Add field `timerIsolation : Option TimerOffsetConfig := none` to `RuntimeBoundaryContract` in `Assumptions.lean`. When `some config`, the `timerMonotonic` predicate is understood to hold for virtual counters per-domain (documentation-level strengthening; the `Prop` signature is unchanged — monotonicity of `phys + offset` follows from monotonicity of `phys`). The `:= none` default preserves backward compatibility. ~5 lines | `SeLe4n/Kernel/Architecture/Assumptions.lean` | Trivial |
-| W5-I | — | **Verify backward compatibility.** Build all existing platform contracts that reference `RuntimeBoundaryContract`: `lake build SeLe4n.Platform.RPi5.RuntimeContract`, `lake build SeLe4n.Platform.Sim.RuntimeContract`. Both must compile without changes. Verification-only — no code changes. | — | Trivial |
-| W5-J | — | **Update re-export hub.** Add `import SeLe4n.Kernel.HardwarePartition.TimerIsolation` to `HardwarePartition.lean`. ~1 line | `HardwarePartition.lean` | Trivial |
+| W5-G | — | **Extend `RuntimeBoundaryContract` with optional timer isolation.** Add field `timerIsolation : Option TimerOffsetConfig := none` to `RuntimeBoundaryContract` in `Assumptions.lean`. When `some config`, the `timerMonotonic` predicate is understood to hold for virtual counters per-domain (documentation-level strengthening; the `Prop` signature is unchanged — monotonicity of `phys + offset` follows from monotonicity of `phys`). The `:= none` default preserves backward compatibility. ~5 lines | `SeLe4n/Kernel/Architecture/Assumptions.lean` | Trivial |
+| W5-H | — | **Verify backward compatibility.** Build all existing platform contracts that reference `RuntimeBoundaryContract`: `lake build SeLe4n.Platform.RPi5.RuntimeContract`, `lake build SeLe4n.Platform.Sim.RuntimeContract`. Both must compile without changes. Verification-only — no code changes. | — | Trivial |
+| W5-I | — | **Update re-export hub.** Add `import SeLe4n.Kernel.HardwarePartition.TimerIsolation` to `HardwarePartition.lean`. ~1 line | `HardwarePartition.lean` | Trivial |
 
 **Intra-phase ordering constraints:**
 - W5-A → W5-B (VirtualCounter used by projectDomainTimer)
 - W5-B → W5-C → W5-D (projection function → uniform increment → NI)
 - W5-B → W5-E (uses projectDomainTimer indirectly via W3-D chain)
-- W5-F → W5-G (function → preservation proof)
 - W5-F is independent of W5-C/D/E (domain switch update is separate from NI proofs)
-- W5-H is independent of W5-A through W5-G (modifies a different file)
-- W5-I depends on W5-H
-- **Parallel chains**: {W5-A→W5-B→W5-C→W5-D, W5-E} and {W5-F→W5-G} and {W5-H→W5-I}
+- W5-G is independent of W5-A through W5-F (modifies a different file)
+- W5-H depends on W5-G
+- **Parallel chains**: {W5-A→W5-B→W5-C→W5-D, W5-E} and {W5-F} and {W5-G→W5-H}
 
 **Gate**: `lake build SeLe4n.Kernel.HardwarePartition.TimerIsolation`,
 `lake build SeLe4n.Kernel.Architecture.Assumptions`. Zero `sorry`/`axiom`.
@@ -294,12 +319,10 @@ highest-risk phase because it modifies the core information flow infrastructure.
 | W6-F | CC-4 | **Strengthen `projectObjectIndex` with partition gate.** Object index entries filtered by `objectObservable && partitionObservable`. When `contract = none`, existing behavior preserved. ~3 lines changed | `Projection.lean` | Trivial |
 | W6-G | — | **Thread `contract` parameter through `projectState`.** Add `(contract : Option PartitionBoundaryContract := none)` parameter to `projectState`. Pass it to `projectObjects`, `projectMemory`, `projectIrqSignalLines`, `projectObjectIndex`. Fill in `partitionId` and `cachePartition` fields of the result from `contract`. When `none`, all partition fields are `none` and all sub-projections behave as before. ~15 lines changed | `Projection.lean` | Small |
 | W6-H | — | **Prove `projectState_partition_none_eq` (backward compatibility).** Statement: `projectState none ctx observer st = projectState_original ctx observer st` (where `projectState_original` is the pre-W6 definition, or equivalently, `projectState none` computes the same result as the old function). **Proof strategy**: unfold `projectState`, show each sub-projection with `contract = none` matches the original via `simp [partitionObservable]` (the `none` branch returns `true`, so the `&&` collapses). This is the **critical safety theorem** — if it fails, all existing NI proofs break. ~40 lines | `Projection.lean` | Medium |
-| W6-I | — | **Update `projectStateFast` to match.** Thread the same `contract` parameter through `projectStateFast` (the precomputed-observable-set variant). Update `projectObjectsFast` and `projectIrqSignalLinesFast` to accept and apply the partition gate. Prove `projectStateFast_eq` still holds (the fast path agrees with the slow path including partition filtering). ~30 lines | `Projection.lean` | Small |
-| W6-J | — | **Define `partitionAwareLowEquivalent`.** `partitionAwareLowEquivalent (contract : PartitionBoundaryContract) (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) : Prop := projectState (some contract) ctx observer s₁ = projectState (some contract) ctx observer s₂`. This is strictly stronger than `lowEquivalent` (which uses `projectState none`). ~5 lines | `Projection.lean` | Trivial |
-| W6-K | — | **Prove `partitionAwareLowEquivalent_implies_lowEquivalent`.** Statement: `partitionAwareLowEquivalent contract ctx observer s₁ s₂ → lowEquivalent ctx observer s₁ s₂`. **Proof strategy**: `partitionAwareLowEquivalent` means `projectState (some c)` agrees. Since `partitionObservable (some c)` is a *strengthening* (filters more), agreement on the strengthened projection implies agreement on the original. Formally: if the partition-filtered projection is equal, then applying the weaker filter (which makes more things visible) cannot introduce inequality because both states have the same underlying objects — the weaker filter just reveals more of what's already equal. This requires a monotonicity lemma: `partitionObservable (some c) oid = true → objectObservable ctx observer oid = true → ∃ the projected objects agree`. ~30 lines | `Projection.lean` | Medium |
-| W6-L | — | **Close W3-H sorry: prove `partitionAwareNonInterference`.** Complete the proof in `Correctness.lean`. Under a `PartitionBoundaryContract`, `partitionAwareLowEquivalent` is preserved by all `NonInterferenceStep` constructors. **Proof strategy**: for each constructor, the existing per-operation NI proof already shows the operation's state changes are localized to non-observable targets (via `hEndpointHigh`, `hSenderHigh`, etc.). With partition-aware projection, these targets are *even more* filtered (by partition in addition to label). Since the existing proof shows the change is invisible under the weaker filter, it is a fortiori invisible under the stronger filter. Formally: compose each existing `_preserves_lowEquivalent` theorem with `partitionAwareLowEquivalent_implies_lowEquivalent` (W6-K). ~40 lines | `Correctness.lean` | Medium |
-| W6-M | CC-1 | **Update covert channel documentation (scheduling).** Add structured doc comment to `projectActiveDomain` explaining that under hardware partitioning, while scheduling state is still visible (scheduling transparency is by design), the cache-timing amplification vector is eliminated: an observer in partition A cannot infer partition B's memory access patterns from cache pressure because MPAM isolates the cache ways. ~15 lines (doc comment only) | `Projection.lean` | Trivial |
-| W6-N | — | **Update `computeObservableSet` to include partition gate.** The precomputed hash set (WS-G9) must also filter by `partitionObservable` when a contract is active. Thread `contract` parameter. Prove `foldl_observable_set_mem` still holds with the strengthened filter. ~20 lines | `Projection.lean` | Small |
+| W6-I | — | **Define `partitionAwareLowEquivalent`.** `partitionAwareLowEquivalent (contract : PartitionBoundaryContract) (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) : Prop := projectState (some contract) ctx observer s₁ = projectState (some contract) ctx observer s₂`. This is strictly stronger than `lowEquivalent` (which uses `projectState none`). ~5 lines | `Projection.lean` | Trivial |
+| W6-J | — | **Prove `partitionAwareLowEquivalent_implies_lowEquivalent`.** Statement: `partitionAwareLowEquivalent contract ctx observer s₁ s₂ → lowEquivalent ctx observer s₁ s₂`. **Proof strategy**: `partitionAwareLowEquivalent` means `projectState (some c)` agrees. Since `partitionObservable (some c)` is a *strengthening* (filters more), agreement on the strengthened projection implies agreement on the original. Formally: if the partition-filtered projection is equal, then applying the weaker filter (which makes more things visible) cannot introduce inequality because both states have the same underlying objects — the weaker filter just reveals more of what's already equal. This requires a monotonicity lemma: `partitionObservable (some c) oid = true → objectObservable ctx observer oid = true → ∃ the projected objects agree`. ~30 lines | `Projection.lean` | Medium |
+| W6-K | — | **Close W3-H sorry: prove `partitionAwareNonInterference`.** Complete the proof in `Correctness.lean`. Under a `PartitionBoundaryContract`, `partitionAwareLowEquivalent` is preserved by all `NonInterferenceStep` constructors. **Proof strategy**: for each constructor, the existing per-operation NI proof already shows the operation's state changes are localized to non-observable targets (via `hEndpointHigh`, `hSenderHigh`, etc.). With partition-aware projection, these targets are *even more* filtered (by partition in addition to label). Since the existing proof shows the change is invisible under the weaker filter, it is a fortiori invisible under the stronger filter. Formally: compose each existing `_preserves_lowEquivalent` theorem with `partitionAwareLowEquivalent_implies_lowEquivalent` (W6-J). ~40 lines | `Correctness.lean` | Medium |
+| W6-L | CC-1 | **Update covert channel documentation (scheduling).** Add structured doc comment to `projectActiveDomain` explaining that under hardware partitioning, while scheduling state is still visible (scheduling transparency is by design), the cache-timing amplification vector is eliminated: an observer in partition A cannot infer partition B's memory access patterns from cache pressure because MPAM isolates the cache ways. ~15 lines (doc comment only) | `Projection.lean` | Trivial |
 
 **Intra-phase ordering constraints:**
 - W6-A first (structure fields must exist before any projection function changes)
@@ -308,13 +331,11 @@ highest-risk phase because it modifies the core information flow infrastructure.
 - W6-C through W6-F all depend on W6-B (use `partitionObservable`)
 - W6-G depends on W6-C through W6-F (threads parameter through to all sub-projections)
 - W6-H depends on W6-G (backward compatibility proof over the threaded `projectState`)
-- W6-I depends on W6-G (fast-path variant mirrors slow path)
-- W6-J depends on W6-G (uses `projectState` with `some contract`)
-- W6-K depends on W6-J + W6-H (strengthened equiv implies original equiv)
-- W6-L depends on W6-K (uses `partitionAwareLowEquivalent_implies_lowEquivalent`)
-- W6-M is independent (doc comment only)
-- W6-N depends on W6-B (uses `partitionObservable`)
-- **Critical path**: W6-A → W6-B → W6-C → W6-G → W6-H → W6-K → W6-L
+- W6-I depends on W6-G (uses `projectState` with `some contract`)
+- W6-J depends on W6-I + W6-H (strengthened equiv implies original equiv)
+- W6-K depends on W6-J (uses `partitionAwareLowEquivalent_implies_lowEquivalent`)
+- W6-L is independent (doc comment only)
+- **Critical path**: W6-A → W6-B → W6-C → W6-G → W6-H → W6-J → W6-K
 
 **Gate**: `lake build SeLe4n.Kernel.InformationFlow.Projection`,
 `lake build SeLe4n.Kernel.HardwarePartition.Correctness`,
@@ -430,20 +451,20 @@ branches are dead and existing proofs apply unchanged.
 | ID | Ref | Description | Files | Est. |
 |----|-----|-------------|-------|------|
 | W9-A | CC-1 | **Add `activeMpamPartId` field to `MachineState`.** Add `activeMpamPartId : Option PartitionId := none` to `MachineState` in `Machine.lean`. This tracks which MPAM PARTID is currently active in the hardware register. The `:= none` default preserves all existing `MachineState` construction sites. ~3 lines | `SeLe4n/Machine.lean` | Trivial |
-| W9-B | CC-1 | **Prove `activeMpamPartId` is frame-transparent.** Prove that all existing `MachineState` operations (`advanceTimerState`, `writeRegisterState`, `readMemoryState`) preserve `activeMpamPartId` (they don't touch it). Statement: `(advanceTimerState ticks st).machine.activeMpamPartId = st.machine.activeMpamPartId`. Similar for write/read. Proof: unfold each operation, show the new field is not in the modified record fields. ~20 lines | `SeLe4n/Machine.lean` | Small |
+| W9-B | CC-1 | **Prove `activeMpamPartId` is frame-transparent.** Prove that all existing `MachineState` operations (`advanceTimerState`, `writeRegisterState`, `Kernel/Architecture/Adapter.lean:29,33`, and `readMem`, `Machine.lean:1932`) preserve `activeMpamPartId` (they don't touch it). Statement: `(advanceTimerState ticks st).machine.activeMpamPartId = st.machine.activeMpamPartId`. Similar for write/read. Proof: unfold each operation, show the new field is not in the modified record fields. ~20 lines | `SeLe4n/Machine.lean` | Small |
 | W9-C | — | **Define `adapterSwitchPartition`.** `adapterSwitchPartition (pid : PartitionId) (ms : MachineState) : MachineState := { ms with activeMpamPartId := some pid }`. Sets the active MPAM PARTID. ~5 lines | `SeLe4n/Kernel/Architecture/Adapter.lean` | Trivial |
 | W9-D | — | **Define `adapterFlushCacheWays`.** `adapterFlushCacheWays (ways : CacheWayMask) (ms : MachineState) : MachineState := ms`. In the abstract model, cache flushing is a no-op on `MachineState` (the abstract model does not model cache contents — cache isolation is captured by the partition contract proofs, not by state mutation). The flush is modeled as a state annotation that the platform contract can reference. ~10 lines | `SeLe4n/Kernel/Architecture/Adapter.lean` | Trivial |
 | W9-E | — | **Add partition hooks to `AdapterProofHooks`.** Add optional fields: `preserveSwitchPartition : Option (∀ pid st, proofLayerInvariantBundle st → proofLayerInvariantBundle (adapterSwitchPartition pid st).machine.toSystemState) := none`, `preserveFlushCacheWays : Option (∀ ways st, proofLayerInvariantBundle st → proofLayerInvariantBundle (adapterFlushCacheWays ways st).machine.toSystemState) := none`. Existing platform hooks (`simRestrictiveAdapterProofHooks`, `rpi5RestrictiveAdapterProofHooks`) pass `none` — unchanged. ~15 lines | `SeLe4n/Kernel/Architecture/Invariant.lean` | Small |
 | W9-F | CC-1 | **Extend `schedule` with partition switch.** In `Scheduler/Operations/Core.lean`, after the domain switch logic (where `activeDomain` changes), add: `match partitionContract with | none => pure () | some c => let oldPart := c.partitionAssignment.assign oldDomain; let newPart := c.partitionAssignment.assign newDomain; if oldPart != newPart then do adapterFlushCacheWays (flushSpec oldDomain newDomain); adapterSwitchPartition newPart else pure ()`. **Sub-steps**: (1) Read lines around domain switch in `Core.lean` to identify insertion point. (2) Add `partitionContract` parameter (defaulting to `none`). (3) Add partition switch logic guarded by `match`. (4) Verify existing proofs compile. ~20 lines added | `Scheduler/Operations/Core.lean` | Medium |
 | W9-G | CC-1 | **Prove `schedule` partition switch preserves `schedulerInvariantBundleFull`.** The partition switch modifies only `machine.activeMpamPartId` (via `adapterSwitchPartition`) and performs a conceptual cache flush (no-op in abstract model). Since `schedulerInvariantBundleFull` does not reference `activeMpamPartId` (it concerns run queues, current thread, domain time), the invariant is frame-preserved. **Proof strategy**: show `activeMpamPartId` is not in any field read by the scheduler invariant predicates, then apply W9-B (frame transparency). ~30 lines | `Scheduler/Operations/Preservation.lean` | Medium |
 | W9-H | CC-4 | **Extend IPC enforcement with cross-partition flush.** In `Enforcement/Wrappers.lean`, for each policy-gated wrapper (9 when this plan was written; 12 since WS-SM SM8.C — read `enforcementBoundaryExtended_count`), add after the `securityFlowsTo` check: if `partitionContract = some c` and sender and receiver are in different partitions, apply `adapterFlushCacheWays` before the IPC operation. This prevents cache-based data exfiltration during cross-partition IPC. Modification pattern: `if partitionCrossCheck c sender receiver then adapterFlushCacheWays ... >>= fun _ => uncheckedOp else uncheckedOp`. ~5 lines per wrapper × 9 = ~45 lines total, but each is mechanical | `Enforcement/Wrappers.lean` | Medium |
-| W9-I | CC-4 | **Prove IPC flush preserves `coreIpcInvariantBundle`.** The cache flush is a no-op in the abstract model (`adapterFlushCacheWays` returns `ms`), so `coreIpcInvariantBundle` is trivially preserved. Statement: `coreIpcInvariantBundle st → coreIpcInvariantBundle (afterFlush st)` where `afterFlush st = st` (definitionally). Proof: `id`. The wrapper correctness theorems (e.g., `endpointSendDualChecked_eq_endpointSendDual_when_allowed`) need a new case for the partition-check branch; when `partitionContract = none`, they reduce to the existing proof. ~30 lines | `Enforcement/Soundness.lean` | Small |
-| W9-J | CC-4 | **Extend `lifecycleRetypeObject` with partition binding.** When a new object is created via `retypeFromUntyped`, if `partitionContract = some c`, the new object's backing domain must match the creating thread's domain (and thus partition). Add a check: `if partitionContract matches some c then verify partitionOfThread caller = expected partition`. If CCA realms are active, assign the object's pages to the domain's realm via `realmCreate`. ~15 lines added | `Lifecycle/Operations.lean` | Small |
-| W9-K | CC-4 | **Prove `lifecycleRetypeObject` partition binding preserves `lifecycleInvariantBundle`.** The partition check is a guard (returns error on failure, no state change). The realm page assignment modifies the GPT (which is not part of `SystemState` — it's a hardware-level structure). Therefore `lifecycleInvariantBundle` is frame-preserved. Proof: case split on partition check success/failure; failure is trivial; success delegates to existing preservation proof. ~25 lines | `Lifecycle/Invariant.lean` | Small |
+| W9-I | CC-4 | **Prove IPC flush preserves `coreIpcInvariantBundle`.** The cache flush is a no-op in the abstract model (`adapterFlushCacheWays` returns `ms`), so `coreIpcInvariantBundle` is trivially preserved. Statement: `coreIpcInvariantBundle st → coreIpcInvariantBundle (afterFlush st)` where `afterFlush st = st` (definitionally). Proof: `id`. The wrapper correctness theorems (e.g., `endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed`, `Enforcement/Wrappers.lean:72`) need a new case for the partition-check branch; when `partitionContract = none`, they reduce to the existing proof. ~30 lines | `Enforcement/Soundness.lean` | Small |
+| W9-J | CC-4 | **Extend the retype with partition binding.** When a new object is created via `retypeFromUntyped` (`Lifecycle/Operations/ScrubAndUntyped.lean:286`; the `lifecycleRetypeObject` entry this row named is gone), if `partitionContract = some c`, the new object's backing domain must match the creating thread's domain (and thus partition). Add a check: `if partitionContract matches some c then verify partitionOfThread caller = expected partition`. If CCA realms are active, assign the object's pages to the domain's realm via `realmCreate`. ~15 lines added | `Lifecycle/Operations.lean` | Small |
+| W9-K | CC-4 | **Prove the retype's partition binding preserves `lifecycleInvariantBundle`.** The partition check is a guard (returns error on failure, no state change). The realm page assignment modifies the GPT (which is not part of `SystemState` — it's a hardware-level structure). Therefore `lifecycleInvariantBundle` is frame-preserved. Proof: case split on partition check success/failure; failure is trivial; success delegates to existing preservation proof. ~25 lines | `Lifecycle/Invariant.lean` | Small |
 | W9-L | — | **Define `partitionCrossSubsystemInvariant`.** Add to `CrossSubsystem.lean`: `partitionCrossSubsystemInvariant (contract : Option PartitionBoundaryContract) (st : SystemState) : Prop`. When `none`: `True` (vacuously satisfied). When `some c`: (1) `activeMpamPartId st.machine = some (c.partitionAssignment.assign st.scheduler.activeDomain)` — PARTID register matches active domain's partition, (2) `∀ oid obj, st.objects[oid]? = some obj → partitionOf oid = c.partitionAssignment.assign (domainOf oid)` — all objects are in their domain's partition. ~20 lines | `CrossSubsystem.lean` | Small |
 | W9-M | — | **Prove `partitionCrossSubsystemInvariant_none`.** When `contract = none`, the invariant is `True`. Proof: `trivial`. This is the backward compatibility lemma — existing proofs that carry `crossSubsystemInvariant st` can discharge the new partition component by `exact True.intro`. ~5 lines | `CrossSubsystem.lean` | Trivial |
-| W9-N | — | **Extend `proofLayerInvariantBundle` with partition invariant.** Add `partitionCrossSubsystemInvariant contract st` as the 10th conjunct in `proofLayerInvariantBundle`. The bundle signature gains a `(contract : Option PartitionBoundaryContract := none)` parameter. When `none`, the 10th conjunct is `True` (W9-M). ~5 lines modified | `Architecture/Invariant.lean` | Small |
-| W9-O | — | **Prove existing `preserves_proofLayerInvariantBundle` theorems still hold.** Each existing preservation theorem (`adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle`, etc.) must discharge the new 10th conjunct. When `contract = none`: apply `partitionCrossSubsystemInvariant_none` (W9-M). When `some c`: the existing adapter operations don't modify `activeMpamPartId` (W9-B frame transparency), so the partition invariant is frame-preserved. **This is the critical backward compatibility proof.** ~40 lines total across 3 adapter theorems | `Architecture/Invariant.lean` | Medium |
+| W9-N | — | **Extend `proofLayerInvariantBundle` with partition invariant.** Add `partitionCrossSubsystemInvariant contract st` as the 21st conjunct in `proofLayerInvariantBundle` (twenty at `v0.36.205`, `Architecture/Invariant.lean:196`; re-read at the row's start). The bundle signature gains a `(contract : Option PartitionBoundaryContract := none)` parameter. When `none`, the new conjunct is `True` (W9-M). ~5 lines modified | `Architecture/Invariant.lean` | Small |
+| W9-O | — | **Prove existing `preserves_proofLayerInvariantBundle` theorems still hold.** Each existing preservation theorem (`adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle`, etc.) must discharge the new conjunct. When `contract = none`: apply `partitionCrossSubsystemInvariant_none` (W9-M). When `some c`: the existing adapter operations don't modify `activeMpamPartId` (W9-B frame transparency), so the partition invariant is frame-preserved. **This is the critical backward compatibility proof.** ~40 lines total across 3 adapter theorems | `Architecture/Invariant.lean` | Medium |
 | W9-P | — | **Run full regression.** Execute `./scripts/test_full.sh`. This is mandatory — W9 touches the proof core. If any Tier 3 invariant surface anchor fails, investigate and fix before proceeding. Verification-only — no code changes. | — | Small |
 
 **Intra-phase ordering constraints:**
@@ -528,26 +549,19 @@ synchronized.
 | W2 — Partition Contract | v0.22.1 | 11 | Low | Contract structure + PlatformBinding extension |
 | W3 — Correctness Proofs | v0.22.2 | 10 | Medium | Core theorems (key lemma + corollaries) |
 | W4 — CCA Realm Model | v0.22.3 | 11 | Medium | Hardware axiom + transition proofs |
-| W5 — Timer Isolation | v0.22.4 | 10 | Medium | Timer model + NI proofs |
-| W6 — Projection Strengthening | v0.22.5 | 14 | High | Core IF infrastructure modification |
+| W5 — Timer Isolation | v0.22.4 | 9 | Medium | Timer model + NI proofs |
+| W6 — Projection Strengthening | v0.22.5 | 12 | High | Core IF infrastructure modification |
 | W7 — Sim Instantiation | v0.22.6 | 12 | Low | Concrete proofs by computation |
 | W8 — ARMv9 Instantiation | v0.22.7 | 16 | Medium | Hardware platform definition |
 | W9 — Cross-Subsystem Integration | v0.22.8 | 16 | High | Proof-core modifications |
 | W10 — Validation & Documentation | v0.22.9 | 19 | Low | Tests + docs + closure |
-| **Total** | | **130** | | |
+| **Total** | | **127** | | |
 
 ## 6. Effort Distribution
 
-| Estimate | W1 | W2 | W3 | W4 | W5 | W6 | W7 | W8 | W9 | W10 | Total |
-|----------|----|----|----|----|----|----|----|----|----|----|-------|
-| Trivial | 9 | 9 | 7 | 7 | 8 | 5 | 8 | 4 | 4 | 8 | **69** |
-| Small | 2 | 2 | 3 | 4 | 2 | 6 | 4 | 11 | 8 | 11 | **53** |
-| Medium | 0 | 0 | 0 | 0 | 0 | 3 | 0 | 1 | 4 | 0 | **8** |
-| Large | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| **Total** | **11** | **11** | **10** | **11** | **10** | **14** | **12** | **16** | **16** | **19** | **130** |
-
-No sub-task is rated Large — every original complex task has been decomposed
-into Small or Medium atomic units.
+Each row of §4 carries its own estimate; no sub-task is rated Large.  (A
+hand-summed table stood here and went stale when the `v0.36.205` re-read
+deleted three rows; the rows are the count.)
 
 ## 7. File Inventory
 
@@ -580,7 +594,7 @@ into Small or Medium atomic units.
 | `SeLe4n/Machine.lean` | W9 | Add `activeMpamPartId` field + frame proofs |
 | `SeLe4n/Kernel/Architecture/Assumptions.lean` | W5 | Add `timerIsolation` field |
 | `SeLe4n/Kernel/Architecture/Adapter.lean` | W9 | Add partition adapter ops |
-| `SeLe4n/Kernel/Architecture/Invariant.lean` | W9 | Extend proof bundle (10th conjunct) |
+| `SeLe4n/Kernel/Architecture/Invariant.lean` | W9 | Extend proof bundle (one conjunct) |
 | `SeLe4n/Kernel/InformationFlow/Projection.lean` | W6 | Strengthen projection + doc update |
 | `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` | W6 | Thread partition contract |
 | `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` | W9 | Cross-partition IPC flush |
@@ -615,7 +629,7 @@ evidence (a proof term) when constructing the `PartitionBoundaryContract`.
 ```
 W1 (Types)
  └──→ W2 (Contract)
-       ├──→ W3 (Correctness) ──────────────────→ W6-L (close sorry)
+       ├──→ W3 (Correctness) ──────────────────→ W6-K (close sorry)
        │     └── W3-H: sorry (needs W6)                ↑
        ├──→ W4 (Realm) ────────────────────────────────┤
        ├──→ W5 (Timer) ────────────────────────────────┤
@@ -631,7 +645,7 @@ W1 (Types)
 **Parallelizable after W2 completes**:
 - W3, W4, W5, W7, W8 can all start simultaneously
 - W4, W5, W7, W8 can complete independently of W3
-- W6 requires W3 (for W6-L sorry closure), W4, W5 (for complete partition model)
+- W6 requires W3 (for W6-K sorry closure), W4, W5 (for complete partition model)
 - W9 requires W6 (for projection-aware integration)
 
 **Optimal execution order with maximum parallelism**:
@@ -653,13 +667,12 @@ Time ──→
 | `coreIpcInvariantBundle` | — | — | — | — | W9-I: trivially preserved (flush is no-op) | — |
 | `ipcSchedulerCouplingInvariantBundle` | — | — | — | — | Frame-preserved | — |
 | `lifecycleInvariantBundle` | — | — | — | — | W9-K: case-split preservation | — |
-| `serviceLifecycleCapabilityInvariantBundle` | — | — | — | — | Frame-preserved | — |
 | `vspaceInvariantBundle` | — | — | — | — | Frame-preserved | — |
 | `crossSubsystemInvariant` | — | — | — | — | W9-L: extended with partition predicate | — |
 | `tlbConsistent` | — | — | — | — | Frame-preserved | — |
 | `partitionCrossSubsystemInvariant` (**new**) | — | — | — | — | W9-L/M/N: defined + backward compat | — |
-| `ObservableState` projection | — | W6-A through W6-N: strengthened | W7: instantiated | W8: instantiated | — | W10-J: doc update |
-| `lowEquivalent` / NI | — | W6-K/L: strengthened variant | — | — | — | — |
+| `ObservableState` projection | — | W6-A through W6-L: strengthened | W7: instantiated | W8: instantiated | — | W10-J: doc update |
+| `lowEquivalent` / NI | — | W6-J/L: strengthened variant | — | — | — | — |
 
 ## 11. Risk Assessment
 
@@ -667,12 +680,11 @@ Time ──→
 |------|-----------|--------|------------|
 | W6-H backward compatibility proof fails | Low | Critical | `Option`-gating ensures `none` branch is syntactically identical. W6-H is prioritized early in W6 to detect issues before dependent work proceeds |
 | W9-O reproof of adapter preservation fails | Medium | High | All W9 modifications are `Option`-gated. Frame transparency (W9-B) provides the key lemma. Run `test_full.sh` after every W9 sub-task |
-| W6-L sorry closure is harder than expected | Medium | Medium | The proof structure delegates to existing per-operation NI proofs via W6-K (strengthened implies original). If delegation fails, fall back to per-constructor case analysis (more tedious but mechanically straightforward) |
+| W6-K sorry closure is harder than expected | Medium | Medium | The proof structure delegates to existing per-operation NI proofs via W6-J (strengthened implies original). If delegation fails, fall back to per-constructor case analysis (more tedious but mechanically straightforward) |
 | BCM2712 successor lacks MPAM support | Medium | Medium | W8 is the only phase affected. Simulation (W7), proofs (W3/W6), and all other phases are hardware-independent |
 | MPAM specification complexity exceeds model | Low | Medium | Model only CPBM + MBW_MAX. Ignore monitoring counters, overflow interrupts, QoS priority levels |
 | Lean 4.28.0 limitations for parameterized invariant bundle | Low | Low | `proofLayerInvariantBundle` gains one `Option` parameter. Lean handles optional parameters well; existing callers use the default `none` |
 | CCA realm model too abstract | Medium | Low | Accepted: captures security-relevant properties (memory isolation per realm) without full RMM state machine. Full integration is WS-X scope |
-| `projectStateFast_eq` proof breaks under partition threading | Low | Medium | W6-I is dedicated to this. The fast path mirrors the slow path structurally; threading the same `contract` parameter preserves the equivalence argument |
 
 ## 12. Success Criteria
 
@@ -694,6 +706,6 @@ At WS-W completion:
    hardware bring-up
 9. **Covert channels**: CC-2 and CC-4 marked CLOSED; CC-1 and CC-3 marked
    NARROWED with residual bandwidth documented
-10. **130/130 sub-tasks complete** with all gates passed
+10. **Every row of §4 complete** with all gates passed
 11. **All documentation synchronized**: README, spec, development guide,
     workstream history, claim evidence index, codebase map
