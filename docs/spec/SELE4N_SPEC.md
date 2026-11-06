@@ -5287,27 +5287,28 @@ rather than the live unbind syscall: that syscall leaves its thread queued at
 its legacy priority, the finalise dequeues it.  A caller blocked on its reply
 is blocked on the reply object, so an endpoint only a reply-blocked caller
 names is no longer kept by the retire's names-by-id check.  A thread's own
-final delete now handles its replies too.  A thread blocked on a reply is
-admitted when the reply cancel admits it (`replyCallerCancelAdmitted`), and its
-cancel is the reply finalisation's own (`finaliseReplyCallerCancel`, seL4's
-`reply_remove_tcb`): a head reply is popped and the context the thread lent comes
-back to it; any other reply is spliced out.  A thread borrowing a context returns
-it by its lender's own pop, before the suspend, in seL4's order
-(`finaliseThreadReturnLoan`).  Every other caller waiting on the thread is then
-ended as `reply_remove` ends it: the reply cancel, then the suspend, `.Inactive`
-(`finaliseThreadEndWaiters`, a walk following the thread's live queue head,
-bounded by its own `replyWaitersCount`, in place).  seL4 keeps the callers
-blocked until their reply objects go. Here, reply authority is tied to the
-server, so the server's delete removes each caller's reply then.  The admission
-reads every waiter on the pre-state (`replyWaitersAdmitted`): the lender is
-endable, the thread's own reply, when it lends onward, heads no stack, and every
-other waiter is endable with its reply on no stack.  On a state carrying the
-finalisation's step invariant that the admission admits, neither the loan
-return nor the walk refuses midway (`finaliseThreadEndWaiters_returnLoan_endsAll`,
-the admission read as `replyWaitersAdmitted_plain` and
-`lenderEndable_of_admitted`); the lender's pop
-keeps the plain waiters' guards (`finaliseReplyWaiter_unframed`).  The head
-pop's recipient check refuses no reachable state
+final delete now handles its replies too, as seL4-MCS's `finaliseCap` does.  A
+thread blocked on a reply is admitted when the reply cancel admits it
+(`replyCallerCancelAdmitted`), and its cancel is seL4's `reply_remove_tcb`
+(`finaliseReplyCallerCancel`, since `v0.36.203`): its frame is cut off the stack
+(`cutCancelledCallerHead`, the cut the suspend makes), a head frame letting go
+of its context, which stays with the thread that holds it, and nothing is
+handed back (`finaliseCutReplyCaller`).  A thread's own context, bound or on
+loan, is unbound and goes back to no one (`schedContext_unbindTCB`).  Every
+caller waiting on the thread is left blocked on its reply with no server
+recorded (`finaliseThreadOrphanWaiters`, a walk bounded by the thread's own
+`replyWaitersCount` that refuses no waiter, `orphanReplyWaiters_endsAll`),
+because seL4 records no server for a caller: the reply still names it, and any
+holder of the reply capability may answer it.  The reply legs answer such a
+caller as `doReplyTransfer` does, the reply leg and then the pop at the answered
+frame, with no chain walk; the model keeps its `some expected` replier check
+where a server is recorded, a confused-deputy hardening that seL4 does not have.
+A context that heads a stack no thread holds is popped as `reply_pop` pops it
+(`popUnheldReplyHead`): to the answered caller, settled on its home core, when
+the caller holds no context, and otherwise only the head comes off the context,
+which is bound to no one (`severUnheldSchedContext`).  A reply deleted later is
+`reply_remove`: at a head that pop, elsewhere the sever of the stack.  The head
+pop's recipient check refuses no reachable held state
 (`donationRecipientAcceptable_of_donationOwnerValid`).  A context whose holder is blocked sending or calling is finalised
 seL4's way: the holder is unbound and keeps waiting, its IPC unended, as
 `schedContext_unbindTCB` leaves it — `v0.36.136` retired `passiveServerIdle`,
@@ -5462,12 +5463,10 @@ information-flow projections; the registry stays.  **The finalise's admission
 carried** (`v0.36.147`, plan row 34): on a state carrying the finalisation's
 invariant that `threadFinaliseAdmitted` admits, what each later step's guard
 reads holds on the state that step runs on (`finaliseThread_admissionCarried`):
-the cancel's admission after the notification unbind, the lender's endability
-and every other waiter's plainness after the cancel (the frames `CancelFrame`
-and `LoanKept`, `finaliseThreadCancel_carries`), and the context unbind's
-binding clause after the release (the loan return takes a loan back,
-`finaliseThreadReturnLoan_unbinds`, and the walk, the suspend and the release
-write no binding).  So no step's guard refuses after an earlier step has
+the cancel's admission after the notification unbind (`finaliseThreadCancel_carries`),
+and the context unbind's binding clause after the release (the cancel's cut
+and the orphaning walk keep each binding where it is, and the suspend and the
+release write none).  So no step's guard refuses after an earlier step has
 written — checks before writes — and `finaliseThread_quiesces` reads the
 admission on the pre-state alone.  A step that runs first, on the state the
 admission reads, reads no guard of its own: the notification unbind (the
@@ -9496,9 +9495,10 @@ respect.
    below is why this composite stopped needing the third.  **WS-HP HP4**
    (§8.12.9) retired it from this composite: with the pop keyed on the very
    frame the relaxation sits at, the two name one context by construction.  What
-   the composite carries instead is `replyFrameHeadIsBound` — strictly weaker,
-   vacuous wherever the answered frame heads nothing, and the one arm
-   construction does not close.  The remaining bundle composite's
+   the composite carried instead was `replyFrameHeadIsBound` — strictly weaker,
+   vacuous wherever the answered frame heads nothing — and WS-ZA ZA6.34
+   retired that too: the pop handles a head no thread holds
+   (`popUnheldReplyHead`), so the composite carries the chain alone.  The remaining bundle composite's
    `hDonationReturned` is still at the pre-state, which is what lets the reply
    *transfer* carry it once rather than once per branch.
 4. **`.replyRecv`'s donation pop runs *between* the legs.**  seL4-MCS's own

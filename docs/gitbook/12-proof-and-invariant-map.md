@@ -135,9 +135,10 @@ the caller made inactive, a reply heading a stack popped first as `reply_pop`
 does, the caller's context handed back) and a stashed one unlinked, and a scheduling
 context's ready holder is dequeued and its reply stack unlinked
 (`finaliseReply`, `finaliseSchedContextDeschedule`), and a thread's own
-delete removes its replies, returns a borrowed context to its lender and ends
-every caller waiting on it (`finaliseThreadReturnLoan`,
-`finaliseThreadEndWaiters`); since `v0.36.139` an object that still holds
+delete cuts its own reply as `reply_remove_tcb` does, lets go of the context
+it holds and leaves every caller waiting on it blocked with no server
+(`finaliseThreadOrphanWaiters`; WS-ZA ZA6.34), answered later by a reply-cap
+holder or ended by its reply's delete; since `v0.36.139` an object that still holds
 capabilities — a populated CNode, a thread with space-slot capabilities — is
 emptied first by seL4's zombie loop (`zombieDeleteAt`, bounded by
 `zombieDeleteAt_run`, its fuel proven to suffice since `v0.36.148`,

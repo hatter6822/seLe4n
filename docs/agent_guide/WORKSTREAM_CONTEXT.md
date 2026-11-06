@@ -339,15 +339,15 @@ or calling while unbound (seL4's `schedContext_unbindTCB`), the reclaim and a
 scheduling context's final delete leave such a holder blocked, and new IPC
 code must not reintroduce a scheduler read into `ipcInvariantFull` — a fact
 about the run queues belongs in the scheduler bundle (WS-CB CB1.12's
-`passiveThreadParked`).  A thread's own final delete removes its replies too:
-a reply-blocked thread's reply is removed (`finaliseReplyCallerCancel`), a
-borrowed context goes back by its lender's pop before the suspend
-(`finaliseThreadReturnLoan`), and every caller waiting on the thread is ended
-(`finaliseThreadEndWaiters`, bounded by the thread's count).  New code that
-changes what a waiter's end reads or writes must keep the pre-state admission
-(`replyWaitersAdmitted`) reading exactly what the walk re-reads, and keep
-`finaliseThreadEndWaiters_returnLoan_endsAll` and `replyWaitersAdmitted_plain`
-proved.  Since part
+`passiveThreadParked`).  A thread's own final delete follows seL4-MCS's `finaliseCap` (WS-ZA
+ZA6.34): a reply-blocked thread's frame is cut as `reply_remove_tcb` cuts it
+(`finaliseReplyCallerCancel`), the context it holds, bound or on loan, goes
+back to no one, and every caller waiting on it is left blocked with no server
+recorded (`finaliseThreadOrphanWaiters`, bounded by the thread's count), for a
+reply-cap holder to answer or a reply delete to end.  New code must keep the
+no-server caller answerable on both reply spines and keep the unheld pop
+(`popUnheldReplyHead`: the donation to a caller holding no context, the sever
+otherwise) total on the states the packs admit (`unheldReplyHeadBoundByNone`).  Since part
 26 (`v0.36.139`) a final delete runs the zombie loop (`zombieDeleteAt`,
 `Capability/FrameFinalise.lean`): an object that still holds capabilities (a
 populated CNode, a thread with space-slot capabilities) is emptied first, pass
