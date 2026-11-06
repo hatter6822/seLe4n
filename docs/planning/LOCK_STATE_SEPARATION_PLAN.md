@@ -13,6 +13,14 @@
 > **Audited cut**: the local head after CV0 (`v0.36.59`), from which every
 > figure and `file:line` below was read; a row re-reads what it depends on
 > when it starts.
+> **Re-read at `v0.36.205`** (WS-ZA ZA6.36): the open rows LS3.2–LS3.4 were
+> re-read against the tree; §1's figures and deleted-module cites stay dated
+> to the audited cut.  LS3.3's two consistency lemmas are now one
+> (`LockSetTransitions.lean:6878`).  **Zero allocation**: no open row changes
+> a kernel entry, an object or a type that runs — the lock keys are ghost
+> since LS3.1 and the compiled kernel never builds them — so the QEMU gate
+> `heap-allocations-per-syscall` (`scripts/qemu_exerciser_lib.sh`) reads every
+> scenario unchanged across them, and each row's acceptance re-runs it.
 > **Phases**: LS0..LS3, numbered in execution order; the rows are §4 and no
 > count of them is written anywhere else.  **Prefix**: `LS` (`ls<digit>`
 > matches no identifier under `SeLe4n/`, `tests/`, `rust/`, `scripts/` at the
@@ -369,8 +377,8 @@ documentation (§4's per-row list) and its Tier 3 anchor sweep (§7), and runs
 |---|---|---|
 | LS3.1 (**done `v0.36.70`**) | The twelve `lock` fields, `objStoreLock`, `schedulerLocks`, their accessors, the frozen mirrors, and every definition and lemma §2 item 1 and §3.3 list, deleted; `lockWritesOnly` consumers reduced to kernel equality; the projections' erasure removed; `FineLockFlow.lean` and `NonInterferencePerCore.lean` §6 restated over the pair (`nonInterference_perCore_underLockSet`, `syscallEntryUnderLockSet`, `withLockSet_noUnpermittedWrite` reduce to the step's results); the lock inventories updated to what exists.  **Decisions**: (1) the old LS3.1 and LS3.2 are one row: Tier 1 builds `SeLe4n.Platform.Staged`, which imports `FineLockFlow` and the NI modules, so neither half compiles alone. (2) Deleted modules: `Locks/WithLockSet.lean`, `Locks/WithLockSetInventory.lean`, `Locks/LockSetHeld.lean`, `Locks/LockIdProjection.lean`, `Model/Object/PerObjectLockInventory.lean`, and the `per_object_lock_suite` and `with_lock_set_suite` suites; the bracket over the pair is `withLockSet` (`BracketSpec.lean`). (3) The revalidated-entry model (`RevalidatedLockSet`, its commit and refusal claims) is retired per §2 item 3: no seam executes it, so `FineLockClaimId` keeps nine claims. (4) The SM3.A per-object-lock and SM3.C bracket inventories are deleted with what they listed; the SM3.E inventory keeps its 96 surviving entries (the two object-store lock-word preservation witnesses went with the word). (5) `LockKind.objStore` stays (LS3.3). | `lake build SeLe4n` green; `rg -n 'lock : RwLockState\|objStoreLock\|schedulerLocks' SeLe4n tests` matches history prose only; the Tier 3 NI anchors (§7) pass on the restated names.  Done: Tier 0–3 pass; the manifest census reads 967 entries, 787 theorems. |
 | LS3.2 | The debt row `REGISTERED_DEBT.md:217` closed with its proof name; the second exerciser reading and image size; the spec passages §7 names, `CLAIM_EVIDENCE_INDEX.md` rows 113–130 and §8 row 227 re-read against the tree. | Acceptance §1.1 met and recorded. |
-| LS3.3 | `LockKind.objStore` deleted (§3.1): the ladder becomes nine object levels under the table key and `LockKey.ofLockId` becomes `LockKey.object`.  It is its own row because `LockKey.kind` (`kind_objStore`) and the `permittedKinds` consistency lemmas (`LockSetTransitions.lean:6143,6295`, `p.fst.kind ∈ [… LockKind.objStore]`) still read the kind after the words are gone. | `rg -n 'LockKind.objStore' SeLe4n tests` empty in the code view. |
-| LS3.4 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` Track D re-pointed per §3.4; the CBS plan's lock-set rows (§4.12 and the resolver table at `HIERARCHICAL_CBS_PLAN.md:1533-1537`) re-read for `LockKey`; this plan moved to `docs/dev_history/planning/` and its `WORKSTREAM_CONTEXT.md` section to the closed file. | WS-LS closed in the workstream registry. |
+| LS3.3 | `LockKind.objStore` deleted (§3.1): the ladder becomes nine object levels under the table key and `LockKey.ofLockId` becomes `LockKey.object`.  It is its own row because `LockKey.kind` (`kind_objStore`) and the `permittedKinds` consistency lemmas (`LockSetTransitions.lean:6878` at `v0.36.205`, `p.fst.kind ∈ [… LockKind.objStore]`; `LockKind.objStore` itself at `Locks/Kind.lean:79`) still read the kind after the words are gone. | `rg -n 'LockKind.objStore' SeLe4n tests` empty in the code view. |
+| LS3.4 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` Track D re-pointed per §3.4; the CBS plan's lock-set rows (its §4.12, and §4.9's total-table rows `lockSetForSyscall` through `declaresStaticLockFootprint`; its CB2.1 names the admission slot a `LockKey` member and defers the re-keying here) re-read for `LockKey`; this plan moved to `docs/dev_history/planning/` and its `WORKSTREAM_CONTEXT.md` section to the closed file. | WS-LS closed in the workstream registry. |
 
 Rows are sequential; no two run in parallel.  LS1.1 and LS1.2 are two rows
 because the ghost compiles alone and the re-keying is a sweep of every
