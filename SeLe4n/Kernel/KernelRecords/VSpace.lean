@@ -345,4 +345,12 @@ theorem vspaceMapFromFrameCap {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId}
 
 end RecordsStage
 
+/-- **The instruction-page unify**: a cache operation, writing no object. -/
+theorem RecordsFrame.vspaceUnifyInstructionPage {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : Architecture.vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
+    RecordsFrame st st' :=
+  have F := Architecture.vspaceUnifyInstructionPage_frame h
+  RecordsFrame.of_objects_eq hInv F.1 F.2.1 (by rw [F.2.2.2.1])
+
 end SeLe4n.Kernel

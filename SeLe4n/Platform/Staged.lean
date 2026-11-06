@@ -255,6 +255,7 @@ import SeLe4n.Kernel.KernelRecords.Finalise
 import SeLe4n.Kernel.KernelRecords.Delete
 import SeLe4n.Kernel.KernelRecords.VSpace
 import SeLe4n.Kernel.KernelRecords.SetSpace
+import SeLe4n.Kernel.KernelRecords.Retype
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident
