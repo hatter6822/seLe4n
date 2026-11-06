@@ -301,6 +301,16 @@ theorem observableSlotsConfinedToCores_then_unlinkReplyWaiter {st st' : SystemSt
         (SystemState.unlinkReplyWaiter_scheduler st' w s)
         (SystemState.unlinkReplyWaiter_machine st' w s)))
 
+/-- WS-ZA ZA6.34: the same, for the unlink of a caller whose recorded server
+may be none (it is then on no queue, and nothing moves). -/
+theorem observableSlotsConfinedToCores_then_unlinkReplyWaiterOpt {st st' : SystemState}
+    {cs : List CoreId} (w : SeLe4n.ThreadId) (s? : Option SeLe4n.ThreadId)
+    (h : observableSlotsConfinedToCores st st' cs) :
+    observableSlotsConfinedToCores st (st'.unlinkReplyWaiterOpt w s?) cs := by
+  cases s? with
+  | none => exact h
+  | some s => exact observableSlotsConfinedToCores_then_unlinkReplyWaiter w s h
+
 theorem endpointQueueRemoveDual_confinedToCores (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
@@ -745,30 +755,27 @@ theorem endpointReplyOnCore_confinedToCores (replier target : SeLe4n.ThreadId)
       · next epId replyTarget hIpc =>
         split
         · exact observableSlotsConfinedToCores_of_eq _ rfl
-        · next expected hSome =>
+        · next st1 hStore =>
+          have hOld : st.getTcb? target = some tcb :=
+            (SystemState.getTcb?_eq_some_iff st target tcb).mpr
+              (lookupTcb_some_objects st target tcb hLk)
+          have hT1 : determineTargetCore st1 target = determineTargetCore st target :=
+            storeTcbIpcStateAndMessage_fromTcb_determineTargetCore_eq st st1 target tcb
+              .ready (some msg) target hOld hObjInv hStore
+          have hPre := observableSlotsConfinedToCores_trans
+            (storeTcbIpcStateAndMessage_fromTcb_confinedToCores st st1 target tcb
+              .ready (some msg) hStore)
+            (wakeThread_confinedToCores st1 target executingCore)
+          rw [hT1] at hPre
           split
-          · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · next st1 hStore =>
-            have hOld : st.getTcb? target = some tcb :=
-              (SystemState.getTcb?_eq_some_iff st target tcb).mpr
-                (lookupTcb_some_objects st target tcb hLk)
-            have hT1 : determineTargetCore st1 target = determineTargetCore st target :=
-              storeTcbIpcStateAndMessage_fromTcb_determineTargetCore_eq st st1 target tcb
-                .ready (some msg) target hOld hObjInv hStore
-            have hPre := observableSlotsConfinedToCores_trans
-              (storeTcbIpcStateAndMessage_fromTcb_confinedToCores st st1 target tcb
-                .ready (some msg) hStore)
-              (wakeThread_confinedToCores st1 target executingCore)
-            rw [hT1] at hPre
+          · exact observableSlotsConfinedToCores_then_unlinkReplyWaiterOpt _ _ hPre
+          · next rid hReply =>
             split
-            · exact observableSlotsConfinedToCores_then_unlinkReplyWaiter _ _ hPre
-            · next rid hReply =>
-              split
-              · next unit st2 hConsume =>
-                exact observableSlotsConfinedToCores_then_unlinkReplyWaiter _ _
-                  (observableSlotsConfinedToCores_trans hPre
-                    (removeCallerReplyFrame_confinedToCores _ st2 target rid hConsume))
-              · exact observableSlotsConfinedToCores_of_eq _ rfl
+            · next unit st2 hConsume =>
+              exact observableSlotsConfinedToCores_then_unlinkReplyWaiterOpt _ _
+                (observableSlotsConfinedToCores_trans hPre
+                  (removeCallerReplyFrame_confinedToCores _ st2 target rid hConsume))
+            · exact observableSlotsConfinedToCores_of_eq _ rfl
       · exact observableSlotsConfinedToCores_of_eq _ rfl
 
 -- ============================================================================

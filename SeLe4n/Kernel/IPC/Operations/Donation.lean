@@ -196,7 +196,7 @@ theorem endpointReplyWithDonation_refuses_delegated_replier
     endpointReplyWithDonation replier target msg st = .error .replyCapInvalid := by
   have hReply : endpointReply replier target msg st = .error .replyCapInvalid := by
     unfold endpointReply
-    simp only [Nat.not_lt.mpr hRegs, if_false, hTcb, hIpc,
+    simp only [Nat.not_lt.mpr hRegs, if_false, hTcb, hIpc, Option.all_some,
       hDelegated, Bool.false_eq_true, if_false]
   simp only [endpointReplyWithDonation, hReply]
 

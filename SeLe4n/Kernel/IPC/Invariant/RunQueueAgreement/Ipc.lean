@@ -290,7 +290,7 @@ theorem endpointReplyOnCore_runQueueStage (replier target : SeLe4n.ThreadId) (ms
   repeat' (first | split | dsimp only)
   all_goals first
     | exact RunQueueStage.refl _
-    | (refine RunQueueStage.trans ?_ (SystemState.unlinkReplyWaiter_runQueueStage _ _ _)
+    | (refine RunQueueStage.trans ?_ (SystemState.unlinkReplyWaiterOpt_runQueueStage _ _ _)
        first
         | (refine (storeTcbIpcStateAndMessage_fromTcb_runQueueStage (by assumption)
               (by assumption) rfl).then_wake _ ?_
@@ -550,7 +550,7 @@ theorem endpointReplyOnCore_currentOnCore (replier target : SeLe4n.ThreadId) (ms
   rcases endpointReplyOnCore_state_eq replier target msg c st with
     hEq | ⟨tcb, st1, server, pre, -, hStore, hPost, hTail⟩
   · rw [hEq]
-  · rw [hPost, SchedulerState.currentOnCore, SystemState.unlinkReplyWaiter_scheduler,
+  · rw [hPost, SchedulerState.currentOnCore, SystemState.unlinkReplyWaiterOpt_scheduler,
       ← SchedulerState.currentOnCore]
     have hS1 := storeTcbIpcStateAndMessage_fromTcb_scheduler_eq hStore
     rcases hTail with ⟨-, hEq⟩ | ⟨rid, -, hR⟩
@@ -571,7 +571,7 @@ theorem endpointReplyOnCore_preserves_queueHeadBlockedConsistent (replier target
   · rw [hEq]; exact hQ
   · rw [hPost]
     refine queueHeadBlockedConsistent_of_readViewAgreement (.of_objectsAgreeOffRunLinks
-      (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _)) ?_
     obtain rfl : tcb0 = tcb := Option.some.inj (hL0.symm.trans hL)
     have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 := by
       rw [← storeTcbIpcStateAndMessage_fromTcb_eq hL]; exact hStore

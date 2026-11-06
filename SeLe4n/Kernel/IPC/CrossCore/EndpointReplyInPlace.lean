@@ -187,7 +187,7 @@ theorem replyOnCore_eq_store (st : SystemState) (replier c server : SeLe4n.Threa
     unfold removeCallerReplyFrame
     rw [hW, hSp]
     unfold SystemState.consumeCallerReply SystemState.consumeReply
-    simp only [hRp2, hStR, hT3c, hSt4]
+    simp only [hRp2, hStR, hT3c, hSt4, SystemState.unlinkReplyWaiterOpt]
   · exact (SystemState.getReply?_eq_some_iff _ _ _).mpr
       ((SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks
         (S3.updateTcb c (fun t => { t with replyObjectCode := 0 })) c server).get_reply_iff.mpr hO4q)

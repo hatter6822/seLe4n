@@ -299,6 +299,15 @@ theorem unlinkReplyWaiter_offSchedulerAgrees (st : SystemState) (w s : SeLe4n.Th
       rw [SystemState.unlinkReplyWaiter_eq_objects st w s])
     (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks st w s)
 
+/-- WS-ZA ZA6.34: leaving the queue of the server a reply wait names, if it
+names one (a caller its server's finalisation forgot is on none). -/
+theorem unlinkReplyWaiterOpt_offSchedulerAgrees (st : SystemState) (w : SeLe4n.ThreadId)
+    (s? : Option SeLe4n.ThreadId) :
+    OffSchedulerAgrees st (st.unlinkReplyWaiterOpt w s?) := by
+  cases s? with
+  | none => exact OffSchedulerAgrees.refl st
+  | some s => exact unlinkReplyWaiter_offSchedulerAgrees st w s
+
 /-- WS-ZA ZA4.7: recording a blocking sender's badge and grant bit writes only
 fields off the IPC read view. -/
 theorem recordSendCap_offSchedulerAgrees (st : SystemState) (tid : SeLe4n.ThreadId)

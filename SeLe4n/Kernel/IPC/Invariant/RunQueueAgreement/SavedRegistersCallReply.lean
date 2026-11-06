@@ -107,6 +107,13 @@ theorem of_unlinkReplyWaiter (st : SystemState) (w s : SeLe4n.ThreadId)
   ⟨.of_replyLinks (SystemState.unlinkReplyWaiter_objectsAgreeOffReplyLinks _ _ _),
     SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hInv⟩
 
+/-- WS-ZA ZA6.34: the unlink of a caller whose recorded server may be none. -/
+theorem of_unlinkReplyWaiterOpt (st : SystemState) (w : SeLe4n.ThreadId)
+    (s? : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    savedRegsUnwritten st (st.unlinkReplyWaiterOpt w s?) :=
+  ⟨.of_replyLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ _ _),
+    SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hInv⟩
+
 theorem of_migrate (st : SystemState) (scId : SeLe4n.SchedContextId) (a b : CoreId)
     (hInv : st.objects.invExt) :
     savedRegsUnwritten st (migrateSchedContextReplenishment st scId a b) :=
@@ -492,18 +499,16 @@ theorem endpointReplyOnCore_savedRegsUnwritten (replier target : SeLe4n.ThreadId
     split
     · split
       · exact .refl hInv
-      · split
-        · exact .refl hInv
-        · rename_i st1 hS
-          have h1 := savedRegsUnwritten.of_storeTcbIpcStateAndMessage_fromTcb hInv hL hS
-          have hW := h1.trans (savedRegsUnwritten.of_wakeThread st1 target c h1.2)
-          split
-          · exact hW.trans (savedRegsUnwritten.of_unlinkReplyWaiter _ _ _ hW.2)
-          · split
-            · rename_i st2 hR
-              have h2 := hW.trans (savedRegsUnwritten.of_removeCallerReplyFrame hW.2 hR)
-              exact h2.trans (savedRegsUnwritten.of_unlinkReplyWaiter _ _ _ h2.2)
-            · exact .refl hInv
+      · rename_i st1 hS
+        have h1 := savedRegsUnwritten.of_storeTcbIpcStateAndMessage_fromTcb hInv hL hS
+        have hW := h1.trans (savedRegsUnwritten.of_wakeThread st1 target c h1.2)
+        split
+        · exact hW.trans (savedRegsUnwritten.of_unlinkReplyWaiterOpt _ _ _ hW.2)
+        · split
+          · rename_i st2 hR
+            have h2 := hW.trans (savedRegsUnwritten.of_removeCallerReplyFrame hW.2 hR)
+            exact h2.trans (savedRegsUnwritten.of_unlinkReplyWaiterOpt _ _ _ h2.2)
+          · exact .refl hInv
     · exact .refl hInv
 
 /-- The reply's donation return: the resolved return, the returned context's

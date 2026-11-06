@@ -117,8 +117,8 @@ theorem endpointReplyOnCore_donationChain_cases
   · exact Or.inl (by rw [hEq]; exact hChain)
   · rw [hPost]
     -- the closing unlink writes only reply-waiter links: no chain data moves
-    have hU := SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks pre target server
-    have hFrameU : donationChainFrame pre (pre.unlinkReplyWaiter target server) :=
+    have hU := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks pre target server
+    have hFrameU : donationChainFrame pre (pre.unlinkReplyWaiterOpt target server) :=
       donationChainFrame.of_objectsAgreeOffRunLinks hU
     have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
       rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore

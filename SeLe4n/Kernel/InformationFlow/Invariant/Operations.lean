@@ -2171,12 +2171,8 @@ theorem endpointReply_preserves_projection
     rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
     cases hIpc : tcb.ipcState with
     | blockedOnReply ep replyTarget =>
-      -- AK1-B (I-H02): Fail-closed on replyTarget = none
+      -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
       simp only [hIpc] at hStep
-      cases hRt : replyTarget with
-      | none => simp [hRt] at hStep
-      | some expected =>
-      simp only [hRt] at hStep
       split at hStep
       · -- authorized = true
         cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
@@ -2508,12 +2504,8 @@ theorem endpointReplyRecv_preserves_projection
     -- Case split on ipcState
     cases hIpc : tcb.ipcState with
     | blockedOnReply ep expectedReplier =>
-      -- AK1-B (I-H02): Fail-closed on expectedReplier = none
+      -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
       simp only [hIpc] at hStep
-      cases hExp : expectedReplier with
-      | none => simp [hExp] at hStep
-      | some expected =>
-      simp only [hExp] at hStep
       split at hStep
       · -- authorized = true
         cases hStore : storeTcbIpcStateAndMessage st replyTarget .ready (some replyMsg) with

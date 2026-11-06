@@ -281,33 +281,46 @@ theorem endpointReplyOnCore_preserves_replyWaitersConsistent (replier target : S
     have hO := lookupTcb_some_objects st target tcb hL
     split
     · rename_i ep rt hIpc
+      have hW0 := replyViews_of_tcb hO
       split
       · exact hC
-      · rename_i server
-        have hW0 := replyViews_of_tcb hO
-        have hWSrv : tcb.replyView.server = some server := by
-          show tcb.blockingServer? = some server
-          rw [blockingServer?_eq_ipcServer?, hIpc]; rfl
-        obtain ⟨vs0, hS0⟩ := hC.2.1 target _ server hW0 hWSrv
-        have hU := (ReplyViews.unlinkStep_of_unlink hC hW0 hWSrv hS0).consistent hC
+      · rename_i st' hStore
+        have hI1 := storeTcbIpcStateAndMessage_fromTcb_objects_invExt hInv hStore
+        have hV1 := replyViews_storeTcbIpcStateAndMessage_fromTcb hInv hO hStore
+        have hV2 : (wakeThread st' target c).1.replyViews = ReplyViews.setServer st.replyViews target none := by
+          rw [wakeThread_replyViews_eq _ _ _ hI1 (by
+            rw [hV1]; exact ReplyViews.serverFree_setServer_none _ _), hV1]; rfl
+        -- WS-ZA ZA6.34: the closing unlink, for either recorded server — a caller
+        -- whose server's finalisation forgot it is on no queue, so there is
+        -- nothing to leave and the views are the pre-state's.
+        have hFin : ∀ pre : SystemState,
+            pre.replyViews = ReplyViews.setServer st.replyViews target none →
+            (pre.unlinkReplyWaiterOpt target rt).replyWaitersConsistent := by
+          intro pre hPre
+          cases rt with
+          | none =>
+            have hS : tcb.blockingServer? = none := by
+              rw [blockingServer?_eq_ipcServer?, hIpc]; rfl
+            show ReplyViews.consistent pre.replyViews
+            rw [hPre, ReplyViews.setServer_of_server (fun v hv => by
+              rw [hW0] at hv; cases hv; exact hS)]
+            exact hC
+          | some server =>
+            have hWSrv : tcb.replyView.server = some server := by
+              show tcb.blockingServer? = some server
+              rw [blockingServer?_eq_ipcServer?, hIpc]; rfl
+            obtain ⟨vs0, hS0⟩ := hC.2.1 target _ server hW0 hWSrv
+            have hU := (ReplyViews.unlinkStep_of_unlink hC hW0 hWSrv hS0).consistent hC
+            show ReplyViews.consistent (pre.unlinkReplyWaiter target server).replyViews
+            rw [replyViews_unlinkReplyWaiter, hPre]; exact hU
         split
-        · exact hC
-        · rename_i st' hStore
-          have hI1 := storeTcbIpcStateAndMessage_fromTcb_objects_invExt hInv hStore
-          have hV1 := replyViews_storeTcbIpcStateAndMessage_fromTcb hInv hO hStore
-          have hV2 : (wakeThread st' target c).1.replyViews = ReplyViews.setServer st.replyViews target none := by
-            rw [wakeThread_replyViews_eq _ _ _ hI1 (by
-              rw [hV1]; exact ReplyViews.serverFree_setServer_none _ _), hV1]; rfl
-          split
-          · show ReplyViews.consistent _
-            rw [replyViews_unlinkReplyWaiter, hV2]; exact hU
-          · split
-            · rename_i st'' hRm
-              show ReplyViews.consistent _
-              rw [replyViews_unlinkReplyWaiter, removeCallerReplyFrame_replyViews_eq
-                (wakeThread_preserves_objects_invExt _ _ _ hI1) hRm, hV2]
-              exact hU
-            · exact hC
+        · exact hFin _ hV2
+        · split
+          · rename_i st'' hRm
+            exact hFin _ (by
+              rw [removeCallerReplyFrame_replyViews_eq
+                (wakeThread_preserves_objects_invExt _ _ _ hI1) hRm, hV2])
+          · exact hC
     · exact hC
 
 /-! Priority inheritance writes the boost and the run-queue placement alone. -/

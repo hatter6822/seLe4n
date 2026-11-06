@@ -161,31 +161,27 @@ theorem endpointReply_preserves_capabilityInvariantBundle
       | blockedOnCall _ => simp [hIpc] at hStep
       | blockedOnReply epId replyTarget =>
           simp only [hIpc] at hStep
-          -- AK1-B (I-H02): Fail-closed on replyTarget = none
+          -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
           suffices ∀ st1, storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 →
               capabilityInvariantBundle (ensureRunnable st1 target) by
-            cases replyTarget with
-            | none => simp at hStep
-            | some expected =>
-              simp only at hStep
-              split at hStep
-              · -- authorized = true
-                cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
-                | error e => simp [hTcb] at hStep
-                | ok st1 =>
-                    simp only [hTcb] at hStep
-                    have hMid := this st1 hTcb
-                    -- PR #827 #3 fold: peel the atomic caller↔Reply consume.
-                    cases hRO : tcb.replyObject with
-                    | none =>
-                      simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                      rw [← hStep]; exact hMid
-                    | some rid =>
-                      simp only [hRO] at hStep
-                      exact removeCallerReplyFrame_preserves_capabilityInvariantBundle
-                        _ _ target rid hMid hStep
-              · -- authorized = false
-                simp_all
+            split at hStep
+            · -- authorized = true
+              cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
+              | error e => simp [hTcb] at hStep
+              | ok st1 =>
+                  simp only [hTcb] at hStep
+                  have hMid := this st1 hTcb
+                  -- PR #827 #3 fold: peel the atomic caller↔Reply consume.
+                  cases hRO : tcb.replyObject with
+                  | none =>
+                    simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                    rw [← hStep]; exact hMid
+                  | some rid =>
+                    simp only [hRO] at hStep
+                    exact removeCallerReplyFrame_preserves_capabilityInvariantBundle
+                      _ _ target rid hMid hStep
+            · -- authorized = false
+              simp_all
           -- Dispatch to extracted lemma
           intro st1 hTcb
           exact capabilityInvariantBundle_of_storeTcbAndEnsureRunnable

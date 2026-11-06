@@ -41,6 +41,13 @@ theorem unlinkReplyWaiter_stepCovers (e : CoreId) (st : SystemState) (w s : SeLe
       (SystemState.unlinkReplyWaiter_objectsAgreeOffReplyLinks _ _ _))
     (SystemState.unlinkReplyWaiter_scheduler _ _ _)
 
+/-- WS-ZA ZA6.34: the unlink of a caller whose recorded server may be none. -/
+theorem unlinkReplyWaiterOpt_stepCovers (e : CoreId) (st : SystemState) (w : SeLe4n.ThreadId)
+    (s? : Option SeLe4n.ThreadId) : stepCovers e st (st.unlinkReplyWaiterOpt w s?) := by
+  cases s? with
+  | none => exact stepCovers_refl e st
+  | some s => exact unlinkReplyWaiter_stepCovers e st w s
+
 /-- A TCB write that keeps the key fields moves no key input. -/
 theorem modifyTcb_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
     (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
@@ -1009,33 +1016,31 @@ theorem endpointReplyOnCore_stepCovers (e : CoreId) {replier target : SeLe4n.Thr
     split
     · split
       · exact hRefl
-      · split
-        · exact hRefl
-        · rename_i st1 hS
-          have hM1 := congrArg MachineState.residentCode
-            (storeTcbIpcStateAndMessage_fromTcb_machine_eq hS)
-          have hM1B := congrArg MachineState.coreRegs (storeTcbIpcStateAndMessage_fromTcb_machine_eq hS)
-          unfold storeTcbIpcStateAndMessage_fromTcb at hS
-          have hF1 : capabilityKeyFrame st st1 := by
-            revert hS
-            cases hSt : storeObject target.toObjId _ st with
-            | error _ => intro h; cases h
-            | ok p =>
-              obtain ⟨⟨⟩, s⟩ := p
-              intro h; cases h
-              exact storeObject_tcbKeyKeeping_keyFrame hInv (lookupTcb_some_objects _ _ _ hL) hSt rfl
-          obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st1 target executingCore hF1.2.2
-          have hPre := stepCovers_trans (hF1.stepCovers hM1) hW
-          split
-          · exact ⟨stepCovers_trans hPre (unlinkReplyWaiter_stepCovers e _ _ _),
-              SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hWInv⟩
-          · split
-            · rename_i st2 hR
-              have hF2 := removeCallerReplyFrame_keyFrame hWInv hR
-              exact ⟨stepCovers_trans (stepCovers_trans hPre hF2.stepCovers)
-                (unlinkReplyWaiter_stepCovers e _ _ _),
-                SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hF2.2.2⟩
-            · exact hRefl
+      · rename_i st1 hS
+        have hM1 := congrArg MachineState.residentCode
+          (storeTcbIpcStateAndMessage_fromTcb_machine_eq hS)
+        have hM1B := congrArg MachineState.coreRegs (storeTcbIpcStateAndMessage_fromTcb_machine_eq hS)
+        unfold storeTcbIpcStateAndMessage_fromTcb at hS
+        have hF1 : capabilityKeyFrame st st1 := by
+          revert hS
+          cases hSt : storeObject target.toObjId _ st with
+          | error _ => intro h; cases h
+          | ok p =>
+            obtain ⟨⟨⟩, s⟩ := p
+            intro h; cases h
+            exact storeObject_tcbKeyKeeping_keyFrame hInv (lookupTcb_some_objects _ _ _ hL) hSt rfl
+        obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st1 target executingCore hF1.2.2
+        have hPre := stepCovers_trans (hF1.stepCovers hM1) hW
+        split
+        · exact ⟨stepCovers_trans hPre (unlinkReplyWaiterOpt_stepCovers e _ _ _),
+            SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hWInv⟩
+        · split
+          · rename_i st2 hR
+            have hF2 := removeCallerReplyFrame_keyFrame hWInv hR
+            exact ⟨stepCovers_trans (stepCovers_trans hPre hF2.stepCovers)
+              (unlinkReplyWaiterOpt_stepCovers e _ _ _),
+              SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hF2.2.2⟩
+          · exact hRefl
     · exact hRefl
 
 /-- The reply's donation return covers: the resolved return, the returned

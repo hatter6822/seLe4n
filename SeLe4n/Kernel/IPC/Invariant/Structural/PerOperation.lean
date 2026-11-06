@@ -2607,33 +2607,29 @@ theorem endpointReply_preserves_blockedThreadsPendingMessageConsistent
     | blockedOnCall _ => simp [hIpc] at hStep
     | blockedOnReply epId replyTarget =>
       simp only [hIpc] at hStep
-      -- AK1-B (I-H02): Fail-closed on replyTarget = none
+      -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
       suffices ∀ st1, storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 →
           blockedThreadsPendingMessageConsistent (ensureRunnable st1 target) by
-        cases replyTarget with
-        | none => simp at hStep
-        | some expected =>
-          simp only at hStep
-          split at hStep
-          · -- authorized = true
-            cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
-            | error e => simp [hMsg] at hStep
-            | ok st1 =>
-              simp only [hMsg] at hStep
-              have hMid := this st1 hMsg
-              have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                apply ensureRunnable_objects_invExt
-                exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target .ready (some msg) hObjInv hMsg
-              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-              cases hRO : tcb.replyObject with
-              | none =>
-                simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                rw [← hStep]; exact hMid
-              | some rid =>
-                simp only [hRO] at hStep
-                exact removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ target rid
-                  hObjInvMid hMid hStep
-          · simp_all
+        split at hStep
+        · -- authorized = true
+          cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st1 =>
+            simp only [hMsg] at hStep
+            have hMid := this st1 hMsg
+            have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+              apply ensureRunnable_objects_invExt
+              exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target .ready (some msg) hObjInv hMsg
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
+              simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+              rw [← hStep]; exact hMid
+            | some rid =>
+              simp only [hRO] at hStep
+              exact removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ target rid
+                hObjInvMid hMid hStep
+        · simp_all
       intro st1 hMsg
       exact ensureRunnable_preserves_blockedThreadsPendingMessageConsistent _ _
         (storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
@@ -2684,51 +2680,47 @@ theorem endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent
         suffices ∀ st3, st3.objects.invExt → blockedThreadsPendingMessageConsistent st3 →
             (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
               blockedThreadsPendingMessageConsistent stR.2) by
-          -- AK1-B (I-H02): Fail-closed on expectedReplier = none
-          cases expectedReplier with
-          | none => simp at hStep
-          | some expected =>
-            simp only at hStep
-            split at hStep
-            · revert hStep
-              cases hStore : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-              | error e => simp
-              | ok st1 =>
+          -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
+          split at hStep
+          · revert hStep
+            cases hStore : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+            | error e => simp
+            | ok st1 =>
+              simp only []
+              have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+                st st1 replyTarget _ _ hObjInv hStore
+              have hInv1 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+                st st1 replyTarget .ready (some msg) hObjInv hStore hInv trivial
+              have hInvEns := ensureRunnable_preserves_blockedThreadsPendingMessageConsistent
+                st1 replyTarget hInv1
+              have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by
+                exact ensureRunnable_objects_invExt _ _ (by assumption)
+              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+              cases hRO : tcb.replyObject with
+              | none =>
                 simp only []
-                have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
-                  st st1 replyTarget _ _ hObjInv hStore
-                have hInv1 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-                  st st1 replyTarget .ready (some msg) hObjInv hStore hInv trivial
-                have hInvEns := ensureRunnable_preserves_blockedThreadsPendingMessageConsistent
-                  st1 replyTarget hInv1
-                have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by
-                  exact ensureRunnable_objects_invExt _ _ (by assumption)
-                -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-                cases hRO : tcb.replyObject with
-                | none =>
-                  simp only []
-                  cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+                | error e => simp
+                | ok result =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hEq⟩; subst hEq
+                  exact this _ hObjInvEns hInvEns result hRecv
+              | some rid =>
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
+                | error e => simp [hCons]
+                | ok p3 =>
+                  obtain ⟨⟨⟩, st3⟩ := p3
+                  simp only [hCons]
+                  have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                  have hInv3 := removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
+                  have hFwd := removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvEns hCons
+                  cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                   | error e => simp
                   | ok result =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
                     intro ⟨_, hEq⟩; subst hEq
-                    exact this _ hObjInvEns hInvEns result hRecv
-                | some rid =>
-                  cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
-                  | error e => simp [hCons]
-                  | ok p3 =>
-                    obtain ⟨⟨⟩, st3⟩ := p3
-                    simp only [hCons]
-                    have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                    have hInv3 := removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
-                    have hFwd := removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvEns hCons
-                    cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
-                    | error e => simp
-                    | ok result =>
-                      simp only [Except.ok.injEq, Prod.mk.injEq]
-                      intro ⟨_, hEq⟩; subst hEq
-                      exact this st3 hObjInv3 hInv3 result hRecv
-            · simp_all
+                    exact this st3 hObjInv3 hInv3 result hRecv
+          · simp_all
         -- Prove the core invariant preservation
         intro st3 hObjInv3 hInv3 stR hRecv
         exact endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent

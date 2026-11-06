@@ -123,47 +123,43 @@ theorem endpointReplyRecv_preserves_ipcInvariant
       suffices ∀ st3, ipcInvariant st3 → st3.objects.invExt →
           (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             ipcInvariant stR.2) by
-        -- AK1-B (I-H02): Fail-closed on expectedReplier = none
-        cases expectedReplier with
-        | none => simp at hStep
-        | some expected =>
-          simp only at hStep
-          split at hStep
-          · revert hStep
-            cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-            | error e => simp
-            | ok st1 =>
+        -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+          | error e => simp
+          | ok st1 =>
+            simp only []
+            have hInv1 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st st1 replyTarget .ready (some msg) hInv hObjInv hMsg
+            have hInv2 : ipcInvariant (ensureRunnable st1 replyTarget) :=
+              fun oid ntfn h => hInv1 oid ntfn ((ensureRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
+            have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
+            have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
               simp only []
-              have hInv1 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st st1 replyTarget .ready (some msg) hInv hObjInv hMsg
-              have hInv2 : ipcInvariant (ensureRunnable st1 replyTarget) :=
-                fun oid ntfn h => hInv1 oid ntfn ((ensureRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
-              have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
-              have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
-              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-              cases hRO : tcb.replyObject with
-              | none =>
-                simp only []
-                cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              | error e => simp
+              | ok result =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                exact this _ hInv2 hObjInvEns result hRecv
+            | some rid =>
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
+              | error e => simp [hCons]
+              | ok p3 =>
+                obtain ⟨⟨⟩, st3⟩ := p3
+                simp only [hCons]
+                have hInv3 := removeCallerReplyFrame_preserves_ipcInvariant _ _ replyTarget rid hObjInvEns hInv2 hCons
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
                   intro ⟨_, hEq⟩; subst hEq
-                  exact this _ hInv2 hObjInvEns result hRecv
-              | some rid =>
-                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
-                | error e => simp [hCons]
-                | ok p3 =>
-                  obtain ⟨⟨⟩, st3⟩ := p3
-                  simp only [hCons]
-                  have hInv3 := removeCallerReplyFrame_preserves_ipcInvariant _ _ replyTarget rid hObjInvEns hInv2 hCons
-                  have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                  cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
-                  | error e => simp
-                  | ok result =>
-                    simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hEq⟩; subst hEq
-                    exact this st3 hInv3 hObjInv3 result hRecv
-          · simp_all
+                  exact this st3 hInv3 hObjInv3 result hRecv
+        · simp_all
       intro st3 hInv3 hObjInv3 stR hRecv
       exact endpointReceiveDual_preserves_ipcInvariant _ stR.2 endpointId receiver stR.1 replyId hInv3 hObjInv3 (by
         have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
@@ -200,110 +196,106 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
           st3.objects.invExt →
           (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             schedulerInvariantBundle stR.2) by
-        -- AK1-B (I-H02): Fail-closed on expectedReplier = none
-        cases expectedReplier with
-        | none => simp at hStep
-        | some expected =>
-          simp only at hStep
-          split at hStep
-          · revert hStep
-            cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-            | error e => simp
-            | ok st1 =>
-              simp only []
-              obtain ⟨hQCC, hRQU, hCTV⟩ := hInv
-              have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 replyTarget .ready (some msg) hMsg
-              have hTargetTcbObj := lookupTcb_some_objects st replyTarget tcb hLookup
-              have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
-              have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
-              have hInvMid : schedulerInvariantBundle (ensureRunnable st1 replyTarget) := by
-                refine ⟨?_, ?_, ?_⟩
-                · unfold queueCurrentConsistent
-                  rw [ensureRunnable_scheduler_current, hSchedEq]
-                  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
-                  | none => trivial
-                  | some x =>
-                    have hNotMem : x ∉ st.scheduler.runnable := by
-                      have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-                    have hNe : x ≠ replyTarget := by
-                      intro hEq
-                      have hObj := lookupTcb_some_objects st replyTarget tcb hLookup
-                      rw [hEq] at hCurr
-                      have hReady : tcb.ipcState = .ready := by
-                        simp [currentThreadIpcReady, hCurr] at hCurrReady; exact hCurrReady tcb hObj
-                      simp [hIpc] at hReady
-                    exact ensureRunnable_not_mem_of_not_mem st1 replyTarget x (hSchedEq ▸ hNotMem) hNe
-                · exact ensureRunnable_nodup st1 replyTarget (hSchedEq ▸ hRQU)
-                · show currentThreadValid (ensureRunnable st1 replyTarget)
-                  unfold currentThreadValid
-                  simp only [ensureRunnable_scheduler_current, (ensureRunnable_objectsAgreeOffRunLinks _ _).exists_tcb_iff, hSchedEq]
-                  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
-                  | none => simp
-                  | some x =>
-                    simp only []
-                    have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
-                      simp [currentThreadValid, hCurr] at hCTV; exact hCTV
-                    by_cases hNeTid : x.toObjId = replyTarget.toObjId
-                    · have hTargetTcb : ∃ t, st.objects[replyTarget.toObjId]? = some (.tcb t) := hNeTid ▸ hCTV'
-                      have h := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 replyTarget .ready (some msg) hObjInv hMsg hTargetTcb
-                      rwa [← hNeTid] at h
-                    · rcases hCTV' with ⟨tcb', hTcbObj⟩
-                      exact ⟨tcb', (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) x.toObjId hNeTid hObjInv hMsg) ▸ hTcbObj⟩
-              have hCNHMid : currentNotEndpointQueueHead (ensureRunnable st1 replyTarget) := by
-                unfold currentNotEndpointQueueHead
+        -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+          | error e => simp
+          | ok st1 =>
+            simp only []
+            obtain ⟨hQCC, hRQU, hCTV⟩ := hInv
+            have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 replyTarget .ready (some msg) hMsg
+            have hTargetTcbObj := lookupTcb_some_objects st replyTarget tcb hLookup
+            have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
+            have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
+            have hInvMid : schedulerInvariantBundle (ensureRunnable st1 replyTarget) := by
+              refine ⟨?_, ?_, ?_⟩
+              · unfold queueCurrentConsistent
                 rw [ensureRunnable_scheduler_current, hSchedEq]
-                cases hCurr' : (st.scheduler.currentOnCore bootCoreId) with
+                cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                 | none => trivial
-                | some tid =>
-                  intro oid ep' hEp'
-                  rw [(ensureRunnable_objectsAgreeOffRunLinks _ _).get_endpoint_iff] at hEp'
-                  have hOidNe : oid ≠ replyTarget.toObjId := by
-                    intro h; subst h
-                    obtain ⟨tcb', hTcb'⟩ := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 replyTarget .ready (some msg) hObjInv hMsg ⟨tcb, hTargetTcbObj⟩
-                    rw [hTcb'] at hEp'; cases hEp'
-                  have hEp'' : st.objects[oid]? = some (.endpoint ep') := by
-                    rwa [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) oid hOidNe hObjInv hMsg] at hEp'
-                  have := hCurrNotHead; simp [currentNotEndpointQueueHead, hCurr'] at this
-                  exact this oid ep' hEp''
-              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-              cases hRO : tcb.replyObject with
-              | none =>
-                simp only []
-                cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+                | some x =>
+                  have hNotMem : x ∉ st.scheduler.runnable := by
+                    have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
+                  have hNe : x ≠ replyTarget := by
+                    intro hEq
+                    have hObj := lookupTcb_some_objects st replyTarget tcb hLookup
+                    rw [hEq] at hCurr
+                    have hReady : tcb.ipcState = .ready := by
+                      simp [currentThreadIpcReady, hCurr] at hCurrReady; exact hCurrReady tcb hObj
+                    simp [hIpc] at hReady
+                  exact ensureRunnable_not_mem_of_not_mem st1 replyTarget x (hSchedEq ▸ hNotMem) hNe
+              · exact ensureRunnable_nodup st1 replyTarget (hSchedEq ▸ hRQU)
+              · show currentThreadValid (ensureRunnable st1 replyTarget)
+                unfold currentThreadValid
+                simp only [ensureRunnable_scheduler_current, (ensureRunnable_objectsAgreeOffRunLinks _ _).exists_tcb_iff, hSchedEq]
+                cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
+                | none => simp
+                | some x =>
+                  simp only []
+                  have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
+                    simp [currentThreadValid, hCurr] at hCTV; exact hCTV
+                  by_cases hNeTid : x.toObjId = replyTarget.toObjId
+                  · have hTargetTcb : ∃ t, st.objects[replyTarget.toObjId]? = some (.tcb t) := hNeTid ▸ hCTV'
+                    have h := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 replyTarget .ready (some msg) hObjInv hMsg hTargetTcb
+                    rwa [← hNeTid] at h
+                  · rcases hCTV' with ⟨tcb', hTcbObj⟩
+                    exact ⟨tcb', (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) x.toObjId hNeTid hObjInv hMsg) ▸ hTcbObj⟩
+            have hCNHMid : currentNotEndpointQueueHead (ensureRunnable st1 replyTarget) := by
+              unfold currentNotEndpointQueueHead
+              rw [ensureRunnable_scheduler_current, hSchedEq]
+              cases hCurr' : (st.scheduler.currentOnCore bootCoreId) with
+              | none => trivial
+              | some tid =>
+                intro oid ep' hEp'
+                rw [(ensureRunnable_objectsAgreeOffRunLinks _ _).get_endpoint_iff] at hEp'
+                have hOidNe : oid ≠ replyTarget.toObjId := by
+                  intro h; subst h
+                  obtain ⟨tcb', hTcb'⟩ := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 replyTarget .ready (some msg) hObjInv hMsg ⟨tcb, hTargetTcbObj⟩
+                  rw [hTcb'] at hEp'; cases hEp'
+                have hEp'' : st.objects[oid]? = some (.endpoint ep') := by
+                  rwa [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) oid hOidNe hObjInv hMsg] at hEp'
+                have := hCurrNotHead; simp [currentNotEndpointQueueHead, hCurr'] at this
+                exact this oid ep' hEp''
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
+              simp only []
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              | error e => simp
+              | ok result =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                exact this _ hInvMid hCNHMid hObjInvEns result hRecv
+            | some rid =>
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
+              | error e => simp [hCons]
+              | ok p3 =>
+                obtain ⟨⟨⟩, st3⟩ := p3
+                simp only [hCons]
+                have hInv3 : schedulerInvariantBundle st3 :=
+                  removeCallerReplyFrame_preserves_schedulerInvariantBundle _ _ replyTarget rid hInvMid hObjInvEns hCons
+                have hCNH3 : currentNotEndpointQueueHead st3 := by
+                  have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvEns hCons
+                  have hSchedC := removeCallerReplyFrame_scheduler_eq _ _ replyTarget rid hCons
+                  unfold currentNotEndpointQueueHead at hCNHMid ⊢
+                  rw [hSchedC]
+                  cases hCurr2 : ((ensureRunnable st1 replyTarget).scheduler.currentOnCore bootCoreId) with
+                  | none => exact True.intro
+                  | some tid =>
+                    rw [hCurr2] at hCNHMid
+                    intro oid ep hEp
+                    exact hCNHMid oid ep ((hNT oid (.endpoint ep)
+                      (fun tt => by exact KernelObject.noConfusion)
+                      (fun rr => by exact KernelObject.noConfusion)).mp hEp)
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
                   intro ⟨_, hEq⟩; subst hEq
-                  exact this _ hInvMid hCNHMid hObjInvEns result hRecv
-              | some rid =>
-                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
-                | error e => simp [hCons]
-                | ok p3 =>
-                  obtain ⟨⟨⟩, st3⟩ := p3
-                  simp only [hCons]
-                  have hInv3 : schedulerInvariantBundle st3 :=
-                    removeCallerReplyFrame_preserves_schedulerInvariantBundle _ _ replyTarget rid hInvMid hObjInvEns hCons
-                  have hCNH3 : currentNotEndpointQueueHead st3 := by
-                    have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvEns hCons
-                    have hSchedC := removeCallerReplyFrame_scheduler_eq _ _ replyTarget rid hCons
-                    unfold currentNotEndpointQueueHead at hCNHMid ⊢
-                    rw [hSchedC]
-                    cases hCurr2 : ((ensureRunnable st1 replyTarget).scheduler.currentOnCore bootCoreId) with
-                    | none => exact True.intro
-                    | some tid =>
-                      rw [hCurr2] at hCNHMid
-                      intro oid ep hEp
-                      exact hCNHMid oid ep ((hNT oid (.endpoint ep)
-                        (fun tt => by exact KernelObject.noConfusion)
-                        (fun rr => by exact KernelObject.noConfusion)).mp hEp)
-                  have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                  cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
-                  | error e => simp
-                  | ok result =>
-                    simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hEq⟩; subst hEq
-                    exact this st3 hInv3 hCNH3 hObjInv3 result hRecv
-          · simp_all
+                  exact this st3 hInv3 hCNH3 hObjInv3 result hRecv
+        · simp_all
       intro st3 hInv3 hCNH3 hObjInv3 stR hRecv
       exact endpointReceiveDual_preserves_schedulerInvariantBundle _ stR.2 endpointId receiver stR.1 replyId hInv3 hCNH3 hObjInv3
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
@@ -338,113 +330,109 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
       suffices ∀ st3, ipcSchedulerContractPredicates st3 → st3.objects.invExt →
           (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             ipcSchedulerContractPredicates stR.2) by
-        -- AK1-B (I-H02): Fail-closed on expectedReplier = none
-        cases expectedReplier with
-        | none => simp at hStep
-        | some expected =>
-          simp only at hStep
-          split at hStep
-          · revert hStep
-            cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-            | error e => simp
-            | ok st1 =>
+        -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+          | error e => simp
+          | ok st1 =>
+            simp only []
+            have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 replyTarget .ready (some msg) hMsg
+            have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
+            have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
+            have hContractMid : ipcSchedulerContractPredicates (ensureRunnable st1 replyTarget) := by
+              refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+              · intro tid tcb' hTcb' hRun'
+                run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+                by_cases hNe : tid.toObjId = replyTarget.toObjId
+                · exact storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
+                · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+                  have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+                  rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+                  · exact hReady tid tcb' hTcbPre (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+                  · exact absurd hEq hNeTid
+              · intro tid tcb' eid hTcb' hIpcState'
+                run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+                by_cases hNe : tid.toObjId = replyTarget.toObjId
+                · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
+                  rw [this] at hIpcState'; cases hIpcState'
+                · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+                  intro hRun'
+                  rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+                  · exact hBlockSend tid tcb' eid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+                  · exact absurd hEq hNeTid
+              · intro tid tcb' eid hTcb' hIpcState'
+                run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+                by_cases hNe : tid.toObjId = replyTarget.toObjId
+                · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
+                  rw [this] at hIpcState'; cases hIpcState'
+                · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+                  intro hRun'
+                  rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+                  · exact hBlockRecv tid tcb' eid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+                  · exact absurd hEq hNeTid
+              · intro tid tcb' eid hTcb' hIpcState'
+                run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+                by_cases hNe : tid.toObjId = replyTarget.toObjId
+                · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
+                  rw [this] at hIpcState'; cases hIpcState'
+                · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+                  intro hRun'
+                  rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+                  · exact hBlockCall tid tcb' eid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+                  · exact absurd hEq hNeTid
+              · intro tid tcb' eid rt hTcb' hIpcState'
+                run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+                by_cases hNe : tid.toObjId = replyTarget.toObjId
+                · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
+                  rw [this] at hIpcState'; cases hIpcState'
+                · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+                  intro hRun'
+                  rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+                  · exact hBlockReply tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+                  · exact absurd hEq hNeTid
+              · -- blockedOnNotificationNotRunnable (WS-F6/D2)
+                intro tid tcb' nid hTcb' hIpcState'
+                run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+                by_cases hNe : tid.toObjId = replyTarget.toObjId
+                · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
+                  rw [this] at hIpcState'; cases hIpcState'
+                · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+                  intro hRun'
+                  rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
+                  · exact hBlockNotif tid tcb' nid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+                  · exact absurd hEq hNeTid
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
               simp only []
-              have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 replyTarget .ready (some msg) hMsg
-              have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
-              have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
-              have hContractMid : ipcSchedulerContractPredicates (ensureRunnable st1 replyTarget) := by
-                refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-                · intro tid tcb' hTcb' hRun'
-                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-                  by_cases hNe : tid.toObjId = replyTarget.toObjId
-                  · exact storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
-                  · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
-                    have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
-                    rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
-                    · exact hReady tid tcb' hTcbPre (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
-                    · exact absurd hEq hNeTid
-                · intro tid tcb' eid hTcb' hIpcState'
-                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-                  by_cases hNe : tid.toObjId = replyTarget.toObjId
-                  · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
-                    rw [this] at hIpcState'; cases hIpcState'
-                  · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
-                    have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
-                    intro hRun'
-                    rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
-                    · exact hBlockSend tid tcb' eid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
-                    · exact absurd hEq hNeTid
-                · intro tid tcb' eid hTcb' hIpcState'
-                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-                  by_cases hNe : tid.toObjId = replyTarget.toObjId
-                  · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
-                    rw [this] at hIpcState'; cases hIpcState'
-                  · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
-                    have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
-                    intro hRun'
-                    rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
-                    · exact hBlockRecv tid tcb' eid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
-                    · exact absurd hEq hNeTid
-                · intro tid tcb' eid hTcb' hIpcState'
-                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-                  by_cases hNe : tid.toObjId = replyTarget.toObjId
-                  · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
-                    rw [this] at hIpcState'; cases hIpcState'
-                  · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
-                    have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
-                    intro hRun'
-                    rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
-                    · exact hBlockCall tid tcb' eid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
-                    · exact absurd hEq hNeTid
-                · intro tid tcb' eid rt hTcb' hIpcState'
-                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-                  by_cases hNe : tid.toObjId = replyTarget.toObjId
-                  · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
-                    rw [this] at hIpcState'; cases hIpcState'
-                  · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
-                    have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
-                    intro hRun'
-                    rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
-                    · exact hBlockReply tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
-                    · exact absurd hEq hNeTid
-                · -- blockedOnNotificationNotRunnable (WS-F6/D2)
-                  intro tid tcb' nid hTcb' hIpcState'
-                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-                  by_cases hNe : tid.toObjId = replyTarget.toObjId
-                  · have := storeTcbIpcStateAndMessage_ipcState_eq st st1 replyTarget .ready (some msg) hObjInv hMsg tcb' (hNe ▸ hTcb')
-                    rw [this] at hIpcState'; cases hIpcState'
-                  · have hNeTid : tid ≠ replyTarget := fun h => hNe (congrArg ThreadId.toObjId h)
-                    have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg) tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
-                    intro hRun'
-                    rcases ensureRunnable_mem_reverse st1 replyTarget tid hRun' with hOld | hEq
-                    · exact hBlockNotif tid tcb' nid hTcbPre hIpcState' (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
-                    · exact absurd hEq hNeTid
-              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-              cases hRO : tcb.replyObject with
-              | none =>
-                simp only []
-                cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              | error e => simp
+              | ok result =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                exact this _ hContractMid hObjInvEns result hRecv
+            | some rid =>
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
+              | error e => simp [hCons]
+              | ok p3 =>
+                obtain ⟨⟨⟩, st3⟩ := p3
+                simp only [hCons]
+                have hContract3 : ipcSchedulerContractPredicates st3 :=
+                  removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates _ _ replyTarget rid hContractMid hObjInvEns hCons
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
                   intro ⟨_, hEq⟩; subst hEq
-                  exact this _ hContractMid hObjInvEns result hRecv
-              | some rid =>
-                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
-                | error e => simp [hCons]
-                | ok p3 =>
-                  obtain ⟨⟨⟩, st3⟩ := p3
-                  simp only [hCons]
-                  have hContract3 : ipcSchedulerContractPredicates st3 :=
-                    removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates _ _ replyTarget rid hContractMid hObjInvEns hCons
-                  have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                  cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
-                  | error e => simp
-                  | ok result =>
-                    simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hEq⟩; subst hEq
-                    exact this st3 hContract3 hObjInv3 result hRecv
-          · simp_all
+                  exact this st3 hContract3 hObjInv3 result hRecv
+        · simp_all
       intro st3 hContract3 hObjInv3 stR hRecv
       exact endpointReceiveDual_preserves_ipcSchedulerContractPredicates _ stR.2 endpointId receiver stR.1 replyId hContract3 hObjInv3 (by
         have : stR = (stR.1, stR.2) := Prod.ext rfl rfl
@@ -479,35 +467,31 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
     | blockedOnCall _ => simp [hIpc] at hStep
     | blockedOnReply epId replyTarget =>
       simp only [hIpc] at hStep
-      -- AK1-B (I-H02): Fail-closed on replyTarget = none
+      -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
       -- Both branches share identical 5-conjunct proof after authorization resolves.
       -- Helper: given st1 from storeTcbIpcStateAndMessage, prove the 5 conjuncts.
       suffices ∀ st1, storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 →
           ipcSchedulerContractPredicates (ensureRunnable st1 target) by
-        cases replyTarget with
-        | none => simp at hStep
-        | some expected =>
-          simp only at hStep
-          split at hStep
-          · -- authorized = true
-            cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
-            | error e => simp [hMsg] at hStep
-            | ok st1 =>
-              simp only [hMsg] at hStep
-              have hMid := this st1 hMsg
-              have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                apply ensureRunnable_objects_invExt
-                exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target .ready (some msg) hObjInv hMsg
-              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-              cases hRO : tcb.replyObject with
-              | none =>
-                simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                rw [← hStep]; exact hMid
-              | some rid =>
-                simp only [hRO] at hStep
-                exact removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates _ _ target rid hMid hObjInvMid hStep
-          · -- authorized = false
-            simp_all
+        split at hStep
+        · -- authorized = true
+          cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st1 =>
+            simp only [hMsg] at hStep
+            have hMid := this st1 hMsg
+            have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+              apply ensureRunnable_objects_invExt
+              exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target .ready (some msg) hObjInv hMsg
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
+              simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+              rw [← hStep]; exact hMid
+            | some rid =>
+              simp only [hRO] at hStep
+              exact removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates _ _ target rid hMid hObjInvMid hStep
+        · -- authorized = false
+          simp_all
       -- Shared proof body
       intro st1 hMsg
       have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 target .ready (some msg) hMsg
