@@ -249,6 +249,7 @@ import SeLe4n.Kernel.KernelRecords.Thread
 import SeLe4n.Kernel.KernelRecords.Capability
 import SeLe4n.Kernel.KernelRecords.SchedulingArms
 import SeLe4n.Kernel.KernelRecords.Timer
+import SeLe4n.Kernel.KernelRecords.Audit
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident
