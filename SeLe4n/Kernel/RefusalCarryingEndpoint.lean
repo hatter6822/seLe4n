@@ -247,16 +247,6 @@ theorem sendDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     hE, hH, hSTcb, hT, hW, hM, ↓reduceIte]
   rfl
 
-/-- Dropping the stash of a thread whose last write left none drops nothing. -/
-theorem clearWokenReceiverStashPure_mapTcbInPlace (Y : SystemState) (r : SeLe4n.ThreadId)
-    (g : TCB → TCB) (h : ∀ t, (g t).pendingReceiveReply = none) :
-    clearWokenReceiverStashPure (some r) (Y.mapTcbInPlace r g) = Y.mapTcbInPlace r g := by
-  unfold clearWokenReceiverStashPure
-  simp only [SystemState.getTcb?_mapTcbInPlace, ↓reduceIte]
-  cases Y.getTcb? r with
-  | none => rfl
-  | some t => simp only [Option.map_some, h]
-
 /-- WS-ZA ZA4.7: **the staged send rendezvous is the delivered one** for a
 message of at most four words read in the sender's registers. -/
 theorem sendRendezvous_eq_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)

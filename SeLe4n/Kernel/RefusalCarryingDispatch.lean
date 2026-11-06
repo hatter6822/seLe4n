@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreScheduleFrames
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
+import SeLe4n.Kernel.IPC.CrossCore.SignalBoundInPlace
 
 /-!
 # The checked syscall entry, refusing in the state it was refused in
@@ -66,6 +67,16 @@ theorem clearWokenReceiverStash_eq_pure (receiver? : Option SeLe4n.ThreadId)
       rcases rTcb.pendingReceiveReply with _ | _
       · rfl
       · exact SystemState.storeObject_eq_withObjectStored _ _ _
+
+/-- Dropping the stash of a thread whose last write left none drops nothing. -/
+theorem clearWokenReceiverStashPure_mapTcbInPlace (Y : SystemState) (r : SeLe4n.ThreadId)
+    (g : TCB → TCB) (h : ∀ t, (g t).pendingReceiveReply = none) :
+    clearWokenReceiverStashPure (some r) (Y.mapTcbInPlace r g) = Y.mapTcbInPlace r g := by
+  unfold clearWokenReceiverStashPure
+  simp only [SystemState.getTcb?_mapTcbInPlace, ↓reduceIte]
+  cases Y.getTcb? r with
+  | none => rfl
+  | some t => simp only [Option.map_some, h]
 
 /-- The checked cross-core signal answers a refusal with the state it was
 handed: the flow gates refuse before anything is written, and the signal
