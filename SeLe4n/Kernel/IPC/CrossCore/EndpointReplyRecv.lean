@@ -143,7 +143,14 @@ def replyRecvPopDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
                 .ok (some (oldScId, holder), SchedContextOps.settleReturnedContext st1'
                   (determineTargetCore st recipient) oldScId)
         | _, _ => .error .invalidArgument
-    | none => .ok (none, st)
+    -- **WS-ZA ZA6.34**: a frame heading a context no thread holds is popped as
+    -- seL4-MCS's `reply_pop` pops it, the context donated to the answered caller
+    -- and settled on its home core; no thread loses a context, so there is no
+    -- holder to report.  A frame heading nothing pops nothing.
+    | none =>
+        match popUnheldReplyHead st rid target (determineTargetCore st target) with
+        | .error e => .error e
+        | .ok st' => .ok (none, st')
 
 /-- The deschedule of the thread the pop unbound, on the Call arm of
 `replyRecvPostReceiveDonation`.

@@ -5856,7 +5856,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     ist.hLifecycleConsistent
   -- 3. ipcInvariantFull (WS-RC R4.C.7: 15 sub-components after uniqueWaiters retirement)
   have hIpcFull : ipcInvariantFull ist.state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ipcInvariant: notifications well-formed
       intro oid ntfn hObj
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
@@ -5977,10 +5977,6 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       intro tid1 _ tcb1 _ _ h1 _ _ hB1 _
       have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
       simp [hTcb1.2.2.2.2.2.2.1, SchedContextBinding.scId?] at hB1
-    · -- AJ1-B: blockedOnReplyHasTarget (boot TCBs have ipcState = .ready)
-      intro tid tcb _ _ hObj hIpc
-      have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
-      rw [hTcb.2.1] at hIpc; cases hIpc
     · -- WS-SM SM6.D (PR #822): replyCallerLinkage (16th, vacuous — boot TCBs have
       -- replyObject = none and boot Replies have caller = none) ∧
       -- pendingReceiveReplyWellFormed (17th, vacuous — boot TCBs have

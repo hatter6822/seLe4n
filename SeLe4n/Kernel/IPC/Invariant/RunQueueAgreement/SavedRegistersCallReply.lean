@@ -107,6 +107,13 @@ theorem of_unlinkReplyWaiter (st : SystemState) (w s : SeLe4n.ThreadId)
   ⟨.of_replyLinks (SystemState.unlinkReplyWaiter_objectsAgreeOffReplyLinks _ _ _),
     SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hInv⟩
 
+/-- WS-ZA ZA6.34: the unlink of a caller whose recorded server may be none. -/
+theorem of_unlinkReplyWaiterOpt (st : SystemState) (w : SeLe4n.ThreadId)
+    (s? : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    savedRegsUnwritten st (st.unlinkReplyWaiterOpt w s?) :=
+  ⟨.of_replyLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ _ _),
+    SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hInv⟩
+
 theorem of_migrate (st : SystemState) (scId : SeLe4n.SchedContextId) (a b : CoreId)
     (hInv : st.objects.invExt) :
     savedRegsUnwritten st (migrateSchedContextReplenishment st scId a b) :=
@@ -284,6 +291,45 @@ theorem of_returnDonatedSchedContextResolved {st st' : SystemState} {serverTid :
   exact ⟨.of_map fun x => returnDonatedSchedContext_getTcb?_map_eq TCB.registerContext
       (fun _ _ _ => rfl) _ st' serverTid scId owner hInv newOwner? hPop x,
     (returnDonatedSchedContextResolved_stepCovers Concurrency.bootCoreId hInv h).2⟩
+
+/-- The unheld pop rewrites the recipient's binding codes and no thread's
+registers. -/
+theorem of_returnUnheldSchedContext {st st' : SystemState} {scId : SeLe4n.SchedContextId}
+    {owner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    savedRegsUnwritten st st' := by
+  refine ⟨.of_map fun x => ?_, returnUnheldSchedContext_objects_invExt hInv h⟩
+  obtain ⟨_, _, ot, -, -, -, -, hO, -, -, hO', tBwd, tFwd, -, -⟩ :=
+    returnUnheldSchedContext_objects hInv h
+  by_cases e : x.toObjId = owner.toObjId
+  · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO'),
+      (SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO)]
+    rfl
+  · cases h1 : st.getTcb? x with
+    | some t0 =>
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr
+        (tFwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1))]
+    | none =>
+      cases h2 : st'.getTcb? x with
+      | none => rfl
+      | some t1 =>
+        have := tBwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h2)
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
+        cases h1
+
+/-- The pop at an unheld head: the unheld pop, then the settle; or the sever,
+which writes no thread. -/
+theorem of_popUnheldReplyHead {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} {home : CoreId} (hInv : st.objects.invExt)
+    (h : popUnheldReplyHead st rid target home = .ok st') : savedRegsUnwritten st st' := by
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
+  · exact .refl hInv
+  rotate_left
+  · exact ⟨.of_map fun x => by rw [severUnheldSchedContext_getTcb?_eq hInv hS],
+      severUnheldSchedContext_objects_invExt hInv hS⟩
+  · have h1 := of_returnUnheldSchedContext hInv hP
+    exact h1.trans (of_settle _ _ _ h1.2)
 
 /-- The pre-receive cleanup returns a donated context and migrates its
 replenishments. -/
@@ -492,18 +538,16 @@ theorem endpointReplyOnCore_savedRegsUnwritten (replier target : SeLe4n.ThreadId
     split
     · split
       · exact .refl hInv
-      · split
-        · exact .refl hInv
-        · rename_i st1 hS
-          have h1 := savedRegsUnwritten.of_storeTcbIpcStateAndMessage_fromTcb hInv hL hS
-          have hW := h1.trans (savedRegsUnwritten.of_wakeThread st1 target c h1.2)
-          split
-          · exact hW.trans (savedRegsUnwritten.of_unlinkReplyWaiter _ _ _ hW.2)
-          · split
-            · rename_i st2 hR
-              have h2 := hW.trans (savedRegsUnwritten.of_removeCallerReplyFrame hW.2 hR)
-              exact h2.trans (savedRegsUnwritten.of_unlinkReplyWaiter _ _ _ h2.2)
-            · exact .refl hInv
+      · rename_i st1 hS
+        have h1 := savedRegsUnwritten.of_storeTcbIpcStateAndMessage_fromTcb hInv hL hS
+        have hW := h1.trans (savedRegsUnwritten.of_wakeThread st1 target c h1.2)
+        split
+        · exact hW.trans (savedRegsUnwritten.of_unlinkReplyWaiterOpt _ _ _ hW.2)
+        · split
+          · rename_i st2 hR
+            have h2 := hW.trans (savedRegsUnwritten.of_removeCallerReplyFrame hW.2 hR)
+            exact h2.trans (savedRegsUnwritten.of_unlinkReplyWaiterOpt _ _ _ h2.2)
+          · exact .refl hInv
     · exact .refl hInv
 
 /-- The reply's donation return: the resolved return, the returned context's
@@ -515,7 +559,7 @@ theorem applyReplyDonationOnCore_savedRegsUnwritten {st st' : SystemState} {rid 
   unfold applyReplyDonationOnCore at h
   dsimp only at h
   split at h
-  · cases h; exact .refl hInv
+  · exact savedRegsUnwritten.of_popUnheldReplyHead hInv h
   · split at h
     · split at h
       · cases h
@@ -543,10 +587,13 @@ theorem endpointReplyCrossCoreDispatch_savedRegsUnwritten (replier target : SeLe
     repeat' split
     all_goals first
       | exact .refl hInv
+      | exact h0
       | exact h0.trans (savedRegsUnwritten.of_propagate _ _ _ _ h0.2)
       | (rename_i hD
          have h1 := h0.trans (applyReplyDonationOnCore_savedRegsUnwritten h0.2 hD)
          exact h1.trans (savedRegsUnwritten.of_propagate _ _ _ _ h1.2))
+      | (rename_i hD
+         exact h0.trans (applyReplyDonationOnCore_savedRegsUnwritten h0.2 hD))
 
 theorem endpointReplyCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingContext)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId) {st : SystemState}
@@ -574,7 +621,11 @@ theorem replyRecvPopDonation_savedRegsUnwritten {rid : SeLe4n.ReplyId} {target :
         have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
         exact h1.trans (savedRegsUnwritten.of_settle _ _ _ h1.2)
     · cases h
-  · cases h; exact .refl hInv
+  · split at h
+    · cases h
+    · rename_i st1 hPop
+      cases h
+      exact savedRegsUnwritten.of_popUnheldReplyHead hInv hPop
 
 theorem replyRecvPostReceiveDonation_savedRegsUnwritten
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}

@@ -497,6 +497,34 @@ theorem of_returnDonationToCancelledCaller (st : SystemState) (v : SeLe4n.Thread
           exact returnDonatedSchedContext_getTcb?_map_eq TCB.registerContext (fun _ _ _ => rfl) _
             st' holder scId v hInv newOwner? hPop x
 
+/-- The pop off an unheld context, and its settle, rewrite the recipient's
+binding codes and no thread's registers; the sever writes no thread. -/
+theorem of_finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    savedRegsKeptExcept W st (finaliseReplyUnheldPop st r c) :=
+  of_map fun x => by
+    rcases finaliseReplyUnheldPop_cases st r c with e | ⟨_, _, st', _, _, hOk, e⟩ |
+        ⟨_, _, _, _, _, _, hOk, e⟩ <;> rw [e]
+    · rw [SchedContextOps.settleReturnedContext_getTcb?]
+      obtain ⟨_, _, ot, -, -, -, -, hO, -, -, hO', tBwd, tFwd, -, -⟩ :=
+        returnUnheldSchedContext_objects hInv hOk
+      by_cases e : x.toObjId = c.toObjId
+      · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO'),
+          (SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO)]
+        rfl
+      · cases h1 : st.getTcb? x with
+        | some t0 =>
+          rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr
+            (tFwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1))]
+        | none =>
+          cases h2 : st'.getTcb? x with
+          | none => rfl
+          | some t1 =>
+            have := tBwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h2)
+            rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
+            cases h1
+    · rw [severUnheldSchedContext_getTcb?_eq hInv hOk]
+
 /-- The reply-frame cut writes replies and contexts alone. -/
 theorem of_cutThreadReplyFrameOut (st : SystemState) (tcb : TCB) (hInv : st.objects.invExt) :
     savedRegsKeptExcept W st (cutThreadReplyFrameOut st tcb) :=
@@ -638,7 +666,7 @@ open SeLe4n.Kernel.Lifecycle.Suspend
 
 /-- WS-ZA ZA6.24: **a finalisation writes the saved registers only of threads no
 core other than `e` held at the entry's start**, step by step over the closed set
-(`finaliseFinalObject_closed`).  Each step keeps the readiness frame
+(`finaliseFinalObject_closed_linked`).  Each step keeps the readiness frame
 (`finaliseFinalObject_readyEntry`) and the bundle the delete carries
 (`finaliseFinalObject_preserves_finaliseLoanBundle`); a cancellation writes the
 thread it cancels, blocked when it is written (an endpoint queue's head by
@@ -649,7 +677,7 @@ other step writes no saved register. -/
 theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemState}
     (B : FinaliseCensusBase st)
     (hR : SystemState.RunQueueEntryStage st s ∧ readyKeptStage (fun _ => False) st s)
-    (hL : finaliseLoanBundle s) (target : Nat) :
+    (hL : finalisingDeleteBundle s) (target : Nat) :
     savedRegsWrittenFree e st s (finaliseFinalObject target s) := by
   let P : SystemState → Prop := fun s' =>
     (SystemState.RunQueueEntryStage st s' ∧ readyKeptStage (fun _ => False) st s') ∧
@@ -662,8 +690,8 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
   have blocked : ∀ {a : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}, P a → a.getTcb? t = some tcb →
       tcb.ipcState ≠ .ready → ∀ u, u = t → offCoreFree e st u := fun h hT hS u hu => by
     subst hu; exact offCoreFree_of_blockedSince B h.1.2 hT hS
-  refine (finaliseFinalObject_closed P ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ target s
-    ⟨hR, hL, .refl s⟩).2.2
+  refine (finaliseFinalObject_closed_linked P ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ target s
+    ⟨hR, hL.1, .refl s⟩ hL.1.2.1 hL.2).1.2.2
   · intro en q s ep t tcb h hE hH hT hC
     have R := h.1; have L := h.2.1
     exact step h (readyEntry_stage R (storeEndpointWaiterCancelled_runQueueStage s en q ep t tcb hE hH hT hC))
@@ -780,6 +808,28 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
           (FinaliseFrame.completeYieldFrom s c L.2.1))
         (completeYieldFrom_savedRegsKeptExcept L.2.1)
         (fun _ ⟨_, _, hS, hC, hu⟩ => hu ▸ offCoreFree_of_yieldFromSince B R.1 hS hC)
+  · intro s w x t h hT _ hS
+    have R := h.1; have L := h.2.1
+    exact step h (readyEntry_stage R (orphanReplyWaiter_runQueueStage hT hS))
+      (L.of_frame (orphanReplyWaiter_preserves_ipcInvariantFull L.1 hT hS)
+        (FinaliseFrame.orphanReplyWaiter s w x L.2.1))
+      ((savedRegsKeptExcept.of_map fun y => by
+          by_cases hy : w.toObjId = y.toObjId
+          · rw [← ThreadId.toObjId_injective _ _ hy, SystemState.mapTcbInPlace_getTcb?_self,
+              Option.map_map]; rfl
+          · rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hy]).trans
+        (.of_replyLinks (SystemState.unlinkReplyWaiter_objectsAgreeOffReplyLinks _ _ _))) none
+  · intro s x r c t h _ hLk hX _ hT hA
+    have R := h.1; have L := h.2.1
+    exact step h (readyEntry_stage R (finaliseReplyUnheldPop_runQueueStage s r c))
+      (finaliseUnheldStep_keepsFinaliseLoanBundle s x r c t L hLk hX hT hA)
+      (.of_finaliseReplyUnheldPop s r c L.2.1) none
+  · intro s _ _ _ t h _ _ _ _
+    have R := h.1; have L := h.2.1
+    exact step h (readyEntry_stage R (cutCancelledCallerHead_runQueueStage s t))
+      (cutCancelledCallerHead_preserves_finaliseLoanBundle s t L)
+      (savedRegsKeptExcept.of_map
+        (cutCancelledCallerHead_getTcb?_map s t TCB.registerContext (fun _ => rfl) L.2.1)) none
 
 end
 
@@ -928,7 +978,7 @@ theorem cspaceDeleteSlotFinalising_savedRegsWritten {e ec : CoreId} {addr : CSpa
     ((savedRegsKeptExcept.of_cspaceDeleteSlot hB.1.2.1 hD).trans
       (savedRegsKeptExcept.of_vspaceRootOnlyWrite hV)).trans
       (savedRegsKeptExcept.of_releaseFinalRegistration _ st2 hI2)
-  have w4 := finaliseFinalObject_savedRegsWrittenFree (e := e) B hR3 hB3.1
+  have w4 := finaliseFinalObject_savedRegsWrittenFree (e := e) B hR3 hB3
     (slotRetireTarget s addr.cnode addr.slot)
   have hI4 := (finaliseFinalObject_preserves_finalisingDeleteBundle
     (slotRetireTarget s addr.cnode addr.slot) _ hB3).1.2.1
@@ -1004,7 +1054,7 @@ theorem finalise (B : FinaliseCensusBase st) (d : Nat) {s : SystemState}
   have hC := hQ.1.finalise d
   ⟨hC, finaliseFinalObject_readyEntry d hQ.2.1,
     savedRegsKeptOffCore_extend hQ.2.2 (finaliseFinalObject_stepCovers e d s hQ.1.2.1.2.1).1 hC.1
-      (fun t => (finaliseFinalObject_savedRegsWrittenFree B hQ.2.1 hQ.1.2.1 d t).imp_right .inl)⟩
+      (fun t => (finaliseFinalObject_savedRegsWrittenFree B hQ.2.1 hQ.1.2 d t).imp_right .inl)⟩
 
 end finaliseCensusChain
 

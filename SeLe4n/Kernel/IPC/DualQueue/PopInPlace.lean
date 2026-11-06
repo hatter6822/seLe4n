@@ -111,6 +111,46 @@ unreserved TCBs. -/
        st.objects.findsInPlace n.toObjId &&
        (st.getTcb? n).isSome)
 
+/-- `sendWakesInPlace` asked of the successor's link **code**, as a compiled
+guard reads it: decoded by a match, so no `some` cell is built for a head that
+has a successor (`sendWakesInPlaceCode_eq`). -/
+@[inline] def sendWakesInPlaceCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (nextCode : Nat) : Bool :=
+  !head.isReserved &&
+  storeLeavesIndexAndTypes st endpointId .endpoint &&
+  st.objects.findsInPlace endpointId &&
+  storeLeavesIndexAndTypes st head.toObjId .tcb &&
+  st.objects.findsInPlace head.toObjId &&
+  (match nextCode with
+   | 0 => true
+   | c + 1 =>
+       let n : SeLe4n.ThreadId := ⟨c⟩
+       !n.isReserved && n != head &&
+       storeLeavesIndexAndTypes st n.toObjId .tcb &&
+       st.objects.findsInPlace n.toObjId &&
+       (st.getTcb? n).isSome)
+
+theorem sendWakesInPlaceCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (nextCode : Nat) :
+    sendWakesInPlaceCode st endpointId head nextCode =
+      sendWakesInPlace st endpointId head (SeLe4n.ThreadId.ofOptCode nextCode) := by
+  unfold sendWakesInPlaceCode
+  rcases nextCode with _ | c <;> rfl
+
+/-- A third thread `t` is not the popped head's successor, asked of the
+successor's link **code** (`queueSuccessorDiffers_eq`). -/
+@[inline] def queueSuccessorDiffers (t : SeLe4n.ThreadId) (nextCode : Nat) : Bool :=
+  match nextCode with
+  | 0 => true
+  | c + 1 => t != (⟨c⟩ : SeLe4n.ThreadId)
+
+theorem queueSuccessorDiffers_eq (t : SeLe4n.ThreadId) (nextCode : Nat) :
+    queueSuccessorDiffers t nextCode =
+      (match SeLe4n.ThreadId.ofOptCode nextCode with
+       | none => true
+       | some n => t != n) := by
+  rcases nextCode with _ | c <;> rfl
+
 /-- The pop of an endpoint queue's head (the receive queue when
 `isReceiveQ`, else the send queue), each write in its slot: the endpoint's
 queue starts at the head's successor, the successor becomes the head, the head
@@ -122,6 +162,23 @@ is unlinked. -/
     | none => s1
     | some n => s1.updateTcb n tcbAsQueueHead
   s2.updateTcb head tcbOffQueue
+
+/-- `storePopHead` behind the successor's link **code**, decoded by a match so
+no `some` cell is built for a head that has a successor
+(`storePopHeadCode_eq`). -/
+@[inline] def storePopHeadCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (head : SeLe4n.ThreadId) (nextCode : Nat) : SystemState :=
+  let s1 := st.modifyObject endpointId (popEndpoint isReceiveQ nextCode)
+  let s2 := match nextCode with
+    | 0 => s1
+    | c + 1 => s1.updateTcb ⟨c⟩ tcbAsQueueHead
+  s2.updateTcb head tcbOffQueue
+
+theorem storePopHeadCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (head : SeLe4n.ThreadId) (nextCode : Nat) :
+    storePopHeadCode st endpointId isReceiveQ head nextCode =
+      storePopHead st endpointId isReceiveQ head (SeLe4n.ThreadId.ofOptCode nextCode) := by
+  rcases nextCode with _ | c <;> rfl
 
 /-- What a pop written in place leaves: the head unlinked, every key found where
 it was, every store still local, and every key other than the endpoint, the head

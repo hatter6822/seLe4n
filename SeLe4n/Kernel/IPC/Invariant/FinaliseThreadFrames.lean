@@ -231,6 +231,25 @@ theorem of_agreeOffReplyLinks {s s' : SystemState}
       exact ⟨t', h', by rw [← hg t', e, hg]⟩)
     (fun _ _ hk => by obtain ⟨t0, h0, -⟩ := h.get_tcb' hk; exact ⟨t0, h0⟩)
 
+/-- ...and an in-place write of one thread that keeps the projection. -/
+theorem mapTcbInPlace (s : SystemState) (w : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hg : ∀ u, g (f u) = g u) : tcbProjKept g (s.mapTcbInPlace w f) s := fun y => by
+  by_cases hy : w.toObjId = y.toObjId
+  · rw [← SeLe4n.ThreadId.toObjId_injective _ _ hy, SystemState.mapTcbInPlace_getTcb?_self,
+      Option.map_map]
+    cases s.getTcb? w with
+    | none => rfl
+    | some u => exact congrArg some (hg u)
+  · rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hy]
+
+/-- ...and so does one waiter's orphaning, for a projection off the IPC state
+word and the reply-waiter links. -/
+theorem orphanReplyWaiter (s : SystemState) (w x : SeLe4n.ThreadId)
+    (hg : ∀ u, g u.serverForgotten = g u) (hg' : ∀ u, g u.withoutReplyLinks = g u) :
+    tcbProjKept g (SeLe4n.Kernel.orphanReplyWaiter s w x) s :=
+  (of_agreeOffReplyLinks (SystemState.unlinkReplyWaiter_objectsAgreeOffReplyLinks _ w x) hg').trans
+    (mapTcbInPlace s w hg)
+
 /-- A frame excluding no thread keeps whatever its key determines. -/
 theorem of_waiterFrame {s s' : SystemState} (h : WaiterFrame s s' (fun _ => False))
     (hg : ∀ u v, TCB.waiterKeyEq u v → g u = g v) : tcbProjKept g s' s := by
@@ -560,6 +579,16 @@ theorem yieldStep : FinaliseYieldStep (finaliseCarried st y) :=
       runCodeBounded.of_runCoresAgree
         (SystemState.completeYieldFrom_objectsAgreeOffYield s c hI.2.1).runCoresAgree hB⟩⟩
 
+/-- WS-ZA ZA6.34: one waiter's orphaning carries it: it keeps the invariant
+(`finaliseStepInvariant.orphan`), is a run-queue stage, a finalisation frame, and
+keeps every run-core code. -/
+theorem orphanStep : FinaliseOrphanStep (finaliseCarried st y) :=
+  fun s w x _ ⟨hI, hR, hF, hB⟩ hT _ hS =>
+    ⟨(hI.orphan hT hS).1, hR.trans (orphanReplyWaiter_runQueueStage hT hS).entry,
+      hF.trans (FinaliseFrame.orphanReplyWaiter s w x hF.invExt).any,
+      runCodeBounded.of_runCoresAgree
+        (tcbProjKept.orphanReplyWaiter s w x (fun _ => rfl) (fun _ => rfl)) hB⟩
+
 theorem replyStep : FinaliseReplyStep (finaliseCarried st y) := by
   intro s x r c t ⟨hI, hR, hF, hB⟩ hX hC hT hG
   refine ⟨(hI.reply hX hC hT hG).1, finaliseReplyStep_runQueueEntryStage st s x r c t hR hX hC hT hG,
@@ -582,6 +611,16 @@ theorem replyStep : FinaliseReplyStep (finaliseCarried st y) := by
   split
   · exact runCodeBounded.propagate _ _ _ _ y hD.2 hD.1
   · exact hD.1
+
+/-- WS-ZA ZA6.34: own-cancel's head cut (`reply_remove_tcb`) carries it: it keeps
+the invariant (`finaliseStepInvariant.cut`), is a run-queue stage, a finalisation
+frame, and writes no thread's run-core code (it clears an owner code alone). -/
+theorem cutStep : FinaliseCutStep (finaliseCarried st y) :=
+  fun s x r c t ⟨hI, hR, hF, hB⟩ hX hC hT hG =>
+    ⟨(hI.cut t).1, hR.trans (cutCancelledCallerHead_runQueueStage s t).entry,
+      FinaliseFrameAny.cutStep st s x r c t hF hX hC hT hG,
+      runCodeBounded.of_runCoresAgree
+        (cutCancelledCallerHead_getTcb?_map s t TCB.runCoreCode (fun _ => rfl) hI.2.1) hB⟩
 
 end finaliseCarried
 
@@ -726,23 +765,18 @@ theorem cancelIpcBlocking_notification_quiets {s : SystemState} {n : SeLe4n.ObjI
   show TCB.quietKey u.bindKey = _
   rw [ku]
 
-/-- **A finalised thread's own reply cancel quiets it**: on a state the
-admission's reply clause admits, the reply removal (the donation return, the
+/-- **A reply's removal quiets its caller**: on a state where the caller is
+finalisable (`replyCallerFinalisable`), the reply removal (the donation return, the
 splice, the restore, the consume and the unlink, a head reply's reclaim, and the
 boost revert) leaves it ready and off every endpoint queue, with its
 bound-notification code and id. -/
-theorem finaliseReplyCallerCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId} {t1 : TCB}
+theorem finaliseReplyRevertCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId} {t1 : TCB}
+    {y : SeLe4n.ObjId} {r : Reply}
     (hInv : s.objects.invExt) (hX : s.getTcb? x = some t1)
-    (hA : replyCallerCancelAdmitted s x t1 = true) :
-    ∃ t2, (finaliseReplyCallerCancel s x t1).getTcb? x = some t2 ∧
-      t2.cancelKey = TCB.quietKey t1.bindKey := by
-  unfold replyCallerCancelAdmitted at hA
-  unfold finaliseReplyCallerCancel
-  split at hA
-  · rename_i r hR
-    rw [if_pos hA]
-    have hG := ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp hA).1).2
-    obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -⟩ := replyCallerFinalisable_parts hG
+    (hG : replyCallerFinalisable s y r x t1 = true) :
+    ∃ t2, (finaliseReplyRevert (finaliseReplyCancel s r x t1) t1.blockingServer?).getTcb? x =
+        some t2 ∧ t2.cancelKey = TCB.quietKey t1.bindKey := by
+  · obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -⟩ := replyCallerFinalisable_parts hG
     have hCI := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s x t1 hInv
     have hC : ∃ t2, (Lifecycle.Suspend.cancelIpcBlocking s x t1).getTcb? x = some t2 ∧
         t2.cancelKey = TCB.quietKey t1.bindKey := by
@@ -793,6 +827,30 @@ theorem finaliseReplyCallerCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId}
         simp only [TCB.cancelKey, a1, a2, a4, a5, a7, a8, a9])
     obtain ⟨t3, h3, k3⟩ := (hRv.trans hF.1).get h2
     exact ⟨t3, h3, k3.trans k2⟩
+
+/-- **A finalised thread's own reply cancel quiets it** (WS-ZA ZA6.34): on a
+state the admission's reply clause admits, the head cut keeps the thread's
+bound-notification code and id (it clears an owner code alone), and the removal
+on the state it leaves quiets the thread (`finaliseReplyRevertCancel_quiets`). -/
+theorem finaliseReplyCallerCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId} {t1 : TCB}
+    (hInv : s.objects.invExt) (hX : s.getTcb? x = some t1)
+    (hA : replyCallerCancelAdmitted s x t1 = true) :
+    ∃ t2, (finaliseReplyCallerCancel s x t1).getTcb? x = some t2 ∧
+      t2.cancelKey = TCB.quietKey t1.bindKey := by
+  unfold replyCallerCancelAdmitted at hA
+  unfold finaliseReplyCallerCancel
+  split at hA
+  · rename_i r hR
+    rw [if_pos hA]
+    have hC := beq_iff_eq.mp ((Bool.and_eq_true _ _).mp hA).1
+    have hG := ((Bool.and_eq_true _ _).mp hA).2
+    obtain ⟨r1, t1', -, -, hX1, hG1, -, -, hE⟩ := finaliseCutReplyCaller_eq hInv hR hC hX hG
+    rw [hE]
+    have hCI := Lifecycle.Suspend.cutCancelledCallerHead_preserves_objects_invExt s t1 hInv
+    have hK := cutCancelledCallerHead_getTcb?_map s t1 TCB.bindKey (fun _ => rfl) hInv x
+    rw [hX1, hX] at hK
+    obtain ⟨t2, h2, k2⟩ := finaliseReplyRevertCancel_quiets hCI hX1 hG1
+    exact ⟨t2, h2, by rw [k2, Option.some.inj hK]⟩
   · cases hA
 
 /-- **The finalisation's cancel quiets the thread** (WS-ZA ZA5.4 part 26): on a
@@ -940,7 +998,7 @@ theorem readyThread_unlinked {s : SystemState} {x : SeLe4n.ThreadId} {t : TCB}
     rw [hS, hO]; rfl
   have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hX
   obtain ⟨hFull, -, hNtfn, hRw, -, -⟩ := h
-  obtain ⟨-, -, -, -, -, -, -, -, -, hTB, -, -, -, -, hLink, hPend, -, -, -⟩ := hFull
+  obtain ⟨-, -, -, -, -, -, -, -, -, hTB, -, -, -, hLink, hPend, -, -, -⟩ := hFull
   have hN := hNtfn.2.2.2.2 x t hTo (fun oid e => by rw [hR] at e; cases e)
   have hSrv : t.blockingServer? = none := by unfold TCB.blockingServer?; rw [hR]
   have hV := SystemState.replyViews_of_tcb hTo
@@ -981,13 +1039,15 @@ theorem readyThread_unlinked {s : SystemState} {x : SeLe4n.ThreadId} {t : TCB}
 -- ============================================================================
 
 /-- **The finalisation's context unbind clears the thread's binding and nothing
-else**: on a thread on no core whose binding names no owner and, when it names a
-context, a context bound back to it, the unbind leaves the thread with no
-binding, every other thread, every core's current slot and the machine as they
+else**: on a thread on no core whose binding, when it names a context, names
+one bound back to it — its own or on loan, which the unbind takes from it alike
+(seL4-MCS's `schedContext_unbindTCB`) — and otherwise names no lender, the unbind
+leaves the thread with no binding, every other thread, every core's current slot and the machine as they
 were. -/
 theorem finaliseThreadUnbindSchedContext_self {s : SystemState} {x : SeLe4n.ThreadId} {t : TCB}
     (hInv : s.objects.invExt) (hX : s.getTcb? x = some t) (hRun : t.runCoreCode = 0)
-    (hHeld : threadHeldOnSomeCore s x = false) (hOwn : t.scBindingOwnerCode = 0)
+    (hHeld : threadHeldOnSomeCore s x = false)
+    (hOwn : t.scBindingScCode = 0 → t.scBindingOwnerCode = 0)
     (hBd : t.scBindingScCode ≠ 0 → ∃ sc, s.getSchedContext? ⟨t.scBindingScCode - 1⟩ = some sc ∧
       sc.boundThreadCode = x.val + 1) :
     (finaliseThreadUnbindSchedContext s x).getTcb? x =
@@ -1004,20 +1064,21 @@ theorem finaliseThreadUnbindSchedContext_self {s : SystemState} {x : SeLe4n.Thre
   · rw [if_neg (by simp [h0])]
     refine ⟨?_, fun _ _ => rfl, fun _ => rfl, rfl⟩
     rw [hX]
+    have hO := hOwn h0
     cases t
-    simp only at h0 hOwn
-    subst h0; subst hOwn; rfl
+    simp only at h0 hO
+    subst h0; subst hO; rfl
   · obtain ⟨sc, hSc, hB⟩ := hBd h0
-    rw [if_pos (by simp [h0, hOwn, hRun, hHeld, hSc, hB])]
-    have hBind := schedContextBinding_of_codes' h0 hOwn
-    rw [cancelDonationArmOnCore_of_bound s x t _ hBind]
-    have hOk := cancelBoundDonationOnCore_of_bound s x t _ hBind
+    rw [if_pos (by simp [h0, hRun, hHeld, hSc, hB])]
+    have hBind := schedContextBinding_ownerCleared (t := t) (x := ⟨t.scBindingScCode - 1⟩)
+      (by show _ = _ - 1 + 1; omega)
+    have hOk := cancelBoundDonationOnCore_of_bound s x _ _ hBind
     rw [hOk]
     dsimp only
-    obtain ⟨g1, g2⟩ := cancelBoundDonationOnCore_getTcb? s _ x t _ hBind hInv hOk
+    obtain ⟨g1, g2⟩ := cancelBoundDonationOnCore_getTcb? s _ x _ _ hBind hInv hOk
     refine ⟨by rw [g1, hX]; rfl, g2,
-      fun c => (cancelBoundDonationOnCore_runQueue_current_eq s _ x t c hOk).2,
-      cancelBoundDonationOnCore_machine_eq s _ x t hOk⟩
+      fun c => (cancelBoundDonationOnCore_runQueue_current_eq s _ x _ c hOk).2,
+      cancelBoundDonationOnCore_machine_eq s _ x _ hOk⟩
 
 /-- **The suspend keeps every thread's blocking server**: the deschedule writes
 run-queue links, the mark the thread's run state and message. -/

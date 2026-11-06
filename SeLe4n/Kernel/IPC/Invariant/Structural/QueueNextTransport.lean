@@ -1258,34 +1258,30 @@ theorem endpointReply_preserves_dualQueueSystemInvariant
         | blockedOnCall _ => simp [hIpc] at hStep
       | blockedOnReply epId' rt =>
           simp only [hIpc] at hStep
-          -- AK1-B (I-H02): Fail-closed on rt = none
-          cases rt with
-          | none => simp at hStep
-          | some val =>
-            simp only at hStep
-            split at hStep
-            · -- authorized = true
-              cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
-              | error e => simp [hStore] at hStep
-              | ok st1 =>
-                simp only [hStore] at hStep
-                have hInv1 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                  st st1 target .ready (some msg) hObjInv hStore hInv
-                have hInvER := ensureRunnable_preserves_dualQueueSystemInvariant st1 target hInv1
-                -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-                have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                  apply ensureRunnable_objects_invExt
-                  exact storeTcbIpcStateAndMessage_preserves_objects_invExt
-                    st st1 target .ready (some msg) hObjInv hStore
-                cases hRO : tcb.replyObject with
-                | none =>
-                  simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                  rw [← hStep]; exact hInvER
-                | some rid =>
-                  simp only [hRO] at hStep
-                  exact removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ target rid
-                    hObjInvMid hInvER hStep
-            · simp at hStep
+          -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
+          split at hStep
+          · -- authorized = true
+            cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
+            | error e => simp [hStore] at hStep
+            | ok st1 =>
+              simp only [hStore] at hStep
+              have hInv1 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                st st1 target .ready (some msg) hObjInv hStore hInv
+              have hInvER := ensureRunnable_preserves_dualQueueSystemInvariant st1 target hInv1
+              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+              have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+                apply ensureRunnable_objects_invExt
+                exact storeTcbIpcStateAndMessage_preserves_objects_invExt
+                  st st1 target .ready (some msg) hObjInv hStore
+              cases hRO : tcb.replyObject with
+              | none =>
+                simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                rw [← hStep]; exact hInvER
+              | some rid =>
+                simp only [hRO] at hStep
+                exact removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ target rid
+                  hObjInvMid hInvER hStep
+          · simp at hStep
 
 -- ---- WS-H5: storeTcbQueueLinks helper lemmas for queue invariant proofs ----
 

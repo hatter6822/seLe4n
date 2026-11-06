@@ -4,6 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 import SeLe4n.Kernel.IPC.Invariant.CancelAllFrame
+import SeLe4n.Kernel.IPC.Invariant.ReplyServerForget
 import SeLe4n.Kernel.IPC.Invariant.FinaliseLoanCoherence
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
@@ -65,7 +66,7 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     ipcInvariantFullExceptMembership st' tid := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hPend, hNoDup, hMem, hQNB, hQHB, hTimeout,
-    _hAcyc, hOwner, hBudget, hReplyTarget, hReplyLink, hStash, hUnique, hTail,
+    _hAcyc, hOwner, hBudget, hReplyLink, hStash, hUnique, hTail,
     hQNT, hNBR, hLinks⟩ := hInv
   have hDual' := endpointQueuePopHead_preserves_dualQueueSystemInvariant endpointId isReceiveQ
     st st' tid hObjInv hStep hDual
@@ -114,8 +115,6 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     donationOwnerValid_implies_donationChainAcyclic st' hOwner',
     hOwner',
     donationBudgetTransfer_of_sameSchedContextBindings hSame hBudget,
-    endpointQueuePopHead_preserves_blockedOnReplyHasTarget endpointId isReceiveQ st st' tid
-      headTcb hObjInv hReplyTarget hStep,
     ⟨replyCallerLinkageReciprocal_of_frame
         (endpointQueuePopHead_replyLinkageFrame endpointId isReceiveQ st st' tid headTcb hObjInv
           hStep) hReplyLink.1,
@@ -331,8 +330,8 @@ theorem storeUnbindNotification_preserves_ipcInvariantFull
 /-- **A context's release of its holder keeps the bundle**: the per-core unbind
 read through the owner-cleared view
 (`cancelBoundDonationOnCore_view_preserves_ipcInvariantFull`), on a thread whose
-context — its own or on loan — is bound back to it.  The thread finalisation's unbind is the case of a
-`.bound` holder (`FinaliseScReleaseStep.scUnbind`). -/
+context — its own or on loan — is bound back to it, the thread finalisation's
+unbind among them. -/
 theorem finaliseScReleaseStep_keepsIpcInvariantFull :
     FinaliseScReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s s' t tcb sc x h hT hS hSc hB hOk
@@ -643,7 +642,7 @@ theorem storeEndpointBlockedCancelled_preserves_ipcInvariantFull
   have hT1 : s1.objects[t.toObjId]? = some (.tcb (tcbOffQueue tcb)) :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mp hFr.removed_tcb
   have hEx' := hEx
-  obtain ⟨-, hDual1, -, -, -, -, -, -, hQHB1, -, -, -, -, -, -, -, -, hQTB1, -⟩ := hEx'
+  obtain ⟨-, hDual1, -, -, -, -, -, -, hQHB1, -, -, -, -, -, -, -, hQTB1, -⟩ := hEx'
   obtain ⟨hNotHead, hNotTail, hNoInc⟩ := endpointQueueRemoveDual_removed_detached_side st s1 e q
     t hObjInv hInv.dualQueueSystemInvariant hRem _ hT1 hSideS hQHB1 hQTB1 hDual1.2.1
   refine cancelledEndpointWaiter_closes s1 t (tcbOffQueue tcb) hI1 hNotRes hT1 hNoBudget
@@ -719,6 +718,356 @@ theorem finaliseReleaseStep_keepsIpcInvariantFull :
 -- §4  The finalisation
 -- ============================================================================
 
+/-- **A reply's pop off a context no thread holds keeps the bundle** (seL4-MCS's
+`reply_pop` after the holder's `schedContext_unbindTCB`): the IPC bundle across
+the pop (`returnUnheldSchedContext_preserves_ipcInvariantFull`), from three
+pre-state facts.  No thread names the context in its binding: one holding it as
+its own would be the thread the context is bound to (the binding pair,
+`schedContextBindingConsistent`), one holding it on loan likewise
+(`donationOwnerValid`), and the context is bound to none.  No loan names the
+caller: its lender's frame — the caller's reply — would head the lent context
+(`lentContextHeadsLenderFrame`), which is then the popped context, bound to no
+thread.  None names the outer caller: its frame is the frame below the head,
+which links to the head and heads nothing.  The lent-context fact itself is
+`returnUnheldSchedContext_keepsLentContextHeads`; the settle after the pop
+writes release fields and queues alone.  A caller that holds a context of its
+own is handed nothing: the sever writes no thread and keeps the bundle and the
+lender frames outright (`severUnheldSchedContext_preserves_ipcInvariantFull`,
+`severUnheldSchedContext_keepsLentContextHeads`). -/
+theorem finaliseUnheldStep_keepsFinaliseLoanBundle (s : SystemState) (x : SeLe4n.ObjId)
+    (r : Reply) (c : SeLe4n.ThreadId) (t : TCB) (h : finaliseLoanBundle s)
+    (hL : schedContextLinkInvariant s) (hX : s.getObject? x = some (.reply r))
+    (hT : s.getTcb? c = some t) (hA : replyUnheldPopAdmitted s x r c t = true) :
+    finaliseLoanBundle (finaliseReplyUnheldPop s r c) := by
+  obtain ⟨sId, hN, hRO⟩ := replyUnheldPopAdmitted_parts hA
+  rcases finaliseReplyUnheldPop_cases s r c with e | ⟨sId', n, st', hN', hRes, hOk, e⟩ |
+      ⟨sId', n, st', hN', -, hRes, hOk, e⟩ <;> rw [e]
+  · exact h
+  rotate_left
+  · rw [hN] at hN'; cases hN'
+    exact ⟨severUnheldSchedContext_preserves_ipcInvariantFull h.2.1 h.1 hOk,
+      (FinaliseFrameAny.severUnheldSchedContext h.2.1 hOk).invExt,
+      severUnheldSchedContext_keepsLentContextHeads h.2.1 h.2.2 h.1.donationOwnerValid hRes hOk⟩
+  rw [hN] at hN'; cases hN'
+  obtain ⟨sc, -, -, hSc, hB0, -, -, -, -, -, -, -, -, -, -⟩ :=
+    returnUnheldSchedContext_objects h.2.1 hOk
+  have hUnheld : ∀ (X : SeLe4n.ThreadId) (sc1 : SchedContext),
+      s.objects[sId.toObjId]? = some (.schedContext sc1) → sc1.boundThread ≠ some X := by
+    intro X sc1 h1 e
+    rw [hSc] at h1; cases h1
+    unfold SchedContext.boundThread at e; rw [hB0] at e; cases e
+  have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
+  have hFree : ∀ (X : SeLe4n.ThreadId) (tX : TCB), s.objects[X.toObjId]? = some (.tcb tX) →
+      tX.schedContextBinding.scId? ≠ some sId := by
+    intro X tX hX' e
+    cases hb : tX.schedContextBinding with
+    | unbound => rw [hb] at e; cases e
+    | bound s' =>
+      rw [hb] at e; cases e
+      obtain ⟨sc1, h1, hbt⟩ := hL.binding.1 X tX hX' _ hb
+      exact hUnheld X sc1 h1 hbt
+    | donated s' o =>
+      rw [hb] at e; cases e
+      obtain ⟨⟨sc1, h1, hbt⟩, -⟩ := h.1.donationOwnerValid X tX _ o hX' hb
+      exact hUnheld X sc1 h1 hbt
+  have hNoOwner : ∀ (X : SeLe4n.ThreadId) (tX : TCB) (s' : SeLe4n.SchedContextId),
+      s.objects[X.toObjId]? = some (.tcb tX) → tX.schedContextBinding ≠ .donated s' c := by
+    intro X tX s' hX' hb
+    obtain ⟨rid, r', hRO', hR', hN'⟩ := h.2.2 X tX s' c t hX' hb hTo
+    rw [hRO] at hRO'; cases hRO'
+    rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
+      hX] at hR'
+    cases hR'
+    rw [hN] at hN'
+    cases hN'
+    obtain ⟨⟨sc1, h1, hbt⟩, -⟩ := h.1.donationOwnerValid X tX _ c hX' hb
+    exact hUnheld X sc1 h1 hbt
+  have hOuterFree : ∀ outer, n = some outer → ∀ (X : SeLe4n.ThreadId) (tX : TCB)
+      (s' : SeLe4n.SchedContextId),
+      s.objects[X.toObjId]? = some (.tcb tX) → tX.schedContextBinding ≠ .donated s' outer := by
+    intro outer hn X tX s' hX' hBindO
+    subst hn
+    obtain ⟨-, ridH, -, below, b, -, -, -, hBelow, hBN, hBC⟩ :=
+      replyStackOuterCaller?_ok_some s sId outer hRes
+    have hBo := (SystemState.getReply?_eq_some_iff _ _ _).mp hBelow
+    obtain ⟨tcbO, hTO, hROO, -⟩ := h.1.replyCallerLinkage.1.2 below b outer hBo hBC
+    obtain ⟨rid', r', hRO', hR', hN'⟩ := h.2.2 X tX s' outer tcbO hX' hBindO hTO
+    rw [hROO] at hRO'
+    cases hRO'
+    rw [hBo] at hR'
+    have eB : b = r' := KernelObject.reply.inj (Option.some.inj hR')
+    rw [← eB, hBN] at hN'
+    cases hN'
+  have hInv1 := (FinaliseFrameAny.returnUnheldSchedContext h.2.1 hOk).invExt
+  have F := FinaliseFrame.of_releaseOnlyWrite
+    (SchedContextOps.settleReturnedContext_releaseOnlyWrite st' (determineTargetCore st' c) sId)
+    (SchedContextOps.settleReturnedContext_agree _ _ _)
+    (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv1)
+  exact ⟨settleReturnedContext_preserves_ipcInvariantFull _ _ _
+      (returnUnheldSchedContext_preserves_ipcInvariantFull h.2.1 h.1 hFree hNoOwner
+        hOuterFree hOk), F.invExt,
+    (returnUnheldSchedContext_keepsLentContextHeads h.2.1 h.2.2 h.1.donationOwnerValid
+      h.1.replyCallerLinkage.1 hRes hOk).of_loanWrite F.loan⟩
+
+/-- **A holder's loan made its own keeps the bundle** (WS-ZA ZA6.34, the
+thread-side cut's last write): the holder's owner code cleared, so its binding
+`.donated scId o` becomes `.bound scId`, every other field kept.  The fourteen
+binding-free conjuncts ride `donationReadAgreement`; of the donation conjuncts,
+every post-state loan is a pre-state loan of another thread (the holder holds
+none after), a loan's owner is never the holder (an owner is unbound, the
+holder is not), and the holder's context is the one it held. -/
+theorem updateTcb_ownerCleared_preserves_ipcInvariantFull (st : SystemState)
+    (h : SeLe4n.ThreadId) (ht : TCB) (scId : SeLe4n.SchedContextId) (o : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) (hT : st.getTcb? h = some ht)
+    (hB : ht.schedContextBinding = .donated scId o) :
+    ipcInvariantFull (st.updateTcb h fun t => { t with scBindingOwnerCode := 0 }) := by
+  rw [SystemState.updateTcb_eq_of_some hT]
+  have hPre := (SystemState.getTcb?_eq_some_iff st h ht).mp hT
+  have hAt := insertObjects_getElem_self st h.toObjId
+    (.tcb { ht with scBindingOwnerCode := 0 }) hObjInv
+  have hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ h.toObjId →
+      ({ st with objects := (st.objects.insert h.toObjId
+          (.tcb { ht with scBindingOwnerCode := 0 })) } : SystemState).objects[oid]? =
+        st.objects[oid]? :=
+    fun oid hne => insertObjects_getElem_ne st h.toObjId _ oid hne hObjInv
+  have hAgree := donationReadAgreement_of_tcbFieldUpdateAgree st _ h.toObjId ht
+    { ht with scBindingOwnerCode := 0 } hPre hAt hFrame rfl (pendingMessageReadAgrees_refl _)
+    rfl rfl rfl rfl rfl rfl
+  have hNoLoan : ∀ s' o', ({ ht with scBindingOwnerCode := 0 } : TCB).schedContextBinding ≠
+      .donated s' o' := TCB.ownerCleared_not_donated ht
+  -- A post-state loan is a pre-state loan of another thread.
+  have hBwd : ∀ (t : SeLe4n.ThreadId) (tx : TCB) (s' : SeLe4n.SchedContextId)
+      (o' : SeLe4n.ThreadId),
+      ({ st with objects := (st.objects.insert h.toObjId
+          (.tcb { ht with scBindingOwnerCode := 0 })) } : SystemState).objects[t.toObjId]? =
+        some (.tcb tx) → tx.schedContextBinding = .donated s' o' →
+      t.toObjId ≠ h.toObjId ∧ st.objects[t.toObjId]? = some (.tcb tx) := by
+    intro t tx s' o' hx hd
+    by_cases hk : t.toObjId = h.toObjId
+    · rw [hk, hAt] at hx; cases hx; exact absurd hd (hNoLoan s' o')
+    · exact ⟨hk, (hFrame _ hk) ▸ hx⟩
+  refine ipcInvariantFull_of_donationReadAgreement st _ hInv hAgree ?_ ?_ ?_ ?_
+  · intro t1 t2 tcb1 tcb2 s1 s2 h1 h2 hB1 hB2
+    exact hInv.donationChainAcyclic t1 t2 tcb1 tcb2 s1 s2 (hBwd _ _ _ _ h1 hB1).2
+      (hBwd _ _ _ _ h2 hB2).2 hB1 hB2
+  · intro t tx s' owner hx hd
+    obtain ⟨-, hx0⟩ := hBwd _ _ _ _ hx hd
+    obtain ⟨⟨sc, hScAt, hBound⟩, ownerTcb, hOwner, hOwnerUnbound, hOwnerBlk⟩ :=
+      hInv.donationOwnerValid t tx s' owner hx0 hd
+    have hOk : owner.toObjId ≠ h.toObjId := by
+      intro e; rw [e, hPre] at hOwner; cases hOwner; rw [hB] at hOwnerUnbound; cases hOwnerUnbound
+    have hSk : s'.toObjId ≠ h.toObjId := by
+      intro e; rw [e, hPre] at hScAt; cases hScAt
+    exact ⟨⟨sc, by rw [hFrame _ hSk]; exact hScAt, hBound⟩, ownerTcb,
+      by rw [hFrame _ hOk]; exact hOwner, hOwnerUnbound, hOwnerBlk⟩
+  · intro t1 t2 tcb1 tcb2 s h1 h2 hNe hS1 hS2
+    have back : ∀ (t : SeLe4n.ThreadId) (tx : TCB),
+        ({ st with objects := (st.objects.insert h.toObjId
+            (.tcb { ht with scBindingOwnerCode := 0 })) } : SystemState).objects[t.toObjId]? =
+          some (.tcb tx) → tx.schedContextBinding.scId? = some s →
+        ∃ ty, st.objects[t.toObjId]? = some (.tcb ty) ∧ ty.schedContextBinding.scId? = some s := by
+      intro t tx hx hs
+      by_cases hk : t.toObjId = h.toObjId
+      · rw [hk, hAt] at hx; cases hx
+        refine ⟨ht, hk ▸ hPre, ?_⟩
+        rw [hB]
+        have e : ({ ht with scBindingOwnerCode := 0 } : TCB).schedContextBinding = .bound scId := by
+          unfold TCB.schedContextBinding SchedContextBinding.ofCodes
+          have hb := hB
+          unfold TCB.schedContextBinding SchedContextBinding.ofCodes at hb
+          split at hb
+          · cases hb
+          · split at hb
+            · cases hb
+            · cases hb; simp_all
+        rw [e] at hs; exact hs
+      · exact ⟨tx, (hFrame _ hk) ▸ hx, hs⟩
+    obtain ⟨y1, hy1, e1⟩ := back t1 tcb1 h1 hS1
+    obtain ⟨y2, hy2, e2⟩ := back t2 tcb2 h2 hS2
+    exact hInv.donationBudgetTransfer t1 t2 y1 y2 s hy1 hy2 hNe e1 e2
+  · intro t1 t2 tcb1 tcb2 s1 s2 owner h1 h2 hB1 hB2
+    exact hInv.donationOwnerUnique t1 t2 tcb1 tcb2 s1 s2 owner (hBwd _ _ _ _ h1 hB1).2
+      (hBwd _ _ _ _ h2 hB2).2 hB1 hB2
+
+/-- **The thread-side cut keeps the bundle the delete carries** (WS-ZA ZA6.34):
+the head reply's upward link is a stack link
+(`storeObject_reply_stackLinks_preserves_ipcInvariantFull`), the context's head and
+origin are content the bundle does not read
+(`insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull`), and a
+holder's loan made its own is `updateTcb_ownerCleared_preserves_ipcInvariantFull`.
+The lent-context fact loses the cut frame's head (`of_headLetGo`): after the cut
+no thread holds the context on loan — its bound thread is the holder, whose loan
+the cut made its own, or holds it as its own already. -/
+theorem cutHeadFrameKeepingContext_preserves_finaliseLoanBundle (s : SystemState)
+    (rid : SeLe4n.ReplyId) (h : finaliseLoanBundle s) :
+    finaliseLoanBundle (Lifecycle.Suspend.cutHeadFrameKeepingContext s rid) := by
+  obtain ⟨hFull, hInv, hW⟩ := h
+  unfold Lifecycle.Suspend.cutHeadFrameKeepingContext
+  cases hH : replyFrameHeadContext? s rid with
+  | none => exact ⟨hFull, hInv, hW⟩
+  | some scId =>
+  obtain ⟨r0, sc0, hR0, hN0, hSc0, -⟩ := replyFrameHeadContext?_eq_some hH
+  cases hR : s.getReply? rid with
+  | none => rw [hR0] at hR; cases hR
+  | some r =>
+  rw [hR0] at hR; cases hR
+  dsimp only
+  cases hS : storeObject rid.toObjId (.reply { r0 with next := none }) s with
+  | error => exact ⟨hFull, hInv, hW⟩
+  | ok p =>
+  obtain ⟨⟨⟩, s1⟩ := p
+  dsimp only
+  have hRo := (SystemState.getReply?_eq_some_iff _ _ _).mp hR0
+  have hI1 := storeObject_preserves_objects_invExt s s1 _ _ hInv hS
+  have hFull1 := storeObject_reply_stackLinks_preserves_ipcInvariantFull
+    (a' := { r0 with next := none }) hInv hFull hR0 rfl rfl hS
+  have hSco := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc0
+  have hSk : scId.toObjId ≠ rid.toObjId := by intro e; rw [e, hRo] at hSco; cases hSco
+  have hSc1 : s1.objects[scId.toObjId]? = some (.schedContext sc0) := by
+    rw [storeObject_objects_ne s s1 _ _ _ hSk hInv hS]; exact hSco
+  let f : SchedContext → SchedContext := fun sc => { sc with scReply := none, donationOrigin := none }
+  have hSc1' : s1.getSchedContext? scId = some sc0 := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc1
+  have e2 : s1.updateSchedContext scId f =
+      { s1 with objects := s1.objects.insert scId.toObjId (.schedContext (f sc0)) } :=
+    SystemState.updateSchedContext_eq_of_some hSc1' f
+  have hFull2 : ipcInvariantFull (s1.updateSchedContext scId f) := by
+    rw [e2]
+    exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull s1 _ sc0 _ hI1 hFull1
+      hSc1 rfl
+  have hI2 : (s1.updateSchedContext scId f).objects.invExt :=
+    SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1
+  -- Objects of the second state: the reply cut, the context rewritten, the rest kept.
+  have hO2 : ∀ k : SeLe4n.ObjId, k ≠ rid.toObjId → k ≠ scId.toObjId →
+      (s1.updateSchedContext scId f).objects[k]? = s.objects[k]? := by
+    intro k h1 h2
+    rw [e2, insertObjects_getElem_ne s1 _ _ k h2 hI1,
+      storeObject_objects_ne s s1 _ _ _ h1 hInv hS]
+  have hSc2 : (s1.updateSchedContext scId f).getSchedContext? scId = some (f sc0) := by
+    rw [e2, SystemState.getSchedContext?_eq_some_iff]
+    exact insertObjects_getElem_self s1 _ _ hI1
+  have hRid2 : (s1.updateSchedContext scId f).objects[rid.toObjId]? =
+      some (.reply { r0 with next := none }) := by
+    rw [e2, insertObjects_getElem_ne s1 _ _ _ (Ne.symm hSk) hI1]
+    exact storeObject_objects_eq s s1 _ _ hInv hS
+  have hN : ∀ r, s.objects[rid.toObjId]? = some (.reply r) → r.next = some (.head scId) := by
+    intro r hr; rw [hRo] at hr; cases hr; exact hN0
+  -- The frame from `s` up to the second state, off the cut reply.
+  have F2 : ∀ oid : SeLe4n.ObjId, oid ≠ rid.toObjId →
+      (s1.updateSchedContext scId f).objects[oid]? = s.objects[oid]? ∨
+      ∃ pre post : KernelObject, s.objects[oid]? = some pre ∧
+        (s1.updateSchedContext scId f).objects[oid]? = some post ∧ objectLoanKept post pre := by
+    intro oid hne
+    by_cases hk : oid = scId.toObjId
+    · subst hk
+      refine .inr ⟨.schedContext sc0, .schedContext (f sc0), hSco, ?_,
+        objectLoanKept_of_inert (fun _ e => by cases e) (fun _ e => by cases e)⟩
+      exact (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc2
+    · exact .inl (hO2 oid hne hk)
+  generalize hs2 : s1.updateSchedContext scId f = s2 at hFull2 hI2 hO2 hSc2 hRid2 F2 ⊢
+  -- A loan of the context in the second state is held by its bound thread.
+  have hLoanBound : ∀ (th : SeLe4n.ThreadId) (tx : TCB) (o : SeLe4n.ThreadId),
+      s2.objects[th.toObjId]? = some (.tcb tx) → tx.schedContextBinding = .donated scId o →
+      (s2.getSchedContext? scId).bind (·.boundThread) = some th := by
+    intro th tx o hx hd
+    obtain ⟨⟨sc, hs, hb⟩, -⟩ := hFull2.donationOwnerValid th tx scId o hx hd
+    rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hs]; exact hb
+  have hRidNoTcb2 : ∀ tx, s2.objects[rid.toObjId]? ≠ some (.tcb tx) := by
+    intro tx e; rw [hRid2] at e; cases e
+  -- The case with no write after the second state.
+  have keep : (∀ (th : SeLe4n.ThreadId) (tx : TCB) (o : SeLe4n.ThreadId),
+      s2.objects[th.toObjId]? = some (.tcb tx) → tx.schedContextBinding ≠ .donated scId o) →
+      finaliseLoanBundle s2 :=
+    fun hNo => ⟨hFull2, hI2, hW.of_headLetGo hN hNo hRidNoTcb2 F2⟩
+  cases hB : (s2.getSchedContext? scId).bind (·.boundThread) with
+  | none =>
+    exact keep fun th tx o hx hd => by rw [hLoanBound th tx o hx hd] at hB; cases hB
+  | some holder =>
+  dsimp only
+  cases hT : s2.getTcb? holder with
+  | none =>
+    refine keep fun th tx o hx hd => ?_
+    have e := hLoanBound th tx o hx hd
+    rw [hB] at e; cases e
+    rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hx] at hT; cases hT
+  | some ht =>
+  dsimp only
+  have notLoan : (∀ s' o', ht.schedContextBinding = .donated s' o' → s' ≠ scId) →
+      finaliseLoanBundle s2 := by
+    intro hne
+    refine keep fun th tx o hx hd => ?_
+    have e := hLoanBound th tx o hx hd
+    rw [hB] at e; cases e
+    rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hx] at hT; cases hT
+    exact hne scId o hd rfl
+  split
+  · rename_i s' o hb
+    split
+    · rename_i hs
+      rw [hs] at hb
+      have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+      have hFull3 := updateTcb_ownerCleared_preserves_ipcInvariantFull s2 holder ht scId o hI2 hFull2 hT hb
+      have hI3 := SystemState.updateTcb_preserves_objects_invExt s2 holder
+        (fun t => { t with scBindingOwnerCode := 0 }) hI2
+      rw [SystemState.updateTcb_eq_of_some hT] at hFull3 hI3 ⊢
+      have hAt : (s2.objects.insert holder.toObjId (.tcb { ht with scBindingOwnerCode := 0 }))[holder.toObjId]? =
+          some (.tcb { ht with scBindingOwnerCode := 0 }) :=
+        RobinHood.RHTable.getElem?_insert_self s2.objects _ _ hI2
+      have hNe3 : ∀ k : SeLe4n.ObjId, k ≠ holder.toObjId →
+          (s2.objects.insert holder.toObjId (.tcb { ht with scBindingOwnerCode := 0 }))[k]? =
+            s2.objects[k]? :=
+        fun k hk => RobinHood.RHTable.getElem?_insert_ne s2.objects _ k _
+          (fun e => hk (eq_of_beq e).symm) hI2
+      have hHk : holder.toObjId ≠ rid.toObjId := by
+        intro e; rw [e, hRid2] at hTo; cases hTo
+      have hHs : holder.toObjId ≠ scId.toObjId := by
+        intro e
+        rw [e, (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc2] at hTo; cases hTo
+      have hE : ∀ k : SeLe4n.ObjId, (markKeyChangeFrom s2 { s2 with objects := (s2.objects.insert holder.toObjId
+          (.tcb { ht with scBindingOwnerCode := 0 })) } holder).objects[k]? =
+          (s2.objects.insert holder.toObjId (.tcb { ht with scBindingOwnerCode := 0 }))[k]? :=
+        fun k => by rw [markKeyChangeFrom_objects]
+      refine ⟨ipcInvariantFull_of_objects_eq (markKeyChangeFrom_objects _ _ _) hFull3,
+        by rw [markKeyChangeFrom_objects]; exact hI3, hW.of_headLetGo hN ?_ ?_ ?_⟩
+      · intro th tx o' hx hd
+        rw [hE] at hx
+        by_cases hk : th.toObjId = holder.toObjId
+        · rw [hk, hAt] at hx; cases hx; exact TCB.ownerCleared_not_donated ht _ _ hd
+        · rw [hNe3 _ hk] at hx
+          have e := hLoanBound th tx o' hx hd
+          rw [hB] at e; cases e; exact hk rfl
+      · intro tx
+        rw [hE, hNe3 _ (Ne.symm hHk)]; exact hRidNoTcb2 tx
+      · intro oid hne
+        rw [hE]
+        by_cases hk : oid = holder.toObjId
+        · subst hk
+          rw [hAt]
+          refine .inr ⟨.tcb ht, _, ?_, rfl,
+            objectLoanKept_tcb ⟨rfl, fun _ _ e => absurd e (TCB.ownerCleared_not_donated ht _ _)⟩⟩
+          rw [← hO2 _ hHk hHs]; exact hTo
+        · rw [hNe3 _ hk]; exact F2 oid hne
+    · rename_i hs
+      exact notLoan (fun a b e => by rw [hb] at e; cases e; exact hs)
+  · rename_i hnd
+    exact notLoan (fun a b e => absurd e (hnd a b))
+
+/-- **The thread-side cut, as the closure asks it, keeps the bundle**
+(`cutHeadFrameKeepingContext_preserves_finaliseLoanBundle`, at the reply the
+cancelled caller waits on). -/
+theorem cutCancelledCallerHead_preserves_finaliseLoanBundle (s : SystemState) (t : TCB)
+    (h : finaliseLoanBundle s) :
+    finaliseLoanBundle (Lifecycle.Suspend.cutCancelledCallerHead s t) := by
+  unfold Lifecycle.Suspend.cutCancelledCallerHead
+  split
+  · unfold Lifecycle.Suspend.cutThreadHeadFrameKeepingContext
+    split
+    · exact h
+    · exact cutHeadFrameKeepingContext_preserves_finaliseLoanBundle _ _ h
+  · exact h
+
+theorem finaliseCutStep_keepsFinaliseLoanBundle : FinaliseCutStep finaliseLoanBundle :=
+  fun s _ _ _ t h _ _ _ _ => cutCancelledCallerHead_preserves_finaliseLoanBundle s t h
+
 /-- A step whose frame is a `FinaliseFrame` keeps the bundle the delete carries
 once it keeps the IPC bundle: the frame keeps the table well formed and every
 lent context headed by its lender. -/
@@ -727,14 +1076,18 @@ theorem finaliseLoanBundle.of_frame {s s' : SystemState} (h : finaliseLoanBundle
   ⟨hI, F.invExt, h.2.2.of_loanWrite F.loan⟩
 
 /-- **The finalisation keeps the bundle the delete carries**, every step of it
-(`finaliseFinalObject_closed`): each step's IPC theorem, its frame for the
-table and the lent-context fact, and the two steps that read the fact — the
-unstack (`finaliseUnstack_keepsLentContextHeads`, on a context its holder's
-unbind left bound to no thread, `finaliseSchedContextUnbind_unbound`) and the
-reply cancel (`finaliseReplyStep_keepsIpcInvariantFull`). -/
+(`finaliseFinalObject_closed_linked`, on a state whose scheduling links hold):
+each step's IPC theorem, its frame for the table and the lent-context fact, the
+two steps that read the fact — the unstack
+(`finaliseUnstack_keepsLentContextHeads`, on a context its holder's unbind left
+bound to no thread, `finaliseSchedContextUnbind_unbound`) and the reply cancel
+(`finaliseReplyStep_keepsIpcInvariantFull`) — and the pop off an unheld
+context, which reads the binding pair as well
+(`finaliseUnheldStep_keepsFinaliseLoanBundle`). -/
 theorem finaliseFinalObject_preserves_finaliseLoanBundle (target : Nat) (st : SystemState)
-    (h : finaliseLoanBundle st) : finaliseLoanBundle (finaliseFinalObject target st) :=
-  finaliseFinalObject_closed finaliseLoanBundle
+    (h : finaliseLoanBundle st) (hL : schedContextLinkInvariant st) :
+    finaliseLoanBundle (finaliseFinalObject target st) :=
+  (finaliseFinalObject_closed_linked finaliseLoanBundle
     (fun e q s ep t tcb h hE hH hT hC =>
       h.of_frame (storeEndpointWaiterCancelled_preserves_ipcInvariantFull s e q ep t tcb h.2.1 h.1
         hE hH hT hC) (FinaliseFrame.storeEndpointWaiterCancelled s e q t _ h.2.1))
@@ -777,15 +1130,21 @@ theorem finaliseFinalObject_preserves_finaliseLoanBundle (target : Nat) (st : Sy
         (FinaliseFrame.cancelYieldTo s t h.2.1),
      fun s c h => h.of_frame (completeYieldFrom_preserves_ipcInvariantFull s c h.2.1 h.1)
         (FinaliseFrame.completeYieldFrom s c h.2.1)⟩
-    target st h
+    (fun s w x _ h hT _ hS =>
+      h.of_frame (orphanReplyWaiter_preserves_ipcInvariantFull h.1 hT hS)
+        (FinaliseFrame.orphanReplyWaiter s w x h.2.1))
+    (fun s x r c t h _ hL hX _ hT hA => finaliseUnheldStep_keepsFinaliseLoanBundle s x r c t h hL hX hT hA)
+    finaliseCutStep_keepsFinaliseLoanBundle
+    target st h h.2.1 hL).1
 
 /-- **The finalisation keeps the IPC bundle**, on a state where every lent
-context is headed by its lender (`finaliseFinalObject_preserves_finaliseLoanBundle`). -/
+context is headed by its lender and the scheduling links hold
+(`finaliseFinalObject_preserves_finaliseLoanBundle`). -/
 theorem finaliseFinalObject_preserves_ipcInvariantFull (target : Nat) (st : SystemState)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hW : lentContextHeadsLenderFrame st) :
+    (hW : lentContextHeadsLenderFrame st) (hL : schedContextLinkInvariant st) :
     ipcInvariantFull (finaliseFinalObject target st) :=
-  (finaliseFinalObject_preserves_finaliseLoanBundle target st ⟨hInv, hObjInv, hW⟩).1
+  (finaliseFinalObject_preserves_finaliseLoanBundle target st ⟨hInv, hObjInv, hW⟩ hL).1
 
 /-- **The bundle the finalising delete carries along its whole chain**: the
 finalisation's bundle (`finaliseLoanBundle`) and the scheduling links the
@@ -814,7 +1173,7 @@ theorem finalisingDeleteBundle.of_objects_scheduler_eq {s s' : SystemState}
 (`finaliseFinalObject_preserves_schedContextLinkInvariant`). -/
 theorem finaliseFinalObject_preserves_finalisingDeleteBundle (target : Nat) (st : SystemState)
     (h : finalisingDeleteBundle st) : finalisingDeleteBundle (finaliseFinalObject target st) :=
-  ⟨finaliseFinalObject_preserves_finaliseLoanBundle target st h.1,
+  ⟨finaliseFinalObject_preserves_finaliseLoanBundle target st h.1 h.2,
     finaliseFinalObject_preserves_schedContextLinkInvariant target st h.1.2.1 h.2⟩
 
 /-- **WS-ZA ZA5.5: a revocation keeps the bundle the delete carries**: it

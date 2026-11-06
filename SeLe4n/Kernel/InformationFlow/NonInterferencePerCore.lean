@@ -1256,26 +1256,23 @@ theorem endpointReply_confinedToBootCore (st st' : SystemState)
     split at hStep
     · next _ replyTarget =>
       split at hStep
-      · simp at hStep
-      · next expected _ =>
-        split at hStep
-        · split at hStep
-          · simp at hStep
-          · next st1 hStore =>
-            have hStoreC := storeTcbIpcStateAndMessage_fromTcb_confinedToCore st st1 target tcb
-              .ready (some msg) bootCoreId hStore
-            split at hStep
-            · next rid _ =>
-              refine observableSlotsConfinedToCore_trans hStoreC ?_
-              refine observableSlotsConfinedToCore_trans
-                (ensureRunnable_confinedToBootCore st1 target) ?_
-              exact removeCallerReplyFrame_confinedToCore _ st' target rid bootCoreId hStep
-            · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep
-              subst hEq
-              exact observableSlotsConfinedToCore_trans hStoreC
-                (ensureRunnable_confinedToBootCore st1 target)
+      · split at hStep
         · simp at hStep
+        · next st1 hStore =>
+          have hStoreC := storeTcbIpcStateAndMessage_fromTcb_confinedToCore st st1 target tcb
+            .ready (some msg) bootCoreId hStore
+          split at hStep
+          · next rid _ =>
+            refine observableSlotsConfinedToCore_trans hStoreC ?_
+            refine observableSlotsConfinedToCore_trans
+              (ensureRunnable_confinedToBootCore st1 target) ?_
+            exact removeCallerReplyFrame_confinedToCore _ st' target rid bootCoreId hStep
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep
+            subst hEq
+            exact observableSlotsConfinedToCore_trans hStoreC
+              (ensureRunnable_confinedToBootCore st1 target)
+      · simp at hStep
     · simp at hStep
 
 /-- SM8.B.3: `endpointReplyRecv` writes only the boot core — both legs. -/
@@ -1294,37 +1291,34 @@ theorem endpointReplyRecv_confinedToBootCore (st st' : SystemState)
     split at hStep
     · next _ expectedReplier =>
       split at hStep
-      · simp at hStep
-      · next expected _ =>
-        split at hStep
-        · split at hStep
+      · split at hStep
+        · simp at hStep
+        · next st1 hStore =>
+          have hStoreC := storeTcbIpcStateAndMessage_fromTcb_confinedToCore st st1 replyTarget
+            tcb .ready (some msg) bootCoreId hStore
+          have hRunC := ensureRunnable_confinedToBootCore st1 replyTarget
+          split at hStep
           · simp at hStep
-          · next st1 hStore =>
-            have hStoreC := storeTcbIpcStateAndMessage_fromTcb_confinedToCore st st1 replyTarget
-              tcb .ready (some msg) bootCoreId hStore
-            have hRunC := ensureRunnable_confinedToBootCore st1 replyTarget
+          · next st3 hConsume =>
+            have hConsumeC : observableSlotsConfinedToCore (ensureRunnable st1 replyTarget) st3
+                bootCoreId := by
+              split at hConsume
+              · next rid _ =>
+                exact removeCallerReplyFrame_confinedToCore _ st3 replyTarget rid bootCoreId hConsume
+              · simp only [Except.ok.injEq, Prod.mk.injEq] at hConsume
+                exact observableSlotsConfinedToCore_of_eq bootCoreId hConsume.2.symm
             split at hStep
             · simp at hStep
-            · next st3 hConsume =>
-              have hConsumeC : observableSlotsConfinedToCore (ensureRunnable st1 replyTarget) st3
-                  bootCoreId := by
-                split at hConsume
-                · next rid _ =>
-                  exact removeCallerReplyFrame_confinedToCore _ st3 replyTarget rid bootCoreId hConsume
-                · simp only [Except.ok.injEq, Prod.mk.injEq] at hConsume
-                  exact observableSlotsConfinedToCore_of_eq bootCoreId hConsume.2.symm
-              split at hStep
-              · simp at hStep
-              · next pair hRecv =>
-                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                obtain ⟨_, hEq⟩ := hStep
-                subst hEq
-                refine observableSlotsConfinedToCore_trans hStoreC ?_
-                refine observableSlotsConfinedToCore_trans hRunC ?_
-                refine observableSlotsConfinedToCore_trans hConsumeC ?_
-                exact endpointReceiveDual_confinedToBootCore st3 _ endpointId receiver _ replyId
-                  hRecv
-        · simp at hStep
+            · next pair hRecv =>
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep
+              subst hEq
+              refine observableSlotsConfinedToCore_trans hStoreC ?_
+              refine observableSlotsConfinedToCore_trans hRunC ?_
+              refine observableSlotsConfinedToCore_trans hConsumeC ?_
+              exact endpointReceiveDual_confinedToBootCore st3 _ endpointId receiver _ replyId
+                hRecv
+      · simp at hStep
     · simp at hStep
 
 

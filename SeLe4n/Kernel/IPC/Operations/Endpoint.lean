@@ -4866,16 +4866,15 @@ them in this module, so a per-store case analysis would change the pattern at al
 47 where a composed step leaves the arity alone and proves the multi-store
 analysis **once**, here.
 
-**The splice ends at the cut frame itself.**  Where there is a frame below, the
-first two stores are the reciprocal pair — `above.prev := some below` and
-`below.next := some (.frame above)` — written *together*, so the pair the removal
-repairs is never transiently inconsistent; that closes the divergence from
-upstream where this tree left the frame below's upward link stale and validated
-reciprocity at every read instead.  Where there is none, the first store is the
-frame above's `Reply.unlinkedFrom`: `above.prev := none`, and its `next` cleared
-too where it names the cut frame — a two-frame cycle, which no operation builds
-and the chain invariant does not exclude, and which would otherwise leave the
-frame above naming a frame that no longer names it back.  The last store clears **both** of the cut frame's
+**The removal severs the stack at the cut frame**, as seL4's `reply_remove`
+does on a frame that is not the head (since WS-ZA ZA6.33; the earlier splice
+was reversed into this sever).  The first store is the frame above's
+`Reply.unlinkedFrom`: `above.prev := none`, and its `next` cleared too where it
+names the cut frame — a two-frame cycle, which no operation builds and the chain
+invariant does not exclude, and which would otherwise leave the frame above
+naming a frame that no longer names it back.  Where a frame below reciprocates
+(`cutFrameBelow?` answers `some`), the second store clears its upward link,
+`below.next := none`, seL4's `replyPrev->replyNext = 0`.  The last store clears **both** of the cut frame's
 links, and it is **not optional**: once the frame above names something else (or
 nothing) as its `prev`, a `next` still naming the frame above would falsify
 `donationChainWellFormed.nextLinkReciprocal` at the cut frame, and once nothing
@@ -6195,14 +6194,14 @@ leaving `returnDonatedSchedContext`'s own `boundThread` guard to catch a drift
 between them.  Under this trigger that guard is satisfied by construction, which
 is the honest direction: the operation reads the fact it used to check.
 
-**A context with no bound thread declines**, and that arm is unreachable today:
-`donateSchedContext` and `returnDonatedSchedContext` both leave `boundThread` a
-`some`, and `schedContextUnbind` refuses a `.donated` holder outright, so no
-reachable state has a context heading a stack while bound to nobody.  It is
-written as a refusal rather than assumed away because the refusal is what keeps
-this total -- and because lifting that unbind refusal, which becomes sound
-exactly once this trigger is live, is the one change that makes the arm
-reachable.
+**A context with no bound thread declines**, and that arm is reachable: a server's
+finalisation unbinds the context it holds while the reply its lender waits on
+still heads it (seL4-MCS's `schedContext_unbindTCB`, which leaves `scReply`
+alone).  The decline is the trigger's half of the answer, not the pop's: the pops
+take that arm to `popUnheldReplyHead` (WS-ZA ZA6.34), seL4-MCS's `reply_pop` of a
+context no thread holds, so a frame heading a context bound to nobody is popped
+with no thread losing a context rather than left in place (and the context
+handed to the answered caller only where it holds none).
 
 **WS-HP HP4.1 -- the resolver is split at the reply object, and the split is
 forced by the reply leg.**  `consumeCallerReply` clears the answered caller's
@@ -6270,55 +6269,6 @@ theorem replyFrameHeadHolder?_eq_some {st : SystemState} {rid : SeLe4n.ReplyId}
       subst h1; subst h2
       exact ⟨rfl, hBt⟩
 
-/-- **WS-HP HP4.4: a scheduling context that heads a reply stack is bound to a
-thread.**
-
-The one coherence fact the head-driven pop still needs, and the replacement for
-`answeredHeadContextIsServerDonation` in the chain composite -- strictly weaker
-than it, because it asks only that the head context has *a* holder rather than
-that a particular recorded server holds it.  That predicate was **deleted** at
-WS-HP HP7 (`v0.35.46`); this is what the composite carries instead.  It is what rules out the arm
-`replyFrameHeadHolder?` declines on: a frame that heads a context bound to nobody,
-where the pop would be the identity while the reply leg has already relaxed the
-chain at that frame.
-
-`answeredFrameHeadContext?`'s docstring argues the arm is unreachable
-(`donateSchedContext` and `returnDonatedSchedContext` both leave `boundThread` a
-`some`, and `schedContextUnbind` refuses a `.donated` holder), and that argument
-is about *reachability* rather than about an invariant -- `donationChainWellFormed`
-carries no binding clause at all.  So it is stated rather than assumed.
-
-**And it is still stated** (the post-landing audit, `v0.35.61`).  This docstring
-used to end "WS-HP HP7 is where it becomes a clause of the chain invariant and
-retires", and HP7 (`v0.35.46`) did neither: it deleted the three *binding-driven*
-coherence facts and left the two the head-driven trigger does not witness -- this
-one, and `replyFrameHeadHolderDonation` -- exactly as they were, with no plan row
-ever scheduling the clause.  A forward-looking sentence reads like a scheduled
-obligation, which is why this one is corrected rather than left for the next
-reader to re-derive.  Deriving it means a `headBound` clause of
-`donationChainWellFormed` with the frame family extended over `boundThread`;
-that is registered (`docs/REGISTERED_DEBT.md`, WS-HP) rather than predicted a
-second time.
-
-Vacuous wherever the frame heads no context, which is every reply in a tree with
-no donation. -/
-def replyFrameHeadIsBound (st : SystemState) (rid : SeLe4n.ReplyId) : Prop :=
-  ∀ scId, replyFrameHeadContext? st rid = some scId →
-    ∃ holder, replyFrameHeadHolder? st rid = some (scId, holder)
-
-/-- The vacuity discharge. -/
-theorem replyFrameHeadIsBound_of_no_head (st : SystemState) (rid : SeLe4n.ReplyId)
-    (h : replyFrameHeadContext? st rid = none) : replyFrameHeadIsBound st rid := by
-  intro scId hHead; rw [h] at hHead; cases hHead
-
-/-- Under it, a frame that heads a context resolves a holder. -/
-theorem replyFrameHeadHolder?_ne_none_of_bound {st : SystemState} {rid : SeLe4n.ReplyId}
-    {scId : SeLe4n.SchedContextId} (hBound : replyFrameHeadIsBound st rid)
-    (hHead : replyFrameHeadContext? st rid = some scId) :
-    replyFrameHeadHolder? st rid ≠ none := by
-  obtain ⟨holder, hH⟩ := hBound scId hHead
-  rw [hH]; intro hx; cases hx
-
 /-- **WS-HP HP4.1: the frame-keyed resolver is a function of the store
 projections it reads** -- every Reply and every SchedContext.  The frame lemma a
 step that writes no chain object crosses, and the one the answered-caller form
@@ -6384,6 +6334,24 @@ theorem answeredFrameHeadContext?_eq_some {st : SystemState} {target : SeLe4n.Th
     simp only []
     intro h
     exact ⟨rid, rfl, (replyFrameHeadHolder?_eq_some h).1, (replyFrameHeadHolder?_eq_some h).2⟩
+
+/-- **WS-ZA ZA6.34: the context the answered frame heads, whoever holds it** --
+the first half of `answeredFrameHeadContext?` without its holder, and the
+expression the reply footprints' context members read: the pop writes that
+context, its stack head and the frame below whether or not a thread holds it
+(`popUnheldReplyHead` where none does), so a member keyed on the holder's answer
+would leave the unheld pop's writes undeclared. -/
+def answeredFrameHeadContextId? (st : SystemState) (target : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  (answeredReplyObject? st target).bind (replyFrameHeadContext? st)
+
+/-- A held head names its context here too. -/
+theorem answeredFrameHeadContextId?_of_holder {st : SystemState} {target : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {holder : SeLe4n.ThreadId}
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    answeredFrameHeadContextId? st target = some scId := by
+  obtain ⟨rid, hRid, hHead, -⟩ := answeredFrameHeadContext?_eq_some h
+  unfold answeredFrameHeadContextId?; rw [hRid]; exact hHead
 
 /-- WS-RM (`v0.35.6`): **the splice folded to the identity on a refusal** — the
 one spelling of "take the frame above off this frame's stack, or leave the state
@@ -7861,7 +7829,7 @@ private theorem storeReply_keeps_reply {s s' : SystemState} {k : SeLe4n.ObjId} {
 
 /-- The head pop commits when its head and the head's lower frame are replies,
 and it keeps every object that is not a reply. -/
-private theorem storeDonationHeadPop_ok_of {s : SystemState} {scId : SeLe4n.SchedContextId}
+theorem storeDonationHeadPop_ok_of {s : SystemState} {scId : SeLe4n.SchedContextId}
     {rid : SeLe4n.ReplyId} {r : Reply} (hInv : s.objects.invExt)
     (hR : s.objects[rid.toObjId]? = some (.reply r))
     (hPrev : ∀ p, r.prev = some p → ∃ b, s.objects[p.toObjId]? = some (.reply b)) :

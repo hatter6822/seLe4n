@@ -6,6 +6,8 @@ import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.IPC.DualQueue.PopInPlace
 import SeLe4n.Kernel.IPC.DualQueue.RemoveInPlace
 import SeLe4n.Kernel.IPC.Operations.NotificationBind
+import SeLe4n.Kernel.IPC.Operations.DonationPopInPlace
+import SeLe4n.Kernel.IPC.Operations.UnheldContextPopInPlace
 
 /-!
 # Cancelling every waiter of an endpoint or a notification
@@ -140,6 +142,92 @@ def cancelEndpointQueue (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) :
         | none => st
       | none => st
     | none => st
+
+/-- The head **code** of one of an endpoint's queues (`endpointWaitQueue`'s
+head, `0` for none). -/
+@[inline] def endpointWaitHeadCode (ep : Endpoint) (isReceiveQ : Bool) : Nat :=
+  if isReceiveQ then ep.recvHeadCode else ep.sendHeadCode
+
+theorem ofOptCode_endpointWaitHeadCode (ep : Endpoint) (isReceiveQ : Bool) :
+    SeLe4n.ThreadId.ofOptCode (endpointWaitHeadCode ep isReceiveQ) =
+      (endpointWaitQueue ep isReceiveQ).head := by
+  unfold endpointWaitHeadCode endpointWaitQueue
+  cases isReceiveQ <;> rfl
+
+/-- `storeEndpointWaiterCancelled` behind the successor's link **code**
+(`storePopHeadCode`), so no `some` cell is built for a waiter with a successor
+(`storeEndpointWaiterCancelledCode_eq`).  Out of line, as the spec form is. -/
+@[noinline] def storeEndpointWaiterCancelledCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (nextCode : Nat) : SystemState :=
+  wakeCancelledWaiter
+    ((storePopHeadCode st endpointId isReceiveQ t nextCode).updateTcb t cancelledEndpointWaiterTcb) t
+
+theorem storeEndpointWaiterCancelledCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (nextCode : Nat) :
+    storeEndpointWaiterCancelledCode st endpointId isReceiveQ t nextCode =
+      storeEndpointWaiterCancelled st endpointId isReceiveQ t
+        (SeLe4n.ThreadId.ofOptCode nextCode) := by
+  unfold storeEndpointWaiterCancelledCode storeEndpointWaiterCancelled
+  rw [storePopHeadCode_eq]
+
+/-- `endpointWaiterCancellable` asked of the waiter's successor **code**
+(`sendWakesInPlaceCode`). -/
+@[inline] def endpointWaiterCancellableCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) (tcb : TCB) : Bool :=
+  cancelledWaiterWakeable st t tcb && tcb.timeoutBudget.isNone &&
+    sendWakesInPlaceCode st endpointId t tcb.queueNextCode
+
+theorem endpointWaiterCancellableCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) (tcb : TCB) :
+    endpointWaiterCancellableCode st endpointId t tcb =
+      endpointWaiterCancellable st endpointId t tcb := by
+  unfold endpointWaiterCancellableCode endpointWaiterCancellable
+  rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode]
+
+/-- `cancelEndpointQueue` as it is compiled: the queue's head and each waiter's
+successor read as codes, so a queue of more than one waiter builds no cell
+(`cancelEndpointQueue_eq_impl`). -/
+def cancelEndpointQueueImpl (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) :
+    Nat → SystemState → SystemState
+  | 0, st => st
+  | fuel + 1, st =>
+    match st.getEndpoint? endpointId with
+    | some ep =>
+      match endpointWaitHeadCode ep isReceiveQ with
+      | 0 => st
+      | k + 1 =>
+        match st.getTcb? ⟨k⟩ with
+        | some tcb =>
+          if endpointWaiterCancellableCode st endpointId ⟨k⟩ tcb then
+            cancelEndpointQueueImpl endpointId isReceiveQ fuel
+              (storeEndpointWaiterCancelledCode st endpointId isReceiveQ ⟨k⟩ tcb.queueNextCode)
+          else st
+        | none => st
+    | none => st
+
+@[csimp] theorem cancelEndpointQueue_eq_impl :
+    @cancelEndpointQueue = @cancelEndpointQueueImpl := by
+  funext endpointId isReceiveQ fuel
+  induction fuel with
+  | zero => funext st; rfl
+  | succ fuel ih =>
+    funext st
+    unfold cancelEndpointQueue cancelEndpointQueueImpl
+    cases st.getEndpoint? endpointId with
+    | none => rfl
+    | some ep =>
+      dsimp only
+      rw [← ofOptCode_endpointWaitHeadCode]
+      cases endpointWaitHeadCode ep isReceiveQ with
+      | zero => rfl
+      | succ k =>
+        dsimp only [SeLe4n.ThreadId.ofOptCode]
+        cases st.getTcb? ⟨k⟩ with
+        | none => rfl
+        | some tcb =>
+          dsimp only
+          rw [endpointWaiterCancellableCode_eq, storeEndpointWaiterCancelledCode_eq,
+            TCB.ofOptCode_queueNextCode, ih]
 
 /-- **seL4's `cancelAllIPC`**: every sender, then every receiver. -/
 def cancelAllIpc (endpointId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
@@ -316,15 +404,6 @@ def unbindMaybeNotification (notificationId : SeLe4n.ObjId) (st : SystemState) :
 -- §4  A thread's and a scheduling context's finalisation
 -- ============================================================================
 
-/-- A thread whose binding codes name a context and no owner is `.bound` to it
-(stated here, ahead of the compiled unbinds that read it). -/
-theorem schedContextBinding_of_codes' {tcb : TCB} (hS : tcb.scBindingScCode ≠ 0)
-    (hO : tcb.scBindingOwnerCode = 0) :
-    tcb.schedContextBinding = .bound ⟨tcb.scBindingScCode - 1⟩ := by
-  unfold TCB.schedContextBinding SchedContextBinding.ofCodes
-  obtain ⟨s, hs⟩ := Nat.exists_eq_succ_of_ne_zero hS
-  rw [hs, hO]; simp
-
 /-- **Whether the thread `tid` (its TCB `tcb`), blocked on the endpoint `ep` at
 `endpointId`, may be cancelled off that endpoint's receive queue
 (`isReceiveQ`) or its send queue, wherever it waits there**: it is blocked on
@@ -433,6 +512,30 @@ to the thread the pop takes it from (`donationOwnerUnique`). -/
     t.replyObjectCode == x.val + 1 && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
     t.timeoutBudget.isNone
 
+/-- **Whether a reply heading a context's stack is named back by that context**
+(`sc.scReply` is the reply at `x`): the frame the head cut finds
+(`replyFrameHeadContext?`).  A reply heading no stack answers `true`.  One
+read: the context. -/
+@[inline] def replyHeadNamedBack (st : SystemState) (x : SeLe4n.ObjId) (r : Reply) : Bool :=
+  match r.next with
+  | some (.head s) =>
+    match st.getSchedContext? s with
+    | some sc => sc.scReply == some ⟨x.val⟩
+    | none => false
+  | _ => true
+
+/-- **Whether a thread's own final delete may cut the reply at `x` its caller
+`c` (its TCB `t`) waits on**, read on the pre-state: the checks
+`replyCallerFinalisable` makes of the caller, with the head pop's commit
+replaced by the head being named back (`replyHeadNamedBack`), since the
+thread-side cut hands no context back (seL4-MCS's `reply_remove_tcb`). -/
+@[inline] def replyCallerCuttable (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
+    (c : SeLe4n.ThreadId) (t : TCB) : Bool :=
+  replyHeadNamedBack st x r && !c.isReserved && !isIdleThreadId c &&
+    t.runCoreCode == 0 && decide (4 ≤ t.ipcStateCode) &&
+    t.replyObjectCode == x.val + 1 && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
+    t.timeoutBudget.isNone
+
 /-- **A finalised reply's caller cancel** (seL4's `reply_remove`): the pop of a
 head reply — the context handed back to the caller, its replenishments moved to
 the caller's core, and the thread it is taken from off its core
@@ -456,51 +559,57 @@ not depend on the core it is run from
   | some s => (PriorityInheritance.propagatePipChainCrossCore st s Concurrency.bootCoreId).1
   | none => st
 
-/-- **Whether a reply heading a context's stack has that context held by the
-server its caller waits on** (`t`, the caller's TCB): the thread the pop takes
-the context from is the one the caller lent it to.  A reply heading no stack
-answers `true`.  One read: the context. -/
-@[inline] def replyHeadHeldByServer (st : SystemState) (r : Reply) (t : TCB) : Bool :=
-  match r.next with
-  | some (.head s) =>
-    match st.getSchedContext? s with
-    | some sc => sc.boundThreadCode == replyCallerServerCode t
-    | none => false
-  | _ => true
-
 /-- **Whether the cancel of the thread `c` (its TCB `t`), blocked on a reply, is
 admitted**, read on the state it runs on before any write: the reply `t` waits on
-(its reply code) is stored, names `c` back as its caller, admits its caller's
-finalisation (`replyCallerFinalisable`: a head reply's pop commits, the caller is
-on no run queue, no endpoint queue, and waits with no timeout budget), and, when
-it heads a context's stack, has that context held by the server `c` waits on
-(`replyHeadHeldByServer`).  Each read is `O(1)`. -/
+(its reply code) is stored, names `c` back as its caller, and admits its caller's
+cut (`replyCallerCuttable`: a head reply is named back by its context, the caller
+is on no run queue, no endpoint queue, and waits with no timeout budget).  Each
+read is `O(1)`. -/
 @[inline] def replyCallerCancelAdmitted (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) :
     Bool :=
   match st.getObject? ⟨t.replyObjectCode - 1⟩ with
   | some (.reply r) =>
-    r.callerCode == c.val + 1 && replyCallerFinalisable st ⟨t.replyObjectCode - 1⟩ r c t &&
-      replyHeadHeldByServer st r t
+    r.callerCode == c.val + 1 && replyCallerCuttable st ⟨t.replyObjectCode - 1⟩ r c t
   | _ => false
 
-/-- **The cancel of the thread `c` (its TCB `t`), blocked on a reply**: seL4 MCS's
-`reply_remove` of the reply it waits on, as the reply's own finalisation runs it
-(`finaliseReplyCancel`: a head reply popped, its context handed back to `c`; any
-other reply spliced out of its stack; `c` restored with the cancellation frame,
-the reply's caller link and `c`'s reply link cleared, `c` off its server's
-reply-waiter queue), then the boost `c` lent its server reverted
-(`finaliseReplyRevert`), when `replyCallerCancelAdmitted` admits it; otherwise
-nothing is written.  It runs on a thread whose own final delete finalises it
-(`finaliseThreadCancel`), where seL4 runs `reply_remove_tcb`, and on each caller
-waiting on a server being finalised (`finaliseReplyWaiters`), the state seL4
-reaches when those callers' reply objects are deleted. -/
+/-- **The removal of the reply the thread `c` waits on, after its head is cut**:
+on the state the cut left, `c`'s reply (read off its thread record there) is
+removed as the reply's own finalisation removes a reply heading no stack
+(`finaliseReplyCancel`'s splice arm, admitted by `replyCallerFinalisable`), and the
+boost `c` lent its server reverted (`finaliseReplyRevert`).  A state the cut
+leaves where the check refuses is left alone. -/
+def finaliseCutReplyCaller (st : SystemState) (c : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? c with
+  | some t =>
+    match st.getObject? ⟨t.replyObjectCode - 1⟩ with
+    | some (.reply r) =>
+      if r.callerCode == c.val + 1 && replyCallerFinalisable st ⟨t.replyObjectCode - 1⟩ r c t then
+        finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer?
+      else st
+    | _ => st
+  | none => st
+
+/-- **The cancel of the thread `c` (its TCB `t`), blocked on a reply** (WS-ZA
+ZA6.34): seL4-MCS's `reply_remove_tcb`, as the suspend runs it
+(`Lifecycle.Suspend.cancelIpcKeepingContexts`).  A reply heading a context's
+stack is cut off it, and the context **stays with the thread it is bound to**
+(`Lifecycle.Suspend.cutCancelledCallerHead`, the suspend's own cut:
+`sc->scReply = NULL`; a holder
+holding it on loan from `c` keeps it as its own); then the reply, heading
+nothing, is removed (`finaliseCutReplyCaller`: spliced out of its stack, `c`
+restored with the cancellation frame, the reply's caller link and `c`'s reply link
+cleared, `c` off its server's reply-waiter queue), and the boost `c` lent its
+server reverted, when `replyCallerCancelAdmitted` admits it; otherwise nothing
+is written.  It runs on a thread whose own final delete finalises it
+(`finaliseThreadCancel`).  The reply object's own finalisation is seL4's
+`reply_remove`, whose head branch is `reply_pop`, and keeps the give-back
+(`finaliseReplyCancel`). -/
 def finaliseReplyCallerCancel (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) :
     SystemState :=
   match st.getObject? ⟨t.replyObjectCode - 1⟩ with
   | some (.reply r) =>
-    if r.callerCode == c.val + 1 && replyCallerFinalisable st ⟨t.replyObjectCode - 1⟩ r c t &&
-        replyHeadHeldByServer st r t then
-      finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer?
+    if r.callerCode == c.val + 1 && replyCallerCuttable st ⟨t.replyObjectCode - 1⟩ r c t then
+      finaliseCutReplyCaller (Lifecycle.Suspend.cutCancelledCallerHead st t) c
     else st
   | _ => st
 
@@ -533,45 +642,38 @@ theorem finaliseReplyCancelSplice_eq (st : SystemState) (c : SeLe4n.ThreadId) (t
     · rfl
   · rfl
 
-/-- **A reply-blocked caller's cancel and revert, as compiled**: a head reply as
-`finaliseReplyCancel` runs it; any other through `finaliseReplyCancelSplice`,
-with the caller's reply and server read as codes before the first write, so the
-caller's thread record is held by its slot alone when the restore and the
-consume write it. -/
-@[inline] def finaliseReplyCallerRevert (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
-    (t : TCB) : SystemState :=
-  if replyStackLinkIsHead r.next then
-    finaliseReplyRevert (cancelIpcBlockingReclaimed c t st) t.blockingServer?
-  else
-    let serverCode := replyCallerServerCode t
-    finaliseReplyRevert (finaliseReplyCancelSplice st c t serverCode)
-      (SeLe4n.ThreadId.ofOptCode serverCode)
+/-- **The removal after the head cut, as compiled** (`finaliseCutReplyCaller`):
+a reply heading no stack is spliced in place (`finaliseReplyCancelSplice`), and
+the server read as a code; the head branch, which the cut leaves unreachable on
+a well-formed table, is the compiled pop (`cancelHeadReplyCaller`), so the two
+forms agree on every state. -/
+def finaliseCutReplyCallerImpl (st : SystemState) (c : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? c with
+  | some t =>
+    match st.getObject? ⟨t.replyObjectCode - 1⟩ with
+    | some (.reply r) =>
+      if r.callerCode == c.val + 1 && replyCallerFinalisable st ⟨t.replyObjectCode - 1⟩ r c t then
+        let serverCode := replyCallerServerCode t
+        finaliseReplyRevert
+          (if replyStackLinkIsHead r.next then cancelHeadReplyCaller st c t
+           else finaliseReplyCancelSplice st c t serverCode)
+          (SeLe4n.ThreadId.ofOptCode serverCode)
+      else st
+    | _ => st
+  | none => st
 
-theorem finaliseReplyCallerRevert_eq (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
-    (t : TCB) :
-    finaliseReplyCallerRevert st r c t =
-      finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer? := by
-  unfold finaliseReplyCallerRevert finaliseReplyCancel
+@[csimp] theorem finaliseCutReplyCaller_eq_impl :
+    @finaliseCutReplyCaller = @finaliseCutReplyCallerImpl := by
+  funext st c
+  unfold finaliseCutReplyCaller finaliseCutReplyCallerImpl finaliseReplyCancel
   split
+  · split
+    · split
+      · split <;> simp only [cancelHeadReplyCaller_eq, finaliseReplyCancelSplice_eq,
+          ofOptCode_replyCallerServerCode]
+      · rfl
+    · rfl
   · rfl
-  · simp only [finaliseReplyCancelSplice_eq, ofOptCode_replyCallerServerCode]
-
-/-- **`finaliseReplyCallerCancel` as compiled** (`finaliseReplyCallerRevert`). -/
-def finaliseReplyCallerCancelImpl (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) :
-    SystemState :=
-  match st.getObject? ⟨t.replyObjectCode - 1⟩ with
-  | some (.reply r) =>
-    if r.callerCode == c.val + 1 && replyCallerFinalisable st ⟨t.replyObjectCode - 1⟩ r c t &&
-        replyHeadHeldByServer st r t then
-      finaliseReplyCallerRevert st r c t
-    else st
-  | _ => st
-
-@[csimp] theorem finaliseReplyCallerCancel_eq_impl :
-    @finaliseReplyCallerCancel = @finaliseReplyCallerCancelImpl := by
-  funext st c t
-  unfold finaliseReplyCallerCancel finaliseReplyCallerCancelImpl
-  simp only [finaliseReplyCallerRevert_eq]
 
 /-- **Whether the endpoint cancel admits the thread `tid`**, as the admission
 reads it: the endpoint is present and `endpointBlockedCancellable` admits the
@@ -609,77 +711,6 @@ stash; or blocked on a reply, which the reply cancel admits
   | 3 => endpointCancelAdmitted st ⟨t.ipcObjectCode⟩ false tid t
   | _ => replyCallerCancelAdmitted st tid t
 
-/-- **Whether the caller `w` (its TCB `t`) waiting on the server `x` may be
-ended** as `reply_remove` ends it (`finaliseReplyWaiter`): it is another thread
-than `x`, reply-blocked on `x`, and its reply's cancel is admitted
-(`replyCallerCancelAdmitted`).  Each read is `O(1)`. -/
-@[inline] def replyWaiterEndable (st : SystemState) (x w : SeLe4n.ThreadId) (t : TCB) : Bool :=
-  w.val != x.val && replyCallerServerCode t == x.val + 1 && replyCallerCancelAdmitted st w t
-
-/-- **Whether the reply a thread `t` waits on sits on no reply stack**: the reply
-its reply code names is stored and links up to nothing, so its cancel is a
-splice with nothing to hand back and touches no other reply. -/
-@[inline] def replyCallerReplyUnstacked (st : SystemState) (t : TCB) : Bool :=
-  match st.getObject? ⟨t.replyObjectCode - 1⟩ with
-  | some (.reply r) => r.next.isNone
-  | _ => false
-
-/-- **Whether the waiters of the server `x`, from the one whose code is `k` on,
-may each be ended**, read on the pre-state by following the waiters' own links
-(`replyWaiterNextCode`), at most `fuel` of them: each waiter but the lender
-(`lenderCode`, whose pop the loan return makes, `finaliseThreadReturnLoan`) is
-endable and waits on a reply on no stack, and the queue ends within the fuel.
-Each waiter costs `O(1)` reads. -/
-def replyWaitersEndableFrom (st : SystemState) (x : SeLe4n.ThreadId) (lenderCode : Nat) :
-    Nat → Nat → Bool
-  | _, 0 => true
-  | 0, _ + 1 => false
-  | fuel + 1, k + 1 =>
-    match st.getTcb? ⟨k⟩ with
-    | some t =>
-      (k + 1 == lenderCode || replyWaiterEndable st x ⟨k⟩ t && replyCallerReplyUnstacked st t) &&
-        replyWaitersEndableFrom st x lenderCode fuel t.replyWaiterNextCode
-    | none => false
-
-/-- **Whether a finalised thread's loan and reply waiters may be ended**, read on
-the pre-state before any write.  A thread `x` holding a context on loan
-(`.donated s L`, its owner code naming `L`) returns it to its lender `L` by `L`'s
-own pop (`finaliseThreadReturnLoan`): `L` is endable as `x`'s waiter, and `x`'s
-own reply, when it waits on one, sits on no stack, so `x`'s cancel leaves `L`'s
-pop as it is read here.  Every other waiter of `x`, followed from `x`'s queue
-head for `x`'s count (`replyWaitersEndableFrom`), is endable and waits on a
-reply on no stack, so no waiter's end touches another's reads.  A loan names a
-context as well as its lender (`t.scBindingScCode`), so the codes read back as
-`.donated` (`SchedContextBinding.ofCodes`), the binding the lender's pop takes
-back. -/
-@[inline] def replyWaitersAdmitted (st : SystemState) (x : SeLe4n.ThreadId) (t : TCB) : Bool :=
-  (match t.scBindingOwnerCode with
-   | 0 => true
-   | o + 1 =>
-     t.scBindingScCode != 0 &&
-     (t.replyObjectCode == 0 || replyCallerReplyUnstacked st t) &&
-       match st.getTcb? ⟨o⟩ with
-       | some tl => replyWaiterEndable st x ⟨o⟩ tl
-       | none => false) &&
-    replyWaitersEndableFrom st x t.scBindingOwnerCode t.replyWaitersCount t.replyWaitersHeadCode
-
-/-- **Whether the pop of the reply a thread `t` waits on hands it back a context
-of its own**: a reply heading a context's stack has no frame below it, so the
-pop resolves no outer caller (`replyStackOuterCaller?`) and binds the context
-back to `t` as its own, with no lender of its own to hand back.  A reply heading
-no stack pops nothing and answers `true`.  A head reply with a frame below is
-one `t` lent on from the caller below, and that caller waits on `t` with its
-reply on a stack, which `replyWaitersAdmitted` refuses: read here, on `t`'s own
-reply, the refusal is the admission's, before any write.  One read: the
-reply. -/
-@[inline] def replyHeadPopsOwn (st : SystemState) (t : TCB) : Bool :=
-  match st.getObject? ⟨t.replyObjectCode - 1⟩ with
-  | some (.reply r) =>
-    match r.next with
-    | some (.head _) => r.prev.isNone
-    | _ => true
-  | _ => true
-
 /-- **Whether the thread `tid` (its TCB `t`) may be unbound from its
 notification**: it is bound to none, or the notification its code names is
 stored and bound back to it, and the unbind writes in place
@@ -701,23 +732,26 @@ executing core's own thread deleting its last capability included — or held by
 a core as its FP/SIMD owner or its resident), blocked on a notification, or
 blocked receiving, sending or calling on an endpoint, wherever it waits in that
 queue, or blocked on a reply, whose cancel removes the reply as the reply's own
-finalisation does (seL4's `reply_remove_tcb`; a head reply popped, so a thread
-that lent its context gets it back, as its own: `replyHeadPopsOwn`); a thread not blocked on a reply is linked
+thread's own cancel does (seL4's `reply_remove_tcb`: a head reply cut off its
+context, which stays with the thread holding it); a thread not blocked on a reply is linked
 into no reply-waiter queue and holds no reply link; it holds no timeout budget;
-a context it holds on loan goes back to its lender by the lender's own pop, and
-every other caller waiting on it for a reply is ended as `reply_remove` ends it
-(`replyWaitersAdmitted`, which reads each of them on this state);
+the callers waiting on it for a reply are no reason to refuse it: each is left
+waiting on its reply with no server (`finaliseThreadOrphanWaiters`), whatever
+stack its reply sits on;
 its space slots may hold capabilities, which the zombie loop deletes after
 the finalisation, by the finalising delete (`zombiePasses`); a bound
-notification and a bound scheduling context are bound back to it.  A context
-that records it as a reservation's origin is no reason to refuse it: that origin
+notification and a bound scheduling context are bound back to it, and a thread
+naming no context names no lender either (its binding codes read as the binding
+they encode).  A context that records it as a reservation's origin is no reason to refuse it: that origin
 counts only while the thread's own back-link names the context
 (`donationOriginRecipient?`), so the thread's record leaving with it ends the
 origin.  The admission is carried across the finalisation's own steps
 (`finaliseThread_quiesces`): the notification unbind, run first on this state,
 reads nothing more (`notificationUnbindAdmitted`); the later steps keep their
 own guards, which the reply finalisation's steps share and the compiled context
-unbind rests on, and none of them refuses after an earlier step has written. -/
+unbind rests on, and none of them refuses after an earlier step has written: the
+walk over the waiters reads each head off the reply-waiter queues, whose
+consistency names it a waiter of the thread (`replyWaitersConsistent`). -/
 @[inline] def threadFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.tcb t) =>
@@ -725,11 +759,11 @@ unbind rests on, and none of them refuses after an earlier step has written. -/
     t.tid.val == x.val && !tid.isReserved && !isIdleThreadId tid &&
     (decide (4 ≤ t.ipcStateCode) ||
       t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 && t.replyObjectCode == 0) &&
-    t.timeoutBudget.isNone && replyWaitersAdmitted st tid t &&
-    threadIpcCancelAdmitted st tid t && (t.replyObjectCode == 0 || replyHeadPopsOwn st t) &&
+    t.timeoutBudget.isNone &&
+    threadIpcCancelAdmitted st tid t &&
     notificationUnbindAdmitted st tid t &&
-    (t.scBindingScCode == 0 ||
-      match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
+    (t.scBindingScCode == 0 && t.scBindingOwnerCode == 0 ||
+      t.scBindingScCode != 0 && match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
       | some sc => sc.boundThreadCode == x.val + 1
       | none => false)
   | _ => false
@@ -762,11 +796,28 @@ def finaliseThreadCancel (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
     | _ => st
   | none => st
 
+/-- Whether a notification's queue is headed by `t`, read off its head code. -/
+theorem Notification.waitHeadCode_beq (ntfn : Notification) (t : SeLe4n.ThreadId) :
+    (ntfn.waitHeadCode == t.val + 1) = (ntfn.waitHead == some t) := by
+  unfold Notification.waitHead
+  cases hw : ntfn.waitHeadCode with
+  | zero => simp [SeLe4n.ThreadId.ofOptCode]
+  | succ w =>
+    simp only [SeLe4n.ThreadId.ofOptCode]
+    rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
+    constructor
+    · intro h
+      have hv : w = t.val := by omega
+      rw [hv]
+    · intro h
+      rw [← Option.some.inj h]
+
 /-- **`finaliseThreadCancel` as compiled**: the notification cancel is its
 in-place writes (`storeNotificationBlockedCancelled`,
 `cancelIpcBlocking_notification_inPlace`); the endpoint cancel is already
-written in place, and the reply cancel is compiled in place through
-`finaliseReplyCallerCancel_eq_impl`. -/
+written in place, and the reply cancel is compiled in place through the head
+cut's and the removal's compiled forms (`cutHeadFrameKeepingContext_eq_impl`,
+`finaliseCutReplyCaller_eq_impl`). -/
 def finaliseThreadCancelImpl (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some t =>
@@ -775,7 +826,7 @@ def finaliseThreadCancelImpl (st : SystemState) (tid : SeLe4n.ThreadId) : System
       match st.getNotification? n with
       | some ntfn =>
         if notificationWaiterCancellable st n tid t then
-          storeNotificationBlockedCancelled st n tid (ntfn.waitHead == some tid) t.ntfnPrev
+          storeNotificationBlockedCancelled st n tid (ntfn.waitHeadCode == tid.val + 1) t.ntfnPrev
             t.ntfnNext
         else st
       | none => st
@@ -797,7 +848,7 @@ def finaliseThreadCancelImpl (st : SystemState) (tid : SeLe4n.ThreadId) : System
       split
       · rename_i ntfn hN
         split
-        · exact cancelIpcBlocking_notification_inPlace hN hT hB
+        · rw [Notification.waitHeadCode_beq]; exact cancelIpcBlocking_notification_inPlace hN hT hB
         · rfl
       · rfl
     all_goals rfl
@@ -836,40 +887,25 @@ def finaliseThreadSuspend (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
     else st
   | none => st
 
-/-- **End a caller `w` (its TCB `t`) waiting on a reply**, as `reply_remove`
-ends it: the reply cancel (`finaliseReplyCallerCancel`: a head reply popped, the
-context handed back to `w`; any other reply spliced out; `w` off its server's
-reply-waiter queue; the boost `w` lent its server reverted), then the suspend
-(`finaliseThreadSuspend`, `.Inactive`).  The step the reply's own finalisation
-takes for its caller (`finaliseReply`). -/
-@[inline] def finaliseReplyWaiter (st : SystemState) (w : SeLe4n.ThreadId) (t : TCB) :
-    SystemState :=
-  finaliseThreadSuspend (finaliseReplyCallerCancel st w t) w
+/-- **Leave a caller `w` waiting on its reply with no server** (seL4-MCS's
+`finaliseCap` on a thread: a deleted server's callers stay `BlockedOnReply`,
+each reply's `replyTCB` naming its caller, and nothing records the server): the
+caller's server is forgotten (`TCB.serverForgotten`) and it leaves the server
+`x`'s reply-waiter queue (`unlinkReplyWaiter`).  Its reply, its reply link and
+every other field are kept, so a reply cap holder can still answer it
+(`doReplyTransfer`) and the delete of its reply ends it (`reply_remove`).  Both
+writes are in place. -/
+@[inline] def orphanReplyWaiter (st : SystemState) (w x : SeLe4n.ThreadId) : SystemState :=
+  (st.mapTcbInPlace w TCB.serverForgotten).unlinkReplyWaiter w x
 
-/-- **Return the context a finalised thread `x` holds on loan** (seL4's
-`reply_remove` of its lender's reply, the pop handing the context back): the
-lender `L` its binding names (`.donated s L`, its owner code) is ended
-(`finaliseReplyWaiter`), so the pop takes the context from `x` and binds it to
-`L`, before `x`'s suspend, when `L` is endable as `x`'s waiter
-(`replyWaiterEndable`).  `O(1)` reads, then the step's own. -/
-def finaliseThreadReturnLoan (st : SystemState) (x : SeLe4n.ThreadId) : SystemState :=
-  match st.getTcb? x with
-  | some tx =>
-    match tx.scBindingOwnerCode with
-    | 0 => st
-    | o + 1 =>
-      match st.getTcb? ⟨o⟩ with
-      | some tl => if replyWaiterEndable st x ⟨o⟩ tl then finaliseReplyWaiter st ⟨o⟩ tl else st
-      | none => st
-  | none => st
-
-/-- **End the callers waiting on the server `x`**, head first, at most `fuel` of
-them: each, endable as `x`'s waiter (`replyWaiterEndable`), is ended as
-`reply_remove` ends it (`finaliseReplyWaiter`), which takes it off `x`'s queue,
-so the walk follows `x`'s own head.  A waiter the guard refuses ends the walk;
-the pre-state admission (`replyWaitersAdmitted`) reads every waiter, so none is
-refused on a state it admits. -/
-def finaliseReplyWaiters (x : SeLe4n.ThreadId) : Nat → SystemState → SystemState
+/-- **Leave every caller waiting on the server `x` with no server**, head first,
+at most `fuel` of them: each, another thread than `x` and reply-blocked on it,
+is orphaned (`orphanReplyWaiter`), which takes it off `x`'s queue, so the walk
+follows `x`'s own head.  A head the guard refuses ends the walk; on a state whose
+reply-waiter queues are consistent (`replyWaitersConsistent`) the head of `x`'s
+queue is always a thread reply-blocked on `x`, so none is refused there
+(`orphanReplyWaiters_endsAll`). -/
+def orphanReplyWaiters (x : SeLe4n.ThreadId) : Nat → SystemState → SystemState
   | 0, st => st
   | fuel + 1, st =>
     match st.getTcb? x with
@@ -879,17 +915,18 @@ def finaliseReplyWaiters (x : SeLe4n.ThreadId) : Nat → SystemState → SystemS
       | k + 1 =>
         match st.getTcb? ⟨k⟩ with
         | some t =>
-          if replyWaiterEndable st x ⟨k⟩ t then
-            finaliseReplyWaiters x fuel (finaliseReplyWaiter st ⟨k⟩ t)
+          if k != x.val && replyCallerServerCode t == x.val + 1 then
+            orphanReplyWaiters x fuel (orphanReplyWaiter st ⟨k⟩ x)
           else st
         | none => st
     | none => st
 
-/-- **End every caller waiting on a finalised thread `x`** (`finaliseReplyWaiters`,
-with the fuel `x`'s own count). -/
-@[inline] def finaliseThreadEndWaiters (st : SystemState) (x : SeLe4n.ThreadId) : SystemState :=
+/-- **Leave every caller waiting on a finalised thread `x` with no server**
+(`orphanReplyWaiters`, with the fuel `x`'s own count). -/
+@[inline] def finaliseThreadOrphanWaiters (st : SystemState) (x : SeLe4n.ThreadId) :
+    SystemState :=
   match st.getTcb? x with
-  | some tx => finaliseReplyWaiters x tx.replyWaitersCount st
+  | some tx => orphanReplyWaiters x tx.replyWaitersCount st
   | none => st
 
 /-- **Release every core's hold on a thread being finalised** (seL4's
@@ -936,56 +973,46 @@ def finaliseThreadUnbindNotification (st : SystemState) (tid : SeLe4n.ThreadId) 
   let c := boundNotificationCodeOf st tid
   if c == 0 then st else storeUnbindNotification st tid ⟨c - 1⟩
 
-/-- **Unbind a thread being finalised from the scheduling context it owns**
-(seL4's `unbindFromSC`): the reservation arm the destroy cleanup runs
-(`cancelDonationArmOnCore`), at a `.bound` thread whose context is bound back
-to it, and before the cleanup, so the cleanup finds the thread unbound. -/
+/-- **Unbind a thread being finalised from the scheduling context it holds**
+(seL4-MCS's `unbindFromSC`, `schedContext_unbindTCB` on `tcb->tcbSchedContext`):
+the in-place unbind of the reservation arm (`cancelBoundDonationOnCore`), with
+the thread's binding read as the context's own whether it holds it as its own
+or on loan (`{ t with scBindingOwnerCode := 0 }`), at a thread on no core whose
+context is bound back to it, and before the destroy cleanup, so the cleanup
+finds the thread unbound.  A context on loan goes back to no one: seL4 unbinds
+whichever thread runs on it, and the lender, left waiting on its reply with no
+server (`finaliseThreadOrphanWaiters`), gets it back when its reply is popped
+(`reply_remove`). -/
 def finaliseThreadUnbindSchedContext (st : SystemState) (tid : SeLe4n.ThreadId) :
     SystemState :=
   match st.getTcb? tid with
   | some t =>
-    if t.scBindingScCode != 0 && t.scBindingOwnerCode == 0 && t.runCoreCode == 0 &&
-        !threadHeldOnSomeCore st tid &&
+    if t.scBindingScCode != 0 && t.runCoreCode == 0 && !threadHeldOnSomeCore st tid &&
         (match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
           | some sc => sc.boundThreadCode == tid.val + 1
           | none => false) then
-      match cancelDonationArmOnCore st tid t with
+      match cancelBoundDonationOnCore st tid { t with scBindingOwnerCode := 0 } with
       | .ok st' => st'
       | .error _ => st
     else st
   | none => st
 
-/-- The compiled `finaliseThreadUnbindSchedContext`: the guard names a `.bound`
-binding, on which the reservation arm is the in-place unbind
-(`cancelBoundDonationPerform`), so no error branch holds the pre-state across
-its writes. -/
+/-- The compiled `finaliseThreadUnbindSchedContext`: the guard names a context,
+which the owner-cleared binding reads as the thread's own, so the reservation
+arm is the in-place unbind (`cancelBoundDonationPerform`), and no error branch
+holds the pre-state across its writes. -/
 @[inline] def finaliseThreadUnbindSchedContextImpl (st : SystemState) (tid : SeLe4n.ThreadId) :
     SystemState :=
   match st.getTcb? tid with
   | some t =>
     let scCode := t.scBindingScCode
-    if scCode != 0 && t.scBindingOwnerCode == 0 && t.runCoreCode == 0 &&
-        !threadHeldOnSomeCore st tid &&
+    if scCode != 0 && t.runCoreCode == 0 && !threadHeldOnSomeCore st tid &&
         (match st.getSchedContext? ⟨scCode - 1⟩ with
           | some sc => sc.boundThreadCode == tid.val + 1
           | none => false) then
       cancelBoundDonationPerform st tid ⟨scCode - 1⟩
     else st
   | none => st
-
-@[csimp] theorem finaliseThreadUnbindSchedContext_eq_impl :
-    @finaliseThreadUnbindSchedContext = @finaliseThreadUnbindSchedContextImpl := by
-  funext st tid
-  unfold finaliseThreadUnbindSchedContext finaliseThreadUnbindSchedContextImpl
-  cases st.getTcb? tid with
-  | none => rfl
-  | some t =>
-    refine ite_congr rfl (fun hG => ?_) (fun _ => rfl)
-    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hG
-    rw [cancelDonationArmOnCore_of_bound st tid t _
-      (schedContextBinding_of_codes' hG.1.1.1.1 hG.1.1.1.2),
-      cancelBoundDonationOnCore_of_bound st tid t _
-      (schedContextBinding_of_codes' hG.1.1.1.1 hG.1.1.1.2)]
 
 /-- **Whether a reply stack's head link names the context at `x`.** -/
 @[inline] def replyStackLinkHeads (x : SeLe4n.ObjId) : Option ReplyStackLink → Bool
@@ -1118,6 +1145,19 @@ context, so the reservation arm is the in-place unbind
         · rfl
   · rfl
 
+@[csimp] theorem finaliseThreadUnbindSchedContext_eq_impl :
+    @finaliseThreadUnbindSchedContext = @finaliseThreadUnbindSchedContextImpl := by
+  funext st tid
+  unfold finaliseThreadUnbindSchedContext finaliseThreadUnbindSchedContextImpl
+  cases st.getTcb? tid with
+  | none => rfl
+  | some t =>
+    refine ite_congr rfl (fun hG => ?_) (fun _ => rfl)
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hG
+    rw [cancelBoundDonationOnCore_of_bound st tid _ _
+      (schedContextBinding_ownerCleared (x := ⟨t.scBindingScCode - 1⟩)
+        (by show _ = _ - 1 + 1; omega))]
+
 /-- **Let go of the reply stack a scheduling context being finalised heads**
 (seL4's `schedContext_unbindReply`: `scReply->replyNext = 0; scReply = NULL`):
 the head reply's upward link is cleared, then the context's head.  The frames
@@ -1138,6 +1178,47 @@ def finaliseSchedContextUnstack (st : SystemState) (x : SeLe4n.ObjId) : SystemSt
       | none => st
     | none => st
   | none => st
+
+/-- `finaliseSchedContextUnstack` as it is compiled: the head reply's upward
+link cleared in its slot (`SystemState.storeReplyWith`), so no reply record, no
+object cell and no store result is built
+(`finaliseSchedContextUnstack_eq_impl`). -/
+@[inline] def finaliseSchedContextUnstackImpl (st : SystemState) (x : SeLe4n.ObjId) :
+    SystemState :=
+  match st.getSchedContext? ⟨x.val⟩ with
+  | some sc =>
+    match sc.scReply with
+    | some rid =>
+      match st.getReply? rid with
+      | some r =>
+        if replyStackLinkHeads x r.next then
+          (st.storeReplyWith rid.toObjId fun r => { r with next := none }).updateSchedContext
+            ⟨x.val⟩ fun sc => { sc with scReply := none }
+        else st
+      | none => st
+    | none => st
+  | none => st
+
+@[csimp] theorem finaliseSchedContextUnstack_eq_impl :
+    @finaliseSchedContextUnstack = @finaliseSchedContextUnstackImpl := by
+  funext st x
+  unfold finaliseSchedContextUnstack finaliseSchedContextUnstackImpl
+  cases st.getSchedContext? ⟨x.val⟩ with
+  | none => rfl
+  | some sc =>
+    dsimp only
+    cases sc.scReply with
+    | none => rfl
+    | some rid =>
+      dsimp only
+      cases hR : st.getReply? rid with
+      | none => rfl
+      | some r =>
+        dsimp only
+        split
+        · rw [SystemState.storeObject_reply_eq_storeReplyWith
+            ((SystemState.getReply?_eq_some_iff _ _ _).mp hR) (fun r => { r with next := none })]
+        · rfl
 
 /-- **The destroy cleanup of a finalised scheduling context**
 (`lifecyclePreRetypeCleanup`'s scheduling-context arm), run once the context is
@@ -1213,25 +1294,24 @@ or on loan; `0` for none and for an absent thread). -/
 
 /-- **seL4's `finaliseCap` on the final capability to a thread**: unbound from
 its notification (`unbindNotification`); its blocked IPC cancelled (`suspend` →
-`cancelIPC`, a reply removed as `reply_remove_tcb` removes it); a context it
-holds on loan handed back to its lender by the lender's pop
-(`finaliseThreadReturnLoan`), before its suspend as in seL4; every caller
-waiting on it for a reply ended as `reply_remove` ends it
-(`finaliseThreadEndWaiters`: seL4 keeps those callers blocked until their reply
-objects go, and here reply authority is tied to the server, so the server's
-delete removes each caller's reply then); suspended (`.Inactive` and off the
+`cancelIPC`, a reply removed as `reply_remove_tcb` removes it); every caller
+waiting on it for a reply left waiting with no server
+(`finaliseThreadOrphanWaiters`: seL4 records no server for a caller, so its
+callers stay `BlockedOnReply`, each reply naming its caller, until a reply cap
+holder answers them or their replies are deleted); suspended (`.Inactive` and off the
 scheduler, a core it ran on made to choose another thread), the suspend ending
 as seL4-MCS's `suspend` ends, with the thread's own yield link cancelled
 (`schedContext_cancelYieldTo`, `cancelYieldTo`); released by every core (`fpuThreadDelete`, and the
-residency record); unbound from its scheduling context (seL4-MCS's
+residency record); unbound from the scheduling context it holds, its own or on loan, which goes
+back to no one (seL4-MCS's
 `unbindFromSC`: `schedContext_unbindTCB`, whose own dequeue the suspend has
 made, then `if (sc->scYieldFrom) schedContext_completeYieldTo(sc->scYieldFrom)`,
 `completeHeldYield`).  seL4 runs the context unbind before the suspend, and the
 cut runs it after, so the unbind finds the thread on no core, which is all the
 order changes: the whole finalisation is one kernel step.  The context the
 thread held is read before the first write (`threadHeldContextCode`), as seL4
-reads `tcb->tcbSchedContext` before `unbindFromSC`, so a context it borrowed and
-handed back is the one whose yield completes, as in seL4.
+reads `tcb->tcbSchedContext` before `unbindFromSC`, so a context it borrowed is
+the one whose yield completes, as in seL4.
 What it leaves is read by the retire
 off the thread's own links (`threadRetirable`).  All of it runs only when the
 pre-state admits it (`threadFinaliseAdmitted`), checks before writes. -/
@@ -1244,10 +1324,9 @@ def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
         (finaliseThreadReleaseCores
           (cancelYieldTo
             (finaliseThreadSuspend
-              (finaliseThreadEndWaiters
-                (finaliseThreadReturnLoan
-                  (finaliseThreadCancel
-                    (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) tid) tid) tid) held
+              (finaliseThreadOrphanWaiters
+                (finaliseThreadCancel
+                  (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) tid) tid) held
   else st
 
 /-- **seL4's `finaliseCap` on the final capability to a scheduling context**:
@@ -1316,6 +1395,151 @@ def finaliseReplyUnstash (st : SystemState) (x : SeLe4n.ObjId) (r : Reply) : Sys
       else st
     | none => st
 
+/-- **Whether a final delete may pop the reply at `x` off a context no thread
+holds**, its caller `c` (TCB `t`) waiting on it, read on the pre-state before any
+write: the reply heads the stack of a context that names it back as its head,
+`reply_pop` of that context commits (`unheldPopCommits`: the context is bound
+to no thread — its holder's finalisation unbound it, seL4-MCS's
+`schedContext_unbindTCB` — and the pop back to `c` commits where `c` holds no
+context of its own, the sever where it holds one), and `c` passes the caller
+checks `replyCallerFinalisable` reads.  Each read is `O(1)`. -/
+@[inline] def replyUnheldPopAdmitted (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
+    (c : SeLe4n.ThreadId) (t : TCB) : Bool :=
+  match r.next with
+  | some (.head s) =>
+    (match st.getSchedContext? s with
+     | some sc =>
+       match sc.scReply with
+       | some rid => rid.val == x.val
+       | none => false
+     | none => false) &&
+      unheldPopCommits st s c && !c.isReserved && !isIdleThreadId c &&
+      t.runCoreCode == 0 && decide (4 ≤ t.ipcStateCode) &&
+      t.replyObjectCode == x.val + 1 && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
+      t.timeoutBudget.isNone
+  | _ => false
+
+/-- **The pop of a reply heading a context no thread holds** (seL4-MCS's
+`reply_remove` head branch, `reply_pop`): where the reply's caller `c` holds no
+context, the context back to `c`, the frame below its new head
+(`returnUnheldSchedContextResolved`), then settled as every returned context is
+(`settleReturnedContext`, the tail of `schedContext_donate`): placed on `c`'s
+home core's release queue by its refills while `c` is not suspended; where `c`
+holds one, the head popped off the context alone, nothing handed back
+(`severUnheldSchedContextResolved`).  The state unchanged where the pop
+refuses. -/
+@[inline] def finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
+    SystemState :=
+  match r.next with
+  | some (.head s) =>
+    if donationRecipientAcceptable st c then
+      match returnUnheldSchedContextResolved st s c with
+      | .ok st' => SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
+      | .error _ => st
+    else
+      match severUnheldSchedContextResolved st s with
+      | .ok st' => st'
+      | .error _ => st
+  | _ => st
+
+/-- **The unheld pop, as compiled**: in place where its gate admits it
+(`unheldPopsInPlace`, under which it is the specification's pop,
+`unheldPopsInPlace_pop`), every check read as a code before the first write;
+the specification's pop otherwise. -/
+@[inline] def finaliseReplyUnheldPopImpl (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
+    SystemState :=
+  match r.next with
+  | some (.head s) =>
+    if unheldPopsInPlace st s c then
+      let st' := returnUnheldSchedContextInPlace st c s
+      SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
+    else if donationRecipientAcceptable st c then
+      match returnUnheldSchedContextResolved st s c with
+      | .ok st' => SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
+      | .error _ => st
+    else
+      match severUnheldSchedContextResolved st s with
+      | .ok st' => st'
+      | .error _ => st
+  | _ => st
+
+@[csimp] theorem finaliseReplyUnheldPop_eq_impl :
+    @finaliseReplyUnheldPop = @finaliseReplyUnheldPopImpl := by
+  funext st r c
+  unfold finaliseReplyUnheldPop finaliseReplyUnheldPopImpl
+  split
+  · next s _ =>
+    cases hG : unheldPopsInPlace st s c with
+    | false => rfl
+    | true =>
+      have hP := unheldPopsInPlace_pop st s c hG
+      simp only [donationRecipientAcceptable_of_unheldReturnCommits hP.1, hP.2, ↓reduceIte]
+  · rfl
+
+/-- **The unheld pop's three outcomes**: the state unchanged; or, the reply
+heading a context `s` and `c` holding none, the pop of `s` back to `c` off the
+outer caller the reply stack resolves, then its settle on `c`'s home core; or,
+`c` holding a context of its own, the sever of `s` (`reply_pop`'s no-donate
+arm). -/
+theorem finaliseReplyUnheldPop_cases (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
+    finaliseReplyUnheldPop st r c = st ∨
+      (∃ (s : SeLe4n.SchedContextId) (n : Option SeLe4n.ThreadId) (st' : SystemState),
+        r.next = some (.head s) ∧
+        replyStackOuterCaller? st s = .ok n ∧ returnUnheldSchedContext st s c n = .ok st' ∧
+        finaliseReplyUnheldPop st r c =
+          SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s) ∨
+      ∃ (s : SeLe4n.SchedContextId) (n : Option SeLe4n.ThreadId) (st' : SystemState),
+        r.next = some (.head s) ∧ donationRecipientAcceptable st c = false ∧
+        replyStackOuterCaller? st s = .ok n ∧ severUnheldSchedContext st s n = .ok st' ∧
+        finaliseReplyUnheldPop st r c = st' := by
+  unfold finaliseReplyUnheldPop
+  split
+  next s hN =>
+    cases hA : donationRecipientAcceptable st c with
+    | true =>
+      simp only [↓reduceIte]
+      cases hR : returnUnheldSchedContextResolved st s c with
+      | error _ => exact Or.inl rfl
+      | ok st' =>
+        refine Or.inr (Or.inl ?_)
+        unfold returnUnheldSchedContextResolved at hR
+        cases hO : replyStackOuterCaller? st s with
+        | error _ => rw [hO] at hR; cases hR
+        | ok n =>
+          rw [hO] at hR
+          exact ⟨s, n, st', hN, hO, hR, rfl⟩
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      cases hR : severUnheldSchedContextResolved st s with
+      | error _ => exact Or.inl rfl
+      | ok st' =>
+        refine Or.inr (Or.inr ?_)
+        obtain ⟨n, hO, hP⟩ := severUnheldSchedContextResolved_ok_decompose hR
+        exact ⟨s, n, st', hN, by simp, hO, hP, rfl⟩
+  next => exact Or.inl rfl
+
+/-- **A finalised reply heading a context no thread holds**: the pop
+(`finaliseReplyUnheldPop`), then — the popped reply heading no stack — the
+caller cancelled as the reply finalisation cancels it there (`finaliseReplyCancel`:
+the caller restored, its reply link and the reply's caller link cleared, the
+caller off any server's reply-waiter queue), the boost it lent a server reverted,
+and the caller made `.Inactive` (seL4's `reply_unlink`).  The cancel reads the
+reply and the caller again on the popped state and keeps its own guard
+(`replyCallerFinalisable`), which the pop keeps on every admitted state. -/
+def finaliseReplyUnheld (st : SystemState) (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.ThreadId) :
+    SystemState :=
+  let st1 := finaliseReplyUnheldPop st r c
+  match st1.getObject? x with
+  | some (.reply r1) =>
+    match st1.getTcb? c with
+    | some t1 =>
+      if r1.callerCode == c.val + 1 && replyCallerFinalisable st1 x r1 c t1 then
+        finaliseThreadSuspend (finaliseReplyRevert (finaliseReplyCancel st1 r1 c t1)
+          t1.blockingServer?) c
+      else st1
+    | none => st1
+  | _ => st1
+
 /-- **seL4's `finaliseCap` on the final capability to a reply whose caller
 still waits on it** (`reply_remove`, then `reply_unlink`): the caller's blocked
 call is cancelled (`finaliseReplyCancel`: a head reply popped, its context
@@ -1325,7 +1549,10 @@ caller's reply link cleared, the caller off its server's reply-waiter queue), th
 (`finaliseReplyRevert`), and the caller made `.Inactive`
 (`finaliseThreadSuspend`, seL4's `setThreadState Inactive`).  Only when the
 pre-state admits it (`replyCallerFinalisable`), checks before writes; a reply
-with no caller but stashed by a receiver is unlinked from it
+heading a context no thread holds — its holder's finalisation unbound it — is
+popped, the context back to the caller, then the caller cancelled and made
+`.Inactive` (`finaliseReplyUnheld`, when `replyUnheldPopAdmitted` admits it); a
+reply with no caller but stashed by a receiver is unlinked from it
 (`finaliseReplyUnstash`), and the retire then takes it if it is quiescent. -/
 def finaliseReply (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   match st.getObject? x with
@@ -1337,6 +1564,7 @@ def finaliseReply (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
       | some t =>
         if replyCallerFinalisable st x r c t then
           finaliseThreadSuspend (finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer?) c
+        else if replyUnheldPopAdmitted st x r c t then finaliseReplyUnheld st x r c
         else st
       | none => st
   | _ => st
@@ -1349,8 +1577,9 @@ when the restore and the consume write it, and is rewritten there. -/
 @[inline] def finaliseReplyCaller (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
     (t : TCB) : SystemState :=
   if replyStackLinkIsHead r.next then
-    finaliseThreadSuspend (finaliseReplyRevert (cancelIpcBlockingReclaimed c t st)
-      t.blockingServer?) c
+    let serverCode := replyCallerServerCode t
+    finaliseThreadSuspend (finaliseReplyRevert (cancelHeadReplyCaller st c t)
+      (SeLe4n.ThreadId.ofOptCode serverCode)) c
   else
     let serverCode := replyCallerServerCode t
     finaliseThreadSuspend (finaliseReplyRevert (finaliseReplyCancelSplice st c t serverCode)
@@ -1362,7 +1591,7 @@ theorem finaliseReplyCaller_eq (st : SystemState) (r : Reply) (c : SeLe4n.Thread
         t.blockingServer?) c := by
   unfold finaliseReplyCaller finaliseReplyCancel
   split
-  · rfl
+  · simp only [cancelHeadReplyCaller_eq, ofOptCode_replyCallerServerCode]
   · simp only [finaliseReplyCancelSplice_eq, ofOptCode_replyCallerServerCode]
 
 /-- **`finaliseReply` as compiled** (`finaliseReplyCaller`). -/
@@ -1375,13 +1604,24 @@ def finaliseReplyImpl (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
       match st.getTcb? c with
       | some t =>
         if replyCallerFinalisable st x r c t then finaliseReplyCaller st r c t
+        else if replyUnheldPopAdmitted st x r c t then
+          let st1 := finaliseReplyUnheldPop st r c
+          match st1.getObject? x with
+          | some (.reply r1) =>
+            match st1.getTcb? c with
+            | some t1 =>
+              if r1.callerCode == c.val + 1 && replyCallerFinalisable st1 x r1 c t1 then
+                finaliseReplyCaller st1 r1 c t1
+              else st1
+            | none => st1
+          | _ => st1
         else st
       | none => st
   | _ => st
 
 @[csimp] theorem finaliseReply_eq_impl : @finaliseReply = @finaliseReplyImpl := by
   funext x st
-  unfold finaliseReply finaliseReplyImpl
+  unfold finaliseReply finaliseReplyImpl finaliseReplyUnheld
   simp only [finaliseReplyCaller_eq]
 
 -- ============================================================================

@@ -254,7 +254,7 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     observableSlotsConfinedToCores st st' (replyDonationDescheduleCores st rid) := by
   rcases applyReplyDonationOnCore_ok_decompose st st' rid targetVtid
     ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, stRet, hHead, _, hRet, hEq⟩
-  · exact observableSlotsConfinedToCores_of_eq _ hEq
+  · exact observableSlotsConfinedToCores_widen (popUnheldReplyHead_confinedToCores hEq)
   · -- The core list is stated on the **pre**-state, which is the only state a
     -- caller holds.  That is sound because neither step before the deschedule
     -- moves a thread: the return writes objects alone and the settle writes
@@ -314,7 +314,28 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
     | ok replySgi? =>
       simp only []
       cases hSrv : recordedReplyServer? st target with
-      | none => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+      | none =>
+        simp only []
+        cases hRid : answeredReplyObject? st target with
+        | none => simp only []; exact hReply
+        | some rid =>
+          simp only []
+          cases hTV : SeLe4n.ThreadId.toValid? target with
+          | none => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+          | some targetV =>
+            simp only []
+            cases hDon : applyReplyDonationOnCore st1 rid targetV
+                (replyDonationRecipientHome st1 rid target) with
+            | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+            | ok st2 =>
+              simp only []
+              exact observableSlotsConfinedToCores_trans hReply
+                (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
+                  (replyDonationRecipientHome st1 rid target)
+                  (by
+                    have h1 := endpointReplyOnCore_preserves_objects_invExt replier target msg
+                      executingCore st hObjInv
+                    rwa [hRep] at h1) hDon)
       | some expected =>
         simp only []
         cases hEV : SeLe4n.ThreadId.toValid? expected with
@@ -562,8 +583,13 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
   cases hHead : replyFrameHeadHolder? st rid with
   | none =>
       rw [hHead] at hStep
-      have hEq : st = st' := (by simpa using hStep : none = returned? ∧ _).2
-      rw [← hEq]; exact observableSlotsConfinedToCores_refl st []
+      simp only [] at hStep
+      cases hPop : popUnheldReplyHead st rid target (determineTargetCore st target) with
+      | error e => rw [hPop] at hStep; cases hStep
+      | ok s1 =>
+        rw [hPop] at hStep
+        cases hStep
+        exact popUnheldReplyHead_confinedToCores hPop
   | some pair =>
     obtain ⟨oldScId, holder⟩ := pair
     rw [hHead] at hStep

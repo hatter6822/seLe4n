@@ -322,6 +322,87 @@ for driver in drivers:
             "cross-core-home-root-back", "chain-server-receives",
             "chain-suspend-server", "chain-suspend-root", "chain-resume-root",
             "chain-suspend-partner", "chain-unbind", "chain-tcb-delete", "chain-reply-cap-delete", "chain-reply-delete",
+            # WS-ZA ZA6.34: a third thread issues the final deletes that stop
+            # the other two.  The server and its reply carved again, the
+            # context bound to the partner, the server resumed and the root
+            # task's wait; the server resumes the partner and receives, the
+            # partner's call lends it the context, the server wakes the root
+            # task and waits; the root task deletes the reply's minted
+            # capability, then its last (the head reply popped, the context
+            # back to its caller, which is ended); the same lend through the
+            # server's reply carved and minted again, then the server's last
+            # capability deleted (the context it holds unbound and returned
+            # to no one, its waiter orphaned, its wait cancelled); the
+            # orphan's reply's minted capability, then its last (the head
+            # reply popped, the context to the orphan, which is ended); the
+            # context unbound.
+            "third-tcb-set-space", "third-tcb-set-priority", "third-reply-cap-mint",
+            "third-configure", "third-bind-partner", "third-resume-server", "third-root-waits",
+            "head-server-resumes-partner", "head-server-receives", "head-partner-calls",
+            "head-server-wakes-root", "head-server-waits", "head-reply-cap-delete", "head-reply-delete",
+            "waited-reply-cap-mint", "waited-wake-server", "waited-root-waits", "waited-server-resumes-partner",
+            "waited-server-receives", "waited-partner-calls", "waited-server-wakes-root",
+            "waited-server-waits", "waited-server-delete", "orphan-reply-cap-delete",
+            "orphan-head-reply-delete",
+            # A second orphan, answered by a reply-receive (WS-ZA ZA6.34): the
+            # server carved again and lent the context by the partner's call,
+            # then deleted; the root task's reply-receive through the orphan's
+            # reply (the head popped, the context to the orphan) blocking it on
+            # the endpoint, the orphan's send waking it; the orphan suspended
+            # and its reply deleted.
+            "orphan-recv-server-set-space", "orphan-recv-server-set-priority",
+            "orphan-recv-reply-cap-mint", "orphan-recv-resume-server", "orphan-recv-root-waits",
+            "orphan-recv-server-resumes-partner", "orphan-recv-server-receives",
+            "orphan-recv-partner-calls", "orphan-recv-server-wakes-root", "orphan-recv-server-waits",
+            "orphan-recv-server-delete", "orphan-reply-recv", "orphan-recv-partner-wakes-root",
+            "orphan-recv-partner-waits", "orphan-recv-suspend-partner", "orphan-recv-reply-cap-delete",
+            "orphan-recv-reply-delete", "third-unbind",
+            # A reply stack three frames deep (the partner's context lent to the
+            # root task, on to the server, on to a fourth thread), its middle
+            # reply's final delete issued by the fourth thread (the stack
+            # severed, the root task ended), the three suspended and the
+            # context unbound; then a carved context under a two-frame stack
+            # (partner, server, fourth thread) deleted, the old top's final
+            # delete (its caller ended, the frame below unlinked), the two
+            # carved threads suspended and deleted.
+            "stack-server-set-space", "stack-server-set-priority", "stack-top-set-space",
+            "stack-top-set-priority", "stack-server-reply-cap-mint", "stack-top-reply-cap-mint",
+            "stack-configure", "stack-bind-partner", "stack-resume-server", "stack-root-receives",
+            "stack-server-resumes-top", "stack-server-receives", "stack-top-resumes-partner",
+            "stack-top-receives", "stack-partner-calls", "stack-root-calls", "stack-server-calls",
+            "middle-reply-cap-delete", "middle-reply-delete", "stack-top-resumes-root",
+            "stack-top-waits", "stack-suspend-server", "stack-suspend-partner", "stack-suspend-top",
+            "stack-unbind", "stack-context-configure", "stack-context-bind-partner",
+            "contextless-resume-server", "contextless-root-waits", "contextless-server-resumes-top",
+            "contextless-server-receives", "contextless-top-resumes-partner",
+            "contextless-top-receives", "contextless-partner-calls", "contextless-server-calls",
+            "contextless-top-wakes-root", "contextless-top-waits", "contextless-context-delete",
+            "contextless-top-cap-delete", "contextless-top-delete", "contextless-suspend-partner",
+            "contextless-suspend-top", "stack-server-delete", "stack-top-delete",
+            # The final delete of an endpoint two threads wait on, the queue
+            # cancelled head first with each waiter's successor read as its code
+            # (`cancelEndpointQueue_eq_impl`): 0.
+            "queue-resume-top", "queue-root-waits", "queue-top-resumes-partner",
+            "queue-top-receives", "queue-partner-wakes-root", "queue-partner-receives",
+            "queue-endpoint-delete", "queue-suspend-top", "queue-suspend-partner",
+            # A holder's final delete under a two-frame stack (the fourth
+            # thread's wait cancelled, the context unbound and left heading
+            # the stack, its two callers blocked), the partner's reply below
+            # the head deleted (the stack severed, the partner ended), the
+            # server answered through the head reply's capability (the head
+            # popped, the context to the server), and the teardown: the
+            # server suspended, the context unbound, the head reply deleted
+            # and the fourth thread carved again.
+            "orphan-stack-configure", "orphan-stack-bind-partner", "orphan-server-reply-cap-mint",
+            "orphan-top-reply-cap-mint", "orphan-resume-server", "orphan-root-waits",
+            "orphan-server-resumes-top", "orphan-server-receives", "orphan-top-resumes-partner",
+            "orphan-top-receives", "orphan-partner-calls", "orphan-server-calls",
+            "orphan-top-wakes-root", "orphan-top-waits", "orphan-holder-delete",
+            "orphan-middle-reply-cap-delete", "orphan-middle-reply-delete",
+            "orphan-root-answers-server", "orphan-root-waits-server", "orphan-server-wakes-root",
+            "orphan-server-waits", "orphan-suspend-server", "orphan-stack-unbind",
+            "orphan-top-reply-cap-delete", "orphan-top-reply-delete", "orphan-top-set-space",
+            "orphan-top-set-priority",
             # and seL4's resume of a thread whose refill is not yet due: the
             # bound partner's yield forfeits its budget, its suspend takes the
             # context off the release queue, and the resume postpones it there
@@ -453,6 +534,7 @@ for driver in drivers:
             # since part 26 writes over its slot's boot record and that
             # record's own target as later carves do (11).
             "untyped-retype-busy-endpoint": (11, 11),
+            "untyped-retype-queue-endpoint": (11, 11),
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
             # Since v0.36.139 a CNode carries its occupancy link array
@@ -567,6 +649,23 @@ for driver in drivers:
             "chain-server-reply-recv": (0, 0), "chain-root-replies": (0, 0),
             # The chain's carves, a thread's and a reply's as above.
             "untyped-retype-chain-tcb": (26, 26), "untyped-retype-chain-reply": (15, 15),
+            # and the third thread's (WS-ZA ZA6.34), the same carves.
+            "untyped-retype-third-tcb": (26, 26), "untyped-retype-third-reply": (15, 15),
+            "untyped-retype-stack-server": (26, 26), "untyped-retype-stack-top": (26, 26),
+            "untyped-retype-stack-server-reply": (15, 15), "untyped-retype-stack-top-reply": (15, 15),
+            # and the server's reply carved again for the orphan's call
+            # (WS-ZA ZA6.34), the same carve.
+            "untyped-retype-waited-reply": (15, 15),
+            # and the holder's-delete scenario's: both replies and the fourth
+            # thread carved again, the same carves.
+            "untyped-retype-orphan-server-reply": (15, 15),
+            "untyped-retype-orphan-top-reply": (15, 15), "untyped-retype-orphan-top": (26, 26),
+            # and the reply-receive orphan's server and reply, the same carves.
+            "untyped-retype-orphan-recv-server": (26, 26),
+            "untyped-retype-orphan-recv-reply": (15, 15),
+            # and a context's: 15 on both calls, `untyped-retype-sched-context`'s
+            # steady state, the capability's target record already built.
+            "untyped-retype-stack-context": (15, 15),
             # The affinity change of a thread running on core 1 (seL4's
             # `setAffinity`: the thread taken off core 1's current slot, a
             # reschedule raised there, the remote stall until core 1 has

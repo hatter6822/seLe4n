@@ -70,6 +70,34 @@ tail's successor link, the appended thread's own links. -/
     | some p => s1.updateTcb p (tcbWithQueueNext tid)
   s2.updateTcb tid (enqueueLinks tail?)
 
+/-- `enqueueLinks` behind the queue's tail **code**, decoded by a match so no
+`some` cell is built for it (`enqueueLinksCode_eq`). -/
+@[inline] def enqueueLinksCode (tailCode : Nat) (t : TCB) : TCB :=
+  match tailCode with
+  | 0 => { t with queuePrevCode := 0, queuePPrevCode := 1, queueNextCode := 0 }
+  | c + 1 => { t with queuePrevCode := c + 1, queuePPrevCode := c + 2, queueNextCode := 0 }
+
+theorem enqueueLinksCode_eq (tailCode : Nat) :
+    enqueueLinksCode tailCode = enqueueLinks (SeLe4n.ThreadId.ofOptCode tailCode) := by
+  rcases tailCode with _ | c <;> rfl
+
+/-- `storeEndpointEnqueue` behind the queue's tail **code**, as a compiled
+block path holds it: the tail decoded by a match, so no `some` cell is built
+for a queue that already has a waiter (`storeEndpointEnqueueCode_eq`). -/
+@[inline] def storeEndpointEnqueueCode (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (tailCode : Nat) : SystemState :=
+  let s1 := st.modifyObject endpointId (enqueueEndpoint isReceiveQ tid tailCode)
+  let s2 := match tailCode with
+    | 0 => s1
+    | c + 1 => s1.updateTcb ⟨c⟩ (tcbWithQueueNext tid)
+  s2.updateTcb tid (enqueueLinksCode tailCode)
+
+theorem storeEndpointEnqueueCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (tailCode : Nat) :
+    storeEndpointEnqueueCode st endpointId isReceiveQ tid tailCode =
+      storeEndpointEnqueue st endpointId isReceiveQ tid (SeLe4n.ThreadId.ofOptCode tailCode) := by
+  rcases tailCode with _ | c <;> rfl
+
 /-- **An enqueue writes only its slots**: the endpoint, the appended thread and
 the old tail each rewritten where it stands (`RHTable.findsInPlace`), each
 store changing only `objects` (`storeLeavesIndexAndTypes`), the thread and the

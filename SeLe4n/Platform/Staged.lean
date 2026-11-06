@@ -598,13 +598,12 @@ import SeLe4n.Kernel.IPC.Invariant.Reachability
 -- nor any thread waiting on it or bound to it.  Staged with `Reachability`.
 import SeLe4n.Kernel.IPC.Invariant.CancelAllReachability
 import SeLe4n.Kernel.InformationFlow.Invariant.FinaliseProjection
--- WS-ZA ZA5.4 part 25: a finalised thread's loan return and reply-waiter walk
--- end every caller waiting on it (`finaliseThreadEndWaiters_returnLoan_endsAll`).
+-- WS-ZA ZA5.4 part 25 (restated by ZA6.34): a finalised thread's reply-waiter
+-- walk orphans every caller waiting on it (`finaliseThreadOrphanWaiters_endsAll`).
 import SeLe4n.Kernel.IPC.Invariant.FinaliseWaiterCompletion
 -- WS-ZA ZA5.4 part 34: the thread finalisation's pre-state admission carries to
--- every state a later step runs on (`finaliseThreadCancel_carries`,
--- `finaliseThreadReturnLoan_unbinds`), so `finaliseThread_quiesces` reads it
--- once, on the pre-state.
+-- every state a later step runs on (`finaliseThreadCancel_carries`), so
+-- `finaliseThread_quiesces` reads it once, on the pre-state.
 import SeLe4n.Kernel.IPC.Invariant.FinaliseAdmissionCarried
 import SeLe4n.Kernel.IPC.Invariant.FinaliseRetirable
 -- WS-ZA ZA5.4 part 29: the reachable state rides the whole delete chain with

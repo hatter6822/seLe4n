@@ -483,9 +483,10 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   checkInvariants counter "post-cspaceCopy-dualQueue-send" st1
   -- M-12: Reply operation
   -- Create a state with a thread blocked on reply
-  -- AK1-B (I-H02): Reply now fails closed on `replyTarget = none`. All
-  -- production paths set `replyTarget := some receiver`; test preserves
-  -- the happy-path semantics by providing the explicit replier.
+  -- WS-H1/M-02: a caller recording a server is answered only by that server;
+  -- one recording none (its server finalised, WS-ZA ZA6.34) by any holder of
+  -- its reply.  This trace takes the recorded-server path, with the replier
+  -- named explicitly.
   let replyTarget : SeLe4n.ThreadId := ⟨1⟩
   let replierTid : SeLe4n.ThreadId := ⟨2⟩
   let replyTcb : KernelObject := .tcb (TCB.setIpcState {

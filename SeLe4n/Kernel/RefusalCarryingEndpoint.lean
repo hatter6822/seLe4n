@@ -12,6 +12,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDonatingInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDonatedInPlace
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyUnheldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
 
@@ -138,7 +139,8 @@ theorem sendDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   rw [if_pos hFlow, endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ _ hReq,
     endpointSendDualOnCore_eq_impl]
   unfold endpointSendDualOnCoreImpl
-  simp only [hE, hH, hSTcb, hT, hW, hM, ↓reduceIte]
+  simp only [sendWakesInPlaceCode_eq, storeSendRendezvousCode_eq, TCB.ofOptCode_queueNextCode,
+    hE, hH, hSTcb, hT, hW, hM, ↓reduceIte]
   rfl
 
 /-- Dropping the stash of a thread whose last write left none drops nothing. -/
@@ -222,7 +224,7 @@ the general arm. -/
                         (st.getTcb? tid).isSome &&
                         endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                           (ctx.endpointLabelOf epId) &&
-                        sendWakesInPlace st epId r rt.queueNext then
+                        sendWakesInPlaceCode st epId r rt.queueNextCode then
                       .ok ((), performSendDelivered st epId r rt.queueNextCode layout rf len
                         cap.badgeWord cap.badged executingCore)
                     else endpointSendCheckedArmGeneralR ctx tid executingCore cap st
@@ -265,6 +267,7 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
           · next hG =>
             simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
             obtain ⟨⟨⟨hSz, hS⟩, hFlow⟩, hW⟩ := hG
+            rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
             have hNo : st.objects.noResizeDue := by
               simp only [sendWakesInPlace, Bool.and_eq_true] at hW
               exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2
@@ -847,6 +850,33 @@ in-place writes or the general arm. -/
         layout rf len cap.badgeWord cap.badged executingCore)
     else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore cap st
 
+/-- WS-ZA ZA6.34: the checked reply arm on a caller recording no server, its
+server finalised (seL4-MCS's `doReplyTransfer` on a caller `finaliseCap` left
+blocked): a reply of at most four words whose checks all pass before any write
+(`replyUnheldPopsInPlace`), the reply object heading a context no thread holds,
+writes in place (`performReplyUnheldDelivered`,
+`replyTransferChecked_unheld_inPlace`); any other takes the general arm.  Out of
+line, taking the caller's fault flag rather than its TCB, so nothing the writes
+rewrite is held across them. -/
+@[noinline] def replyUnheldAdmits (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (tid : SeLe4n.ThreadId)
+    (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cFault : Bool) (st : SystemState) : Bool :=
+  decide (Architecture.regMessageLength layout len ≤ 4) &&
+    securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
+    !cFault && replyUnheldPopsInPlace st c rid
+
+/-- The no-server reply's arm: the checks of `replyUnheldAdmits`, then the
+in-place writes or the general arm. -/
+@[inline] def endpointReplyUnheldArmR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cFault : Bool) : RefusalCarrying Unit :=
+  fun st =>
+    if replyUnheldAdmits ctx layout len tid c rid cFault st then
+      .ok ((), performReplyUnheldDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
+        (determineTargetCore st c) layout rf len cap.badgeWord cap.badged)
+    else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore cap st
+
 /-- WS-ZA ZA4.7: the checked reply arm (`dispatchWithCapChecked`'s `.reply`
 case), refusing in the state it was handed (`endpointReplyCheckedArmR_eq`).  A
 reply to an unfaulted caller blocked on it whose checks all pass before any
@@ -887,6 +917,12 @@ takes the general arm. -/
                             else endpointReplyDonatedArmR ctx layout rf len extraCaps label tid
                                 executingCore cap c server rid ct.scBindingScCode
                                 ct.faultWords.isFault st
+                        | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
+                            tid executingCore cap st
+                    | .blockedOnReply _ none =>
+                        match ct.replyObject with
+                        | some rid => endpointReplyUnheldArmR ctx layout rf len extraCaps label tid
+                            executingCore cap c rid ct.faultWords.isFault st
                         | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                             tid executingCore cap st
                     | _ =>
@@ -967,6 +1003,27 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                     rfl (by simp only [maxMessageRegisters]; omega) hSz4
                     ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hP hNoF hFlow]
                 · rfl
+            · rfl
+          · next ep hIpc =>
+            split
+            · next rid hRO =>
+              unfold endpointReplyUnheldArmR
+              split
+              · next hG =>
+                unfold replyUnheldAdmits at hG
+                simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
+                obtain ⟨⟨⟨hSz4, hFlow⟩, hNoF⟩, hP⟩ := hG
+                have hAns : replyAnsweredCaller? st rid0 = some c := by
+                  rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
+                rw [replyTransferChecked_unheld_inPlace ctx st tid c ct ep rid
+                  { length := len, extraCaps := extraCaps, label := label }
+                  (Architecture.regMessageRegs layout rf) layout rf len cap.badgeWord cap.badged
+                  executingCore
+                  { registers := extractMessageRegisters (Architecture.regMessageRegs layout rf) { length := len, extraCaps := extraCaps, label := label }, badge := cap.badge }
+                  rfl (by simp only [maxMessageRegisters]; omega) hSz4
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hNoF hFlow]
+              · rfl
             · rfl
           · rfl
         · rfl

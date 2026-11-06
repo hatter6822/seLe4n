@@ -1,3 +1,110 @@
+## v0.36.203 — WS-ZA ZA6.34: a server's final delete is seL4-MCS's, and the deletes around it allocate nothing
+
+The QEMU exerciser gains a third and a fourth thread, so the final deletes
+that stop the threads they are about can be issued from outside the stack and
+measured.  A server's own final delete now follows seL4-MCS's `finaliseCap`,
+and the orphans it leaves are answered or ended as seL4 answers or ends them.
+Every allocation the new steps found was removed, in the forms seL4-MCS gives,
+and each new step now reads 0 on its first call and in steady state.
+
+- **The scenarios** (`rust/sele4n-hal/src/smp_exercisers.rs`).  After the
+  chain scenario, the root task issues four deletes.  `head-reply-delete` is
+  seL4's `reply_remove` head arm (`reply_pop`).  `waited-server-delete` is a
+  server's own delete with a caller waiting on it.  `middle-reply-delete` is
+  the middle reply of a stack three frames deep (the non-head arm's sever).
+  `contextless-top-delete` is the top reply of a stack whose context was
+  deleted first (`contextless-context-delete`, seL4's
+  `schedContext_unbindReply`).  At every switch exactly one thread is
+  runnable.
+- **The head pop in place** (`IPC/Operations/DonationPopInPlace.lean`, new).
+  `cancelHeadReplyCaller` hands the context back to the caller in its slots
+  (`cancelHeadReplyCallerInPlace`, `replyPopsInPlace_pop`,
+  `donatedReturnCommits_eq_impl`).  The reply's final delete went from 63 to
+  0 and the waited server's from 79 to 0.
+- **Queues read by their link codes.**
+  - A block behind a waiter goes through `storeEndpointEnqueueCode` (1 to 0).
+  - A rendezvous with a head that has a successor uses `sendWakesInPlaceCode`
+    and `queueSuccessorDiffers`, with csimps for `callWakesInPlace`,
+    `callTakesReplyInPlace`, `receiveTakesInPlace` and
+    `receiveCallTakesInPlace` (2 to 0).
+- **Reply links read off the links** (`IPC/Operations/ReplyFrameInPlace.lean`).
+  `Reply.prevNames` and `Reply.nextNamesFrame` replace comparisons that built
+  `some` cells, through the `cutReplyFrameStoresInPlace` and
+  `cutReplyFrameOutOrSelfInPlace` csimps.  A blocked thread's server is now
+  the cell its state already holds (`TCB.blockingServer?_eq_impl`,
+  `blockingServer_eq_impl`).  The middle reply's delete went from 6 to 0 and
+  the contextless top's from 2 to 0.
+- **An endpoint's cancel-all and the general send rendezvous.**  The cancel
+  walk reads each queue's head and each waiter's successor as codes
+  (`cancelEndpointQueue_eq_impl`, `storeEndpointWaiterCancelledCode`,
+  `storePopHeadCode`).  The general send rendezvous pops a head with a
+  successor through `storeSendRendezvousCode`.  The new `queue-endpoint-delete`
+  step deletes an endpoint two threads wait on, and reads 0.
+- **A resumed thread's boost** is written as the waiter walk's code
+  (`resumeReadyMidState_eq_impl`, 1 to 0).  **A finalised context** lets go of
+  its stack in the head reply's slot (`finaliseSchedContextUnstack_eq_impl`,
+  4 to 0).
+- **A server's final delete is seL4-MCS's `finaliseCap`.**  The thread's own
+  reply is cut as `reply_remove_tcb` cuts it, and the context it holds, bound
+  or on loan, goes back to no one (`schedContext_unbindTCB`).  Every caller
+  waiting on it is left blocked with no server recorded
+  (`finaliseThreadOrphanWaiters`).  The loan return and the waiter walk that
+  ended those callers (`finaliseThreadReturnLoan`, `finaliseThreadEndWaiters`)
+  are retired.
+- **A caller recording no server is answered.**  Both reply spines answer it as
+  `doReplyTransfer` does: the reply leg, then the pop at the answered frame,
+  with no chain walk.  The AK1-B `.replyCapInvalid` refusal on that arm is
+  retired.  It was fail-closed under an assumption that the server finalise now
+  retires.  The model keeps its `some expected` replier check as a
+  confused-deputy hardening, which seL4 does not have.
+- **The unheld pop is `reply_pop` as written** (`popUnheldReplyHead`,
+  `finaliseReplyUnheldPop`).  A caller holding no context is handed it and
+  settled on its home core.  A caller holding a context of its own has only the
+  head taken off the context, which is bound to no one
+  (`severUnheldSchedContext`).  The sever keeps `ipcInvariantFull`, the
+  donation chain, the lent-context heads and the projection.
+- **The frozen mirror** gains the unheld return, the sever and the pop
+  (`frozenPopUnheldReplyHead`), and its reply answers a caller recording no
+  server.  FO-041 is flipped, the refusal witness is retired, and FO-045 drives
+  both of the pop's arms.
+- **In place.**
+  - A reply to a caller recording no server, whose reply object heads a context
+    no thread holds, writes in place (`IPC/CrossCore/EndpointReplyUnheldInPlace.lean`:
+    `performReplyUnheldDelivered`, `replyTransferChecked_unheld_inPlace`).  The
+    reply leg is factored out of the rendezvous store (`storeReplyLeg`,
+    `replyOnCore_eq_storeLeg`), and the unheld pop's gate is carried across it
+    (`unheldPopsInPlace_transport`).  It read 55, and now reads 0.
+  - The orphan's head-reply delete asks the commit test through the in-place
+    gate first (`unheldPopCommits_eq_impl`).  It read 5, and now reads 0.
+  - A reply-receive answering such a caller writes in place too, then blocks
+    the replier on its endpoint (`IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean`:
+    `performReplyRecvUnheldDelivered`, `replyRecvOnCore_unheld_delivered`).
+    The receive's checks are read on the pre-state and carried across the reply
+    leg and the unheld pop, whose writes are a pop's
+    (`popUnheldSettled_receiveGuard`, `returnUnheldSchedContextInPlace_popFrame`).
+    The arm (`replyRecvUnheldAdmits`) runs after the donated one and is covered
+    by `endpointReplyRecvCheckedArmR_eq_general`.  The new `orphan-reply-recv`
+    step reads 0.
+- **The holder's-delete scenario** (`orphan-*`).  The fourth thread holds the
+  partner's context under a two-frame stack and is deleted.  The partner's
+  reply below the head is deleted (the sever), and the root task answers the
+  server through the head reply's capability (the pop).  A second orphan
+  follows the orphan's head-reply delete (`orphan-recv-*`): the server is carved
+  again, lent the context by the partner's call and deleted, and the root task
+  answers the partner with a reply-receive (`orphan-reply-recv`), which blocks
+  it on the endpoint until the partner's send.  Every step reads (0, 0), and the
+  carves keep a carve's counts.
+- **Pins** (`scripts/qemu_exerciser_lib.sh`).  Every new step is pinned at
+  (0, 0) except the carves, which keep a carve's counts: a thread 26, a reply
+  15, an endpoint 11, and a context 15 on both calls
+  (`untyped-retype-sched-context`'s steady state).  No existing pin changed.
+- **Documentation fixed along the way.**  `cutReplyFrameStores`' docstring
+  described the splice that ZA6.33 reversed, and now describes the sever.  A
+  comment in `Lifecycle/Suspend.lean` cited a `CLAUDE.md` section that no
+  longer exists.
+- **Closed**: "A head reply's final delete has no QEMU scenario"
+  (`docs/REGISTERED_DEBT.md`).
+
 ## v0.36.202 — A retype the kernel heap cannot hold is refused before any write
 
 Every Lean object lives in the fixed 64 MiB `.lean_heap` arena, and the Lean

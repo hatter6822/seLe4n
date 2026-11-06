@@ -620,10 +620,6 @@ private theorem default_donationBudgetTransfer :
 -- WS-RC R4.C close-out: `default_uniqueWaiters` was deleted along with
 -- the `uniqueWaiters` predicate it discharged.
 
-private theorem default_blockedOnReplyHasTarget :
-    blockedOnReplyHasTarget (default : SystemState) := by
-  intro _ _ _ _ h; exact default_objects_absurd h
-
 private theorem default_replyCallerLinkage :
     replyCallerLinkage (default : SystemState) :=
   ⟨⟨fun _ _ _ h _ => default_objects_absurd h, fun _ _ _ h _ => default_objects_absurd h⟩,
@@ -657,7 +653,7 @@ theorem default_ipcInvariantFull :
    default_queueNextBlockingConsistent, default_queueHeadBlockedConsistent,
    default_blockedThreadTimeoutConsistent,
    default_donationChainAcyclic, default_donationOwnerValid, default_donationBudgetTransfer,
-   default_blockedOnReplyHasTarget, default_replyCallerLinkage,
+   default_replyCallerLinkage,
    default_pendingReceiveReplyWellFormed, default_donationOwnerUnique,
    default_endpointQueueTailBlockedConsistent, default_queueNextTargetBlocked,
    .of_objects_none default_objects_none, fun _ _ hT _ => default_objects_absurd hT⟩
@@ -961,12 +957,12 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
     (ticks : Nat) (st : SystemState)
     (hIpc : ipcInvariantFull st) :
     ipcInvariantFull (advanceTimerState ticks st) := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h16, h17, h18, h19, h20, h21, hBindings⟩ := hIpc
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h17, h18, h19, h20, h21, hBindings⟩ := hIpc
   have hObjs : (advanceTimerState ticks st).objects = st.objects := by
     unfold advanceTimerState; rfl
   have hLk : ∀ (x : SeLe4n.ObjId), (advanceTimerState ticks st).objects[x]? = st.objects[x]? := by
     intro x; exact congrArg (·.get? x) hObjs
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     .of_codes (.of_objects_eq hObjs) hBindings.1,
     endpointQueueLinksOnlyBlocked_of_objects_eq _ _ hLk hBindings.2⟩
   -- dualQueueSystemInvariant
@@ -1003,8 +999,6 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
   -- Z7: donationBudgetTransfer
   · intro tid1 tid2 tcb1 tcb2 scId h1Obj h2Obj hNe hB1 hB2
     exact h14 tid1 tid2 tcb1 tcb2 scId (hObjs ▸ h1Obj) (hObjs ▸ h2Obj) hNe hB1 hB2
-  -- AJ1-B: blockedOnReplyHasTarget
-  · intro tid tcb epId rt hObj hIpc; exact h16 tid tcb epId rt (hObjs ▸ hObj) hIpc
   · exact replyCallerLinkage_of_objects_eq hObjs h17
   · exact pendingReceiveReplyWellFormed_of_objects_eq hObjs h18
   · exact donationOwnerUnique_of_objects_eq hObjs h19
@@ -1305,8 +1299,8 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
   have hObjs : (writeRegisterState reg value st).objects = st.objects := rfl
   have hLk : ∀ (x : SeLe4n.ObjId),
       (writeRegisterState reg value st).objects[x]? = st.objects[x]? := fun x => congrArg (·.get? x) hObjs
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h16, h17, h18, h19, h20, h21, hBindings⟩ := hIpc
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h17, h18, h19, h20, h21, hBindings⟩ := hIpc
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     .of_codes (.of_objects_eq hObjs) hBindings.1,
     endpointQueueLinksOnlyBlocked_of_objects_eq _ _ hLk hBindings.2⟩
   · obtain ⟨hEp, hLink, hAcyc, hPPair, hHD⟩ := h2
@@ -1332,8 +1326,6 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
     exact ⟨hSc.imp fun sc hSc => hObjs ▸ hSc, hOwner.imp fun ownerTcb ⟨hO, hEp⟩ => ⟨hObjs ▸ hO, hEp⟩⟩
   · intro t1 t2 tc1 tc2 scId h1O h2O hNe hB1 hB2
     exact h14 t1 t2 tc1 tc2 scId (hObjs ▸ h1O) (hObjs ▸ h2O) hNe hB1 hB2
-  -- AJ1-B: blockedOnReplyHasTarget
-  · intro tid tcb epId rt hObj hIpc; exact h16 tid tcb epId rt (hObjs ▸ hObj) hIpc
   · exact replyCallerLinkage_of_objects_eq hObjs h17
   · exact pendingReceiveReplyWellFormed_of_objects_eq hObjs h18
   · exact donationOwnerUnique_of_objects_eq hObjs h19
@@ -1437,8 +1429,8 @@ private theorem contextSwitchState_preserves_ipcInvariantFull
   have hLk : ∀ (x : SeLe4n.ObjId),
       (contextSwitchState newTid newRegs st).objects[x]? = st.objects[x]? :=
     fun x => congrArg (·.get? x) hObjs
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h16, h17, h18, h19, h20, h21, hBindings⟩ := hIpc
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h17, h18, h19, h20, h21, hBindings⟩ := hIpc
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     .of_codes (.of_objects_eq hObjs) hBindings.1,
     endpointQueueLinksOnlyBlocked_of_objects_eq _ _ hLk hBindings.2⟩
   · obtain ⟨hEp, hLink, hAcyc, hPPair, hHD⟩ := h2
@@ -1465,8 +1457,6 @@ private theorem contextSwitchState_preserves_ipcInvariantFull
            hOwner.imp fun ownerTcb ⟨hO, hEp⟩ => ⟨hObjs ▸ hO, hEp⟩⟩
   · intro t1 t2 tc1 tc2 scId h1O h2O hNe hB1 hB2
     exact h14 t1 t2 tc1 tc2 scId (hObjs ▸ h1O) (hObjs ▸ h2O) hNe hB1 hB2
-  -- AJ1-B: blockedOnReplyHasTarget
-  · intro tid tcb epId rt hObj hIpc'; exact h16 tid tcb epId rt (hObjs ▸ hObj) hIpc'
   · exact replyCallerLinkage_of_objects_eq hObjs h17
   · exact pendingReceiveReplyWellFormed_of_objects_eq hObjs h18
   · exact donationOwnerUnique_of_objects_eq hObjs h19

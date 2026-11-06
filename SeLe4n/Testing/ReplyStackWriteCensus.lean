@@ -779,17 +779,19 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .states [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept])
     -- WS-ZA ZA4.7: the in-place reply.  `replyConsumedObject` is the consume
-    -- as an object rewrite; the store that runs it answers a caller whose reply
-    -- heads no frame, so it keeps the chain whole.
-  , (`SeLe4n.Kernel.replyConsumedObject, .halfStep `SeLe4n.Kernel.storeReplyRendezvous)
-  , (`SeLe4n.Kernel.storeReplyRendezvous,
-      .states [`SeLe4n.Kernel.storeReplyRendezvous_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.storeReplyRendezvousReady,
-      .states [`SeLe4n.Kernel.storeReplyRendezvousReady_preserves_donationChainWellFormed])
+    -- as an object rewrite; the leg that runs it (WS-ZA ZA6.34: factored out
+    -- of `storeReplyRendezvous`, which adds only the reply-waiter unlink, so
+    -- that a caller recording no server runs it alone) answers a caller whose
+    -- reply heads no frame, so it keeps the chain whole.
+  , (`SeLe4n.Kernel.replyConsumedObject, .halfStep `SeLe4n.Kernel.storeReplyLeg)
+  , (`SeLe4n.Kernel.storeReplyLeg,
+      .states [`SeLe4n.Kernel.storeReplyLeg_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.storeReplyLegReady,
+      .states [`SeLe4n.Kernel.storeReplyLegReady_preserves_donationChainWellFormed])
     -- WS-ZA ZA6.31: the fault reply's store is the reply's with no message
     -- (`storeFaultReplyRendezvous_eq`, `rfl`).
   , (`SeLe4n.Kernel.storeFaultReplyRendezvous,
-      .mirrors `SeLe4n.Kernel.storeReplyRendezvous)
+      .mirrors `SeLe4n.Kernel.storeReplyLeg)
     -- ---------------------------------------------------------------------
     -- The frozen execution surface.
     --
@@ -833,6 +835,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.FrozenOps.frozenReturnDonatedSchedContext,
       .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
+    -- WS-ZA ZA6.34: the frozen unheld pop and its sever.
+  , (`SeLe4n.Kernel.FrozenOps.frozenReturnUnheldSchedContext,
+      .mirrors `SeLe4n.Kernel.returnUnheldSchedContext)
+  , (`SeLe4n.Kernel.FrozenOps.frozenSeverUnheldSchedContext,
+      .mirrors `SeLe4n.Kernel.severUnheldSchedContext)
     -- The cut itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
     -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation
@@ -863,6 +870,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- (`cutReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed`).
   , (`SeLe4n.Kernel.cutReplyFrameStoresInPlace,
       .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
+    -- WS-ZA ZA6.34: the compiled form of `cutReplyFrameStoresInPlace`
+    -- (`cutReplyFrameStoresInPlace_eq_impl`, `@[csimp]`), the same stores.
+  , (`SeLe4n.Kernel.cutReplyFrameStoresInPlaceImpl,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
   , (`SeLe4n.Kernel.severReplyFrameBelowStoresInPlace,
       .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
@@ -889,6 +900,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- link cleared, then the context's head.
   , (`SeLe4n.Kernel.finaliseSchedContextUnstack,
       .states [`SeLe4n.Kernel.finaliseSchedContextUnstack_preserves_donationChainWellFormed])
+    -- WS-ZA ZA6.34: its compiled form, the head reply's link cleared in its
+    -- slot (`finaliseSchedContextUnstack_eq_impl`, `@[csimp]`): the same writes.
+  , (`SeLe4n.Kernel.finaliseSchedContextUnstackImpl,
+      .mirrors `SeLe4n.Kernel.finaliseSchedContextUnstack)
     -- The push's second store: the new head's links and the old head's `next`.
     -- Between the two stores the context's head names a frame that does not yet
     -- answer it, so the chain is broken by construction here.
@@ -911,6 +926,19 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- that pop's result.
   , (`SeLe4n.Kernel.returnDonatedSchedContextInPlace,
       .states [`SeLe4n.Kernel.returnDonatedSchedContextInPlace_preserves_donationChainWellFormed])
+    -- WS-ZA ZA6.34: the pop of a context no thread holds (seL4-MCS's
+    -- `reply_pop` after its holder's `schedContext_unbindTCB`), back to the
+    -- popped reply's caller: the donation return's stores less the holder's.
+  , (`SeLe4n.Kernel.returnUnheldSchedContext,
+      .states [`SeLe4n.Kernel.returnUnheldSchedContext_preserves_donationChainWellFormed])
+    -- Its in-place form: on the states its gate admits it is that pop.
+  , (`SeLe4n.Kernel.returnUnheldSchedContextInPlace,
+      .states [`SeLe4n.Kernel.returnUnheldSchedContextInPlace_preserves_donationChainWellFormed])
+    -- WS-ZA ZA6.34: `reply_pop` at an unheld head whose caller holds a context
+    -- of its own: the context's head moved to the frame below and the head
+    -- pop, no context handed on.
+  , (`SeLe4n.Kernel.severUnheldSchedContext,
+      .states [`SeLe4n.Kernel.severUnheldSchedContext_preserves_donationChainWellFormed])
     -- ---------------------------------------------------------------------
     -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
     -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects

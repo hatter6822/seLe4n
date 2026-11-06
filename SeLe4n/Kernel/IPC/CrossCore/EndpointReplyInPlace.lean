@@ -60,16 +60,23 @@ ask. -/
    | some rp => rp.next.isNone && rp.prev.isNone
    | none => false)
 
-/-- The reply's writes up to the priority walk, each in its slot: the caller
-handed the message and woken on its home core, its reply object consumed and
-released, and the caller off the server's reply waiters. -/
-@[noinline] def storeReplyRendezvous (st : SystemState) (c server : SeLe4n.ThreadId)
+/-- The reply leg's writes to the answered caller and its reply object, each in
+its slot: the caller handed the message and woken on its home core, its reply
+object consumed and released.  A caller recording a server then leaves that
+server's reply waiters (`storeReplyRendezvous`); one recording none has no
+queue to leave. -/
+@[inline] def storeReplyLeg (st : SystemState) (c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (msg : IpcMessage) : SystemState :=
   let s1 := st.updateTcb c (callReceiverTcb msg)
   let s2 := enqueueRunnableOnCore s1 (determineTargetCore s1 c) c
-  let s3 := (s2.modifyObject rid.toObjId replyConsumedObject).updateTcb c
+  (s2.modifyObject rid.toObjId replyConsumedObject).updateTcb c
     (fun t => { t with replyObjectCode := 0 })
-  s3.unlinkReplyWaiter c server
+
+/-- The reply's writes up to the priority walk, each in its slot: the reply
+leg (`storeReplyLeg`), and the caller off the server's reply waiters. -/
+@[noinline] def storeReplyRendezvous (st : SystemState) (c server : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) : SystemState :=
+  (storeReplyLeg st c rid msg).unlinkReplyWaiter c server
 
 /-- The reply's state: the writes, the server's priority walk, and the
 caller's delivered message staged in its return frame. -/
@@ -80,15 +87,17 @@ caller's delivered message staged in its return frame. -/
       (storeReplyRendezvous st c server rid msg) server core).1 c 0
 
 /-- **The reply leg, in place**, on a reply object linked to nothing or heading
-a stack (the splice is the identity on both): every write lands in its slot, so
-the specification's reply returns `storeReplyRendezvous`'s state with the caller
-wake's SGI. -/
-theorem replyOnCore_eq_store (st : SystemState) (replier c server : SeLe4n.ThreadId)
+a stack (the splice is the identity on both), whether or not the caller records
+a server: every write lands in its slot, so the specification's reply returns
+`storeReplyLeg`'s state, off the recorded server's reply waiters where there is
+one, with the caller wake's SGI. -/
+theorem replyOnCore_eq_storeLeg (st : SystemState) (replier c : SeLe4n.ThreadId)
+    (server? : Option SeLe4n.ThreadId)
     (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (rp : Reply) (msg : IpcMessage)
     (core : Concurrency.CoreId)
     (hSz : ¬ msg.registers.size > maxMessageRegisters)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
-    (hIpc : ct.ipcState = .blockedOnReply ep (some server))
+    (hIpc : ct.ipcState = .blockedOnReply ep server?)
     (hRO : ct.replyObject = some rid)
     (hCRes : c.isReserved = false)
     (hLC : storeLeavesIndexAndTypes st c.toObjId .tcb = true)
@@ -98,9 +107,10 @@ theorem replyOnCore_eq_store (st : SystemState) (replier c server : SeLe4n.Threa
     (hRo : st.objects[rid.toObjId]? = some (.reply rp))
     (hShape : (rp.next = none ∧ rp.prev = none) ∨ ∃ s, rp.next = some (.head s)) :
     endpointReplyOnCore replier c msg core st =
-        (storeReplyRendezvous st c server rid msg,
+        ((storeReplyLeg st c rid msg).unlinkReplyWaiterOpt c server?,
          .ok (wakeThread (st.updateTcb c (callReceiverTcb msg)) c core).2) ∧
-      (storeReplyRendezvous st c server rid msg).getReply? rid = some rp.consumed := by
+      ((storeReplyLeg st c rid msg).unlinkReplyWaiterOpt c server?).getReply? rid =
+        some rp.consumed := by
   have hNeCQ : c.toObjId ≠ rid.toObjId := fun h => by rw [h, hRo] at hT; cases hT
   have hNeQC : rid.toObjId ≠ c.toObjId := fun h => hNeCQ h.symm
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
@@ -120,7 +130,7 @@ theorem replyOnCore_eq_store (st : SystemState) (replier c server : SeLe4n.Threa
   have hL1 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes (st.updateTcb c (callReceiverTcb msg)) id ty = true :=
     fun h => updateTcb_storeLeaves _ hTc hFC h
-  unfold storeReplyRendezvous
+  unfold storeReplyLeg
   dsimp only
   generalize hS1 : st.updateTcb c (callReceiverTcb msg) = S1 at *
   -- The wake.
@@ -187,10 +197,37 @@ theorem replyOnCore_eq_store (st : SystemState) (replier c server : SeLe4n.Threa
     unfold removeCallerReplyFrame
     rw [hW, hSp]
     unfold SystemState.consumeCallerReply SystemState.consumeReply
-    simp only [hRp2, hStR, hT3c, hSt4]
-  · exact (SystemState.getReply?_eq_some_iff _ _ _).mpr
-      ((SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks
-        (S3.updateTcb c (fun t => { t with replyObjectCode := 0 })) c server).get_reply_iff.mpr hO4q)
+    simp only [hRp2, hStR, hT3c, hSt4, SystemState.unlinkReplyWaiterOpt]
+  · cases server? with
+    | none => exact (SystemState.getReply?_eq_some_iff _ _ _).mpr hO4q
+    | some server =>
+      exact (SystemState.getReply?_eq_some_iff _ _ _).mpr
+        ((SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks
+          (S3.updateTcb c (fun t => { t with replyObjectCode := 0 })) c server).get_reply_iff.mpr hO4q)
+
+/-- **The reply leg, in place**, to a caller recording a server: the
+specification's reply returns `storeReplyRendezvous`'s state with the caller
+wake's SGI (`replyOnCore_eq_storeLeg`). -/
+theorem replyOnCore_eq_store (st : SystemState) (replier c server : SeLe4n.ThreadId)
+    (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (rp : Reply) (msg : IpcMessage)
+    (core : Concurrency.CoreId)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep (some server))
+    (hRO : ct.replyObject = some rid)
+    (hCRes : c.isReserved = false)
+    (hLC : storeLeavesIndexAndTypes st c.toObjId .tcb = true)
+    (hFC : st.objects.findsInPlace c.toObjId = true)
+    (hLR : storeLeavesIndexAndTypes st rid.toObjId .reply = true)
+    (hFR : st.objects.findsInPlace rid.toObjId = true)
+    (hRo : st.objects[rid.toObjId]? = some (.reply rp))
+    (hShape : (rp.next = none ∧ rp.prev = none) ∨ ∃ s, rp.next = some (.head s)) :
+    endpointReplyOnCore replier c msg core st =
+        (storeReplyRendezvous st c server rid msg,
+         .ok (wakeThread (st.updateTcb c (callReceiverTcb msg)) c core).2) ∧
+      (storeReplyRendezvous st c server rid msg).getReply? rid = some rp.consumed :=
+  replyOnCore_eq_storeLeg st replier c (some server) ct ep rid rp msg core hSz hT hIpc hRO hCRes
+    hLC hFC hLR hFR hRo hShape
 
 /-- **The reply, in place**: under `replyWakesInPlace` the specification's
 reply returns `storeReplyRendezvous`'s state with the caller wake's SGI, and the
@@ -206,7 +243,7 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
     endpointReplyOnCore replier c msg core st =
         (storeReplyRendezvous st c server rid msg,
          .ok (wakeThread (st.updateTcb c (callReceiverTcb msg)) c core).2) ∧
-      replyFrameHeadHolder? (storeReplyRendezvous st c server rid msg) rid = none := by
+      replyFrameHeadContext? (storeReplyRendezvous st c server rid msg) rid = none := by
   simp only [replyWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
   obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG
   obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
@@ -220,7 +257,6 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
   obtain ⟨hEq, hR5⟩ := replyOnCore_eq_store st replier c server ct ep rid rp msg core hSz hT hIpc
     hRO hCRes hLC hFC hLR hFR hRo (Or.inl ⟨hNext, hPrev⟩)
   refine ⟨hEq, ?_⟩
-  apply replyFrameHeadHolder?_of_no_head
   unfold replyFrameHeadContext?
   rw [hR5]
   simp only [Reply.consumed, hNext]
@@ -259,7 +295,8 @@ theorem replyDispatch_inPlace (st : SystemState) (replier c server : SeLe4n.Thre
   rw [hEq]
   simp only [hRec, hsv, hAns, hcv]
   unfold applyReplyDonationOnCore
-  rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, hHead]
+  rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, replyFrameHeadHolder?_of_no_head _ _ hHead]
+  simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
   exact ⟨_, rfl⟩
 
 /-- **The checked reply transfer, in place**: under the flow gate and
@@ -321,5 +358,45 @@ theorem storeReplyRendezvous_preserves_donationChainWellFormed (st : SystemState
     rw [hR] at hRp
     simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hRp
     rw [hRp.1] at hNext; cases hNext
+
+/-- **The reply leg keeps the donation chain**, on a caller recording no server
+whose reply object heads no frame: the specification's reply is the leg there
+(`replyOnCore_eq_storeLeg`, with no reply waiters to leave), and its reply
+object heading no frame puts it in the chain-preserving case of
+`endpointReplyOnCore_donationChain_cases`. -/
+theorem storeReplyLeg_preserves_donationChainWellFormed (st : SystemState)
+    (c : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (msg : IpcMessage) (core : Concurrency.CoreId)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyWakesInPlace st c ct rid = true)
+    (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
+    donationChainWellFormed (storeReplyLeg st c rid msg) := by
+  have hG' := hG
+  simp only [replyWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG'
+  obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG'
+  obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
+      rp.next = none ∧ rp.prev = none := by
+    split at hRp
+    · next rp hRo =>
+      rw [Bool.and_eq_true] at hRp
+      exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo,
+        Option.isNone_iff_eq_none.mp hRp.1, Option.isNone_iff_eq_none.mp hRp.2⟩
+    · cases hRp
+  have hEq := (replyOnCore_eq_storeLeg st c c none ct ep rid rp msg core hSz hT hIpc hRO hCRes
+    hLC hFC hLR hFR hRo (Or.inl ⟨hNext, hPrev⟩)).1
+  rcases endpointReplyOnCore_donationChain_cases c c msg core st hObjInv hChain with
+    h | ⟨tcb, rid', r, scId, hLk, hRo', hR, hNext', _, _⟩
+  · rw [hEq] at h; exact h
+  · exfalso
+    have hTcb : tcb = ct := by
+      have h1 := lookupTcb_some_objects st c tcb hLk
+      rw [hT] at h1; cases h1; rfl
+    subst hTcb
+    rw [hRO] at hRo'; cases hRo'
+    rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hRo] at hR; cases hR
+    rw [hNext] at hNext'; cases hNext'
 
 end SeLe4n.Kernel

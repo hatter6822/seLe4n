@@ -317,7 +317,7 @@ theorem ipcReachable.reachQueueInvariant {s : SystemState} (h : ipcReachable s) 
 /-- **The finalisation keeps the reachable state and the bundle.** -/
 theorem finaliseFinalObject_preserves_reachableDeleteBundle (target : Nat) (st : SystemState)
     (h : reachableDeleteBundle st) : reachableDeleteBundle (finaliseFinalObject target st) :=
-  ⟨finaliseFinalObject_preserves_ipcReachable target h.1 h.2.1.2.2,
+  ⟨finaliseFinalObject_preserves_ipcReachable target h.1 h.2.1.2.2 h.2.2,
     finaliseFinalObject_preserves_finalisingDeleteBundle target st h.2⟩
 
 /-- **The retire after the finalisation keeps the reachable state and the
@@ -325,7 +325,7 @@ bundle.** -/
 theorem retireFinalisedObject_preserves_reachableDeleteBundle (ec : CoreId)
     (target recorder : Nat) (st : SystemState) (h : reachableDeleteBundle st) :
     reachableDeleteBundle (retireFinalisedObject ec target recorder st) :=
-  ⟨retireFinalisedObject_preserves_ipcReachable ec target recorder h.1 h.2.1.2.2,
+  ⟨retireFinalisedObject_preserves_ipcReachable ec target recorder h.1 h.2,
     retireFinalisedObject_preserves_finalisingDeleteBundle ec target recorder st h.2⟩
 
 /-- **The slot delete and the page teardown keep the reachable state and the

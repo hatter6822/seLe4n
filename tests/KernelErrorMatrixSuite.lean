@@ -431,21 +431,25 @@ private def row_targetSlotOccupied : KernelErrorRejection :=
           (.cnode cn) }
       runUnit (cspaceInsertSlot ⟨cnodeId, slot⟩ occupant st) }
 
-/-- Row: `endpointReply` rejects when target's `replyTarget = none` with
-`.replyCapInvalid`.  Builds a TCB in `.blockedOnReply _ none` to trigger
-the AK1-B fail-closed branch. -/
-private def row_replyCapInvalid_no_target : KernelErrorRejection :=
+/-- Row: `endpointReply` rejects a replier that is not the server the caller
+recorded, with `.replyCapInvalid` (WS-H1/M-02, kept as a hardening over seL4-MCS,
+whose `doReplyTransfer` has no replier gate).  A caller recording no server — its
+server finalised (WS-ZA ZA6.34) — is answered by any replier, so the refused case
+is a recorded server that differs from the replier. -/
+private def row_replyCapInvalid_wrong_replier : KernelErrorRejection :=
   { syscall       := "endpointReply"
     expectedError := .replyCapInvalid
-    scenarioTag   := "AN11A.3.replyCapInvalid.no_target"
-    scenarioDesc  := "AK1-B (I-H02): endpointReply fails closed when the" ++
-                     " replier's blockedOnReply target slot is `none`" ++
-                     " (production paths always set `some receiver`)"
+    scenarioTag   := "AN11A.3.replyCapInvalid.wrong_replier"
+    scenarioDesc  := "WS-H1/M-02: endpointReply refuses a replier other" ++
+                     " than the server the caller's blockedOnReply" ++
+                     " records"
     runScenario   := fun _ =>
       let endpointId : ObjId := ObjId.ofNat 130
       let replierId : ThreadId := ThreadId.ofNat 50
+      let serverId  : ThreadId := ThreadId.ofNat 52
       let targetId  : ThreadId := ThreadId.ofNat 51
-      let targetTcb : TCB := ((mkTcb 51).setIpcState (.blockedOnReply endpointId none))
+      let targetTcb : TCB :=
+        ((mkTcb 51).setIpcState (.blockedOnReply endpointId (some serverId)))
       let st : SystemState := { (default : SystemState) with
         objects := ((default : SystemState).objects.insert
           targetId.toObjId (.tcb targetTcb)).insert
@@ -994,7 +998,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_schedulerInvariantViolation,
     row_alignmentError_security,
     row_targetSlotOccupied,
-    row_replyCapInvalid_no_target,
+    row_replyCapInvalid_wrong_replier,
     row_replyCapInvalid_not_blocked,
     -- AN11-A.4 IPC / SchedContext / Lifecycle
     row_invalidCapability_send_to_nonEndpoint,

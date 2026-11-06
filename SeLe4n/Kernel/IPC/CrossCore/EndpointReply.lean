@@ -98,9 +98,11 @@ Authority is the reply **capability** (PR #822 review 6J-lYm): the live `.reply`
 *holder* as `replier`, so this below-API primitive does **not** gate on `replier ==
 expected` — a copied/minted (delegated) reply cap held by a *different* server is
 legitimate authority (seL4-MCS reply caps are delegatable).  It fails closed
-(`.replyCapInvalid`) only on a `none` recorded target or a caller not in
-`blockedOnReply` state (the SM6.C.7 replay barrier — a consumed reply leaves the
-caller `.ready`).  The `replier` parameter is retained for caller documentation
+(`.replyCapInvalid`) only on a caller not in `blockedOnReply` state (the SM6.C.7
+replay barrier — a consumed reply leaves the caller `.ready`).  A caller recording
+no server — its server's finalisation forgot it (WS-ZA ZA6.34) — is answered as
+any other, and leaves no reply-waiter queue, being on none (seL4-MCS's
+`doReplyTransfer` reads only the reply's `replyTCB`).  The `replier` parameter is retained for caller documentation
 (the dispatch passes the cap holder) though the gate it fed has been removed.
 
 WS-SM SM6.D (PR #827 review #3 fold): a delivered reply now **consumes** the
@@ -131,10 +133,7 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
   | none => (st, .error .objectNotFound)
   | some tcb =>
       match tcb.ipcState with
-      | .blockedOnReply _ replyTarget =>
-          match replyTarget with
-          | none => (st, .error .replyCapInvalid)
-          | some server =>
+      | .blockedOnReply _ server? =>
             -- PR #822 review 6J-lYm: authority flows from **holding the reply
             -- capability**, not from the syscall issuer being the originally-called
             -- server.  The live `.reply`/`.replyRecv` arms resolve the reply cap to
@@ -172,15 +171,19 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                 -- are unchanged.
                 --
                 -- WS-ZA ZA4.6: and the answered caller leaves its server's
-                -- reply-waiter queue, last, off every other field.
+                -- reply-waiter queue, last, off every other field.  WS-ZA
+                -- ZA6.34: a caller whose server's finalisation forgot it
+                -- (`.blockedOnReply _ none`) is on no queue, and the reply
+                -- capability's holder still answers it, as seL4-MCS's
+                -- `doReplyTransfer` reads only the reply's `replyTCB`.
                 match tcb.replyObject with
-                | none => ((wakeThread st' target executingCore).1.unlinkReplyWaiter
-                              target server,
+                | none => ((wakeThread st' target executingCore).1.unlinkReplyWaiterOpt
+                              target server?,
                            .ok (wakeThread st' target executingCore).2)
                 | some rid =>
                     match removeCallerReplyFrame target rid
                         (wakeThread st' target executingCore).1 with
-                    | .ok ((), st'') => (st''.unlinkReplyWaiter target server,
+                    | .ok ((), st'') => (st''.unlinkReplyWaiterOpt target server?,
                                          .ok (wakeThread st' target executingCore).2)
                     | .error e => (st, .error e)
       | _ => (st, .error .replyCapInvalid)
@@ -808,8 +811,8 @@ as its stasher (`storeReplyStasher`), and the receiver stashing that reply.
 Compiled as its own function so each update is specialised in. -/
 @[noinline] def storeReceiveBlock (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) : SystemState :=
-  (storeReplyStasher ((storeEndpointEnqueue st endpointId true receiver
-      (ThreadId.ofOptCode tailCode)).updateTcb receiver
+  (storeReplyStasher ((storeEndpointEnqueueCode st endpointId true receiver
+      tailCode).updateTcb receiver
       (fun t => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))))
     replyCode receiver).updateTcb receiver (fun t => { t with pendingReceiveReplyCode := replyCode })
 
@@ -845,7 +848,7 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     revert hB
     cases h : rt.schedContextBinding <;> simp [h]
   unfold endpointReceiveDualOnCore storeReceiveBlock
-  rw [Endpoint.ofOptCode_recvTailCode]
+  rw [storeEndpointEnqueueCode_eq, Endpoint.ofOptCode_recvTailCode]
   simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hS,
     cleanupPreReceiveDonationMigrated_of_no_donation st receiver hNoDon, hEnq]
   generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hL hSlot ⊢
@@ -882,7 +885,7 @@ theorem receiveBlock_receiver_blocked (st : SystemState) (endpointId : SeLe4n.Ob
     (fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId)))
     hE hF hG
   unfold storeReceiveBlock
-  rw [Endpoint.ofOptCode_recvTailCode]
+  rw [storeEndpointEnqueueCode_eq, Endpoint.ofOptCode_recvTailCode]
   generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hSlot ⊢
   let g2 := fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))
   have hT2 := updateTcb_getTcb?_self_of_findsInPlace g2 hT hF
@@ -1239,25 +1242,33 @@ theorem answeredFrameHeadContext?_none_of_frameAbove (st : SystemState)
     exact replyFrameHeadHolder?_of_no_head st rid
       (replyFrameHeadContext?_of_frameAbove st rid above hAbove)
 
-/-- And the converse exclusion, at the member HP3 declares: a reply that pops a
-donation splices nothing. -/
+/-- And the converse exclusion, at the member HP3 declares: a reply whose frame
+heads a context -- held or not -- splices nothing. -/
 theorem answeredReplyFrameBelow?_none_of_headContext (st : SystemState)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (h : answeredFrameHeadContextId? st target = some scId) :
     answeredReplyFrameBelow? st target = none := by
-  obtain ⟨rid, hRid, hHead, _⟩ := answeredFrameHeadContext?_eq_some h
-  rw [answeredReplyFrameBelow?_eq st target rid hRid,
-    replyFrameBelow?_of_headContext st rid scId hHead]
+  unfold answeredFrameHeadContextId? at h
+  cases hRid : answeredReplyObject? st target with
+  | none => rw [hRid] at h; cases h
+  | some rid =>
+    rw [hRid] at h
+    rw [answeredReplyFrameBelow?_eq st target rid hRid,
+      replyFrameBelow?_of_headContext st rid scId h]
 
 /-- And the frame above is absent there too, which is the same exclusion read from
 the other side. -/
 theorem answeredReplyFrameAbove?_none_of_headContext (st : SystemState)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (h : answeredFrameHeadContextId? st target = some scId) :
     answeredReplyFrameAbove? st target = none := by
-  obtain ⟨rid, hRid, hHead, _⟩ := answeredFrameHeadContext?_eq_some h
-  rw [answeredReplyFrameAbove?_eq_bind, hRid]
-  exact replyFrameAbove?_of_headContext st rid scId hHead
+  unfold answeredFrameHeadContextId? at h
+  cases hRid : answeredReplyObject? st target with
+  | none => rw [hRid] at h; cases h
+  | some rid =>
+    rw [hRid] at h
+    rw [answeredReplyFrameAbove?_eq_bind, hRid]
+    exact replyFrameAbove?_of_headContext st rid scId h
 
 /-- **WS-HP HP1.2: the trigger is a function of the store projections it reads** --
 the answered caller's TCB, every Reply and every SchedContext.  The frame lemma
@@ -1312,6 +1323,11 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
   -- `answeredReplyObject?` with `replyFrameHeadHolder?` that
   -- `applyReplyDonationOnCore` itself reads, so the footprint and the transition
   -- cannot disagree about which context is popped or which thread is unbound.
+  -- **WS-ZA ZA6.34**: the context members (the context, its stack head, the
+  -- frames below it and the recorded origin) read the context half alone,
+  -- `answeredFrameHeadContextId?`, because the pop writes them whether or not a
+  -- thread holds the context (`popUnheldReplyHead` where none does); only the
+  -- holder member reads the holder.
   -- The first TCB **write** lock stays keyed on the **recorded** server
   -- (`server`), because that is the thread `propagatePipChainCrossCore` walks
   -- from and rewrites; the splice can make it a different thread from the
@@ -1326,11 +1342,11 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
   -- footprint was unchanged until OD4.1 (`v0.35.2`) wrote a `scReply`; it is
   -- load-bearing at depth >= 2 and inert at depth 1.
   let server := (recordedReplyServer? st target).getD replier
-  let belowHead := match (answeredFrameHeadContext? st target).map (·.1) with
+  let belowHead := match answeredFrameHeadContextId? st target with
     | none => (none, none)
     | some scId => replyStackBelowHead? st scId
   lockSet_endpointReply server cnodeRootObjId target
-    ((answeredFrameHeadContext? st target).map (·.1))
+    (answeredFrameHeadContextId? st target)
     ((answeredFrameHeadContext? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
     belowHead.1 belowHead.2
@@ -1341,7 +1357,7 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     -- no hypothesis), where the binding reading needed a stated coherence fact to
     -- say so -- one HP7 (`v0.35.46`) deleted, its content having become that
     -- theorem.
-    (((answeredFrameHeadContext? st target).map (·.1)).bind (replyStackHead? st))
+    ((answeredFrameHeadContextId? st target).bind (replyStackHead? st))
     -- **WS-RM (`v0.35.6`)**: and the frame above the answered one, which the
     -- removal splices out before it consumes the caller link.
     (answeredReplyFrameAbove? st target)
@@ -1366,7 +1382,7 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     -- not.  That is precisely the state HP10.7's pop writes a different TCB on, so
     -- the widening is the declaration catching up with the write -- one row before
     -- the code, which is the plan's own numbering rule.
-    (((answeredFrameHeadContext? st target).map (·.1)).bind
+    ((answeredFrameHeadContextId? st target).bind
       (donationOriginRecipient? st))
     -- **WS-ZA ZA4.6**: and the answered caller's reply-waiter predecessor and
     -- successor, which `unlinkReplyWaiter target expected` links past it.
@@ -1721,11 +1737,11 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
   -- arm pops — the same resolver the `.reply` arm uses, for the same
   -- question.  This is the arm the ceiling moved for: at depth ≥ 2 they are two
   -- keys nothing else covers, taking the widest declared footprint to thirteen.
-  let belowHead := match (answeredFrameHeadContext? st target).map (·.1) with
+  let belowHead := match answeredFrameHeadContextId? st target with
     | none => (none, none)
     | some scId => replyStackBelowHead? st scId
   lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender?
-    ((answeredFrameHeadContext? st target).map (·.1))
+    (answeredFrameHeadContextId? st target)
     ((answeredFrameHeadContext? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
     (receiveInstallsCaps st endpointObjId)
@@ -1740,7 +1756,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- stack, which the reply leg's pop clears.  Both resolved by
     -- `replyStackHead?` on the contexts the members above already name.
     ((receiveRendezvousDonatedSc? st endpointObjId replier).bind (replyStackHead? st))
-    (((answeredFrameHeadContext? st target).map (·.1)).bind (replyStackHead? st))
+    ((answeredFrameHeadContextId? st target).bind (replyStackHead? st))
     -- **PR #894 review — the INVOKING receiver's own pre-receive return.**  The
     -- receive leg is `.receive`'s transition, so with no sender queued it runs
     -- `cleanupPreReceiveDonationChecked` on `replier`, and the donation return
@@ -1766,7 +1782,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- write, since this arm's reply leg *is* that transition.  Live at depth 1
     -- and merged there; a distinct key on the out-of-order removal, for the
     -- reason `lockSet_endpointReplyOnCore` records.
-    (((answeredFrameHeadContext? st target).map (·.1)).bind
+    ((answeredFrameHeadContextId? st target).bind
       (donationOriginRecipient? st))
     -- **WS-ZA ZA4.6**: and the reply leg's reply-waiter neighbours -- the same
     -- resolvers the `.reply` arm reads, since this arm's reply leg *is* that
@@ -1854,14 +1870,14 @@ For a caller carrying a forward reply link see the companion
 `endpointReplyOnCore_reply_eq_linked`. -/
 theorem endpointReplyOnCore_reply_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (server? : Option SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hLk : lookupTcb st target = some tcb)
-    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hIpc : tcb.ipcState = .blockedOnReply ep server?)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hRO : tcb.replyObject = none) :
     endpointReplyOnCore replier target msg executingCore st
-      = ((wakeThread st' target executingCore).1.unlinkReplyWaiter target expected,
+      = ((wakeThread st' target executingCore).1.unlinkReplyWaiterOpt target server?,
           .ok (wakeThread st' target executingCore).2) := by
   unfold endpointReplyOnCore
   rw [if_neg hSz1]
@@ -1882,17 +1898,17 @@ dispatch-layer step; folding it in gives a direct below-API caller full single-u
 reply semantics.) -/
 theorem endpointReplyOnCore_reply_eq_linked
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (server? : Option SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hLk : lookupTcb st target = some tcb)
-    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hIpc : tcb.ipcState = .blockedOnReply ep server?)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hRO : tcb.replyObject = some rid) :
     ∃ st'', removeCallerReplyFrame target rid
         (wakeThread st' target executingCore).1 = .ok ((), st'')
       ∧ endpointReplyOnCore replier target msg executingCore st
-          = (st''.unlinkReplyWaiter target expected,
+          = (st''.unlinkReplyWaiterOpt target server?,
               .ok (wakeThread st' target executingCore).2) := by
   obtain ⟨st'', hCons⟩ := removeCallerReplyFrame_isOk
     (wakeThread st' target executingCore).1 target rid
@@ -1910,20 +1926,20 @@ disturb the result component.  The uniform driver behind the §4 SGI-emission an
 §9 per-core-consistency conclusions. -/
 theorem endpointReplyOnCore_reply_snd_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (server? : Option SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hLk : lookupTcb st target = some tcb)
-    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hIpc : tcb.ipcState = .blockedOnReply ep server?)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st') :
     (endpointReplyOnCore replier target msg executingCore st).2
       = .ok (wakeThread st' target executingCore).2 := by
   cases hRO : tcb.replyObject with
   | none =>
-      rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+      rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep server?
             hSz1 hLk hIpc hStore hRO]
   | some rid =>
       obtain ⟨st'', _, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
-        executingCore st st' tcb ep expected rid hSz1 hLk hIpc hStore hRO
+        executingCore st st' tcb ep server? rid hSz1 hLk hIpc hStore hRO
       rw [hEq]
 
 /-- WS-SM SM6.C.7 (replay barrier): a reply to a caller **not** in `blockedOnReply`
@@ -1962,7 +1978,7 @@ theorem endpointReplyOnCore_delegated_replier_eq
     endpointReplyOnCore replier target msg executingCore st
       = ((wakeThread st' target executingCore).1.unlinkReplyWaiter target expected,
           .ok (wakeThread st' target executingCore).2) :=
-  endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+  endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep (some expected)
     hSz1 hLk hIpc hStore hRO
 
 -- ============================================================================
@@ -1979,17 +1995,17 @@ wake site `st'`; the reply store mutates only the caller's `ipcState` /
 pre-state target names. -/
 theorem endpointReplyOnCore_remote_wake
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (server? : Option SeLe4n.ThreadId)
     (targetTcb' : TCB)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hLk : lookupTcb st target = some tcb)
-    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hIpc : tcb.ipcState = .blockedOnReply ep server?)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hTcb' : st'.getTcb? target = some targetTcb')
     (hRemote : determineTargetCore st' target ≠ executingCore) :
     (endpointReplyOnCore replier target msg executingCore st).2
       = .ok (some (determineTargetCore st' target, SgiKind.reschedule)) := by
-  rw [endpointReplyOnCore_reply_snd_eq replier target msg executingCore st st' tcb ep expected
+  rw [endpointReplyOnCore_reply_snd_eq replier target msg executingCore st st' tcb ep server?
         hSz1 hLk hIpc hStore]
   rw [wakeThread_emits_sgi_if_remote st' target executingCore targetTcb' hTcb' hRemote]
 
@@ -1998,14 +2014,14 @@ executing core) surfaces **no** SGI — the local scheduler picks the newly-runn
 caller up on its next decision. -/
 theorem endpointReplyOnCore_no_sgi_if_local
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (server? : Option SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hLk : lookupTcb st target = some tcb)
-    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hIpc : tcb.ipcState = .blockedOnReply ep server?)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hLocal : determineTargetCore st' target = executingCore) :
     (endpointReplyOnCore replier target msg executingCore st).2 = .ok none := by
-  rw [endpointReplyOnCore_reply_snd_eq replier target msg executingCore st st' tcb ep expected
+  rw [endpointReplyOnCore_reply_snd_eq replier target msg executingCore st st' tcb ep server?
         hSz1 hLk hIpc hStore]
   rw [wakeThread_no_sgi_if_local st' target executingCore hLocal]
 
@@ -2281,10 +2297,10 @@ additionally clears the caller's `replyObject`, but preserves its `ipcState` /
 survives the atomic link teardown. -/
 theorem endpointReplyOnCore_perCore_delivery
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (server? : Option SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hLk : lookupTcb st target = some tcb)
-    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hIpc : tcb.ipcState = .blockedOnReply ep server?)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt) :
     ∃ t, (endpointReplyOnCore replier target msg executingCore st).1.getTcb? target = some t
@@ -2302,15 +2318,15 @@ theorem endpointReplyOnCore_perCore_delivery
     TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage hWE
   cases hRO : tcb.replyObject with
   | none =>
-      rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+      rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep server?
             hSz1 hLk hIpc hStore hRO]
       obtain ⟨tU, hU, hUE⟩ := SystemState.getTcb?_of_objectsAgreeOffRunLinks
-        (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ target expected) hWake
+        (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ target server?) hWake
       exact ⟨tU, hU, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hUE).trans hWIpc,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage hUE).trans hWMsg⟩
   | some rid =>
       obtain ⟨st'', hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
-        executingCore st st' tcb ep expected rid hSz1 hLk hIpc hStore hRO
+        executingCore st st' tcb ep server? rid hSz1 hLk hIpc hStore hRO
       rw [hEq]
       have hInvW : (wakeThread st' target executingCore).1.objects.invExt :=
         wakeThread_preserves_objects_invExt st' target executingCore hInv'
@@ -2321,7 +2337,7 @@ theorem endpointReplyOnCore_perCore_delivery
           (wakeThread st' target executingCore).1 st'' target rid hInvW hCons
           target.toObjId tW hObjW
       obtain ⟨tU, hU, hUE⟩ := SystemState.getTcb?_of_objectsAgreeOffRunLinks
-        (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks st'' target expected)
+        (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st'' target server?)
         ((SystemState.getTcb?_eq_some_iff st'' target tx).mpr hTx)
       exact ⟨tU, hU, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hUE).trans (by rw [hIpcEq, hWIpc]),
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage hUE).trans (by rw [hMsgEq, hWMsg])⟩
@@ -2341,9 +2357,9 @@ theorem endpointReplyOnCore_ok_decompose
     (st : SystemState) {sgi? : Option (CoreId × SgiKind)}
     (hOk : (endpointReplyOnCore replier target msg executingCore st).2 = .ok sgi?) :
     ¬ msg.registers.size > maxMessageRegisters ∧
-    ∃ (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId) (st' : SystemState),
+    ∃ (tcb : TCB) (ep : SeLe4n.ObjId) (server? : Option SeLe4n.ThreadId) (st' : SystemState),
       lookupTcb st target = some tcb ∧
-      tcb.ipcState = .blockedOnReply ep (some expected) ∧
+      tcb.ipcState = .blockedOnReply ep server? ∧
       storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st' := by
   unfold endpointReplyOnCore at hOk
   by_cases hSz1 : msg.registers.size > maxMessageRegisters
@@ -2364,14 +2380,9 @@ theorem endpointReplyOnCore_ok_decompose
     | blockedOnReply ep rt =>
       rw [hIpc] at hOk
       simp only at hOk
-      cases hRT : rt with
-      | none => rw [hRT] at hOk; exact absurd hOk (by simp)
-      | some expected =>
-        rw [hRT] at hOk
-        simp only at hOk
-        cases hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
-        | error e => rw [hStore] at hOk; exact absurd hOk (by simp)
-        | ok st' => exact ⟨tcb, ep, expected, st', rfl, by rw [hIpc, hRT], hStore⟩
+      cases hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
+      | error e => rw [hStore] at hOk; exact absurd hOk (by simp)
+      | ok st' => exact ⟨tcb, ep, rt, st', rfl, hIpc, hStore⟩
 
 /-- **WS-RR RR8.16 (`v0.35.195`)**: a successful reply leg leaves its target
 `.ready`.
@@ -2863,17 +2874,20 @@ to the answered caller, which is `target`, a non-optional argument of this
 footprint. -/
 theorem lockSet_endpointReplyOnCore_covers_donationPop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hHead : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId) :
     (schedContextLock scId, AccessMode.write)
       ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs ∧
-    (tcbLock holder, AccessMode.write)
-      ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
+    ∀ holder, answeredFrameHeadContext? st target = some (scId, holder) →
+      (tcbLock holder, AccessMode.write)
+        ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
   unfold lockSet_endpointReplyOnCore
+  rw [hCtx]
+  refine ⟨lockSet_endpointReply_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
+    fun holder hHead => ?_⟩
   rw [hHead]
   simp only [Option.map_some]
-  exact ⟨lockSet_endpointReply_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
-    lockSet_endpointReply_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _⟩
+  exact lockSet_endpointReply_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
 /-- **WS-HP HP6.2**: and `.replyRecv`'s, which is the same pop because its reply
@@ -2883,21 +2897,23 @@ hottest IPC arm's pop wrote under declared locks. -/
 theorem lockSet_endpointReplyRecvOnCore_covers_donationPop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hHead : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (scId : SeLe4n.SchedContextId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId) :
     (schedContextLock scId, AccessMode.write)
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
            endpointObjId).pairs ∧
-    (tcbLock holder, AccessMode.write)
-      ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
-           endpointObjId).pairs := by
+    ∀ holder, answeredFrameHeadContext? st target = some (scId, holder) →
+      (tcbLock holder, AccessMode.write)
+        ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+             endpointObjId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
-  rw [hHead]
-  simp only [Option.map_some]
-  refine ⟨?_, ?_⟩
+  rw [hCtx]
+  refine ⟨?_, fun holder hHead => ?_⟩
   · exact lockSet_replyRecv_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _
-  · exact lockSet_replyRecv_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · rw [hHead]
+    simp only [Option.map_some]
+    exact lockSet_replyRecv_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: the reply-stack pop's two Reply writes -- the head it
@@ -2909,8 +2925,8 @@ recorded server's binding, which is not what the pop reads, so on a state where
 the two disagree this said nothing about the objects the transition writes. -/
 theorem lockSet_endpointReplyOnCore_covers_pop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hDon : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId) :
     (∀ head, replyStackHead? st scId = some head →
       (replyLock head, AccessMode.write)
         ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs) ∧
@@ -2918,8 +2934,8 @@ theorem lockSet_endpointReplyOnCore_covers_pop
       (replyLock below, AccessMode.write)
         ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs) := by
   unfold lockSet_endpointReplyOnCore
-  rw [hDon]
-  simp only [Option.map_some]
+  rw [hCtx]
+  dsimp only
   constructor
   · intro head hHead
     have h2 : Option.bind (some scId) (replyStackHead? st) = some head := hHead
@@ -2955,8 +2971,8 @@ on the pop's own trigger, for the reason its `.reply` twin records. -/
 theorem lockSet_endpointReplyRecvOnCore_covers_pop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hDon : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (scId : SeLe4n.SchedContextId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId) :
     (∀ head, replyStackHead? st scId = some head →
       (replyLock head, AccessMode.write)
         ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
@@ -2966,8 +2982,8 @@ theorem lockSet_endpointReplyRecvOnCore_covers_pop
         ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
              endpointObjId).pairs) := by
   unfold lockSet_endpointReplyRecvOnCore
-  rw [hDon]
-  simp only [Option.map_some]
+  rw [hCtx]
+  dsimp only
   constructor
   · intro head hHead
     have h2 : Option.bind (some scId) (replyStackHead? st) = some head := hHead
@@ -3082,15 +3098,15 @@ members for one; what moved is `maxLockSetSize`, which bounds the union over all
 argument values and is what `boundedWait_under_2pl` and the WCRT surface consume. -/
 theorem lockSet_endpointReplyOnCore_covers_originRecipient
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
     (origin : SeLe4n.ThreadId)
-    (hHead : answeredFrameHeadContext? st target = some (scId, holder))
+    (hCtx : answeredFrameHeadContextId? st target = some scId)
     (hOrigin : donationOriginRecipient? st scId = some origin) :
     (tcbLock origin, AccessMode.write)
       ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
   unfold lockSet_endpointReplyOnCore
-  rw [hHead]
-  simp only [Option.map_some, Option.bind_some, hOrigin]
+  rw [hCtx]
+  simp only [Option.bind_some, hOrigin]
   exact lockSet_endpointReply_originRecipient_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
@@ -3099,15 +3115,15 @@ reply leg is the `.reply` arm's transition. -/
 theorem lockSet_endpointReplyRecvOnCore_covers_originRecipient
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId) (origin : SeLe4n.ThreadId)
-    (hHead : answeredFrameHeadContext? st target = some (scId, holder))
+    (scId : SeLe4n.SchedContextId) (origin : SeLe4n.ThreadId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId)
     (hOrigin : donationOriginRecipient? st scId = some origin) :
     (tcbLock origin, AccessMode.write)
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
            endpointObjId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
-  rw [hHead]
-  simp only [Option.map_some, Option.bind_some, hOrigin]
+  rw [hCtx]
+  simp only [Option.bind_some, hOrigin]
   exact lockSet_replyRecv_originRecipient_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     _ _ _ _ _ _ _ _
 
@@ -3232,17 +3248,17 @@ the replay-rejection `endpointReplyOnCore_not_blocked_eq`.) -/
 theorem endpointReplyOnCore_replay_rejected
     (replier replier2 target : SeLe4n.ThreadId) (msg msg2 : IpcMessage)
     (executingCore executingCore2 : CoreId)
-    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (server? : Option SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hLk : lookupTcb st target = some tcb)
-    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hIpc : tcb.ipcState = .blockedOnReply ep server?)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
     (hSz1' : ¬ msg2.registers.size > maxMessageRegisters) :
     (endpointReplyOnCore replier2 target msg2 executingCore2
         (endpointReplyOnCore replier target msg executingCore st).1).2 = .error .replyCapInvalid := by
   obtain ⟨t, hGet, hReady, _⟩ :=
-    endpointReplyOnCore_perCore_delivery replier target msg executingCore st st' tcb ep expected
+    endpointReplyOnCore_perCore_delivery replier target msg executingCore st st' tcb ep server?
       hSz1 hLk hIpc hStore hObjInv
   have hLkPost : lookupTcb (endpointReplyOnCore replier target msg executingCore st).1 target = some t :=
     lookupTcb_some_of_getTcb?_some st _ target tcb t hLk hGet
@@ -3304,11 +3320,11 @@ enqueue on `determineTargetCore st' target`; a concurrent scheduling decision on
 any sibling core cannot observe a change to its own per-core state. -/
 theorem endpointReplyOnCore_perCore_consistent
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (server? : Option SeLe4n.ThreadId)
     (c' : CoreId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hLk : lookupTcb st target = some tcb)
-    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hIpc : tcb.ipcState = .blockedOnReply ep server?)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hOther : determineTargetCore st' target ≠ c') :
     (endpointReplyOnCore replier target msg executingCore st).1.scheduler.runQueueOnCore c'
@@ -3322,13 +3338,13 @@ theorem endpointReplyOnCore_perCore_consistent
   obtain ⟨hRQ, hCur⟩ := wakeThread_independent_of_other_core st' target executingCore c' hOther
   cases hRO : tcb.replyObject with
   | none =>
-      rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+      rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep server?
             hSz1 hLk hIpc hStore hRO]
-      simp only [SystemState.unlinkReplyWaiter_scheduler]
+      simp only [SystemState.unlinkReplyWaiterOpt_scheduler]
       exact ⟨by rw [hRQ, hSched], by rw [hCur, hSched]⟩
   | some rid =>
       obtain ⟨st'', hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
-        executingCore st st' tcb ep expected rid hSz1 hLk hIpc hStore hRO
+        executingCore st st' tcb ep server? rid hSz1 hLk hIpc hStore hRO
       -- The folded removal is scheduler-invisible (`removeCallerReplyFrame_scheduler_eq`),
       -- so the other-core frame transports across it unchanged.
       have hSchedC : st''.scheduler = (wakeThread st' target executingCore).1.scheduler :=
@@ -3336,12 +3352,12 @@ theorem endpointReplyOnCore_perCore_consistent
           (wakeThread st' target executingCore).1 st'' target rid hCons
       rw [hEq]
       constructor
-      · show (st''.unlinkReplyWaiter target expected).scheduler.runQueueOnCore c'
+      · show (st''.unlinkReplyWaiterOpt target server?).scheduler.runQueueOnCore c'
             = st.scheduler.runQueueOnCore c'
-        rw [SystemState.unlinkReplyWaiter_scheduler, hSchedC, hRQ, hSched]
-      · show (st''.unlinkReplyWaiter target expected).scheduler.currentOnCore c'
+        rw [SystemState.unlinkReplyWaiterOpt_scheduler, hSchedC, hRQ, hSched]
+      · show (st''.unlinkReplyWaiterOpt target server?).scheduler.currentOnCore c'
             = st.scheduler.currentOnCore c'
-        rw [SystemState.unlinkReplyWaiter_scheduler, hSchedC, hCur, hSched]
+        rw [SystemState.unlinkReplyWaiterOpt_scheduler, hSchedC, hCur, hSched]
 
 -- ============================================================================
 -- WS-RR RR2.10 — the scheduler-domain footprint of the cross-core `.reply`

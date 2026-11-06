@@ -50,7 +50,7 @@ theorem storeReplyRendezvousReady_fields (st : SystemState) (c server : SeLe4n.T
     (rid : SeLe4n.ReplyId) (hNo : st.objects.noResizeDue) :
     (storeReplyRendezvousReady st c server rid).objectIndexSet = st.objectIndexSet ∧
       (storeReplyRendezvousReady st c server rid).lifecycle = st.lifecycle := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
@@ -73,7 +73,7 @@ theorem storeReplyRendezvousReady_agree (st : SystemState) (c server : SeLe4n.Th
     (x : SeLe4n.ObjId) (hxc : x ≠ c.toObjId) (hxr : x ≠ rid.toObjId) :
     ((storeReplyRendezvousReady st c server rid).objects[x]?).map KernelObject.withoutRunLinks =
       (st.objects[x]?).map KernelObject.withoutRunLinks := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
@@ -118,7 +118,7 @@ theorem storeReplyRendezvousReady_keepsFinds (st : SystemState) (c server : SeLe
     (rid : SeLe4n.ReplyId) (hNo : st.objects.noResizeDue)
     (hFC : st.objects.findsInPlace c.toObjId = true) :
     (storeReplyRendezvousReady st c server rid).objectsKeepFinds st := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
@@ -141,7 +141,7 @@ theorem storeReplyRendezvousReady_reply (st : SystemState) (c server : SeLe4n.Th
     (hT : st.getTcb? c = some ct) (hFC : st.objects.findsInPlace c.toObjId = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp)) (hNe : rid.toObjId ≠ c.toObjId) :
     (storeReplyRendezvousReady st c server rid).objects[rid.toObjId]? = some (.reply rp.consumed) := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
@@ -168,7 +168,7 @@ theorem storeReplyRendezvousReady_caller (st : SystemState) (c server : SeLe4n.T
     (hNe : rid.toObjId ≠ c.toObjId) :
     ∃ t, (storeReplyRendezvousReady st c server rid).objects[c.toObjId]? = some (.tcb t) ∧
       t.ipcStateCode = (receiverReady ct).ipcStateCode := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
@@ -466,7 +466,8 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
   generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hHead hE1 hR1 hG1
   have hPop : replyRecvPopDonation rid c S1 = .ok (none, S1) := by
     unfold replyRecvPopDonation
-    rw [hHead]
+    rw [replyFrameHeadHolder?_of_no_head _ _ hHead]
+    simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
   have hEp1 : S1.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE1
   have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) root slot core S1 =
       (removeRunnableOnCore (storeReceiveBlock S1 epId tid ep.recvTailCode
@@ -512,7 +513,9 @@ theorem storeReplyStasher_msg (st : SystemState) (r recv : SeLe4n.ThreadId) (rc 
 theorem storeReceiveBlock_noResizeDue (st : SystemState) (epId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (tc rc : Nat) (hNo : st.objects.noResizeDue) :
     (storeReceiveBlock st epId tid tc rc).objects.noResizeDue := by
-  unfold storeReceiveBlock storeEndpointEnqueue
+  unfold storeReceiveBlock
+  simp only [storeEndpointEnqueueCode_eq]
+  unfold storeEndpointEnqueue
   dsimp only
   have h1 := modifyObject_noResizeDue st epId
     (enqueueEndpoint true tid (ThreadId.optCode (ThreadId.ofOptCode tc))) hNo
@@ -527,7 +530,9 @@ theorem storeReceiveBlock_msg (st : SystemState) (epId : SeLe4n.ObjId)
     (hNo : st.objects.noResizeDue) (hNe : tid ≠ r) :
     storeReceiveBlock (st.mapTcbInPlace r (holdMessage msg)) epId tid tc rc =
       (storeReceiveBlock st epId tid tc rc).mapTcbInPlace r (holdMessage msg) := by
-  unfold storeReceiveBlock storeEndpointEnqueue
+  unfold storeReceiveBlock
+  simp only [storeEndpointEnqueueCode_eq]
+  unfold storeEndpointEnqueue
   dsimp only
   rw [modifyObject_msg _ _ _ _ _ _ hNo (fun o => by
     cases o <;> try rfl

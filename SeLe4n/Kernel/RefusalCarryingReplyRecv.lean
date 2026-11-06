@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.RefusalCarryingEndpoint
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvDonatedInPlace
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvUnheldInPlace
 
 /-!
 # Reply-receive, refusing in the state it was refused in
@@ -314,6 +315,115 @@ here. -/
         .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
     | .error e => .error (e, st)
 
+/-- WS-ZA ZA6.34: **a reply-receive answering a caller recording no server that
+may block in place**, read on the pre-state: the caller `c` blocked on reply
+object `rid` with no server recorded (its server finalised, seL4-MCS's
+`finaliseCap`), the unheld pop's checks (`replyUnheldPopsInPlace`), no sender
+waiting on the endpoint, the replier a thread that may block there in place and
+the reply object not stashed and in its slot for the stasher record.  Every
+read is a code. -/
+@[inline] def replyRecvUnheldBlocks (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Bool :=
+  tid.val != c.val &&
+  (match st.getTcb? c with
+   | some ct =>
+       (match ct.ipcState with
+        | .blockedOnReply _ none => true
+        | _ => false) &&
+       ct.replyObjectCode == rid.val + 1
+   | none => false) &&
+  replyUnheldPopsInPlace st c rid &&
+  (match st.getEndpoint? epId with
+   | some ep =>
+       ep.sendQ.head.isNone &&
+       (match st.getTcb? tid with
+        | some rt => receiveBlockAdmits rt && enqueuesInPlaceCode st epId tid ep.recvTailCode
+        | none => false)
+   | none => false) &&
+  (match st.getReply? rid with
+   | some rp => !st.replyStashedAt rid rp && replyRecordsInPlace st (rid.val + 1)
+   | none => false)
+
+theorem replyRecvUnheldBlocks_spec {st : SystemState} {epId : SeLe4n.ObjId}
+    {tid c : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    (h : replyRecvUnheldBlocks st epId tid c rid = true) :
+    ∃ (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply),
+      st.objects[c.toObjId]? = some (.tcb ct) ∧
+      ct.ipcState = .blockedOnReply ep0 none ∧ ct.replyObject = some rid ∧
+      replyUnheldPopsInPlace st c rid = true ∧ tid ≠ c ∧
+      st.objects[epId]? = some (.endpoint ep) ∧ ep.sendQ.head = none ∧
+      st.objects[tid.toObjId]? = some (.tcb rt) ∧ receiveBlockAdmits rt = true ∧
+      enqueuesInPlace st epId tid ep.receiveQ.tail = true ∧
+      st.objects[rid.toObjId]? = some (.reply rp) ∧
+      st.replyStashedAt rid rp = false ∧ replyRecordsInPlace st (rid.val + 1) = true ∧
+      receiveQueueTailCode st epId = ep.recvTailCode := by
+  unfold replyRecvUnheldBlocks at h
+  simp only [Bool.and_eq_true] at h
+  obtain ⟨⟨⟨⟨hNe, hC⟩, hU⟩, hE⟩, hRp⟩ := h
+  have hNe' : tid ≠ c := fun e => by subst e; simp at hNe
+  cases hTc : st.getTcb? c with
+  | none => rw [hTc] at hC; cases hC
+  | some ct =>
+  rw [hTc] at hC
+  simp only [Bool.and_eq_true] at hC
+  obtain ⟨hIpc, hRO⟩ := hC
+  obtain ⟨ep0, hIpc'⟩ : ∃ ep0, ct.ipcState = .blockedOnReply ep0 none := by
+    revert hIpc
+    split
+    · next ep0 hS => intro _; exact ⟨ep0, hS⟩
+    · intro e; cases e
+  cases hEp : st.getEndpoint? epId with
+  | none => rw [hEp] at hE; cases hE
+  | some ep =>
+  rw [hEp] at hE
+  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hE
+  obtain ⟨hS, hT⟩ := hE
+  cases hTt : st.getTcb? tid with
+  | none => rw [hTt] at hT; cases hT
+  | some rt =>
+  rw [hTt] at hT
+  simp only [Bool.and_eq_true] at hT
+  obtain ⟨hA, hEnq⟩ := hT
+  cases hR : st.getReply? rid with
+  | none => rw [hR] at hRp; cases hRp
+  | some rp =>
+  rw [hR] at hRp
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at hRp
+  obtain ⟨hStash, hRecR⟩ := hRp
+  refine ⟨ct, ep0, rt, ep, rp, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc, hIpc', ?_, hU,
+    hNe', (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp, hS,
+    (SystemState.getTcb?_eq_some_iff _ _ _).mp hTt, hA, ?_,
+    (SystemState.getReply?_eq_some_iff _ _ _).mp hR, hStash, hRecR, ?_⟩
+  · simp only [TCB.replyObject, beq_iff_eq.mp hRO, SeLe4n.ReplyId.ofOptCode]
+  · rw [enqueuesInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode] at hEnq; exact hEnq
+  · simp only [receiveQueueTailCode, hEp]
+
+/-- WS-ZA ZA6.34: whether a reply-receive of at most four words answering a
+caller recording no server may block in place (`replyRecvUnheldBlocks`).  Out of
+line, so the checks are one call and nothing they read is held across the
+writes. -/
+@[noinline] def replyRecvUnheldAdmits (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (layout : SeLe4n.SyscallRegisterLayout) (len : Nat)
+    (st : SystemState) : Bool :=
+  decide (Architecture.regMessageLength layout len - 1 ≤ 4) && replyRecvUnheldBlocks st epId tid c rid
+
+/-- The checked reply-receive answering a caller recording no server (seL4-MCS's
+`doReplyTransfer` by a holder of the reply capability, then `reply_pop` handing
+the context the reply object heads to the caller): in place when
+`replyRecvUnheldAdmits` passes (`performReplyRecvUnheldDelivered`,
+`replyRecvOnCore_unheld_delivered`), the context the reply object heads and the
+caller's home read on the pre-state; the specification's otherwise. -/
+@[inline] def replyRecvUnheldArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  fun st =>
+    if replyRecvUnheldAdmits epId tid c rid layout len st then
+      .ok ((), performReplyRecvUnheldDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
+        (determineTargetCore st c) epId (receiveQueueTailCode st epId) layout rf len badge
+        executingCore)
+    else replyRecvRendezvousR epId tid c rid badge layout rf len executingCore st
+
 /-- WS-ZA ZA6.33: whether a donated reply-receive of at most four words may
 block in place (`replyRecvDonatedBlocks`).  Out of line, so the checks are one
 call and nothing they read is held across the writes. -/
@@ -336,7 +446,7 @@ the caller's home read on the pre-state; the specification's otherwise. -/
       .ok ((), performReplyRecvDonatedDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) epId (receiveQueueTailCode st epId) layout rf len badge
         executingCore)
-    else replyRecvRendezvousR epId tid c rid badge layout rf len executingCore st
+    else replyRecvUnheldArmR epId tid c rid badge layout rf len executingCore st
 
 /-- The checked reply-receive once its reply capability resolved to reply object
 `rid`, answering caller `c` with badge `badge`: the reply leg's flow gate, then
@@ -480,7 +590,36 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                   rfl
                 · show ¬ (Architecture.regReplyRecvBody layout rf len).size > maxMessageRegisters
                   unfold maxMessageRegisters; omega
-              · simp only [replyRecvRendezvousR]
+              · unfold replyRecvUnheldArmR
+                split
+                · next hG =>
+                  unfold replyRecvUnheldAdmits at hG
+                  simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
+                  obtain ⟨hSz, hF⟩ := hG
+                  obtain ⟨ct, ep0, rt, ep, rp, hT, hIpc, hRO, hU, hNe, hE, hS, hR, hA, hEnq, hRp,
+                    hStash, hRecR, hTail⟩ := replyRecvUnheldBlocks_spec hF
+                  have hSz4 : (Architecture.regReplyRecvBody layout rf len).size ≤ 4 := by
+                    rw [Architecture.regReplyRecvBody_size]; exact hSz
+                  have h := replyRecvOnCore_unheld_delivered st epId tid c rid
+                    { registers := Architecture.regReplyRecvBody layout rf len,
+                      badge := badge } (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore
+                    ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
+                    hRO hU hNe hE hS hR hA hEnq hRp hStash hRecR
+                  rw [Architecture.returnFrameOfMessage_regReplyRecvBody,
+                    (replyRecvOnCore_unheld_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
+                      (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hU hNe hE hS hR
+                      hA hEnq hRp hStash hRecR).1] at h
+                  simp only [CapTransferSummary.installedCount_empty] at h
+                  rw [hTail, (replyRecvOnCore_unheld_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
+                      ?_ hT hIpc hRO hU hNe hE hS hR hA hEnq hRp hStash hRecR).1]
+                  · simp only [CapTransferSummary.installedCount_empty]
+                    have h2 := congrArg Prod.snd (Except.ok.inj h)
+                    dsimp only at h2
+                    rw [h2]
+                    rfl
+                  · show ¬ (Architecture.regReplyRecvBody layout rf len).size > maxMessageRegisters
+                    unfold maxMessageRegisters; omega
+                · simp only [replyRecvRendezvousR]
           · rfl
       · rfl
   · next hTgt =>

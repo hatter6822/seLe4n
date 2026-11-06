@@ -880,11 +880,16 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     -- trigger and the resolver, so a reply that redirects nothing owes nothing.
     (hOriginCoherent : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid →
       redirectedOriginFrameCoherent (endpointReplyOnCore replier target msg ec st).fst
-        rid target) :
+        rid target)
+    -- **WS-ZA ZA6.34**: a frame heading a context no thread holds is popped to
+    -- the answered caller, which asks that no thread bind the context as its own
+    -- and none hold one on loan from the caller.
+    (hUnheld : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid →
+      unheldReplyPopCoherent (endpointReplyOnCore replier target msg ec st).fst rid target) :
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg ec st).1 :=
   endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier target msg ec st hInv
     hObjInv hDonationReturned hHolderDonation hAllBudgetsNone hStackValid
-    hOriginCoherent
+    hOriginCoherent hUnheld
 
 /-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
 full one — the other half of the reply chain's honest statement, and the reason the

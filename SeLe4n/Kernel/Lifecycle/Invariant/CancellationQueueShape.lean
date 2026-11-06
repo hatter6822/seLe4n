@@ -1752,23 +1752,6 @@ theorem sweptAndRestored_blockedThreadsPendingMessageConsistent
   · rw [restoredTcb_eq]
     simp only [TCB.ipcState_setIpcState]
 
-/-- **WS-RR RR7.22 (residual)**: a `.blockedOnReply` thread in the post-state was
-one in the pre-state — the swept thread is not, since it is `.ready`. -/
-theorem sweptAndRestored_blockedOnReplyHasTarget
-    (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
-    (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
-    (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
-    (h : blockedOnReplyHasTarget st) :
-    blockedOnReplyHasTarget (sweptAndRestored st v frame) := by
-  intro tid tcb' epId rt hTcb' hBlocked
-  obtain ⟨t0, h0, hcase⟩ :=
-    sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
-  rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
-  · exact h tid t0 epId rt h0 hBlocked
-  · rw [restoredTcb_ipcState] at hBlocked
-    cases hBlocked
-
 /-- **WS-RR RR7.22 (residual)**: no SchedContext is rebound, so a post-state
 donation cycle is a pre-state one. -/
 theorem sweptAndRestored_donationChainAcyclic
@@ -2263,7 +2246,7 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
     (hCoh : sweptThreadQueueCoherent st v) :
     ipcInvariantFull (sweptAndRestored st v frame) := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
-    hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
+    hDonAcyc, hDonOwner, hDonBudget, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt, hNBR, hLinks⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hAcyc : tcbQueueChainAcyclic st := hDual.chainAcyclic
@@ -2287,7 +2270,6 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
       (sweptAndRestored_donationOwnerFrame st v frame tcbV hInv hLink hAcyc hLookup hNotReply)
       hDonOwner,
     donationBudgetTransfer_of_sameSchedContextBindings hBind hDonBudget,
-    sweptAndRestored_blockedOnReplyHasTarget st v frame tcbV hInv hLink hAcyc hLookup hBlkReply,
     sweptAndRestored_replyCallerLinkage st v frame tcbV hInv hLink hAcyc hLookup hNotReply
       hReplyLink,
     sweptAndRestored_pendingReceiveReplyWellFormed st v frame tcbV hInv hLink hAcyc hLookup hStash,

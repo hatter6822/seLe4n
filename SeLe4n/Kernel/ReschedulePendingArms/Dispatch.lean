@@ -830,6 +830,24 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
      (tcbsKept_enqueueRunnableOnCore _ _ _
        (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st t tcb hInv)).residentTcbKept⟩
 
+/-- **A finalised reply's pop off an unheld context, and its settle, cover**:
+the pop (`returnUnheldSchedContext_stepCovers`), then a release-only write
+(`settleReturnedContext_stepCovers`); the sever is a key frame
+(`severUnheldSchedContext_keyFrame`). -/
+theorem finaliseReplyUnheldPop_stepCovers (e : CoreId) (st : SystemState) (r : Reply)
+    (c : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    stepCovers e st (finaliseReplyUnheldPop st r c) ∧
+      (finaliseReplyUnheldPop st r c).objects.invExt := by
+  rcases finaliseReplyUnheldPop_cases st r c with h | ⟨_, _, _, _, _, hOk, h⟩ |
+      ⟨_, _, _, _, _, _, hOk, h⟩ <;> rw [h]
+  · exact ⟨stepCovers_refl e st, hInv⟩
+  · have p := returnUnheldSchedContext_stepCovers e hInv hOk
+    exact ⟨stepCovers_trans p.1 (settleReturnedContext_stepCovers e _ _ _),
+      SchedContextOps.settleReturnedContext_objects_invExt _ _ _ p.2⟩
+  · have hF := severUnheldSchedContext_keyFrame hInv hOk
+    have hM := severUnheldSchedContext_machine_eq hOk
+    exact ⟨hF.stepCovers (by rw [hM]) (banksKeptOffCore_of_eq (by rw [hM])), hF.2.2⟩
+
 /-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
 (`finaliseFinalObject_closed`): each cancel's, the notification unbind's
 (`unbindNotification_keyFrame`, through `unbindNotification_of_inPlace`), a
@@ -841,8 +859,9 @@ cores' holds on the thread, which writes no object and no scheduler field, a
 context's reply-stack unlink (a reply and a context's head, neither a key
 input), a reply's caller cancel — a head reply's with its loan returned and its
 holder descheduled (`cancelIpcBlockingReclaimed_stepCovers`) — with its boost
-reverted (`propagatePipChainCrossCore_stepCovers`), and a stashed reply's unlink, a stash
-that is no key input (`updateTcb_keyFrame`). -/
+reverted (`propagatePipChainCrossCore_stepCovers`), a stashed reply's unlink, a stash
+that is no key input (`updateTcb_keyFrame`), and a reply's pop off an unheld
+context with its settle (`finaliseReplyUnheldPop_stepCovers`). -/
 theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
     stepCovers e st (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt :=
@@ -923,6 +942,19 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
         (SystemState.completeYieldFrom_scheduler s c)
         (hRes := by rw [completeYieldFrom_machine]) (hBank := banksKeptOffCore_of_eq (by rw [completeYieldFrom_machine]))),
         SystemState.completeYieldFrom_preserves_objects_invExt _ _ h.2⟩⟩
+    (fun s w x _ h _ _ _ =>
+      have hK : keyInputsEq s (s.mapTcbInPlace w TCB.serverForgotten) := fun oid => by
+        rw [SystemState.objects_mapTcbInPlace]; split
+        · cases s.objects[oid]? with
+          | none => rfl
+          | some o => cases o <;> rfl
+        · rfl
+      ⟨stepCovers_trans (stepCovers_trans h.1 (stepCovers_of_keys_sched hK rfl (hRes := rfl)
+          (hBank := banksKeptOffCore_of_eq rfl))) (unlinkReplyWaiter_stepCovers e _ w x),
+        SystemState.unlinkReplyWaiter_objects_invExt _ w x
+          (SystemState.mapTcbInPlace_objects_invExt _ _ _ h.2)⟩)
+    (fun s _ r c _ h _ _ _ _ => stepCoversInv_trans h.1 (finaliseReplyUnheldPop_stepCovers e s r c h.2))
+    (fun s _ _ _ t h _ _ _ _ => stepCoversInv_trans h.1 (cutCancelledCallerHead_stepCovers e s t h.2))
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA6.32: a node's retire writes the tree's issued lines and the mask

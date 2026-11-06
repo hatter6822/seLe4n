@@ -290,7 +290,7 @@ theorem endpointReplyOnCore_runQueueStage (replier target : SeLe4n.ThreadId) (ms
   repeat' (first | split | dsimp only)
   all_goals first
     | exact RunQueueStage.refl _
-    | (refine RunQueueStage.trans ?_ (SystemState.unlinkReplyWaiter_runQueueStage _ _ _)
+    | (refine RunQueueStage.trans ?_ (SystemState.unlinkReplyWaiterOpt_runQueueStage _ _ _)
        first
         | (refine (storeTcbIpcStateAndMessage_fromTcb_runQueueStage (by assumption)
               (by assumption) rfl).then_wake _ ?_
@@ -307,6 +307,9 @@ theorem applyReplyDonationOnCore_runQueueStage {st st' : SystemState} {rid : SeL
     (h : applyReplyDonationOnCore st rid targetV ownerHome = .ok st') :
     RunQueueStage st st' := by
   unfold applyReplyDonationOnCore at h
+  dsimp only at h
+  split at h
+  · exact popUnheldReplyHead_runQueueStage h
   repeat' (first | split at h | dsimp only at h)
   all_goals first
     | (cases h; exact RunQueueStage.refl _)
@@ -332,9 +335,11 @@ theorem endpointReplyCrossCoreDispatch_runQueueStage (replier target : SeLe4n.Th
   repeat' (first | split | dsimp only)
   all_goals first
     | exact RunQueueStage.refl _
+    | exact hE
     | exact hE.trans (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
     | exact (hE.trans (applyReplyDonationOnCore_runQueueStage (by assumption))).trans
         (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
+    | exact hE.trans (applyReplyDonationOnCore_runQueueStage (by assumption))
 
 theorem endpointReplyCrossCoreDispatchChecked_runQueueStage (ctx : LabelingContext)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : Concurrency.CoreId)
@@ -504,6 +509,11 @@ theorem replyRecvPopDonation_runQueueStage {rid : SeLe4n.ReplyId} {target : SeLe
     {st st' : SystemState} {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)}
     (h : replyRecvPopDonation rid target st = .ok (r, st')) : RunQueueStage st st' := by
   unfold replyRecvPopDonation at h
+  split at h
+  case h_2 =>
+    split at h
+    · cases h
+    · rename_i hPop; cases h; exact popUnheldReplyHead_runQueueStage hPop
   repeat' (first | split at h | dsimp only at h)
   all_goals first
     | (cases h; exact RunQueueStage.refl _)
@@ -550,7 +560,7 @@ theorem endpointReplyOnCore_currentOnCore (replier target : SeLe4n.ThreadId) (ms
   rcases endpointReplyOnCore_state_eq replier target msg c st with
     hEq | ⟨tcb, st1, server, pre, -, hStore, hPost, hTail⟩
   · rw [hEq]
-  · rw [hPost, SchedulerState.currentOnCore, SystemState.unlinkReplyWaiter_scheduler,
+  · rw [hPost, SchedulerState.currentOnCore, SystemState.unlinkReplyWaiterOpt_scheduler,
       ← SchedulerState.currentOnCore]
     have hS1 := storeTcbIpcStateAndMessage_fromTcb_scheduler_eq hStore
     rcases hTail with ⟨-, hEq⟩ | ⟨rid, -, hR⟩
@@ -571,7 +581,7 @@ theorem endpointReplyOnCore_preserves_queueHeadBlockedConsistent (replier target
   · rw [hEq]; exact hQ
   · rw [hPost]
     refine queueHeadBlockedConsistent_of_readViewAgreement (.of_objectsAgreeOffRunLinks
-      (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _)) ?_
     obtain rfl : tcb0 = tcb := Option.some.inj (hL0.symm.trans hL)
     have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 := by
       rw [← storeTcbIpcStateAndMessage_fromTcb_eq hL]; exact hStore
@@ -593,6 +603,36 @@ theorem endpointReplyOnCore_preserves_queueHeadBlockedConsistent (replier target
     · exact removeCallerReplyFrame_preserves_queueHeadBlockedConsistent _ _ target rid
         (wakeThread_preserves_objects_invExt st1 target c hInv1) hQ2 hR
 
+/-- The pop at an unheld head writes a context, a reply and the recipient's
+binding, then the settle, or (the sever) a context and a reply alone: it adds no
+endpoint, keeps every current slot and every IPC state. -/
+theorem popUnheldReplyHead_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
+    {home : Concurrency.CoreId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : popUnheldReplyHead st rid target home = .ok st') :
+    (∀ (oid : SeLe4n.ObjId) (ep : Endpoint), st'.objects[oid]? = some (.endpoint ep) →
+      st.objects[oid]? = some (.endpoint ep)) ∧
+    (∀ c, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) ∧
+    (∀ (y : SeLe4n.ThreadId) (tcb' : TCB), st'.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState) := by
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
+  · exact ⟨fun _ _ h => h, fun _ => rfl, fun _ t h => ⟨t, h, rfl⟩⟩
+  rotate_left
+  · obtain ⟨-, -, -, -, -, -, tBwd, -, -, -⟩ := severUnheldSchedContext_objects hInv hS
+    exact ⟨severUnheldSchedContext_endpoint_backward hInv hS,
+      fun c' => by rw [severUnheldSchedContext_scheduler_eq hS],
+      fun t tcb' hT => ⟨tcb', tBwd _ _ hT, rfl⟩⟩
+  refine ⟨fun oid ep hE => ?_, fun c' => ?_, fun t tcb' hT => ?_⟩
+  · replace hE := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
+      (fun _ e => KernelObject.noConfusion e) hE
+    exact returnUnheldSchedContext_endpoint_backward hInv hP oid ep hE
+  · rw [SchedContextOps.settleReturnedContext_currentOnCore, returnUnheldSchedContext_scheduler_eq hP]; rfl
+  · replace hT := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
+      (fun _ e => KernelObject.noConfusion e) hT
+    obtain ⟨tcb, hPre, c, o, hRw⟩ := (returnUnheldSchedContext_tcb_rewrite hInv hP).2 t.toObjId tcb' hT
+    subst hRw
+    exact ⟨tcb, hPre, rfl⟩
+
 /-- The donation pop writes only scheduling-context bindings and replenishment
 queues (the settle): it adds no endpoint, keeps every current slot and every IPC state. -/
 theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
@@ -604,6 +644,11 @@ theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.Threa
     (∀ (y : SeLe4n.ThreadId) (tcb' : TCB), st'.objects[y.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState) := by
   unfold replyRecvPopDonation at h
+  split at h
+  case h_2 =>
+    split at h
+    · cases h
+    · rename_i hPop; cases h; exact popUnheldReplyHead_frame hInv hPop
   repeat' (first | split at h | dsimp only at h)
   all_goals first
     | (cases h; exact ⟨fun _ _ h => h, fun _ => rfl, fun _ t h => ⟨t, h, rfl⟩⟩)

@@ -278,19 +278,23 @@ theorem stageWokenDelivery_performCallRendezvous (st : SystemState) (endpointId 
     Architecture.returnFrameOfMessage_regMessageBody]
   rfl
 
-/-- `storeReplyRendezvous` with the caller woken holding no message. -/
-@[noinline] def storeReplyRendezvousReady (st : SystemState) (c server : SeLe4n.ThreadId)
+/-- `storeReplyLeg` with the caller woken holding no message. -/
+@[inline] def storeReplyLegReady (st : SystemState) (c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) : SystemState :=
   let s1 := st.updateTcb c receiverReady
   let s2 := enqueueRunnableOnCore s1 (determineTargetCore s1 c) c
-  let s3 := (s2.modifyObject rid.toObjId replyConsumedObject).updateTcb c
+  (s2.modifyObject rid.toObjId replyConsumedObject).updateTcb c
     (fun t => { t with replyObjectCode := 0 })
-  s3.unlinkReplyWaiter c server
+
+/-- `storeReplyRendezvous` with the caller woken holding no message. -/
+@[noinline] def storeReplyRendezvousReady (st : SystemState) (c server : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) : SystemState :=
+  (storeReplyLegReady st c rid).unlinkReplyWaiter c server
 
 theorem storeReplyRendezvousReady_noResizeDue (st : SystemState) (c server : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (hNo : st.objects.noResizeDue) :
     (storeReplyRendezvousReady st c server rid).objects.noResizeDue := by
-  unfold storeReplyRendezvousReady
+  unfold storeReplyRendezvousReady storeReplyLegReady
   dsimp only
   exact unlinkReplyWaiter_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _
     (modifyObject_noResizeDue _ _ _ (enqueueRunnableOnCore_noResizeDue _ _ _
@@ -300,7 +304,7 @@ theorem storeReplyRendezvous_eq_hold (st : SystemState) (c server : SeLe4n.Threa
     (rid : SeLe4n.ReplyId) (msg : IpcMessage) (hNo : st.objects.noResizeDue) :
     storeReplyRendezvous st c server rid msg =
       (storeReplyRendezvousReady st c server rid).mapTcbInPlace c (holdMessage msg) := by
-  unfold storeReplyRendezvous storeReplyRendezvousReady
+  unfold storeReplyRendezvous storeReplyRendezvousReady storeReplyLeg storeReplyLegReady
   dsimp only
   have hHold : st.updateTcb c (callReceiverTcb msg) =
       (st.updateTcb c receiverReady).mapTcbInPlace c (holdMessage msg) := by
@@ -316,6 +320,29 @@ theorem storeReplyRendezvous_eq_hold (st : SystemState) (c server : SeLe4n.Threa
   have hNo3 := modifyObject_noResizeDue s2 rid.toObjId replyConsumedObject hNo2
   generalize s2.modifyObject rid.toObjId replyConsumedObject = s3 at hNo3
   rw [updateTcb_msg _ _ _ _ _ _ _ hNo3 ?_, unlinkReplyWaiter_msg]
+  intros; rfl
+
+/-- The reply leg holding a message is the leg woken holding none, then the
+message held. -/
+theorem storeReplyLeg_eq_hold (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (hNo : st.objects.noResizeDue) :
+    storeReplyLeg st c rid msg = (storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg) := by
+  unfold storeReplyLeg storeReplyLegReady
+  dsimp only
+  have hHold : st.updateTcb c (callReceiverTcb msg) =
+      (st.updateTcb c receiverReady).mapTcbInPlace c (holdMessage msg) := by
+    rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo,
+      SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo, SystemState.mapTcbInPlace_mapTcbInPlace,
+      holdMessage_receiverReady]
+  have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
+  generalize st.updateTcb c receiverReady = s1 at hHold hNo1
+  rw [hHold, determineTargetCore_msg, enqueueRunnableOnCore_msg _ _ _ _ _ _ _ hNo1]
+  have hNo2 := enqueueRunnableOnCore_noResizeDue s1 (determineTargetCore s1 c) c hNo1
+  generalize enqueueRunnableOnCore s1 (determineTargetCore s1 c) c = s2 at hNo2
+  rw [modifyObject_msg _ _ _ _ _ _ hNo2 (fun o => by cases o <;> rfl)]
+  have hNo3 := modifyObject_noResizeDue s2 rid.toObjId replyConsumedObject hNo2
+  generalize s2.modifyObject rid.toObjId replyConsumedObject = s3 at hNo3
+  rw [updateTcb_msg _ _ _ _ _ _ _ hNo3 ?_]
   intros; rfl
 
 /-- A TCB rewrite in its slot leaves every Reply and SchedContext as it was,
@@ -342,6 +369,25 @@ theorem donationChainFrame_of_mapTcbInPlace_rev (st : SystemState) (t : SeLe4n.T
     split
     · rw [h]; rfl
     · exact h
+
+/-- **The reply leg with the caller woken holding no message keeps the
+donation chain**, on a caller recording no server whose reply object heads no
+frame: it is the message-carrying leg less one TCB write
+(`storeReplyLeg_eq_hold`), which touches no Reply and no SchedContext. -/
+theorem storeReplyLegReady_preserves_donationChainWellFormed (st : SystemState)
+    (c : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (core : Concurrency.CoreId)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyWakesInPlace st c ct rid = true)
+    (hObjInv : st.objects.invExt) (hNo : st.objects.noResizeDue)
+    (hChain : donationChainWellFormed st) :
+    donationChainWellFormed (storeReplyLegReady st c rid) := by
+  have h := storeReplyLeg_preserves_donationChainWellFormed st c ct ep rid
+    { registers := #[] } core (by simp) hT hIpc hRO hG hObjInv hChain
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo] at h
+  exact donationChainWellFormed_of_frame (donationChainFrame_of_mapTcbInPlace_rev _ _ _) h
 
 /-- **The in-place reply keeps the donation chain**, its caller woken with no
 message held: the reply that holds the message keeps it

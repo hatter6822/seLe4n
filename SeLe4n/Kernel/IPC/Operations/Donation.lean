@@ -196,7 +196,7 @@ theorem endpointReplyWithDonation_refuses_delegated_replier
     endpointReplyWithDonation replier target msg st = .error .replyCapInvalid := by
   have hReply : endpointReply replier target msg st = .error .replyCapInvalid := by
     unfold endpointReply
-    simp only [Nat.not_lt.mpr hRegs, if_false, hTcb, hIpc,
+    simp only [Nat.not_lt.mpr hRegs, if_false, hTcb, hIpc, Option.all_some,
       hDelegated, Bool.false_eq_true, if_false]
   simp only [endpointReplyWithDonation, hReply]
 
@@ -334,7 +334,8 @@ the binding through.  So of the three facts HP7 set out to retire, two are
 **eliminated** -- `replyStackHeadIsAnsweredReply` became the derivation
 `answeredFrameHeadContext?_head_is_answered_reply`, and
 `answeredHeadContextIsServerDonation` was replaced in the chain composite by the
-strictly weaker `replyFrameHeadIsBound` -- and the third is **migrated**: deleted
+strictly weaker `replyFrameHeadIsBound` (itself retired at WS-ZA ZA6.34, once the
+pop handled a head bound to nobody) -- and the third is **migrated**: deleted
 in its binding-driven spelling and live in this one.  "Migrated" rather than
 "renamed", because this is not a re-spelling of the same proposition: the retired
 one read `endpointReplyServerDonation? st target = some (scId, owner) -> owner =
@@ -408,7 +409,9 @@ theorem applyReplyDonation_characterisation
                        (SchedContextOps.settleReturnedContext st'
                          Concurrency.bootCoreId scId) holderVtid.val))
               | none => .error .invalidArgument)
-         | none => .ok st) := by
+         -- WS-ZA ZA6.34: a frame heading a context no thread holds is popped
+         -- to the answered caller; one heading nothing pops nothing.
+         | none => popUnheldReplyHead st rid targetVtid.val Concurrency.bootCoreId) := by
   simp only [applyReplyDonation]
   cases replyFrameHeadHolder? st rid with
   | none => rfl

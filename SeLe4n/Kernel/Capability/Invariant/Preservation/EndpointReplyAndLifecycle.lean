@@ -161,31 +161,27 @@ theorem endpointReply_preserves_capabilityInvariantBundle
       | blockedOnCall _ => simp [hIpc] at hStep
       | blockedOnReply epId replyTarget =>
           simp only [hIpc] at hStep
-          -- AK1-B (I-H02): Fail-closed on replyTarget = none
+          -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
           suffices ∀ st1, storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 →
               capabilityInvariantBundle (ensureRunnable st1 target) by
-            cases replyTarget with
-            | none => simp at hStep
-            | some expected =>
-              simp only at hStep
-              split at hStep
-              · -- authorized = true
-                cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
-                | error e => simp [hTcb] at hStep
-                | ok st1 =>
-                    simp only [hTcb] at hStep
-                    have hMid := this st1 hTcb
-                    -- PR #827 #3 fold: peel the atomic caller↔Reply consume.
-                    cases hRO : tcb.replyObject with
-                    | none =>
-                      simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                      rw [← hStep]; exact hMid
-                    | some rid =>
-                      simp only [hRO] at hStep
-                      exact removeCallerReplyFrame_preserves_capabilityInvariantBundle
-                        _ _ target rid hMid hStep
-              · -- authorized = false
-                simp_all
+            split at hStep
+            · -- authorized = true
+              cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
+              | error e => simp [hTcb] at hStep
+              | ok st1 =>
+                  simp only [hTcb] at hStep
+                  have hMid := this st1 hTcb
+                  -- PR #827 #3 fold: peel the atomic caller↔Reply consume.
+                  cases hRO : tcb.replyObject with
+                  | none =>
+                    simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                    rw [← hStep]; exact hMid
+                  | some rid =>
+                    simp only [hRO] at hStep
+                    exact removeCallerReplyFrame_preserves_capabilityInvariantBundle
+                      _ _ target rid hMid hStep
+            · -- authorized = false
+              simp_all
           -- Dispatch to extracted lemma
           intro st1 hTcb
           exact capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
@@ -271,54 +267,45 @@ theorem coreIpcInvariantBundle_to_donationBudgetTransfer {st : SystemState}
 -- WS-RC R4.C close-out: `coreIpcInvariantBundle_to_uniqueWaiters` was
 -- deleted along with the `uniqueWaiters` predicate it extracted.
 
-/-- AJ1-B: Extract `blockedOnReplyHasTarget` from the core bundle.
-WS-RC R4.C.7: index shifted after `uniqueWaiters` conjunct removal.
-WS-SM SM6.D (PR #822): `+.1` after `replyCallerLinkage` became the 16th
-`ipcInvariantFull` conjunct (the slot now holds the `blockedOnReplyHasTarget ∧
-replyCallerLinkage` pair). -/
-theorem coreIpcInvariantBundle_to_blockedOnReplyHasTarget {st : SystemState}
-    (h : coreIpcInvariantBundle st) : blockedOnReplyHasTarget st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-
 /-- WS-SM SM6.D (PR #822 review): extract the bidirectional `replyCallerLinkage`
-(15th `ipcInvariantFull` conjunct) from the core bundle. -/
+(14th `ipcInvariantFull` conjunct) from the core bundle. -/
 theorem coreIpcInvariantBundle_to_replyCallerLinkage {st : SystemState}
     (h : coreIpcInvariantBundle st) : replyCallerLinkage st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- WS-SM SM6.D (PR #822 review): extract the server-first stash well-formedness
-(16th `ipcInvariantFull` conjunct) from the core bundle. -/
+(15th `ipcInvariantFull` conjunct) from the core bundle. -/
 theorem coreIpcInvariantBundle_to_pendingReceiveReplyWellFormed {st : SystemState}
     (h : coreIpcInvariantBundle st) : pendingReceiveReplyWellFormed st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-/-- IPC de-threading D6: extract donation-owner uniqueness (17th `ipcInvariantFull` conjunct). -/
+/-- IPC de-threading D6: extract donation-owner uniqueness (16th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_donationOwnerUnique {st : SystemState}
     (h : coreIpcInvariantBundle st) : donationOwnerUnique st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- IPC de-threading D4 (Finding F-2): extract endpoint-queue tail-blocked consistency
-(18th `ipcInvariantFull` conjunct). -/
+(17th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_endpointQueueTailBlockedConsistent {st : SystemState}
     (h : coreIpcInvariantBundle st) : endpointQueueTailBlockedConsistent st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- IPC de-threading D4 Slice 2c: extract queue-next target-blocked consistency
-(19th `ipcInvariantFull` conjunct). -/
+(18th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_queueNextTargetBlocked {st : SystemState}
     (h : coreIpcInvariantBundle st) : queueNextTargetBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-/-- Extract notification binding reciprocity (20th `ipcInvariantFull` conjunct). -/
+/-- Extract notification binding reciprocity (19th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_notificationBindingReciprocal {st : SystemState}
     (h : coreIpcInvariantBundle st) : notificationBindingReciprocal st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-/-- Extract the endpoint-queue link discipline (21st `ipcInvariantFull` conjunct):
+/-- Extract the endpoint-queue link discipline (20th `ipcInvariantFull` conjunct):
 a thread with a queue successor is blocked on an endpoint. -/
 theorem coreIpcInvariantBundle_to_endpointQueueLinksOnlyBlocked {st : SystemState}
     (h : coreIpcInvariantBundle st) : endpointQueueLinksOnlyBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=

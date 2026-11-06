@@ -39,6 +39,28 @@ the sender a plain sender, not a caller. -/
    | .blockedOnCall _ => false
    | _ => true)
 
+/-- `receiveTakesInPlace` as it is compiled: the sender's successor asked of
+its link code, so no `some` cell is built for a sender with a successor
+(`receiveTakesInPlace_eq_impl`). -/
+@[inline] def receiveTakesInPlaceImpl (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver s : SeLe4n.ThreadId) (sTcb : TCB) : Bool :=
+  sendWakesInPlaceCode st endpointId s sTcb.queueNextCode &&
+  !receiver.isReserved && receiver != s &&
+  queueSuccessorDiffers receiver sTcb.queueNextCode &&
+  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
+  st.objects.findsInPlace receiver.toObjId &&
+  (st.getTcb? receiver).isSome &&
+  (match sTcb.ipcState with
+   | .blockedOnCall _ => false
+   | _ => true)
+
+@[csimp] theorem receiveTakesInPlace_eq_impl :
+    @receiveTakesInPlace = @receiveTakesInPlaceImpl := by
+  funext st endpointId receiver s sTcb
+  unfold receiveTakesInPlace receiveTakesInPlaceImpl
+  rw [sendWakesInPlaceCode_eq, queueSuccessorDiffers_eq, TCB.ofOptCode_queueNextCode]
+  rfl
+
 /-- **The receive's take, in place**: under `receiveTakesInPlace` the
 specification's receive pops the sender in place, makes it ready, wakes it and
 hands the receiver the sender's message. -/

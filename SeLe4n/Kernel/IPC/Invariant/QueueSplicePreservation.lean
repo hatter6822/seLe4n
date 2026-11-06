@@ -782,22 +782,6 @@ theorem endpointQueueRemoveDual_preserves_blockedThreadsPendingMessageConsistent
     hObjInv hStep hInv
 
 /-- WS-RR RR7.22 -/
-theorem endpointQueueRemoveDual_preserves_blockedOnReplyHasTarget
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
-    (hInv : blockedOnReplyHasTarget st) : blockedOnReplyHasTarget st' :=
-  endpointQueueRemoveDual_carry (P := blockedOnReplyHasTarget)
-    endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore _ hP =>
-      storeObject_endpoint_preserves_blockedOnReplyHasTarget' s endpointId epNew ((), s')
-        hInvS hP hStore)
-    (fun s s' t qp qpp qn hInvS hStore hP =>
-      storeTcbQueueLinks_preserves_blockedOnReplyHasTarget s s' t qp qpp qn hInvS hP hStore)
-    hObjInv hStep hInv
-
-/-- WS-RR RR7.22 -/
 theorem endpointQueueRemoveDual_preserves_pendingReceiveReplyWellFormed
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
@@ -2403,7 +2387,7 @@ def ipcInvariantFullExceptMembership (st : SystemState) (ex : SeLe4n.ThreadId) :
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   donationBudgetTransfer st ∧
-  blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
+  replyCallerLinkage st ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
   queueNextTargetBlocked st ∧ notificationBindingReciprocal st ∧
@@ -2459,8 +2443,6 @@ theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
       hObjInv hStep hInv.donationOwnerValid,
     endpointQueueRemoveDual_preserves_donationBudgetTransfer st st' endpointId isReceiveQ
       tid hObjInv hStep hInv.donationBudgetTransfer,
-    endpointQueueRemoveDual_preserves_blockedOnReplyHasTarget st st' endpointId isReceiveQ
-      tid hObjInv hStep hInv.blockedOnReplyHasTarget,
     endpointQueueRemoveDual_preserves_replyCallerLinkage st st' endpointId isReceiveQ tid
       hObjInv hStep hInv.replyCallerLinkage,
     endpointQueueRemoveDual_preserves_pendingReceiveReplyWellFormed st st' endpointId
@@ -2607,7 +2589,7 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     ipcInvariantFull st' := by
   obtain ⟨hIpc, hDual, hBounded, hBadge, hPend, hNoDup, hMemExcept, hQNB, hQHB,
-    hTimeout, _hAcyc, hOwnerValid, hBudget, hReplyTarget, hReplyLink,
+    hTimeout, _hAcyc, hOwnerValid, hBudget, hReplyLink,
     hStash, hUnique, hTail, hQNT, hNBR, hLinks, hNoNext⟩ := hExcept
   -- `tid` carries no reply object: a `replyObject` forces a reciprocal `caller`
   -- back-link, and the backward clause makes that caller `.blockedOnReply` —
@@ -2646,8 +2628,6 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
     donationOwnerValid_implies_donationChainAcyclic st' hOwnerValid',
     hOwnerValid',
     donationBudgetTransfer_of_sameSchedContextBindings hSame hBudget,
-    storeTcbReceiveComplete_preserves_blockedOnReplyHasTarget st st' tid msg hObjInv
-      hReplyTarget hStep,
     ⟨replyCallerLinkageReciprocal_of_frame
         (storeTcbReceiveComplete_replyLinkageFrame_of_unlinked st st' tid msg hUnlinked
           hObjInv hStep)
@@ -3006,7 +2986,6 @@ theorem ipcInvariantFull_of_storeAgrees {st st' : SystemState}
    donationChainAcyclic_of_storeAgrees hA h.donationChainAcyclic,
    donationOwnerValid_of_storeAgrees hA h.donationOwnerValid,
    donationBudgetTransfer_of_storeAgrees hA h.donationBudgetTransfer,
-   blockedOnReplyHasTarget_of_storeAgrees hA h.blockedOnReplyHasTarget,
    replyCallerLinkage_of_storeAgrees hA h.replyCallerLinkage,
    pendingReceiveReplyWellFormed_of_storeAgrees hA h.pendingReceiveReplyWellFormed,
    donationOwnerUnique_of_storeAgrees hA h.donationOwnerUnique,
@@ -3035,16 +3014,15 @@ theorem ipcInvariantFullExceptMembership_of_storeAgrees
    donationChainAcyclic_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.1,
    donationOwnerValid_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.1,
    donationBudgetTransfer_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   blockedOnReplyHasTarget_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   replyCallerLinkage_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   pendingReceiveReplyWellFormed_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   donationOwnerUnique_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   replyCallerLinkage_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   pendingReceiveReplyWellFormed_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   donationOwnerUnique_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    endpointQueueTailBlockedConsistent_of_storeAgrees hA
-     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   queueNextTargetBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   notificationBindingReciprocal_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   endpointQueueLinksOnlyBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   fun tcb hTcb => h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 tcb (by rw [← hA]; exact hTcb)⟩
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   queueNextTargetBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   notificationBindingReciprocal_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   endpointQueueLinksOnlyBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   fun tcb hTcb => h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 tcb (by rw [← hA]; exact hTcb)⟩
 
 -- ============================================================================
 -- §18  WS-OD OD1.3 — the two endpoint-queue removals agree
@@ -3856,7 +3834,7 @@ theorem timeoutStaging_preserves_ipcInvariantFull
     donationOwnerValid_implies_donationChainAcyclic st' hOwnerValid',
     hOwnerValid',
     donationBudgetTransfer_of_sameSchedContextBindings hSame h.donationBudgetTransfer,
-    ?_, ?_, ?_,
+    ?_, ?_,
     donationOwnerUnique_of_sameSchedContextBindings hSame h.donationOwnerUnique,
     ?_, ?_, ?_, ?_⟩
   · exact storeObject_preserves_ipcInvariant_of_ne_notification st st' tid.toObjId _
@@ -3910,9 +3888,6 @@ theorem timeoutStaging_preserves_ipcInvariantFull
     obtain ⟨t0, h0, hI, _, _, _, _⟩ := hBwd hd.toObjId tcbH hT
     rw [hI]
     exact h.queueHeadBlockedConsistent epId ep hd t0 (hEpBwd epId ep hEp) h0
-  · intro t tcbT ep rt hT hBlk
-    obtain ⟨t0, h0, hI, _, _, _, _⟩ := hBwd t.toObjId tcbT hT
-    exact h.blockedOnReplyHasTarget t t0 ep rt h0 (hI ▸ hBlk)
   · exact ⟨replyCallerLinkageReciprocal_of_frame hLinkFrame h.replyCallerLinkage.1,
       storeObject_preserves_blockedOnReplyHasReplyObject st st' tid.toObjId _ hObjInv
         h.replyCallerLinkage.2

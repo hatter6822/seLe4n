@@ -171,20 +171,7 @@ theorem suspendThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidT
             | some ntfn =>
               have hB : tcb.ipcState = .blockedOnNotification ⟨tcb.ipcObjectCode⟩ := by
                 simp only [TCB.ipcState, hc]; rfl
-              have hHead : (ntfn.waitHeadCode == vtid.val.val + 1) =
-                  (ntfn.waitHead == some vtid.val) := by
-                unfold Notification.waitHead
-                cases hw : ntfn.waitHeadCode with
-                | zero => simp [SeLe4n.ThreadId.ofOptCode]
-                | succ w =>
-                  simp only [SeLe4n.ThreadId.ofOptCode]
-                  rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
-                  constructor
-                  · intro h
-                    have hv : w = vtid.val.val := by omega
-                    rw [hv]
-                  · intro h
-                    rw [← Option.some.inj h]
+              have hHead := Notification.waitHeadCode_beq ntfn vtid.val
               have hNS : tcb.blockingServer? = none := by simp [TCB.blockingServer?, hB]
               simp only [hN, hNS, hHead]
               rw [cancelIpcKeepingContexts_of_not_reply _ _ _ (by rw [hB]; intro _ _ h; cases h)]

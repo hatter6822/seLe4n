@@ -2761,20 +2761,16 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
     | some tcb =>
         match tcb.ipcState with
         | .blockedOnReply _ replyTarget =>
-            -- WS-H1/M-02: Validate replier is the authorized server
-            -- AK1-B (I-H02 / HIGH): Fail-closed on `replyTarget = none`.
-            -- All production paths that create `blockedOnReply` set
-            -- `replyTarget := some receiver` (see `endpointCall` and the
-            -- call path of `endpointReceiveDual`), and the 16th conjunct
-            -- `blockedOnReplyHasTarget` of `ipcInvariantFull` excludes the
-            -- `none` case invariant-preservation-wise. Under invariant
-            -- drift, however, the previous `none => true` branch let any
-            -- reply through — a confused-deputy risk. This arm now fails
-            -- closed with `.replyCapInvalid`.
-            match replyTarget with
-            | none => .error .replyCapInvalid
-            | some expected =>
-              if replier == expected then
+            -- WS-H1/M-02: Validate replier is the authorized server.  The
+            -- gate is a deliberate hardening over seL4-MCS, whose
+            -- `doReplyTransfer` reads only the reply's `replyTCB`.
+            -- WS-ZA ZA6.34: a caller recording no server (`replyTarget =
+            -- none`) is one whose server's finalisation forgot it, and the
+            -- reply's holder answers it as seL4 does.  AK1-B (I-H02) had
+            -- failed this arm closed while `none` was assumed unreachable;
+            -- the server-finalise redesign makes it a reachable, defined
+            -- state, so it is delivered rather than refused.
+              if replyTarget.all (replier == ·) then
                 -- WS-L1/L1-B: Use _fromTcb to avoid redundant lookupTcb on same state
                 match storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
                 | .error e => .error e
@@ -2823,15 +2819,11 @@ def endpointReplyRecv
     | some tcb =>
         match tcb.ipcState with
         | .blockedOnReply _ expectedReplier =>
-            -- WS-H1/M-02: Validate receiver is the authorized replier
-            -- AK1-B (I-H02 / HIGH): Fail-closed on `expectedReplier = none`.
-            -- Symmetric to `endpointReply`: the previous implicit-authorized
-            -- branch admitted any replier on invariant drift; now rejected
-            -- with `.replyCapInvalid`.
-            match expectedReplier with
-            | none => .error .replyCapInvalid
-            | some expected =>
-              if receiver == expected then
+            -- WS-H1/M-02: Validate receiver is the authorized replier,
+            -- symmetric to `endpointReply`: a caller recording no server
+            -- (WS-ZA ZA6.34, its server finalised) is answered as seL4-MCS's
+            -- `doReplyTransfer` answers it.
+              if expectedReplier.all (receiver == ·) then
                 -- WS-L1/L1-B: Use _fromTcb to avoid redundant lookupTcb on same state
                 match storeTcbIpcStateAndMessage_fromTcb st replyTarget tcb .ready (some msg) with
                 | .error e => .error e
