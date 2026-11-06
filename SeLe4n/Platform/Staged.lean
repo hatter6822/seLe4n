@@ -245,6 +245,8 @@ import SeLe4n.Kernel.KernelRecords.IpcNotification
 import SeLe4n.Kernel.KernelRecords.Fault
 import SeLe4n.Kernel.KernelRecords.Cancellation
 import SeLe4n.Kernel.KernelRecords.ThreadLifecycle
+import SeLe4n.Kernel.KernelRecords.Thread
+import SeLe4n.Kernel.KernelRecords.Capability
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident
