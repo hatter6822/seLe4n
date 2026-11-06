@@ -37,6 +37,37 @@ theorem writeDeliveredFrameToTcb (st : SystemState) (t : SeLe4n.ThreadId)
     RecordsFrame st (Architecture.writeDeliveredFrameToTcb st t f) :=
   updateTcb st t hInv fun _ => rfl
 
+theorem recordPhysicalWrites (st : SystemState) (ws : List Architecture.PhysicalWrite)
+    (hInv : st.objects.invExt) : RecordsFrame st (_root_.SeLe4n.Kernel.Architecture.recordPhysicalWrites st ws) :=
+  of_objects_eq hInv rfl rfl
+
+theorem stageDeliveredMessage (st : SystemState) (t : SeLe4n.ThreadId) (n : Nat)
+    (hInv : st.objects.invExt) : RecordsFrame st (Architecture.stageDeliveredMessage st t n) := by
+  unfold Architecture.stageDeliveredMessage
+  split
+  · split
+    · split
+      · exact (writeDeliveredFrameToTcb st t _ hInv).trans
+          (recordPhysicalWrites _ _ (writeDeliveredFrameToTcb st t _ hInv).invExt)
+      · exact refl hInv
+    · exact refl hInv
+  · exact refl hInv
+
+theorem stageWokenDelivery (st : SystemState) (w? : Option SeLe4n.ThreadId) (n : Nat)
+    (hInv : st.objects.invExt) : RecordsFrame st (Architecture.stageWokenDelivery st w? n) := by
+  unfold Architecture.stageWokenDelivery
+  split
+  · exact stageDeliveredMessage st _ n hInv
+  · exact refl hInv
+
+theorem stageWokenSendCompletion (st : SystemState) (w? : Option SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : RecordsFrame st (Architecture.stageWokenSendCompletion st w?) := by
+  unfold Architecture.stageWokenSendCompletion
+  repeat' split
+  all_goals first
+    | exact refl hInv
+    | exact writeReturnFrameToTcb st _ _ hInv
+
 theorem stageCallerReturnFor (caller? : Option SeLe4n.ThreadId) (st : SystemState) (c : CoreId)
     (o : Architecture.SyscallOutcome) (hInv : st.objects.invExt) :
     RecordsFrame st (Architecture.stageCallerReturnFor caller? st c o) := by
