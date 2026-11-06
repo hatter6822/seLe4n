@@ -397,4 +397,123 @@ theorem storeTcbReceiveComplete {st st' : SystemState} {t : SeLe4n.ThreadId}
 
 end RecordsStep
 
+-- ============================================================================
+-- §4  The reply links and the reply-waiter links
+-- ============================================================================
+
+/-- A checked TCB write leaves every other thread as it was. -/
+theorem modifyTcb_getTcb?_ne {st st' : SystemState} {t u : SeLe4n.ThreadId} {f : TCB → TCB}
+    (hInv : st.objects.invExt) (h : _root_.SeLe4n.Kernel.modifyTcb st t f = .ok st')
+    (hne : t.toObjId ≠ u.toObjId) : st'.getTcb? u = st.getTcb? u := by
+  obtain ⟨tcb, -, hS⟩ := modifyTcb_ok_decompose h
+  unfold SystemState.getTcb?
+  rw [storeObject_objects_ne st st' _ _ _ (Ne.symm hne) hInv hS]
+
+theorem TcbStaysParked.of_fields {x y : TCB} (hpf : y.pendingFault = x.pendingFault)
+    (hts : y.threadState = x.threadState) (hi : y.ipcState = x.ipcState) : TcbStaysParked x y := by
+  intro hF H
+  have := H (hpf ▸ hF)
+  unfold TCB.faultParked at this ⊢
+  rw [hts, hi]; exact this
+
+namespace RecordsStep
+
+theorem updateTcbAtCode (st : SystemState) (k : Nat) {g : TCB → TCB} (hInv : st.objects.invExt)
+    (hS : ∀ x, TcbStaysParked x (g x)) : RecordsStep st (st.updateTcbAtCode k g) := by
+  unfold SystemState.updateTcbAtCode
+  split
+  · exact refl hInv
+  · exact mapTcbInPlace st _ hInv fun x _ => hS x
+
+/-- An in-place thread write keeping its fault record, thread state and IPC
+state. -/
+theorem mapTcbInPlace_fields (st : SystemState) (t : SeLe4n.ThreadId) {g : TCB → TCB}
+    (hInv : st.objects.invExt)
+    (hf : ∀ x, (g x).pendingFault = x.pendingFault ∧ (g x).threadState = x.threadState ∧
+      (g x).ipcState = x.ipcState := by intro _; exact ⟨rfl, rfl, rfl⟩) :
+    RecordsStep st (st.mapTcbInPlace t g) :=
+  mapTcbInPlace st t hInv fun x _ => TcbStaysParked.of_fields (hf x).1 (hf x).2.1 (hf x).2.2
+
+theorem updateTcbAtCode_fields (st : SystemState) (k : Nat) {g : TCB → TCB}
+    (hInv : st.objects.invExt)
+    (hf : ∀ x, (g x).pendingFault = x.pendingFault ∧ (g x).threadState = x.threadState ∧
+      (g x).ipcState = x.ipcState := by intro _; exact ⟨rfl, rfl, rfl⟩) :
+    RecordsStep st (st.updateTcbAtCode k g) :=
+  updateTcbAtCode st k hInv fun x => TcbStaysParked.of_fields (hf x).1 (hf x).2.1 (hf x).2.2
+
+/-- **The reply-waiter link writes keep every thread's fault record and state.** -/
+theorem linkReplyWaiter (st : SystemState) (w s : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    RecordsStep st (st.linkReplyWaiter w s) := by
+  unfold SystemState.linkReplyWaiter
+  dsimp only
+  have S1 := mapTcbInPlace_fields st w hInv (g := fun x => { x with
+    replyWaiterPrevCode := 0, replyWaiterNextCode := st.replyHeadCode s })
+  have S2 := S1.trans (updateTcbAtCode_fields _ (st.replyHeadCode s) S1.invExt
+    (g := fun x => { x with replyWaiterPrevCode := SeLe4n.Kernel.LinkedQueue.code w }))
+  exact S2.trans (mapTcbInPlace_fields _ s S2.invExt)
+
+theorem unlinkReplyWaiter (st : SystemState) (w s : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    RecordsStep st (st.unlinkReplyWaiter w s) := by
+  unfold SystemState.unlinkReplyWaiter
+  dsimp only
+  have S1 := updateTcbAtCode_fields st (st.replyPrevCode w) hInv
+    (g := fun x => { x with replyWaiterNextCode := st.replyNextCode w })
+  have S2 := S1.trans (updateTcbAtCode_fields _ (st.replyNextCode w) S1.invExt
+    (g := fun x => { x with replyWaiterPrevCode := st.replyPrevCode w }))
+  have S3 := S2.trans (mapTcbInPlace_fields _ s S2.invExt (g := fun x => { x with
+    replyWaitersHeadCode := if st.replyPrevCode w = 0 then st.replyNextCode w
+      else x.replyWaitersHeadCode,
+    replyWaitersCount := x.replyWaitersCount - 1 }))
+  exact S3.trans (mapTcbInPlace_fields _ w S3.invExt)
+
+theorem unlinkReplyWaiterOpt (st : SystemState) (w : SeLe4n.ThreadId) (s? : Option SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : RecordsStep st (st.unlinkReplyWaiterOpt w s?) := by
+  cases s? with
+  | none => exact refl hInv
+  | some s => exact unlinkReplyWaiter st w s hInv
+
+end RecordsStep
+
+namespace RecordsFrame
+
+theorem linkReply {rid : SeLe4n.ReplyId} {caller : SeLe4n.ThreadId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : SystemState.linkReply rid caller st = .ok ((), st')) :
+    RecordsFrame st st' := by
+  unfold SystemState.linkReply at h
+  cases hR : st.getReply? rid with
+  | none => simp [hR] at h
+  | some r =>
+    simp only [hR] at h
+    split at h
+    · exact storeReply hInv ((SystemState.getReply?_eq_some_iff st rid r).mp hR) h
+    · simp at h
+
+theorem linkCallerReply {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    RecordsFrame st st' := by
+  unfold SystemState.linkCallerReply at h
+  cases hLink : SystemState.linkReply rid caller st with
+  | error e => simp [hLink] at h
+  | ok p1 =>
+    obtain ⟨⟨⟩, st1⟩ := p1
+    simp only [hLink] at h
+    have F1 := linkReply hInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at h
+    | some tcb =>
+      simp only [hT] at h
+      split at h
+      · exact F1.trans (storeObject F1.invExt h
+          (by rw [(SystemState.getTcb?_eq_some_iff st1 caller tcb).mp hT]; rfl)
+          (fun _ h => by cases h))
+      · simp at h
+
+theorem recordReplyStasher (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : RecordsFrame st (st.recordReplyStasher code recv) := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, _, _, hR, hS⟩
+  · rw [h]; exact refl hInv
+  · exact storeReply hInv hR hS
+
+end RecordsFrame
+
 end SeLe4n.Kernel
