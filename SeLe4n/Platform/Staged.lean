@@ -241,6 +241,7 @@ import SeLe4n.Kernel.KernelRecords.Donation
 import SeLe4n.Kernel.KernelRecords.IpcReceive
 import SeLe4n.Kernel.KernelRecords.IpcCall
 import SeLe4n.Kernel.KernelRecords.IpcReply
+import SeLe4n.Kernel.KernelRecords.IpcNotification
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident
