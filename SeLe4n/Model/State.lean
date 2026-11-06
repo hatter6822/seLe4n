@@ -1752,10 +1752,25 @@ theorem SystemState.withFreshAuditRing_eq (st : SystemState) : st.withFreshAudit
 @[inline] def RegisterFile.fresh (rf : RegisterFile) : RegisterFile :=
   { rf with x0 := opaqueWord rf.x0 }
 
-/-- A run queue's ends rebuilt, its bucket table's slot array its own. -/
+/-- A priority bucket's ends rebuilt: a cell of its own. -/
+@[inline] def _root_.SeLe4n.Kernel.BucketEnds.fresh (b : SeLe4n.Kernel.BucketEnds) :
+    SeLe4n.Kernel.BucketEnds :=
+  { b with head := opaqueId b.head }
+
+/-- A run queue's ends rebuilt, its bucket table and each priority's entry its
+own (WS-ZA ZA6.35): the boot's tables are the shared empty table, one entry
+replicated for every priority, so the first enqueue at a priority would have
+copied the table and built the entry. -/
 @[inline] def _root_.SeLe4n.Kernel.RunQueueEnds.fresh (e : SeLe4n.Kernel.RunQueueEnds) :
     SeLe4n.Kernel.RunQueueEnds :=
-  { e with buckets := e.buckets.unshare, head := opaqueId e.head }
+  { e with buckets := e.buckets.map SeLe4n.Kernel.BucketEnds.fresh, head := opaqueId e.head }
+
+theorem _root_.SeLe4n.Kernel.RunQueueEnds.fresh_eq :
+    SeLe4n.Kernel.RunQueueEnds.fresh = id := by
+  have hB : SeLe4n.Kernel.BucketEnds.fresh = id := rfl
+  funext e
+  simp only [SeLe4n.Kernel.RunQueueEnds.fresh, hB, Array.map_id]
+  rfl
 
 /-- WS-ZA ZA6.1: **the per-core slots prepared at boot.**  The boot state's
 per-core vectors (each core's register bank and its scheduler slots) are built
@@ -1785,7 +1800,7 @@ def SystemState.withFreshPerCoreSlots (st : SystemState) : SystemState :=
 theorem SystemState.withFreshPerCoreSlots_eq (st : SystemState) :
     st.withFreshPerCoreSlots = st := by
   have hR : RegisterFile.fresh = id := rfl
-  have hE : SeLe4n.Kernel.RunQueueEnds.fresh = id := rfl
+  have hE := SeLe4n.Kernel.RunQueueEnds.fresh_eq
   have hN : (opaqueId : Nat → Nat) = id := rfl
   have hD : (opaqueId : SeLe4n.DomainId → SeLe4n.DomainId) = id := rfl
   have hO : (opaqueId : Option SeLe4n.ThreadId → Option SeLe4n.ThreadId) = id := rfl

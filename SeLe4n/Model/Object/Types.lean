@@ -1239,30 +1239,116 @@ end QueuePPrev
 first child, next sibling, previous sibling; a CNode word and a slot word each). -/
 def slotLinkWords : Nat := 8
 
+/-- WS-ZA ZA5.4: the target naming object `id`, built fresh, out of line. -/
+@[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
+
+/-- WS-ZA ZA5.4: the target naming object `id`, written over `t` when `t` already
+names an object, a reply, a core's scheduling control or an interrupt line (a
+constructor of one field, the same cell size, so
+the compiler reuses `t`'s cell for the new one: a slot whose last capability was
+a reply capability is carved into in place).  Out of line, with a distinct
+fallback arm, so the one-field arms keep their reuse of `t`'s cell. -/
+@[noinline] def CapTarget.objectOver (t : CapTarget) (id : SeLe4n.ObjId) : CapTarget :=
+  match t with
+  | .object _ => .object id
+  | .replyCap _ => .object id
+  | .schedControl _ => .object id
+  | .irqHandler _ => .object id
+  | _ => CapTarget.ofObject id
+
+theorem CapTarget.objectOver_eq (t : CapTarget) (id : SeLe4n.ObjId) :
+    t.objectOver id = .object id := by
+  cases t <;> rfl
+
+/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, built fresh,
+out of line. -/
+@[noinline] def CapTarget.ofIrqHandler (line : Nat) : CapTarget := .irqHandler line
+
+/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, written over
+`t` when `t` is a constructor of one field (an object, a reply or a handler: the
+same cell size, so the compiler reuses `t`'s cell), as `objectOver` writes an
+object's.  Out of line, with a distinct fallback arm. -/
+@[noinline] def CapTarget.irqHandlerOver (t : CapTarget) (line : Nat) : CapTarget :=
+  match t with
+  | .object _ => .irqHandler line
+  | .replyCap _ => .irqHandler line
+  | .schedControl _ => .irqHandler line
+  | .irqHandler _ => .irqHandler line
+  | _ => CapTarget.ofIrqHandler line
+
+theorem CapTarget.irqHandlerOver_eq (t : CapTarget) (line : Nat) :
+    t.irqHandlerOver line = .irqHandler line := by
+  cases t <;> rfl
+
+/-- WS-ZA ZA6.35: the target naming reply `rid`, built fresh, out of line. -/
+@[noinline] def CapTarget.ofReplyCap (rid : SeLe4n.ReplyId) : CapTarget := .replyCap rid
+
+/-- WS-ZA ZA6.35: the target naming reply `rid`, written over `t` when `t` is a
+constructor of one field, as `objectOver` writes an object's. -/
+@[noinline] def CapTarget.replyCapOver (t : CapTarget) (rid : SeLe4n.ReplyId) : CapTarget :=
+  match t with
+  | .object _ => .replyCap rid
+  | .replyCap _ => .replyCap rid
+  | .schedControl _ => .replyCap rid
+  | .irqHandler _ => .replyCap rid
+  | _ => CapTarget.ofReplyCap rid
+
+theorem CapTarget.replyCapOver_eq (t : CapTarget) (rid : SeLe4n.ReplyId) :
+    t.replyCapOver rid = .replyCap rid := by
+  cases t <;> rfl
+
+/-- WS-ZA ZA6.35: core `core`'s scheduling-control target, built fresh, out of
+line. -/
+@[noinline] def CapTarget.ofSchedControl (core : Nat) : CapTarget := .schedControl core
+
+/-- WS-ZA ZA6.35: core `core`'s scheduling-control target, written over `t` when
+`t` is a constructor of one field, as `objectOver` writes an object's. -/
+@[noinline] def CapTarget.schedControlOver (t : CapTarget) (core : Nat) : CapTarget :=
+  match t with
+  | .object _ => .schedControl core
+  | .replyCap _ => .schedControl core
+  | .schedControl _ => .schedControl core
+  | .irqHandler _ => .schedControl core
+  | _ => CapTarget.ofSchedControl core
+
+theorem CapTarget.schedControlOver_eq (t : CapTarget) (core : Nat) :
+    t.schedControlOver core = .schedControl core := by
+  cases t <;> rfl
+
+/-- WS-ZA ZA6.35: whether the target is a constructor of one field (an object, a
+reply, a core's scheduling control, an interrupt line): a cell of one size,
+which a write of any of them reuses. -/
+@[inline] def CapTarget.isOneField : CapTarget → Bool
+  | .object _ => true
+  | .replyCap _ => true
+  | .schedControl _ => true
+  | .irqHandler _ => true
+  | _ => false
+
 /-- WS-ZA ZA6.35: the target `src`, written over the record's own target `t` when
-both name an object or a reply (constructors of one field, the same cell size,
-so the compiler reuses `t`'s cell): a copy or mint then leaves its slot a target
-cell of its own, which the next capability written there, a carve's among
-them, writes over in turn (`CapTarget.objectOver`).  Any other target is
-`src` itself, shared.  Out of line, so `t` is the only cell it can write.
-Equal to `src` (`copyOver_eq`). -/
+both are constructors of one field (`objectOver`, `replyCapOver`,
+`schedControlOver`, `irqHandlerOver`, each out of line, so the compiler builds
+the new constructor in `t`'s cell instead of answering `src` itself): a copy,
+mint or move leaves its slot a target cell of its own, shared with nothing,
+which the next capability written there, a carve's among them, writes over in
+turn.  Any other target is `src` itself.  Equal to `src` (`copyOver_eq`). -/
 @[noinline] def CapTarget.copyOver (t src : CapTarget) : CapTarget :=
-  match src with
-  | .object id =>
-    match t with
-    | .object _ => .object id
-    | .replyCap _ => .object id
+  if t.isOneField then
+    match src with
+    | .object id => t.objectOver id
+    | .replyCap rid => t.replyCapOver rid
+    | .schedControl core => t.schedControlOver core
+    | .irqHandler line => t.irqHandlerOver line
     | _ => src
-  | .replyCap rid =>
-    match t with
-    | .object _ => .replyCap rid
-    | .replyCap _ => .replyCap rid
-    | _ => src
-  | _ => src
+  else src
 
 theorem CapTarget.copyOver_eq (t src : CapTarget) : t.copyOver src = src := by
   unfold CapTarget.copyOver
-  split <;> (try split) <;> rfl
+  split
+  · cases src <;>
+      simp only [CapTarget.objectOver_eq, CapTarget.replyCapOver_eq,
+        CapTarget.schedControlOver_eq, CapTarget.irqHandlerOver_eq]
+  · rfl
 
 /-- WS-ZA ZA6.35: whether the target is a constructor with no field (the audit
 trail, interrupt control), which the compiled kernel holds as a scalar, so a
@@ -1286,23 +1372,6 @@ Equal to the capability of those fields (`overwrite_eq`). -/
     ⟨t.copyOver target, if rr = rights then rr else rights, badgeWord, badged,
       mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩
 
-/-- WS-ZA ZA5.4: the target naming object `id`, built fresh, out of line. -/
-@[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
-
-/-- WS-ZA ZA5.4: the target naming object `id`, written over `t` when `t` already
-names an object, a reply, a core's scheduling control or an interrupt line (a
-constructor of one field, the same cell size, so
-the compiler reuses `t`'s cell for the new one: a slot whose last capability was
-a reply capability is carved into in place).  Out of line, with a distinct
-fallback arm, so the first two keep their reuse of `t`'s cell. -/
-@[noinline] def CapTarget.objectOver (t : CapTarget) (id : SeLe4n.ObjId) : CapTarget :=
-  match t with
-  | .object _ => .object id
-  | .replyCap _ => .object id
-  | .schedControl _ => .object id
-  | .irqHandler _ => .object id
-  | _ => CapTarget.ofObject id
-
 /-- WS-ZA ZA5.4: `rights`, kept as the record's own `rr` when equal.  Out of line,
 so the capability built from it has no join point before it. -/
 @[noinline] def AccessRightSet.keepOr (rr rights : AccessRightSet) : AccessRightSet :=
@@ -1325,10 +1394,6 @@ fresh out of line, so its target is built only on the path that builds it. -/
 @[noinline] def Capability.ofObject (id : SeLe4n.ObjId) (rights : AccessRightSet) : Capability :=
   ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
 
-theorem CapTarget.objectOver_eq (t : CapTarget) (id : SeLe4n.ObjId) :
-    t.objectOver id = .object id := by
-  cases t <;> rfl
-
 theorem AccessRightSet.keepOr_eq (rr rights : AccessRightSet) : rr.keepOr rights = rights := by
   unfold keepOr; split <;> simp_all
 
@@ -1340,25 +1405,6 @@ theorem Capability.overwriteObject_eq (r : Capability) (id : SeLe4n.ObjId)
   unfold overwriteObject
   dsimp only
   rw [CapTarget.objectOver_eq, AccessRightSet.keepOr_eq]
-
-/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, built fresh,
-out of line. -/
-@[noinline] def CapTarget.ofIrqHandler (line : Nat) : CapTarget := .irqHandler line
-
-/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, written over
-`t` when `t` is a constructor of one field (an object, a reply or a handler: the
-same cell size, so the compiler reuses `t`'s cell), as `objectOver` writes an
-object's.  Out of line, with a distinct fallback arm. -/
-@[noinline] def CapTarget.irqHandlerOver (t : CapTarget) (line : Nat) : CapTarget :=
-  match t with
-  | .object _ => .irqHandler line
-  | .replyCap _ => .irqHandler line
-  | .irqHandler _ => .irqHandler line
-  | _ => CapTarget.ofIrqHandler line
-
-theorem CapTarget.irqHandlerOver_eq (t : CapTarget) (line : Nat) :
-    t.irqHandlerOver line = .irqHandler line := by
-  cases t <;> rfl
 
 /-- WS-ZA ZA6.32: the handler capability of line `line` with `rights` and nothing
 else, written over the record `r` (a slot's spare) and its target

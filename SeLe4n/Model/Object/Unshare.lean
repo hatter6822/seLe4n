@@ -58,12 +58,16 @@ def KernelObject.unshare (o : KernelObject) : KernelObject := o
 
 @[simp] theorem KernelObject.unshare_eq (o : KernelObject) : o.unshare = o := rfl
 
-/-- A capability's object target, rebuilt when shared, so a record written
-over in place (`Capability.overwriteObject`) owns the target cell it rewrites
-(WS-ZA ZA5.4 part 26).  Every other target is passed through. -/
+/-- A capability's target of one field, rebuilt when shared, so a record written
+over in place (`Capability.overwriteObject`, `CapTarget.copyOver`) owns the
+target cell it rewrites (WS-ZA ZA5.4 part 26; every one-field target since
+ZA6.35).  Every other target is passed through. -/
 @[inline] def unshareTarget (t : CapTarget) : CapTarget :=
   match t with
   | .object id => .object (opaqueId id)
+  | .replyCap rid => .replyCap (opaqueId rid)
+  | .schedControl core => .schedControl (opaqueId core)
+  | .irqHandler line => .irqHandler (opaqueId line)
   | t => t
 
 theorem unshareTarget_eq (t : CapTarget) : unshareTarget t = t := by
@@ -76,20 +80,22 @@ its own, and its object target (WS-ZA ZA5.3 part 6, ZA5.4 part 26). -/
   | some r => some { r with rights := opaqueId r.rights, target := unshareTarget r.target }
   | none => none
 
-/-- A CNode's slot cell, rebuilt when shared so the CNode owns its `some` and its
-capability record: since WS-ZA ZA5.4 part 13 a carve writes the invoked untyped
-capability's free index into that record in place (`CNode.setFreeIndexCells`),
-and a boot capability's record is otherwise the boot image's constant, so the
-first carve would copy both. -/
+/-- A CNode's slot cell, rebuilt when shared so the CNode owns its `some`, its
+capability record and the record's target: since WS-ZA ZA5.4 part 13 a carve
+writes the invoked untyped capability's free index into that record in place
+(`CNode.setFreeIndexCells`), and a boot capability's record is otherwise the
+boot image's constant, so the first carve would copy both; since ZA6.35 the
+record a delete keeps as the slot's spare owns its target, so the next write
+there reuses it (`CapTarget.copyOver`). -/
 @[inline] def unshareSlotCell (o : Option Capability) : Option Capability :=
   match o with
-  | some r => some { r with rights := opaqueId r.rights }
+  | some r => some { r with rights := opaqueId r.rights, target := unshareTarget r.target }
   | none => none
 
 theorem unshareSlotCell_eq (o : Option Capability) : unshareSlotCell o = o := by
   cases o with
   | none => rfl
-  | some r => simp only [unshareSlotCell, opaqueId]
+  | some r => simp only [unshareSlotCell, opaqueId, unshareTarget_eq]
 
 /-- A thread's space slot, rebuilt when shared so the thread owns its `some`,
 its capability record and the record's object target (setting the thread's
