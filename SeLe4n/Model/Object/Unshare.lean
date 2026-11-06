@@ -68,6 +68,8 @@ ZA6.35).  Every other target is passed through. -/
   | .replyCap rid => .replyCap (opaqueId rid)
   | .schedControl core => .schedControl (opaqueId core)
   | .irqHandler line => .irqHandler (opaqueId line)
+  | .auditTrail code => .auditTrail (opaqueId code)
+  | .irqControl code => .irqControl (opaqueId code)
   | t => t
 
 theorem unshareTarget_eq (t : CapTarget) : unshareTarget t = t := by

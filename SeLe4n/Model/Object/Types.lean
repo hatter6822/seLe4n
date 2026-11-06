@@ -336,10 +336,14 @@ inductive CapTarget where
   | object (id : SeLe4n.ObjId)
   | cnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
   | replyCap (replyId : SeLe4n.ReplyId)
-  /-- WS-SM SM9.A.9: the declassification audit trail.  Fieldless — the trail is
-      a singleton `SystemState` component, not an object in the store — so this
-      capability carries authority and nothing else. -/
-  | auditTrail
+  /-- WS-SM SM9.A.9: the declassification audit trail.  It names nothing — the
+      trail is a singleton `SystemState` component, not an object in the store —
+      so this capability carries authority and nothing else.  WS-ZA ZA6.35: its
+      one word is a reserved code (`CapTarget.authorityCode`) and means nothing;
+      it is there so the compiled kernel holds the target as a cell, which the
+      slot's record owns and the next capability written there writes over
+      (`CapTarget.copyOver`), as it holds every other target. -/
+  | auditTrail (code : Nat)
   /-- WS-ZA ZA6.4: core `core`'s scheduling control, seL4-MCS's `SchedControl`
       capability: the one authority to configure a scheduling context's budget
       and period (`seL4_SchedControl_ConfigureFlags`).  One per core, created at
@@ -347,9 +351,11 @@ inductive CapTarget where
       unbinds and names the context to configure, and configures nothing. -/
   | schedControl (core : Nat)
   /-- WS-ZA ZA6.32: seL4's `IRQControl` capability: the one authority to issue
-      an interrupt handler capability (`seL4_IRQControl_Get`).  Fieldless, as
-      seL4's is: one is created at boot and held by the root task. -/
-  | irqControl
+      an interrupt handler capability (`seL4_IRQControl_Get`).  It names nothing,
+      as seL4's does: one is created at boot and held by the root task.  WS-ZA
+      ZA6.35: its one word is the reserved code (`CapTarget.authorityCode`), as
+      the audit trail's is. -/
+  | irqControl (code : Nat)
   /-- WS-ZA ZA6.32: the handler capability of interrupt line `irq`, seL4's
       `IRQHandler` capability: the authority to acknowledge the line
       (`seL4_IRQHandler_Ack`), which re-enables it at the interrupt controller
@@ -366,6 +372,11 @@ inductive CapTarget where
     fallback. The chosen default is `.object SeLe4n.ObjId.sentinel`, matching
     the H-06/WS-E3 sentinel convention. -/
 instance : Inhabited CapTarget := ⟨.object SeLe4n.ObjId.sentinel⟩
+
+/-- WS-ZA ZA6.35: the word an audit-trail or interrupt-control target holds.  It
+carries no meaning (no check reads it); the boot writes it and a copy or mint
+carries it over. -/
+def CapTarget.authorityCode : Nat := 0
 
 /-- Architecture-neutral address of a capability slot inside a CNode object.
 
@@ -722,14 +733,14 @@ between this and `auditTrailManage` is the whole reason the two audit syscalls
 require different rights: a deployment that hands out only this one has a reader
 that provably cannot remove evidence. -/
 def auditTrailRead : Capability :=
-  { target := .auditTrail, rights := AccessRightSet.ofList [.read] }
+  { target := .auditTrail CapTarget.authorityCode, rights := AccessRightSet.ofList [.read] }
 
 /-- WS-SM SM9.A.9: **the read-and-drain audit capability**, for the deployment's
 audit monitor.  Draining additionally requires the configured
 `LabelingContext.auditMonitorClearance`, so this right is necessary and not
 sufficient. -/
 def auditTrailManage : Capability :=
-  { target := .auditTrail, rights := AccessRightSet.ofList [.read, .write] }
+  { target := .auditTrail CapTarget.authorityCode, rights := AccessRightSet.ofList [.read, .write] }
 
 /-- WS-SM SM9.A.9 (**the separation, as a theorem**): a read-only audit
 capability grants the reader's right and **not** the drain's.
@@ -768,7 +779,7 @@ theorem schedControlOf_not_null (core : Nat) : (Capability.schedControlOf core).
 the root task: the `.write` right `seL4_IRQControl_Get` requires
 (`syscallRequiredRight .irqControlGet`) and nothing else. -/
 def irqControl : Capability :=
-  { target := .irqControl, rights := AccessRightSet.ofList [.write] }
+  { target := .irqControl CapTarget.authorityCode, rights := AccessRightSet.ofList [.write] }
 
 /-- WS-ZA ZA6.32: the interrupt-control capability is non-null. -/
 theorem irqControl_not_null : Capability.irqControl.isNull = false := by
@@ -1254,6 +1265,8 @@ fallback arm, so the one-field arms keep their reuse of `t`'s cell. -/
   | .replyCap _ => .object id
   | .schedControl _ => .object id
   | .irqHandler _ => .object id
+  | .auditTrail _ => .object id
+  | .irqControl _ => .object id
   | _ => CapTarget.ofObject id
 
 theorem CapTarget.objectOver_eq (t : CapTarget) (id : SeLe4n.ObjId) :
@@ -1274,6 +1287,8 @@ object's.  Out of line, with a distinct fallback arm. -/
   | .replyCap _ => .irqHandler line
   | .schedControl _ => .irqHandler line
   | .irqHandler _ => .irqHandler line
+  | .auditTrail _ => .irqHandler line
+  | .irqControl _ => .irqHandler line
   | _ => CapTarget.ofIrqHandler line
 
 theorem CapTarget.irqHandlerOver_eq (t : CapTarget) (line : Nat) :
@@ -1291,6 +1306,8 @@ constructor of one field, as `objectOver` writes an object's. -/
   | .replyCap _ => .replyCap rid
   | .schedControl _ => .replyCap rid
   | .irqHandler _ => .replyCap rid
+  | .auditTrail _ => .replyCap rid
+  | .irqControl _ => .replyCap rid
   | _ => CapTarget.ofReplyCap rid
 
 theorem CapTarget.replyCapOver_eq (t : CapTarget) (rid : SeLe4n.ReplyId) :
@@ -1309,21 +1326,65 @@ line. -/
   | .replyCap _ => .schedControl core
   | .schedControl _ => .schedControl core
   | .irqHandler _ => .schedControl core
+  | .auditTrail _ => .schedControl core
+  | .irqControl _ => .schedControl core
   | _ => CapTarget.ofSchedControl core
 
 theorem CapTarget.schedControlOver_eq (t : CapTarget) (core : Nat) :
     t.schedControlOver core = .schedControl core := by
   cases t <;> rfl
 
+/-- WS-ZA ZA6.35: the audit-trail target of word `code`, built fresh, out of
+line. -/
+@[noinline] def CapTarget.ofAuditTrail (code : Nat) : CapTarget := .auditTrail code
+
+/-- WS-ZA ZA6.35: the audit-trail target of word `code`, written over `t` when `t`
+is a constructor of one field, as `objectOver` writes an object's. -/
+@[noinline] def CapTarget.auditTrailOver (t : CapTarget) (code : Nat) : CapTarget :=
+  match t with
+  | .object _ => .auditTrail code
+  | .replyCap _ => .auditTrail code
+  | .schedControl _ => .auditTrail code
+  | .irqHandler _ => .auditTrail code
+  | .auditTrail _ => .auditTrail code
+  | .irqControl _ => .auditTrail code
+  | _ => CapTarget.ofAuditTrail code
+
+theorem CapTarget.auditTrailOver_eq (t : CapTarget) (code : Nat) :
+    t.auditTrailOver code = .auditTrail code := by
+  cases t <;> rfl
+
+/-- WS-ZA ZA6.35: the interrupt-control target of word `code`, built fresh, out
+of line. -/
+@[noinline] def CapTarget.ofIrqControl (code : Nat) : CapTarget := .irqControl code
+
+/-- WS-ZA ZA6.35: the interrupt-control target of word `code`, written over `t`
+when `t` is a constructor of one field, as `objectOver` writes an object's. -/
+@[noinline] def CapTarget.irqControlOver (t : CapTarget) (code : Nat) : CapTarget :=
+  match t with
+  | .object _ => .irqControl code
+  | .replyCap _ => .irqControl code
+  | .schedControl _ => .irqControl code
+  | .irqHandler _ => .irqControl code
+  | .auditTrail _ => .irqControl code
+  | .irqControl _ => .irqControl code
+  | _ => CapTarget.ofIrqControl code
+
+theorem CapTarget.irqControlOver_eq (t : CapTarget) (code : Nat) :
+    t.irqControlOver code = .irqControl code := by
+  cases t <;> rfl
+
 /-- WS-ZA ZA6.35: whether the target is a constructor of one field (an object, a
-reply, a core's scheduling control, an interrupt line): a cell of one size,
-which a write of any of them reuses. -/
+reply, a core's scheduling control, an interrupt line, the audit trail,
+interrupt control): a cell of one size, which a write of any of them reuses. -/
 @[inline] def CapTarget.isOneField : CapTarget → Bool
   | .object _ => true
   | .replyCap _ => true
   | .schedControl _ => true
   | .irqHandler _ => true
-  | _ => false
+  | .auditTrail _ => true
+  | .irqControl _ => true
+  | .cnodeSlot _ _ => false
 
 /-- WS-ZA ZA6.35: the target `src`, written over the record's own target `t` when
 both are constructors of one field (`objectOver`, `replyCapOver`,
@@ -1339,7 +1400,9 @@ turn.  Any other target is `src` itself.  Equal to `src` (`copyOver_eq`). -/
     | .replyCap rid => t.replyCapOver rid
     | .schedControl core => t.schedControlOver core
     | .irqHandler line => t.irqHandlerOver line
-    | _ => src
+    | .auditTrail code => t.auditTrailOver code
+    | .irqControl code => t.irqControlOver code
+    | .cnodeSlot _ _ => src
   else src
 
 theorem CapTarget.copyOver_eq (t src : CapTarget) : t.copyOver src = src := by
@@ -1347,16 +1410,9 @@ theorem CapTarget.copyOver_eq (t src : CapTarget) : t.copyOver src = src := by
   split
   · cases src <;>
       simp only [CapTarget.objectOver_eq, CapTarget.replyCapOver_eq,
-        CapTarget.schedControlOver_eq, CapTarget.irqHandlerOver_eq]
+        CapTarget.schedControlOver_eq, CapTarget.irqHandlerOver_eq,
+        CapTarget.auditTrailOver_eq, CapTarget.irqControlOver_eq]
   · rfl
-
-/-- WS-ZA ZA6.35: whether the target is a constructor with no field (the audit
-trail, interrupt control), which the compiled kernel holds as a scalar, so a
-record holding it owns no target cell for a later write to reuse. -/
-@[inline] def CapTarget.isFieldless : CapTarget → Bool
-  | .auditTrail => true
-  | .irqControl => true
-  | _ => false
 
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, written over the
 record `r` (a slot's spare): out of line, so `r` is the only record the
@@ -1462,23 +1518,13 @@ instance : Repr SpareCells := ⟨fun _ _ => "spare cells"⟩
 
 namespace SpareCells
 
-/-- The spares `a` with slot `i` keeping the cell `o`; a `none` leaves them as
-they are.  A record whose target is fieldless was stored shared and the slot's
-own record left in the spares (`CNode.insertCellShared`), so while the slot has
-one it is kept.  Out of line, so the caller's write of its CNode keeps its
-shape. -/
-@[noinline] def keepCell (a : Array (Option Capability)) (i : Nat) (o : Option Capability) :
-    Array (Option Capability) :=
-  match o with
-  | some c =>
-    if c.target.isFieldless && (if h : i < a.size then a[i].isSome else false) then a
-    else a.setIfInBounds i o
-  | none => a
-
-/-- `sp` with slot `i` keeping the cell `o` (a cleared slot's record,
-`keepCell`). -/
+/-- `sp` with slot `i` keeping the cell `o` (a cleared slot's record); a `none`
+leaves the slot's spare as it was. -/
 @[inline] def keep (sp : SpareCells) (i : Nat) (o : Option Capability) : SpareCells :=
-  Quot.lift (fun a => Squash.mk (keepCell a i o)) (fun _ _ _ => Quot.sound trivial) sp
+  Quot.lift (fun a => Squash.mk (match o with
+      | some _ => a.setIfInBounds i o
+      | none => a))
+    (fun _ _ _ => Quot.sound trivial) sp
 
 /-- `sp` with each slot `i` whose cell in `cells` holds a capability `f i`
 rejects keeping that capability as its record (a bulk clear's `keep`). -/

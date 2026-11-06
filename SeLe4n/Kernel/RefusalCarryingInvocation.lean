@@ -215,7 +215,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
     | _ => .error .invalidCapability
   | .irqControlGet =>
     match cap.target with
-    | .irqControl =>
+    | .irqControl _ =>
         irqControlGetFromCap tid capAddr (decodeIrqControlGetArgsBy (msgRegOfFile layout regs)) st
     | _ => .error .invalidCapability
   | .irqHandlerSetNotification =>
@@ -710,7 +710,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
   -- words).
   | .irqControlGet =>
     match cap.target with
-    | .irqControl =>
+    | .irqControl _ =>
       match decodeIrqControlGetArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>

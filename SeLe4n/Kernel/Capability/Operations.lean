@@ -925,10 +925,10 @@ capability exists in a deployment exactly where the boot/CSpace layer put one �
 which is why an unconfigured deployment has no audit reader at all. -/
 theorem mintDerivedCap_no_audit_forgery
     (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-    (child : Capability)
+    (child : Capability) {code : Nat}
     (hMint : mintDerivedCap parent rights badge = .ok child)
-    (hChild : child.target = .auditTrail) :
-    parent.val.target = .auditTrail := by
+    (hChild : child.target = .auditTrail code) :
+    parent.val.target = .auditTrail code := by
   rw [← mintDerivedCap_preserves_target parent rights badge child hMint]
   exact hChild
 
@@ -2135,17 +2135,14 @@ def cspaceMintPerform (src dst : CSpaceAddr) (rights : AccessRightSet)
 
 /-- `cspaceMintPerform` as compiled: the minted capability's fields are written
 straight over the destination slot's own record (`CNode.insertFields`), so the
-mint builds neither a capability nor its cell (WS-ZA ZA5.3 part 6).  A fieldless
-capability minted unchanged is stored as the cell read from the source slot
-(`CNode.insertDerivedFields`, WS-ZA ZA6.35). -/
+mint builds neither a capability nor its cell (WS-ZA ZA5.3 part 6). -/
 @[inline] def cspaceMintPerformWords (src dst : CSpaceAddr) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (st : SystemState) : SystemState :=
-  let o := SystemState.lookupSlotCap st src
-  match ho : o with
+  match SystemState.lookupSlotCap st src with
   | some parent =>
       untypedSourceSetFull
         ((st.storeCNodeWith dst.cnode
-          (·.insertDerivedFields dst.slot o parent ho rights badgeWord badged)).cdtAddChild
+          (·.insertFields dst.slot parent.target rights badgeWord badged parent.freeIndex)).cdtAddChild
           src dst .mint) src parent
   | none => st
 
@@ -2158,19 +2155,7 @@ capability holds (`cspaceMintPerformWords`), so no `Option` is passed. -/
 @[csimp] theorem cspaceMintPerform_eq_impl : @cspaceMintPerform = @cspaceMintPerformImpl := by
   funext src dst rights badge st
   unfold cspaceMintPerform cspaceMintPerformImpl cspaceMintPerformWords cspaceInstallPerform
-  split
-  · next parent hp =>
-    dsimp only
-    split
-    · next parent' ho =>
-      rw [hp] at ho; cases ho
-      simp only [CNode.insertDerivedFields_eq, CNode.insertFields_eq_insert]; cases badge <;> rfl
-    · next ho => rw [hp] at ho; cases ho
-  · next hp =>
-    dsimp only
-    split
-    · next ho => rw [hp] at ho; cases ho
-    · rfl
+  simp only [CNode.insertFields_eq_insert]; cases badge <;> rfl
 
 /-- WS-ZA ZA5.3: an admitted mint is its writes. -/
 theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRightSet}
@@ -2310,34 +2295,20 @@ the copy's edge (`cspaceInstallPerform`). -/
 /-- `cspaceCopyPerform` as compiled: the source capability's fields, with no
 mapping record, are written straight over the destination slot's own record
 (`CNode.insertFields`), so copying a mapped capability builds no unmapped
-capability first (WS-ZA ZA5.3 part 6).  A fieldless capability is stored as the
-cell read from the source slot (`CNode.insertDerivedFields`, WS-ZA ZA6.35). -/
+capability first (WS-ZA ZA5.3 part 6). -/
 @[inline] def cspaceCopyPerformImpl (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
-  let o := SystemState.lookupSlotCap st src
-  match ho : o with
+  match SystemState.lookupSlotCap st src with
   | some cap =>
       untypedSourceSetFull
         ((st.storeCNodeWith dst.cnode
-          (·.insertDerivedFields dst.slot o cap ho cap.rights cap.badgeWord cap.badged)).cdtAddChild
+          (·.insertFields dst.slot cap.target cap.rights cap.badgeWord cap.badged cap.freeIndex)).cdtAddChild
           src dst .copy) src cap
   | none => st
 
 @[csimp] theorem cspaceCopyPerform_eq_impl : @cspaceCopyPerform = @cspaceCopyPerformImpl := by
   funext src dst st
   unfold cspaceCopyPerform cspaceCopyPerformImpl cspaceInstallPerform
-  split
-  · next cap hp =>
-    dsimp only
-    split
-    · next cap' ho =>
-      rw [hp] at ho; cases ho
-      simp only [CNode.insertDerivedFields_eq, CNode.insertFields_eq_insert]; rfl
-    · next ho => rw [hp] at ho; cases ho
-  · next hp =>
-    dsimp only
-    split
-    · next ho => rw [hp] at ho; cases ho
-    · rfl
+  simp only [CNode.insertFields_eq_insert]; rfl
 
 /-- The copy's writes keep the scheduler. -/
 theorem cspaceCopyPerform_scheduler (src dst : CSpaceAddr) (st : SystemState) :

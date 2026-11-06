@@ -171,9 +171,9 @@ def capTargetsReservedKernelObject (cap : SeLe4n.Model.Capability) : Bool :=
   | .object oid => isReservedKernelObjId oid
   | .cnodeSlot cnode _ => isReservedKernelObjId cnode
   | .replyCap _ => false
-  | .auditTrail => false
+  | .auditTrail _ => false
   | .schedControl _ => false
-  | .irqControl => false
+  | .irqControl _ => false
   | .irqHandler _ => false
 
 /-- PR #889 review round 2: on an object capability the predicate is the idle
