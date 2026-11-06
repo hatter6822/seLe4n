@@ -425,13 +425,15 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
       exact ⟨(hKF _).trans hRec.1, storeLeavesIndexAndTypes_of_frame
         (s' := S1.mapTcbInPlace c (holdMessage msg)) hI hL hV hRec.2⟩
 
-/-- **The reply-receive that blocks, in place**: under the reply's guard
+/-- **The reply-receive that blocks, in place, on either answer**: under the reply's guard
 (`replyWakesInPlace`), with the receiver the server the caller recorded, no
 sender waiting and the receive's block admissible (read on the pre-state and
 carried across the reply leg, `storeReplyRendezvous_receiveGuard`), the
-specification's reply-receive is the reply's writes, the receive's block, the
-server's priority walk and the caller's staged message. -/
-theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
+composite answering the caller with `answer` is the reply's writes, the
+receive's block, the server's priority walk and the caller answered
+(`replyRecvAnswerCaller`). -/
+theorem replyRecvAnsweringOnCore_blocks_inPlace
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
     (root : SeLe4n.ObjId) (slot : SeLe4n.Slot) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
@@ -447,11 +449,11 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
     (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
-    endpointReplyRecvOnCore epId tid rid c msg root slot core st =
-      .ok ({ results := #[] }, Architecture.stageDeliveredMessage
+    endpointReplyRecvAnsweringOnCore answer epId tid rid c msg root slot core st =
+      .ok ({ results := #[] }, replyRecvAnswerCaller answer
         (PriorityInheritance.propagatePipChainCrossCore
           (removeRunnableOnCore (storeReceiveBlock (storeReplyRendezvous st c tid rid msg) epId tid
-            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) := by
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c) := by
   have hNo := replyWakesInPlace_noResizeDue hG
   have hFC : st.objects.findsInPlace c.toObjId = true := by
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
@@ -477,10 +479,38 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     have hSnd : (receiveRendezvousSender? S1 epId).isNone = true := by
       simp [receiveRendezvousSender?, hEp1, hS]
     simp only [hSnd, ↓reduceIte]
-  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
+  unfold endpointReplyRecvAnsweringOnCore
   simp only [hRec, Option.getD_some, hEq, hPop, hRecv, hEp1, Option.bind_some, hS]
   simp [replyRecvPostReceiveDonation, applyReceiveLegPipHandoff,
     Architecture.stageWokenSendCompletion_none]
+
+/-- **The reply-receive that blocks, in place**: the composite for a caller
+carrying no fault (`replyRecvAnsweringOnCore_blocks_inPlace` at `none`) is the
+reply's writes, the receive's block, the server's priority walk and the caller's
+staged message. -/
+theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+    (root : SeLe4n.ObjId) (slot : SeLe4n.Slot) (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
+    (hRO : ct.replyObject = some rid)
+    (hG : replyWakesInPlace st c ct rid = true)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
+    endpointReplyRecvOnCore epId tid rid c msg root slot core st =
+      .ok ({ results := #[] }, Architecture.stageDeliveredMessage
+        (PriorityInheritance.propagatePipChainCrossCore
+          (removeRunnableOnCore (storeReceiveBlock (storeReplyRendezvous st c tid rid msg) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) :=
+  replyRecvAnsweringOnCore_blocks_inPlace none st epId tid c rid msg root slot core ct ep0 rt ep
+    rp hSz hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree hStash hRec
 
 end ReplyRecvInPlace
 

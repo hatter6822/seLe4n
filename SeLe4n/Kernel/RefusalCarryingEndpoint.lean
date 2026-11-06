@@ -1060,8 +1060,11 @@ in-place writes or the general arm. -/
 case), refusing in the state it was handed (`endpointReplyCheckedArmR_eq`).  A
 reply to an unfaulted caller blocked on it whose checks all pass before any
 write (`replyWakesInPlace`) writes in place on a state nothing else holds
-(`performReplyRendezvous`, `replyTransferChecked_inPlace`); any other reply
-takes the general arm. -/
+(`performReplyRendezvous`, `replyTransferChecked_inPlace`), and one to a
+faulted caller under the same checks answers its fault in place
+(`performFaultReplyAnswer`, `faultReplyTransferChecked_inPlace`), the answer the
+`.replyRecv` arm shares (`performFaultAnswer`); any other reply takes the
+general arm. -/
 @[inline] def endpointReplyCheckedArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId)
@@ -1086,13 +1089,11 @@ takes the general arm. -/
                               if !ct.faultWords.isFault then
                                 .ok ((), replyRendezvousDelivered st c server rid
                                   layout rf len cap.badgeWord cap.badged executingCore)
-                              else if ct.faultKind == 1 || ct.faultKind == 2 then
-                                .ok ((), performFaultReplyRestart st c server rid executingCore
-                                  ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1
-                                  ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6
-                                  ct.faultX7)
-                              else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
-                                  tid executingCore cap st
+                              else
+                                .ok ((), performFaultReplyAnswer st c server rid executingCore
+                                  ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0
+                                  ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
+                                  ct.faultX6 ct.faultX7 layout rf (min len layout.msgRegs.size))
                             else endpointReplyDonatedArmR ctx layout rf len extraCaps label tid
                                 executingCore cap c server rid ct.scBindingScCode
                                 ct.faultWords.isFault st
@@ -1157,14 +1158,12 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                     (by rw [← Architecture.regMessageBody_size layout rf len] at hSz; exact hSz)
                     ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hNoF hFlow]
                   rfl
-                · split
-                  · next hK =>
-                    rw [faultReplyTransferChecked_inPlace ctx st tid c server ct ep rid
-                      { length := len, extraCaps := extraCaps, label := label }
-                      (Architecture.regMessageRegs layout rf) _ executingCore
-                      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hK]
-                  · simp only [endpointReplyCheckedArmRegsR, endpointReplyCheckedArmGeneralR, hTgt,
-                      hAns, hFlow, ↓reduceIte]
+                · next hF =>
+                  simp only [Bool.not_eq_true', Bool.not_eq_false] at hF
+                  rw [faultReplyTransferChecked_inPlace ctx st tid c server ct ep rid
+                    { length := len, extraCaps := extraCaps, label := label } layout rf _
+                    executingCore ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes
+                    hW hF]
               · unfold endpointReplyDonatedArmR
                 split
                 · next hG =>

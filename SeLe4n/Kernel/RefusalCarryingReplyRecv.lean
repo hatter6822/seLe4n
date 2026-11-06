@@ -11,6 +11,7 @@ import SeLe4n.Kernel.RefusalCarryingEndpoint
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvDonatedInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvUnheldInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvFaultAnswerInPlace
 
 /-!
 # Reply-receive, refusing in the state it was refused in
@@ -449,10 +450,63 @@ the caller's home read on the pre-state; the specification's otherwise. -/
         executingCore)
     else replyRecvUnheldArmR epId tid c rid badge layout rf len label executingCore st
 
+/-- **The checked reply-receive answering a faulted caller**: in place when the
+reply's writes and the receive's block each stay in their slots
+(`replyRecvBlocksFast`): the caller's fault words read off the pre-state and the
+fault answered from them and the reply's registers past MR0
+(`performReplyRecvFaultAnswer`, `replyRecvTransferOnCore_fault_blocks_inPlace`),
+the answer the `.reply` arm applies (`performFaultAnswer`); the specification's
+otherwise (`replyRecvFaultArmR_eq`).  The caller's words are read before the
+writes and its TCB is not held across them. -/
+@[inline] def replyRecvFaultArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  fun st =>
+    if replyRecvBlocksFast st epId tid c rid then
+      match st.getTcb? c with
+      | some ct =>
+          .ok ((), performReplyRecvFaultAnswer st c tid rid epId (receiveQueueTailCode st epId)
+            executingCore ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0
+            ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7
+            layout rf len)
+      | none => replyRecvRendezvousR epId tid c rid badge layout rf len label executingCore st
+    else replyRecvRendezvousR epId tid c rid badge layout rf len label executingCore st
+
+/-- On a faulted caller the arm is the specification's path. -/
+theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
+    (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hF : threadHasPendingFault st c = true) :
+    replyRecvFaultArmR epId tid c rid badge layout rf len label executingCore st =
+      replyRecvRendezvousR epId tid c rid badge layout rf len label executingCore st := by
+  unfold replyRecvFaultArmR
+  split
+  · next hB =>
+    obtain ⟨ct, ep0, rt, ep, rp, hT, hIpc, hRO, hW, hNe, hE, hS, hR, hA, hEnq, hRp,
+      hFree, hStash, hRecR, hTail⟩ := replyRecvBlocksFast_spec hB
+    have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+    obtain ⟨tf, hPF⟩ : ∃ tf, ct.pendingFault = some tf := by
+      unfold threadHasPendingFault at hF
+      rw [hTc] at hF
+      exact Option.isSome_iff_exists.mp hF
+    simp only [hTc]
+    unfold replyRecvRendezvousR
+    rw [replyRecvTransferOnCore_fault_blocks_inPlace st epId tid c rid label layout rf len badge
+      _ _ executingCore ct ep0 rt ep rp tf hPF hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree
+      hStash hRecR]
+    simp only [CapTransferSummary.installedCount_empty]
+    rw [hTail, performReplyRecvFaultAnswer_staged st epId tid c rid executingCore _ _ _ _ _ _ _
+      _ _ _ _ _ _ layout rf len ct ep0 rt ep rp hT hIpc hW hNe hE hR hA hEnq hRp hFree hStash
+      hRecR]
+  · rfl
+
 /-- The checked reply-receive once its reply capability resolved to reply object
 `rid`, answering caller `c` with badge `badge`: the reply leg's flow gate, then a
 caller carrying a fault answered through the specification's path (its fault
-reply, `replyRecvTransferOnCore`), and for any other caller the in-place path when
+reply: `replyRecvFaultArmR`, in place when the receive blocks), and for any
+other caller the in-place path when
 it may be taken (`replyRecvBlocksFast`, a reply of at most four words;
 `replyRecvDonatedArmR` on a donated reply), the specification's otherwise.  Every
 in-place path delivers the reply as a message, which is the answer only for a
@@ -464,7 +518,7 @@ caller carrying no fault, so the fault test runs first. -/
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
       if threadHasPendingFault st c then
-        replyRecvRendezvousR epId tid c rid badge layout rf len label executingCore st
+        replyRecvFaultArmR epId tid c rid badge layout rf len label executingCore st
       else if decide (Architecture.regMessageLength layout len - 1 ≤ 4) &&
           replyRecvBlocksFast st epId tid c rid then
         .ok ((), performReplyRecvBlockDelivered st c tid rid epId (receiveQueueTailCode st epId)
@@ -539,7 +593,10 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
           split
           · next hFlow =>
             split
-            · simp only [replyRecvRendezvousR]
+            · next hFault =>
+              rw [replyRecvFaultArmR_eq epId tid c rid badge layout rf len label executingCore st
+                hFault]
+              simp only [replyRecvRendezvousR]
             rename_i hNoFault
             rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)]
             split
