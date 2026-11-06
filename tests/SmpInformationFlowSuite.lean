@@ -111,6 +111,10 @@ open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 
+-- The fixture's run queues are a 256-bucket array by priority (`BucketTable`),
+-- which the `rfl` and `decide` facts over `probeState` reduce.
+set_option maxRecDepth 8192
+
 -- ============================================================================
 -- §1  Surface anchors (Tier-3): every SM8.A public symbol resolves
 -- ============================================================================
