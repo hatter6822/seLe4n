@@ -6537,7 +6537,10 @@ Every kernel object has a decidable well-formedness predicate:
   retype's carve at exactly its object's cells (`CLAUDE.md`, *A kernel entry
   allocates nothing*).  A core's run-queue buckets are a fixed array by
   priority, as seL4's `ksReadyQueues` is (`BucketTable`).  A capability copy
-  writes the destination slot's own target cell (`CapTarget.copyOver`).  A
+  writes the destination slot's own target cell (`CapTarget.copyOver`), and a
+  capability with a fieldless target copied or minted unchanged is stored as
+  the cell read from its source slot (`CNode.insertDerivedFields`), the
+  destination's record left in its spares.  A
   send of more than four words copies its overflow words from the sender's
   IPC buffer into the receiver's in place (`sendLongRoutedArm`,
   `performSendDeliveredLong`).  A signal, declassified signal or interrupt to

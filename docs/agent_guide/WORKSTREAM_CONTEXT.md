@@ -459,7 +459,8 @@ than 0, and on a carve that reads other than its object's cells (`CLAUDE.md`,
 *A kernel entry allocates nothing*).  New code keeps three forms.  A carve
 reads its request as words (`carveRequestWordsK`).  A capability with a
 fieldless target is stored shared and leaves the slot's record in the spares
-(`CNode.insertCellShared`).  A word-valued field is read off its word, not
+(`CNode.insertCellShared`); copied or minted unchanged, it is stored as the
+cell read from its source slot (`CNode.insertDerivedFields`).  A word-valued field is read off its word, not
 its `Nat` (`refusalFieldChunk`).  A scenario added for a new entry is named in
 the gate's pinned set.  A queue removal's guard reads the endpoint's end
 codes (`dualQueueRemovalEnabledCode`), a run queue's buckets are a fixed

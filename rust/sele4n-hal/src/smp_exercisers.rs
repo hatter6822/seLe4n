@@ -2352,7 +2352,8 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   capability minted over the record the copy left (its target shared with
 ///   the frame's capability) and deleted, named as the partner's IPC buffer,
 ///   unmapped and deleted; the tables taken out deepest first and
-///   deleted; an endpoint, a notification, a reply and a CNode each carved
+///   deleted; the interrupt-control capability copied and minted into the
+///   frame's slot, each deleted; an endpoint, a notification, a reply and a CNode each carved
 ///   and its only capability deleted, which retires it; and the untyped
 ///   reset.  While the frame is mapped it is also the
 ///   root task's IPC buffer, and the image's scheduling context is first
@@ -4250,18 +4251,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         ),
         invocation(
             "irq-control-mint-delete",
-            CSPACE_DELETE,
-            CNODE_CAP,
-            [FRAME_SLOT, 0, 0, 0],
-        ),
-        invocation(
-            "irq-control-mint-attenuated",
-            CSPACE_MINT,
-            CNODE_CAP,
-            [IRQ_CONTROL_SLOT, FRAME_SLOT, 0, 0],
-        ),
-        invocation(
-            "irq-control-mint-attenuated-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],

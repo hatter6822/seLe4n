@@ -44,6 +44,14 @@ signal, and the refused-receiver read.
     cell, and the next carve into that slot built one.
   - `CapTarget.objectOver` also reuses the cell of a scheduling-control or
     interrupt-handler target.
+  - A copy or mint of one that leaves it unchanged stores the cell read from
+    the source slot, shared with it, into a destination that keeps a record
+    (`CNode.insertDerivedFields`, `CNode.insertCellOf`, `derivesUnchanged`;
+    `insertDerivedFields_eq`, used by the copy's and the mint's `@[csimp]`).
+    Before this the copy and the mint built the capability and its `some`
+    (`irq-control-copy`, `irq-control-mint` 2/2, now 0/0; found in review).
+    The derived-fields insert is out of line, so the caller's CNode object
+    keeps its cell.
 - **The declassified signal that wakes a waiter runs in place.**
   - Admitted when the waiter is woken in place (`signalWakesInPlace`) and
     each hop is ordinary or a permitted downgrade, with room for the records

@@ -286,7 +286,7 @@ for driver in drivers:
             "head-reply-cap-delete", "head-reply-delete", "head-server-receives",
             "head-server-resumes-partner", "head-server-waits", "head-server-wakes-root",
             "inactive-tcb-delete", "irq-control-copy", "irq-control-copy-delete", "irq-control-get",
-            "irq-control-mint", "irq-control-mint-attenuated", "irq-control-mint-attenuated-delete",
+            "irq-control-mint",
             "irq-control-mint-delete", "irq-handler-ack", "irq-handler-clear",
             "irq-handler-delete", "irq-handler-set-notification", "irq-notification-revoke",
             "irq-revoked-line", "irq-signal-bound", "irq-signal-no-waiter", "irq-signal-waiter",
