@@ -461,6 +461,16 @@ theorem returnUnheldSchedContext_runQueueFrameStage {st st' : SystemState}
   rw [hEq]
   exact (f1.trans (f2.toFrame _)).trans ((f3.trans (markKeyChangeFrom_runQueueStage st s3 owner)).toFrame _)
 
+/-- **The sever is a run-queue stage**: the context stored over itself with a
+new head and origin, its refills, release and yield links kept, then the head
+pop. -/
+theorem severUnheldSchedContext_runQueueStage {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : severUnheldSchedContext st scId newOwner? = .ok st') : RunQueueStage st st' := by
+  obtain ⟨_, _, _, hSc, -, -, hS1, hS2⟩ := severUnheldSchedContext_ok_storeChain h
+  exact (RunQueueStage.storeObject_nonTcb hS1 hSc (fun _ e => by cases e)
+    (fun _ e => by cases e)).trans (storeDonationHeadPop_runQueueStage hS2)
+
 /-- **A finalised reply's pop off an unheld context, and its settle, is a
 run-queue stage**: the pop a frame stage off the context
 (`returnUnheldSchedContext_runQueueFrameStage`), closed by the settle
@@ -468,32 +478,31 @@ run-queue stage**: the pop a frame stage off the context
 so well formed. -/
 theorem finaliseReplyUnheldPop_runQueueStage (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
     RunQueueStage st (finaliseReplyUnheldPop st r c) := by
-  unfold finaliseReplyUnheldPop
-  split
-  · split
-    · rename_i hOk
-      unfold returnUnheldSchedContextResolved at hOk
-      split at hOk
-      · cases hOk
-      · refine SchedContextOps.settleReturnedContext_runQueueStage
-          (returnUnheldSchedContext_runQueueFrameStage hOk) ?_
-        intro S hS hInv hSnd _ a ha
-        obtain ⟨sc, _, _, hSc, -, -, -, -, -, hSc', -⟩ := returnUnheldSchedContext_objects hInv hOk
-        rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp ha] at hSc'
-        cases hSc'
-        exact schedContextWellFormed_of_refillsView rfl
-          (hSnd.1 _ sc hS ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc))
-    · exact .refl _
-  · exact .refl _
+  rcases finaliseReplyUnheldPop_cases st r c with e | ⟨_, _, _, _, _, hOk, e⟩ |
+      ⟨_, _, _, _, _, _, hOk, e⟩
+  · rw [e]; exact .refl _
+  · rw [e]
+    refine SchedContextOps.settleReturnedContext_runQueueStage
+      (returnUnheldSchedContext_runQueueFrameStage hOk) ?_
+    intro S hS hInv hSnd _ a ha
+    obtain ⟨sc, _, _, hSc, -, -, -, -, -, hSc', -⟩ := returnUnheldSchedContext_objects hInv hOk
+    rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp ha] at hSc'
+    cases hSc'
+    exact schedContextWellFormed_of_refillsView rfl
+      (hSnd.1 _ sc hS ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc))
+  · rw [e]; exact severUnheldSchedContext_runQueueStage hOk
 
 /-- **The pop at an unheld head is a run-queue stage** (WS-ZA ZA6.34): the
 unheld pop a frame stage off the context, closed by the settle on a context
-whose refills the pop kept. -/
+whose refills the pop kept; or the sever, a stage outright. -/
 theorem popUnheldReplyHead_runQueueStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {home : Concurrency.CoreId}
     (h : popUnheldReplyHead st rid target home = .ok st') : RunQueueStage st st' := by
-  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hOk, rfl⟩
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hOk, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
   · exact .refl _
+  rotate_left
+  · exact severUnheldSchedContext_runQueueStage hS
   · refine SchedContextOps.settleReturnedContext_runQueueStage
       (returnUnheldSchedContext_runQueueFrameStage hOk) ?_
     intro S hS hInv hSnd _ a ha

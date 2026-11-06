@@ -2111,7 +2111,9 @@ theorem orphan {s : SystemState} {w x : SeLe4n.ThreadId} {t : TCB}
 the pop rewrites one thread's binding, which neither the notification queues,
 the budgets nor the reply-waiter queues read; the chains by the head pop's chain
 writes (`returnUnheldSchedContext_preserves_donationChainWellFormed`); the
-settle writes release fields and queues alone. -/
+settle writes release fields and queues alone.  The sever, where the caller
+holds a context of its own, writes no thread and the head pop's chain writes
+alone (`severUnheldSchedContext_preserves_donationChainWellFormed`). -/
 theorem unheld {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.ThreadId} {t : TCB}
     (h : finaliseStepInvariant s) (hL : schedContextLinkInvariant s)
     (hX : s.getObject? x = some (.reply r)) (hT : s.getTcb? c = some t)
@@ -2119,8 +2121,21 @@ theorem unheld {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Thre
     finaliseStepInvariant (finaliseReplyUnheldPop s r c) ∧
       timeoutBudgetFrame s (finaliseReplyUnheldPop s r c) := by
   have hB := finaliseUnheldStep_keepsFinaliseLoanBundle s x r c t ⟨h.1, h.2.1, h.2.2.2.2.2⟩ hL hX hT hA
-  rcases finaliseReplyUnheldPop_cases s r c with e | ⟨sId, n, st', -, -, hPop, e⟩
+  rcases finaliseReplyUnheldPop_cases s r c with e | ⟨sId, n, st', -, -, hPop, e⟩ |
+      ⟨_, _, st', -, -, -, hPop, e⟩
   · rw [e]; exact ⟨h, fun _ tcb' hx => ⟨tcb', hx, rfl⟩⟩
+  rotate_left
+  · rw [e] at hB ⊢
+    obtain ⟨-, -, -, -, -, -, tBwd, tFwd, -, -⟩ := severUnheldSchedContext_objects h.2.1 hPop
+    have N : NtfnFrame s st' :=
+      ⟨fun k nt => severUnheldSchedContext_notification_iff h.2.1 hPop k nt,
+        fun k ty hy => ⟨ty, tFwd k ty hy, .refl ty⟩, fun k tx hx => ⟨tx, tBwd k tx hx, .refl tx⟩⟩
+    have q1 := N.parts h.2.2.1
+    have hViews : st'.replyViews = s.replyViews := SystemState.replyViews_eq_of_tcbs
+      (fun k t0 hk => ⟨t0, tFwd k t0 hk, rfl⟩) (fun k t' hk => ⟨t', tBwd k t' hk⟩)
+    exact ⟨⟨hB.1, hB.2.1, q1.1, SystemState.replyWaitersConsistent.of_views hViews h.2.2.2.1,
+      severUnheldSchedContext_preserves_donationChainWellFormed h.2.1 h.2.2.2.2.1 hPop, hB.2.2⟩,
+      q1.2⟩
   · rw [e] at hB ⊢
     obtain ⟨tF, tB⟩ := returnUnheldSchedContext_tcb_rewrite h.2.1 hPop
     have N : NtfnFrame s st' :=

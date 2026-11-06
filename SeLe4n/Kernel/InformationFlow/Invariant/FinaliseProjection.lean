@@ -1822,11 +1822,38 @@ theorem returnUnheldSchedContext_preserves_projection (ctx : LabelingContext)
     rw [markKeyChangeFrom_objectIndexSet]
     exact hC3 k hk
 
+/-- **The sever is invisible to every observer**: the projection erases the two
+context fields it writes, the head and the origin, and the pop's reply stores
+are stack links (`storeDonationHeadPop_preserves_projection`).  Each store is at
+an indexed key, so the object index stays complete and well formed. -/
+theorem severUnheldSchedContext_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) {st st' : SystemState} {s : SeLe4n.SchedContextId}
+    {n : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
+    (hPop : severUnheldSchedContext st s n = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st ∧
+      SeLe4n.Model.objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
+  obtain ⟨sc, head?, s1, hSc, -, -, hS1, hClear⟩ := severUnheldSchedContext_ok_storeChain hPop
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInv hS1
+  have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _ hSet hS1
+  have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInv
+    hSet hIdx hS1
+  have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
+    s.toObjId _ (.schedContext sc) hSc
+    (by simp [projectKernelObject, donationSeverSchedContext])
+    (hIdx s.toObjId (by rw [hSc]; intro hx; cases hx)) hObjInv hS1
+  exact ⟨(storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear).trans hP1,
+    storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear,
+    storeDonationHeadPop_preserves_objectIndexSet_invExt hSet1 hClear⟩
+
 /-- **The unheld pop, settled, is invisible** when the context it pops is
 hidden — the settle moves that context's release entry
 (`settleReturnedContext_preserves_projection`) — and leaves the reply it pops
 heading nothing (`returnUnheldSchedContext_head_unlinked`; the settle writes no
-reply), or the state unchanged where it refuses. -/
+reply); the sever is invisible outright
+(`severUnheldSchedContext_preserves_projection`) and leaves the reply heading
+nothing likewise (`severUnheldSchedContext_head_unlinked`); or the state is
+unchanged where it refuses. -/
 theorem finaliseReplyUnheldPop_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.ThreadId} {t : TCB}
     (hInv : st.objects.invExt) (hIdx : SeLe4n.Model.objectIndexSetComplete st)
@@ -1838,8 +1865,36 @@ theorem finaliseReplyUnheldPop_hidden (ctx : LabelingContext) (observer : IfObse
       (finaliseReplyUnheldPop st r c = st ∨
         ∃ rx : Reply, (finaliseReplyUnheldPop st r c).getObject? x =
           some (.reply { rx with prev := none, next := none })) := by
-  rcases finaliseReplyUnheldPop_cases st r c with e | ⟨s, n, st', hN, hRes, hPop, e⟩
+  -- The head the context names is this reply.
+  have hHeadIsX : ∀ s, r.next = some (.head s) → ∃ sc rid, st.getSchedContext? s = some sc ∧
+      sc.scReply = some rid ∧ rid.toObjId = x := by
+    intro s hN
+    unfold replyUnheldPopAdmitted at hU
+    rw [hN] at hU
+    simp only [Bool.and_eq_true] at hU
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hHd, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := hU
+    cases hG : st.getSchedContext? s with
+    | none => rw [hG] at hHd; cases hHd
+    | some sc =>
+      rw [hG] at hHd
+      simp only [] at hHd
+      cases hR : sc.scReply with
+      | none => rw [hR] at hHd; cases hHd
+      | some rid =>
+        rw [hR] at hHd
+        have hv : rid.val = x.val := by simpa using hHd
+        exact ⟨sc, rid, rfl, hR, by cases rid; cases x; simp only at hv; subst hv; rfl⟩
+  rcases finaliseReplyUnheldPop_cases st r c with e | ⟨s, n, st', hN, hRes, hPop, e⟩ |
+      ⟨s, n, st', hN, -, hRes, hPop, e⟩
   · rw [e]; exact ⟨rfl, hIdx, hSet, Or.inl rfl⟩
+  rotate_left
+  · rw [e]
+    obtain ⟨hP, hC, hS⟩ := severUnheldSchedContext_preserves_projection ctx observer hInv hIdx hSet hPop
+    refine ⟨hP, hC, hS, Or.inr ?_⟩
+    obtain ⟨sc, rid, hG, hR, eX⟩ := hHeadIsX s hN
+    obtain ⟨rx, hx⟩ := severUnheldSchedContext_head_unlinked hInv hRes hPop hG hR
+    rw [eX] at hx
+    exact ⟨rx, by rw [SystemState.getObject?_eq_getElem]; exact hx⟩
   rw [e]
   obtain ⟨hP, hC, hS⟩ := returnUnheldSchedContext_preserves_projection ctx observer hInv hIdx hSet hPop
   have hInv' := (FinaliseFrameAny.returnUnheldSchedContext hInv hPop).invExt
@@ -1852,27 +1907,11 @@ theorem finaliseReplyUnheldPop_hidden (ctx : LabelingContext) (observer : IfObse
   obtain ⟨hC', hS'⟩ := objectIndexFacts_of_writeAny hF.any.write hIx hC hS
   refine ⟨(settleReturnedContext_preserves_projection ctx observer st' _ s (hScHigh s hN)).trans hP,
     hC', hS', Or.inr ?_⟩
-  -- The head the context names is this reply.
-  unfold replyUnheldPopAdmitted at hU
-  rw [hN] at hU
-  simp only [Bool.and_eq_true] at hU
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hHd, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := hU
-  cases hG : st.getSchedContext? s with
-  | none => rw [hG] at hHd; cases hHd
-  | some sc =>
-    rw [hG] at hHd
-    simp only [] at hHd
-    cases hR : sc.scReply with
-    | none => rw [hR] at hHd; cases hHd
-    | some rid =>
-      rw [hR] at hHd
-      have hv : rid.val = x.val := by simpa using hHd
-      obtain ⟨rx, hx⟩ := returnUnheldSchedContext_head_unlinked hInv hRes hPop hG hR
-      have eX : rid.toObjId = x := by
-        cases rid; cases x; simp only at hv; subst hv; rfl
-      rw [eX] at hx
-      exact ⟨rx, hF.write.keeps hx (by
-        simp [finaliseWritable, KernelObject.objectType])⟩
+  obtain ⟨sc, rid, hG, hR, eX⟩ := hHeadIsX s hN
+  obtain ⟨rx, hx⟩ := returnUnheldSchedContext_head_unlinked hInv hRes hPop hG hR
+  rw [eX] at hx
+  exact ⟨rx, hF.write.keeps hx (by
+    simp [finaliseWritable, KernelObject.objectType])⟩
 
 /-- **A reply's finalisation off a context no thread holds is invisible** when
 its caller and the context it heads are hidden: the settled pop

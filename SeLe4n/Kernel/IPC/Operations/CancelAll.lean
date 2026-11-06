@@ -1398,10 +1398,11 @@ def finaliseReplyUnstash (st : SystemState) (x : SeLe4n.ObjId) (r : Reply) : Sys
 /-- **Whether a final delete may pop the reply at `x` off a context no thread
 holds**, its caller `c` (TCB `t`) waiting on it, read on the pre-state before any
 write: the reply heads the stack of a context that names it back as its head,
-the pop of that context back to `c` commits (`unheldReturnCommits`: the context
-is bound to no thread — its holder's finalisation unbound it, seL4-MCS's
-`schedContext_unbindTCB` — and `c` holds no context of its own), and `c` passes
-the caller checks `replyCallerFinalisable` reads.  Each read is `O(1)`. -/
+`reply_pop` of that context commits (`unheldPopCommits`: the context is bound
+to no thread — its holder's finalisation unbound it, seL4-MCS's
+`schedContext_unbindTCB` — and the pop back to `c` commits where `c` holds no
+context of its own, the sever where it holds one), and `c` passes the caller
+checks `replyCallerFinalisable` reads.  Each read is `O(1)`. -/
 @[inline] def replyUnheldPopAdmitted (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
     (c : SeLe4n.ThreadId) (t : TCB) : Bool :=
   match r.next with
@@ -1412,25 +1413,33 @@ the caller checks `replyCallerFinalisable` reads.  Each read is `O(1)`. -/
        | some rid => rid.val == x.val
        | none => false
      | none => false) &&
-      unheldReturnCommits st s c && !c.isReserved && !isIdleThreadId c &&
+      unheldPopCommits st s c && !c.isReserved && !isIdleThreadId c &&
       t.runCoreCode == 0 && decide (4 ≤ t.ipcStateCode) &&
       t.replyObjectCode == x.val + 1 && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
       t.timeoutBudget.isNone
   | _ => false
 
 /-- **The pop of a reply heading a context no thread holds** (seL4-MCS's
-`reply_remove` head branch, `reply_pop`): the context back to the reply's caller
-`c`, the frame below its new head (`returnUnheldSchedContextResolved`), then
-settled as every returned context is (`settleReturnedContext`, the tail of
-`schedContext_donate`): placed on `c`'s home core's release queue by its refills
-while `c` is not suspended.  The state unchanged where the pop refuses. -/
+`reply_remove` head branch, `reply_pop`): where the reply's caller `c` holds no
+context, the context back to `c`, the frame below its new head
+(`returnUnheldSchedContextResolved`), then settled as every returned context is
+(`settleReturnedContext`, the tail of `schedContext_donate`): placed on `c`'s
+home core's release queue by its refills while `c` is not suspended; where `c`
+holds one, the head popped off the context alone, nothing handed back
+(`severUnheldSchedContextResolved`).  The state unchanged where the pop
+refuses. -/
 @[inline] def finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
     SystemState :=
   match r.next with
   | some (.head s) =>
-    match returnUnheldSchedContextResolved st s c with
-    | .ok st' => SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
-    | .error _ => st
+    if donationRecipientAcceptable st c then
+      match returnUnheldSchedContextResolved st s c with
+      | .ok st' => SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
+      | .error _ => st
+    else
+      match severUnheldSchedContextResolved st s with
+      | .ok st' => st'
+      | .error _ => st
   | _ => st
 
 /-- **The unheld pop, as compiled**: in place where its gate admits it
@@ -1444,9 +1453,13 @@ the specification's pop otherwise. -/
     if unheldPopsInPlace st s c then
       let st' := returnUnheldSchedContextInPlace st c s
       SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
-    else
+    else if donationRecipientAcceptable st c then
       match returnUnheldSchedContextResolved st s c with
       | .ok st' => SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
+      | .error _ => st
+    else
+      match severUnheldSchedContextResolved st s with
+      | .ok st' => st'
       | .error _ => st
   | _ => st
 
@@ -1458,8 +1471,52 @@ the specification's pop otherwise. -/
   · next s _ =>
     cases hG : unheldPopsInPlace st s c with
     | false => rfl
-    | true => simp only [(unheldPopsInPlace_pop st s c hG).2, ↓reduceIte]
+    | true =>
+      have hP := unheldPopsInPlace_pop st s c hG
+      simp only [donationRecipientAcceptable_of_unheldReturnCommits hP.1, hP.2, ↓reduceIte]
   · rfl
+
+/-- **The unheld pop's three outcomes**: the state unchanged; or, the reply
+heading a context `s` and `c` holding none, the pop of `s` back to `c` off the
+outer caller the reply stack resolves, then its settle on `c`'s home core; or,
+`c` holding a context of its own, the sever of `s` (`reply_pop`'s no-donate
+arm). -/
+theorem finaliseReplyUnheldPop_cases (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
+    finaliseReplyUnheldPop st r c = st ∨
+      (∃ (s : SeLe4n.SchedContextId) (n : Option SeLe4n.ThreadId) (st' : SystemState),
+        r.next = some (.head s) ∧
+        replyStackOuterCaller? st s = .ok n ∧ returnUnheldSchedContext st s c n = .ok st' ∧
+        finaliseReplyUnheldPop st r c =
+          SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s) ∨
+      ∃ (s : SeLe4n.SchedContextId) (n : Option SeLe4n.ThreadId) (st' : SystemState),
+        r.next = some (.head s) ∧ donationRecipientAcceptable st c = false ∧
+        replyStackOuterCaller? st s = .ok n ∧ severUnheldSchedContext st s n = .ok st' ∧
+        finaliseReplyUnheldPop st r c = st' := by
+  unfold finaliseReplyUnheldPop
+  split
+  next s hN =>
+    cases hA : donationRecipientAcceptable st c with
+    | true =>
+      simp only [↓reduceIte]
+      cases hR : returnUnheldSchedContextResolved st s c with
+      | error _ => exact Or.inl rfl
+      | ok st' =>
+        refine Or.inr (Or.inl ?_)
+        unfold returnUnheldSchedContextResolved at hR
+        cases hO : replyStackOuterCaller? st s with
+        | error _ => rw [hO] at hR; cases hR
+        | ok n =>
+          rw [hO] at hR
+          exact ⟨s, n, st', hN, hO, hR, rfl⟩
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      cases hR : severUnheldSchedContextResolved st s with
+      | error _ => exact Or.inl rfl
+      | ok st' =>
+        refine Or.inr (Or.inr ?_)
+        obtain ⟨n, hO, hP⟩ := severUnheldSchedContextResolved_ok_decompose hR
+        exact ⟨s, n, st', hN, by simp, hO, hP, rfl⟩
+  next => exact Or.inl rfl
 
 /-- **A finalised reply heading a context no thread holds**: the pop
 (`finaliseReplyUnheldPop`), then — the popped reply heading no stack — the

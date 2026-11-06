@@ -498,39 +498,32 @@ theorem of_returnDonationToCancelledCaller (st : SystemState) (v : SeLe4n.Thread
             st' holder scId v hInv newOwner? hPop x
 
 /-- The pop off an unheld context, and its settle, rewrite the recipient's
-binding codes and no thread's registers. -/
+binding codes and no thread's registers; the sever writes no thread. -/
 theorem of_finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
     savedRegsKeptExcept W st (finaliseReplyUnheldPop st r c) :=
   of_map fun x => by
-    unfold finaliseReplyUnheldPop
-    split
-    · split
-      · rename_i hOk
-        rw [SchedContextOps.settleReturnedContext_getTcb?]
-        unfold returnUnheldSchedContextResolved at hOk
-        split at hOk
-        · cases hOk
-        · rename_i st' _ _ _
-          obtain ⟨_, _, ot, -, -, -, -, hO, -, -, hO', tBwd, tFwd, -, -⟩ :=
-            returnUnheldSchedContext_objects hInv hOk
-          by_cases e : x.toObjId = c.toObjId
-          · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO'),
-              (SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO)]
-            rfl
-          · cases h1 : st.getTcb? x with
-            | some t0 =>
-              rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr
-                (tFwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1))]
-            | none =>
-              cases h2 : st'.getTcb? x with
-              | none => rfl
-              | some t1 =>
-                have := tBwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h2)
-                rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
-                cases h1
-      · rfl
-    · rfl
+    rcases finaliseReplyUnheldPop_cases st r c with e | ⟨_, _, st', _, _, hOk, e⟩ |
+        ⟨_, _, _, _, _, _, hOk, e⟩ <;> rw [e]
+    · rw [SchedContextOps.settleReturnedContext_getTcb?]
+      obtain ⟨_, _, ot, -, -, -, -, hO, -, -, hO', tBwd, tFwd, -, -⟩ :=
+        returnUnheldSchedContext_objects hInv hOk
+      by_cases e : x.toObjId = c.toObjId
+      · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO'),
+          (SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO)]
+        rfl
+      · cases h1 : st.getTcb? x with
+        | some t0 =>
+          rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr
+            (tFwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1))]
+        | none =>
+          cases h2 : st'.getTcb? x with
+          | none => rfl
+          | some t1 =>
+            have := tBwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h2)
+            rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
+            cases h1
+    · rw [severUnheldSchedContext_getTcb?_eq hInv hOk]
 
 /-- The reply-frame cut writes replies and contexts alone. -/
 theorem of_cutThreadReplyFrameOut (st : SystemState) (tcb : TCB) (hInv : st.objects.invExt) :

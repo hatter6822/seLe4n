@@ -362,12 +362,18 @@ theorem endpointReplyOnCore_mappingStage {replier target : SeLe4n.ThreadId} {msg
         (fun h => endpointReply_kindPreservingWrite _ _ _ _ _ h hS) hA hInv
 
 /-- **The pop at an unheld head is a mapping stage**: the unheld pop's three
-stores keep every object's kind, and the settle writes scheduler links alone. -/
+stores keep every object's kind, and the settle writes scheduler links alone;
+the sever's two stores keep every kind as well. -/
 theorem popUnheldReplyHead_mappingStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {home : CoreId}
     (h : popUnheldReplyHead st rid target home = .ok st') : MappingStage st st' := by
-  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨_, _, st1, -, -, hP, rfl⟩
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨_, _, st1, -, -, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
   · exact MappingStage.refl _
+  rotate_left
+  · exact MappingStage.of_kindPreservingWrite
+      (fun hI => severUnheldSchedContext_objects_invExt hI hS)
+      (fun hI => severUnheldSchedContext_kindPreservingWrite hI hS)
   · exact (MappingStage.of_kindPreservingWrite
       (fun hI => returnUnheldSchedContext_objects_invExt hI hP)
       (fun hI => returnUnheldSchedContext_kindPreservingWrite hI hP)).trans
@@ -383,8 +389,10 @@ theorem applyReplyDonationOnCore_mappingStage {st st' : SystemState} {rid : SeLe
   refine MappingStage.of_kindPreservingWrite
     (fun hI => applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hI h) fun hI => ?_
   rcases applyReplyDonationOnCore_objects_frame _ _ _ _ _ h with
-    ⟨-, hO⟩ | ⟨_, _, _, -, -, -, hR, hA⟩ | ⟨_, _, _, s, hR, hA⟩
+    ⟨-, hO⟩ | ⟨_, _, _, -, -, -, hR, hA⟩ | ⟨_, _, _, s, hR, hA⟩ | ⟨_, _, -, -, -, hS⟩
   · exact kindPreservingWrite.of_objects_eq hO
+  rotate_left 2
+  · exact severUnheldSchedContext_kindPreservingWrite hI hS
   · exact (returnUnheldSchedContext_kindPreservingWrite hI hR).trans hA.kindPreserving
   · exact (returnDonatedSchedContext_kindPreservingWrite hI hR).trans hA.kindPreserving
 

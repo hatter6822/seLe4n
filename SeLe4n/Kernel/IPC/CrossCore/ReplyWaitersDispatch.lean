@@ -264,12 +264,18 @@ theorem applyReceiveLegPipHandoff_replyViews_eq (st : SystemState) (r d w : SeLe
     · rfl
 
 /-- **The pop at an unheld head keeps the reply views**: it rewrites the
-recipient's binding and settles the context — no reply-view field. -/
+recipient's binding and settles the context, or severs the context and writes
+no thread — no reply-view field. -/
 theorem popUnheldReplyHead_replyViews_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {home : CoreId} (hInv : st.objects.invExt)
     (h : popUnheldReplyHead st rid target home = .ok st') : st'.replyViews = st.replyViews := by
-  rcases popUnheldReplyHead_ok_cases h with ⟨-, rfl⟩ | ⟨scId, st1, -, h1, rfl⟩
+  rcases popUnheldReplyHead_ok_cases h with ⟨-, rfl⟩ | ⟨scId, st1, -, h1, rfl⟩ | ⟨_, -, -, hS⟩
   · rfl
+  rotate_left
+  · obtain ⟨_, -, hP⟩ := severUnheldSchedContextResolved_ok_decompose hS
+    obtain ⟨-, -, -, -, -, -, tBwd, tFwd, -, -⟩ := severUnheldSchedContext_objects hInv hP
+    exact replyViews_eq_of_tcbs (fun k t0 hk => ⟨t0, tFwd k t0 hk, rfl⟩)
+      (fun k t' hk => ⟨t', tBwd k t' hk⟩)
   · obtain ⟨n, -, hPop⟩ := returnUnheldSchedContextResolved_ok_decompose h1
     obtain ⟨hF, hB⟩ := returnUnheldSchedContext_tcb_rewrite hInv hPop
     rw [settleReturnedContext_replyViews_eq]

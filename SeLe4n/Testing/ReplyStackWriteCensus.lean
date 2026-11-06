@@ -833,6 +833,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.FrozenOps.frozenReturnDonatedSchedContext,
       .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
+    -- WS-ZA ZA6.34: the frozen unheld pop and its sever.
+  , (`SeLe4n.Kernel.FrozenOps.frozenReturnUnheldSchedContext,
+      .mirrors `SeLe4n.Kernel.returnUnheldSchedContext)
+  , (`SeLe4n.Kernel.FrozenOps.frozenSeverUnheldSchedContext,
+      .mirrors `SeLe4n.Kernel.severUnheldSchedContext)
     -- The cut itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
     -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation
@@ -927,6 +932,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- Its in-place form: on the states its gate admits it is that pop.
   , (`SeLe4n.Kernel.returnUnheldSchedContextInPlace,
       .states [`SeLe4n.Kernel.returnUnheldSchedContextInPlace_preserves_donationChainWellFormed])
+    -- WS-ZA ZA6.34: `reply_pop` at an unheld head whose caller holds a context
+    -- of its own: the context's head moved to the frame below and the head
+    -- pop, no context handed on.
+  , (`SeLe4n.Kernel.severUnheldSchedContext,
+      .states [`SeLe4n.Kernel.severUnheldSchedContext_preserves_donationChainWellFormed])
     -- ---------------------------------------------------------------------
     -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
     -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects

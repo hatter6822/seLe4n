@@ -278,20 +278,19 @@ private def fo004f_replyRevertsPriorityInheritance : IO Unit := do
           expect "a server with no donation stays runnable"
             (inBucket st' 150 ⟨3⟩)
 
-/-- FO-004g (PR #895 review round 15): **a caller with no recorded server is not
-repliable.**
+/-- FO-004g (PR #895 review round 15; WS-ZA ZA6.34): **a caller with no recorded
+server is answered.**
 
-Both live spellings answer `.replyCapInvalid` for `.blockedOnReply _ none` — the
-bare `endpointReply` and `endpointReplyOnCore` — and the live comment records why
-the `none => true` branch was retired: every production path records `some
-receiver`, so the `none` case is invariant drift, and letting a reply through
-there was rated a confused-deputy risk (AK1-B / I-H02).  This mirror bound the
-recorded server and never read it.
+A server's finalisation forgets the callers blocked on it, so `.blockedOnReply _
+none` is a reachable state, and both live spellings answer it — the bare
+`endpointReply` and `endpointReplyOnCore` — as seL4-MCS's `doReplyTransfer` does:
+the presented reply capability is the authority.  Until ZA6.34 both refused it
+(AK1-B / I-H02), fail-closed under an assumption the server finalisation
+retires, and this scenario pinned the refusal.
 
-The control replies to the SAME state with a server recorded, so the refusal is
-known to be about the missing server rather than about anything else in the
-fixture. -/
-private def fo004g_replyNeedsARecordedServer : IO Unit := do
+The control replies to the SAME state with a server recorded, so the delivery is
+known to be the same one either way. -/
+private def frozenReplyAnswersAnUnrecordedCaller : IO Unit := do
   let rid : SeLe4n.ReplyId := ⟨505⟩
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩) }
   let mkState (server? : Option SeLe4n.ThreadId) : FrozenSystemState :=
@@ -301,14 +300,20 @@ private def fo004g_replyNeedsARecordedServer : IO Unit := do
        (⟨3⟩, .tcb (mkTcb 3)), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg (mkState none) with
-  | .ok _ => throw <| IO.userError "a reply with no recorded server must be refused"
-  | .error e => expect "refused as an invalid reply capability" (e == .replyCapInvalid)
-  -- ...and nothing is committed: the composite refuses for the same reason.
+  | .ok ((), st) =>
+      match st.getTcb? ⟨2⟩ with
+      | some t => expect "a caller with no recorded server is answered" (t.ipcState == .ready)
+      | none => throw <| IO.userError "target TCB missing"
+  | .error _ => throw <| IO.userError "a reply with no recorded server must be delivered"
+  -- ...and the composite answers it too: the pop at the answered frame (here it
+  -- heads nothing) and no reversion, since no server is recorded.
   match frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg (mkState none) with
-  | .ok _ => throw <| IO.userError "the composite must refuse it too"
-  | .error e => expect "composite refuses identically" (e == .replyCapInvalid)
-  -- The control: the same fixture with a server recorded goes through, so the
-  -- refusal above is about `replyTarget` and not about the rest of the state.
+  | .ok ((), st) =>
+      match st.getTcb? ⟨2⟩ with
+      | some t => expect "the composite answers it too" (t.ipcState == .ready)
+      | none => throw <| IO.userError "target TCB missing"
+  | .error _ => throw <| IO.userError "the composite must deliver it too"
+  -- The control: the same fixture with a server recorded goes through as well.
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg (mkState (some ⟨3⟩)) with
   | .ok ((), st) =>
       match st.getTcb? ⟨2⟩ with
@@ -1441,9 +1446,11 @@ Two halves, because the two divergences this round found fail differently.  The
 first gives the recorded server an inherited boost, so a composite that skips
 the revert leaves a `pipBoost` the live one clears — a TCB-field disagreement
 `frozenStateAgrees` sees.  The second drops the recorded server from the
-caller's `ipcState`, where the live operation refuses and a composite missing
-the guard succeeds — a disagreement only the refusal half of `frozenRunAgrees`
-can see, which is why that half exists.
+caller's `ipcState` — the shape a server's finalisation leaves (WS-ZA ZA6.34) —
+which both sides now answer as seL4-MCS's `doReplyTransfer` does: the reply
+delivered, no reversion run, since no server is recorded to revert.  Until
+ZA6.34 both sides refused it, and the half compared two refusals; it compares
+two deliveries now, with a control that the live side really delivers.
 
 **...and against WHICH live operation** (PR #895 review round 22).  This compared
 the frozen composite against `endpointReplyWithDonation` — the *single-core*
@@ -1489,21 +1496,24 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
       (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze ist))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffB diffA msg) ist.state))
-  -- The refusal half: a caller whose `ipcState` records no server at all.  Both
-  -- sides must decline it with the same error — the live one has since AK1-B
-  -- (I-H02), which rated letting a reply through there a confused-deputy risk.
+  -- The no-server half: a caller whose `ipcState` records no server at all —
+  -- its server's finalisation forgot it (WS-ZA ZA6.34).  Both sides answer it:
+  -- the presented reply capability is the authority, as in seL4-MCS's
+  -- `doReplyTransfer`.  AK1-B (I-H02) had both refuse it, fail-closed under an
+  -- assumption the server finalisation retires; the authority gates it rated
+  -- the confused-deputy path on (the cap names the caller) still run.
   let unrecorded : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply diffEpId none))
   let ist' := diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) unrecorded) (diffTcb 63))
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA) }
-  expect "FO-041: both refuse a caller with no recorded server"
+  expect "FO-041: both answer a caller with no recorded server"
     (frozenRunAgrees unitResultAgrees
       (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze ist'))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffB diffA msg) ist'.state))
-  expect "FO-041 control: and the live side really refuses (not a shared success)"
-    (liveReplySpine diffB diffA msg ist'.state).toOption.isNone
+  expect "FO-041 control: and the live side really answers (not a shared refusal)"
+    (liveReplySpine diffB diffA msg ist'.state).toOption.isSome
   -- **The delegated half** (PR #895 review round 22): the replier holds the
   -- caller's reply capability without being the recorded server.  `diffDelegate`
   -- is a third thread, so `replier ≠ expected` and the two candidate live
@@ -3225,6 +3235,95 @@ private def differentialScenarios :
     (.endpointCallParks,                differentialEndpointCallAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyAgrees) ]
 
+/-- FO-045 (WS-ZA ZA6.34): **a frame heading a context no thread holds is popped,
+on both surfaces.**
+
+The answered caller's server was finalised: the caller records no server
+(`.blockedOnReply _ none`) and the context its Call lent heads the caller's
+frame, bound to nobody.  seL4-MCS's `reply_pop` hands it back only when the
+caller holds none (`if (tcb->tcbSchedContext == NULL) schedContext_donate(sc,
+tcb)`); otherwise it pops the head off the context alone.  Both halves run the
+whole operation on both surfaces, with controls that the pop really fired: the
+first binds the context to the caller, the second leaves the caller its own
+context and the popped one bound to nobody. -/
+private def differentialEndpointReplyPopsUnheldHead : IO Unit := do
+  let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat 72
+  let ownScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 67
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
+  let unheldSc : SeLe4n.Kernel.SchedContext :=
+    { diffDonatedSc (some rid) with boundThreadCode := 0 }
+  let mkCaller (own? : Option SeLe4n.SchedContextId) : TCB :=
+    (TCB.setIpcState { diffTcb 62 with
+      replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
+      scBindingScCode := (match own? with
+        | some s => SeLe4n.Kernel.SchedContextBinding.scCode (.bound s)
+        | none => 0),
+      scBindingOwnerCode := (match own? with
+        | some s => SeLe4n.Kernel.SchedContextBinding.ownerCode (.bound s)
+        | none => 0) } (.blockedOnReply diffEpId none))
+  let mkState (own? : Option SeLe4n.SchedContextId) : IntermediateState :=
+    let base := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+      (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) (mkCaller own?)) (diffTcb 65))
+      rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA),
+            next := some (.head diffScId) })
+      diffScId unheldSc
+    match own? with
+    | some s => diffAddSchedContext base s
+        { scId := s, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+          deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+          boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), scReply := none,
+          isActive := true }
+    | none => base
+  -- ### Half one: the caller holds nothing, so the context is donated back.
+  let donating := mkState none
+  expect "FO-045 control: the answered frame heads a context no thread holds"
+    (SeLe4n.Kernel.replyFrameHeadHolder? donating.state rid == none
+      && SeLe4n.Kernel.replyFrameHeadContext? donating.state rid == some diffScId)
+  expect "FO-045 control: the live operation succeeds"
+    (liveReplySpine diffDelegate diffA msg donating.state).toOption.isSome
+  expect "FO-045: the frozen pop binds the context to the answered caller"
+    (match (frozenEndpointReplyWithDonationReturn diffDelegate diffA rid msg
+              (freeze donating)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false)
+     | none => false)
+  expect "FO-045: and the whole frozen OPERATION agrees with the live one"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffDelegate diffA rid msg (freeze donating))
+      (liveWithTaint .reply diffDelegate (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffDelegate diffA msg) donating.state))
+  -- ### Half two: the caller holds its own context, so the head is severed.
+  let severing := mkState (some ownScId)
+  expect "FO-045 half two control: the caller holds a context of its own"
+    (match severing.state.getTcb? diffA with
+     | some t => t.schedContextBinding == .bound ownScId
+     | none   => false)
+  expect "FO-045 half two control: the live operation succeeds"
+    (liveReplySpine diffDelegate diffA msg severing.state).toOption.isSome
+  expect "FO-045 half two: the frozen caller keeps its own context"
+    (match (frozenEndpointReplyWithDonationReturn diffDelegate diffA rid msg
+              (freeze severing)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == .bound ownScId
+          | none   => false)
+     | none => false)
+  expect "FO-045 half two: ...and the popped context is bound to nobody, off the stack"
+    (match (frozenEndpointReplyWithDonationReturn diffDelegate diffA rid msg
+              (freeze severing)).toOption with
+     | some (_, post) =>
+         (match post.getSchedContext? diffScId with
+          | some sc => sc.boundThread.isNone && sc.scReply.isNone
+          | none    => false)
+     | none => false)
+  expect "FO-045 half two: and the whole frozen OPERATION agrees with the live one"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffDelegate diffA rid msg (freeze severing))
+      (liveWithTaint .reply diffDelegate (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffDelegate diffA msg) severing.state))
+
 /-- ...and the scenarios that compare a branch's **whole live operation**, not
 only its leg (PR #895 review round 15).
 
@@ -3250,7 +3349,8 @@ private def operationDifferentialScenarios :
   [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyDonationAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSevers),
-    (.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin) ]
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyPopsUnheldHead) ]
 
 /-- The claim and the scenarios name the same syscalls, in both directions: a
 scenario for a syscall the table does not claim, or a claim with no scenario,
@@ -3337,7 +3437,7 @@ def main : IO Unit := do
   fo004d_replyOffStackNeedsNoPop
   fo004e_replyDeschedulesTheServer
   fo004f_replyRevertsPriorityInheritance
-  fo004g_replyNeedsARecordedServer
+  frozenReplyAnswersAnUnrecordedCaller
   fo005_replyDelegatedReplier
   fo005b_replyWrongPresentedCap
   IO.println "--- TPH-006: Frozen Scheduler Tick ---"

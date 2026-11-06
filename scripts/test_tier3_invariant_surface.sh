@@ -2676,7 +2676,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSched
 run_check "INVARIANT" rg -n 'FO-044: the live pop binds the context to the ORIGIN' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'FO-044 half two: the resolver DECLINES an origin whose frame heads the context' tests/FrozenOpsSuite.lean
 run_negative_check "INVARIANT" rg -n 'FO-044 half two: the resolver DECLINES a reply-blocked origin' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n 'differentialEndpointReplyRedirectsToOrigin\) \]' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialEndpointReplyRedirectsToOrigin\)(,| \])' tests/FrozenOpsSuite.lean
 # --- WS-HP HP10.9: the depth-two payoff -------------------------------------
 # The theorem this workstream exists to make true, and the residue HP6's splice
 # PROVABLY could not reach: at depth two the frame the removal takes off the
@@ -17959,7 +17959,10 @@ run_check "INVARIANT" bash -lc 'rg -n "FO-043 NEGATIVE: the frozen removal does 
 # frame's links anyway, so a composite-only assertion about them tests `consumed`
 # rather than the splice -- an inert witness reading as coverage.
 run_check "INVARIANT" bash -lc 'rg -n "FO-043: the frozen PRIMITIVE writes all three links, clearing both of the cut frame.s own" tests/FrozenOpsSuite.lean'
-run_check "INVARIANT" bash -lc 'rg -n "^    \(\.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin\) \]" tests/FrozenOpsSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "^    \(\.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin\)(,| \])" tests/FrozenOpsSuite.lean'
+# WS-ZA ZA6.34: and FO-045, the unheld pop's two arms (the donation to a caller
+# holding no context, the sever under one that holds its own), is registered.
+run_check "INVARIANT" bash -lc 'rg -n "^    \(\.endpointReplyToBlockedCaller,     differentialEndpointReplyPopsUnheldHead\)(,| \])" tests/FrozenOpsSuite.lean'
 # The frozen reply removes before it consumes, in the order the live one does.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*let st. := frozenCutReplyFrameOutOrSelf st.. replyId[^\n]*(\n([ \t][^\n]*)?)*\(\.reply r\.consumed\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # NEGATIVE, token-preserving -- it keeps both steps and swaps them.
@@ -18386,6 +18389,39 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonatio
 # assumption the unheld pop retires, and it is gone.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*\(st, \.error \.replyCapInvalid\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*      \| none =>\n(([ \t][^\n]*)?\n)*          match answeredReplyObject\? st target with\n          \| none => \(st1, \.ok replySgi\?\)\n          \| some rid =>\n(([ \t][^\n]*)?\n)*              match applyReplyDonationOnCore st1 rid targetV" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+
+# (7b) WS-ZA ZA6.34: the unheld pop is seL4-MCS's `reply_pop` as written -- it
+# donates the context back only to a caller holding none, and otherwise severs:
+# the head comes off the context, the context is bound to no one, and nothing is
+# handed back.  Both the specification pop and the finalise pop route on the
+# recipient's acceptability, and each compiled form keeps the sever arm.
+run_check "INVARIANT" rg -n '^def severUnheldSchedContext \(st : SystemState\)' SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def donationSeverSchedContext ' SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def popUnheldReplyHead \(st[^\n]*(\n([ \t][^\n]*)?)*    if donationRecipientAcceptable st target then\n(([ \t][^\n]*)?\n)*    else severUnheldSchedContextResolved st scId" SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def popUnheldReplyHeadImpl[^\n]*(\n([ \t][^\n]*)?)*    else severUnheldSchedContextResolved st scId" SeLe4n/Kernel/IPC/Operations/UnheldContextPopInPlace.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def finaliseReplyUnheldPop \(st[^\n]*(\n([ \t][^\n]*)?)*      match severUnheldSchedContextResolved st s with" SeLe4n/Kernel/IPC/Operations/CancelAll.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def finaliseReplyUnheldPopImpl[^\n]*(\n([ \t][^\n]*)?)*      match severUnheldSchedContextResolved st s with" SeLe4n/Kernel/IPC/Operations/CancelAll.lean'
+run_check "INVARIANT" rg -n '^theorem finaliseReplyUnheldPop_cases($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The sever keeps the IPC invariant, the chain, the lent-context heads and the
+# projection, with no hypothesis beyond the store's own.
+run_check "INVARIANT" rg -n '^theorem severUnheldSchedContext_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/UnheldContextPop.lean
+run_check "INVARIANT" rg -n '^theorem severUnheldSchedContext_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/UnheldContextPop.lean
+run_check "INVARIANT" rg -n '^theorem severUnheldSchedContext_keepsLentContextHeads($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/UnheldContextPop.lean
+run_check "INVARIANT" rg -n '^theorem severUnheldSchedContext_head_unlinked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/UnheldContextPop.lean
+run_check "INVARIANT" rg -n '^theorem severUnheldSchedContext_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+run_check "INVARIANT" rg -n '^theorem severUnheldSchedContext_keyFrame($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean
+# NEGATIVE: token-preserving -- the sever keeps its name and hands the context to
+# the caller anyway, which is the donation `reply_pop` withholds.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def severUnheldSchedContext \(st[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding" SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean'
+# The frozen mirror routes the same way, and the frozen reply answers a caller
+# recording no server rather than refusing it.
+run_check "INVARIANT" rg -n '^def frozenSeverUnheldSchedContext ' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenReturnUnheldSchedContext ' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenPopUnheldReplyHead[^\n]*(\n([ \t][^\n]*)?)*      if frozenDonationRecipientAcceptable st target then\n        frozenReturnUnheldSchedContext st scId target newOwner\?\n      else frozenSeverUnheldSchedContext st scId newOwner\?" SeLe4n/Kernel/FrozenOps/Core.lean'
+# The recorded server is bound and never read: NEGATIVE, a match on it, which is
+# the shape the retired refusal took.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply [^\n]*(\n([ \t][^\n]*)?)*        \| \.blockedOnReply _epId _replyTarget =>" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply [^\n]*(\n([ \t][^\n]*)?)*match _?replyTarget with" SeLe4n/Kernel/FrozenOps/Operations.lean'
 
 # (8) HP4.6 -- the pop validates the thread it is about to rewrite.  The
 # head-driven recipient is the answered caller, which no binding the operation

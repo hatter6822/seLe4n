@@ -223,9 +223,10 @@ def applyReplyDonation (st : SystemState) (rid : SeLe4n.ReplyId)
   let target : SeLe4n.ThreadId := targetVtid.val
   match replyFrameHeadHolder? st rid with
   -- **WS-ZA ZA6.34**: a frame heading a context no thread holds (its server was
-  -- finalised) is popped as seL4-MCS's `reply_pop` pops it, the context donated
-  -- to the answered caller (`popUnheldReplyHead`); a frame heading nothing pops
-  -- nothing.
+  -- finalised) is popped as seL4-MCS's `reply_pop` pops it (`popUnheldReplyHead`):
+  -- the context donated to the answered caller, or, where that caller holds a
+  -- context of its own, the head popped off the context alone; a frame heading
+  -- nothing pops nothing.
   | none => popUnheldReplyHead st rid target Concurrency.bootCoreId
   | some (scId, holder) =>
       -- The thread that loses the context is the context's own `boundThread`,

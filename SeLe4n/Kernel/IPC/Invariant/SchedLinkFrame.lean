@@ -1226,6 +1226,27 @@ theorem SchedLinkFrame.storeDonationHeadPop {st st' : SystemState} {scId : SeLe4
   exact ⟨key _ (fun _ _ => rfl), key _ (fun _ _ => rfl), key _ (fun _ _ => rfl),
     by rw [storeDonationHeadPop_scheduler_eq h]⟩
 
+/-- **The sever writes no scheduling link**: the context stored over itself
+with a new head and origin — no budget, binding code or release field — then
+the head pop. -/
+theorem SchedLinkFrame.severUnheldSchedContext {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.severUnheldSchedContext st scId newOwner? = .ok st') :
+    SchedLinkFrame st st' := by
+  obtain ⟨sc, head?, s1, hSc, -, -, hS1, hS2⟩ := severUnheldSchedContext_ok_storeChain h
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hInv hS1
+  have p1 : ∀ {α : Type} (p : Option KernelObject → α),
+      (p (some (.schedContext (donationSeverSchedContext sc
+        (head?.bind (fun q => q.2.prev)) newOwner?))) = p (some (.schedContext sc))) →
+      ∀ oid : SeLe4n.ObjId, p s1.objects[oid]? = p st.objects[oid]? := by
+    intro α p hp oid
+    by_cases e : oid = scId.toObjId
+    · subst e; rw [storeObject_objects_eq st s1 _ _ hInv hS1, hSc]; exact hp
+    · rw [storeObject_objects_ne st s1 _ _ _ e hInv hS1]
+  exact (⟨p1 _ rfl, p1 _ rfl, p1 _ rfl, by rw [storeObject_scheduler_eq st s1 _ _ hS1]⟩ :
+    SchedLinkFrame st s1).trans (SchedLinkFrame.storeDonationHeadPop hInv1 hS2)
+
 /-- **The unheld pop keeps every scheduling-link invariant**: it writes no
 budget, affinity, release field or release slot, and no replenishment queue;
 the binding pair it adds is reciprocal (the context names its recipient, the
@@ -1388,22 +1409,17 @@ theorem returnUnheldSchedContext_boundThread {st st' : SystemState}
   simp only [SeLe4n.ThreadId.optCode, SeLe4n.ThreadId.ofOptCode]
 
 /-- ...and so does a finalised reply's pop off such a context with its settle,
-or its refusal. -/
+its sever, or its refusal. -/
 theorem finaliseReplyUnheldPop_preserves_schedContextLinkInvariant (st : SystemState) (r : Reply)
     (c : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hI : schedContextLinkInvariant st) :
     schedContextLinkInvariant (finaliseReplyUnheldPop st r c) := by
-  unfold finaliseReplyUnheldPop
-  split
-  · split
-    · rename_i hOk
-      unfold returnUnheldSchedContextResolved at hOk
-      split at hOk
-      · cases hOk
-      · exact settleReturnedContext_preserves_schedContextLinkInvariant
-          (returnUnheldSchedContext_preserves_schedContextLinkInvariant hInv hI hOk)
-          (returnUnheldSchedContext_boundThread hInv hOk)
-    · exact hI
+  rcases finaliseReplyUnheldPop_cases st r c with e | ⟨_, _, _, _, _, hOk, e⟩ |
+      ⟨_, _, _, _, _, _, hOk, e⟩ <;> rw [e]
   · exact hI
+  · exact settleReturnedContext_preserves_schedContextLinkInvariant
+      (returnUnheldSchedContext_preserves_schedContextLinkInvariant hInv hI hOk)
+      (returnUnheldSchedContext_boundThread hInv hOk)
+  · exact (SchedLinkFrame.severUnheldSchedContext hInv hOk).preserves hI
 
 -- ============================================================================
 -- §8  The finalisation

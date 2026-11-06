@@ -317,12 +317,17 @@ theorem of_returnUnheldSchedContext {st st' : SystemState} {scId : SeLe4n.SchedC
         rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
         cases h1
 
-/-- The pop at an unheld head: the unheld pop, then the settle. -/
+/-- The pop at an unheld head: the unheld pop, then the settle; or the sever,
+which writes no thread. -/
 theorem of_popUnheldReplyHead {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {home : CoreId} (hInv : st.objects.invExt)
     (h : popUnheldReplyHead st rid target home = .ok st') : savedRegsUnwritten st st' := by
-  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hP, rfl⟩
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
   · exact .refl hInv
+  rotate_left
+  · exact ⟨.of_map fun x => by rw [severUnheldSchedContext_getTcb?_eq hInv hS],
+      severUnheldSchedContext_objects_invExt hInv hS⟩
   · have h1 := of_returnUnheldSchedContext hInv hP
     exact h1.trans (of_settle _ _ _ h1.2)
 

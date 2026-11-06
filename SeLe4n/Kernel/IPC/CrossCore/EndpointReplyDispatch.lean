@@ -126,8 +126,9 @@ def applyReplyDonationOnCore (st : SystemState) (rid : SeLe4n.ReplyId)
   match replyFrameHeadHolder? st rid with
   -- **WS-ZA ZA6.34**: a frame heading a context no thread holds -- its server
   -- was finalised and returned the context to no one -- is popped as seL4-MCS's
-  -- `reply_pop` pops it, the context donated to the answered caller
-  -- (`popUnheldReplyHead`); a frame heading nothing pops nothing.
+  -- `reply_pop` pops it (`popUnheldReplyHead`): the context donated to the
+  -- answered caller, or, where that caller holds a context of its own, the head
+  -- popped off the context alone; a frame heading nothing pops nothing.
   | none => popUnheldReplyHead st rid target ownerHome
   | some (scId, holder) =>
       match SeLe4n.ThreadId.toValid? holder with
@@ -499,7 +500,7 @@ theorem returnDonatedSchedContext_purgeReplenishCores {st st' : SystemState}
 
 /-- **Where the pop at an unheld head writes a replenish queue**: only the
 purge's core, which the pop keeps, and `home`, where the settle places the
-context. -/
+context; the sever writes none. -/
 theorem popUnheldReplyHead_replenishQueueOnCore_ne {st st' : SystemState}
     {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId} {home c : Concurrency.CoreId}
     (hObjInv : st.objects.invExt)
@@ -507,8 +508,12 @@ theorem popUnheldReplyHead_replenishQueueOnCore_ne {st st' : SystemState}
         c ∉ SchedContextOps.purgeReplenishCores st scId)
     (hTo : c ≠ home) (h : popUnheldReplyHead st rid target home = .ok st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  rcases popUnheldReplyHead_ok_cases h with ⟨_, rfl⟩ | ⟨scId, st1, hH, hR, rfl⟩
+  rcases popUnheldReplyHead_ok_cases h with ⟨_, rfl⟩ | ⟨scId, st1, hH, hR, rfl⟩ |
+      ⟨_, -, -, hS⟩
   · rfl
+  rotate_left
+  · obtain ⟨_, -, hP⟩ := severUnheldSchedContextResolved_ok_decompose hS
+    rw [severUnheldSchedContext_scheduler_eq hP]
   · obtain ⟨_, _, hP⟩ := returnUnheldSchedContextResolved_ok_decompose hR
     have hNot : c ∉ SchedContextOps.purgeReplenishCores st1 scId := by
       rw [SchedContextOps.purgeReplenishCores_of_linksAgree
@@ -671,7 +676,10 @@ links (WS-ZA ZA4.5).
 **WS-HP HP4.3**: the `none` arm names the head-driven trigger
 (`answeredFrameHeadContext?`) rather than the binding-driven resolver it
 replaces, and the `some` arm's return is stated at the holder-as-source,
-answered-caller-as-destination argument order the trigger produces. -/
+answered-caller-as-destination argument order the trigger produces.
+
+**WS-ZA ZA6.34**: a fourth arm, the sever — the unheld head's caller holds a
+context of its own, so `reply_pop` pops the head and hands nothing back. -/
 theorem applyReplyDonationOnCore_objects_frame
     (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
     (ownerHome : CoreId)
@@ -682,17 +690,23 @@ theorem applyReplyDonationOnCore_objects_frame
         replyStackOuterCaller? st scId = .ok newOwner? ∧
         returnUnheldSchedContext st scId targetVtid.val newOwner? = .ok st' ∧
         st''.objectsAgreeOffSchedulerLinks st')
-    ∨ ∃ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    ∨ (∃ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
         (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
         returnDonatedSchedContext st holder scId
           (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
-        st''.objectsAgreeOffSchedulerLinks st' := by
+        st''.objectsAgreeOffSchedulerLinks st')
+    ∨ ∃ (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId),
+        replyFrameHeadHolder? st rid = none ∧ replyFrameHeadContext? st rid = some scId ∧
+        replyStackOuterCaller? st scId = .ok newOwner? ∧
+        severUnheldSchedContext st scId newOwner? = .ok st'' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNone, hPop⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩
-  · rcases popUnheldReplyHead_objects_frame hPop with ⟨hN, rfl⟩ | ⟨scId, n, st1, hH, hN, hP, rfl⟩
+  · rcases popUnheldReplyHead_objects_frame hPop with ⟨hN, rfl⟩ | ⟨scId, n, st1, hH, hN, hP, rfl⟩ |
+        ⟨scId, n, hH, hN, hP⟩
     · exact Or.inl ⟨hN, rfl⟩
     · exact Or.inr (Or.inl ⟨scId, n, st1, hNone, hH, hN, hP,
         .of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ _ _)⟩)
-  · refine Or.inr (Or.inr ⟨scId, holderVtid.val, n, st', hRet, ?_⟩)
+    · exact Or.inr (Or.inr (Or.inr ⟨scId, n, hNone, hH, hN, hP⟩))
+  · refine Or.inr (Or.inr (Or.inl ⟨scId, holderVtid.val, n, st', hRet, ?_⟩))
     rw [hEq]
     exact SystemState.objectsAgreeOffSchedulerLinks.trans
       (.of_runLinks (descheduleAtPlacement_objectsAgreeOffRunLinks _ _))
@@ -786,8 +800,12 @@ theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNoH, hPop⟩ | ⟨scId, holderVtid, n, st', hRes, _, hRet, hEq⟩
-  · rcases popUnheldReplyHead_objects_frame hPop with ⟨_, rfl⟩ | ⟨scId, n, st1, hH, _, hP, rfl⟩
+  · rcases popUnheldReplyHead_objects_frame hPop with ⟨_, rfl⟩ | ⟨scId, n, st1, hH, _, hP, rfl⟩ |
+        ⟨_, _, -, -, hS⟩
     · exact hCons
+    rotate_left
+    · have F := SchedLinkFrame.severUnheldSchedContext hObjInv hS
+      exact replenishQueueAffinityConsistent_smp_of_frame F.binding F.aux F.replenish hCons
     · exact returnUnheldSchedContext_settle_preserves_replenishQueueAffinityConsistent_smp
         hObjInv hRef hCons (hUnheldHome scId hNoH hH) hP
   · rw [hEq]

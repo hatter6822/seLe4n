@@ -1076,14 +1076,32 @@ theorem returnUnheldSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
     by simp only [markKeyChangeFrom_objects]
        exact storeObject_preserves_objects_invExt _ _ _ _ hInv2 hS3⟩
 
+/-- **The sever covers**: a context store and the head pop, neither a key
+input, and no scheduler field. -/
+theorem severUnheldSchedContext_keyFrame {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (h : severUnheldSchedContext st scId newOwner? = .ok st') :
+    capabilityKeyFrame st st' := by
+  obtain ⟨sc, head?, s1, hSc, -, -, hS1, hS2⟩ := severUnheldSchedContext_ok_storeChain h
+  have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
+  exact ⟨keyInputsEq_trans (keyInputsEq_storeObject hInv hS1 (by rw [hSc]; rfl))
+      (storeDonationHeadPop_keyInputsEq hInv1 hS2),
+    severUnheldSchedContext_scheduler_eq h,
+    storeDonationHeadPop_preserves_objects_invExt hInv1 hS2⟩
+
 /-- The pop at an unheld head covers: the unheld pop and the returned context's
-settle. -/
+settle, or the sever. -/
 theorem popUnheldReplyHead_stepCovers (e : CoreId) {st st' : SystemState}
     {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId} {home : CoreId}
     (hInv : st.objects.invExt) (h : popUnheldReplyHead st rid target home = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
-  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨_, _, st1, -, -, hP, rfl⟩
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨_, _, st1, -, -, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
   · exact ⟨stepCovers_refl e _, hInv⟩
+  rotate_left
+  · have hF := severUnheldSchedContext_keyFrame hInv hS
+    have hM := severUnheldSchedContext_machine_eq hS
+    exact ⟨hF.stepCovers (by rw [hM]) (banksKeptOffCore_of_eq (by rw [hM])), hF.2.2⟩
   · obtain ⟨h1, h1Inv⟩ := returnUnheldSchedContext_stepCovers e hInv hP
     exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
       SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv⟩

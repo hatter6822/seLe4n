@@ -351,31 +351,6 @@ theorem replyUnheldPopAdmitted_parts {st : SystemState} {x : SeLe4n.ObjId} {r : 
     exact ⟨s, hN, by unfold TCB.replyObject; rw [hRO]; rfl⟩
   · cases h
 
-/-- **The unheld pop's two outcomes**: the state unchanged, or, the reply
-heading a context `s`, the pop of `s` back to `c` off the outer caller the reply
-stack resolves, then its settle on `c`'s home core. -/
-theorem finaliseReplyUnheldPop_cases (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
-    finaliseReplyUnheldPop st r c = st ∨
-      ∃ (s : SeLe4n.SchedContextId) (n : Option SeLe4n.ThreadId) (st' : SystemState),
-        r.next = some (.head s) ∧
-        replyStackOuterCaller? st s = .ok n ∧ returnUnheldSchedContext st s c n = .ok st' ∧
-        finaliseReplyUnheldPop st r c =
-          SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s := by
-  unfold finaliseReplyUnheldPop
-  split
-  next s hN =>
-    cases hR : returnUnheldSchedContextResolved st s c with
-    | error _ => exact Or.inl rfl
-    | ok st' =>
-      refine Or.inr ?_
-      unfold returnUnheldSchedContextResolved at hR
-      cases hO : replyStackOuterCaller? st s with
-      | error _ => rw [hO] at hR; cases hR
-      | ok n =>
-        rw [hO] at hR
-        exact ⟨s, n, st', hN, hO, hR, rfl⟩
-  next => exact Or.inl rfl
-
 /-- **What a committing head pop reads**: the context `s` the reply heads names
 the reply back, is bound to a thread `h` holding it on loan from the caller
 (`.donated s c`), and the donation return of `s` from `h` to `c` commits. -/
@@ -2264,25 +2239,31 @@ theorem returnUnheldSchedContext {st st' : SystemState} {scId : SeLe4n.SchedCont
   exact ⟨eC.trans f3.cdt, eA.trans f3.asidTable, eO ▸ f3.invExt,
     fun k => by rw [eO]; exact f3.write k⟩
 
-/-- **A reply's pop off a context no thread holds**, or nothing when it
-declines. -/
+/-- **The sever of a context no thread holds**: the context's store, then the
+pop's two reply stores. -/
+theorem severUnheldSchedContext {st st' : SystemState} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.severUnheldSchedContext st scId newOwner? = .ok st') :
+    FinaliseFrameAny st st' := by
+  obtain ⟨sc, _, s1, hSc, -, -, hS1, hClear⟩ := severUnheldSchedContext_ok_storeChain h
+  have f1 := storeObject hInv hSc (Or.inl (finaliseWritable_schedContext sc)) hS1 rfl rfl
+  exact f1.trans (storeDonationHeadPop f1.invExt hClear)
+
+/-- **A reply's pop off a context no thread holds**, its sever, or nothing when
+it declines. -/
 theorem finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
     FinaliseFrameAny st (SeLe4n.Kernel.finaliseReplyUnheldPop st r c) := by
-  unfold SeLe4n.Kernel.finaliseReplyUnheldPop
-  split
-  · split
-    · rename_i hOk
-      unfold returnUnheldSchedContextResolved at hOk
-      split at hOk
-      · cases hOk
-      · have f := returnUnheldSchedContext hInv hOk
-        exact f.trans (FinaliseFrame.of_releaseOnlyWrite
-          (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _)
-          (SchedContextOps.settleReturnedContext_agree _ _ _)
-          (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ f.invExt)).any
-    · exact .refl hInv
-  · exact .refl hInv
+  rcases finaliseReplyUnheldPop_cases st r c with e | ⟨_, _, _, _, _, hP, e⟩ |
+      ⟨_, _, _, _, _, _, hP, e⟩
+  · rw [e]; exact .refl hInv
+  · rw [e]
+    have f := returnUnheldSchedContext hInv hP
+    exact f.trans (FinaliseFrame.of_releaseOnlyWrite
+      (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _)
+      (SchedContextOps.settleReturnedContext_agree _ _ _)
+      (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ f.invExt)).any
+  · rw [e]; exact severUnheldSchedContext hInv hP
 
 /-- **A cancelled caller's donation return**: the pop, or nothing when it
 declines. -/
@@ -2587,19 +2568,14 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       rw [SystemState.unlinkReplyWaiter_cdt]; exact h)
     (fun s _ r c _ h _ _ _ _ => by
       refine Eq.trans ?_ h
-      unfold SeLe4n.Kernel.finaliseReplyUnheldPop
-      split
-      · split
-        · rename_i hOk
-          unfold returnUnheldSchedContextResolved at hOk
-          split at hOk
-          · cases hOk
-          · obtain ⟨_, _, _, s1, s2, s3, -, -, -, -, -, hS1, hClear, -, hS3, hEq⟩ :=
-              returnUnheldSchedContext_ok_storeChain _ _ _ _ _ hOk
-            rw [SchedContextOps.settleReturnedContext_cdt, hEq, markKeyChangeFrom_cdt]
-            exact (hSt hS3).trans ((storeDonationHeadPop_cdt_eq hClear).trans (hSt hS1))
-        · rfl
-      · rfl)
+      rcases finaliseReplyUnheldPop_cases s r c with e | ⟨_, _, _, _, _, hOk, e⟩ |
+          ⟨_, _, _, _, _, _, hOk, e⟩
+      · rw [e]
+      · obtain ⟨_, _, _, s1, s2, s3, -, -, -, -, -, hS1, hClear, -, hS3, hEq⟩ :=
+          returnUnheldSchedContext_ok_storeChain _ _ _ _ _ hOk
+        rw [e, SchedContextOps.settleReturnedContext_cdt, hEq, markKeyChangeFrom_cdt]
+        exact (hSt hS3).trans ((storeDonationHeadPop_cdt_eq hClear).trans (hSt hS1))
+      · rw [e]; exact severUnheldSchedContext_cdt_eq hOk)
     (fun s _ _ _ t h _ _ _ _ =>
       Lifecycle.Suspend.cutCancelledCallerHead_closed (fun s => s.cdt = st.cdt)
         (fun s0 s1 _ _ scId h0 _ _ hS => by

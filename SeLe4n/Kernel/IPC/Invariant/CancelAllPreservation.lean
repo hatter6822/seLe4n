@@ -730,85 +730,84 @@ caller: its lender's frame — the caller's reply — would head the lent contex
 thread.  None names the outer caller: its frame is the frame below the head,
 which links to the head and heads nothing.  The lent-context fact itself is
 `returnUnheldSchedContext_keepsLentContextHeads`; the settle after the pop
-writes release fields and queues alone. -/
+writes release fields and queues alone.  A caller that holds a context of its
+own is handed nothing: the sever writes no thread and keeps the bundle and the
+lender frames outright (`severUnheldSchedContext_preserves_ipcInvariantFull`,
+`severUnheldSchedContext_keepsLentContextHeads`). -/
 theorem finaliseUnheldStep_keepsFinaliseLoanBundle (s : SystemState) (x : SeLe4n.ObjId)
     (r : Reply) (c : SeLe4n.ThreadId) (t : TCB) (h : finaliseLoanBundle s)
     (hL : schedContextLinkInvariant s) (hX : s.getObject? x = some (.reply r))
     (hT : s.getTcb? c = some t) (hA : replyUnheldPopAdmitted s x r c t = true) :
     finaliseLoanBundle (finaliseReplyUnheldPop s r c) := by
   obtain ⟨sId, hN, hRO⟩ := replyUnheldPopAdmitted_parts hA
-  unfold finaliseReplyUnheldPop
-  rw [hN]
-  simp only
-  cases hOk : returnUnheldSchedContextResolved s sId c with
-  | error _ => exact h
-  | ok st' =>
-    simp only
-    unfold returnUnheldSchedContextResolved at hOk
-    cases hRes : replyStackOuterCaller? s sId with
-    | error e => rw [hRes] at hOk; cases hOk
-    | ok n =>
-      rw [hRes] at hOk
-      simp only at hOk
-      obtain ⟨sc, -, -, hSc, hB0, -, -, -, -, -, -, -, -, -, -⟩ :=
-        returnUnheldSchedContext_objects h.2.1 hOk
-      have hUnheld : ∀ (X : SeLe4n.ThreadId) (sc1 : SchedContext),
-          s.objects[sId.toObjId]? = some (.schedContext sc1) → sc1.boundThread ≠ some X := by
-        intro X sc1 h1 e
-        rw [hSc] at h1; cases h1
-        unfold SchedContext.boundThread at e; rw [hB0] at e; cases e
-      have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
-      have hFree : ∀ (X : SeLe4n.ThreadId) (tX : TCB), s.objects[X.toObjId]? = some (.tcb tX) →
-          tX.schedContextBinding.scId? ≠ some sId := by
-        intro X tX hX' e
-        cases hb : tX.schedContextBinding with
-        | unbound => rw [hb] at e; cases e
-        | bound s' =>
-          rw [hb] at e; cases e
-          obtain ⟨sc1, h1, hbt⟩ := hL.binding.1 X tX hX' _ hb
-          exact hUnheld X sc1 h1 hbt
-        | donated s' o =>
-          rw [hb] at e; cases e
-          obtain ⟨⟨sc1, h1, hbt⟩, -⟩ := h.1.donationOwnerValid X tX _ o hX' hb
-          exact hUnheld X sc1 h1 hbt
-      have hNoOwner : ∀ (X : SeLe4n.ThreadId) (tX : TCB) (s' : SeLe4n.SchedContextId),
-          s.objects[X.toObjId]? = some (.tcb tX) → tX.schedContextBinding ≠ .donated s' c := by
-        intro X tX s' hX' hb
-        obtain ⟨rid, r', hRO', hR', hN'⟩ := h.2.2 X tX s' c t hX' hb hTo
-        rw [hRO] at hRO'; cases hRO'
-        rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
-          hX] at hR'
-        cases hR'
-        rw [hN] at hN'
-        cases hN'
-        obtain ⟨⟨sc1, h1, hbt⟩, -⟩ := h.1.donationOwnerValid X tX _ c hX' hb
-        exact hUnheld X sc1 h1 hbt
-      have hOuterFree : ∀ outer, n = some outer → ∀ (X : SeLe4n.ThreadId) (tX : TCB)
-          (s' : SeLe4n.SchedContextId),
-          s.objects[X.toObjId]? = some (.tcb tX) → tX.schedContextBinding ≠ .donated s' outer := by
-        intro outer hn X tX s' hX' hBindO
-        subst hn
-        obtain ⟨-, ridH, -, below, b, -, -, -, hBelow, hBN, hBC⟩ :=
-          replyStackOuterCaller?_ok_some s sId outer hRes
-        have hBo := (SystemState.getReply?_eq_some_iff _ _ _).mp hBelow
-        obtain ⟨tcbO, hTO, hROO, -⟩ := h.1.replyCallerLinkage.1.2 below b outer hBo hBC
-        obtain ⟨rid', r', hRO', hR', hN'⟩ := h.2.2 X tX s' outer tcbO hX' hBindO hTO
-        rw [hROO] at hRO'
-        cases hRO'
-        rw [hBo] at hR'
-        have eB : b = r' := KernelObject.reply.inj (Option.some.inj hR')
-        rw [← eB, hBN] at hN'
-        cases hN'
-      have hInv1 := (FinaliseFrameAny.returnUnheldSchedContext h.2.1 hOk).invExt
-      have F := FinaliseFrame.of_releaseOnlyWrite
-        (SchedContextOps.settleReturnedContext_releaseOnlyWrite st' (determineTargetCore st' c) sId)
-        (SchedContextOps.settleReturnedContext_agree _ _ _)
-        (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv1)
-      exact ⟨settleReturnedContext_preserves_ipcInvariantFull _ _ _
-          (returnUnheldSchedContext_preserves_ipcInvariantFull h.2.1 h.1 hFree hNoOwner
-            hOuterFree hOk), F.invExt,
-        (returnUnheldSchedContext_keepsLentContextHeads h.2.1 h.2.2 h.1.donationOwnerValid
-          h.1.replyCallerLinkage.1 hRes hOk).of_loanWrite F.loan⟩
+  rcases finaliseReplyUnheldPop_cases s r c with e | ⟨sId', n, st', hN', hRes, hOk, e⟩ |
+      ⟨sId', n, st', hN', -, hRes, hOk, e⟩ <;> rw [e]
+  · exact h
+  rotate_left
+  · rw [hN] at hN'; cases hN'
+    exact ⟨severUnheldSchedContext_preserves_ipcInvariantFull h.2.1 h.1 hOk,
+      (FinaliseFrameAny.severUnheldSchedContext h.2.1 hOk).invExt,
+      severUnheldSchedContext_keepsLentContextHeads h.2.1 h.2.2 h.1.donationOwnerValid hRes hOk⟩
+  rw [hN] at hN'; cases hN'
+  obtain ⟨sc, -, -, hSc, hB0, -, -, -, -, -, -, -, -, -, -⟩ :=
+    returnUnheldSchedContext_objects h.2.1 hOk
+  have hUnheld : ∀ (X : SeLe4n.ThreadId) (sc1 : SchedContext),
+      s.objects[sId.toObjId]? = some (.schedContext sc1) → sc1.boundThread ≠ some X := by
+    intro X sc1 h1 e
+    rw [hSc] at h1; cases h1
+    unfold SchedContext.boundThread at e; rw [hB0] at e; cases e
+  have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
+  have hFree : ∀ (X : SeLe4n.ThreadId) (tX : TCB), s.objects[X.toObjId]? = some (.tcb tX) →
+      tX.schedContextBinding.scId? ≠ some sId := by
+    intro X tX hX' e
+    cases hb : tX.schedContextBinding with
+    | unbound => rw [hb] at e; cases e
+    | bound s' =>
+      rw [hb] at e; cases e
+      obtain ⟨sc1, h1, hbt⟩ := hL.binding.1 X tX hX' _ hb
+      exact hUnheld X sc1 h1 hbt
+    | donated s' o =>
+      rw [hb] at e; cases e
+      obtain ⟨⟨sc1, h1, hbt⟩, -⟩ := h.1.donationOwnerValid X tX _ o hX' hb
+      exact hUnheld X sc1 h1 hbt
+  have hNoOwner : ∀ (X : SeLe4n.ThreadId) (tX : TCB) (s' : SeLe4n.SchedContextId),
+      s.objects[X.toObjId]? = some (.tcb tX) → tX.schedContextBinding ≠ .donated s' c := by
+    intro X tX s' hX' hb
+    obtain ⟨rid, r', hRO', hR', hN'⟩ := h.2.2 X tX s' c t hX' hb hTo
+    rw [hRO] at hRO'; cases hRO'
+    rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
+      hX] at hR'
+    cases hR'
+    rw [hN] at hN'
+    cases hN'
+    obtain ⟨⟨sc1, h1, hbt⟩, -⟩ := h.1.donationOwnerValid X tX _ c hX' hb
+    exact hUnheld X sc1 h1 hbt
+  have hOuterFree : ∀ outer, n = some outer → ∀ (X : SeLe4n.ThreadId) (tX : TCB)
+      (s' : SeLe4n.SchedContextId),
+      s.objects[X.toObjId]? = some (.tcb tX) → tX.schedContextBinding ≠ .donated s' outer := by
+    intro outer hn X tX s' hX' hBindO
+    subst hn
+    obtain ⟨-, ridH, -, below, b, -, -, -, hBelow, hBN, hBC⟩ :=
+      replyStackOuterCaller?_ok_some s sId outer hRes
+    have hBo := (SystemState.getReply?_eq_some_iff _ _ _).mp hBelow
+    obtain ⟨tcbO, hTO, hROO, -⟩ := h.1.replyCallerLinkage.1.2 below b outer hBo hBC
+    obtain ⟨rid', r', hRO', hR', hN'⟩ := h.2.2 X tX s' outer tcbO hX' hBindO hTO
+    rw [hROO] at hRO'
+    cases hRO'
+    rw [hBo] at hR'
+    have eB : b = r' := KernelObject.reply.inj (Option.some.inj hR')
+    rw [← eB, hBN] at hN'
+    cases hN'
+  have hInv1 := (FinaliseFrameAny.returnUnheldSchedContext h.2.1 hOk).invExt
+  have F := FinaliseFrame.of_releaseOnlyWrite
+    (SchedContextOps.settleReturnedContext_releaseOnlyWrite st' (determineTargetCore st' c) sId)
+    (SchedContextOps.settleReturnedContext_agree _ _ _)
+    (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv1)
+  exact ⟨settleReturnedContext_preserves_ipcInvariantFull _ _ _
+      (returnUnheldSchedContext_preserves_ipcInvariantFull h.2.1 h.1 hFree hNoOwner
+        hOuterFree hOk), F.invExt,
+    (returnUnheldSchedContext_keepsLentContextHeads h.2.1 h.2.2 h.1.donationOwnerValid
+      h.1.replyCallerLinkage.1 hRes hOk).of_loanWrite F.loan⟩
 
 /-- **A holder's loan made its own keeps the bundle** (WS-ZA ZA6.34, the
 thread-side cut's last write): the holder's owner code cleared, so its binding

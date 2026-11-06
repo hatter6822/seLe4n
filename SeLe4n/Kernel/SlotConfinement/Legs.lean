@@ -361,13 +361,18 @@ theorem settleReturnedContext_confinedToCores (st : SystemState) (c : CoreId)
 
 /-- WS-ZA ZA6.34: the pop at an unheld head is per-core silent: the unheld pop
 writes objects and raises reschedule flags, and the settle writes release state;
-no run queue, current slot or register bank moves. -/
+the sever writes objects alone; no run queue, current slot or register bank
+moves. -/
 theorem popUnheldReplyHead_confinedToCores {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {home : CoreId}
     (h : popUnheldReplyHead st rid target home = .ok st') :
     observableSlotsConfinedToCores st st' [] := by
-  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hP, rfl⟩
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
   · exact observableSlotsConfinedToCores_refl _ _
+  rotate_left
+  · exact observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
+      (by rw [severUnheldSchedContext_scheduler_eq hS]) (severUnheldSchedContext_machine_eq hS)
   · simpa using observableSlotsConfinedToCores_trans
       (observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
         (returnUnheldSchedContext_scheduler_eq hP) (returnUnheldSchedContext_machine_eq hP))

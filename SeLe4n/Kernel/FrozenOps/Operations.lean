@@ -967,7 +967,7 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
     match frozenLookupTcb st targetId with
     | some targetTcb =>
         match targetTcb.ipcState with
-        | .blockedOnReply _epId replyTarget =>
+        | .blockedOnReply _epId _replyTarget =>
             -- PR #822 review (Codex), frozen mirror of E.2: authority is the **presented
             -- reply capability** `replyId` — the replier must hold a reply cap naming
             -- `targetId` as its caller, exactly like the live `.reply` arm resolves
@@ -981,29 +981,26 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
             -- (`replyObject ≠ some replyId`); a missing Reply object; or a Reply whose
             -- `caller` is not `some targetId`.  Deliver + consume the single-use Reply link
             -- (clear both reciprocal sides, mirroring `consumeCallerReply`).
-            -- **A caller with no recorded server is not repliable** (PR #895
-            -- review round 15).  Both live spellings fail closed here -- the
-            -- bare `endpointReply` (`IPC/DualQueue/Transport.lean`) and
-            -- `endpointReplyOnCore` (`IPC/CrossCore/EndpointReply.lean`) each
-            -- answer `.replyCapInvalid` for `.blockedOnReply _ none` -- and the
-            -- live comment says why: every production path that creates
-            -- `blockedOnReply` records `some receiver`, so the `none` case is
-            -- invariant drift, and the retired `none => true` branch let any
-            -- reply through, which that finding (AK1-B / I-H02) rated a
-            -- confused-deputy risk.  This mirror kept the retired behaviour: it
-            -- bound the recorded server and never read it, so a malformed
-            -- frozen state -- and `Model.freeze` copies `ipcState` verbatim --
-            -- was delivered and its Reply consumed on a surface whose whole
-            -- purpose is to agree with the live kernel.
+            -- **A caller with no recorded server is answered** (WS-ZA ZA6.34),
+            -- as both live spellings answer it -- `endpointReplyOnCore`
+            -- (`IPC/CrossCore/EndpointReply.lean`) and the bare `endpointReply`
+            -- (`IPC/DualQueue/Transport.lean`) -- and as seL4-MCS's
+            -- `doReplyTransfer` does: a server's finalisation forgets the
+            -- callers blocked on it, so `.blockedOnReply _ none` is a reachable
+            -- state, and the reply capability the replier presents is the
+            -- authority to answer it.  PR #895 review round 15 made this
+            -- mirror refuse the shape because the live legs then did (AK1-B /
+            -- I-H02, which rated the retired `none => true` a confused-deputy
+            -- risk): that refusal was fail-closed under the assumption that no
+            -- reachable state records no server, an assumption the server
+            -- finalisation retires.  The authority gates below -- the
+            -- presented reply cap is the caller's forward link and the Reply
+            -- names the caller -- are what close the confused-deputy path, and
+            -- they run on this arm as on the recorded one.
             --
-            -- The binder is `_expected` and nothing gates on it, exactly as in
+            -- The recorded server is read nowhere here, exactly as in
             -- `endpointReplyOnCore`: authority is the presented reply
-            -- capability, so a *delegated* replier is still legitimate.  What
-            -- is refused is the absence of a recorded server, not a mismatch
-            -- with it.
-            match replyTarget with
-            | none => .error .replyCapInvalid
-            | some _expected =>
+            -- capability, so a *delegated* replier is legitimate.
             let targetTcb' := (TCB.setIpcState { targetTcb with
               pendingMessage := some msg
               replyObjectCode := 0 } ThreadIpcState.ready)
@@ -1210,7 +1207,14 @@ It runs **after** the donation return, as both live compositions do, and takes
 the **recorded server** as its subject -- not the (possibly delegated) cap
 holder, which is nobody's blocking target.  Like the pop, it belongs in this
 composite and not in `frozenEndpointReply`: neither bare live reply reverts, and
-the mirror is refined against the bare one. -/
+the mirror is refined against the bare one.
+
+**...and a frame heading a context no thread holds is popped too** (WS-ZA
+ZA6.34), as the live unheld arm pops it (`frozenPopUnheldReplyHead`): the
+context donated to the answered caller, or the head popped off alone where that
+caller holds a context of its own (seL4-MCS's `reply_pop`).  A caller recording
+no server — its server's finalisation forgot it — is answered with no
+reversion, as the live spine answers it. -/
 def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
     (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
     FrozenKernel Unit :=
@@ -1236,12 +1240,30 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
                   (frozenReplyDonationRecipient st scId targetId) with
           | .error e => .error e
           | .ok st'' => .ok ((), frozenRevertPriorityInheritance st'' server)
-      | _, some server => .ok ((), frozenRevertPriorityInheritance st' server)
-      -- Unreachable since the round-15 guard: `frozenEndpointReply` refuses a
-      -- caller with no recorded server, so a reply that returned `.ok` has one.
-      -- Kept as the total match rather than as a `panic`, which is what every
-      -- other resolver in this surface does with an impossible case.
-      | _, none => .ok ((), st')
+      -- **WS-ZA ZA6.34**: a frame heading a context no thread holds -- its
+      -- server was finalised and returned the context to no one -- is popped
+      -- as the live unheld arm pops it (`frozenPopUnheldReplyHead`, read on the
+      -- state the pop runs on, as `applyReplyDonationOnCore` reads it): the
+      -- context donated to the answered caller, or, where that caller holds a
+      -- context of its own, the head popped off alone; a frame heading nothing
+      -- pops nothing.
+      | none, some server =>
+          match frozenPopUnheldReplyHead st' replyId targetId with
+          | .error e => .error e
+          | .ok st'' => .ok ((), frozenRevertPriorityInheritance st'' server)
+      -- **WS-ZA ZA6.34**: a caller recording no server -- its server was
+      -- finalised, which forgot it -- is answered as the live spine answers it:
+      -- the reply leg, then the pop at the answered frame, and no reversion,
+      -- since the walk starts at a server and none is recorded.
+      | some (scId, holder), none =>
+          match frozenApplyReplyDonation st' holder scId
+                  (frozenReplyDonationRecipient st scId targetId) with
+          | .error e => .error e
+          | .ok st'' => .ok ((), st'')
+      | none, none =>
+          match frozenPopUnheldReplyHead st' replyId targetId with
+          | .error e => .error e
+          | .ok st'' => .ok ((), st'')
 
 -- ============================================================================
 -- Q7-C3: Capability Frozen Operations

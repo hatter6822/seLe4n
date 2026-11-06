@@ -832,23 +832,21 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
 
 /-- **A finalised reply's pop off an unheld context, and its settle, cover**:
 the pop (`returnUnheldSchedContext_stepCovers`), then a release-only write
-(`settleReturnedContext_stepCovers`). -/
+(`settleReturnedContext_stepCovers`); the sever is a key frame
+(`severUnheldSchedContext_keyFrame`). -/
 theorem finaliseReplyUnheldPop_stepCovers (e : CoreId) (st : SystemState) (r : Reply)
     (c : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     stepCovers e st (finaliseReplyUnheldPop st r c) ∧
       (finaliseReplyUnheldPop st r c).objects.invExt := by
-  unfold finaliseReplyUnheldPop
-  split
-  · split
-    · rename_i hOk
-      unfold returnUnheldSchedContextResolved at hOk
-      split at hOk
-      · cases hOk
-      · have p := returnUnheldSchedContext_stepCovers e hInv hOk
-        exact ⟨stepCovers_trans p.1 (settleReturnedContext_stepCovers e _ _ _),
-          SchedContextOps.settleReturnedContext_objects_invExt _ _ _ p.2⟩
-    · exact ⟨stepCovers_refl e st, hInv⟩
+  rcases finaliseReplyUnheldPop_cases st r c with h | ⟨_, _, _, _, _, hOk, h⟩ |
+      ⟨_, _, _, _, _, _, hOk, h⟩ <;> rw [h]
   · exact ⟨stepCovers_refl e st, hInv⟩
+  · have p := returnUnheldSchedContext_stepCovers e hInv hOk
+    exact ⟨stepCovers_trans p.1 (settleReturnedContext_stepCovers e _ _ _),
+      SchedContextOps.settleReturnedContext_objects_invExt _ _ _ p.2⟩
+  · have hF := severUnheldSchedContext_keyFrame hInv hOk
+    have hM := severUnheldSchedContext_machine_eq hOk
+    exact ⟨hF.stepCovers (by rw [hM]) (banksKeptOffCore_of_eq (by rw [hM])), hF.2.2⟩
 
 /-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
 (`finaliseFinalObject_closed`): each cancel's, the notification unbind's

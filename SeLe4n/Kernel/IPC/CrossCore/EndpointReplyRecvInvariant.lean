@@ -316,8 +316,11 @@ theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
   · subst hR
     rcases popUnheldReplyHead_objects_frame
         (replyRecvPopDonation_ok_none_decompose rid target st st' h).2 with
-      ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩
+      ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩ | ⟨_, _, -, -, hS⟩
     · exact hCons
+    rotate_left
+    · have F := SchedLinkFrame.severUnheldSchedContext hObjInv hS
+      exact replenishQueueAffinityConsistent_smp_of_frame F.binding F.aux F.replenish hCons
     · exact returnUnheldSchedContext_settle_preserves_replenishQueueAffinityConsistent_smp
         hObjInv hRef hCons rfl hP
   unfold replyRecvPopDonation at h

@@ -604,8 +604,8 @@ theorem endpointReplyOnCore_preserves_queueHeadBlockedConsistent (replier target
         (wakeThread_preserves_objects_invExt st1 target c hInv1) hQ2 hR
 
 /-- The pop at an unheld head writes a context, a reply and the recipient's
-binding, then the settle: it adds no endpoint, keeps every current slot and
-every IPC state. -/
+binding, then the settle, or (the sever) a context and a reply alone: it adds no
+endpoint, keeps every current slot and every IPC state. -/
 theorem popUnheldReplyHead_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
     {home : Concurrency.CoreId} {st st' : SystemState}
     (hInv : st.objects.invExt) (h : popUnheldReplyHead st rid target home = .ok st') :
@@ -614,8 +614,14 @@ theorem popUnheldReplyHead_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadI
     (∀ c, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) ∧
     (∀ (y : SeLe4n.ThreadId) (tcb' : TCB), st'.objects[y.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState) := by
-  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hP, rfl⟩
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
   · exact ⟨fun _ _ h => h, fun _ => rfl, fun _ t h => ⟨t, h, rfl⟩⟩
+  rotate_left
+  · obtain ⟨-, -, -, -, -, -, tBwd, -, -, -⟩ := severUnheldSchedContext_objects hInv hS
+    exact ⟨severUnheldSchedContext_endpoint_backward hInv hS,
+      fun c' => by rw [severUnheldSchedContext_scheduler_eq hS],
+      fun t tcb' hT => ⟨tcb', tBwd _ _ hT, rfl⟩⟩
   refine ⟨fun oid ep hE => ?_, fun c' => ?_, fun t tcb' hT => ?_⟩
   · replace hE := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
       (fun _ e => KernelObject.noConfusion e) hE

@@ -83,6 +83,59 @@ def returnUnheldSchedContextResolved (st : SystemState) (scId : SeLe4n.SchedCont
   | .error e => .error e
   | .ok newOwner? => returnUnheldSchedContext st scId owner newOwner?
 
+/-- **The context record `reply_pop` stores when it hands nothing back**: the
+head moves to the frame below, the holder is left as it is (none: the context
+is unheld), and the origin is kept only while an outer caller remains, as the
+donation pop's record keeps it (`donationReturnSchedContext`, which also names
+the recipient as holder). -/
+@[inline] def donationSeverSchedContext (sc : SchedContext) (nextHead? : Option SeLe4n.ReplyId)
+    (newOwner? : Option SeLe4n.ThreadId) : SchedContext :=
+  { sc with
+      scReply := nextHead?,
+      donationOrigin := if newOwner?.isNone then none else sc.donationOrigin }
+
+/-- **seL4-MCS's `reply_pop` at an unheld head whose caller holds a context of
+its own**: `reply_pop` donates the context back only when the caller holds none
+(`if (tcb->tcbSchedContext == NULL) schedContext_donate(sc, tcb)`), so here it
+pops the head off the context alone — the context's head moves to the frame
+below (`sc->scReply = prev`), the popped head's links are cleared and the frame
+below re-headed (`storeDonationHeadPop`) — and binds the context to no one.
+Refused, before any write, on a context bound to a thread and a head that does
+not name the context back. -/
+def severUnheldSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (newOwner? : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
+  match st.getSchedContext? scId with
+  | some sc =>
+    if sc.boundThreadCode != 0 then .error .illegalState
+    else
+    match donationHeadOf? st scId sc with
+    | .error e => .error e
+    | .ok head? =>
+      match storeObject scId.toObjId
+          (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+          st with
+      | .error e => .error e
+      | .ok ((), st1) => storeDonationHeadPop scId head? st1
+  | none => .error .objectNotFound
+
+/-- **The sever, its outer caller resolved off the reply stack**
+(`replyStackOuterCaller?`), as the donation pop resolves it. -/
+def severUnheldSchedContextResolved (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Except KernelError SystemState :=
+  match replyStackOuterCaller? st scId with
+  | .error e => .error e
+  | .ok newOwner? => severUnheldSchedContext st scId newOwner?
+
+/-- **Whether the sever commits, read on the state it runs on**: the reply-stack
+resolver answers and the context is stored, bound to no thread. -/
+def unheldSeverCommits (st : SystemState) (scId : SeLe4n.SchedContextId) : Bool :=
+  match replyStackOuterCaller? st scId with
+  | .error _ => false
+  | .ok _ =>
+    match st.getSchedContext? scId with
+    | none => false
+    | some sc => sc.boundThreadCode == 0
+
 /-- **Whether the unheld pop commits, read on the state it runs on**: the
 reply-stack resolver answers, the context is bound to no thread, the outer
 caller and the recipient are acceptable, and the recipient is a stored thread.
@@ -99,6 +152,26 @@ def unheldReturnCommits (st : SystemState) (scId : SeLe4n.SchedContextId)
         outerCallerAcceptable st owner owner newOwner? &&
         donationRecipientAcceptable st owner &&
         (lookupTcb st owner).isSome
+
+/-- The donation pop's admission reads the recipient as holding no context. -/
+theorem donationRecipientAcceptable_of_unheldReturnCommits {st : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : unheldReturnCommits st scId owner = true) : donationRecipientAcceptable st owner = true := by
+  unfold unheldReturnCommits at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · simp only [Bool.and_eq_true] at h
+      exact h.1.2
+
+/-- **Whether `reply_pop` at an unheld head commits, read on the state it runs
+on**: the donation pop's admission (`unheldReturnCommits`) where the caller holds
+no context, the sever's (`unheldSeverCommits`) where it holds one. -/
+def unheldPopCommits (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (owner : SeLe4n.ThreadId) : Bool :=
+  if donationRecipientAcceptable st owner then unheldReturnCommits st scId owner
+  else unheldSeverCommits st scId
 
 /-- **What a successful unheld pop is**: the context it read, bound to no thread;
 the outer caller and the recipient it accepted; the head it validated; and its
@@ -283,24 +356,208 @@ theorem returnUnheldSchedContextResolved_ok_of_commits {st : SystemState}
       rw [hOw2]
       exact ⟨_, rfl⟩
 
+/-- **What a successful sever is**: the context it read, bound to no thread;
+the head it validated; and its two stores — the context, then the head pop. -/
+theorem severUnheldSchedContext_ok_storeChain {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : severUnheldSchedContext st scId newOwner? = .ok st') :
+    ∃ (sc : SchedContext) (head? : Option (SeLe4n.ReplyId × Reply)) (s1 : SystemState),
+      st.objects[scId.toObjId]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
+      donationHeadOf? st scId sc = .ok head? ∧
+      storeObject scId.toObjId
+        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+        st = .ok ((), s1) ∧
+      storeDonationHeadPop scId head? s1 = .ok st' := by
+  unfold severUnheldSchedContext SystemState.getSchedContext? at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hB : sc.boundThreadCode with
+      | succ _ => simp only [bne_iff_ne, ne_eq, Nat.add_one_ne_zero, not_false_eq_true, ↓reduceIte]; intro h; cases h
+      | zero =>
+      simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+      cases hHead : donationHeadOf? st scId sc with
+      | error _ => intro h; cases h
+      | ok head? =>
+        simp only []
+        cases hS1 : storeObject scId.toObjId
+            (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+            st with
+        | error _ => intro h; cases h
+        | ok p1 =>
+          simp only []
+          intro h
+          exact ⟨sc, head?, p1.2, rfl, hB, hHead, by rw [← hS1], h⟩
+    | _ => intro h; cases h
+
+/-- **The resolved sever, decomposed**: the outer caller it resolved, and the
+sever at it. -/
+theorem severUnheldSchedContextResolved_ok_decompose {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId}
+    (h : severUnheldSchedContextResolved st scId = .ok st') :
+    ∃ newOwner?, replyStackOuterCaller? st scId = .ok newOwner? ∧
+      severUnheldSchedContext st scId newOwner? = .ok st' := by
+  unfold severUnheldSchedContextResolved at h
+  split at h
+  · cases h
+  · next n hN => exact ⟨n, hN, h⟩
+
+/-- **The sever commits on every state `unheldSeverCommits` admits** (checks
+before writes). -/
+theorem severUnheldSchedContextResolved_ok_of_commits {st : SystemState}
+    {scId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (h : unheldSeverCommits st scId = true) :
+    ∃ st', severUnheldSchedContextResolved st scId = .ok st' := by
+  unfold unheldSeverCommits at h
+  unfold severUnheldSchedContextResolved
+  cases hRes : replyStackOuterCaller? st scId with
+  | error e => rw [hRes] at h; cases h
+  | ok newOwner? =>
+    rw [hRes] at h
+    simp only []
+    cases hSc : st.getSchedContext? scId with
+    | none => rw [hSc] at h; cases h
+    | some sc =>
+      rw [hSc] at h
+      simp only [beq_iff_eq] at h
+      unfold severUnheldSchedContext
+      rw [hSc]
+      simp only [h, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+      have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
+      unfold replyStackOuterCaller? at hRes
+      rw [hSc] at hRes
+      simp only [] at hRes
+      cases hH : donationHeadOf? st scId sc with
+      | error e => rw [hH] at hRes; cases hRes
+      | ok head? =>
+        rw [hH] at hRes
+        simp only []
+        obtain ⟨st1, hS1⟩ : ∃ st1, storeObject scId.toObjId (.schedContext
+            (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+            st = .ok ((), st1) := ⟨_, rfl⟩
+        rw [hS1]
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st st1 _ _ hInv hS1
+        cases hHd : head? with
+        | none => exact ⟨st1, rfl⟩
+        | some pr =>
+          obtain ⟨rid, r⟩ := pr
+          subst hHd
+          simp only [] at hRes
+          have hHeadAt : st.objects[rid.toObjId]? = some (.reply r) := by
+            unfold donationHeadOf? at hH
+            revert hH
+            cases sc.scReply with
+            | none => intro hH; cases hH
+            | some rid' =>
+              simp only []
+              cases hG : st.getReply? rid' with
+              | none => intro hH; cases hH
+              | some r' =>
+                simp only []
+                split
+                · intro hH; cases hH
+                · intro hH; cases hH
+                  exact (SystemState.getReply?_eq_some_iff _ _ _).mp hG
+          have hne : rid.toObjId ≠ scId.toObjId := by
+            intro e; rw [e, hScO] at hHeadAt; cases hHeadAt
+          have hHeadAt1 : st1.objects[rid.toObjId]? = some (.reply r) := by
+            rw [storeObject_objects_ne st st1 _ _ _ hne hInv hS1]; exact hHeadAt
+          have hPrev1 : ∀ p, r.prev = some p → ∃ b, st1.objects[p.toObjId]? = some (.reply b) := by
+            intro p hp
+            rw [hp] at hRes
+            simp only [] at hRes
+            cases hGb : st.getReply? p with
+            | none => rw [hGb] at hRes; cases hRes
+            | some b =>
+              have hb := (SystemState.getReply?_eq_some_iff _ _ _).mp hGb
+              have hne' : p.toObjId ≠ scId.toObjId := by
+                intro e; rw [e, hScO] at hb; cases hb
+              exact ⟨b, by rw [storeObject_objects_ne st st1 _ _ _ hne' hInv hS1]; exact hb⟩
+          obtain ⟨st2, h2, -⟩ := storeDonationHeadPop_ok_of (scId := scId) hInv1 hHeadAt1 hPrev1
+          exact ⟨st2, h2⟩
+
+/-- The sever keeps the object store's extended invariant: two stores. -/
+theorem severUnheldSchedContext_objects_invExt {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (h : severUnheldSchedContext st scId newOwner? = .ok st') :
+    st'.objects.invExt := by
+  obtain ⟨_, _, s1, _, _, _, h1, h2⟩ := severUnheldSchedContext_ok_storeChain h
+  exact storeDonationHeadPop_preserves_objects_invExt
+    (storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1) h2
+
+/-- The sever writes no scheduler state. -/
+theorem severUnheldSchedContext_scheduler_eq {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : severUnheldSchedContext st scId newOwner? = .ok st') : st'.scheduler = st.scheduler := by
+  obtain ⟨_, _, s1, _, _, _, h1, h2⟩ := severUnheldSchedContext_ok_storeChain h
+  rw [storeDonationHeadPop_scheduler_eq h2, SeLe4n.Model.storeObject_scheduler_eq st s1 _ _ h1]
+
+/-- The sever writes no machine state. -/
+theorem severUnheldSchedContext_machine_eq {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : severUnheldSchedContext st scId newOwner? = .ok st') : st'.machine = st.machine := by
+  obtain ⟨_, _, s1, _, _, _, h1, h2⟩ := severUnheldSchedContext_ok_storeChain h
+  rw [storeDonationHeadPop_machine_eq h2, SeLe4n.Model.storeObject_machine_eq st s1 _ _ h1]
+
+/-- The sever writes no capability derivation edge. -/
+theorem severUnheldSchedContext_cdt_eq {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : severUnheldSchedContext st scId newOwner? = .ok st') : st'.cdt = st.cdt := by
+  obtain ⟨_, _, s1, _, _, _, h1, h2⟩ := severUnheldSchedContext_ok_storeChain h
+  rw [storeDonationHeadPop_cdt_eq h2, SeLe4n.Model.storeObject_cdt_eq st s1 _ _ h1]
+
+/-- The sever is a kind-preserving write: a context for a context, a reply for a
+reply. -/
+theorem severUnheldSchedContext_kindPreservingWrite {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (h : severUnheldSchedContext st scId newOwner? = .ok st') :
+    kindPreservingWrite st st' := by
+  obtain ⟨_, _, s1, hSc, _, _, hS1, hClear⟩ := severUnheldSchedContext_ok_storeChain h
+  have hW1 : kindPreservingWrite st s1 :=
+    storeObject_kindPreservingWrite hObjInv hS1 hSc rfl (by simp [KernelObject.objectType])
+  exact hW1.trans (storeDonationHeadPop_kindPreservingWrite
+    (storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1) hClear)
+
+/-- The sever holds the release queues: its context store keeps the release
+fields, and its other stores are replies'. -/
+theorem severUnheldSchedContext_releaseStateAgree {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (h : severUnheldSchedContext st scId newOwner? = .ok st') :
+    SystemState.releaseStateAgree st' st := by
+  obtain ⟨_, _, s1, hSc, _, _, h1, hClear⟩ := severUnheldSchedContext_ok_storeChain h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have a1 := SystemState.releaseStateAgree.storeObject hObjInv h1 fun _ => by rw [hSc]; rfl
+  have a2 : SystemState.releaseStateAgree st' s1 :=
+    .of_getSchedContext? (storeDonationHeadPop_getSchedContext?_eq i1 hClear)
+      (by rw [storeDonationHeadPop_scheduler_eq hClear])
+  exact a2.trans a1
+
 /-- **seL4-MCS's `reply_pop` at a reply heading a context no thread holds**,
 keyed on the reply `rid` and the caller `target` it answers (WS-ZA ZA6.34).  A
 server's finalisation unbinds the context it held and returns it to no one, so
 the reply its lender is blocked on keeps heading that context; answering or
 removing that reply pops the head (`sc->scReply = prev`) and, the caller
 holding no context, donates it to the caller (`schedContext_donate`), whose
-replenishments the settle places on `home`.  The identity where the reply heads
-no context; the pop's own refusal otherwise (it refuses a context bound to a
-thread, so this arm is the unheld one).  The recipient is the answered caller,
-as in `reply_pop`. -/
+replenishments the settle places on `home`; a caller that holds a context of its
+own is handed nothing, and the head is popped off the context alone
+(`severUnheldSchedContextResolved`), as `reply_pop` does.  The identity where the
+reply heads no context; the pop's own refusal otherwise (it refuses a context
+bound to a thread, so this arm is the unheld one).  The recipient is the
+answered caller, as in `reply_pop`. -/
 def popUnheldReplyHead (st : SystemState) (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
     (home : Concurrency.CoreId) : Except KernelError SystemState :=
   match replyFrameHeadContext? st rid with
   | none => .ok st
   | some scId =>
-    match returnUnheldSchedContextResolved st scId target with
-    | .error e => .error e
-    | .ok st' => .ok (SchedContextOps.settleReturnedContext st' home scId)
+    if donationRecipientAcceptable st target then
+      match returnUnheldSchedContextResolved st scId target with
+      | .error e => .error e
+      | .ok st' => .ok (SchedContextOps.settleReturnedContext st' home scId)
+    else severUnheldSchedContextResolved st scId
 
 /-- A reply heading no context pops nothing. -/
 @[simp] theorem popUnheldReplyHead_of_no_head (st : SystemState) (rid : SeLe4n.ReplyId)
@@ -309,24 +566,37 @@ def popUnheldReplyHead (st : SystemState) (rid : SeLe4n.ReplyId) (target : SeLe4
   unfold popUnheldReplyHead; rw [h]
 
 /-- **What a successful pop at an unheld head is**: the identity where the reply
-heads no context, or the unheld pop of the context it heads, settled on `home`. -/
+heads no context; the unheld pop of the context it heads, settled on `home`,
+where the caller holds no context; or the sever of that context, where it holds
+one. -/
 theorem popUnheldReplyHead_ok_cases {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {home : Concurrency.CoreId}
     (h : popUnheldReplyHead st rid target home = .ok st') :
     (replyFrameHeadContext? st rid = none ∧ st' = st) ∨
-    ∃ (scId : SeLe4n.SchedContextId) (st1 : SystemState),
+    (∃ (scId : SeLe4n.SchedContextId) (st1 : SystemState),
       replyFrameHeadContext? st rid = some scId ∧
       returnUnheldSchedContextResolved st scId target = .ok st1 ∧
-      st' = SchedContextOps.settleReturnedContext st1 home scId := by
+      st' = SchedContextOps.settleReturnedContext st1 home scId) ∨
+    ∃ (scId : SeLe4n.SchedContextId),
+      replyFrameHeadContext? st rid = some scId ∧
+      donationRecipientAcceptable st target = false ∧
+      severUnheldSchedContextResolved st scId = .ok st' := by
   unfold popUnheldReplyHead at h
   cases hH : replyFrameHeadContext? st rid with
   | none => rw [hH] at h; exact .inl ⟨rfl, (Except.ok.inj h).symm⟩
   | some scId =>
     rw [hH] at h
     simp only [] at h
-    cases hR : returnUnheldSchedContextResolved st scId target with
-    | error e => rw [hR] at h; cases h
-    | ok st1 => rw [hR] at h; exact .inr ⟨scId, st1, rfl, hR, (Except.ok.inj h).symm⟩
+    cases hA : donationRecipientAcceptable st target with
+    | false =>
+      rw [hA] at h
+      exact .inr (.inr ⟨scId, rfl, rfl, h⟩)
+    | true =>
+      rw [hA] at h
+      simp only [↓reduceIte] at h
+      cases hR : returnUnheldSchedContextResolved st scId target with
+      | error e => rw [hR] at h; cases h
+      | ok st1 => rw [hR] at h; exact .inr (.inl ⟨scId, st1, rfl, hR, (Except.ok.inj h).symm⟩)
 
 /-- The unheld pop writes no machine state. -/
 theorem returnUnheldSchedContext_machine_eq {st st' : SystemState}
@@ -352,10 +622,12 @@ theorem returnUnheldSchedContextResolved_machine_eq {st st' : SystemState}
 theorem popUnheldReplyHead_machine_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {home : Concurrency.CoreId}
     (h : popUnheldReplyHead st rid target home = .ok st') : st'.machine = st.machine := by
-  rcases popUnheldReplyHead_ok_cases h with ⟨_, rfl⟩ | ⟨scId, st1, _, hR, rfl⟩
+  rcases popUnheldReplyHead_ok_cases h with ⟨_, rfl⟩ | ⟨scId, st1, _, hR, rfl⟩ | ⟨_, _, _, hS⟩
   · rfl
   · rw [SchedContextOps.settleReturnedContext_machine]
     exact returnUnheldSchedContextResolved_machine_eq hR
+  · obtain ⟨_, _, hP⟩ := severUnheldSchedContextResolved_ok_decompose hS
+    exact severUnheldSchedContext_machine_eq hP
 
 /-- **The resolved unheld pop, decomposed**: the reply stack's outer caller it
 resolved, and the pop at it. -/
@@ -386,11 +658,13 @@ theorem returnUnheldSchedContext_objects_invExt {st st' : SystemState}
 theorem popUnheldReplyHead_objects_invExt {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {home : Concurrency.CoreId} (hObjInv : st.objects.invExt)
     (h : popUnheldReplyHead st rid target home = .ok st') : st'.objects.invExt := by
-  rcases popUnheldReplyHead_ok_cases h with ⟨_, rfl⟩ | ⟨scId, st1, _, hR, rfl⟩
+  rcases popUnheldReplyHead_ok_cases h with ⟨_, rfl⟩ | ⟨scId, st1, _, hR, rfl⟩ | ⟨_, _, _, hS⟩
   · exact hObjInv
   · obtain ⟨_, _, hP⟩ := returnUnheldSchedContextResolved_ok_decompose hR
     exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _
       (returnUnheldSchedContext_objects_invExt hObjInv hP)
+  · obtain ⟨_, _, hP⟩ := severUnheldSchedContextResolved_ok_decompose hS
+    exact severUnheldSchedContext_objects_invExt hObjInv hP
 
 /-- The unheld pop holds the release queues: its context store keeps the
 release fields, and its other stores are a reply's and a thread's. -/
@@ -481,14 +755,20 @@ theorem popUnheldReplyHead_objects_frame {st st' : SystemState}
     {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId} {home : Concurrency.CoreId}
     (h : popUnheldReplyHead st rid target home = .ok st') :
     (replyFrameHeadContext? st rid = none ∧ st' = st) ∨
-    ∃ (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId) (st1 : SystemState),
+    (∃ (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId) (st1 : SystemState),
       replyFrameHeadContext? st rid = some scId ∧
       replyStackOuterCaller? st scId = .ok newOwner? ∧
       returnUnheldSchedContext st scId target newOwner? = .ok st1 ∧
-      st' = SchedContextOps.settleReturnedContext st1 home scId := by
-  rcases popUnheldReplyHead_ok_cases h with hId | ⟨scId, st1, hH, hR, hEq⟩
+      st' = SchedContextOps.settleReturnedContext st1 home scId) ∨
+    ∃ (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId),
+      replyFrameHeadContext? st rid = some scId ∧
+      replyStackOuterCaller? st scId = .ok newOwner? ∧
+      severUnheldSchedContext st scId newOwner? = .ok st' := by
+  rcases popUnheldReplyHead_ok_cases h with hId | ⟨scId, st1, hH, hR, hEq⟩ | ⟨scId, hH, -, hS⟩
   · exact .inl hId
   · obtain ⟨n, hN, hP⟩ := returnUnheldSchedContextResolved_ok_decompose hR
-    exact .inr ⟨scId, n, st1, hH, hN, hP, hEq⟩
+    exact .inr (.inl ⟨scId, n, st1, hH, hN, hP, hEq⟩)
+  · obtain ⟨n, hN, hP⟩ := severUnheldSchedContextResolved_ok_decompose hS
+    exact .inr (.inr ⟨scId, n, hH, hN, hP⟩)
 
 end SeLe4n.Kernel

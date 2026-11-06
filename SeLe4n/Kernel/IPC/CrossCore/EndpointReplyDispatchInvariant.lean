@@ -47,14 +47,19 @@ open SeLe4n.Kernel.PriorityInheritance
 -- ============================================================================
 
 /-- The pop at an unheld head keeps every thread's `ipcState` backward: it
-rewrites one thread's binding codes, and the settle writes release links. -/
+rewrites one thread's binding codes, and the settle writes release links; the
+sever writes no thread. -/
 theorem popUnheldReplyHead_tcb_ipcState_backward {st st' : SystemState}
     {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId} {home : CoreId}
     (hObjInv : st.objects.invExt) (h : popUnheldReplyHead st rid target home = .ok st')
     (t : SeLe4n.ObjId) (tcb' : TCB) (hTcb' : st'.objects[t]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[t]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
-  rcases popUnheldReplyHead_objects_frame h with ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩
+  rcases popUnheldReplyHead_objects_frame h with ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
   · exact ⟨tcb', hTcb', rfl⟩
+  rotate_left
+  · obtain ⟨-, -, -, -, -, -, tBwd, -, -, -⟩ := severUnheldSchedContext_objects hObjInv hS
+    exact ⟨tcb', tBwd _ _ hTcb', rfl⟩
   · obtain ⟨t0, hT0, hE⟩ := (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
         (SchedContextOps.settleReturnedContext_agree st1 home scId)).get_tcb' hTcb'
     obtain ⟨tcb, hPre, c, o, hRw⟩ := (returnUnheldSchedContext_tcb_rewrite hObjInv hP).2 t t0 hT0
@@ -416,8 +421,12 @@ theorem applyReplyDonationOnCore_tcb_ipcState_backward
     ⟨_, hPop⟩ | _
   · exact popUnheldReplyHead_tcb_ipcState_backward hObjInv hPop t tcb' hTcb'
   rcases applyReplyDonationOnCore_objects_frame st st'' rid targetVtid ownerHome h with
-    ⟨_, hObj⟩ | ⟨scId, newOwner?, st', _, _, _, hP, hObj⟩ | ⟨scId, holder, newOwner?, st', hRet, hObj⟩
+    ⟨_, hObj⟩ | ⟨scId, newOwner?, st', _, _, _, hP, hObj⟩ | ⟨scId, holder, newOwner?, st', hRet, hObj⟩ |
+      ⟨_, _, -, -, -, hS⟩
   · exact ⟨tcb', by rw [← hObj]; exact hTcb', rfl⟩
+  rotate_left 2
+  · obtain ⟨-, -, -, -, -, -, tBwd, -, -, -⟩ := severUnheldSchedContext_objects hObjInv hS
+    exact ⟨tcb', tBwd _ _ hTcb', rfl⟩
   · obtain ⟨t0, hT0, hE⟩ := hObj.get_tcb' hTcb'
     obtain ⟨tcb, hPre, c, o, hRw⟩ := (returnUnheldSchedContext_tcb_rewrite hObjInv hP).2 t t0 hT0
     subst hRw
@@ -1083,29 +1092,40 @@ theorem settleReturnedContext_preserves_schedulerInvariantBase_smp
         exact ⟨tcb, by rw [SchedContextOps.settleReturnedContext_getTcb?]; exact hT⟩
 
 /-- The pop at an unheld head keeps the base SMP scheduler invariant: the pop
-writes the reschedule flags alone, and the settle is a release write. -/
+writes the reschedule flags alone, and the settle is a release write; the
+sever writes no scheduler state. -/
 theorem popUnheldReplyHead_preserves_schedulerInvariantBase_smp {st st' : SystemState}
     {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId} {home : CoreId}
     (hObjInv : st.objects.invExt) (h : schedulerInvariantBase_smp st)
     (hStep : popUnheldReplyHead st rid target home = .ok st') :
     schedulerInvariantBase_smp st' := by
-  rcases popUnheldReplyHead_objects_frame hStep with ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩
+  rcases popUnheldReplyHead_objects_frame hStep with ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
   · exact h
+  rotate_left
+  · exact schedulerInvariantBase_smp_of_frame h
+      (by rw [severUnheldSchedContext_scheduler_eq hS])
+      (kindPreservingWrite.getTcb?_isSome (severUnheldSchedContext_kindPreservingWrite hObjInv hS))
   · exact settleReturnedContext_preserves_schedulerInvariantBase_smp _ _
       (schedulerInvariantBase_smp_of_frame h (returnUnheldSchedContext_scheduler_eq hP)
         (kindPreservingWrite.getTcb?_isSome
           (returnUnheldSchedContext_kindPreservingWrite hObjInv hP)))
 
 /-- The pop at an unheld head keeps the capability bundle: it writes no CNode
-and no derivation edge. -/
+and no derivation edge, nor does the sever. -/
 theorem popUnheldReplyHead_preserves_capabilityInvariantBundle {st st' : SystemState}
     {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId} {home : CoreId}
     (h : capabilityInvariantBundle st)
     (hStep : popUnheldReplyHead st rid target home = .ok st') :
     capabilityInvariantBundle st' := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.1
-  rcases popUnheldReplyHead_objects_frame hStep with ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩
+  rcases popUnheldReplyHead_objects_frame hStep with ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩ |
+      ⟨_, _, -, -, hS⟩
   · exact h
+  rotate_left
+  · exact capabilityInvariantBundle_of_kindPreserving h (severUnheldSchedContext_cdt_eq hS)
+      (severUnheldSchedContext_objects_invExt hObjInv hS)
+      (severUnheldSchedContext_kindPreservingWrite hObjInv hS)
   · have hRetB : capabilityInvariantBundle st1 :=
       capabilityInvariantBundle_of_kindPreserving h (returnUnheldSchedContext_cdt_eq hP)
         (returnUnheldSchedContext_objects_invExt hObjInv hP)

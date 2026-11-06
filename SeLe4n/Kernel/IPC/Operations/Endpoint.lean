@@ -6200,7 +6200,8 @@ still heads it (seL4-MCS's `schedContext_unbindTCB`, which leaves `scReply`
 alone).  The decline is the trigger's half of the answer, not the pop's: the pops
 take that arm to `popUnheldReplyHead` (WS-ZA ZA6.34), seL4-MCS's `reply_pop` of a
 context no thread holds, so a frame heading a context bound to nobody is popped
-with no thread losing a context rather than left in place.
+with no thread losing a context rather than left in place (and the context
+handed to the answered caller only where it holds none).
 
 **WS-HP HP4.1 -- the resolver is split at the reply object, and the split is
 forced by the reply leg.**  `consumeCallerReply` clears the answered caller's
