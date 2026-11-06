@@ -1530,11 +1530,51 @@ theorem insertCellWith_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl rfl rfl
   · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl rfl rfl
 
+/-- WS-ZA ZA6.35: `insert` of `cap` stored as it is, shared with its source,
+the slot's own record left in the spares.  For a capability whose target is
+fieldless (`CapTarget.isFieldless`): written over the slot's record, it would
+drop that record's target cell, and the next object capability written there
+would build one. -/
+@[inline] def insertCellShared (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : slot.toNat < node.cells.size) : CNode :=
+  let i := slot.toNat
+  let w := occupiedAt node.cells i
+  { node with
+    slotsGhost := node.slotsGhost.map (·.insert slot cap)
+    cells := node.cells.set i (some cap) h
+    cells_size := by rw [Array.size_set]; exact node.cells_size
+    slots_agree := insert_slots_agree node slot cap h
+    occ := fillOccOf w node.occ node.occHead i
+    occ_size := (size_fillOcc node.cells node.occ node.occHead i).trans node.occ_size
+    occHead := fillHeadOf w node.occHead i
+    occ_agree := occ_agree_fill node i h _ rfl }
+
+theorem insertCellShared_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : slot.toNat < node.cells.size) :
+    node.insertCellShared slot cap h = node.insert slot cap := by
+  unfold insertCellShared insert
+  simp only [h, dite_true]
+  exact ext_of_fields rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- `insertCellShared` of the capability with these fields, out of line, so a
+caller passing a literal builds the capability only on this branch. -/
+@[noinline] def insertCellSharedOf (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget)
+    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr) (mapEpoch : Nat) (mapped : Bool)
+    (freeIndex : Nat) (h : slot.toNat < node.cells.size) : CNode :=
+  node.insertCellShared slot
+    ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩ h
+
 /-- `insertCellWith` writing `cap`'s fields over the record
 (`Capability.overwrite`); the stored capability is `cap`'s fields, so a caller
-passing `cap` as a literal never builds it. -/
+passing `cap` as a literal never builds it.  A capability with a fieldless
+target is stored shared (`insertCellShared`). -/
 @[inline] def insertCellFrom (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) : CNode :=
+  if cap.target.isFieldless then
+    node.insertCellSharedOf slot cap.target cap.rights cap.badgeWord cap.badged cap.mapAsid
+      cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex h
+  else
   node.insertCellWith slot
     ⟨cap.target, cap.rights, cap.badgeWord, cap.badged, cap.mapAsid, cap.mapVaddr, cap.mapEpoch,
       cap.mapped, cap.freeIndex⟩
@@ -1547,7 +1587,10 @@ passing `cap` as a literal never builds it. -/
 theorem insertCellFrom_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) :
     node.insertCellFrom slot cap h a = node.insert slot cap := by
-  unfold insertCellFrom; rw [insertCellWith_eq]
+  unfold insertCellFrom
+  split
+  · unfold insertCellSharedOf; exact insertCellShared_eq node slot cap h
+  · rw [insertCellWith_eq]
 
 /-- WS-ZA ZA5.3 part 6: **`insert` as compiled** — `cap` written over the
 slot's own record (its spare, `insertCellFrom`), so the write reuses the record

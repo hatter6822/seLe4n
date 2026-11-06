@@ -347,3 +347,302 @@ specialised to its function (no closure is built for it). -/
         simp only [storedState, hS, hF]
     · rfl
   · rfl
+
+/-! ## The carve read from its request's words
+
+WS-ZA ZA6.35: a decoded request is words, as seL4's `decodeUntypedInvocation`
+hands `invokeUntyped` the object type and size it read from the message
+registers: the kind's code, the size, and the thread's domain and core or the
+root's ASID.  The compiled dispatch carries the words and reads each function of
+the request off them, so it builds no request (`untypedRetypePerformCode_eq`,
+`untypedRetypeAdmittedCode_eq`). -/
+
+/-- The request the words name: kind `k` (0 frame, 1 untyped, 2 VSpace root,
+3 page table, 4 thread, 5 endpoint, 6 notification, 7 CNode, 8 reply, 9 and
+above scheduling context), size or radix `n`, a thread's `dom` and `core`, a
+root's `asid`.  A CNode's radix is read below `maxCSpaceDepth`. -/
+def CarveRequest.ofWords (k n : Nat) (dom : SeLe4n.DomainId)
+    (core : SeLe4n.Kernel.Concurrency.CoreId) (asid : SeLe4n.ASID) : CarveRequest :=
+  match k with
+  | 0 => .frame
+  | 1 => .untyped n
+  | 2 => .vspaceRoot asid
+  | 3 => .pageTable
+  | 4 => .tcb dom core
+  | 5 => .endpoint
+  | 6 => .notification
+  | 7 => .cnode (min n maxCSpaceDepth) (Nat.min_le_right _ _)
+  | 8 => .reply
+  | _ => .schedContext n
+
+/-- A request's kind code. -/
+def CarveRequest.kindWord : CarveRequest → Nat
+  | .frame => 0
+  | .untyped _ => 1
+  | .vspaceRoot _ => 2
+  | .pageTable => 3
+  | .tcb _ _ => 4
+  | .endpoint => 5
+  | .notification => 6
+  | .cnode _ _ => 7
+  | .reply => 8
+  | .schedContext _ => 9
+
+/-- A request's size or radix word (`0` for a fixed-size kind). -/
+def CarveRequest.sizeWord : CarveRequest → Nat
+  | .untyped b => b
+  | .cnode r _ => r
+  | .schedContext b => b
+  | _ => 0
+
+/-- A request's domain word (`dom0` for a kind other than a thread). -/
+def CarveRequest.domainWord (dom0 : SeLe4n.DomainId) : CarveRequest → SeLe4n.DomainId
+  | .tcb d _ => d
+  | _ => dom0
+
+/-- A request's core word (`core0` for a kind other than a thread). -/
+def CarveRequest.coreWord (core0 : SeLe4n.Kernel.Concurrency.CoreId) :
+    CarveRequest → SeLe4n.Kernel.Concurrency.CoreId
+  | .tcb _ c => c
+  | _ => core0
+
+/-- A request's ASID word (`asid0` for a kind other than a VSpace root). -/
+def CarveRequest.asidWord (asid0 : SeLe4n.ASID) : CarveRequest → SeLe4n.ASID
+  | .vspaceRoot a => a
+  | _ => asid0
+
+/-- **A request is the request its words name.** -/
+theorem CarveRequest.ofWords_words (dom0 : SeLe4n.DomainId)
+    (core0 : SeLe4n.Kernel.Concurrency.CoreId) (asid0 : SeLe4n.ASID) (req : CarveRequest) :
+    CarveRequest.ofWords req.kindWord req.sizeWord (req.domainWord dom0) (req.coreWord core0)
+      (req.asidWord asid0) = req := by
+  cases req with
+  | cnode r h =>
+    simp only [ofWords, kindWord, sizeWord]
+    congr 1
+    exact Nat.min_eq_left h
+  | _ => rfl
+
+/-- `CarveRequest.objectType` of the words. -/
+@[inline] def CarveRequest.objectTypeW (k : Nat) : KernelObjectType :=
+  match k with
+  | 0 => .frame | 1 => .untyped | 2 => .vspaceRoot | 3 => .pageTable | 4 => .tcb
+  | 5 => .endpoint | 6 => .notification | 7 => .cnode | 8 => .reply | _ => .schedContext
+
+/-- `CarveRequest.size` of the words. -/
+@[inline] def CarveRequest.sizeW (k n : Nat) : Nat :=
+  match k with
+  | 0 => SeLe4n.pageBytes | 1 => 2 ^ n | 2 => SeLe4n.pageBytes | 3 => SeLe4n.pageBytes
+  | 4 => objectTypeAllocSize .tcb | 5 => objectTypeAllocSize .endpoint
+  | 6 => objectTypeAllocSize .notification
+  | 7 => 2 ^ (min n maxCSpaceDepth + cnodeSlotBits)
+  | 8 => objectTypeAllocSize .reply | _ => 2 ^ n
+
+/-- `CarveRequest.rights` of the words. -/
+@[inline] def CarveRequest.rightsW (k : Nat) : AccessRightSet :=
+  match k with
+  | 0 => AccessRightSet.ofList [.read, .write, .grant]
+  | 1 => AccessRightSet.ofList [.read, .write, .retype]
+  | 2 => AccessRightSet.ofList [.read, .write]
+  | 3 => AccessRightSet.ofList [.read, .write]
+  | _ => kernelObjectRights
+
+/-- `CarveRequest.objectImpl` of the words: the object built with its cells. -/
+@[inline] def CarveRequest.objectW (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject)
+    (idx k n : Nat) (dom : SeLe4n.DomainId) (core : SeLe4n.Kernel.Concurrency.CoreId)
+    (asid : SeLe4n.ASID) : KernelObject :=
+  match k with
+  | 0 => .frame (untypedNextFrame ut idx)
+  | 1 => .untyped (untypedNextChild ut idx untypedId n)
+  | 2 => .vspaceRoot (untypedNextVSpaceRoot ut idx asid)
+  | 3 => .pageTable (untypedNextPageTable ut idx)
+  | 4 => (KernelObject.tcb (carvedTcb childId dom core)).unshareFresh
+  | 5 => (KernelObject.endpoint (Endpoint.ofQueues {} {})).unshareFresh
+  | 6 => (KernelObject.notification ({ state := .idle } : Notification)).unshareFresh
+  | 7 => .cnode (carvedCNode (min n maxCSpaceDepth))
+  | 8 => .reply (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId childId))
+  | _ => .schedContext (SeLe4n.Kernel.SchedContext.empty (SeLe4n.SchedContextId.ofObjId childId))
+
+/-- `CarveRequest.scrubAt` of the words. -/
+@[inline] def CarveRequest.scrubAtW (st : SystemState) (base : SeLe4n.PAddr) (isDevice : Bool)
+    (k : Nat) : SystemState :=
+  match k with
+  | 0 =>
+      if isDevice then st
+      else { st with
+              machine := SeLe4n.zeroMemoryRange st.machine base SeLe4n.pageBytes
+              physicalWrites := st.physicalWrites.pushAfter st.physicalWritesDrained
+                (SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage base)
+              physicalWritesDrained := false }
+  | 2 | 3 =>
+      { st with
+          machine := SeLe4n.zeroMemoryRange st.machine base SeLe4n.pageBytes
+          physicalWrites := st.physicalWrites.pushAfter st.physicalWritesDrained
+            (SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage base)
+          physicalWritesDrained := false }
+  | _ => st
+
+/-- `CarveRequest.heapAdmitted` of the words. -/
+@[inline] def CarveRequest.heapAdmittedW (st : SystemState) (k n : Nat) : Bool :=
+  decide (retypeHeapReserveBytes +
+      (match k with
+       | 4 => carvedTcbHeapBytes
+       | 7 => carvedObjectHeapBytes + cnodeSlotHeapBytes * 2 ^ (min n maxCSpaceDepth)
+       | _ => carvedObjectHeapBytes)
+      + rhInsertResizeHeapBytes st.objects
+      + rhInsertResizeHeapBytes st.objectIndexSet.table
+      + rhInsertResizeHeapBytes st.lifecycle.objectTypes
+      + (match k with
+         | 2 => rhInsertResizeHeapBytes st.asidTable
+         | _ => 0) ≤ st.machine.kernelHeapFreeBytes)
+
+/-- `CarveRequest.admissible` of the words. -/
+@[inline] def CarveRequest.admissibleW (st : SystemState) (k : Nat) (asid : SeLe4n.ASID) : Bool :=
+  match k with
+  | 2 =>
+      asid.toNat != 0 && decide (asid.toNat < st.machine.maxASID) &&
+        (st.asidTable[asid]?).isNone
+  | _ => true
+
+section CarveWords
+variable (k n : Nat) (dom : SeLe4n.DomainId) (core : SeLe4n.Kernel.Concurrency.CoreId)
+  (asid : SeLe4n.ASID)
+
+theorem CarveRequest.objectTypeW_eq :
+    CarveRequest.objectTypeW k = (CarveRequest.ofWords k n dom core asid).objectType := by
+  match k with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => rfl
+  | _ + 9 => rfl
+
+theorem CarveRequest.sizeW_eq :
+    CarveRequest.sizeW k n = (CarveRequest.ofWords k n dom core asid).size := by
+  match k with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => rfl
+  | _ + 9 => rfl
+
+theorem CarveRequest.rightsW_eq :
+    CarveRequest.rightsW k = (CarveRequest.ofWords k n dom core asid).rights := by
+  match k with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => rfl
+  | _ + 9 => rfl
+
+theorem CarveRequest.objectW_eq (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject)
+    (idx : Nat) :
+    CarveRequest.objectW untypedId childId ut idx k n dom core asid =
+      (CarveRequest.ofWords k n dom core asid).object untypedId childId ut idx := by
+  rw [CarveRequest.object_eq_impl]
+  match k with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => rfl
+  | _ + 9 => rfl
+
+theorem CarveRequest.scrubAtW_eq (st : SystemState) (base : SeLe4n.PAddr) (isDevice : Bool) :
+    CarveRequest.scrubAtW st base isDevice k =
+      (CarveRequest.ofWords k n dom core asid).scrubAt st base isDevice := by
+  match k with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => rfl
+  | _ + 9 => rfl
+
+theorem CarveRequest.heapAdmittedW_eq (st : SystemState) :
+    CarveRequest.heapAdmittedW st k n = (CarveRequest.ofWords k n dom core asid).heapAdmitted st := by
+  match k with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => rfl
+  | _ + 9 => rfl
+
+theorem CarveRequest.admissibleW_eq (st : SystemState) :
+    CarveRequest.admissibleW st k asid = (CarveRequest.ofWords k n dom core asid).admissible st := by
+  match k with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => rfl
+  | _ + 9 => rfl
+
+end CarveWords
+
+/-- **`untypedRetypePerformWords` read off the request's words**, so no request
+is built: the compiled carve's writes. -/
+def untypedRetypePerformCode (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCnode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (childId : SeLe4n.ObjId)
+    (k n : Nat) (dom : SeLe4n.DomainId) (core : SeLe4n.Kernel.Concurrency.CoreId)
+    (asid : SeLe4n.ASID) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st ⟨srcCnode, srcSlot⟩ with
+  | some utCap =>
+    match utCap.target with
+    | .object untypedId =>
+      match st.getUntyped? untypedId with
+      | some ut =>
+        let size := CarveRequest.sizeW k n
+        let idx := alignedCarveIndex (CarveRequest.objectTypeW k) size ut
+          (retypeFreeIndex st ⟨srcCnode, srcSlot⟩ utCap)
+        let newObj := CarveRequest.objectW untypedId childId ut idx k n dom core asid
+        let base := (untypedNextFrame ut idx).base
+        let isDevice := ut.isDevice
+        let st1 := st.storeUntypedWith untypedId (·.allocated idx childId size)
+        let st2 := storedState childId newObj st1
+        let st3 := st2.storeCNodeWith srcCnode (·.setFreeIndexCells srcSlot (idx + size))
+        ((CarveRequest.scrubAtW st3 base isDevice k).storeCNodeWith dstCnode
+          (·.insertObjectCap dstSlot childId (CarveRequest.rightsW k))).cdtAddChild
+            ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ .retype
+      | none => st
+    | _ => st
+  | none => st
+
+theorem untypedRetypePerformCode_eq_words (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCnode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (childId : SeLe4n.ObjId)
+    (k n : Nat) (dom : SeLe4n.DomainId) (core : SeLe4n.Kernel.Concurrency.CoreId)
+    (asid : SeLe4n.ASID) (st : SystemState) :
+    untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot childId k n dom core asid st =
+      untypedRetypePerformWords srcCnode srcSlot dstCnode dstSlot childId
+        (CarveRequest.ofWords k n dom core asid) st := by
+  unfold untypedRetypePerformCode untypedRetypePerformWords
+  simp only [CarveRequest.carveIndex, ← CarveRequest.objectTypeW_eq k n dom core asid,
+    ← CarveRequest.sizeW_eq k n dom core asid, ← CarveRequest.objectW_eq k n dom core asid,
+    ← CarveRequest.scrubAtW_eq k n dom core asid, ← CarveRequest.rightsW_eq k n dom core asid]
+
+/-- **The compiled carve's writes are the carve's**, given the request's
+words. -/
+theorem untypedRetypePerformCode_eq (src dst : CSpaceAddr) (childId : SeLe4n.ObjId)
+    (dom0 : SeLe4n.DomainId) (core0 : SeLe4n.Kernel.Concurrency.CoreId) (asid0 : SeLe4n.ASID)
+    (req : CarveRequest) (st : SystemState) :
+    untypedRetypePerformCode src.cnode src.slot dst.cnode dst.slot childId req.kindWord
+        req.sizeWord (req.domainWord dom0) (req.coreWord core0) (req.asidWord asid0) st =
+      untypedRetypePerformAt src dst childId req st := by
+  rw [untypedRetypePerformCode_eq_words, CarveRequest.ofWords_words, untypedRetypePerformAt_eq_impl]
+  rfl
+
+/-- **`untypedRetypeAdmittedAt` read off the request's words.** -/
+@[inline] def untypedRetypeAdmittedCode (st : SystemState) (src dst : CSpaceAddr)
+    (childId : SeLe4n.ObjId) (k n : Nat) (asid : SeLe4n.ASID) : Bool :=
+  CarveRequest.heapAdmittedW st k n && CarveRequest.admissibleW st k asid &&
+  match SystemState.lookupSlotCap st src with
+  | some utCap =>
+    match utCap.target with
+    | .object untypedId =>
+      match st.getUntyped? untypedId with
+      | some ut =>
+        cspaceDstAdmitted dst st &&
+        retypeFromUntypedAdmitted st src.cnode src.slot utCap untypedId childId
+          (CarveRequest.objectTypeW k) (CarveRequest.sizeW k n) ut
+      | none => false
+    | _ => false
+  | none => false
+
+theorem untypedRetypeAdmittedCode_eq (st : SystemState) (src dst : CSpaceAddr)
+    (childId : SeLe4n.ObjId) (dom0 : SeLe4n.DomainId) (core0 : SeLe4n.Kernel.Concurrency.CoreId)
+    (asid0 : SeLe4n.ASID) (req : CarveRequest) :
+    untypedRetypeAdmittedCode st src dst childId req.kindWord req.sizeWord (req.asidWord asid0) =
+      untypedRetypeAdmittedAt st src dst childId req := by
+  conv => rhs; rw [← CarveRequest.ofWords_words dom0 core0 asid0 req]
+  unfold untypedRetypeAdmittedCode untypedRetypeAdmittedAt
+  simp only [← CarveRequest.heapAdmittedW_eq req.kindWord req.sizeWord (req.domainWord dom0)
+      (req.coreWord core0) (req.asidWord asid0),
+    ← CarveRequest.admissibleW_eq req.kindWord req.sizeWord (req.domainWord dom0)
+      (req.coreWord core0) (req.asidWord asid0),
+    ← CarveRequest.objectTypeW_eq req.kindWord req.sizeWord (req.domainWord dom0)
+      (req.coreWord core0) (req.asidWord asid0),
+    ← CarveRequest.sizeW_eq req.kindWord req.sizeWord (req.domainWord dom0)
+      (req.coreWord core0) (req.asidWord asid0)]
+
+/-- The carve's heap check, read off the request's words. -/
+theorem CarveRequest.heapAdmittedW_words (st : SystemState) (dom0 : SeLe4n.DomainId)
+    (core0 : SeLe4n.Kernel.Concurrency.CoreId) (asid0 : SeLe4n.ASID) (req : CarveRequest) :
+    CarveRequest.heapAdmittedW st req.kindWord req.sizeWord = req.heapAdmitted st := by
+  rw [CarveRequest.heapAdmittedW_eq req.kindWord req.sizeWord (req.domainWord dom0)
+    (req.coreWord core0) (req.asidWord asid0), CarveRequest.ofWords_words]

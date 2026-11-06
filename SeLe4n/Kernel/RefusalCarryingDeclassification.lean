@@ -582,6 +582,33 @@ theorem auditFieldChunkCount?_eq_code (v : Nat) :
     let n := auditChunkCountN (auditExportedFieldValue true index (r.entry j) f)
     if n = 0 then 0 else n + 1
 
+/-- Chunk `i` of `v` in base `K` by repeated division: the four chunks a field
+exports never form the power `K ^ i`, a number past a word for `i ≥ 2`
+(`divChunk_eq`). -/
+@[inline] def divChunk (K v i : Nat) : Nat :=
+  match i with
+  | 0 => v % K
+  | 1 => v / K % K
+  | 2 => v / K / K % K
+  | 3 => v / K / K / K % K
+  | _ => v / K ^ i % K
+
+theorem divChunk_eq (K v i : Nat) : divChunk K v i = v / K ^ i % K := by
+  unfold divChunk
+  split
+  · rw [Nat.pow_zero, Nat.div_one]
+  · rw [Nat.pow_one]
+  · rw [Nat.div_div_eq_div_mul, ← Nat.pow_two]
+  · rw [Nat.div_div_eq_div_mul, Nat.div_div_eq_div_mul, ← Nat.pow_two, Nat.mul_comm,
+      ← Nat.pow_succ]
+  · rfl
+
+/-- `auditFieldChunk` by repeated division (`auditFieldChunkCode_eq`). -/
+@[inline] def auditFieldChunkCode (v i : Nat) : Nat := divChunk auditFieldChunkModulus v i
+
+theorem auditFieldChunkCode_eq (v i : Nat) : auditFieldChunkCode v i = auditFieldChunk v i :=
+  divChunk_eq auditFieldChunkModulus v i
+
 /-- A field's chunk, read off the `index`th visible entry, as a code: `0` when
 the entry is missing or the chunk is out of range, `w + 1` for word `w`. -/
 @[inline] def auditFieldWordCode (ctx : LabelingContext) (reader : SecurityDomain)
@@ -591,14 +618,160 @@ the entry is missing or the chunk is out of range, `w + 1` for word `w`. -/
   | j + 1 =>
     let v := auditExportedFieldValue true index (r.entry j) f
     let n := auditChunkCountN v
-    if n ≠ 0 ∧ chunk < n then auditFieldChunk v chunk + 1 else 0
+    if n ≠ 0 ∧ chunk < n then auditFieldChunkCode v chunk + 1 else 0
+
+/-- `ByteArray.toList`'s loop is the array's list after the bytes it has
+consed. -/
+theorem auditBytes_toList_loop (bs : ByteArray) :
+    ∀ (k i : Nat) (r : List UInt8), bs.size - i = k →
+      ByteArray.toList.loop bs i r = r.reverse ++ bs.data.toList.drop i := by
+  intro k
+  induction k with
+  | zero =>
+    intro i r hk
+    rw [ByteArray.toList.loop]
+    have : ¬ i < bs.size := by omega
+    simp only [this, ↓reduceIte]
+    have hd : bs.data.toList.drop i = [] := by
+      simp only [List.drop_eq_nil_iff, Array.length_toList]; exact Nat.le_of_not_lt this
+    rw [hd, List.append_nil]
+  | succ k ih =>
+    intro i r hk
+    rw [ByteArray.toList.loop]
+    have hi : i < bs.size := by omega
+    simp only [hi, ↓reduceIte]
+    rw [ih (i+1) _ (by omega)]
+    simp only [List.reverse_cons, List.append_assoc, List.singleton_append]
+    congr 1
+    have hl : i < bs.data.toList.length := by simpa using hi
+    rw [List.drop_eq_getElem_cons hl]
+    simp [ByteArray.get!, hi]
+
+theorem auditBytes_toList (bs : ByteArray) : bs.toList = bs.data.toList := by
+  unfold ByteArray.toList
+  rw [auditBytes_toList_loop bs _ 0 [] rfl]; simp
+
+/-- Byte `i` of a string's UTF-8 encoding, `0` past its end, read in place. -/
+@[inline] def auditBasisByteAt (s : String) (i : Nat) : Nat :=
+  if h : i < s.utf8ByteSize then (s.getUTF8Byte ⟨i⟩ h).toNat else 0
+
+theorem auditBasisBytes_getD (e : DeclassificationEvent) (i : Nat) :
+    ((auditBasisBytes e).getD i 0).toNat = auditBasisByteAt e.authorizationBasis.render i := by
+  unfold auditBasisBytes
+  generalize e.authorizationBasis.render = s
+  rw [String.toUTF8_eq_toByteArray, auditBytes_toList]
+  unfold auditBasisByteAt
+  split
+  · next h =>
+    have h' : i < s.toByteArray.data.toList.length := by rw [Array.length_toList]; exact h
+    simp [String.getUTF8Byte, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h',
+      ByteArray.getElem_eq_getElem_data]
+  · next h =>
+    have h' : s.toByteArray.data.toList.length ≤ i := by
+      rw [Array.length_toList]; exact Nat.le_of_not_lt h
+    simp [List.getD_eq_getElem?_getD, List.getElem?_eq_none h']
+
+theorem auditBasisBytes_length (e : DeclassificationEvent) :
+    (auditBasisBytes e).length = e.authorizationBasis.render.utf8ByteSize := by
+  unfold auditBasisBytes
+  rw [String.toUTF8_eq_toByteArray, auditBytes_toList]
+  simp only [Array.length_toList, String.utf8ByteSize, ByteArray.size]
+
+/-- `auditBasisChunkValue` of an entry's designation, read in place. -/
+@[inline] def auditBasisChunkCode (s : String) (i : Nat) : Nat :=
+  auditBasisByteAt s (4 * i) + 256 * auditBasisByteAt s (4 * i + 1)
+    + 65536 * auditBasisByteAt s (4 * i + 2) + 16777216 * auditBasisByteAt s (4 * i + 3)
+
+theorem auditBasisChunkCode_eq (e : DeclassificationEvent) (i : Nat) :
+    auditBasisChunkCode e.authorizationBasis.render i =
+      auditBasisChunkValue (auditBasisBytes e) i := by
+  unfold auditBasisChunkCode auditBasisChunkValue
+  simp only [auditBasisBytes_getD]
+
+/-- An entry's designation byte count, as a code. -/
+@[inline] def auditBasisCountCode (ctx : LabelingContext) (reader : SecurityDomain)
+    (r : AuditRing) (index : Nat) : Nat :=
+  match auditWindowFindVisible ctx reader r 0 r.length index with
+  | 0 => 0
+  | j + 1 =>
+    let n := (r.entry j).authorizationBasis.render.utf8ByteSize
+    if n ≤ maxAuditDesignationBytes then n + 1 else 0
+
+/-- An entry's designation chunk, as a code. -/
+@[inline] def auditBasisWordCode (ctx : LabelingContext) (reader : SecurityDomain)
+    (r : AuditRing) (index chunk : Nat) : Nat :=
+  match auditWindowFindVisible ctx reader r 0 r.length index with
+  | 0 => 0
+  | j + 1 =>
+    let s := (r.entry j).authorizationBasis.render
+    let n := s.utf8ByteSize
+    if n ≤ maxAuditDesignationBytes then
+      (if chunk < auditBasisChunkCount n then auditBasisChunkCode s chunk + 1 else 0)
+    else 0
+
+/-- A refusal-ledger slot's code: `0` for a slot out of range or empty, else
+`f` of its refusal. -/
+@[inline] def refusalSlotCode (rl : RefusalLedger) (slot : Nat)
+    (f : DeclassificationRefusal → Nat) : Nat :=
+  if h : slot < refusalRingSize then
+    match rl.recent.get ⟨slot, h⟩ with
+    | none => 0
+    | some r => f r
+  else 0
+
+/-- A refusal's field chunk count, as a code. -/
+@[inline] def refusalFieldCountCode (r : DeclassificationRefusal) (f : RefusalReadField) : Nat :=
+  let n := auditChunkCountN (refusalExportedFieldValue r f)
+  if n = 0 then 0 else n + 1
+
+/-- A refusal's field chunk, as a code. -/
+@[inline] def refusalFieldWordCode (r : DeclassificationRefusal) (f : RefusalReadField)
+    (chunk : Nat) : Nat :=
+  let v := refusalExportedFieldValue r f
+  let n := auditChunkCountN v
+  if n ≠ 0 ∧ chunk < n then auditFieldChunkCode v chunk + 1 else 0
+
+/-- A refusal's receiver chunk count, as a code (`1` for no receiver: count 0). -/
+@[inline] def refusalReceiverCountCode (r : DeclassificationRefusal) : Nat :=
+  match r.refusedReceiver with
+  | none => 1
+  | some receiver =>
+    let n := auditChunkCountN receiver.val
+    if n = 0 then 0 else n + 1
+
+/-- A refusal's receiver chunk, as a code. -/
+@[inline] def refusalReceiverWordCode (r : DeclassificationRefusal) (chunk : Nat) : Nat :=
+  match r.refusedReceiver with
+  | none => 0
+  | some receiver =>
+    let n := auditChunkCountN receiver.val
+    if n ≠ 0 ∧ chunk < n then auditFieldChunkCode receiver.val chunk + 1 else 0
+
+/-- **Whether a later event names an earlier one**, read off the later event's
+snapshot words (`declassificationEventNames_eq_code`). -/
+@[inline] def auditEventNamesCode (later earlier : DeclassificationEvent) : Bool :=
+  later.predecessorWords.containsCode earlier.timestamp
+
+theorem declassificationEventNames_eq_code (later earlier : DeclassificationEvent) :
+    declassificationEventNames later earlier = auditEventNamesCode later earlier :=
+  TaintWords.decode_contains_eq _ _
+
+/-- A causality verdict over two visible entries, as a code. -/
+@[inline] def auditChainCode (ctx : LabelingContext) (reader : SecurityDomain) (r : AuditRing)
+    (later earlier : Nat) : Nat :=
+  match auditWindowFindVisible ctx reader r 0 r.length later,
+      auditWindowFindVisible ctx reader r 0 r.length earlier with
+  | j + 1, i + 1 => (if auditEventNamesCode (r.entry j) (r.entry i) then 1 else 0) + 1
+  | _, _ => 0
 
 /-- **A monitor's audit read, walked in place**, as a code: `w + 1` for the word
-`w` the specification returns (`auditReadFastCode_spec`), `0` for a read this
-form does not cover — the basis, refusal-ledger and causality opcodes, which
-take the general form — or one the specification refuses. -/
-def auditReadFastCode (ctx : LabelingContext) (reader : SecurityDomain) (r : AuditRing)
+`w` the specification returns (`auditReadFastCode_spec`), `0` for a read the
+specification refuses.  Every opcode is read off the trail's live window and the
+refusal ledger's slots, so no view, designation, number or tag list is built. -/
+def auditReadFastCode (ctx : LabelingContext) (reader : SecurityDomain) (st : SystemState)
     (opcode index chunk : Nat) : Nat :=
+  let r := st.declassificationAudit
+  let rl := st.declassificationRefusals
   match opcode with
   | 0 => auditStatusWord (auditWindowVisibleCount ctx reader r 0 r.length 0) r.epoch + 1
   | 1 => auditFieldCountCode ctx reader r index .srcDomain
@@ -613,10 +786,31 @@ def auditReadFastCode (ctx : LabelingContext) (reader : SecurityDomain) (r : Aud
     match auditWindowFindVisible ctx reader r 0 r.length index with
     | 0 => 0
     | j + 1 => auditCoreAndTrustWord (r.entry j) + 1
+  | 10 => auditBasisCountCode ctx reader r index
+  | 11 => auditBasisWordCode ctx reader r index chunk
+  | 12 => refusalStatusWord rl.nextSlot.val rl.version + 1
+  | 13 => refusalCountersWord rl.attemptCount.val rl.droppedCount.val + 1
+  | 14 => refusalSlotCode rl index fun x => refusalTagsWord x + 1
+  | 15 => refusalSlotCode rl index fun x => refusalFieldCountCode x .subject
+  | 16 => refusalSlotCode rl index fun x => refusalFieldCountCode x .subjectDomain
+  | 17 => refusalSlotCode rl index fun x => refusalFieldCountCode x .requestedTarget
+  | 18 => refusalSlotCode rl index fun x => refusalFieldWordCode x .subject chunk
+  | 19 => refusalSlotCode rl index fun x => refusalFieldWordCode x .subjectDomain chunk
+  | 20 => refusalSlotCode rl index fun x => refusalFieldWordCode x .requestedTarget chunk
   | 21 => auditFieldCountCode ctx reader r index .actorSubject
   | 22 => auditFieldCountCode ctx reader r index .actorDomain
   | 23 => auditFieldWordCode ctx reader r index chunk .actorSubject
   | 24 => auditFieldWordCode ctx reader r index chunk .actorDomain
+  | 25 => refusalSlotCode rl index refusalReceiverCountCode
+  | 26 => refusalSlotCode rl index fun x => refusalReceiverWordCode x chunk
+  | 27 => if index = 0 then 0 else auditChainCode ctx reader r index (index - 1)
+  | 28 => if chunk < index then auditChainCode ctx reader r index chunk else 0
+  | 29 =>
+    if chunk < r.epoch then
+      match auditWindowFindVisible ctx reader r 0 r.length index with
+      | 0 => 0
+      | j + 1 => (if (r.entry j).predecessorWords.containsCode chunk then 1 else 0) + 1
+    else 0
   | _ => 0
 
 /-- The visible view's entries, found in place. -/
@@ -654,7 +848,6 @@ theorem auditFieldCountCode_spec (ctx : LabelingContext) (m reader : SecurityDom
   split at h
   · cases h
   · next j hF =>
-    dsimp only
     by_cases hn : auditChunkCountN (auditExportedFieldValue true index
       (st.declassificationAudit.entry j) f) = 0
     · simp only [hn, ↓reduceIte] at h; cases h
@@ -673,44 +866,250 @@ theorem auditFieldWordCode_spec (ctx : LabelingContext) (m reader : SecurityDoma
   split at h
   · cases h
   · next j hF =>
-    dsimp only
     by_cases hc : auditChunkCountN (auditExportedFieldValue true index
         (st.declassificationAudit.entry j) f) ≠ 0 ∧
       chunk < auditChunkCountN (auditExportedFieldValue true index
         (st.declassificationAudit.entry j) f)
     · obtain ⟨hn, hlt⟩ := hc
       simp only [ne_eq, hn, not_false_eq_true, hlt, and_self, ↓reduceIte,
-        Nat.add_right_cancel_iff] at h ⊢
+        Nat.add_right_cancel_iff, auditFieldChunkCode_eq] at h ⊢
       rw [h]
     · simp only [hc, ↓reduceIte] at h; cases h
 
-/-- A covered read's code is the specification's word, for a reader the
-clearance dominates. -/
+/-- A designation byte-count code is the specification's count. -/
+theorem auditBasisCountCode_spec (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (index w : Nat)
+    (h : auditBasisCountCode ctx reader st.declassificationAudit index = w + 1) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.basisByteCount index) =
+      .ok w := by
+  unfold auditBasisCountCode at h
+  simp only [auditReadWord, auditLogVisibleTo_getElem?]
+  split at h
+  · cases h
+  · next j hF =>
+    simp only [auditBasisBytes_length]
+    by_cases hn : (st.declassificationAudit.entry j).authorizationBasis.render.utf8ByteSize ≤
+        maxAuditDesignationBytes
+    · simp only [hn, ↓reduceIte, Nat.add_right_cancel_iff] at h ⊢
+      rw [h]
+    · simp only [hn, ↓reduceIte] at h; cases h
+
+/-- A designation chunk code is the specification's chunk. -/
+theorem auditBasisWordCode_spec (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (index chunk w : Nat)
+    (h : auditBasisWordCode ctx reader st.declassificationAudit index chunk = w + 1) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.basisChunk index chunk) =
+      .ok w := by
+  unfold auditBasisWordCode at h
+  simp only [auditReadWord, auditLogVisibleTo_getElem?]
+  split at h
+  · cases h
+  · next j hF =>
+    simp only [auditBasisBytes_length]
+    by_cases hn : (st.declassificationAudit.entry j).authorizationBasis.render.utf8ByteSize ≤
+        maxAuditDesignationBytes
+    · by_cases hc : chunk < auditBasisChunkCount
+          (st.declassificationAudit.entry j).authorizationBasis.render.utf8ByteSize
+      · simp only [hn, hc, ↓reduceIte, Nat.add_right_cancel_iff] at h ⊢
+        rw [← auditBasisChunkCode_eq, h]
+      · simp only [hn, hc, ↓reduceIte] at h; cases h
+    · simp only [hn, ↓reduceIte] at h; cases h
+
+/-- A refusal slot's code is nonzero only on a present slot. -/
+theorem refusalSlotCode_some {rl : RefusalLedger} {slot w : Nat}
+    {f : DeclassificationRefusal → Nat} (h : refusalSlotCode rl slot f = w + 1) :
+    ∃ (hs : slot < refusalRingSize) (r : DeclassificationRefusal),
+      rl.recent.get ⟨slot, hs⟩ = some r ∧ f r = w + 1 := by
+  unfold refusalSlotCode at h
+  split at h
+  · next hs =>
+    split at h
+    · cases h
+    · next r hr => exact ⟨hs, r, hr, h⟩
+  · cases h
+
+/-- A refusal-ledger opcode's code is the specification's word, for a monitor. -/
+theorem refusalFieldCountCode_spec (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (slot w : Nat) (f : RefusalReadField)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : refusalSlotCode st.declassificationRefusals slot (fun x => refusalFieldCountCode x f) =
+      w + 1) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalSlotFieldChunkCount slot f) =
+      .ok w := by
+  obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
+  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
+  unfold refusalFieldCountCode at hf
+  by_cases hn : auditChunkCountN (refusalExportedFieldValue r f) = 0
+  · simp only [hn, ↓reduceIte] at hf; cases hf
+  · simp only [hn, ↓reduceIte, Nat.add_right_cancel_iff] at hf ⊢
+    rw [hf]
+
+theorem refusalFieldWordCode_spec (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (slot chunk w : Nat) (f : RefusalReadField)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : refusalSlotCode st.declassificationRefusals slot
+      (fun x => refusalFieldWordCode x f chunk) = w + 1) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalSlotField slot f chunk) =
+      .ok w := by
+  obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
+  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
+  unfold refusalFieldWordCode at hf
+  by_cases hc : auditChunkCountN (refusalExportedFieldValue r f) ≠ 0 ∧
+      chunk < auditChunkCountN (refusalExportedFieldValue r f)
+  · obtain ⟨hn, hlt⟩ := hc
+    simp only [ne_eq, hn, not_false_eq_true, hlt, and_self, ↓reduceIte,
+      Nat.add_right_cancel_iff, auditFieldChunkCode_eq] at hf ⊢
+    rw [hf]
+  · simp only [hc, ↓reduceIte] at hf; cases hf
+
+theorem refusalReceiverCountCode_spec (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (slot w : Nat)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : refusalSlotCode st.declassificationRefusals slot refusalReceiverCountCode = w + 1) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalReceiverChunkCount slot) =
+      .ok w := by
+  obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
+  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
+  unfold refusalReceiverCountCode at hf
+  split at hf
+  · next hN =>
+    simp only [hN] at hf ⊢
+    obtain rfl : w = 0 := by omega
+    rfl
+  · next rc hN =>
+    simp only [hN]
+    by_cases hn : auditChunkCountN rc.val = 0
+    · simp only [hn, ↓reduceIte] at hf; cases hf
+    · simp only [hn, ↓reduceIte, Nat.add_right_cancel_iff] at hf ⊢
+      rw [hf]
+
+theorem refusalReceiverWordCode_spec (ctx : LabelingContext) (m reader : SecurityDomain)
+    (st : SystemState) (slot chunk w : Nat)
+    (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
+    (h : refusalSlotCode st.declassificationRefusals slot
+      (fun x => refusalReceiverWordCode x chunk) = w + 1) :
+    auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalReceiverChunk slot chunk) =
+      .ok w := by
+  obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
+  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
+  unfold refusalReceiverWordCode at hf
+  split at hf
+  · cases hf
+  · next rc hN =>
+    simp only [hN]
+    by_cases hc : auditChunkCountN rc.val ≠ 0 ∧ chunk < auditChunkCountN rc.val
+    · obtain ⟨hn, hlt⟩ := hc
+      simp only [ne_eq, hn, not_false_eq_true, hlt, and_self, ↓reduceIte,
+        Nat.add_right_cancel_iff, auditFieldChunkCode_eq] at hf ⊢
+      rw [hf]
+    · simp only [hc, ↓reduceIte] at hf; cases hf
+
+/-- A causality code is the specification's verdict over two visible entries. -/
+theorem auditChainCode_some {ctx : LabelingContext} {reader : SecurityDomain} {st : SystemState}
+    {later earlier w : Nat}
+    (h : auditChainCode ctx reader st.declassificationAudit later earlier = w + 1) :
+    ∃ j i, auditWindowFindVisible ctx reader st.declassificationAudit 0
+        st.declassificationAudit.length later = j + 1 ∧
+      auditWindowFindVisible ctx reader st.declassificationAudit 0
+        st.declassificationAudit.length earlier = i + 1 ∧
+      (if declassificationEventNames (st.declassificationAudit.entry j)
+          (st.declassificationAudit.entry i) then 1 else 0) = w := by
+  unfold auditChainCode at h
+  split at h
+  · next j i hF1 hF2 =>
+    refine ⟨j, i, hF1, hF2, ?_⟩
+    rw [declassificationEventNames_eq_code]
+    omega
+  · cases h
+
+/-- **A read's code is the specification's word**, for a reader the clearance
+dominates. -/
 theorem auditReadFastCode_spec (ctx : LabelingContext) (m reader : SecurityDomain)
     (st : SystemState) (opcode index chunk w : Nat)
     (hMon : DomainFlowPolicy.legacyLattice.canFlow m reader = true)
-    (h : auditReadFastCode ctx reader st.declassificationAudit opcode index chunk = w + 1) :
+    (h : auditReadFastCode ctx reader st opcode index chunk = w + 1) :
     (match decodeAuditReadOp opcode index chunk with
      | none => (.error .invalidSyscallArgument : Except KernelError Nat)
      | some op => auditReadWord (liftLegacyContext ctx) (some m) reader st op) = .ok w := by
   have hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true := hMon
   unfold auditReadFastCode at h
-  split at h
-  · simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte, auditLogVisibleTo_length]
+  dsimp only at h
+  match opcode, h with
+  | 0, h =>
+    simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte, auditLogVisibleTo_length]
     simp only [Nat.add_right_cancel_iff] at h
     rw [h]
-  all_goals first
-    | (simp only [decodeAuditReadOp]; exact auditFieldCountCode_spec ctx m reader st _ _ _ hIs h)
-    | (simp only [decodeAuditReadOp]; exact auditFieldWordCode_spec ctx m reader st _ _ _ _ hIs h)
-    | skip
-  · simp only [decodeAuditReadOp, auditReadWord, auditLogVisibleTo_getElem?]
-    split at h
-    · cases h
-    · next j hF =>
-      dsimp only
+  | 1, h => exact auditFieldCountCode_spec ctx m reader st _ _ _ hIs h
+  | 2, h => exact auditFieldCountCode_spec ctx m reader st _ _ _ hIs h
+  | 3, h => exact auditFieldCountCode_spec ctx m reader st _ _ _ hIs h
+  | 4, h => exact auditFieldCountCode_spec ctx m reader st _ _ _ hIs h
+  | 5, h => exact auditFieldWordCode_spec ctx m reader st _ _ _ _ hIs h
+  | 6, h => exact auditFieldWordCode_spec ctx m reader st _ _ _ _ hIs h
+  | 7, h => exact auditFieldWordCode_spec ctx m reader st _ _ _ _ hIs h
+  | 8, h => exact auditFieldWordCode_spec ctx m reader st _ _ _ _ hIs h
+  | 9, h =>
+    simp only [decodeAuditReadOp, auditReadWord, auditLogVisibleTo_getElem?]
+    generalize auditWindowFindVisible ctx reader st.declassificationAudit 0
+      st.declassificationAudit.length index = v at h ⊢
+    cases v with
+    | zero => cases h
+    | succ j =>
       simp only [Nat.add_right_cancel_iff] at h
-      rw [h]
-  · cases h
+      subst h; rfl
+  | 10, h => exact auditBasisCountCode_spec ctx m reader st _ _ h
+  | 11, h => exact auditBasisWordCode_spec ctx m reader st _ _ _ h
+  | 12, h =>
+    simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte]
+    simp only [Nat.add_right_cancel_iff] at h
+    rw [h]
+  | 13, h =>
+    simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte]
+    simp only [Nat.add_right_cancel_iff] at h
+    rw [h]
+  | 14, h =>
+    obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
+    simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr]
+    simp only [Nat.add_right_cancel_iff] at hf
+    rw [hf]
+  | 15, h => exact refusalFieldCountCode_spec ctx m reader st _ _ _ hIs h
+  | 16, h => exact refusalFieldCountCode_spec ctx m reader st _ _ _ hIs h
+  | 17, h => exact refusalFieldCountCode_spec ctx m reader st _ _ _ hIs h
+  | 18, h => exact refusalFieldWordCode_spec ctx m reader st _ _ _ _ hIs h
+  | 19, h => exact refusalFieldWordCode_spec ctx m reader st _ _ _ _ hIs h
+  | 20, h => exact refusalFieldWordCode_spec ctx m reader st _ _ _ _ hIs h
+  | 21, h => exact auditFieldCountCode_spec ctx m reader st _ _ _ hIs h
+  | 22, h => exact auditFieldCountCode_spec ctx m reader st _ _ _ hIs h
+  | 23, h => exact auditFieldWordCode_spec ctx m reader st _ _ _ _ hIs h
+  | 24, h => exact auditFieldWordCode_spec ctx m reader st _ _ _ _ hIs h
+  | 25, h => exact refusalReceiverCountCode_spec ctx m reader st _ _ hIs h
+  | 26, h => exact refusalReceiverWordCode_spec ctx m reader st _ _ _ hIs h
+  | 27, h =>
+    by_cases hi : index = 0
+    · simp only [hi, ↓reduceIte] at h; cases h
+    · simp only [hi, ↓reduceIte] at h
+      obtain ⟨j, i, hF1, hF2, hw⟩ := auditChainCode_some h
+      simp only [decodeAuditReadOp, auditReadWord, auditLogVisibleTo_getElem?, hF1, hF2, hi,
+        ↓reduceIte, hw]
+  | 28, h =>
+    by_cases hc : chunk < index
+    · simp only [hc, ↓reduceIte] at h
+      obtain ⟨j, i, hF1, hF2, hw⟩ := auditChainCode_some h
+      simp only [decodeAuditReadOp, auditReadWord, auditLogVisibleTo_getElem?, hF1, hF2, hc,
+        ↓reduceIte, hw]
+    · simp only [hc, ↓reduceIte] at h; cases h
+  | 29, h =>
+    by_cases hc : chunk < st.declassificationAudit.epoch
+    · simp only [hc, ↓reduceIte] at h
+      split at h
+      · cases h
+      · next j hF =>
+        simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte,
+          SystemState.declassificationAuditEpoch, hc, auditLogVisibleTo_getElem?, hF,
+          TaintWords.decode_contains_eq]
+        simp only [Nat.add_right_cancel_iff] at h
+        rw [h]
+    · simp only [hc, ↓reduceIte] at h; cases h
+  | _ + 30, h => cases h
 
 /-- **An admitted read's write**: the word staged into the caller's return
 registers as words (`writeReturnFrameToTcb_ofWord_eq_words`). -/
@@ -731,7 +1130,7 @@ dominates the reader, and the read is covered, succeeds and fits a word. -/
 /-- The opcode, index and chunk of a read, from the caller's registers. -/
 @[inline] def auditReadCode (ctx : LabelingContext) (readerDomain : SecurityDomain)
     (st : SystemState) (regs : SeLe4n.RegisterFile) : Nat :=
-  auditReadFastCode ctx readerDomain st.declassificationAudit (auditedArgWord regs 0).toNat
+  auditReadFastCode ctx readerDomain st (auditedArgWord regs 0).toNat
     (auditedArgWord regs 1).toNat (auditedArgWord regs 2).toNat
 
 /-- An admitted read is the specification's. -/
@@ -885,6 +1284,112 @@ no result record is built across the call. -/
     (declassifySignalRecord c tid actorDomain notifDomain nid hop
       (notificationSignalBoundOnCore nid badge c st).1)
 
+/-- A write that leaves a thread's taint words where they are reads the same
+words at every id. -/
+theorem taintWordsAt_mapTcbInPlace_withMessageSlots (X : SystemState) (w : SeLe4n.ThreadId)
+    (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
+    (π : Nat → Nat) (k : SeLe4n.ObjId) :
+    (X.mapTcbInPlace w (TCB.withMessageSlots ρ μ π)).taintWordsAt k = X.taintWordsAt k := by
+  rw [SystemState.taintWordsAt_eq, SystemState.taintWordsAt_eq, SystemState.objects_mapTcbInPlace]
+  by_cases hw : (w.toObjId == k) = true
+  · rw [if_pos hw]
+    rcases X.objects[k]? with _ | o
+    · rfl
+    · cases o <;> rfl
+  · rw [if_neg hw]
+
+/-- The stored signal's record and a write to a waiter's message slots commute:
+the record reads the trail and the caller's words, which the write leaves. -/
+theorem declassifySignalRecord_mapTcbInPlace (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId) (hop : Bool)
+    (X : SystemState) (w : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
+    (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat) :
+    declassifySignalRecord c tid actorDomain notifDomain nid hop
+        (X.mapTcbInPlace w (TCB.withMessageSlots ρ μ π)) =
+      (declassifySignalRecord c tid actorDomain notifDomain nid hop X).mapTcbInPlace w
+        (TCB.withMessageSlots ρ μ π) := by
+  unfold declassifySignalRecord
+  split
+  · rw [withTaintWordsAt_eq, withTaintWordsAt_eq, taintWordsAt_mapTcbInPlace_withMessageSlots]
+    rfl
+  · rfl
+
+theorem declassifySignalRecord_objects (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId) (hop : Bool)
+    (X : SystemState) :
+    (declassifySignalRecord c tid actorDomain notifDomain nid hop X).objects = X.objects := by
+  unfold declassifySignalRecord
+  split
+  · rw [withTaintWordsAt_eq]; rfl
+  · rfl
+
+/-- **A declassified signal's wake, delivered**: the waiter woken without the
+badge message, the record its first hop owes written over the trail, then the
+badge frame written into the waiter's saved registers
+(`declassifySignalWoken_eq_writes`).  The message is built only where the
+waiter is, unexpectedly, not ready. -/
+@[inline] def declassifySignalWokenWrites (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (nextCode : Nat) (badge : SeLe4n.Badge) (hop : Bool) (st : SystemState) : SystemState :=
+  let X := (wakeThread (storeSignalWokenWith st nid waiter (SeLe4n.ThreadId.ofOptCode nextCode)
+    receiverReady) waiter c).1
+  let Y := declassifySignalRecord c tid actorDomain notifDomain nid hop X
+  writeDeliveredFrameIfReady Y waiter (Architecture.returnFrameOfBadge badge)
+    (fun _ => holdSignalBody Y waiter badge)
+
+/-- The specification's woken signal, its record, then the staged badge, is
+the delivered form. -/
+theorem declassifySignalWoken_eq_writes (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) (badge : SeLe4n.Badge) (hop : Bool) (st : SystemState)
+    (hNo : st.objects.noResizeDue) :
+    Architecture.stageWokenDelivery
+        (declassifySignalRecord c tid actorDomain notifDomain nid hop
+          (wakeThread (storeSignalWoken st nid waiter next
+            { IpcMessage.empty with badge := some badge }) waiter c).1)
+        (some waiter) 0 =
+      declassifySignalWokenWrites c tid actorDomain notifDomain nid waiter
+        (SeLe4n.ThreadId.optCode next) badge hop st := by
+  have hNo0 := storeSignalWokenWith_noResizeDue st nid waiter next receiverReady hNo
+  have hNo1 := wakeThread_noResizeDue _ waiter c hNo0
+  unfold declassifySignalWokenWrites holdSignalBody
+  rw [SeLe4n.ThreadId.ofOptCode_optCode, storeSignalWoken_eq_hold _ _ _ _ _ hNo,
+    wakeThread_msg _ _ _ _ _ _ _ hNo0]
+  dsimp only
+  rw [declassifySignalRecord_mapTcbInPlace, Architecture.stageWokenDelivery_some,
+    stageDeliveredMessage_holdMessage _ _ _
+      (by rw [declassifySignalRecord_objects]; exact hNo1) (by simp [IpcMessage.empty]),
+    returnFrameOfMessage_badge]
+
+/-- Whether a `.declassifySignal` to `nid` that wakes the notification's head
+waiter `waiter` is admitted in place: the core runs the caller, no bound
+receiver, every write of the wake in its slot (`signalWakesInPlace`), the second
+hop an ordinary flow (so the plan owes at most the first hop's record), and the
+first hop either an ordinary flow or a downgrade the policy permits with room in
+the trail. -/
+@[inline] def declassifySignalWokenAdmitted (ctx : LabelingContext) (st : SystemState)
+    (tid signaler : SeLe4n.ThreadId) (nid : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) : Bool :=
+  decide (signaler = tid) && (boundDeliveryTarget? st nid).isNone &&
+    signalWakesInPlace st nid waiter &&
+    securityFlowsTo (ctx.objectLabelOf nid) (ctx.threadLabelOf waiter) &&
+    (securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) ||
+      (ctx.declassificationPolicy.canDeclassify (embedLegacyLabel (ctx.threadLabelOf signaler))
+          (embedLegacyLabel (ctx.objectLabelOf nid)) &&
+        decide (st.declassificationAudit.length < maxDeclassificationAuditEntries)))
+
+/-- **An admitted woken `.declassifySignal`'s writes**: the wake delivered with
+its record (`declassifySignalWokenWrites`), then the fused taint step over the
+caller's and the notification's words captured before the signal. -/
+@[noinline] def declassifySignalWokenPerform (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (nextCode : Nat) (badge : SeLe4n.Badge) (hop : Bool) (epoch len : Nat)
+    (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
+    (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool) (st : SystemState) :
+    SystemState :=
+  declassifySignalTaintStep (.toWaiter waiter) nid tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩
+    ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ epoch len
+    (declassifySignalWokenWrites c tid actorDomain notifDomain nid waiter nextCode badge hop st)
+
 /-- `.declassifySignal`'s general form: the specification's arm, then its fused
 taint step over the pre-state's words (`declassifySignalTaintStep_eq`), every
 refusal carrying the state it was handed. -/
@@ -922,7 +1427,24 @@ general one (`declassifySignalOperandArmR_eq`). -/
               (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
               st.declassificationAudit.epoch st.declassificationAudit.length
               a0 a1 a2 a3 a4 a5 a6 a7 ac as b0 b1 b2 b3 b4 b5 b6 b7 bc bs st)
-          else declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
+          else
+            match st.getNotification? nid with
+            | some ntfn =>
+              match ntfn.waitHeadCode with
+              | k + 1 =>
+                if declassifySignalWokenAdmitted ctx st tid signaler nid ⟨k⟩ then
+                  withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
+                  withTaintWordsAt st nid fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
+                  .ok ((), declassifySignalWokenPerform executingCore tid
+                    (embedLegacyLabel (ctx.threadLabelOf tid))
+                    (embedLegacyLabel (ctx.objectLabelOf nid)) nid ⟨k⟩ (ntfnSuccessorCode st ⟨k⟩)
+                    (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+                    (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
+                    st.declassificationAudit.epoch st.declassificationAudit.length
+                    a0 a1 a2 a3 a4 a5 a6 a7 ac as b0 b1 b2 b3 b4 b5 b6 b7 bc bs st)
+                else declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
+              | 0 => declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
+            | none => declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
         | _, _ => declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
       else .error (.illegalAuthority, st)
 
@@ -981,6 +1503,73 @@ theorem auditedArmSpec_declassifySignal_stored (ctx : LabelingContext) (capAddr 
         clearWokenReceiverStash, Architecture.stageWokenDelivery_none, withTaintWordsAt_eq]
       rw [recordEventInPlace_eq]
 
+/-- An admitted woken `.declassifySignal` is the specification's: the wake,
+then the record its first hop owes when it is a downgrade (the second hop is an
+ordinary flow and owes none), then the badge staged into the waiter. -/
+theorem auditedArmSpec_declassifySignal_woken (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+    (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (cap : Capability) (st : SystemState) (nid : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
+    (ntfn : Notification) (k : Nat)
+    (hT : cap.target = .object nid)
+    (hCur : st.scheduler.currentOnCore executingCore = some signaler)
+    (hN : st.getNotification? nid = some ntfn) (hK : ntfn.waitHeadCode = k + 1)
+    (hA : declassifySignalWokenAdmitted ctx st tid signaler nid ⟨k⟩ = true) :
+    auditedArmSpec ctx .declassifySignal capAddr regs tid executingCore cap st =
+      .ok ((), Architecture.stageWokenDelivery
+        (declassifySignalRecord executingCore tid
+          (embedLegacyLabel (ctx.threadLabelOf tid)) (embedLegacyLabel (ctx.objectLabelOf nid)) nid
+          (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
+          (wakeThread (storeSignalWoken st nid ⟨k⟩ (ntfnSuccessor? st ⟨k⟩)
+            { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) })
+            ⟨k⟩ executingCore).1)
+        (some ⟨k⟩) 0) := by
+  simp only [declassifySignalWokenAdmitted, Bool.and_eq_true, decide_eq_true_eq,
+    Option.isNone_iff_eq_none, Bool.or_eq_true] at hA
+  obtain ⟨⟨⟨⟨hSig, hBound⟩, hW⟩, hFlow2⟩, hHop⟩ := hA
+  subst hSig
+  have hHead : ntfn.waitHead = some ⟨k⟩ := by
+    rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
+  have hWait : notificationSignalWaiter? st nid = some ⟨k⟩ := by
+    simp only [notificationSignalWaiter?, hN, hHead]
+  have hS : notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+      executingCore st =
+      ((wakeThread (storeSignalWoken st nid ⟨k⟩ (ntfnSuccessor? st ⟨k⟩)
+          { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) })
+          ⟨k⟩ executingCore).1,
+        .ok (wakeThread (storeSignalWoken st nid ⟨k⟩ (ntfnSuccessor? st ⟨k⟩)
+          { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) })
+          ⟨k⟩ executingCore).2) := by
+    simp only [notificationSignalBoundOnCore, hBound, notificationSignalOnCore_eq_impl,
+      notificationSignalOnCoreImpl, hN, hHead, hW, ↓reduceIte]
+  have hLen := congrArg List.length (notificationSignalBoundOnCore_declassificationAuditLog_eq nid
+    (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st)
+  rw [hS] at hLen
+  simp only [SystemState.declassificationAuditLog, AuditRing.length_toList] at hLen
+  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+    Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
+    auditedDecoded_msgReg regs 0 (by decide), bind, Except.bind, pure, Except.pure,
+    ← SeLe4n.Badge.ofWord_eq_ofNatMasked, notificationSignalDeclassifiedCrossCoreDispatch,
+    notificationSignalDeclassifiedOnCore, hCur, hN, declassificationActorOf,
+    liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
+    declassifiedSignalHopAuthorization, liftLegacyContext_policy, legacyLattice_canFlow_embed,
+    declassifiedSignalReceiver?, hBound, hWait, hFlow2, ↓reduceIte, Option.map_none, hS,
+    declassifiedHopRecords_ordinary, List.append_nil]
+  by_cases hFlow : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) = true
+  · simp only [hFlow, ↓reduceIte, declassifiedHopRecords, recordDeclassifiedHops_nil,
+      declassifySignalRecord, Bool.not_true, Bool.false_eq_true, clearWokenReceiverStash,
+      Architecture.stageWokenDelivery_none]
+  · obtain ⟨hDecl, hRoom⟩ := hHop.resolve_left hFlow
+    have hRoom1 : (wakeThread (storeSignalWoken st nid ⟨k⟩ (ntfnSuccessor? st ⟨k⟩)
+          { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) })
+          ⟨k⟩ executingCore).1.declassificationAudit.length < maxDeclassificationAuditEntries := by
+      rw [hLen]; exact hRoom
+    simp only [hFlow, Bool.false_eq_true, ↓reduceIte, declassificationDecision,
+      liftLegacyContext_policy, legacyLattice_canFlow_embed, hDecl, declassifiedHopRecords,
+      recordDeclassifiedHops, recordDeclassifiedHopsFrom, recordDeclassificationChecked,
+      hRoom1, declassifySignalRecord, Bool.not_false,
+      clearWokenReceiverStash, Architecture.stageWokenDelivery_none, withTaintWordsAt_eq]
+    rw [recordEventInPlace_eq]
+
 /-- `.declassifySignal` behind its operand check is the specification's arm and
 taint step, on every capability the operand resolves to. -/
 theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult)
@@ -1038,9 +1627,41 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
               executingCore st with ⟨st1, e | sgi⟩
           · rw [hS] at hOk; cases hOk
           · rfl
-        · unfold declassifySignalGeneralR
-          rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
-            with _ | ⟨⟨⟩, post⟩ <;> rfl
+        · split
+          · next ntfn hN =>
+            split
+            · next k hK =>
+              split
+              · next hA =>
+                have hA' := hA
+                simp only [declassifySignalWokenAdmitted, Bool.and_eq_true, decide_eq_true_eq,
+                  Option.isNone_iff_eq_none] at hA'
+                obtain ⟨⟨⟨⟨-, hBound⟩, hW⟩, -⟩, -⟩ := hA'
+                have hHead : ntfn.waitHead = some ⟨k⟩ := by
+                  rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
+                have hWait : notificationSignalWaiter? st nid = some ⟨k⟩ := by
+                  simp only [notificationSignalWaiter?, hN, hHead]
+                have hCase : signalTaintCaseOf st (some cap) = .toWaiter ⟨k⟩ := by
+                  simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound,
+                    hWait]
+                have hNo : st.objects.noResizeDue := by
+                  simp only [signalWakesInPlace, Bool.and_eq_true] at hW
+                  exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.2
+                rw [auditedArmSpec_declassifySignal_woken ctx decoded.capAddr regs tid executingCore
+                  cap st nid signaler ntfn k hT hCur hN hK hA, withTaintWordsAt_eq,
+                  withTaintWordsAt_eq, hCase, declassifySignalWoken_eq_writes _ _ _ _ _ _ _ _ _ st hNo,
+                  ← optCode_ntfnSuccessor?]
+                simp only [declassifySignalWokenPerform, TaintWords.mk_fields, operandObjectId,
+                  capObjectId, hT]
+              · unfold declassifySignalGeneralR
+                rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore
+                  cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
+            · unfold declassifySignalGeneralR
+              rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap
+                st with _ | ⟨⟨⟩, post⟩ <;> rfl
+          · unfold declassifySignalGeneralR
+            rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
+              with _ | ⟨⟨⟩, post⟩ <;> rfl
       · unfold declassifySignalGeneralR
         rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
           with _ | ⟨⟨⟩, post⟩ <;> rfl

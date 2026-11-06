@@ -4402,15 +4402,17 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// - a send that blocks carrying the caller's tags, and the other thread's
 ///   receive that takes the message — and the tags — from it: the tainted
 ///   path, IPC whose content carries a declassification's provenance;
-/// - the audit monitor's reads of the trail's status and of the first entry's
-///   target, and its drain of the whole trail, through the boot audit
-///   capability ([`AUDIT_CAP`]);
-/// - the carved notification's only capability deleted.
+/// - a wait that takes the stored badge, a wait on the notification that
+///   blocks, and the other thread's declassified signal that wakes it (one more record, the second hop an
+///   ordinary flow);
+/// - a refused declassification, unmeasured, then the audit monitor's drain
+///   and reads ([`AUDIT_SCENARIO`]) and the carved notification's only
+///   capability deleted.
 ///
 /// Run twice like every scenario: the second run's caller and receiver are
 /// already tagged, so it is the steady state of the tainted path too.
 #[cfg(feature = "hw_target")]
-const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
+const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
     RoundTrip {
         name: "declassify",
         syscall: DECLASSIFY,
@@ -4440,6 +4442,62 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
         true,
     ),
     partner_step("receive-tainted", RECEIVE, ENDPOINT_CAP, 0, [0, 0], false),
+    // WS-ZA ZA6.35: the stored badge taken by a wait, then a declassified
+    // signal that wakes the notification's next waiter: its first hop the
+    // caller's downgrade into the notification (one record), its second the
+    // notification's ordinary flow into the waiter.
+    partner_step("declassified-wait-pending", WAIT, FRAME_CAP, 0, [0, 0], false),
+    partner_step("declassified-wait-blocks", WAIT, FRAME_CAP, 0, [0, 0], true),
+    partner_step(
+        "declassified-signal-wakes",
+        DECLASSIFY_SIGNAL,
+        FRAME_CAP,
+        1,
+        [2, 0],
+        false,
+    ),
+];
+/// A refused declassification (WS-ZA ZA6.35), unmeasured, so the refusal
+/// ledger has a slot for the audit reads to read: the boot domain's endpoint
+/// is in the caller's own domain, a flow the base lattice already permits,
+/// which `.declassify` refuses (`flowDenied`) and the seam records.
+#[cfg(feature = "hw_target")]
+const DECLASSIFICATION_REFUSAL: RoundTrip = RoundTrip {
+    name: "declassify-refused",
+    syscall: DECLASSIFY,
+    cptr: ENDPOINT_CAP,
+    msg_len: 0,
+    msg: [0; 4],
+    primed: None,
+    blocks: false,
+    returns: Some((
+        (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 9,
+        None,
+    )),
+};
+/// `KernelError::FlowDenied`'s discriminant.
+#[cfg(feature = "hw_target")]
+const FLOW_DENIED: u64 = 13;
+/// **The audit monitor's reads** (WS-ZA ZA5.13, every opcode family at
+/// ZA6.35), through the boot audit capability ([`AUDIT_CAP`]): the trail's
+/// first entry drained, so the trail has an epoch for the archived verdict to
+/// read below; the status, an entry's field, its authorization basis (a chunk
+/// past the first among them), the refusal ledger's status, counters and the
+/// refused declassification's slot, and the causality verdicts; then the
+/// whole trail drained and the carved notification's only capability deleted.
+#[cfg(feature = "hw_target")]
+const AUDIT_SCENARIO: [RoundTrip; 20] = [
+    RoundTrip {
+        name: "audit-drain-first",
+        syscall: AUDIT_DRAIN,
+        cptr: AUDIT_CAP,
+        msg_len: 1,
+        msg: [1, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // The trail's status.
     RoundTrip {
         name: "audit-read-status",
         syscall: AUDIT_READ,
@@ -4450,13 +4508,178 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
         blocks: false,
         returns: None,
     },
-    // Opcode 7: the target object of entry 0, chunk 0.
+    // The target object of the first visible entry, chunk 0.
     RoundTrip {
         name: "audit-read-entry",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         msg_len: 3,
         msg: [7, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // The first visible entry's authorization basis: its byte count.
+    RoundTrip {
+        name: "audit-read-basis-count",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [10, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Its second chunk: a chunk past the first.
+    RoundTrip {
+        name: "audit-read-basis-chunk",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [11, 0, 1, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // The refusal ledger's status.
+    RoundTrip {
+        name: "audit-read-refusal-status",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [12, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Its counters.
+    RoundTrip {
+        name: "audit-read-refusal-counters",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [13, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Slot 0's refusal: its tags.
+    RoundTrip {
+        name: "audit-read-refusal-tags",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [14, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Its subject's chunk count.
+    RoundTrip {
+        name: "audit-read-refusal-subject-count",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [15, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Its subject domain's chunk count.
+    RoundTrip {
+        name: "audit-read-refusal-domain-count",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [16, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Its requested target's chunk count.
+    RoundTrip {
+        name: "audit-read-refusal-target-count",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [17, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Its subject, chunk 0.
+    RoundTrip {
+        name: "audit-read-refusal-subject",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [18, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Its subject domain, chunk 0.
+    RoundTrip {
+        name: "audit-read-refusal-domain",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [19, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Its requested target, chunk 0.
+    RoundTrip {
+        name: "audit-read-refusal-target",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [20, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Its refused receiver's chunk count (none: 0).
+    RoundTrip {
+        name: "audit-read-refusal-receiver-count",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [25, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Whether the second visible entry names the first.
+    RoundTrip {
+        name: "audit-read-chain-predecessor",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [27, 1, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // The same verdict over the pair named in full.
+    RoundTrip {
+        name: "audit-read-chain-entry",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [28, 1, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    },
+    // Whether the first visible entry names the drained timestamp 0 of its run.
+    RoundTrip {
+        name: "audit-read-chain-archived",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [29, 0, 0, 0],
         primed: None,
         blocks: false,
         returns: None,
@@ -4786,6 +5009,17 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         }
         let which = if first { " (first call)" } else { "" };
         for step in DECLASSIFICATION_SCENARIO.iter() {
+            if heap_allocations_round_trip(step, which) != Some(true) {
+                return Some(false);
+            }
+        }
+        if !unmeasured(
+            &DECLASSIFICATION_REFUSAL,
+            "the declassification was not refused with flowDenied",
+        ) {
+            return Some(false);
+        }
+        for step in AUDIT_SCENARIO.iter() {
             if heap_allocations_round_trip(step, which) != Some(true) {
                 return Some(false);
             }

@@ -2293,6 +2293,92 @@ theorem carveRequestOf?_ok (st : SystemState) (executingCore : Concurrency.CoreI
     | (right; right; right; right; right; right; right; right; right;
         exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
 
+/-- WS-ZA ZA6.35: `freshAsidFrom` as a code: `0` for no ASID, `a + 1` for
+ASID `a`, so the scan builds no `some`. -/
+def freshAsidCodeFrom (st : SystemState) : Nat → Nat → Nat
+  | 0, _ => 0
+  | fuel + 1, n =>
+      if n < st.machine.maxASID then
+        if (st.asidTable[SeLe4n.ASID.ofNat n]?).isNone then n + 1
+        else freshAsidCodeFrom st fuel (n + 1)
+      else 0
+
+theorem freshAsidFrom_eq_code (st : SystemState) : ∀ (fuel n : Nat),
+    freshAsidFrom st fuel n =
+      match freshAsidCodeFrom st fuel n with
+      | 0 => none
+      | a + 1 => some (SeLe4n.ASID.ofNat a)
+  | 0, _ => rfl
+  | fuel + 1, n => by
+    unfold freshAsidFrom freshAsidCodeFrom
+    split
+    · split
+      · rfl
+      · exact freshAsidFrom_eq_code st fuel (n + 1)
+    · rfl
+
+/-- WS-ZA ZA6.35: **`carveRequestOf?` as words, handed to a continuation** —
+the kind's code, the size, the thread's domain and core and the root's ASID
+(`CarveRequest.ofWords`), so the decode builds neither a request nor an
+`Except` (`carveRequestWordsK_eq`).  A kind other than a thread carries the
+domain `0` and the executing core, and one other than a VSpace root the ASID
+`0`, which nothing reads. -/
+@[inline] def carveRequestWordsK {α : Type} (st : SystemState) (executingCore : Concurrency.CoreId)
+    (newType : KernelObjectType) (sizeBits : Nat) (kErr : KernelError → α)
+    (kOk : Nat → Nat → SeLe4n.DomainId → Concurrency.CoreId → SeLe4n.ASID → α) : α :=
+  match newType with
+  | .frame =>
+      if sizeBits = 0 then kOk 0 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .pageTable =>
+      if sizeBits = 0 then kOk 3 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .untyped =>
+      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
+        kOk 1 sizeBits (.ofNat 0) executingCore (.ofNat 0)
+      else kErr .invalidArgument
+  | .vspaceRoot =>
+      if sizeBits = 0 then
+        match freshAsidCodeFrom st st.machine.maxASID 1 with
+        | 0 => kErr .resourceExhausted
+        | a + 1 => kOk 2 0 (.ofNat 0) executingCore (SeLe4n.ASID.ofNat a)
+      else kErr .invalidArgument
+  | .tcb =>
+      if sizeBits = 0 then
+        kOk 4 0 (st.scheduler.activeDomainOnCore executingCore) executingCore (.ofNat 0)
+      else kErr .invalidArgument
+  | .endpoint =>
+      if sizeBits = 0 then kOk 5 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .notification =>
+      if sizeBits = 0 then kOk 6 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .reply =>
+      if sizeBits = 0 then kOk 8 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .cnode =>
+      if minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then
+        kOk 7 sizeBits (.ofNat 0) executingCore (.ofNat 0)
+      else kErr .invalidArgument
+  | .schedContext =>
+      if minSchedContextSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
+        kOk 9 sizeBits (.ofNat 0) executingCore (.ofNat 0)
+      else kErr .invalidArgument
+
+theorem carveRequestWordsK_eq {α : Type} (st : SystemState) (executingCore : Concurrency.CoreId)
+    (newType : KernelObjectType) (sizeBits : Nat) (kErr : KernelError → α)
+    (kOk : Nat → Nat → SeLe4n.DomainId → Concurrency.CoreId → SeLe4n.ASID → α) :
+    carveRequestWordsK st executingCore newType sizeBits kErr kOk =
+      match carveRequestOf? st executingCore newType sizeBits with
+      | .error e => kErr e
+      | .ok req => kOk req.kindWord req.sizeWord (req.domainWord (.ofNat 0))
+          (req.coreWord executingCore) (req.asidWord (.ofNat 0)) := by
+  cases newType
+  case vspaceRoot =>
+    simp only [carveRequestWordsK, carveRequestOf?, freshAsid?,
+      freshAsidFrom_eq_code st st.machine.maxASID 1]
+    split
+    · split <;> rfl
+    · rfl
+  all_goals
+    simp only [carveRequestWordsK, carveRequestOf?]
+    split <;> rfl
+
 /-- **WS-BP BP7.1 (`v0.36.5`, child untypeds at slice 4, `v0.36.8`): the live
 `.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype`, at every
 object kind since WS-ZA ZA5.4 part 14.

@@ -246,7 +246,14 @@ for driver in drivers:
         # the exerciser (smp_exercisers.rs) must change this set too, so the
         # evidence cannot disappear while the gate stays green.
         expected = {
-            "audit-drain", "audit-read-entry", "audit-read-status", "badged-call",
+            "audit-drain", "audit-drain-first", "audit-read-basis-chunk",
+            "audit-read-basis-count", "audit-read-chain-archived", "audit-read-chain-entry",
+            "audit-read-chain-predecessor", "audit-read-entry", "audit-read-refusal-counters",
+            "audit-read-refusal-domain", "audit-read-refusal-domain-count",
+            "audit-read-refusal-receiver-count", "audit-read-refusal-status",
+            "audit-read-refusal-subject", "audit-read-refusal-subject-count",
+            "audit-read-refusal-tags", "audit-read-refusal-target",
+            "audit-read-refusal-target-count", "audit-read-status", "badged-call",
             "badged-send-blocks", "badged-send-to-receiver", "bind-carved-notification",
             "bind-carved-sched-context", "bind-carved-tcb", "bound-notification-delete",
             "bound-sched-context-delete", "bound-tcb-delete", "busy-endpoint-delete",
@@ -268,7 +275,9 @@ for driver in drivers:
             "contextless-top-waits", "contextless-top-wakes-root", "cross-core-home-root",
             "cross-core-home-root-back", "cross-core-partner-calls", "cspace-copy",
             "cspace-delete", "cspace-mint", "cspace-move", "cspace-revoke",
-            "declassified-signal", "declassify", "endpoint-delete", "exhaust-drain-tick",
+            "declassified-signal", "declassified-signal-wakes", "declassified-wait-blocks",
+            "declassified-wait-pending",
+            "declassify", "endpoint-delete", "exhaust-drain-tick",
             "exhaust-tick", "fp-access", "fp-access-partner", "fp-owner-blocks",
             "fp-owner-wakes-root", "frame-copy-delete", "frame-copy-for-revoke",
             "frame-copy-mapped", "frame-delete", "frame-revoke", "head-partner-calls",

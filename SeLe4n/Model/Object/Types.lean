@@ -1264,6 +1264,14 @@ theorem CapTarget.copyOver_eq (t src : CapTarget) : t.copyOver src = src := by
   unfold CapTarget.copyOver
   split <;> (try split) <;> rfl
 
+/-- WS-ZA ZA6.35: whether the target is a constructor with no field (the audit
+trail, interrupt control), which the compiled kernel holds as a scalar, so a
+record holding it owns no target cell for a later write to reuse. -/
+@[inline] def CapTarget.isFieldless : CapTarget → Bool
+  | .auditTrail => true
+  | .irqControl => true
+  | _ => false
+
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, written over the
 record `r` (a slot's spare): out of line, so `r` is the only record the
 compiler can write it into, its fields matched apart and rebuilt with no join
@@ -1282,7 +1290,8 @@ Equal to the capability of those fields (`overwrite_eq`). -/
 @[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
 
 /-- WS-ZA ZA5.4: the target naming object `id`, written over `t` when `t` already
-names an object or a reply (a constructor of one field, the same cell size, so
+names an object, a reply, a core's scheduling control or an interrupt line (a
+constructor of one field, the same cell size, so
 the compiler reuses `t`'s cell for the new one: a slot whose last capability was
 a reply capability is carved into in place).  Out of line, with a distinct
 fallback arm, so the first two keep their reuse of `t`'s cell. -/
@@ -1290,6 +1299,8 @@ fallback arm, so the first two keep their reuse of `t`'s cell. -/
   match t with
   | .object _ => .object id
   | .replyCap _ => .object id
+  | .schedControl _ => .object id
+  | .irqHandler _ => .object id
   | _ => CapTarget.ofObject id
 
 /-- WS-ZA ZA5.4: `rights`, kept as the record's own `rr` when equal.  Out of line,
@@ -1405,13 +1416,23 @@ instance : Repr SpareCells := ⟨fun _ _ => "spare cells"⟩
 
 namespace SpareCells
 
-/-- `sp` with slot `i` keeping the cell `o` (a cleared slot's record); a `none`
-leaves the slot's spare as it was. -/
+/-- The spares `a` with slot `i` keeping the cell `o`; a `none` leaves them as
+they are.  A record whose target is fieldless was stored shared and the slot's
+own record left in the spares (`CNode.insertCellShared`), so while the slot has
+one it is kept.  Out of line, so the caller's write of its CNode keeps its
+shape. -/
+@[noinline] def keepCell (a : Array (Option Capability)) (i : Nat) (o : Option Capability) :
+    Array (Option Capability) :=
+  match o with
+  | some c =>
+    if c.target.isFieldless && (if h : i < a.size then a[i].isSome else false) then a
+    else a.setIfInBounds i o
+  | none => a
+
+/-- `sp` with slot `i` keeping the cell `o` (a cleared slot's record,
+`keepCell`). -/
 @[inline] def keep (sp : SpareCells) (i : Nat) (o : Option Capability) : SpareCells :=
-  Quot.lift (fun a => Squash.mk (match o with
-      | some _ => a.setIfInBounds i o
-      | none => a))
-    (fun _ _ _ => Quot.sound trivial) sp
+  Quot.lift (fun a => Squash.mk (keepCell a i o)) (fun _ _ _ => Quot.sound trivial) sp
 
 /-- `sp` with each slot `i` whose cell in `cells` holds a capability `f i`
 rejects keeping that capability as its record (a bulk clear's `keep`). -/

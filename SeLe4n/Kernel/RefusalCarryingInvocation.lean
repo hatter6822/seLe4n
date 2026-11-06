@@ -930,9 +930,11 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       match decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        match carveRequestOf? st executingCore args.newType args.sizeBits with
-        | .error e => .error (e, st)
-        | .ok req =>
+        -- The request as words (`carveRequestWordsK`), read by the carve's
+        -- checks and writes (`untypedRetypeAdmittedCode`,
+        -- `untypedRetypePerformCode`), so no request is built.
+        carveRequestWordsK st executingCore args.newType args.sizeBits (fun e => .error (e, st))
+          (fun k n dom core asid =>
           match validateObjIdArg args.childId with
           | .error e => .error (e, st)
           | .ok vChild =>
@@ -942,12 +944,13 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
                 -- arm was handed: the carve's first check, so the general
                 -- path it would otherwise fall back to (which decodes the
                 -- invocation again) never runs for it.
-                if !req.heapAdmitted st then .error (.untypedRegionExhausted, st) else
+                if !CarveRequest.heapAdmittedW st k n then .error (.untypedRegionExhausted, st) else
                 RefusalCarrying.ofChecked
-                  (untypedRetypeAdmittedAt st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val req)
-                  (fun st => untypedRetypePerformAt ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
-                    vChild.val req st)
-                  (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+                  (untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val
+                    k n asid)
+                  (fun st => untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot
+                    vChild.val k n dom core asid st)
+                  (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st))
     | _ => .error (.invalidCapability, st)
   | .untypedReset =>
     match cap.target with
@@ -1546,6 +1549,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD]
       | ok args =>
         dsimp only
+        rw [carveRequestWordsK_eq]
         cases hQ : carveRequestOf? st executingCore args.newType args.sizeBits with
         | error e =>
           simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ]
@@ -1564,6 +1568,15 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
             | ok pr =>
               obtain ⟨src, dst⟩ := pr
               dsimp only
+              rw [CarveRequest.heapAdmittedW_words st (.ofNat 0) executingCore (.ofNat 0) req,
+                untypedRetypeAdmittedCode_eq st _ _ _ (.ofNat 0) executingCore (.ofNat 0) req]
+              have hP : ∀ s, untypedRetypePerformCode src.cnode src.slot dst.cnode dst.slot
+                  vChild.val req.kindWord req.sizeWord (req.domainWord (.ofNat 0))
+                  (req.coreWord executingCore) (req.asidWord (.ofNat 0)) s =
+                  untypedRetypePerformAt src dst vChild.val req s := fun s =>
+                untypedRetypePerformCode_eq src dst vChild.val (.ofNat 0) executingCore (.ofNat 0)
+                  req s
+              simp only [hP]
               cases hH : req.heapAdmitted st
               · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ,
                   hV, hR, hH, untypedRetypeObject_heapRefused _ _ _ _ _ hH]
