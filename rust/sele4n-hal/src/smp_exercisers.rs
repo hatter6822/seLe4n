@@ -4788,6 +4788,315 @@ const UPPER_NOTIFICATION_CARVE: RoundTrip = invocation(
         FRAME_SLOT,
     ],
 );
+/// The low band's thread: its id in the exerciser labeling's lower trusted
+/// domain.
+#[cfg(feature = "hw_target")]
+const LOW_THREAD_ID: u64 = 0x8_0000;
+/// The low band's endpoint, the one the low thread receives on.
+#[cfg(feature = "hw_target")]
+const LOW_ENDPOINT_ID: u64 = 0x8_0001;
+/// The boot-domain notification bound to the root task, then to the low thread.
+#[cfg(feature = "hw_target")]
+const BOOT_DOMAIN_NOTIFICATION_ID: u64 = PASSIVE_CHILD_IDS[1];
+#[cfg(feature = "hw_target")]
+const LOW_THREAD_CAP: u64 = CHAIN_TCB_CAP;
+#[cfg(feature = "hw_target")]
+const LOW_ENDPOINT_CAP: u64 = STACK_TOP_TCB_CAP;
+/// `KernelError::DeclassificationDeniedAtReceiver`'s discriminant.
+#[cfg(feature = "hw_target")]
+const DECLASSIFICATION_DENIED_AT_RECEIVER: u64 = 56;
+/// The refusal ledger's ring size (`refusalRingSize`).
+#[cfg(feature = "hw_target")]
+const REFUSAL_RING_SIZE: u64 = 32;
+/// The bound scenario's setup, unmeasured.
+#[cfg(feature = "hw_target")]
+const BOUND_SIGNAL_SETUP: [RoundTrip; 8] = [
+    invocation(
+        "untyped-retype-low-thread",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [TCB_TYPE, LOW_THREAD_ID, CNODE_CAP, CHAIN_TCB_SLOT],
+    ),
+    invocation(
+        "low-thread-set-space",
+        TCB_SET_SPACE,
+        LOW_THREAD_CAP,
+        [CNODE_CAP, VSPACE_CAP, 0, 0],
+    ),
+    invocation(
+        "low-thread-set-priority",
+        TCB_SET_PRIORITY,
+        LOW_THREAD_CAP,
+        [PARTNER_PRIORITY, 0, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-low-endpoint",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            ENDPOINT_TYPE,
+            LOW_ENDPOINT_ID,
+            CNODE_CAP,
+            STACK_TOP_TCB_SLOT,
+        ],
+    ),
+    invocation(
+        "untyped-retype-boot-domain-notification",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            NOTIFICATION_TYPE,
+            BOOT_DOMAIN_NOTIFICATION_ID,
+            CNODE_CAP,
+            MOVE_SLOT,
+        ],
+    ),
+    UPPER_NOTIFICATION_CARVE,
+    invocation(
+        "root-bind-boot-domain-notification",
+        TCB_BIND_NOTIFICATION,
+        ROOT_TCB_CAP,
+        [MOVE_CAP, 0, 0, 0],
+    ),
+    invocation("low-thread-resume", TCB_RESUME, LOW_THREAD_CAP, [0; 4]),
+];
+/// The root task's receive on the boot endpoint, which blocks and runs the
+/// low thread, unmeasured.
+#[cfg(feature = "hw_target")]
+const BOUND_ROOT_RECEIVES: RoundTrip = partner_step(
+    "bound-root-receives",
+    RECEIVE,
+    ENDPOINT_CAP,
+    0,
+    [0, 0],
+    true,
+);
+/// The low thread's declassified signal to the root task, bound and blocked.
+#[cfg(feature = "hw_target")]
+const DECLASSIFIED_SIGNAL_BOUND: RoundTrip = partner_step(
+    "declassified-signal-bound",
+    DECLASSIFY_SIGNAL,
+    MOVE_CAP,
+    1,
+    [3, 0],
+    false,
+);
+/// The low thread's receive on its endpoint, which blocks and runs the root
+/// task, unmeasured.
+#[cfg(feature = "hw_target")]
+const LOW_THREAD_RECEIVES: RoundTrip = partner_step(
+    "low-thread-receives",
+    RECEIVE,
+    LOW_ENDPOINT_CAP,
+    0,
+    [0, 0],
+    true,
+);
+/// The upper notification bound to the low thread, unmeasured.
+#[cfg(feature = "hw_target")]
+const BIND_UPPER_TO_LOW_THREAD: RoundTrip = invocation(
+    "low-thread-bind-upper-notification",
+    TCB_BIND_NOTIFICATION,
+    LOW_THREAD_CAP,
+    [FRAME_CAP, 0, 0, 0],
+);
+/// The root task's declassified signal on the upper notification, both hops
+/// downgrades.
+#[cfg(feature = "hw_target")]
+const DECLASSIFIED_SIGNAL_TWO_HOP: RoundTrip = partner_step(
+    "declassified-signal-two-hop",
+    DECLASSIFY_SIGNAL,
+    FRAME_CAP,
+    1,
+    [4, 0],
+    false,
+);
+/// The root task's yield, which runs the woken low thread, unmeasured.
+#[cfg(feature = "hw_target")]
+const BOUND_ROOT_YIELDS: RoundTrip = kernel_step("bound-root-yields", YIELD);
+/// The notifications swapped, unmeasured: the upper one unbound from the low
+/// thread, the boot domain's from the root task and bound to the low thread.
+#[cfg(feature = "hw_target")]
+const BOUND_SIGNAL_SWAP: [RoundTrip; 3] = [
+    invocation(
+        "low-thread-unbind-upper-notification",
+        TCB_UNBIND_NOTIFICATION,
+        LOW_THREAD_CAP,
+        [0; 4],
+    ),
+    invocation(
+        "root-unbind-boot-domain-notification",
+        TCB_UNBIND_NOTIFICATION,
+        ROOT_TCB_CAP,
+        [0; 4],
+    ),
+    invocation(
+        "low-thread-bind-boot-domain-notification",
+        TCB_BIND_NOTIFICATION,
+        LOW_THREAD_CAP,
+        [MOVE_CAP, 0, 0, 0],
+    ),
+];
+/// The root task's declassified signal refused at its second hop, unmeasured.
+#[cfg(feature = "hw_target")]
+const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
+    name: "declassified-signal-refused-at-receiver",
+    syscall: DECLASSIFY_SIGNAL,
+    cptr: MOVE_CAP,
+    msg_len: 1,
+    msg: [5, 0, 0, 0],
+    primed: None,
+    blocks: false,
+    returns: Some((
+        (crate::svc_dispatch::ERROR_LABEL_BASE + DECLASSIFICATION_DENIED_AT_RECEIVER) << 9,
+        None,
+    )),
+};
+/// The refusal ledger's status, read unmeasured for the refusal's slot.
+#[cfg(feature = "hw_target")]
+const BOUND_REFUSAL_STATUS: RoundTrip = RoundTrip {
+    name: "bound-refusal-status",
+    syscall: AUDIT_READ,
+    cptr: AUDIT_CAP,
+    msg_len: 3,
+    msg: [12, 0, 0, 0],
+    primed: None,
+    blocks: false,
+    returns: None,
+};
+/// The slots emptied again, unmeasured: the low thread's capability deleted
+/// (its finalisation cancels its receive and unbinds its notification), then
+/// the endpoint's and the two notifications'.
+#[cfg(feature = "hw_target")]
+const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 4] = [
+    invocation(
+        "low-thread-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [CHAIN_TCB_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "low-endpoint-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [STACK_TOP_TCB_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "boot-domain-notification-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "upper-notification-delete-again",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+];
+
+/// **WS-ZA ZA6.35: a declassified signal's bound delivery, its two-hop
+/// downgrade and its refused second hop**, on the exerciser labeling's low
+/// band (`qemuVirtExerciserInLowBand`): a thread carved at [`LOW_THREAD_ID`],
+/// given the root task's spaces and priority, and an endpoint carved at
+/// [`LOW_ENDPOINT_ID`], both in the lower trusted domain, beside a
+/// notification in the boot domain (in the move slot) bound to the root task
+/// and the upper-domain one (in the frame slot).  With the partner suspended
+/// and the timer masked, the two threads are the core's only runnable ones,
+/// so a step that blocks one restores the other.  Then:
+/// - the root task's receive on the boot endpoint blocks, and the low thread's
+///   declassified signal on the root task's notification delivers to it, bound
+///   and blocked receiving (seL4's `sendSignal` bound arm: both hops ordinary
+///   flows, no record); the low thread's receive on its endpoint blocks;
+/// - the upper notification bound to the low thread, and the root task's
+///   declassified signal on it delivers to the low thread, the first hop the
+///   downgrade from the boot domain to the upper one and the second the upper
+///   domain's downgrade to the lower one (two records, the second stamped
+///   with the first's words); the root task's yield runs the low thread, whose
+///   receive blocks again;
+/// - the notifications swapped, the boot domain's bound to the low thread, and
+///   the root task's declassified signal on it is refused at its second hop
+///   (`declassificationDeniedAtReceiver`: the boot domain does not flow to the
+///   lower one and the policy authorizes no such downgrade), which the
+///   refusal ledger records naming the receiver;
+/// - the audit monitor's read of that refusal's receiver chunk (opcode 26),
+///   its slot read off the ledger's status first, its word checked to be the
+///   low thread's id.
+///
+/// Only the two signals and the read are measured; the setup, the refusal and
+/// the deletes that leave the slots empty again are not.
+///
+/// One run (`which` names the first call); the caller masks the timer across
+/// it.
+#[cfg(feature = "hw_target")]
+fn bound_declassified_signals(which: &str) -> bool {
+    if !unmeasured_all(&BOUND_SIGNAL_SETUP, "the bound scenario's setup failed")
+        || !unmeasured(
+            &BOUND_ROOT_RECEIVES,
+            "the root task's receive did not block",
+        )
+        || heap_allocations_round_trip(&DECLASSIFIED_SIGNAL_BOUND, which) != Some(true)
+        || !unmeasured(
+            &LOW_THREAD_RECEIVES,
+            "the low thread's receive did not block",
+        )
+        || !unmeasured(
+            &BIND_UPPER_TO_LOW_THREAD,
+            "the upper notification was not bound",
+        )
+        || heap_allocations_round_trip(&DECLASSIFIED_SIGNAL_TWO_HOP, which) != Some(true)
+        || !unmeasured(&BOUND_ROOT_YIELDS, "the root task's yield failed")
+        || !unmeasured(
+            &LOW_THREAD_RECEIVES,
+            "the low thread's receive did not block",
+        )
+        || !unmeasured_all(&BOUND_SIGNAL_SWAP, "the notifications were not swapped")
+        || !unmeasured(
+            &DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER,
+            "the declassified signal was not refused at its receiver",
+        )
+    {
+        return false;
+    }
+    let Dispatched::Returned(status) = dispatch_round_trip(&BOUND_REFUSAL_STATUS).0 else {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: bound-refusal-status: the refusal ledger's status was not read"
+        );
+        return false;
+    };
+    // The status word is the next slot plus the version times the ring size:
+    // the refusal just recorded is in the slot before the next.
+    let slot = (status[0] % REFUSAL_RING_SIZE + REFUSAL_RING_SIZE - 1) % REFUSAL_RING_SIZE;
+    let read = RoundTrip {
+        name: "audit-read-refusal-receiver",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [26, slot, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: None,
+    };
+    if heap_allocations_round_trip(&read, which) != Some(true) {
+        return false;
+    }
+    match dispatch_round_trip(&read).0 {
+        Dispatched::Returned(regs) if regs[0] == LOW_THREAD_ID => {}
+        Dispatched::Returned(regs) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: audit-read-refusal-receiver: slot {slot} names {:#x}, not the low thread",
+                regs[0]
+            );
+            return false;
+        }
+        _ => return false,
+    }
+    unmeasured_all(
+        &BOUND_SIGNAL_TEARDOWN,
+        "the bound scenario's slots were not emptied",
+    )
+}
+
 /// **WS-ZA ZA6.29's two other branches** (added at ZA6.30): the yieldTo
 /// invocation on the context bound to a schedulable partner, issued by the
 /// root task with the timer masked across the whole sequence, so no tick
@@ -5067,8 +5376,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             return Some(false);
         }
     }
-    // WS-ZA ZA5.13: the declassification scenario, the partner runnable, then
-    // the boot audit capability deleted so its slot is the copy's again.
+    // WS-ZA ZA5.13: the declassification scenario, the partner runnable.
     for first in [true, false] {
         if !unmeasured(
             &UPPER_NOTIFICATION_CARVE,
@@ -5094,15 +5402,6 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             }
         }
     }
-    let delete_audit = invocation(
-        "delete-audit-capability",
-        CSPACE_DELETE,
-        CNODE_CAP,
-        [AUDIT_SLOT, 0, 0, 0],
-    );
-    if !unmeasured(&delete_audit, "the boot audit capability was not deleted") {
-        return Some(false);
-    }
     // The partner goes back to `.Inactive`: suspended from its own core's queue
     // when the root task is current, or suspending itself when it is.
     let suspend = partner_step(
@@ -5117,6 +5416,28 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: suspend-partner: the partner was not suspended"
         );
+        return Some(false);
+    }
+    // WS-ZA ZA6.35: the declassified signal's bound delivery, its two-hop
+    // downgrade and its refused second hop, the partner suspended and the
+    // timer masked across each run; then the boot audit capability deleted so
+    // its slot is the copy's again.
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        let saved = crate::interrupts::disable_interrupts();
+        let ok = bound_declassified_signals(which);
+        crate::interrupts::restore_interrupts(saved);
+        if !ok {
+            return Some(false);
+        }
+    }
+    let delete_audit = invocation(
+        "delete-audit-capability",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [AUDIT_SLOT, 0, 0, 0],
+    );
+    if !unmeasured(&delete_audit, "the boot audit capability was not deleted") {
         return Some(false);
     }
     // The mint slot is the invocation scenarios' own again.

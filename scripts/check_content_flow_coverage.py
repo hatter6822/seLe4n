@@ -225,9 +225,11 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.declassifyPerform",
     "SeLe4n.Kernel.declassifyGeneralR",
     "SeLe4n.Kernel.declassifySignalStoredPerform",
-    # WS-ZA ZA6.35: the woken signal's admitted writes in place, proven the
-    # specification's arm (`auditedArmSpec_declassifySignal_woken`).
+    # WS-ZA ZA6.35: the woken and the bound signal's admitted writes in place,
+    # each proven the specification's arm (`auditedArmSpec_declassifySignal_woken`,
+    # `auditedArmSpec_declassifySignal_bound`).
     "SeLe4n.Kernel.declassifySignalWokenPerform",
+    "SeLe4n.Kernel.declassifySignalBoundPerform",
     "SeLe4n.Kernel.declassifySignalGeneralR",
     "SeLe4n.Kernel.signalResolvedArmThenTaintR",
     "SeLe4n.Kernel.waitOperandArmThenTaintR",
