@@ -1,3 +1,55 @@
+## v0.36.205 — WS-ZA ZA6.36: the other plans re-read against the tree WS-ZA leaves
+
+Every plan under `docs/planning/` except the zero-allocation plan and its
+untyped-reset sub-plan is re-read against the current tree.  Each citation,
+name and figure was checked.  Rows this workstream already did are recorded
+as landed, rows it made unnecessary are deleted, and the rest are renumbered
+to their execution order.  Every remaining row that adds or changes a kernel
+entry, an object or a type now states how it keeps the zero-allocation rule
+and which exerciser scenario reads 0.  No source changes.
+`docs/planning/ipc_dethreading_pending.txt` is not a plan: it is the empty
+register `scripts/check_ipc_invariant_dethreading.py` reads, and it is left
+as it is.
+
+- **`CONTEXT_BY_VALUE_PLAN.md`.**  CV2.2 is merged into CV2.1.  CV3.5, CV4.1,
+  CV4.2 and the rest of CV4.3 are recorded as landed.  The message-word
+  carrier and the measured-difference rows are deleted.  The rows after
+  them are renumbered (CV4.4 → CV4.3, CV4.5 → CV4.4, CV5.2 → CV5.1,
+  CV5.3 → CV5.2).  CV1.2 and the closure CV5.2 remain open.
+- **`HIERARCHICAL_CBS_PLAN.md`.**
+  - §4.2's hard-CBS engine is restated as ZA6.4's seL4-MCS refills, which
+    supersede D14 and D16.  The deadline is derived from the head refill.
+  - CB0.8 (the waiter index, done by ZA4.6) and the old CB1.10 (the
+    run-queue representation, done by ZA4.5) are deleted.  CB1.11–CB1.12
+    are renumbered CB1.10–CB1.11.
+  - CB1.7, CB4.1–CB4.4 and CB1.10 are restated against ZA6.3's linked
+    release queue, ZA6.2's reschedule flags and ZA6.4's refills.
+  - CB2.1's fields become codes and words, so they do not conflict with
+    the word retype.
+  - configureServer gains a same-core check over a live residual.
+  - The three new syscall ids move to 48–50, since WS-ZA took 41–47.
+  - §7.1 adds the zero-allocation table, and Q18 records the SchedControl
+    question.
+- **`LOCK_STATE_SEPARATION_PLAN.md`.**  The LS3.3 and LS3.4 citations are
+  restated, with a zero-allocation note.
+- **`SMP_FINE_LOCK_MIGRATION_PLAN.md`.**  Track D is restated against WS-LS's
+  ghost keys, ZA1.6's in-place `RHTable.modify` and ZA5.3's slot-linked
+  derivation tree, with a zero-allocation statement for PRs 12 and 13.
+- **`SMP_BOOT_PATH_PLAN.md`.**  The board boot is renumbered BP8.3 → BP8.6,
+  because BP8.4 and BP8.5 landed first.  `docs/spec/SELE4N_SPEC.md`,
+  `docs/HARDWARE_TESTING.md`, `docs/DEVELOPMENT.md` and
+  `docs/agent_guide/WORKSTREAM_CONTEXT.md` follow.
+- **`SMP_MULTICORE_COMPLETION_PLAN.md`, `SMP_RELEASE_CLOSURE_PLAN.md` and
+  `UNFINISHED_SMP_WORK.md`.**  Each gains a re-read note.
+- **`HARDWARE_PARTITION_ISOLATION_PLAN.md`.**  W5-G, W6-I and W6-N are
+  deleted: their predicates and the fast projection are gone.  Their
+  phases are renumbered, the retired names are restated, and a
+  zero-allocation table is added.
+- **`ZERO_ALLOCATION_SYSCALL_PLAN.md`.**  ZA6.36 is marked as landed, and the
+  plan's citations of renumbered CV rows are restated.
+  `docs/REGISTERED_DEBT.md` (the WS-CB row) and
+  `docs/agent_guide/WORKSTREAM_CONTEXT.md` are updated to match.
+
 ## v0.36.204 — WS-ZA ZA6.35: the gate pins every entry at 0 and a carve at its object's cells, and `CLAUDE.md` states the rule
 
 The QEMU heap gate now fails on any kernel entry that reads other than 0.

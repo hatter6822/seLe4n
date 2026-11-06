@@ -27,7 +27,7 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.4 v0.36.74; opens before WS-CB)
+### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.3 v0.36.74; the rest recorded landed at the v0.36.205 re-read, which deleted two rows and renumbered; open: CV1.2 and the closure CV5.2; opens before WS-CB)
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
@@ -338,7 +338,7 @@ the cancellation reclaim's holder abort, so a thread may wait blocked sending
 or calling while unbound (seL4's `schedContext_unbindTCB`), the reclaim and a
 scheduling context's final delete leave such a holder blocked, and new IPC
 code must not reintroduce a scheduler read into `ipcInvariantFull` — a fact
-about the run queues belongs in the scheduler bundle (WS-CB CB1.12's
+about the run queues belongs in the scheduler bundle (WS-CB CB1.11's
 `passiveThreadParked`).  A thread's own final delete follows seL4-MCS's `finaliseCap` (WS-ZA
 ZA6.34): a reply-blocked thread's frame is cut as `reply_remove_tcb` cuts it
 (`finaliseReplyCallerCancel`), the context it holds, bound or on loan, goes
@@ -456,7 +456,10 @@ decode it: a queue's successor through `sendWakesInPlaceCode` and
 form, or the exerciser's multi-waiter and stacked-reply steps read nonzero.
 Since `v0.36.204` (ZA6.35) the heap gate fails on any entry that reads other
 than 0, and on a carve that reads other than its object's cells (`CLAUDE.md`,
-*A kernel entry allocates nothing*).  New code keeps three forms.  A carve
+*A kernel entry allocates nothing*).  Since `v0.36.205` (ZA6.36) every open plan under
+`docs/planning/` states, for each row that adds or changes a kernel entry,
+an object or a type, how it keeps that rule and which scenario reads 0; a
+new plan row does the same.  New code keeps three forms.  A carve
 reads its request as words (`carveRequestWordsK`).  A capability with a
 fieldless target is stored shared and leaves the slot's record in the spares
 (`CNode.insertCellShared`).  A word-valued field is read off its word, not
@@ -779,8 +782,11 @@ closes first: `schedContextConfigure` applies priority, domain and a
 caller-supplied deadline to the bound thread under the SchedContext write right
 alone, with no caller-MCP check (CB0.3, CB1.7); and the live tick's exhaustion
 arm schedules a refill of at most one tick, so a bound thread receives about one
-tick per period after its first window (CB1.7, which moves the engine to
-per-window refills).  At `v0.36.50` the plan was re-verified against
+tick per period after its first window — closed at `v0.36.167` by WS-ZA
+ZA6.4's seL4-MCS refills, which the plan adopts as its engine at the
+`v0.36.205` re-read (WS-ZA ZA6.36: §4.2 restated, CB0.8 and the old CB1.10
+deleted as done by ZA4.6 and ZA4.5, CB1.11–CB1.12 renumbered CB1.10–CB1.11,
+and every live row given its zero-allocation statement).  At `v0.36.50` the plan was re-verified against
 `v0.36.46` and absorbed the kernel audit's scheduler findings as sub-tasks
 (the live selector carrying the progress proofs, named per-core bundles, a
 waiter index, a per-domain run queue, machine-word scheduler fields, the

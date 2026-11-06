@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.204` (`lakefile.toml`) |
+| **Package version** | `0.36.205` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 588,656 across 557 Lean files |
 | **Test LoC** | 88,753 across 70 Lean test suites |
@@ -8325,7 +8325,7 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   conjunct reads the scheduler, so every IPC-bundle proof frames scheduler
   writes for free.  Under the single `.unbound`, such a holder becomes a legacy
   time-sliced thread when its IPC later completes; the passive/legacy split
-  (WS-CB CB1.12) parks it instead, under a scheduler-bundle invariant.
+  (WS-CB CB1.11) parks it instead, under a scheduler-bundle invariant.
 
   **And the live `.tcbSuspend` performs that wake only since `v0.35.90`** (WS-RR
   RR8.12, second cut).  `cancelIpcBlockingOnCore` has no production caller: the
