@@ -2141,9 +2141,13 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     address-space fields (`cspaceRoot`, `vspaceRoot`, `ipcBuffer`,
     `boundNotification`, `faultHandler`) are the deployment's to choose;
     `tid` is pinned to the slot by `PlatformConfig.wellFormed`; `pipBoost`,
-    `timedOut`, `registerContext` and `pendingFault` are zero-valued
+    `timedOut` and `registerContext` are zero-valued
     by their own defaults and a config that sets them describes a thread mid
-    flight, which `threadState = .Inactive` already excludes.  The
+    flight, which `threadState = .Inactive` already excludes.  The fault record
+    (`pendingFault`) must be empty (WS-ZA ZA6.37): the start makes a configured
+    `.Inactive` thread ready (`startInitialThreadOnCore`), so a record carried in
+    would reach a running thread, and the boot's `faultRecordParked`
+    (`bootFromPlatformCheckedStartedFor_faultRecordParked`) rests on it.  The
     notification-queue links (`ntfnPrev`, `ntfnNext`) must be empty: the
     notification-waiter invariant requires every thread blocked on no
     notification to hold none (as seL4 clears `tcbEPNext`/`tcbEPPrev` on
@@ -2192,7 +2196,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
     tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0) &&
     tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear &&
     decide (tcb.taintWords = {}) &&
-    decide (tcb.yieldToCode = 0)
+    decide (tcb.yieldToCode = 0) &&
+    tcb.pendingFault.isNone
 
 @[simp] theorem bootSafeTcbCheck_def (tcb : TCB) :
     bootSafeTcbCheck tcb =
@@ -2209,7 +2214,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0) &&
        tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear &&
        decide (tcb.taintWords = {}) &&
-       decide (tcb.yieldToCode = 0)) := rfl
+       decide (tcb.yieldToCode = 0) &&
+       tcb.pendingFault.isNone) := rfl
 
 /-- What a boot thread's two space slots hold: every capability carries a valid
     badge, none is a reply capability and none records a mapping, as
@@ -2453,7 +2459,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
       tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
       tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
       tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
-      bootSpaceSlotsSafe tcb ∧ tcb.yieldToCode = 0) ∧
+      bootSpaceSlotsSafe tcb ∧ tcb.yieldToCode = 0 ∧ tcb.pendingFault = none) ∧
     -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
     -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
     (∀ vs, obj = .vspaceRoot vs →
@@ -2508,11 +2514,11 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | tcb tcb =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩,
-      hWP⟩, hWN⟩, hWH⟩, hWC⟩, hSC⟩, hSL⟩, -⟩, hYield⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩,
+      hWP⟩, hWN⟩, hWH⟩, hWC⟩, hSC⟩, hSL⟩, -⟩, hYield⟩, hFault⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN, Option.eq_none_of_isNone hWP, Option.eq_none_of_isNone hWN, Option.eq_none_of_isNone hWH, hWC, bootSpaceSlotsSafe_of_check hSC hSL, hYield⟩,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN, Option.eq_none_of_isNone hWP, Option.eq_none_of_isNone hWN, Option.eq_none_of_isNone hWH, hWC, bootSpaceSlotsSafe_of_check hSC hSL, hYield, Option.eq_none_of_isNone hFault⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
   | vspaceRoot vsr =>
@@ -2611,7 +2617,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
       tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
       tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
-      bootSpaceSlotsSafe tcb ∧ tcb.yieldToCode = 0) ∧
+      bootSpaceSlotsSafe tcb ∧ tcb.yieldToCode = 0 ∧ tcb.pendingFault = none) ∧
     (∀ vs, obj = .vspaceRoot vs →
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
     (∀ sc, obj = .schedContext sc →
@@ -5325,7 +5331,9 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     -- and its space slots hold safe capabilities and no link.
     bootSpaceSlotsSafe tcb ∧
     -- WS-ZA ZA6.6: and it has yielded to no context.
-    tcb.yieldToCode = 0) ∧
+    tcb.yieldToCode = 0 ∧
+    -- WS-ZA ZA6.37: and it carries no fault record (`faultRecordParked`).
+    tcb.pendingFault = none) ∧
   -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
   -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
   (∀ vs, obj = .vspaceRoot vs →
@@ -5414,7 +5422,7 @@ def bootTcbShape (tcb : TCB) : Prop :=
   tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
   tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
   tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
-  bootSpaceSlotCapsSafe tcb ∧ tcb.yieldToCode = 0
+  bootSpaceSlotCapsSafe tcb ∧ tcb.yieldToCode = 0 ∧ tcb.pendingFault = none
 
 /-- **The boot shape off the derivation links**: what the proof-layer bundle
     reads of an object, none of it a link word — so it holds of the linked boot
@@ -5522,7 +5530,7 @@ theorem readyIdleThread_bootObjectShape (c : SeLe4n.Kernel.Concurrency.CoreId) :
     bootObjectShape (.tcb (readyIdleThread c)) := by
   refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;> intro x hx <;> cases hx
   · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-      (bootSpaceSlotsSafe_of_check rfl rfl).1, rfl⟩
+      (bootSpaceSlotsSafe_of_check rfl rfl).1, rfl, rfl⟩
   · rfl
 
 -- ============================================================================
@@ -6301,7 +6309,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       cases o with
       | tcb t =>
         show (t.yieldToCode, 0) = (0, 0)
-        rw [((hShape _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
+        rw [((hShape _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
       | schedContext sc =>
         show (0, sc.yieldFromCode) = (0, 0)
         rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2]
@@ -6326,7 +6334,7 @@ theorem yieldLinkedNotResident_of_bootShape (ist : IntermediateState)
       cases o with
       | tcb t =>
         show t.yieldToCode = 0
-        exact ((hShape _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+        exact ((hShape _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
       | _ => rfl
 
 -- ============================================================================
@@ -6665,7 +6673,7 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
       tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
       tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
       tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
-      bootSpaceSlotsSafe tcb ∧ tcb.yieldToCode = 0 := by
+      bootSpaceSlotsSafe tcb ∧ tcb.yieldToCode = 0 ∧ tcb.pendingFault = none := by
   obtain ⟨_, hSafe, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   have hPlain : (bootFromPlatform config).state.objects[oid]? = some (KernelObject.tcb tcb) := by
     rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
@@ -7833,7 +7841,7 @@ theorem bootSafeObjectCheck_taintWords {obj : KernelObject}
   | tcb t =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    exact h.1.2
+    exact h.1.1.2
   | _ => rfl
 
 /-- **Every object the checked boot holds that holds a table back-link is a
@@ -8279,7 +8287,7 @@ theorem bootSafeObjectCheck_slotCap_freeIndex {obj : KernelObject}
   | tcb t =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true] at h
     obtain ⟨_, hm⟩ := TCB.mem_spaceSlotCaps hs
-    have hc := (List.all_eq_true.mp h.1.1.1.2) _ hm
+    have hc := (List.all_eq_true.mp h.1.1.1.1.2) _ hm
     simp only at hc
     unfold bootSafeCapCheck at hc
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
@@ -8439,6 +8447,24 @@ resident. -/
 theorem yieldLinkedNotResident_of_bootLinkedShape (ist : IntermediateState)
     (h : bootLinkedShape ist) : ist.state.yieldLinkedNotResident :=
   yieldLinkedNotResident_of_bootShape ist h.1
+
+/-- WS-ZA ZA6.37: **a boot-shaped state carries no fault record** -- the boot
+admits no configured thread with one (`bootSafeTcbCheck`), the idle threads are
+stored with none, and a start writes only a thread's state, its IPC state and its
+run-queue links (`bootObjectShapeOffLinks`), so `faultRecordParked` holds
+vacuously. -/
+theorem faultRecordParked_of_bootShape (ist : IntermediateState)
+    (hShape : ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+      ist.state.objects[oid]? = some obj → bootObjectShapeOffLinks obj) :
+    ist.state.faultRecordParked := by
+  intro t tcb hT hF
+  have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+  have hNone := ((hShape _ _ hO).2.2.2.1 tcb rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  rw [hNone] at hF; cases hF
+
+theorem faultRecordParked_of_bootLinkedShape (ist : IntermediateState)
+    (h : bootLinkedShape ist) : ist.state.faultRecordParked :=
+  faultRecordParked_of_bootShape ist h.1
 
 /-- **WS-BP BP7.11**: the checked, idle-storing boot leaves a state of boot
     shape — for any configuration the checked boot accepts and any

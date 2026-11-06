@@ -23440,6 +23440,21 @@ run_check "INVARIANT" rg -n '^      match interruptDispatchSequence st executing
 run_check "INVARIANT" rg -n '^theorem handleInterrupt_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
 run_check "INVARIANT" rg -n '^theorem timerTickOnCore_machine_interruptsEnabled($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/ExceptionModel.lean
 run_negative_check "INVARIANT" rg -n '^(noncomputable )?def (handleInterruptWith|interruptDispatchSequenceWith|dispatchExceptionWith) ' SeLe4n/Kernel/Architecture
+# WS-ZA ZA6.37: the boot refuses a configured fault record, so the started boot
+# satisfies faultRecordParked (the check's last conjunct, read as a relation).
+run_check "INVARIANT" rg -n -U '^    decide \(tcb\.yieldToCode = 0\) &&\n    tcb\.pendingFault\.isNone$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem faultRecordParked_of_bootShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_faultRecordParked($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+# WS-ZA ZA6.37: the frozen surface keeps each core's release-queue ends, and the
+# frozen configure and budget tick write them through the frozen mirrors of
+# releasePlace and purgeReplenishment, so frozenStateAgrees compares them.
+run_check "INVARIANT" rg -n '^  releaseHeadCode     : Vector Nat numCores' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^def frozenReleasePlace \(' SeLe4n/Kernel/FrozenOps/ReleaseQueue.lean
+run_check "INVARIANT" rg -n '^def frozenPurgeReplenishment \(' SeLe4n/Kernel/FrozenOps/ReleaseQueue.lean
+run_check "INVARIANT" rg -n -U '^          match frozenWithObjectStored \(frozenPurgeReplenishment st scIdTyped\) scId\n' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^              let st. := frozenReleasePlace stStored \(frozenDetermineTargetCore st boundTid\) scIdTyped$' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^                  let stPlaced := frozenReleasePlace st. bootCoreId scId$' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^    && decide \(fs\.scheduler\.releaseHeadCode = ls\.scheduler\.releaseHeadCode\)$' SeLe4n/Kernel/FrozenOps/Agreement.lean
 # WS-ZA ZA6.32: seL4's handleInterrupt — a bound line's notification signalled
 # and the line masked until the handler's acknowledge, an unbound line masked —
 # entered from the HAL in ZA3.1's form, with its entry-level carries.

@@ -806,6 +806,14 @@ private def runBootValidationParityChecks : IO Unit := do
      SeLe4n.Platform.Boot.bootSafeObjectCheck
        (.tcb { tcbWithTid ⟨9⟩ with queuePPrevCode := 1 }) == false &&
      SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb (tcbWithTid ⟨9⟩)) == true)
+  -- WS-ZA ZA6.37: a configured fault record would reach a running thread
+  -- (`startInitialThreadOnCore` makes the thread ready), so the boot refuses it
+  -- and the started boot satisfies `faultRecordParked`.
+  let faulted : TCB := { tcbWithTid ⟨9⟩ with faultKind := 1 }
+  assertBool "control: the fixture carries a fault record"
+    (faulted.pendingFault.isSome)
+  assertBool "NEGATIVE: a boot TCB carrying a fault record fails the boot-safety check"
+    (SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb faulted) == false)
   -- WS-ZA ZA4.5: run-queue membership lives in the TCB, so a boot TCB naming a
   -- core claims a queue place the queue never gave it.
   assertBool "NEGATIVE: a boot TCB on a run queue fails the boot-safety check"

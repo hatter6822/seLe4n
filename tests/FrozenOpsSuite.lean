@@ -401,6 +401,46 @@ private def fo006_timerTickIdle : IO Unit := do
       expect "still idle" ((fst'.scheduler.current) == none)
   | .error _ => throw <| IO.userError "timer tick should succeed"
 
+/-- WS-ZA ZA6.37: **an exhausting frozen budget tick queues the context for its
+refill**, as the live tick's `replenishOnCore` (`releasePlace`) does: the bound
+context, its head used up and its next refill pending, ends on the boot core's
+release queue -- the queue's head and count, and the context's own link -- and
+the current thread is cleared.  The CONTROL is the same tick on a context with
+budget left: it charges the unit and queues nothing. -/
+private def frozenBudgetTickPlacesExhaustedContext : IO Unit := do
+  let scId : SeLe4n.SchedContextId := ⟨40⟩
+  let tcb : TCB := { mkTcb 1 with
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+    scBindingOwnerCode := 0 }
+  let spent : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨0⟩,
+      refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 1000,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩) }
+  let run (sc : SeLe4n.Kernel.SchedContext) : Except KernelError FrozenSystemState :=
+    let fst := mkFrozenState [(⟨1⟩, .tcb tcb), (scId.toObjId, .schedContext sc)]
+    let fst := { fst with scheduler := { fst.scheduler with current := some ⟨1⟩ } }
+    (frozenTimerTickBudget fst).map (·.2)
+  expect "control: the fixture's context exhausts on this tick"
+    (spent.tickExhausts 0)
+  match run spent with
+  | .error e => expect s!"the exhausting frozen budget tick succeeds (error: {reprStr e})" false
+  | .ok fst' =>
+    expect "an exhausting tick puts the context at the head of the boot core's release queue"
+      (frozenReleaseHeadOn fst' bootCoreId == SeLe4n.Kernel.ReleaseChain.code scId
+        && frozenReleaseCountOn fst' bootCoreId == 1)
+    expect "...linked on that core by its own record"
+      ((fst'.getSchedContext? scId).any (fun sc => sc.releaseCoreCode == bootCoreId.val + 1))
+    expect "...and clears the current thread"
+      (fst'.scheduler.current == none)
+  let funded : SeLe4n.Kernel.SchedContext :=
+    { spent with budgetRemaining := ⟨50⟩, refillHeadEligibleAt := 0, refillHeadAmount := 50 }
+  match run funded with
+  | .error e => expect s!"the funded frozen budget tick succeeds (error: {reprStr e})" false
+  | .ok fst' =>
+    expect "CONTROL: a tick with budget left queues nothing"
+      (frozenReleaseHeadOn fst' bootCoreId == 0 && frozenReleaseCountOn fst' bootCoreId == 0)
+
 -- ============================================================================
 -- TPH-007: Frozen CSpace Lookup (Radix O(1))
 -- ============================================================================
@@ -3068,25 +3108,34 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
         (freeze istQueued)).toOption.map
       (fun r => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere r.2 diffA)) == some false)
   -- The live configure also puts the context on its home core's release queue
-  -- (`releasePlace`), which writes the context's release links; the frozen
-  -- surface keeps no release-queue links (`docs/REGISTERED_DEBT.md` §C, "The
-  -- frozen surface keeps no release-queue links"), so the states agree whole once those links are
-  -- taken from the live record -- and the records agree off them.
-  expect "FO-052: ...and the two states agree whole, off the context's release links"
+  -- (`releasePlace`), which writes the context's release links and the core's
+  -- queue ends; the frozen configure mirrors it (`frozenReleasePlace`), so the
+  -- two states agree whole, links and ends included.
+  expect "FO-052: ...and the two states agree whole, the release queue included"
+    (agrees istQueued 0)
+  expect "FO-052: ...the context is on its home core's release queue on both surfaces"
     (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0,
           (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
             (freeze istQueued)).toOption with
      | some l, some f =>
-       match l.getSchedContext? cfgScId, f.2.getSchedContext? cfgScId with
-       | some lsc, some fsc =>
-         lsc.withoutRelease == fsc.withoutRelease
-           && (match frozenWithObjectStored f.2 cfgScId.toObjId (.schedContext lsc) with
-               | .ok f' => frozenStateAgrees f' l
-               | .error _ => false)
-       | _, _ => false
+       l.scheduler.releaseHeadOnCore bootCoreId != 0
+         && SeLe4n.Kernel.FrozenOps.frozenReleaseHeadOn f.2 bootCoreId
+              == l.scheduler.releaseHeadOnCore bootCoreId
      | _, _ => false)
-  expect "FO-052 NEGATIVE: ...and that is the only difference the comparison sees"
-    (!agrees istQueued 0)
+  -- NEGATIVE: the comparison sees the release queue -- the frozen result with its
+  -- context's link cleared disagrees with the live one.
+  expect "FO-052 NEGATIVE: a frozen state off the release queue does not agree"
+    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
+            (freeze istQueued)).toOption with
+     | some l, some f =>
+       match f.2.getSchedContext? cfgScId with
+       | some fsc =>
+         match frozenWithObjectStored f.2 cfgScId.toObjId (.schedContext fsc.withoutRelease) with
+         | .ok f' => !frozenStateAgrees f' l
+         | .error _ => false
+       | none => false
+     | _, _ => false)
   -- CONTROL: on a context with budget the queued thread stays queued on both.
   let istQueuedReady := diffAddSchedContext (diffAddTcb mkEmptyIntermediateState boundTcb)
     cfgScId readySc
@@ -3442,6 +3491,7 @@ def main : IO Unit := do
   fo005b_replyWrongPresentedCap
   IO.println "--- TPH-006: Frozen Scheduler Tick ---"
   fo006_timerTickIdle
+  frozenBudgetTickPlacesExhaustedContext
   IO.println "--- TPH-007: Frozen CSpace Lookup ---"
   fo007_cspaceLookup
   fo008_cspaceLookupMissing

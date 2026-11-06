@@ -179,7 +179,11 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
       (fs.scheduler.byPriority.get? prio).getD [] == (lb.get? prio).getD [])
   -- The derivation tree's stored part, its edge bound: its edges are a ghost
   -- (WS-ZA ZA5.3 part 5), read through the slot links each CNode arm compares.
+  -- WS-ZA ZA6.37: every core's release-queue ends; the links themselves are the
+  -- contexts' fields, which `objectsAgree` compares record by record.
   objectsAgree && queueAgree
+    && decide (fs.scheduler.releaseHeadCode = ls.scheduler.releaseHeadCode)
+    && decide (fs.scheduler.releaseCount = ls.scheduler.releaseCount)
     && fs.cdt.edgeBound == ls.cdt.edgeBound
     && fs.scheduler.current == ls.scheduler.currentOnCore Concurrency.bootCoreId
     && fs.scheduler.activeDomain == ls.scheduler.activeDomainOnCore Concurrency.bootCoreId
