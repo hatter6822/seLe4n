@@ -1508,7 +1508,8 @@ struct RoundTrip {
     /// The message length in `x1`'s `MessageInfo`: at most 4, except for the
     /// scheduling-context configure and the service register, whose fifth
     /// word the kernel reads from the root task's IPC buffer, mapped for the
-    /// duration of their group.
+    /// duration of their group, and the long send, whose words past the
+    /// fourth it reads from the sender's.
     msg_len: u64,
     /// The message registers `x2` to `x5`.
     msg: [u64; 4],
@@ -2174,6 +2175,11 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
         returns: None,
     }
 }
+
+/// The long send's message length: four words in the sender's registers and
+/// two in its IPC buffer's overflow slots 0 and 1, which share a page.
+#[cfg(feature = "hw_target")]
+const LONG_SEND_LENGTH: u64 = 6;
 
 /// The Consumed invocation's success word in `x1`: `MessageInfo` length 1,
 /// label 0 (Lean's `consumedInfoWord`).
@@ -3001,6 +3007,62 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         invocation("postpone-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         invocation(
             "postpone-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // WS-ZA ZA6.35: a send of more than the inline words to a waiting
+        // receiver (seL4's `doNormalTransfer`, `copyMRs`): the partner's six
+        // words, four in its registers and two in its IPC buffer, which the
+        // send copies into the receiver's registers and the receiver's own
+        // buffer slots in place.  Both threads' buffers are set here, and the
+        // partner is run as the postpone above runs it: resumed bound to the
+        // one-tick context, the root task's receive blocks, the partner's long
+        // send wakes it, and the partner's yield forfeits the budget, which
+        // leaves the root task current to suspend the partner and unbind.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "long-send-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                REFILL_BUDGET,
+                REFILL_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "long-send-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "long-send-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "long-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "long-send-to-receiver",
+            SEND,
+            ENDPOINT_CAP,
+            LONG_SEND_LENGTH,
+            [0x55, 0x56],
+            false,
+        ),
+        kernel_step("long-send-partner-yield", YIELD),
+        invocation("long-send-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        invocation(
+            "long-send-unbind",
             SCHED_CONTEXT_UNBIND,
             SCHED_CONTEXT_CAP,
             [0; 4],
