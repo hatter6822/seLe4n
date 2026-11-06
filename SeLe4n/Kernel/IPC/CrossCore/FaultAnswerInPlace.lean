@@ -207,6 +207,21 @@ the one constant cell (`storeFaultReplyLeg_eq`). -/
 theorem storeFaultReplyLeg_eq (st : SystemState) (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
     storeFaultReplyLeg st c rid = storeReplyLeg st c rid IpcMessage.empty := rfl
 
+/-- The fault reply's leg keeps the donation chain: it is `storeReplyLeg` at
+the empty message (`storeFaultReplyLeg_eq`), whose chain theorem it inherits. -/
+theorem storeFaultReplyLeg_preserves_donationChainWellFormed (st : SystemState)
+    (c : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (core : Concurrency.CoreId)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyWakesInPlace st c ct rid = true)
+    (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
+    donationChainWellFormed (storeFaultReplyLeg st c rid) := by
+  rw [storeFaultReplyLeg_eq]
+  exact storeReplyLeg_preserves_donationChainWellFormed st c ct ep rid IpcMessage.empty core
+    (by simp [IpcMessage.empty]) hT hIpc hRO hG hObjInv hChain
+
 /-- **The donated reply-receive answering a fault, in place**: the reply's
 writes with no message, the pop and its settle, the server's block on the
 endpoint, the server taken off its core and its priority walk, then the fault

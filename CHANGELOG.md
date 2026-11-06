@@ -73,9 +73,14 @@ or abandoned.  The receive leg runs unchanged.
   (`*-reply`) read 0 at the first call and at steady state, and each now
   checks the restart the answer applied: the PC, `x0` and `x1` the faulted
   thread resumes with (the reply's word as an unknown syscall's `x0` and a user
-  exception's PC).  Five new `.reply` scenarios (`*-delivered-to-reply`,
-  `*-plain-reply`) answer each kind with `Reply` and check the same restart
-  when the handler waits again; each reads 0.
+  exception's PC; a capability fault resumes at the `SVC`, which it re-issues,
+  and an unknown syscall at the instruction after it, the fault IP each
+  records).  Ten new scenarios, `*-delivered-to-reply` and `*-plain-reply` for
+  each of the five kinds, deliver the fault and answer it with `Reply`, then
+  check the same restart when the handler waits again.  Each reads 0, and all
+  ten are in the pinned scenario set under the zero rule.  The fault reply's
+  leg on the donated and unheld shapes (`storeFaultReplyLeg`) is registered
+  with the reply-stack write census by its chain theorem.
 - **Tests.**  `tests/FaultHandlingSuite.lean` §7g delivers a fault, has the
   handler answer with `ReplyRecv` through the compiled syscall entry, and
   checks that the fault record is cleared, the restart applied and the

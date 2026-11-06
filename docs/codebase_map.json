@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/replyrecv-fault-reply",
-      "commit_sha": "9d8efcaa606fae3e263f3b37e33c45a3e26c8c52",
-      "tree_sha": "07d5cd4c9946e6a567ff15e6458ffa96e28d950f",
-      "committed_at_utc": "2026-11-06T23:08:48+00:00"
+      "commit_sha": "1692871606e1359a3e74c7223362f751426f07fd",
+      "tree_sha": "c46274ab710bc7a7a6b047f7a5c654d765f3ade7",
+      "committed_at_utc": "2026-11-06T23:18:10+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "518e0340844f811535c27578e635fed51ced0c8409232a8f70752fd359480489"
+    "source_digest": "8ef4548299b02b95ec17a984a050fffa76d27432d02804fc7ac72593f065145c"
   },
   "summary": {
     "module_count": 629,
-    "declaration_count": 34296
+    "declaration_count": 34297
   },
   "readme_sync": {
     "version": "0.36.206",
     "lean_toolchain": "v4.28.0",
     "production_files": 559,
-    "production_loc": 590112,
+    "production_loc": 590131,
     "test_files": 70,
     "test_loc": 88879,
-    "proved_theorem_lemma_decls": 22569,
+    "proved_theorem_lemma_decls": 22570,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -114562,7 +114562,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace",
       "path": "SeLe4n/Kernel/IPC/CrossCore/FaultAnswerInPlace.lean",
-      "declaration_count": 16,
+      "declaration_count": 17,
       "declarations": [
         {
           "kind": "theorem",
@@ -114775,10 +114775,33 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "storeFaultReplyLeg_preserves_donationChainWellFormed",
+          "full_name": "SeLe4n.Kernel.storeFaultReplyLeg_preserves_donationChainWellFormed",
+          "line": 212,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.donationChainWellFormed",
+            "SeLe4n.Kernel.replyWakesInPlace",
+            "SeLe4n.Kernel.storeFaultReplyLeg",
+            "SeLe4n.Kernel.storeFaultReplyLeg_eq",
+            "SeLe4n.Kernel.storeReplyLeg_preserves_donationChainWellFormed",
+            "SeLe4n.Model.IpcMessage.empty",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.replyObject",
+            "SeLe4n.ObjId",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
           "kind": "def",
           "name": "performReplyRecvDonatedFaultAnswer",
           "full_name": "SeLe4n.Kernel.performReplyRecvDonatedFaultAnswer",
-          "line": 214,
+          "line": 229,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageLength",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -114802,7 +114825,7 @@
           "kind": "theorem",
           "name": "replyRecvTransferOnCore_fault_donated_inPlace",
           "full_name": "SeLe4n.Kernel.replyRecvTransferOnCore_fault_donated_inPlace",
-          "line": 227,
+          "line": 242,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.regMessageLength",
@@ -114870,7 +114893,7 @@
           "kind": "def",
           "name": "performReplyRecvUnheldFaultAnswer",
           "full_name": "SeLe4n.Kernel.performReplyRecvUnheldFaultAnswer",
-          "line": 312,
+          "line": 327,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageLength",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -114894,7 +114917,7 @@
           "kind": "theorem",
           "name": "replyRecvTransferOnCore_fault_unheld_inPlace",
           "full_name": "SeLe4n.Kernel.replyRecvTransferOnCore_fault_unheld_inPlace",
-          "line": 327,
+          "line": 342,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.regMessageLength",
@@ -114961,7 +114984,7 @@
           "kind": "def",
           "name": "performFaultReplyDonatedAnswer",
           "full_name": "SeLe4n.Kernel.performFaultReplyDonatedAnswer",
-          "line": 410,
+          "line": 425,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
@@ -114980,7 +115003,7 @@
           "kind": "theorem",
           "name": "faultReplyTransferChecked_donated_inPlace",
           "full_name": "SeLe4n.Kernel.faultReplyTransferChecked_donated_inPlace",
-          "line": 422,
+          "line": 437,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -115028,7 +115051,7 @@
           "kind": "def",
           "name": "performFaultReplyUnheldAnswer",
           "full_name": "SeLe4n.Kernel.performFaultReplyUnheldAnswer",
-          "line": 481,
+          "line": 496,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.SchedContextOps.settleReturnedContext",
@@ -115047,7 +115070,7 @@
           "kind": "theorem",
           "name": "faultReplyTransferChecked_unheld_inPlace",
           "full_name": "SeLe4n.Kernel.faultReplyTransferChecked_unheld_inPlace",
-          "line": 492,
+          "line": 507,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -473798,7 +473821,7 @@
           "kind": "def",
           "name": "halfStepResolves",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves",
-          "line": 973,
+          "line": 977,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline"
           ]
@@ -473807,14 +473830,14 @@
           "kind": "def",
           "name": "halfStepResolves.go",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves.go",
-          "line": 976,
+          "line": 980,
           "called": []
         },
         {
           "kind": "def",
           "name": "disciplineViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.disciplineViolations",
-          "line": 989,
+          "line": 993,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline",
             "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves",
@@ -473826,14 +473849,14 @@
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.reconciliationViolations",
-          "line": 1029,
+          "line": 1033,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusWitnessBareConsume",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessBareConsume",
-          "line": 1061,
+          "line": 1065,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.SystemState.consumeCallerReply",
@@ -473846,7 +473869,7 @@
           "kind": "def",
           "name": "censusWitnessDirectLinkWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDirectLinkWrite",
-          "line": 1072,
+          "line": 1076,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -473859,7 +473882,7 @@
           "kind": "def",
           "name": "censusWitnessRawTableWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessRawTableWrite",
-          "line": 1091,
+          "line": 1095,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -473873,7 +473896,7 @@
           "kind": "def",
           "name": "censusWitnessSplitHelper",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitHelper",
-          "line": 1101,
+          "line": 1105,
           "called": [
             "SeLe4n.Kernel.Reply"
           ],
@@ -473883,7 +473906,7 @@
           "kind": "def",
           "name": "censusWitnessSplitWriter",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitWriter",
-          "line": 1108,
+          "line": 1112,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -473897,7 +473920,7 @@
           "kind": "def",
           "name": "censusWitnessDelegatedStoreHelper",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreHelper",
-          "line": 1121,
+          "line": 1125,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.KernelObject",
@@ -473910,7 +473933,7 @@
           "kind": "def",
           "name": "censusWitnessDelegatedStoreWriter",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreWriter",
-          "line": 1125,
+          "line": 1129,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.ReplyId",
@@ -473923,7 +473946,7 @@
           "kind": "def",
           "name": "eq_censusWitnessUserNamed",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed",
-          "line": 1137,
+          "line": 1141,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -473936,7 +473959,7 @@
           "kind": "def",
           "name": "eq_1",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.eq_1",
-          "line": 1152,
+          "line": 1156,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -473949,7 +473972,7 @@
           "kind": "def",
           "name": "censusWitnessNoWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessNoWrite",
-          "line": 1159,
+          "line": 1163,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.SystemState",
