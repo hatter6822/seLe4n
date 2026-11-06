@@ -1757,8 +1757,11 @@ the cell `o` holds (read from the source slot): its target and free index, and
 these rights and badge.  A fieldless capability derived unchanged
 (`derivesUnchanged`) into a slot that keeps a record is stored as `o` itself
 (`insertCellOf`), so the slot's record, and the target cell it owns, stay in the
-spares for the next capability written there; any other is `insertFields`. -/
-@[inline] def insertDerivedFields (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability)
+spares for the next capability written there; any other is `insertFields`.  Out
+of line, as `insertFields` is: the caller's write of its CNode object then
+reuses that object's cell, which a match on the spare inlined beside it took
+for its own. -/
+def insertDerivedFields (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability)
     (cap : Capability) (ho : o = some cap) (rights : AccessRightSet) (badgeWord : SeLe4n.Badge)
     (badged : Bool) : CNode :=
   if hs : derivesUnchanged cap rights badgeWord badged then
