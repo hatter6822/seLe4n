@@ -98,6 +98,38 @@ theorem restoreToReadyCancelled (st : SystemState) (t : SeLe4n.ThreadId)
 end RecordsStep
 
 -- ============================================================================
+-- §2  A frame read off the threads and the roots
+-- ============================================================================
+
+/-- The thread a slot holds. -/
+def tcbAt : Option KernelObject → Option TCB
+  | some (.tcb t) => some t
+  | _ => none
+
+theorem getTcb?_eq_tcbAt (st : SystemState) (k : SeLe4n.ObjId) :
+    st.getTcb? ⟨k.val⟩ = tcbAt st.objects[k]? := rfl
+
+/-- A slot's record view is read off its thread's and its root's. -/
+theorem recordViewOf_congr {o o' : Option KernelObject}
+    (hT : (tcbAt o').map TCB.recordView = (tcbAt o).map TCB.recordView)
+    (hR : rootViewOf o' = rootViewOf o) : recordViewOf o' = recordViewOf o := by
+  rcases o with _ | x <;> rcases o' with _ | y
+  · rfl
+  · cases y <;> simp_all [tcbAt, rootViewOf, recordViewOf, KernelObject.mappingView]
+  · cases x <;> simp_all [tcbAt, rootViewOf, recordViewOf, KernelObject.mappingView]
+  · cases x <;> cases y <;> simp_all [tcbAt, rootViewOf, recordViewOf, KernelObject.mappingView]
+
+/-- **A step keeping every root's view, the ASID table and every thread's record
+view is a frame.** -/
+theorem RecordsFrame.of_kept {st st' : SystemState}
+    (hR : ∀ k : SeLe4n.ObjId, rootViewOf st'.objects[k]? = rootViewOf st.objects[k]?)
+    (hA : st'.asidTable = st.asidTable) (hI : st'.objects.invExt)
+    (hK : tcbProjKept TCB.recordView st' st) : RecordsFrame st st' :=
+  ⟨fun k => recordViewOf_congr (by
+      have := hK ⟨k.val⟩
+      rwa [getTcb?_eq_tcbAt, getTcb?_eq_tcbAt] at this) (hR k), hA, hI⟩
+
+-- ============================================================================
 -- §1  The cancellation's writes
 -- ============================================================================
 
