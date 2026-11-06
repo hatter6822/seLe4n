@@ -237,6 +237,9 @@ import SeLe4n.Kernel.KernelRecords.Tails
 import SeLe4n.Kernel.KernelRecords.IpcPrimitives
 import SeLe4n.Kernel.KernelRecords.CapabilityPrimitives
 import SeLe4n.Kernel.KernelRecords.IpcSend
+import SeLe4n.Kernel.KernelRecords.Donation
+import SeLe4n.Kernel.KernelRecords.IpcReceive
+import SeLe4n.Kernel.KernelRecords.IpcCall
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident
