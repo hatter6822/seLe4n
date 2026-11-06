@@ -938,6 +938,11 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           | .ok vChild =>
             resolveIssuingSlotsK tid capAddr args.dstCNode args.dstSlot st (fun e => .error (e, st))
               (fun srcCnode srcSlot dstCnode dstSlot =>
+                -- The kernel heap's refusal, answered here in the state the
+                -- arm was handed: the carve's first check, so the general
+                -- path it would otherwise fall back to (which decodes the
+                -- invocation again) never runs for it.
+                if !req.heapAdmitted st then .error (.untypedRegionExhausted, st) else
                 RefusalCarrying.ofChecked
                   (untypedRetypeAdmittedAt st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val req)
                   (fun st => untypedRetypePerformAt ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
@@ -1559,10 +1564,14 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
             | ok pr =>
               obtain ⟨src, dst⟩ := pr
               dsimp only
-              apply RefusalCarrying.ofChecked_eq
-              intro hA
-              simp only [dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV, hR,
-                untypedRetypeObject_of_admitted hA]
+              cases hH : req.heapAdmitted st
+              · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ,
+                  hV, hR, hH, untypedRetypeObject_heapRefused _ _ _ _ _ hH]
+              · simp only [hH, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+                apply RefusalCarrying.ofChecked_eq
+                intro hA
+                simp only [dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV, hR,
+                  untypedRetypeObject_of_admitted hA]
     all_goals rfl
   case untypedReset =>
     cases target

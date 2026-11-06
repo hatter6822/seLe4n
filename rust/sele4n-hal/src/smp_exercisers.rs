@@ -4814,7 +4814,83 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     let saved = crate::interrupts::disable_interrupts();
     let ok = fault_entries();
     crate::interrupts::restore_interrupts(saved);
-    ok
+    if ok != Some(true) {
+        return ok;
+    }
+    // The retype the kernel heap cannot hold, twice, last: its confirming
+    // carve and delete run unmeasured and touch nothing a later reading sees.
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !heap_refused_retype(which) {
+            return Some(false);
+        }
+    }
+    Some(true)
+}
+
+/// `KernelError.untypedRegionExhausted`'s discriminant (`sele4n-types`'
+/// `UntypedRegionExhausted`): the refusal of a carve the kernel heap cannot
+/// hold, as seL4's `seL4_NotEnoughMemory`.
+#[cfg(feature = "hw_target")]
+const UNTYPED_REGION_EXHAUSTED: u64 = 20;
+
+/// The free bytes the kernel is told while the heap refusal is measured: one
+/// page, below what any carve asks (`retypeHeapReserveBytes` alone is 64 KiB),
+/// so the heap is never filled to reach the refusal.
+#[cfg(feature = "hw_target")]
+const HEAP_REFUSED_CEILING: u64 = 4096;
+
+/// An endpoint carve into the frame slot, the passive endpoint's id.
+#[cfg(feature = "hw_target")]
+const HEAP_RETYPE_MSG: [u64; 4] = [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT];
+
+/// That carve, with the heap's capacity capped below it: refused with
+/// `untypedRegionExhausted` before any write, so it allocates nothing.
+#[cfg(feature = "hw_target")]
+const HEAP_REFUSED_RETYPE: RoundTrip = RoundTrip {
+    name: "untyped-retype-heap-refused",
+    syscall: UNTYPED_RETYPE,
+    cptr: UNTYPED_CAP,
+    msg_len: 4,
+    msg: HEAP_RETYPE_MSG,
+    primed: None,
+    blocks: false,
+    returns: Some((
+        (crate::svc_dispatch::ERROR_LABEL_BASE + UNTYPED_REGION_EXHAUSTED) << 9,
+        None,
+    )),
+};
+
+/// **The kernel heap's refusal of a retype**: the free bytes the kernel is
+/// told capped at [`HEAP_REFUSED_CEILING`] (`lean_heap`'s exerciser hook), the
+/// carve measured and refused with `untypedRegionExhausted`, the cap lifted;
+/// then the same carve, unmeasured, succeeds on the heap's own free bytes and
+/// its capability is deleted, which retires the endpoint — so the refusal was
+/// the heap's, not some other check's, and the state is as it was.
+#[cfg(feature = "hw_target")]
+fn heap_refused_retype(which: &str) -> bool {
+    crate::lean_heap::set_reported_free_bytes_ceiling(Some(HEAP_REFUSED_CEILING));
+    let refused = heap_allocations_round_trip(&HEAP_REFUSED_RETYPE, which) == Some(true);
+    crate::lean_heap::set_reported_free_bytes_ceiling(None);
+    refused
+        && unmeasured(
+            &invocation(
+                "untyped-retype-heap-admitted",
+                UNTYPED_RETYPE,
+                UNTYPED_CAP,
+                HEAP_RETYPE_MSG,
+            ),
+            "the carve the heap refused did not succeed on the heap's own capacity",
+        )
+        && unmeasured(
+            &invocation(
+                "heap-admitted-endpoint-delete",
+                CSPACE_DELETE,
+                CNODE_CAP,
+                [FRAME_SLOT, 0, 0, 0],
+            ),
+            "the admitted carve's endpoint was not deleted",
+        )
 }
 
 /// **WS-ZA ZA6.32**: the shared peripheral interrupts the exerciser raises —

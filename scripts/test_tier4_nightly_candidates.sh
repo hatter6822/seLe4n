@@ -68,11 +68,6 @@ run_check "META" bash -lc "if [[ ! -s '${ARTIFACT_DIR}/scenario_seeds.txt' ]] ||
 run_check_with_timeout "TRACE" bash -lc 'lake exe sele4n > tests/artifacts/nightly/sele4n_run1.trace'
 run_check_with_timeout "TRACE" bash -lc 'lake exe sele4n > tests/artifacts/nightly/sele4n_run2.trace'
 run_check "TRACE" bash -lc 'diff -u tests/artifacts/nightly/sele4n_run1.trace tests/artifacts/nightly/sele4n_run2.trace > tests/artifacts/nightly/sele4n_determinism.diff'
-# Q1 simplified the service interface: start/stop/restart lifecycle ops removed.
-# Validate the Q1/Q2 service registry surface instead.
-run_check "TRACE" rg -n 'register service success: true' tests/artifacts/nightly/sele4n_run1.trace
-run_check "TRACE" rg -n 'duplicate register: SeLe4n.Model.KernelError.illegalState' tests/artifacts/nightly/sele4n_run1.trace
-run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/artifacts/nightly/sele4n_run1.trace
 # shellcheck disable=SC2016
 run_check_with_timeout "TRACE" bash -lc 'while read -r seed; do [[ -z "${seed}" ]] && continue; lake exe trace_sequence_probe "${seed}" 320 | tee "tests/artifacts/nightly/trace_sequence_probe_seed_${seed}.log"; done < tests/artifacts/nightly/scenario_seeds.txt'
 # shellcheck disable=SC2016

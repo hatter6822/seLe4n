@@ -3282,6 +3282,19 @@ theorem returnOutcomeWords_eq (syscallId : UInt32) (st : SystemState) (tid : SeL
           SeLe4n.RegisterFile.gpr, SeLe4n.RegisterFile.word, SeLe4n.RegisterFile.wordOfByte,
           Architecture.trapFrameWordCount]
 
+/-- **A refusal's boundary words, as scalars**: tag `0` and the error frame's
+six words (`errorFrame`'s `x1` label, every other word `0`), read without
+building the frame or its outcome, so a refused syscall allocates neither
+(`errorOutcomeWords_eq`). -/
+@[inline] def errorOutcomeWords (ke : KernelError) :
+    UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 :=
+  (0, 0, (MessageInfo.encode
+      { length := 0, extraCaps := 0, label := Architecture.errorLabel ke }).toUInt64, 0, 0, 0, 0)
+
+theorem errorOutcomeWords_eq (ke : KernelError) :
+    errorOutcomeWords ke = (Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words :=
+  rfl
+
 /-- WS-ZA ZA4: `syscallDispatchFromAbi` with its outcome as the boundary's words
 (`syscallDispatchFromAbiWords_eq`).  Inlined into the step, each branch hands
 its words on as scalars, so no outcome is built. -/
@@ -3305,18 +3318,18 @@ its words on as scalars, so no outcome is built. -/
           (fun s fault => (Architecture.SyscallOutcome.faulted.words,
             deliverSyscallCapFault ctx executingCore s tid fault
               (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr))
-          (fun ke s => ((Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words,
+          (fun ke s => (errorOutcomeWords ke,
             recordSyscallRefusal ctx executingCore syscallId tid ke x0 s))
           (fun st' => (returnOutcomeWords syscallId st' tid, st')))
         (syscallArmOutcome
-          (fun ke s => ((Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words,
+          (fun ke s => (errorOutcomeWords ke,
             recordSyscallRefusal ctx executingCore syscallId tid ke x0 s))
           (fun st' => (returnOutcomeWords syscallId st' tid, st')))
         (syscallLookupOutcome
           (fun s w b e => (Architecture.SyscallOutcome.faulted.words,
             deliverSyscallLookupFault ctx executingCore s tid w b e
               syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr))
-          (fun ke s => ((Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words,
+          (fun ke s => (errorOutcomeWords ke,
             recordSyscallRefusal ctx executingCore syscallId tid ke x0 s)))
 
 theorem syscallDispatchFromAbiWords_eq
@@ -3627,6 +3640,18 @@ opaque ffiApplyPhysicalWrite : UInt64 → UInt64 → UInt64 → BaseIO Unit
     Rust: `ffi_entry_word_buffer` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_entry_word_buffer"]
 opaque ffiEntryWordBuffer : BaseIO ByteArray
+
+/-- **The kernel heap's free bytes**: its free pages times the page size, read
+    under the heap's lock (`lean_heap::kernel_heap_free_bytes`), as a word, so
+    nothing is allocated.  The syscall entry reads it before its atomic step
+    and hands it to the state (`SystemState.withKernelHeapFreeBytes`), where a
+    retype reads it to refuse a carve the heap could not hold.  `0` when the
+    heap cannot be taken into service, which refuses every retype: a capacity
+    nothing can read is no capacity.
+
+    Rust: `ffi_kernel_heap_free_bytes` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_kernel_heap_free_bytes"]
+opaque ffiKernelHeapFreeBytes : BaseIO UInt64
 
 /-- **WS-BP BP7.8 (batched at the `v0.36.47` audit, into the entry-word buffer
     at WS-ZA ZA5.2): the `count` user words at `base`**, read into the

@@ -1127,6 +1127,48 @@ pub fn kernel_allocations_on(core: usize) -> Result<u64, KernelHeapError> {
     })
 }
 
+/// The kernel heap's free bytes: its free pages times [`PAGE_SIZE`].  A small
+/// object is served from a page some allocation already owns, so a page still
+/// free is the capacity no allocation has claimed — the measure a retype is
+/// checked against (`CarveRequest.heapAdmitted`).
+///
+/// # Errors
+///
+/// `Init` if the arena cannot be taken into service.
+pub fn kernel_heap_free_bytes() -> Result<u64, KernelHeapError> {
+    with_kernel_heap(|heap| (heap.stats().free_pages * PAGE_SIZE) as u64)
+}
+
+/// The exerciser's ceiling on the free bytes the kernel is told
+/// ([`set_reported_free_bytes_ceiling`]); `u64::MAX` is none.
+#[cfg(feature = "smp_exercisers")]
+static REPORTED_FREE_BYTES_CEILING: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(u64::MAX);
+
+/// **A test image's hook**: the free bytes the kernel is told are at most
+/// `ceiling` (`None` lifts it), so the exerciser drives a retype into the
+/// kernel's heap refusal without filling the heap.  Only the exerciser image
+/// (`smp_exercisers`) carries it.
+#[cfg(feature = "smp_exercisers")]
+pub fn set_reported_free_bytes_ceiling(ceiling: Option<u64>) {
+    REPORTED_FREE_BYTES_CEILING.store(
+        ceiling.unwrap_or(u64::MAX),
+        core::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// **The free bytes the kernel is told** (`ffi::ffi_kernel_heap_free_bytes`):
+/// [`kernel_heap_free_bytes`], or `0` when the heap cannot be taken into
+/// service — a capacity nothing can read refuses every retype rather than
+/// admitting one into a heap that is not there.  On the exerciser image,
+/// capped by its ceiling.
+pub fn reported_kernel_heap_free_bytes() -> u64 {
+    let free = kernel_heap_free_bytes().unwrap_or(0);
+    #[cfg(feature = "smp_exercisers")]
+    let free = free.min(REPORTED_FREE_BYTES_CEILING.load(core::sync::atomic::Ordering::Relaxed));
+    free
+}
+
 /// The fail-closed end of every Lean-facing heap call: the Lean runtime cannot
 /// recover from a failed small allocation — `lean.h`'s inline paths do not test
 /// the result — and a contract violation means an object's lifetime is already
@@ -1726,6 +1768,16 @@ mod tests {
     #[test]
     fn the_kernel_heap_serves_the_lean_contract() {
         let base = kernel_heap_census().expect("the census takes the arena into service");
+        // The free bytes a retype is checked against are the pages no
+        // allocation owns, and the kernel is told exactly that.
+        assert_eq!(
+            kernel_heap_free_bytes(),
+            Ok(((base.pages - base.used_pages) * PAGE_SIZE) as u64)
+        );
+        assert_eq!(
+            crate::ffi::ffi_kernel_heap_free_bytes(),
+            kernel_heap_free_bytes().unwrap()
+        );
         let a = kernel_alloc_small(40, 4).expect("the kernel heap takes the arena into service");
         let b = kernel_alloc_small(40, 4).expect("room");
         // v0.36.31: the census counts what was allocated, and checks the
@@ -1786,12 +1838,18 @@ mod tests {
             full.used_pages, full.pages,
             "an exhausted heap uses every page"
         );
+        assert_eq!(kernel_heap_free_bytes(), Ok(0), "no page is free");
+        assert_eq!(reported_kernel_heap_free_bytes(), 0);
         for addr in live {
             assert_eq!(kernel_free_small(addr), Ok(()));
         }
         assert!(
             kernel_alloc_small(8, 0).is_ok(),
             "freed memory serves again"
+        );
+        assert!(
+            kernel_heap_free_bytes().unwrap() > 0,
+            "the freed pages are free bytes again"
         );
     }
 }

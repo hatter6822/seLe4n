@@ -499,6 +499,44 @@ on that core rewrites, is never read after the entry that filled it. -/
 @[inline] def clearUserWords (st : SystemState) : SystemState :=
   syncUserWords st ByteArray.empty 0
 
+/-- **The kernel heap's free bytes handed to the step** — the syscall entry's
+other reading of the hardware, applied right after its words
+(`syncUserWords`): the HAL's count of the heap's free bytes, read as a word
+before the atomic step (`Platform.FFI.ffiKernelHeapFreeBytes`), written into
+the machine's field (`MachineState.kernelHeapFreeBytes`), which a retype reads
+to refuse a carve the heap could not hold (`CarveRequest.heapAdmitted`).  A
+write of one scalar field, as `writeResidentCode` writes its slot, so it finds
+the state exclusive and boxes nothing. -/
+def _root_.SeLe4n.Model.SystemState.withKernelHeapFreeBytes (st : SystemState) (free : Nat) :
+    SystemState :=
+  { st with machine := { st.machine with kernelHeapFreeBytes := free } }
+
+@[simp] theorem withKernelHeapFreeBytes_kernelHeapFreeBytes (st : SystemState) (free : Nat) :
+    (st.withKernelHeapFreeBytes free).machine.kernelHeapFreeBytes = free := rfl
+
+@[simp] theorem withKernelHeapFreeBytes_objects (st : SystemState) (free : Nat) :
+    (st.withKernelHeapFreeBytes free).objects = st.objects := rfl
+
+@[simp] theorem withKernelHeapFreeBytes_scheduler (st : SystemState) (free : Nat) :
+    (st.withKernelHeapFreeBytes free).scheduler = st.scheduler := rfl
+
+@[simp] theorem withKernelHeapFreeBytes_memory (st : SystemState) (free : Nat) :
+    (st.withKernelHeapFreeBytes free).machine.memory = st.machine.memory := rfl
+
+@[simp] theorem withKernelHeapFreeBytes_residentCode (st : SystemState) (free : Nat) :
+    (st.withKernelHeapFreeBytes free).machine.residentCode = st.machine.residentCode := rfl
+
+/-- The refresh and the words' sync write disjoint fields, so either order
+commits the same state: an entry-state theorem stated over
+`syncUserWords st bytes n` covers the entry's refreshed state at
+`st.withKernelHeapFreeBytes free`. -/
+theorem withKernelHeapFreeBytes_syncUserWords (st : SystemState) (bytes : ByteArray) (n : Nat)
+    (free : Nat) :
+    (syncUserWords st bytes n).withKernelHeapFreeBytes free =
+      syncUserWords (st.withKernelHeapFreeBytes free) bytes n := by
+  unfold syncUserWords SystemState.withKernelHeapFreeBytes
+  split <;> rfl
+
 theorem byteArray_eq_empty_of_size {b : ByteArray} (h : b.size = 0) : b = ByteArray.empty := by
   cases b with
   | mk data =>
