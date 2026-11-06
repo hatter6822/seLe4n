@@ -6362,13 +6362,21 @@ struct FaultRestart {
 
 /// The restart of fault kind `kind`: a VM or capability fault resumes its own
 /// context whatever the reply says; an unknown syscall takes the reply's first
-/// word as `x0`; a user exception takes it as its PC.
+/// word as `x0`; a user exception takes it as its PC.  A fault raised by an
+/// `SVC` (the capability fault and the unknown syscall) restarts at the `SVC`
+/// itself, one instruction before the `ELR_EL1` its trap saved, so the reply
+/// re-issues the syscall (the model's `svcFaultIP`).
 #[cfg(feature = "hw_target")]
 const fn fault_restart(kind: usize) -> FaultRestart {
     let trip = fault_trip(kind, "");
+    let restart_pc = if kind == 2 || kind == 3 {
+        trip.elr - 4
+    } else {
+        trip.elr
+    };
     match kind {
         3 => FaultRestart {
-            pc: trip.elr,
+            pc: restart_pc,
             x0: FAULT_REPLY_WORD,
             x1: trip.x1,
         },
@@ -6378,7 +6386,7 @@ const fn fault_restart(kind: usize) -> FaultRestart {
             x1: trip.x1,
         },
         _ => FaultRestart {
-            pc: trip.elr,
+            pc: restart_pc,
             x0: trip.x0,
             x1: trip.x1,
         },
