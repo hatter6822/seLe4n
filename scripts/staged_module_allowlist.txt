@@ -102,6 +102,7 @@ SeLe4n.Kernel.KernelRecords.Capability # infra (WS-ZA ZA6.37: the slot-writing c
 SeLe4n.Kernel.KernelRecords.SchedulingArms # infra (WS-ZA ZA6.37: the priority, scheduling-context and affinity arms keep the records' reads)
 SeLe4n.Kernel.KernelRecords.Timer # infra (WS-ZA ZA6.37: the timer tick, the timeouts and the yield keep the records)
 SeLe4n.Kernel.KernelRecords.Audit # infra (WS-ZA ZA6.37: the audit, declassification, stash-clear and interrupt-issue arms keep the records' reads)
+SeLe4n.Kernel.KernelRecords.Boot # infra (WS-ZA ZA6.37: the records the started boot installs — the physical-address width within the bundle bound)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch # infra (WS-ZA ZA4.5: the run-queue link agreement carried through the capability-only, checked and unchecked syscall dispatch; imports the staged dispatcher reschedule-flag arms)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry # infra (WS-ZA ZA4.5: the run-queue link agreement carried through every committing entry — syscall, tick, reschedule, fault, unknown syscall, FP access, suspend; imports the staged entry reschedule-flag arms)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident # infra (WS-ZA ZA6.8: no core's current or resident thread holds a yield link, carried through every committing entry from boot; imports the staged run-queue entry stages)
