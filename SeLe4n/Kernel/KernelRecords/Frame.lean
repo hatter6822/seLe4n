@@ -54,18 +54,114 @@ structure TcbRecordView where
 def _root_.SeLe4n.Model.TCB.recordView (t : TCB) : TcbRecordView :=
   ⟨t.replyView, t.ipcState, t.threadState, t.pendingFault.isSome⟩
 
+/-- What the address-space records read of one VSpace root: its ASID, its
+translations and its mapping epochs (the root's half of
+`KernelObject.mappingView`). -/
+abbrev RootView :=
+  SeLe4n.ASID × RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions) ×
+    RobinHood.RHTable SeLe4n.VAddr Nat
+
+/-- A slot's address-space view: a root's `RootView`, nothing of any other object. -/
+def rootViewOf (o : Option KernelObject) : Option RootView :=
+  o.bind fun x => x.mappingView.1
+
 /-- What the carried records read of one object slot: a TCB's record view, or a
-VSpace root whole; nothing of any other object. -/
-def recordViewOf : Option KernelObject → Option (TcbRecordView ⊕ VSpaceRoot)
+VSpace root's ASID, translations and epochs; nothing of any other object. -/
+def recordViewOf : Option KernelObject → Option (TcbRecordView ⊕ RootView)
   | some (.tcb t) => some (.inl t.recordView)
-  | some (.vspaceRoot r) => some (.inr r)
+  | some (.vspaceRoot r) => some (.inr (r.asid, r.mappings, r.mappingEpochs))
   | _ => none
 
 @[simp] theorem recordViewOf_tcb (t : TCB) :
     recordViewOf (some (.tcb t)) = some (.inl t.recordView) := rfl
 
 @[simp] theorem recordViewOf_vspaceRoot (r : VSpaceRoot) :
-    recordViewOf (some (.vspaceRoot r)) = some (.inr r) := rfl
+    recordViewOf (some (.vspaceRoot r)) = some (.inr (r.asid, r.mappings, r.mappingEpochs)) :=
+  rfl
+
+/-- The address-space view is read off the record view. -/
+theorem rootViewOf_eq_bind (o : Option KernelObject) :
+    rootViewOf o = (recordViewOf o).bind Sum.getRight? := by
+  cases o with
+  | none => rfl
+  | some x => cases x <;> rfl
+
+/-- A slot whose address-space view is `v` holds a root with that view. -/
+theorem root_of_rootViewOf {o : Option KernelObject} {v : RootView} (h : rootViewOf o = some v) :
+    ∃ r, o = some (.vspaceRoot r) ∧ (r.asid, r.mappings, r.mappingEpochs) = v := by
+  cases o with
+  | none => cases h
+  | some x =>
+    cases x <;> simp only [rootViewOf, Option.bind_some, KernelObject.mappingView,
+      reduceCtorEq, Option.some.injEq] at h
+    exact ⟨_, rfl, h⟩
+
+/-- **A root of one store is a root of the other**, with the same ASID,
+translations and epochs, when the two stores' address-space views agree. -/
+theorem root_of_rootViews {a b : SystemState}
+    (hV : ∀ k : SeLe4n.ObjId, rootViewOf b.objects[k]? = rootViewOf a.objects[k]?)
+    {k : SeLe4n.ObjId} {r : VSpaceRoot} (h : a.objects[k]? = some (.vspaceRoot r)) :
+    ∃ q, b.objects[k]? = some (.vspaceRoot q) ∧ q.asid = r.asid ∧ q.mappings = r.mappings ∧
+      q.mappingEpochs = r.mappingEpochs := by
+  have hk := hV k
+  rw [h] at hk
+  obtain ⟨q, hq, he⟩ := root_of_rootViewOf hk
+  simp only [Prod.mk.injEq] at he
+  exact ⟨q, hq, he.1, he.2.1, he.2.2⟩
+
+/-- **A step that keeps the ASID table and every root's address-space view keeps
+the state well formed**: the VSpace bundle reads a root's ASID, translations and
+epochs only, so a step may rewrite a root's table slots or base. -/
+theorem teardownWellFormed_of_rootViews {st st' : SystemState} (hInv : st'.objects.invExt)
+    (hA : st'.asidTable = st.asidTable)
+    (hV : ∀ k : SeLe4n.ObjId, rootViewOf st'.objects[k]? = rootViewOf st.objects[k]?)
+    (h : teardownWellFormed st) : teardownWellFormed st' := by
+  obtain ⟨-, h2, h3⟩ := h
+  refine ⟨hInv, hA ▸ h2, ?_⟩
+  unfold Architecture.vspaceInvariantBundle Architecture.vspaceAsidRootsUnique
+    Architecture.vspaceRootNonOverlap Architecture.asidTableConsistent
+    Architecture.wxExclusiveInvariant Architecture.boundedAddressTranslation
+    Architecture.vspaceCrossAsidIsolation Architecture.canonicalAddressInvariant
+    Architecture.vspaceMappingsWellFormed at h3 ⊢
+  obtain ⟨c1, c2, ⟨c3a, c3b⟩, c4, c5, c6, c7, c8⟩ := h3
+  have B : ∀ {k : SeLe4n.ObjId} {r : VSpaceRoot}, st'.objects[k]? = some (KernelObject.vspaceRoot r) → ∃ q : VSpaceRoot,
+      st.objects[k]? = some (KernelObject.vspaceRoot q) ∧ q.asid = r.asid ∧ q.mappings = r.mappings ∧
+        q.mappingEpochs = r.mappingEpochs :=
+    fun h => root_of_rootViews (fun k => (hV k).symm) h
+  refine ⟨?_, ?_, ⟨?_, ?_⟩, ?_, ?_, ?_, ?_, ?_⟩
+  · intro o1 o2 r1 r2 h1 h2 he
+    obtain ⟨q1, hq1, ha1, -, -⟩ := B h1
+    obtain ⟨q2, hq2, ha2, -, -⟩ := B h2
+    exact c1 o1 o2 q1 q2 hq1 hq2 (by rw [ha1, ha2]; exact he)
+  · intro o r h
+    obtain ⟨q, hq, -, hm, -⟩ := B h
+    have := c2 o q hq
+    unfold VSpaceRoot.noVirtualOverlap VSpaceRoot.lookup at this ⊢
+    rw [← hm]; exact this
+  · intro a o hT
+    rw [hA] at hT
+    obtain ⟨r, hr, ha⟩ := c3a a o hT
+    obtain ⟨q, hq, hqa, -, -⟩ := root_of_rootViews hV hr
+    exact ⟨q, hq, hqa.trans ha⟩
+  · intro o r h
+    obtain ⟨q, hq, ha, -, -⟩ := B h
+    rw [hA, ← ha]; exact c3b o q hq
+  · intro o r v p q h hm
+    obtain ⟨x, hx, -, hmx, -⟩ := B h
+    exact c4 o x v p q hx (hmx ▸ hm)
+  · intro o r v p q h hm
+    obtain ⟨x, hx, -, hmx, -⟩ := B h
+    exact c5 o x v p q hx (hmx ▸ hm)
+  · intro o1 o2 r1 r2 h1 h2 hne he
+    obtain ⟨q1, hq1, ha1, -, -⟩ := B h1
+    obtain ⟨q2, hq2, ha2, -, -⟩ := B h2
+    exact c6 o1 o2 q1 q2 hq1 hq2 hne (by rw [ha1, ha2]; exact he)
+  · intro o r v p q h hm
+    obtain ⟨x, hx, -, hmx, -⟩ := B h
+    exact c7 o x v p q hx (hmx ▸ hm)
+  · intro o r h
+    obtain ⟨x, hx, -, hm, he⟩ := B h
+    rw [← hm, ← he]; exact c8 o x hx
 
 /-- **The records every kernel entry carries.** -/
 def _root_.SeLe4n.Model.SystemState.kernelRecordsSound (st : SystemState) : Prop :=
@@ -85,14 +181,14 @@ theorem tcb_of_view {o : Option KernelObject} {v : TcbRecordView}
     cases o <;> simp only [recordViewOf, Option.some.injEq, reduceCtorEq, Sum.inl.injEq] at h
     exact ⟨_, rfl, h⟩
 
-/-- A slot whose view is a root holds that root. -/
-theorem root_of_view {o : Option KernelObject} {r : VSpaceRoot}
-    (h : recordViewOf o = some (.inr r)) : o = some (.vspaceRoot r) := by
+/-- A slot whose view is a root's holds a root. -/
+theorem root_of_view {o : Option KernelObject} {v : RootView}
+    (h : recordViewOf o = some (.inr v)) : ∃ r, o = some (.vspaceRoot r) := by
   cases o with
   | none => cases h
   | some o =>
-    cases o <;> simp only [recordViewOf, Option.some.injEq, reduceCtorEq, Sum.inr.injEq] at h
-    rw [h]
+    cases o <;> simp only [recordViewOf, Option.some.injEq, reduceCtorEq] at h
+    exact ⟨_, rfl⟩
 
 /-- The reply view of a slot is read off its record view. -/
 theorem objReplyView_eq_of_view {a b : Option KernelObject}
@@ -119,7 +215,9 @@ theorem objReplyView_eq_of_view {a b : Option KernelObject}
         have := congrArg TcbRecordView.reply (hva.trans hvb.symm); exact this
       simp [objReplyView, this]
     | inr r =>
-      rw [root_of_view ha, root_of_view h.symm]
+      obtain ⟨_, rfl⟩ := root_of_view ha
+      obtain ⟨_, rfl⟩ := root_of_view h.symm
+      rfl
 
 end KernelRecords
 
@@ -173,13 +271,9 @@ theorem replyViews {st st' : SystemState} (F : RecordsFrame st st') :
   simp only [RHTable_getElem?_eq_get?]
   exact KernelRecords.objReplyView_eq_of_view (F.views k)
 
-theorem roots {st st' : SystemState} (F : RecordsFrame st st') (oid : SeLe4n.ObjId)
-    (r : VSpaceRoot) :
-    st'.objects[oid]? = some (.vspaceRoot r) ↔ st.objects[oid]? = some (.vspaceRoot r) := by
-  have hv := F.views oid
-  constructor
-  · intro h; rw [h, recordViewOf_vspaceRoot] at hv; exact KernelRecords.root_of_view hv.symm
-  · intro h; rw [h, recordViewOf_vspaceRoot] at hv; exact KernelRecords.root_of_view hv
+theorem rootViews {st st' : SystemState} (F : RecordsFrame st st') (k : SeLe4n.ObjId) :
+    rootViewOf st'.objects[k]? = rootViewOf st.objects[k]? := by
+  rw [rootViewOf_eq_bind, rootViewOf_eq_bind, F.views k]
 
 theorem faultRecordParked {st st' : SystemState} (F : RecordsFrame st st')
     (h : st.faultRecordParked) : st'.faultRecordParked := by
@@ -193,7 +287,7 @@ theorem faultRecordParked {st st' : SystemState} (F : RecordsFrame st st')
 /-- **A step that keeps the records' reads keeps the records.** -/
 theorem preserves {st st' : SystemState} (F : RecordsFrame st st')
     (h : st.kernelRecordsSound) : st'.kernelRecordsSound :=
-  ⟨teardownWellFormed_of_roots_eq F.invExt F.asid F.roots h.1,
+  ⟨teardownWellFormed_of_rootViews F.invExt F.asid F.rootViews h.1,
    SystemState.replyWaitersConsistent.of_views F.replyViews h.2.1,
    F.faultRecordParked h.2.2⟩
 
@@ -382,5 +476,134 @@ theorem of_agreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLi
   simpa only [RHTable_getElem?_eq_get?] using this
 
 end RecordsFrame
+
+-- ============================================================================
+-- §6  The step: a frame for the writes that move a fault record or a state
+-- ============================================================================
+
+/-- **An IPC state a fault record may sit on**: blocked on a call, or in a
+reply. -/
+def ipcParked (s : ThreadIpcState) : Prop :=
+  (∃ e, s = .blockedOnCall e) ∨ (∃ e r, s = .blockedOnReply e r)
+
+@[simp] theorem ipcParked_ready : ¬ ipcParked .ready := by
+  rintro (⟨_, h⟩ | ⟨_, _, h⟩) <;> cases h
+
+@[simp] theorem ipcParked_blockedOnCall (e : SeLe4n.ObjId) : ipcParked (.blockedOnCall e) :=
+  .inl ⟨e, rfl⟩
+
+@[simp] theorem ipcParked_blockedOnReply (e : SeLe4n.ObjId) (r : Option SeLe4n.ThreadId) :
+    ipcParked (.blockedOnReply e r) :=
+  .inr ⟨e, r, rfl⟩
+
+@[simp] theorem ipcParked_blockedOnSend (e : SeLe4n.ObjId) : ¬ ipcParked (.blockedOnSend e) := by
+  rintro (⟨_, h⟩ | ⟨_, _, h⟩) <;> cases h
+
+@[simp] theorem ipcParked_blockedOnReceive (e : SeLe4n.ObjId) :
+    ¬ ipcParked (.blockedOnReceive e) := by
+  rintro (⟨_, h⟩ | ⟨_, _, h⟩) <;> cases h
+
+@[simp] theorem ipcParked_blockedOnNotification (n : SeLe4n.ObjId) :
+    ¬ ipcParked (.blockedOnNotification n) := by
+  rintro (⟨_, h⟩ | ⟨_, _, h⟩) <;> cases h
+
+/-- **A thread a fault record may sit on**: `.Inactive`, or blocked on a call or
+in a reply (`SystemState.faultRecordParked` reads it of every thread carrying a
+fault). -/
+def _root_.SeLe4n.Model.TCB.faultParked (t : TCB) : Prop :=
+  t.threadState = .Inactive ∨ ipcParked t.ipcState
+
+/-- **The step leaves every fault record parked that was**: a thread carrying a
+fault after the step is parked, if the thread at its key before the step was
+parked whenever it carried a fault.  A new thread, or one whose fault the step
+retired, carries none; a thread whose fault the step records is parked by it;
+a thread the step unparks carried no fault.  It composes, and it carries
+`SystemState.faultRecordParked` (`FaultsStayParked.preserves`). -/
+def FaultsStayParked (st st' : SystemState) : Prop :=
+  ∀ t tcb', st'.getTcb? t = some tcb' → tcb'.pendingFault.isSome →
+    (∀ tcb, st.getTcb? t = some tcb → tcb.pendingFault.isSome → tcb.faultParked) →
+      tcb'.faultParked
+
+namespace FaultsStayParked
+
+theorem refl (st : SystemState) : FaultsStayParked st st := fun _ tcb h hF H => H tcb h hF
+
+theorem trans {a b c : SystemState} (h₁ : FaultsStayParked a b) (h₂ : FaultsStayParked b c) :
+    FaultsStayParked a c := fun t tcb h hF H =>
+  h₂ t tcb h hF fun tb hb hFb => h₁ t tb hb hFb H
+
+theorem preserves {st st' : SystemState} (F : FaultsStayParked st st')
+    (h : st.faultRecordParked) : st'.faultRecordParked := fun t tcb hT hF =>
+  F t tcb hT hF fun tcb0 hT0 hF0 => h t tcb0 hT0 hF0
+
+/-- **A step that keeps every thread's fault flag, thread state and IPC state.** -/
+theorem of_fields {st st' : SystemState}
+    (h : ∀ t tcb', st'.getTcb? t = some tcb' → tcb'.pendingFault.isSome →
+      ∃ tcb, st.getTcb? t = some tcb ∧ tcb.pendingFault.isSome = tcb'.pendingFault.isSome ∧
+        tcb.threadState = tcb'.threadState ∧ tcb.ipcState = tcb'.ipcState) :
+    FaultsStayParked st st' := fun t tcb' hT hF H => by
+  obtain ⟨tcb, hT0, hf, hs, hi⟩ := h t tcb' hT hF
+  have := H tcb hT0 (hf ▸ hF)
+  unfold TCB.faultParked at this ⊢
+  rw [← hs, ← hi]; exact this
+
+theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : FaultsStayParked st st' :=
+  of_fields fun _ _ hT _ => by
+    obtain ⟨tcb, hT0, hv⟩ := F.getTcb?_view hT
+    simp only [TCB.recordView, TcbRecordView.mk.injEq] at hv
+    exact ⟨tcb, hT0, hv.2.2.2, hv.2.2.1, hv.2.1⟩
+
+end FaultsStayParked
+
+/-- **A step that keeps the address-space records and leaves every fault record
+parked**: the frame of a write that moves a thread's IPC state or fault record
+(an IPC arm, a cancellation, the suspend, the resume).  With the reply-waiter
+queues carried by the arm's own theorem it is a `RecordsStage`
+(`RecordsStage.of_step`). -/
+structure RecordsStep (st st' : SystemState) : Prop where
+  rootViews : ∀ k : SeLe4n.ObjId, rootViewOf st'.objects[k]? = rootViewOf st.objects[k]?
+  asid : st'.asidTable = st.asidTable
+  invExt : st'.objects.invExt
+  faults : FaultsStayParked st st'
+
+namespace RecordsStep
+
+theorem refl {st : SystemState} (hInv : st.objects.invExt) : RecordsStep st st :=
+  ⟨fun _ => rfl, rfl, hInv, FaultsStayParked.refl st⟩
+
+theorem trans {a b c : SystemState} (h₁ : RecordsStep a b) (h₂ : RecordsStep b c) :
+    RecordsStep a c :=
+  ⟨fun k => (h₂.rootViews k).trans (h₁.rootViews k), h₂.asid.trans h₁.asid, h₂.invExt,
+    h₁.faults.trans h₂.faults⟩
+
+theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : RecordsStep st st' :=
+  ⟨F.rootViews, F.asid, F.invExt, FaultsStayParked.of_frame F⟩
+
+/-- A kind-preserving write keeps every root's address-space view. -/
+theorem rootViews_of_kindPreservingWrite {st st' : SystemState} (h : kindPreservingWrite st st') :
+    ∀ k : SeLe4n.ObjId, rootViewOf st'.objects[k]? = rootViewOf st.objects[k]? := fun k => by
+  rcases h k with e | ⟨pre, post, hp, hq, -, -, -, -, -, -, hm⟩
+  · rw [e]
+  · rw [hp, hq]; simp only [rootViewOf, Option.bind_some, hm]
+
+/-- A write that keeps every object's mapping facts keeps every root's view. -/
+theorem rootViews_of_mappingFactsKept {st st' : SystemState} (h : st.mappingFactsKept st') :
+    ∀ k : SeLe4n.ObjId, rootViewOf st'.objects[k]? = rootViewOf st.objects[k]? := fun k => by
+  rcases h k with e | ⟨pre, post, hp, hq, -, -, -, hm⟩
+  · rw [e]
+  · rw [hp, hq]; simp only [rootViewOf, Option.bind_some, hm]
+
+/-- The records carried across the step, given the reply-waiter queues. -/
+theorem preserves {st st' : SystemState} (S : RecordsStep st st')
+    (hRW : st.replyWaitersConsistent → st'.replyWaitersConsistent)
+    (h : st.kernelRecordsSound) : st'.kernelRecordsSound :=
+  ⟨teardownWellFormed_of_rootViews S.invExt S.asid S.rootViews h.1, hRW h.2.1,
+   S.faults.preserves h.2.2⟩
+
+end RecordsStep
+
+theorem RecordsStage.of_step {st st' : SystemState} (S : RecordsStep st st')
+    (hRW : st.replyWaitersConsistent → st'.replyWaitersConsistent) : RecordsStage st st' :=
+  S.preserves hRW
 
 end SeLe4n.Kernel

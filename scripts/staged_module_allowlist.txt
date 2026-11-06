@@ -85,6 +85,7 @@ SeLe4n.Kernel.ReschedulePendingArms.Tick # infra (the per-core timer tick covers
 SeLe4n.Kernel.KernelRecords.Frame # infra (WS-ZA ZA6.37: the records every entry carries — reply-waiter queues, fault records, address-space records — and the frame that keeps their reads)
 SeLe4n.Kernel.KernelRecords.Scheduling # infra (WS-ZA ZA6.37: the scheduling points keep the records' reads)
 SeLe4n.Kernel.KernelRecords.Tails # infra (WS-ZA ZA6.37: an entry's saves, stagings, activation and ledger clears keep the records' reads)
+SeLe4n.Kernel.KernelRecords.IpcPrimitives # infra (WS-ZA ZA6.37: the IPC primitives keep the records, or leave every fault record parked)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch # infra (WS-ZA ZA4.5: the run-queue link agreement carried through the capability-only, checked and unchecked syscall dispatch; imports the staged dispatcher reschedule-flag arms)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry # infra (WS-ZA ZA4.5: the run-queue link agreement carried through every committing entry — syscall, tick, reschedule, fault, unknown syscall, FP access, suspend; imports the staged entry reschedule-flag arms)
 SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident # infra (WS-ZA ZA6.8: no core's current or resident thread holds a yield link, carried through every committing entry from boot; imports the staged run-queue entry stages)
