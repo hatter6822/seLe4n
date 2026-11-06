@@ -223,6 +223,66 @@ theorem ipcBufferFillHeld_one (st : SystemState) (c : CoreId) (tid : ThreadId) :
     | some q => exact (tlbEntriesHoldWalked_eq _ _ _ _ _).symm
   · simp only [hEq, if_false]
 
+/-- Whether overflow slots `i` to `i + n - 1` of the buffer at `buf` lie in the
+page of slot 0.  When slots `0` to `n - 1` do, a walk of them resolves that one
+page (`ipcBufferOverflowPages_of_onFirstPage`), and the check builds nothing. -/
+def overflowSlotsOnFirstPage (buf : VAddr) : Nat → Nat → Bool
+  | _, 0 => true
+  | i, n + 1 => ipcBufferSlotPage buf i == ipcBufferSlotPage buf 0 &&
+      overflowSlotsOnFirstPage buf (i + 1) n
+
+theorem overflowSlotsOnFirstPage_spec (buf : VAddr) :
+    ∀ (n i : Nat), overflowSlotsOnFirstPage buf i n = true →
+      ∀ j, i ≤ j → j < i + n → ipcBufferSlotPage buf j = ipcBufferSlotPage buf 0
+  | 0, _, _, _, h1, h2 => by omega
+  | n + 1, i, h, j, h1, h2 => by
+    simp only [overflowSlotsOnFirstPage, Bool.and_eq_true, beq_iff_eq] at h
+    by_cases hj : j = i
+    · subst hj; exact h.1
+    · exact overflowSlotsOnFirstPage_spec buf n (i + 1) h.2 j (by omega) (by omega)
+
+/-- Slots on slot 0's page walk the pages one slot walks. -/
+theorem ipcBufferOverflowPages_of_onFirstPage {buf : VAddr} {n : Nat} (hn : 0 < n)
+    (h : overflowSlotsOnFirstPage buf 0 n = true) :
+    ipcBufferOverflowPages buf n = ipcBufferOverflowPages buf 1 := by
+  obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
+  have hAll := overflowSlotsOnFirstPage_spec buf (m + 1) 0 h
+  unfold ipcBufferOverflowPages
+  rw [List.range_succ_eq_map, List.map_cons, List.eraseDups_cons]
+  have hF : List.filter (fun b => !b == ipcBufferSlotPage buf 0)
+      (List.map (ipcBufferSlotPage buf) (List.map Nat.succ (List.range m))) = [] := by
+    rw [List.filter_eq_nil_iff]
+    intro x hx
+    simp only [List.map_map, List.mem_map, List.mem_range, Function.comp_apply] at hx
+    obtain ⟨j, hj, rfl⟩ := hx
+    rw [hAll (j + 1) (by omega) (by omega)]
+    simp
+  rw [hF]
+  simp [List.eraseDups, List.eraseDupsBy, List.eraseDupsBy.loop]
+
+/-- A thread whose overflow slots lie on slot 0's page plans one slot's walk. -/
+theorem ipcBufferWalkPlan_of_onFirstPage {st : SystemState} {tid : ThreadId} {tcb : TCB}
+    {n : Nat} (hT : st.getTcb? tid = some tcb) (hn : 0 < n)
+    (h : overflowSlotsOnFirstPage tcb.ipcBuffer 0 n = true) :
+    ipcBufferWalkPlan st tid n = ipcBufferWalkPlan st tid 1 := by
+  simp only [ipcBufferWalkPlan, hT, ipcBufferOverflowPages_of_onFirstPage hn h]
+
+/-- …so its fill is one slot's fill… -/
+theorem tlbFillIpcBufferOnCore_of_onFirstPage {st : SystemState} {c : CoreId}
+    {tid : ThreadId} {tcb : TCB} {n : Nat} (hT : st.getTcb? tid = some tcb) (hn : 0 < n)
+    (h : overflowSlotsOnFirstPage tcb.ipcBuffer 0 n = true) :
+    tlbFillIpcBufferOnCore st c tid n = tlbFillIpcBufferOnCore st c tid 1 := by
+  unfold tlbFillIpcBufferOnCore
+  rw [ipcBufferWalkPlan_of_onFirstPage hT hn h]
+
+/-- …and the check that the fill writes nothing is one slot's check. -/
+theorem ipcBufferFillHeld_of_onFirstPage {st : SystemState} {c : CoreId}
+    {tid : ThreadId} {tcb : TCB} {n : Nat} (hT : st.getTcb? tid = some tcb) (hn : 0 < n)
+    (h : overflowSlotsOnFirstPage tcb.ipcBuffer 0 n = true) :
+    ipcBufferFillHeld st c tid n = ipcBufferFillHeld st c tid 1 := by
+  unfold ipcBufferFillHeld
+  rw [ipcBufferWalkPlan_of_onFirstPage hT hn h]
+
 private theorem foldl_tlbFillOnCore_of_held (c : CoreId) (asid : SeLe4n.ASID)
     (st : SystemState) (pages : List VAddr)
     (h : pages.all (fun page =>

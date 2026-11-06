@@ -15,6 +15,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDonatedInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyUnheldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
+import SeLe4n.Kernel.IPC.CrossCore.LongSendInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -63,6 +64,109 @@ theorem routedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
         (sendFrame_of_routed st tid tcb hT capAddr mi hR endpointId badge grant).2,
       fun badge grant _ => (sendFrame_of_routed st tid tcb hT capAddr mi hR tid.toObjId badge
         grant).1⟩
+
+/-- WS-ZA ZA6.35: the decode a long send's frame reads to: the inline words
+and then its overflow slots' words, as `.send`. -/
+def longSendDecode (st : SystemState) (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo) : SyscallDecodeResult :=
+  { capAddr, msgInfo := mi, syscallId := .send,
+    msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
+      (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
+    inlineCount := 4, overflowCount := mi.length - 4 }
+
+@[simp] theorem longSendDecode_overflowCount (st : SystemState) (tid : SeLe4n.ThreadId)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) :
+    (longSendDecode st tid rf capAddr mi).overflowCount = mi.length - 4 := rfl
+
+/-- WS-ZA ZA6.35: **a routed long send whose overflow slots all read decodes**
+to the inline words and then those slots' words, as `.send`, with no
+capabilities (`longSendDecode`). -/
+theorem decodeSyscallArgsFromState_of_routedSendLong_ok (st : SystemState)
+    (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
+    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+      .ok (longSendDecode st tid rf capAddr mi) := by
+  obtain ⟨_, _, _, hDec⟩ :=
+    decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
+  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+  have hM := mapM_readOverflowWord st tid (mi.length - 4) 0
+    (fun j _ h2 => hRead j (by omega))
+  rw [hDec]
+  unfold mergeOverflowWords
+  simp only [Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
+    bind, Except.bind, pure, Except.pure, longSendDecode]
+  rfl
+
+/-- …and one whose first overflow slot does not read is refused as the decode
+refuses it. -/
+theorem decodeSyscallArgsFromState_of_routedSendLong_error (st : SystemState)
+    (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
+    (e : Architecture.IpcBufferRead.IpcBufferReadError)
+    (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid 0 = .error e) :
+    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+      .error .invalidMessageInfo := by
+  obtain ⟨hGt, _, _, hDec⟩ :=
+    decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
+  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+  rw [hSz] at hGt
+  obtain ⟨m, hm⟩ : ∃ m, mi.length - 4 = m + 1 := ⟨mi.length - 5, by omega⟩
+  rw [hDec]
+  unfold mergeOverflowWords
+  simp only [Array.size_map, hSz, hm, List.range_eq_range', List.range'_succ, List.mapM_cons,
+    readOverflowWord, h0, bind, Except.bind]
+
+/-- **A frame that routes as a long send**, read for the sender `tid` whose
+saved registers `rf` are and whose overflow slots all read: it asks to
+transfer no capability, and a present sender's message is its inline words
+and then the words its IPC buffer holds (`longSendMessage`). -/
+theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
+    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
+      ∀ badge grant, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant) =
+          longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
+  obtain ⟨hGt, hMax, hX, -⟩ :=
+    decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
+  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+  rw [hSz] at hGt
+  have hD := decodeSyscallArgsFromState_of_routedSendLong_ok st tid rf capAddr mi hR hRead
+  cases hT : st.getTcb? tid with
+  | none =>
+    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
+    unfold sendCapRequest
+    split
+    · rfl
+    · rw [hT]
+  | some tcb =>
+    have hRf := hFrame tcb hT
+    subst hRf
+    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
+    · unfold sendCapRequest
+      split
+      · rfl
+      · rw [hT]
+        simp only [sendPayloadCapRequest, senderFrameCapRequest, blockedSenderDecode, hD]
+        have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs
+            (longSendDecode st tid tcb.registerContext capAddr mi)).isEmpty = true := by
+          unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs longSendDecode
+          simp only [hX]
+          rfl
+        simp only [hE, ↓reduceIte]
+        split <;> rfl
+    · simp only [sendPayloadMessage, senderFrameDecode, hT, blockedSenderDecode, hD,
+        senderFrameMessage, extractMessageRegisters, longSendMessage, longSendDecode]
+      congr 1
+      apply Array.extract_eq_self_of_le
+      simp only [Array.size_append, Architecture.regMessageRegs, Array.size_map, hSz,
+        List.size_toArray, overflowRegsFrom_length]
+      omega
 
 /-- The checked send arm (`dispatchWithCapChecked`'s `.send` case) through the
 specification's send, refusing in the state it was handed
@@ -188,6 +292,45 @@ theorem sendRendezvous_eq_delivered (st : SystemState) (endpointId : SeLe4n.ObjI
     Architecture.returnFrameOfMessage_regMessageBody]
   rfl
 
+/-- WS-ZA ZA6.35: **the staged send rendezvous is the delivered one** for a
+message of more than four words, its inline words read in the sender's
+registers and the rest in its IPC buffer. -/
+theorem sendRendezvous_eq_deliveredLong (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (sender : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (core : Concurrency.CoreId) (hNo : st.objects.noResizeDue)
+    (hSize : layout.msgRegs.size = 4) (hLen : 4 ≤ len) :
+    Architecture.stageWokenDelivery
+        (clearWokenReceiverStashPure (some r)
+          (wakeThread (storeSendRendezvous st endpointId r next
+            (longSendMessage layout rf st sender len (SeLe4n.Badge.opt badgeWord badged))) r
+            core).1)
+        (some r) 0 =
+      performSendDeliveredLong st endpointId r (ThreadId.optCode next) layout rf len sender
+        badgeWord badged core := by
+  have hNo0 := storeSendRendezvousWith_noResizeDue st endpointId r next ipcReadyTcb hNo
+  have hNoX : (wakeThread (storeSendRendezvousReady st endpointId r (ThreadId.optCode next)) r
+      core).1.objects.noResizeDue :=
+    wakeThread_noResizeDue _ r core
+      (storeSendRendezvousWith_noResizeDue st endpointId r
+        (ThreadId.ofOptCode (ThreadId.optCode next)) receiveReadyTcb hNo)
+  unfold performSendDeliveredLong
+  rw [deliverLongSendFrame_eq _ st r sender layout rf len badgeWord badged hNoX
+    (ipcBufferReadsAgree_sendWoken st endpointId r _ core hNo) hSize hLen]
+  unfold storeSendRendezvousReady
+  rw [SeLe4n.ThreadId.ofOptCode_optCode]
+  rw [storeSendRendezvous_eq_with, receiveCompleteTcb_eq_slots, receiveReadyTcb_eq_slots,
+    storeSendRendezvousWith_comp _ _ _ _ _ _ hNo, storeSendRendezvousWith_comp _ _ _ _ _ _ hNo]
+  simp only [receiveCompleteSlots, clearMessageSlots]
+  rw [wakeThread_msg _ _ _ _ _ _ _ hNo0, wakeThread_msg _ _ _ _ _ _ _ hNo0]
+  dsimp only
+  have hD : ∀ M : IpcMessage,
+      TCB.withMessageSlots id (fun _ => some M) (fun _ : Nat => 0) =
+        holdMessage M ∘ TCB.withMessageSlots id (fun _ => none) (fun _ => 0) := fun _ => rfl
+  rw [clearWokenReceiverStashPure_mapTcbInPlace _ _ _ (fun _ => rfl),
+    hD, ← SystemState.mapTcbInPlace_mapTcbInPlace, Architecture.stageWokenDelivery_some]
+
 /-- WS-ZA ZA4.7: a send blocks, and writes only its slots: the sender may be
 enqueued (`enqueueAdmits`) and every write stays in place
 (`enqueuesInPlace`), the send queue's tail read as its code. -/
@@ -200,10 +343,13 @@ enqueued (`enqueueAdmits`) and every write stays in place
 /-- WS-ZA ZA4.7: the checked send arm (`dispatchWithCapChecked`'s `.send` case)
 for a sender whose saved registers `rf` hold a message of `len` words and no
 capability addresses, refusing in the state it was handed
-(`endpointSendCheckedArmR_eq`).  A send of at most four words to a waiting
-receiver whose checks all pass before any write (`sendWakesInPlace`) wakes the
-receiver in place and writes the words into its saved registers
-(`performSendDelivered`, `sendRendezvous_eq_delivered`); a send with no
+(`endpointSendCheckedArmR_eq`).  A send to a waiting receiver whose checks all
+pass before any write (`sendWakesInPlace`) wakes the receiver in place and
+writes the words into its saved registers (`performSendDelivered`,
+`sendRendezvous_eq_delivered`); WS-ZA ZA6.35: a send of more than four words
+also copies the words past the fourth from the sender's IPC buffer into the
+receiver's, word by word (`performSendDeliveredLong`,
+`sendRendezvous_eq_deliveredLong`), as seL4's `copyMRs` does; a send with no
 receiver waiting whose checks all pass (`sendBlocksFast`) blocks in place,
 its words left in its registers (`sendBlock_inPlace_eq`); any other send takes
 the general arm. -/
@@ -220,13 +366,16 @@ the general arm. -/
             | some r =>
                 match st.getTcb? r with
                 | some rt =>
-                    if decide (Architecture.regMessageLength layout len ≤ 4) &&
-                        (st.getTcb? tid).isSome &&
+                    if (st.getTcb? tid).isSome &&
                         endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                           (ctx.endpointLabelOf epId) &&
                         sendWakesInPlaceCode st epId r rt.queueNextCode then
-                      .ok ((), performSendDelivered st epId r rt.queueNextCode layout rf len
-                        cap.badgeWord cap.badged executingCore)
+                      if len ≤ 4 then
+                        .ok ((), performSendDelivered st epId r rt.queueNextCode layout rf len
+                          cap.badgeWord cap.badged executingCore)
+                      else
+                        .ok ((), performSendDeliveredLong st epId r rt.queueNextCode layout rf len
+                          tid cap.badgeWord cap.badged executingCore)
                     else endpointSendCheckedArmGeneralR ctx tid executingCore cap st
                 | none => endpointSendCheckedArmGeneralR ctx tid executingCore cap st
             | none =>
@@ -240,20 +389,39 @@ the general arm. -/
         | none => endpointSendCheckedArmGeneralR ctx tid executingCore cap st
     | _ => .error (.invalidCapability, st)
 
+/-- WS-ZA ZA6.35: **what a send's frame routes as**, read for the sender `tid`
+whose saved registers `rf` are: a capability-free send of at most four words,
+or a capability-free long send whose overflow slots all read in `st`. -/
+def SendFrameRouted (st : SystemState) (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo) : Prop :=
+  registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .send capAddr mi ∨
+    (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi ∧
+      ∀ j, j < mi.length - 4 →
+        ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w)
+
+/-- A routed frame asks to transfer no capability. -/
+theorem SendFrameRouted.capRequest {st : SystemState} {tid : SeLe4n.ThreadId}
+    {rf : SeLe4n.RegisterFile} {capAddr : SeLe4n.CPtr} {mi : MessageInfo}
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : SendFrameRouted st tid rf capAddr mi) :
+    ∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none := by
+  rcases hR with hR | ⟨hR, hRead⟩
+  · exact (routedSenderFrame st tid rf capAddr mi hFrame (.inl hR)).1
+  · exact (routedLongSenderFrame st tid rf capAddr mi hFrame hR hRead).1
+
 /-- The fast send arm is the general one for a sender whose saved registers
-`rf` route as a capability-free send or call: the words it writes in place are
-the words the specification's send reads from that frame
-(`routedSenderFrame`). -/
+`rf` route as a capability-free send (`SendFrameRouted`): the words it writes
+in place are the words the specification's send reads from that frame
+(`routedSenderFrame`, `routedLongSenderFrame`). -/
 theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
     (st : SystemState)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .send capAddr mi ∨
-      registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .call capAddr mi) :
+    (hR : SendFrameRouted st tid rf capAddr mi) :
     endpointSendCheckedArmR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore cap st =
       endpointSendCheckedArmGeneralR ctx tid executingCore cap st := by
-  obtain ⟨hReq, hMsg⟩ := routedSenderFrame st tid rf capAddr mi hFrame hR
+  have hReq := SendFrameRouted.capRequest hFrame hR
   unfold endpointSendCheckedArmR
   split
   · next epId hTgt =>
@@ -265,20 +433,42 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
         · next rt hT =>
           split
           · next hG =>
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
-            obtain ⟨⟨⟨hSz, hS⟩, hFlow⟩, hW⟩ := hG
+            simp only [Bool.and_eq_true] at hG
+            obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
             rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
             have hNo : st.objects.noResizeDue := by
               simp only [sendWakesInPlace, Bool.and_eq_true] at hW
               exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2
             unfold endpointSendCheckedArmGeneralR
             simp only [hTgt, hE, Option.bind_some, hH]
-            rw [sendDispatchChecked_inPlace ctx st epId ep tid r rt _ _ executingCore
-              (hMsg _ _ hS) (hReq _ _ _) hE hH hT hS hW hFlow]
-            simp only []
-            rw [← TCB.optCode_queueNext,
-              ← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
-            rfl
+            split
+            · next hShort =>
+              rcases hR with hR | ⟨hR, _⟩
+              · have hMsg := (routedSenderFrame st tid rf capAddr mi hFrame (.inl hR)).2
+                have hSz : Architecture.regMessageLength SeLe4n.arm64DefaultLayout mi.length ≤ 4 := by
+                  unfold Architecture.regMessageLength; omega
+                rw [sendDispatchChecked_inPlace ctx st epId ep tid r rt _ _ executingCore
+                  (hMsg _ _ hS) (hReq _ _ _) hE hH hT hS hW hFlow]
+                simp only []
+                rw [← TCB.optCode_queueNext,
+                  ← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
+                rfl
+              · have hGt := (decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr
+                  mi hR).1
+                have hSz4 : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+                rw [hSz4] at hGt
+                exact absurd hShort (by omega)
+            · next hLong =>
+              rcases hR with hR | ⟨hR, hRead⟩
+              · exact absurd (Nat.le_trans
+                  (registerRoutedSyscall_send_length _ rf 32 capAddr mi hR) (by decide)) hLong
+              · have hMsg := (routedLongSenderFrame st tid rf capAddr mi hFrame hR hRead).2
+                rw [sendDispatchChecked_inPlace ctx st epId ep tid r rt _ _ executingCore
+                  (hMsg _ _ hS) (hReq _ _ _) hE hH hT hS hW hFlow]
+                simp only []
+                rw [← TCB.optCode_queueNext,
+                  ← sendRendezvous_eq_deliveredLong _ _ _ _ _ _ _ _ _ _ _ hNo rfl (by omega)]
+                rfl
           · rfl
         · rfl
       · next hH =>
@@ -321,14 +511,13 @@ theorem endpointSendCheckedArmR_eq (ctx : LabelingContext)
     (hSend : decoded.syscallId = .send)
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .send capAddr mi) :
+    (hR : SendFrameRouted st tid rf capAddr mi) :
     endpointSendCheckedArmR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore cap st =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
         st := by
-  rw [endpointSendCheckedArmR_eq_general ctx rf capAddr mi tid executingCore cap st hFrame
-    (.inl hR)]
+  rw [endpointSendCheckedArmR_eq_general ctx rf capAddr mi tid executingCore cap st hFrame hR]
   exact endpointSendCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap st hSend hSlot
-    (routedSenderFrame st tid rf capAddr mi hFrame (.inl hR)).1
+    (SendFrameRouted.capRequest hFrame hR)
 
 /-- The receiver a send's content reaches, read from the pre-state before the
 arm: the head of the receive queue of the endpoint its capability names
@@ -416,7 +605,7 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hSend : decoded.syscallId = .send)
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .send capAddr mi)
+    (hR : SendFrameRouted st tid rf capAddr mi)
     (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     sendOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore
@@ -464,7 +653,7 @@ theorem dispatchSendCheckedR_eq (ctx : LabelingContext)
     (hSend : decoded.syscallId = .send)
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .send capAddr mi) :
+    (hR : SendFrameRouted st tid rf capAddr mi) :
     dispatchSendCheckedR ctx decoded.capAddr SeLe4n.arm64DefaultLayout rf mi.length tid
         executingCore st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
