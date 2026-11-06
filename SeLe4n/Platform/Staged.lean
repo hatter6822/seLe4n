@@ -231,6 +231,9 @@ import SeLe4n.Kernel.ReschedulePendingArms.Ipc
 import SeLe4n.Kernel.ReschedulePendingArms.Dispatch
 import SeLe4n.Kernel.ReschedulePendingArms.Entry
 import SeLe4n.Kernel.ReschedulePendingArms.Tick
+import SeLe4n.Kernel.KernelRecords.Frame
+import SeLe4n.Kernel.KernelRecords.Scheduling
+import SeLe4n.Kernel.KernelRecords.Tails
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident
