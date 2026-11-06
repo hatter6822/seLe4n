@@ -330,16 +330,20 @@ for driver in drivers:
             # task and waits; the root task deletes the reply's minted
             # capability, then its last (the head reply popped, the context
             # back to its caller, which is ended); the same lend through the
-            # root task's reply object, then the server's last capability
-            # deleted (its loan returned, its waiter ended, its wait
-            # cancelled); the context unbound.
+            # server's reply carved and minted again, then the server's last
+            # capability deleted (the context it holds unbound and returned
+            # to no one, its waiter orphaned, its wait cancelled); the
+            # orphan's reply's minted capability, then its last (the head
+            # reply popped, the context to the orphan, which is ended); the
+            # context unbound.
             "third-tcb-set-space", "third-tcb-set-priority", "third-reply-cap-mint",
             "third-configure", "third-bind-partner", "third-resume-server", "third-root-waits",
             "head-server-resumes-partner", "head-server-receives", "head-partner-calls",
             "head-server-wakes-root", "head-server-waits", "head-reply-cap-delete", "head-reply-delete",
-            "waited-wake-server", "waited-root-waits", "waited-server-resumes-partner",
+            "waited-reply-cap-mint", "waited-wake-server", "waited-root-waits", "waited-server-resumes-partner",
             "waited-server-receives", "waited-partner-calls", "waited-server-wakes-root",
-            "waited-server-waits", "waited-server-delete", "third-unbind",
+            "waited-server-waits", "waited-server-delete", "orphan-reply-cap-delete",
+            "orphan-head-reply-delete", "third-unbind",
             # A reply stack three frames deep (the partner's context lent to the
             # root task, on to the server, on to a fourth thread), its middle
             # reply's final delete issued by the fourth thread (the stack
@@ -614,6 +618,9 @@ for driver in drivers:
             "untyped-retype-third-tcb": (26, 26), "untyped-retype-third-reply": (15, 15),
             "untyped-retype-stack-server": (26, 26), "untyped-retype-stack-top": (26, 26),
             "untyped-retype-stack-server-reply": (15, 15), "untyped-retype-stack-top-reply": (15, 15),
+            # and the server's reply carved again for the orphan's call
+            # (WS-ZA ZA6.34), the same carve.
+            "untyped-retype-waited-reply": (15, 15),
             # and a context's: 15 on both calls, `untyped-retype-sched-context`'s
             # steady state, the capability's target record already built.
             "untyped-retype-stack-context": (15, 15),

@@ -3316,6 +3316,25 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
+        // The server's reply carved again, so the call it answers is on a
+        // reply the root task can delete.
+        invocation(
+            "untyped-retype-waited-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+        ),
+        invocation(
+            "waited-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
         signal("waited-wake-server", 0x11),
         partner_step("waited-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
         invocation(
@@ -3329,7 +3348,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             RECEIVE,
             ENDPOINT_CAP,
             1,
-            [REPLY_CAP, 0],
+            [CHAIN_REPLY_CAP, 0],
             true,
         ),
         partner_step(
@@ -3354,6 +3373,25 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             CSPACE_DELETE,
             CNODE_CAP,
             [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        // WS-ZA ZA6.34: the server's delete orphaned the partner, blocked on
+        // the carved reply, which still heads the context the server held
+        // (seL4-MCS's `finaliseCap` → `schedContext_unbindTCB`).  The root
+        // task deletes that reply's minted capability, then its last:
+        // seL4-MCS's `reply_remove` pops it (`reply_pop`: the context to the
+        // partner, which holds none) and `reply_unlink` ends the partner's
+        // call.
+        invocation(
+            "orphan-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "orphan-head-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
         invocation(
             "third-unbind",
