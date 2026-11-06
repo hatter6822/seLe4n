@@ -835,6 +835,20 @@ theorem finaliseReplyStep_runQueueEntryStage (st : SystemState) :
     h.trans ((cancelIpcBlockingReclaimed_runQueueStage s c t).trans
       (finaliseReplyRevert_runQueueStage _ _)).entry
 
+/-- WS-ZA ZA6.33: **the head cut is a run-queue stage**: a reply stored over
+itself, a context's head and origin cleared (no refill field), and a holder's
+owner code cleared under the key hook. -/
+theorem cutCancelledCallerHead_runQueueStage (st : SystemState) (tcb : TCB) :
+    RunQueueStage st (Lifecycle.Suspend.cutCancelledCallerHead st tcb) :=
+  Lifecycle.Suspend.cutCancelledCallerHead_closed (RunQueueStage st)
+    (fun _ s1 _ _ scId h _ hR hS => (h.trans (storeObject_replyOver_runQueueStage hR hS)).trans
+      (updateSchedContext_runQueueStage s1 scId _))
+    (fun s _ holder _ _ h _ _ _ =>
+      (h.trans (RunQueueStage.updateTcb s holder
+        (f := fun t => { t with scBindingOwnerCode := 0 }) (fun _ _ => rfl))).trans
+        (markKeyChangeFrom_runQueueStage _ _ holder))
+    st tcb (RunQueueStage.refl st)
+
 /-- **The finalisation is a kernel entry's worth of run-queue steps**, every
 step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's
 stage, a context's dequeue of its holder (`descheduleAt_runQueueStage`), a
@@ -872,6 +886,7 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
      fun s c h => h.trans (SystemState.completeYieldFrom_runQueueStage s c).entry⟩
     (fun _ _ _ _ h hT _ hS => h.trans (orphanReplyWaiter_runQueueStage hT hS).entry)
     (fun s _ r c _ h _ _ _ _ => h.trans (finaliseReplyUnheldPop_runQueueStage s r c).entry)
+    (fun s _ _ _ t h _ _ _ _ => h.trans (cutCancelledCallerHead_runQueueStage s t).entry)
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
 /-- A line's state change writes the tree's issued lines and the mask alone. -/

@@ -956,6 +956,7 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
         SystemState.unlinkReplyWaiter_objects_invExt _ w x
           (SystemState.mapTcbInPlace_objects_invExt _ _ _ h.2)⟩)
     (fun s _ r c _ h _ _ _ _ => stepCoversInv_trans h.1 (finaliseReplyUnheldPop_stepCovers e s r c h.2))
+    (fun s _ _ _ t h _ _ _ _ => stepCoversInv_trans h.1 (cutCancelledCallerHead_stepCovers e s t h.2))
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA6.32: a node's retire writes the tree's issued lines and the mask

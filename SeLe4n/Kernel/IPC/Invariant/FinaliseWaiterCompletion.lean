@@ -385,47 +385,43 @@ theorem consumeReplyLink (st : SystemState) (w : SeLe4n.ThreadId) (t tw : TCB)
 
 end WaiterFrame
 
-/-- **An admitted cancel of a reply heading no stack**: the caller is blocked on
-the reply, hands nothing back, and the cancel is the splice, restore, consume
-and unlink on the state itself, then the revert. -/
-theorem finaliseReplyCallerCancel_noHead (st : SystemState) {c : SeLe4n.ThreadId} {t : TCB}
-    {r : Reply} (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
-    (hNH : replyStackLinkIsHead r.next = false) (hE : replyCallerCancelAdmitted st c t = true) :
-    (∃ ep rt, t.ipcState = .blockedOnReply ep rt) ∧ r.callerCode = c.val + 1 ∧
-      t.replyObject = some ⟨t.replyObjectCode - 1⟩ ∧
+/-- **The removal of a reply heading no stack**: on a state where its caller is
+finalisable, the caller is blocked on the reply, hands nothing back, and the
+removal is the splice, restore, consume and unlink on the state itself, then the
+revert. -/
+theorem finaliseReplyRevertCancel_noHead (st : SystemState) {x : SeLe4n.ObjId}
+    {c : SeLe4n.ThreadId} {t : TCB} {r : Reply}
+    (hR : st.getObject? x = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false)
+    (hF : replyCallerFinalisable st x r c t = true) :
+    (∃ ep rt, t.ipcState = .blockedOnReply ep rt) ∧
+      t.replyObject = some ⟨x.val⟩ ∧
       Lifecycle.Suspend.cancelledCallerDonation? st c t = none ∧
-      finaliseReplyCallerCancel st c t = finaliseReplyRevert
+      finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer? = finaliseReplyRevert
         (SystemState.unlinkReplyWaiterOpt
           (Lifecycle.Suspend.consumeReplyLink
             (Lifecycle.Suspend.restoreToReadyCancelled (cutThreadReplyFrameOut st t) c) c t)
           c t.blockingServer?) t.blockingServer? := by
-  unfold replyCallerCancelAdmitted at hE
-  rw [hR] at hE
-  dsimp only at hE
-  have hG := hE
-  simp only [Bool.and_eq_true, beq_iff_eq] at hE
-  obtain ⟨⟨hC, hF⟩, -⟩ := hE
   obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
   have hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = none := by
     rcases replyCallerFinalisable_cases hR hF with ⟨-, hD⟩ | ⟨s, -, -, -, hN, -⟩
     · exact hD
     · rw [hN] at hNH; cases hNH
-  refine ⟨⟨ep, rt, hB⟩, hC, hRO, hD, ?_⟩
-  unfold finaliseReplyCallerCancel finaliseReplyCancel
-  rw [hR]
-  dsimp only
-  rw [if_pos hG, hNH]
+  refine ⟨⟨ep, rt, hB⟩, hRO, hD, ?_⟩
+  unfold finaliseReplyCancel
+  rw [hNH]
   simp only [Bool.false_eq_true, if_false]
   rw [cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
 
-/-- **The cancel of a reply heading no stack writes no binding.** -/
-theorem finaliseReplyCallerCancel_noHead_schedLinkFrame (st : SystemState)
-    (hInv : st.objects.invExt) {c : SeLe4n.ThreadId} {t : TCB} {r : Reply}
-    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
-    (hNH : replyStackLinkIsHead r.next = false) (hE : replyCallerCancelAdmitted st c t = true) :
-    SchedLinkFrame st (finaliseReplyCallerCancel st c t) ∧
-      (finaliseReplyCallerCancel st c t).objects.invExt := by
-  obtain ⟨⟨ep, rt, hB⟩, -, -, hD, hEq⟩ := finaliseReplyCallerCancel_noHead st hR hNH hE
+/-- **The removal of a reply heading no stack writes no binding.** -/
+theorem finaliseReplyRevertCancel_noHead_schedLinkFrame (st : SystemState)
+    (hInv : st.objects.invExt) {x : SeLe4n.ObjId} {c : SeLe4n.ThreadId} {t : TCB} {r : Reply}
+    (hR : st.getObject? x = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false)
+    (hF : replyCallerFinalisable st x r c t = true) :
+    SchedLinkFrame st (finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer?) ∧
+      (finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer?).objects.invExt := by
+  obtain ⟨⟨ep, rt, hB⟩, -, hD, hEq⟩ := finaliseReplyRevertCancel_noHead st hR hNH hF
   rw [hEq]
   have F := SchedLinkFrame.replyCancelTail st c t hInv
   have hI : (SystemState.unlinkReplyWaiterOpt

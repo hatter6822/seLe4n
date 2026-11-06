@@ -293,4 +293,48 @@ theorem lentContextHeadsLenderFrame.of_loanWriteOff {c : SeLe4n.ThreadId} {st st
     obtain ⟨r', rfl, hN'⟩ := hK.2 r scId rfl hN
     exact ⟨rid, r', hRO', hq, hN'⟩
 
+/-- **The lent-context fact survives a frame that lets one head go** (WS-ZA
+ZA6.34, the thread-side cut): the reply at `rid` heads the context `scId` and
+may lose its upward link, and every other key keeps what the fact reads; the fact
+survives when no thread holds `scId` on loan after, since only such a loan read
+`rid` as its lender's frame. -/
+theorem lentContextHeadsLenderFrame.of_headLetGo {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {scId : SeLe4n.SchedContextId} (h : lentContextHeadsLenderFrame st)
+    (hN : ∀ r, st.objects[rid.toObjId]? = some (.reply r) → r.next = some (.head scId))
+    (hNoLoan : ∀ (th : SeLe4n.ThreadId) (tx : TCB) (o : SeLe4n.ThreadId),
+      st'.objects[th.toObjId]? = some (.tcb tx) → tx.schedContextBinding ≠ .donated scId o)
+    (hRid : ∀ tx, st'.objects[rid.toObjId]? ≠ some (.tcb tx))
+    (F : ∀ oid : SeLe4n.ObjId, oid ≠ rid.toObjId → st'.objects[oid]? = st.objects[oid]? ∨
+      ∃ pre post : KernelObject, st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
+        objectLoanKept post pre) :
+    lentContextHeadsLenderFrame st' := by
+  have back : ∀ (k : SeLe4n.ObjId) (tx : TCB), st'.objects[k]? = some (.tcb tx) →
+      ∃ ty, st.objects[k]? = some (.tcb ty) ∧ TCB.loanKept tx ty := by
+    intro k tx hx
+    by_cases hk : k = rid.toObjId
+    · subst hk; exact absurd hx (hRid tx)
+    rcases F k hk with e | ⟨pre, post, hp, hq, hK⟩
+    · exact ⟨tx, e ▸ hx, TCB.loanKept.refl tx⟩
+    · rw [hq] at hx; cases hx
+      obtain ⟨ty, rfl, hk⟩ := hK.1 tx rfl
+      exact ⟨ty, hp, hk⟩
+  intro holder hx s owner ox hH hB hO
+  obtain ⟨hy, hHy, kH⟩ := back _ hx hH
+  obtain ⟨oy, hOy, kO⟩ := back _ ox hO
+  obtain ⟨rid', r, hRO, hR, hN'⟩ := h holder hy s owner oy hHy (kH.2 s owner hB) hOy
+  have hRO' : ox.replyObject = some rid' := by
+    unfold TCB.replyObject at hRO ⊢; rw [kO.1]; exact hRO
+  have hk : rid'.toObjId ≠ rid.toObjId := by
+    intro e
+    rw [e] at hR
+    have e2 := hN r hR
+    rw [hN'] at e2
+    cases e2
+    exact hNoLoan holder hx owner hH hB
+  rcases F rid'.toObjId hk with e | ⟨pre, post, hp, hq, hK⟩
+  · exact ⟨rid', r, hRO', e ▸ hR, hN'⟩
+  · rw [hR] at hp; cases hp
+    obtain ⟨r', rfl, hN''⟩ := hK.2 r s rfl hN'
+    exact ⟨rid', r', hRO', hq, hN''⟩
+
 end SeLe4n.Kernel

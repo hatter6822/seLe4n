@@ -630,37 +630,6 @@ theorem ValidThreadId.isReserved_false (v : SeLe4n.ValidThreadId) : v.val.isRese
   simp only [SeLe4n.ThreadId.isReserved, decide_eq_false_iff_not]
   intro h; subst h; exact hv rfl
 
-/-- WS-ZA ZA6.33: **the head cut keeps every thread's TCB but for the holder's
-owner code**, so any reading of a TCB that ignores that code reads every thread
-alike across it. -/
-theorem cutCancelledCallerHead_getTcb?_map {β : Type} (st : SystemState) (tcb : TCB)
-    (g : TCB → β) (hg : ∀ t, g { t with scBindingOwnerCode := 0 } = g t)
-    (hInv : st.objects.invExt) (y : SeLe4n.ThreadId) :
-    ((cutCancelledCallerHead st tcb).getTcb? y).map g = (st.getTcb? y).map g :=
-  (cutCancelledCallerHead_closed
-    (fun s => s.objects.invExt ∧ ∀ y, (s.getTcb? y).map g = (st.getTcb? y).map g)
-    (fun s s1 rid r scId ⟨hI, hP⟩ _ hR hS => by
-      have hI1 := storeObject_preserves_objects_invExt s _ _ _ hI hS
-      refine ⟨SystemState.updateSchedContext_preserves_objects_invExt _ scId _ hI1, fun y => ?_⟩
-      rw [SystemState.updateSchedContext_getTcb? _ _ _ hI1,
-        storeObject_replyAt_getTcb?_eq s s1 rid r _ hR hI hS]
-      exact hP y)
-    (fun s _ holder _ _ ⟨hI, hP⟩ _ _ _ => by
-      refine ⟨by
-        rw [markKeyChangeFrom_objects]
-        exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hI, fun y => ?_⟩
-      rw [markKeyChangeFrom_getTcb?]
-      by_cases hy : holder = y
-      · subst hy
-        rw [SystemState.updateTcb_getTcb?_self _ _ _ hI, Option.map_map, ← hP holder]
-        cases s.getTcb? holder with
-        | none => rfl
-        | some t => exact congrArg some (hg t)
-      · rw [SystemState.updateTcb_getTcb?_ne _ _ _ hI y
-          (fun h => hy (SeLe4n.ThreadId.toObjId_injective _ _ h))]
-        exact hP y)
-    st tcb ⟨hInv, fun _ => rfl⟩).2 y
-
 /-- WS-ZA ZA6.33: the head cut writes no current slot. -/
 theorem cutCancelledCallerHead_currentOnCore (st : SystemState) (tcb : TCB)
     (c : Concurrency.CoreId) :
@@ -675,20 +644,6 @@ theorem cutCancelledCallerHead_currentOnCore (st : SystemState) (tcb : TCB)
       dsimp only
       rw [markKeyChangeFrom_currentOnCore, SystemState.updateTcb_scheduler]; exact h)
     st tcb rfl
-
-/-- WS-ZA ZA6.33: **the head cut is a run-queue stage**: a reply stored over
-itself, a context's head and origin cleared (no refill field), and a holder's
-owner code cleared under the key hook. -/
-theorem cutCancelledCallerHead_runQueueStage (st : SystemState) (tcb : TCB) :
-    RunQueueStage st (cutCancelledCallerHead st tcb) :=
-  cutCancelledCallerHead_closed (RunQueueStage st)
-    (fun _ s1 _ _ scId h _ hR hS => (h.trans (storeObject_replyOver_runQueueStage hR hS)).trans
-      (updateSchedContext_runQueueStage s1 scId _))
-    (fun s _ holder _ _ h _ _ _ =>
-      (h.trans (RunQueueStage.updateTcb s holder
-        (f := fun t => { t with scBindingOwnerCode := 0 }) (fun _ _ => rfl))).trans
-        (markKeyChangeFrom_runQueueStage _ _ holder))
-    st tcb (RunQueueStage.refl st)
 
 /-- WS-ZA ZA6.33: **the suspend's IPC cancel is a run-queue stage**: the head
 cut, then the teardown, which hands nothing back once the head is cut. -/

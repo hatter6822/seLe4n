@@ -22,8 +22,10 @@ checks-before-writes property of the thread finalisation.
   which the cancel's admission reads (`CancelReadsKept`).
 * **The thread's context bound back after the cancel**
   (`finaliseThreadCancel_carries`): a notification or endpoint cancel writes no
-  binding, and a reply cancel's own head pop hands the context back to the
-  thread as its own — what the context unbind's guard reads
+  binding, and a reply cancel cuts the reply's head off its context, which stays
+  with the thread holding it (seL4-MCS's `reply_remove_tcb`), clearing an owner
+  code alone, then removes a reply heading no stack — what the context unbind's
+  guard reads
   (`finaliseThreadUnbindSchedContext`).  The walk over the thread's waiters
   needs no admission: it orphans each (`finaliseThreadOrphanWaiters_endsAll`).
 -/
@@ -322,9 +324,13 @@ theorem replyCallerFinalisable_eq (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.Thr
     replyCallerFinalisable s' x r c t = replyCallerFinalisable s x r c t := by
   unfold replyCallerFinalisable; rw [h.replyHeadPopCommits_eq]
 
-theorem replyHeadHeldByServer_eq (r : Reply) (t : TCB) :
-    replyHeadHeldByServer s' r t = replyHeadHeldByServer s r t := by
-  unfold replyHeadHeldByServer; simp only [h.schedContext]
+theorem replyHeadNamedBack_eq (x : SeLe4n.ObjId) (r : Reply) :
+    replyHeadNamedBack s' x r = replyHeadNamedBack s x r := by
+  unfold replyHeadNamedBack; simp only [h.schedContext]
+
+theorem replyCallerCuttable_eq (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.ThreadId) (t : TCB) :
+    replyCallerCuttable s' x r c t = replyCallerCuttable s x r c t := by
+  unfold replyCallerCuttable; rw [h.replyHeadNamedBack_eq]
 
 theorem replyCallerCancelAdmitted_eq (c : SeLe4n.ThreadId) (t : TCB) :
     replyCallerCancelAdmitted s' c t = replyCallerCancelAdmitted s c t := by
@@ -335,7 +341,7 @@ theorem replyCallerCancelAdmitted_eq (c : SeLe4n.ThreadId) (t : TCB) :
     cases o with
     | reply r =>
       rw [(h.reply _ r).mpr e]; dsimp only
-      rw [h.replyCallerFinalisable_eq, h.replyHeadHeldByServer_eq]
+      rw [h.replyCallerCuttable_eq]
     | _ =>
       cases e' : s'.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
       | none => rfl
@@ -422,7 +428,6 @@ theorem threadFinaliseAdmitted_parts {st : SystemState} {x : SeLe4n.ObjId}
         tx.replyWaiterNextCode = 0 ∧ tx.replyWaiterPrevCode = 0 ∧ tx.replyObjectCode = 0) ∧
       tx.timeoutBudget = none ∧
       threadIpcCancelAdmitted st ⟨x.val⟩ tx = true ∧
-      (tx.replyObjectCode = 0 ∨ replyHeadPopsOwn st tx = true) ∧
       notificationUnbindAdmitted st ⟨x.val⟩ tx = true ∧
       (tx.scBindingScCode = 0 ∧ tx.scBindingOwnerCode = 0 ∨
         tx.scBindingScCode ≠ 0 ∧ ∃ sc, st.getSchedContext? ⟨tx.scBindingScCode - 1⟩ = some sc ∧
@@ -435,10 +440,9 @@ theorem threadFinaliseAdmitted_parts {st : SystemState} {x : SeLe4n.ObjId}
   rename_i tx hO
   dsimp only at hA
   simp only [Bool.and_eq_true] at hA
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hTid, hRes⟩, hIdle⟩, hRw⟩, hTB⟩, hC⟩, hP⟩, hN⟩, hS⟩ := hA
+  obtain ⟨⟨⟨⟨⟨⟨⟨hTid, hRes⟩, hIdle⟩, hRw⟩, hTB⟩, hC⟩, hN⟩, hS⟩ := hA
   refine ⟨tx, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, by simpa using hTid,
-    by simpa using hRes, by simpa using hIdle, ?_, by simpa using hTB, hC,
-    by simpa only [Bool.or_eq_true, beq_iff_eq] using hP, hN, ?_⟩
+    by simpa using hRes, by simpa using hIdle, ?_, by simpa using hTB, hC, hN, ?_⟩
   · simp only [Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq] at hRw
     rcases hRw with h | ⟨⟨h1, h2⟩, h3⟩
     · exact Or.inl h
@@ -462,7 +466,7 @@ theorem threadIpcCancelAdmitted_after_unbind {st : SystemState} {x : SeLe4n.ObjI
     (hInv : st.objects.invExt) (hA : threadFinaliseAdmitted st x = true) :
     ∀ t1, (finaliseThreadUnbindNotification st ⟨x.val⟩).getTcb? ⟨x.val⟩ = some t1 →
       threadIpcCancelAdmitted (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩ t1 = true := by
-  obtain ⟨tx, hX, -, -, -, -, -, hC, -, hBnc, -⟩ := threadFinaliseAdmitted_parts hA
+  obtain ⟨tx, hX, -, -, -, -, -, hC, hBnc, -⟩ := threadFinaliseAdmitted_parts hA
   intro t1 h1
   rw [finaliseThreadUnbindNotification_self hInv hX] at h1
   cases h1
@@ -515,75 +519,6 @@ theorem returnDonatedSchedContext_codes {st st' : SystemState} {hd c : SeLe4n.Th
       (SeLe4n.Kernel.threadId_toObjId_ne hne.symm) hInv3 hS4).trans
       (storeObject_objects_eq' s2 c.toObjId _ _ hInv2 hS3), rfl, rfl⟩⟩
 
-/-- **An admitted head reply's cancel is a committed pop, then writes no
-binding**: the cancel of `c` (its TCB `t`), whose reply heads the stack of `s`,
-admitted by its guard, runs the donation return of `s` from the thread `hd`
-holding it to `c`, resolving the outer caller `n`, and every write after it —
-the splice, restore, consume and unlink, the migration, the holder's deschedule
-and the revert — keeps every binding (`bindingLinksAgree`). -/
-theorem finaliseReplyCallerCancel_pop (st : SystemState) (hInv : st.objects.invExt)
-    {c : SeLe4n.ThreadId} {t : TCB} {r : Reply} {s : SeLe4n.SchedContextId}
-    (hT : st.getTcb? c = some t)
-    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r)) (hN : r.next = some (.head s))
-    (hE : replyCallerCancelAdmitted st c t = true) :
-    ∃ (hd : SeLe4n.ThreadId) (n : Option SeLe4n.ThreadId) (P : SystemState),
-      replyStackOuterCaller? st s = .ok n ∧ c ≠ hd ∧
-      replyCallerServerCode t = hd.val + 1 ∧
-      returnDonatedSchedContext st hd s c n = .ok P ∧
-      bindingLinksAgree P (finaliseReplyCallerCancel st c t) := by
-  unfold replyCallerCancelAdmitted at hE
-  rw [hR] at hE
-  dsimp only at hE
-  have hG := hE
-  simp only [Bool.and_eq_true, beq_iff_eq] at hE
-  obtain ⟨⟨hC, hF⟩, hH⟩ := hE
-  obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hF
-  rcases replyCallerFinalisable_cases hR hF with ⟨hNH, -⟩ |
-      ⟨s', sc, hd, ht, hN', hSc, -, hBt, hHt, hBind, hCm, hDon⟩
-  · rw [hN] at hNH; cases hNH
-  rw [hN] at hN'; cases hN'
-  have hSrv : replyCallerServerCode t = hd.val + 1 := by
-    unfold replyHeadHeldByServer at hH
-    rw [hN] at hH
-    simp only [hSc, beq_iff_eq] at hH
-    rw [← hH]
-    exact (SeLe4n.ThreadId.ofOptCode_eq_some_iff _ _).mp hBt
-  obtain ⟨P, hOk⟩ := returnDonatedSchedContextResolved_ok_of_commits hInv hCm
-  obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-  have hne : c ≠ hd := returnDonatedSchedContext_ok_recipient_ne_server st P hd s c n ht hHt
-    (by rw [hBind]; exact fun e => by cases e) hPop
-  have hRet : Lifecycle.Suspend.returnDonationToCancelledCaller st c t = P := by
-    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-    rw [hDon, hT]
-    dsimp only
-    rw [hOk]
-  have hCancel : finaliseReplyCallerCancel st c t =
-      finaliseReplyRevert (cancelIpcBlockingReclaimed c t st) t.blockingServer? := by
-    unfold finaliseReplyCallerCancel finaliseReplyCancel
-    rw [hR]
-    dsimp only
-    rw [if_pos hG, hN]
-    rfl
-  refine ⟨hd, n, P, hRes, hne, hSrv, hPop, ?_⟩
-  rw [hCancel]
-  have hIP : P.objects.invExt :=
-    returnDonatedSchedContext_preserves_objects_invExt st P hd s c hInv n hPop
-  have F := SchedLinkFrame.replyCancelTail P c t hIP
-  rw [← hRet, ← cancelIpcBlocking_replyArm_unfold st c t hB] at F
-  have hInvC : (Lifecycle.Suspend.cancelIpcBlocking st c t).objects.invExt :=
-    (FinaliseFrameAny.replyCancel st c t hInv hB).invExt
-  have FD : SchedLinkFrame (cancelIpcBlockingMigrated c t st) (cancelIpcBlockingReclaimed c t st) :=
-    SchedLinkFrame.of_agreeOffRunLinks
-      (descheduleUnboundHolder_objectsAgreeOffRunLinks st (cancelIpcBlockingMigrated c t st) c t)
-      (by unfold cancelIpcBlockingReclaimed descheduleUnboundHolder; split; rfl
-          exact descheduleAtPlacement_releaseSlots _ _)
-  have FR := SchedLinkFrame.finaliseReplyRevert _ t.blockingServer?
-    (cancelIpcBlockingReclaimed_objects_invExt c t st hInvC)
-  rw [hRet] at F
-  exact ((bindingLinksAgree.trans F.binding (fun o => proj_eq_of_map_eq _ _
-    (fun x => by cases x <;> rfl) (cancelIpcBlockingMigrated_agree c t st o))).trans
-    FD.binding).trans FR.binding
-
 -- ============================================================================
 -- §5  The cancel carries the binding
 -- ============================================================================
@@ -616,64 +551,72 @@ theorem cancelEndpointBlocked_bindings (s : SystemState) (e : SeLe4n.ObjId) (q :
     · exact fun _ => rfl
   · exact fun _ => rfl
 
+/-- **The head cut keeps a thread's context bound back** (WS-ZA ZA6.34): the
+reply stored over itself and the context's head and origin cleared write no
+binding, and a holder's owner code cleared keeps its context code, and the
+context's holder, as they were. -/
+theorem cutCancelledCallerHead_bindingBack (s : SystemState) (t : TCB) (x : SeLe4n.ThreadId)
+    (hInv : s.objects.invExt) (hB : bindingBack s x) :
+    bindingBack (Lifecycle.Suspend.cutCancelledCallerHead s t) x :=
+  (Lifecycle.Suspend.cutCancelledCallerHead_closed
+    (fun s' => s'.objects.invExt ∧ bindingBack s' x)
+    (fun s0 s1 _ r scId h0 _ hR hS => by
+      have hRo := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+      have F1 := SchedLinkFrame.storeObject h0.1 hS (by rw [hRo]; rfl) (by rw [hRo]; rfl)
+        (by rw [hRo]; rfl)
+      have hI1 := storeObject_preserves_objects_invExt s0 s1 _ _ h0.1 hS
+      have F2 := SchedLinkFrame.updateSchedContext s1 scId
+        (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 (fun _ => rfl)
+      exact ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1,
+        bindingBack.transport (F1.trans F2).binding h0.2⟩)
+    (fun s0 _ holder ht _ h0 _ hT _ => by
+      have hI1 := SystemState.updateTcb_preserves_objects_invExt s0 holder
+        (fun t => { t with scBindingOwnerCode := 0 }) h0.1
+      refine ⟨by rw [markKeyChangeFrom_objects]; exact hI1, ?_⟩
+      intro tx hX
+      rw [markKeyChangeFrom_getTcb?] at hX
+      have hSc : ∀ k, (markKeyChangeFrom s0 (s0.updateTcb holder fun t =>
+          { t with scBindingOwnerCode := 0 }) holder).getSchedContext? k = s0.getSchedContext? k :=
+        fun k => by
+          rw [markKeyChangeFrom_getSchedContext?]
+          exact SystemState.updateTcb_getSchedContext? _ _ _ h0.1 k
+      by_cases hE : holder.toObjId = x.toObjId
+      · have e := SeLe4n.ThreadId.toObjId_injective _ _ hE
+        subst e
+        rw [SystemState.updateTcb_getTcb?_self _ _ _ h0.1, hT] at hX
+        cases hX
+        obtain ⟨-, h2⟩ := h0.2 ht hT
+        exact ⟨fun _ => rfl, fun hc => by rw [hSc]; exact h2 hc⟩
+      · rw [SystemState.updateTcb_getTcb?_ne _ _ _ h0.1 _ hE] at hX
+        obtain ⟨h1, h2⟩ := h0.2 tx hX
+        exact ⟨h1, fun hc => by rw [hSc]; exact h2 hc⟩)
+    s t ⟨hInv, hB⟩).2
+
 /-- **A reply-blocked thread's own cancel keeps its context bound back**, on a
-state the finalisation admits: a reply heading no stack is removed writing no
-binding; a head reply is the thread's own pop, which hands its context back to
-it as its own (`replyHeadPopsOwn`), bound back to it. -/
+state the finalisation admits (WS-ZA ZA6.34): the head cut keeps it
+(`cutCancelledCallerHead_bindingBack`), and the reply, which heads no stack once
+cut (`finaliseCutReplyCaller_eq`), is removed writing no binding
+(`finaliseReplyRevertCancel_noHead_schedLinkFrame`). -/
 theorem finaliseReplyCallerCancel_carries (s : SystemState) (x : SeLe4n.ThreadId) (t : TCB)
     (h : finaliseStepInvariant s) (hX : s.getTcb? x = some t)
-    (hA : replyCallerCancelAdmitted s x t = true) (hP : replyHeadPopsOwn s t = true) :
+    (hA : replyCallerCancelAdmitted s x t = true) :
     bindingBack s x → bindingBack (finaliseReplyCallerCancel s x t) x := by
   have hInv := h.2.1
-  have hA0 := hA
-  unfold replyCallerCancelAdmitted at hA0
-  cases hR : s.getObject? ⟨t.replyObjectCode - 1⟩ with
-  | none => rw [hR] at hA0; cases hA0
-  | some o =>
-    cases o with
-    | reply r =>
-      rw [hR] at hA0
-      dsimp only at hA0
-      simp only [Bool.and_eq_true, beq_iff_eq] at hA0
-      obtain ⟨⟨hC, hF⟩, -⟩ := hA0
-      have noHead : replyStackLinkIsHead r.next = false →
-          bindingBack s x → bindingBack (finaliseReplyCallerCancel s x t) x := fun hNH =>
-        bindingBack.transport
-          (finaliseReplyCallerCancel_noHead_schedLinkFrame s hInv hR hNH hA).1.binding
-      cases hN : r.next with
-      | none => exact noHead (by rw [hN]; rfl)
-      | some l =>
-        cases l with
-        | frame a => exact noHead (by rw [hN]; rfl)
-        | head sid =>
-          obtain ⟨hd, n, P, hRes, hne, -, hPop, hAg⟩ := finaliseReplyCallerCancel_pop s hInv hX hR hN hA
-          -- The pop resolves no outer caller.
-          have hn : n = none := by
-            rcases replyCallerFinalisable_cases hR hF with ⟨hNH, -⟩ |
-                ⟨s', sc, -, -, hN', hSc, hRp, -⟩
-            · rw [hN] at hNH; cases hNH
-            rw [hN] at hN'; cases hN'
-            have hPv : r.prev = none := by
-              unfold replyHeadPopsOwn at hP; rw [hR] at hP
-              simp only [hN, Option.isNone_iff_eq_none] at hP; exact hP
-            have hGR : s.getReply? ⟨t.replyObjectCode - 1⟩ = some r :=
-              (SystemState.getReply?_eq_some_iff _ _ _).mpr hR
-            rw [replyStackOuterCaller?_of_prev_none hSc hRp hGR hN hPv] at hRes
-            cases hRes; rfl
-          subst hn
-          obtain ⟨-, tc, htc, hc1, hc2⟩ := returnDonatedSchedContext_codes hInv hPop hne
-          obtain ⟨tx', hX', e1, e2⟩ := hAg.getTcb?_fwd ((SystemState.getTcb?_eq_some_iff _ _ _).mpr htc)
-          have hOwn' : ∀ t', (finaliseReplyCallerCancel s x t).getTcb? x = some t' →
-              t'.scBindingOwnerCode = 0 := by
-            intro t' ht'; rw [hX'] at ht'; cases ht'; rw [e2, hc2]; rfl
-          intro _ t' ht'
-          refine ⟨fun _ => hOwn' t' ht', fun hz => ?_⟩
-          rw [hX'] at ht'; cases ht'
-          obtain ⟨sc', hS', hB'⟩ := returnDonatedSchedContext_post_boundThread s P hd sid x hInv none hPop
-          obtain ⟨sc'', hS'', hB''⟩ := hAg.getSchedContext?_fwd hS'
-          refine ⟨sc'', ?_, hB''.trans ((SeLe4n.ThreadId.ofOptCode_eq_some_iff _ _).mp hB')⟩
-          rw [e1, hc1]; exact hS''
-    | _ => rw [hR] at hA0; cases hA0
+  intro hB
+  unfold replyCallerCancelAdmitted at hA
+  unfold finaliseReplyCallerCancel
+  split at hA
+  · rename_i r hR
+    rw [if_pos hA]
+    have hC := beq_iff_eq.mp ((Bool.and_eq_true _ _).mp hA).1
+    have hG := ((Bool.and_eq_true _ _).mp hA).2
+    obtain ⟨r1, t1, hR1, -, -, hG1, hNH1, -, hE⟩ := finaliseCutReplyCaller_eq hInv hR hC hX hG
+    rw [hE]
+    have hCI := Lifecycle.Suspend.cutCancelledCallerHead_preserves_objects_invExt s t hInv
+    exact bindingBack.transport
+      (finaliseReplyRevertCancel_noHead_schedLinkFrame _ hCI hR1 hNH1 hG1).1.binding
+      (cutCancelledCallerHead_bindingBack s t x hInv hB)
+  · cases hA
 
 /-- **The finalisation's cancel keeps `x`'s context bound back** (part 34), on a
 state carrying the finalisation's invariant whose cancel the admission admits,
@@ -681,8 +624,7 @@ whatever `x` was blocked on: a notification or endpoint cancel writes no
 binding, and a reply cancel carries it (`finaliseReplyCallerCancel_carries`). -/
 theorem finaliseThreadCancel_carries (s : SystemState) (x : SeLe4n.ThreadId) (t : TCB)
     (h : finaliseStepInvariant s) (hX : s.getTcb? x = some t)
-    (hA : threadIpcCancelAdmitted s x t = true)
-    (hP : t.replyObjectCode = 0 ∨ replyHeadPopsOwn s t = true) :
+    (hA : threadIpcCancelAdmitted s x t = true) :
     bindingBack s x → bindingBack (finaliseThreadCancel s x) x := by
   have hInv := h.2.1
   have hEp : ∀ e q, bindingBack s x → bindingBack (cancelEndpointBlocked s e q x t) x :=
@@ -718,61 +660,7 @@ theorem finaliseThreadCancel_carries (s : SystemState) (x : SeLe4n.ThreadId) (t 
       rw [hI, hc]; rfl
     rw [hR]
     rw [hc] at hA
-    have hP' : replyHeadPopsOwn s t = true := by
-      rcases hP with e | e
-      · unfold replyHeadPopsOwn
-        unfold replyCallerCancelAdmitted at hA
-        cases hO : s.getObject? ⟨t.replyObjectCode - 1⟩ with
-        | none => rfl
-        | some o =>
-          cases o with
-          | reply r =>
-            rw [hO] at hA
-            simp only [Bool.and_eq_true, beq_iff_eq] at hA
-            obtain ⟨-, -, -, -, -, hRO, -, -, -⟩ := replyCallerFinalisable_parts hA.1.2
-            unfold TCB.replyObject at hRO; rw [e] at hRO; cases hRO
-          | _ => rfl
-      · exact e
-    exact finaliseReplyCallerCancel_carries s x t h hX hA hP'
+    exact finaliseReplyCallerCancel_carries s x t h hX hA
 
-
--- ============================================================================
--- §6  The notification unbind carries the admission's reads
--- ============================================================================
-
-/-- **The notification unbind keeps every reply, both ways**, on a state whose
-admission admits it (`finaliseThreadUnbindNotification_readsKept`). -/
-theorem finaliseThreadUnbindNotification_replies (st : SystemState) (x : SeLe4n.ThreadId)
-    {t : TCB} (hInv : st.objects.invExt) (hX : st.getTcb? x = some t)
-    (hG : notificationUnbindAdmitted st x t = true) (k : SeLe4n.ObjId) (r : Reply) :
-    (finaliseThreadUnbindNotification st x).objects[k]? = some (.reply r) ↔
-      st.objects[k]? = some (.reply r) :=
-  (finaliseThreadUnbindNotification_readsKept st x hInv hX hG).reply k r
-
-/-- A read of one reply answers alike on two states keeping every reply, both
-ways: the head pop's hand-back question. -/
-theorem replyHeadPopsOwn_of_replies {s s' : SystemState}
-    (h : ∀ (k : SeLe4n.ObjId) (r : Reply), s'.objects[k]? = some (KernelObject.reply r) ↔
-      s.objects[k]? = some (KernelObject.reply r))
-    (t : TCB) : replyHeadPopsOwn s' t = replyHeadPopsOwn s t := by
-  unfold replyHeadPopsOwn SystemState.getObject?
-  cases e : s.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
-  | some o =>
-    cases o with
-    | reply rr => rw [(h _ rr).mpr e]
-    | _ =>
-      cases e' : s'.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
-      | none => rfl
-      | some o' =>
-        cases o' with
-        | reply rr => rw [(h _ rr).mp e'] at e; cases e
-        | _ => rfl
-  | none =>
-    cases e' : s'.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
-    | none => rfl
-    | some o' =>
-      cases o' with
-      | reply rr => rw [(h _ rr).mp e'] at e; cases e
-      | _ => rfl
 
 end SeLe4n.Kernel

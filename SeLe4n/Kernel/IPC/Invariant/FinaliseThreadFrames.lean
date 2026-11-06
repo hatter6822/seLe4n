@@ -612,6 +612,16 @@ theorem replyStep : FinaliseReplyStep (finaliseCarried st y) := by
   · exact runCodeBounded.propagate _ _ _ _ y hD.2 hD.1
   · exact hD.1
 
+/-- WS-ZA ZA6.34: own-cancel's head cut (`reply_remove_tcb`) carries it: it keeps
+the invariant (`finaliseStepInvariant.cut`), is a run-queue stage, a finalisation
+frame, and writes no thread's run-core code (it clears an owner code alone). -/
+theorem cutStep : FinaliseCutStep (finaliseCarried st y) :=
+  fun s x r c t ⟨hI, hR, hF, hB⟩ hX hC hT hG =>
+    ⟨(hI.cut t).1, hR.trans (cutCancelledCallerHead_runQueueStage s t).entry,
+      FinaliseFrameAny.cutStep st s x r c t hF hX hC hT hG,
+      runCodeBounded.of_runCoresAgree
+        (cutCancelledCallerHead_getTcb?_map s t TCB.runCoreCode (fun _ => rfl) hI.2.1) hB⟩
+
 end finaliseCarried
 
 -- ============================================================================
@@ -755,23 +765,18 @@ theorem cancelIpcBlocking_notification_quiets {s : SystemState} {n : SeLe4n.ObjI
   show TCB.quietKey u.bindKey = _
   rw [ku]
 
-/-- **A finalised thread's own reply cancel quiets it**: on a state the
-admission's reply clause admits, the reply removal (the donation return, the
+/-- **A reply's removal quiets its caller**: on a state where the caller is
+finalisable (`replyCallerFinalisable`), the reply removal (the donation return, the
 splice, the restore, the consume and the unlink, a head reply's reclaim, and the
 boost revert) leaves it ready and off every endpoint queue, with its
 bound-notification code and id. -/
-theorem finaliseReplyCallerCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId} {t1 : TCB}
+theorem finaliseReplyRevertCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId} {t1 : TCB}
+    {y : SeLe4n.ObjId} {r : Reply}
     (hInv : s.objects.invExt) (hX : s.getTcb? x = some t1)
-    (hA : replyCallerCancelAdmitted s x t1 = true) :
-    ∃ t2, (finaliseReplyCallerCancel s x t1).getTcb? x = some t2 ∧
-      t2.cancelKey = TCB.quietKey t1.bindKey := by
-  unfold replyCallerCancelAdmitted at hA
-  unfold finaliseReplyCallerCancel
-  split at hA
-  · rename_i r hR
-    rw [if_pos hA]
-    have hG := ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp hA).1).2
-    obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -⟩ := replyCallerFinalisable_parts hG
+    (hG : replyCallerFinalisable s y r x t1 = true) :
+    ∃ t2, (finaliseReplyRevert (finaliseReplyCancel s r x t1) t1.blockingServer?).getTcb? x =
+        some t2 ∧ t2.cancelKey = TCB.quietKey t1.bindKey := by
+  · obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -⟩ := replyCallerFinalisable_parts hG
     have hCI := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s x t1 hInv
     have hC : ∃ t2, (Lifecycle.Suspend.cancelIpcBlocking s x t1).getTcb? x = some t2 ∧
         t2.cancelKey = TCB.quietKey t1.bindKey := by
@@ -822,6 +827,30 @@ theorem finaliseReplyCallerCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId}
         simp only [TCB.cancelKey, a1, a2, a4, a5, a7, a8, a9])
     obtain ⟨t3, h3, k3⟩ := (hRv.trans hF.1).get h2
     exact ⟨t3, h3, k3.trans k2⟩
+
+/-- **A finalised thread's own reply cancel quiets it** (WS-ZA ZA6.34): on a
+state the admission's reply clause admits, the head cut keeps the thread's
+bound-notification code and id (it clears an owner code alone), and the removal
+on the state it leaves quiets the thread (`finaliseReplyRevertCancel_quiets`). -/
+theorem finaliseReplyCallerCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId} {t1 : TCB}
+    (hInv : s.objects.invExt) (hX : s.getTcb? x = some t1)
+    (hA : replyCallerCancelAdmitted s x t1 = true) :
+    ∃ t2, (finaliseReplyCallerCancel s x t1).getTcb? x = some t2 ∧
+      t2.cancelKey = TCB.quietKey t1.bindKey := by
+  unfold replyCallerCancelAdmitted at hA
+  unfold finaliseReplyCallerCancel
+  split at hA
+  · rename_i r hR
+    rw [if_pos hA]
+    have hC := beq_iff_eq.mp ((Bool.and_eq_true _ _).mp hA).1
+    have hG := ((Bool.and_eq_true _ _).mp hA).2
+    obtain ⟨r1, t1', -, -, hX1, hG1, -, -, hE⟩ := finaliseCutReplyCaller_eq hInv hR hC hX hG
+    rw [hE]
+    have hCI := Lifecycle.Suspend.cutCancelledCallerHead_preserves_objects_invExt s t1 hInv
+    have hK := cutCancelledCallerHead_getTcb?_map s t1 TCB.bindKey (fun _ => rfl) hInv x
+    rw [hX1, hX] at hK
+    obtain ⟨t2, h2, k2⟩ := finaliseReplyRevertCancel_quiets hCI hX1 hG1
+    exact ⟨t2, h2, by rw [k2, Option.some.inj hK]⟩
   · cases hA
 
 /-- **The finalisation's cancel quiets the thread** (WS-ZA ZA5.4 part 26): on a

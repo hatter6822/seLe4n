@@ -697,7 +697,7 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
   have blocked : ∀ {a : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}, P a → a.getTcb? t = some tcb →
       tcb.ipcState ≠ .ready → ∀ u, u = t → offCoreFree e st u := fun h hT hS u hu => by
     subst hu; exact offCoreFree_of_blockedSince B h.1.2 hT hS
-  refine (finaliseFinalObject_closed_linked P ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ target s
+  refine (finaliseFinalObject_closed_linked P ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ target s
     ⟨hR, hL.1, .refl s⟩ hL.1.2.1 hL.2).1.2.2
   · intro en q s ep t tcb h hE hH hT hC
     have R := h.1; have L := h.2.1
@@ -831,6 +831,12 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
     exact step h (readyEntry_stage R (finaliseReplyUnheldPop_runQueueStage s r c))
       (finaliseUnheldStep_keepsFinaliseLoanBundle s x r c t L hLk hX hT hA)
       (.of_finaliseReplyUnheldPop s r c L.2.1) none
+  · intro s _ _ _ t h _ _ _ _
+    have R := h.1; have L := h.2.1
+    exact step h (readyEntry_stage R (cutCancelledCallerHead_runQueueStage s t))
+      (cutCancelledCallerHead_preserves_finaliseLoanBundle s t L)
+      (savedRegsKeptExcept.of_map
+        (cutCancelledCallerHead_getTcb?_map s t TCB.registerContext (fun _ => rfl) L.2.1)) none
 
 end
 

@@ -1453,6 +1453,113 @@ theorem SchedLinkFrame.orphanReplyWaiter (st : SystemState) (w x : SeLe4n.Thread
       | some o => cases o <;> rfl
     · rfl
 
+/-- **A holder's loan made its own keeps every scheduling-link invariant**
+(WS-ZA ZA6.34, the thread-side cut's last object write): the holder `holder`,
+the thread the context `scId` names, holds it on loan (`.donated scId o`); its
+owner code cleared, it holds the context as its own (`.bound scId`), which the
+binding pair asks of a context's bound thread either way.  Its budget, affinity
+and every other object are kept. -/
+theorem ownerCleared_preserves_schedContextLinkInvariant (s : SystemState)
+    (holder : SeLe4n.ThreadId) (ht : TCB) (scId : SeLe4n.SchedContextId) (o : SeLe4n.ThreadId)
+    (hInv : s.objects.invExt) (hT : s.getTcb? holder = some ht)
+    (hb : ht.schedContextBinding = .donated scId o)
+    (hBt : (s.getSchedContext? scId).bind (·.boundThread) = some holder)
+    (h : schedContextLinkInvariant s) :
+    schedContextLinkInvariant (s.updateTcb holder fun t => { t with scBindingOwnerCode := 0 }) := by
+  have hSc : ∀ s', (s.updateTcb holder fun t => { t with scBindingOwnerCode := 0 }).getSchedContext? s' =
+      s.getSchedContext? s' := fun s' => SystemState.updateTcb_getSchedContext? _ _ _ hInv s'
+  rw [SystemState.updateTcb_eq_of_some hT] at hSc ⊢
+  have hPre := (SystemState.getTcb?_eq_some_iff s holder ht).mp hT
+  have hAt : (s.objects.insert holder.toObjId (.tcb { ht with scBindingOwnerCode := 0 }))[holder.toObjId]? =
+      some (.tcb { ht with scBindingOwnerCode := 0 }) :=
+    RobinHood.RHTable.getElem?_insert_self s.objects _ _ hInv
+  have hNe : ∀ k : SeLe4n.ObjId, k ≠ holder.toObjId →
+      (s.objects.insert holder.toObjId (.tcb { ht with scBindingOwnerCode := 0 }))[k]? = s.objects[k]? :=
+    fun k hk => RobinHood.RHTable.getElem?_insert_ne s.objects _ k _
+      (fun e => hk (eq_of_beq e).symm) hInv
+  have hAux : schedAuxAgree s { s with objects := (s.objects.insert holder.toObjId
+      (.tcb { ht with scBindingOwnerCode := 0 })) } :=
+    proj_insert_eq tcbSchedAuxOf hInv (by rw [hPre]; rfl)
+  have hRel : ∀ k, schedReleaseOf (s.objects.insert holder.toObjId
+      (.tcb { ht with scBindingOwnerCode := 0 }))[k]? = schedReleaseOf s.objects[k]? :=
+    proj_insert_eq schedReleaseOf hInv (by rw [hPre]; rfl)
+  have hCode : ht.scBindingScCode = scId.val + 1 := by
+    have hb' := hb
+    unfold TCB.schedContextBinding SchedContextBinding.ofCodes at hb'
+    split at hb'
+    · cases hb'
+    · rename_i k hk
+      split at hb'
+      · cases hb'
+      · cases hb'; exact hk
+  have hBound : ({ ht with scBindingOwnerCode := 0 } : TCB).schedContextBinding = .bound scId :=
+    schedContextBinding_ownerCleared (x := scId.toObjId) hCode
+  obtain ⟨sc0, hS0, hB0⟩ : ∃ sc0, s.getSchedContext? scId = some sc0 ∧ sc0.boundThread = some holder := by
+    cases e : s.getSchedContext? scId with
+    | none => rw [e] at hBt; cases hBt
+    | some sc0 => rw [e] at hBt; exact ⟨sc0, rfl, hBt⟩
+  have hS0o := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS0
+  have hSk : scId.toObjId ≠ holder.toObjId := by
+    intro e; rw [e, hPre] at hS0o; cases hS0o
+  refine ⟨allTimeoutBudgetsNone_of_aux hAux h.budgets, ⟨fun tid tcb hx s' hb' => ?_,
+    fun s' sc hS tid hb' => ?_⟩, fun c s' t hMem => ?_, fun c s' t hMem sc hS tid hb' => ?_,
+    (show SystemState.releaseStateAgree { s with objects := (s.objects.insert holder.toObjId
+        (.tcb { ht with scBindingOwnerCode := 0 })) } s from
+      ⟨.of_objReleaseLinkOn fun k c => objReleaseLinkOn_of_schedReleaseOf (hRel k) c,
+        rfl⟩).refined h.refined⟩
+  · by_cases hk : tid.toObjId = holder.toObjId
+    · rw [hk, hAt] at hx; cases hx
+      rw [hBound] at hb'; cases hb'
+      refine ⟨sc0, by rw [hNe _ hSk]; exact hS0o, ?_⟩
+      rw [hB0, SeLe4n.ThreadId.toObjId_injective _ _ hk]
+    · rw [hNe _ hk] at hx
+      obtain ⟨sc, hs, hst⟩ := h.binding.1 tid tcb hx s' hb'
+      have hk' : s'.toObjId ≠ holder.toObjId := by
+        intro e; rw [e, hPre] at hs; cases hs
+      exact ⟨sc, by rw [hNe _ hk']; exact hs, hst⟩
+  · have hk' : s'.toObjId ≠ holder.toObjId := by
+      intro e; rw [e, hAt] at hS; cases hS
+    rw [hNe _ hk'] at hS
+    obtain ⟨tcb, htc, hor⟩ := h.binding.2 s' sc hS tid hb'
+    by_cases hk : tid.toObjId = holder.toObjId
+    · rw [hk, hPre] at htc; cases htc
+      refine ⟨{ ht with scBindingOwnerCode := 0 }, by rw [hk]; exact hAt, .inl ?_⟩
+      rw [hBound]
+      rcases hor with e | ⟨_, e⟩ <;> rw [hb] at e <;> cases e <;> rfl
+    · exact ⟨tcb, by rw [hNe _ hk]; exact htc, hor⟩
+  · obtain ⟨sc, hS, tid, hb⟩ := h.replenishBound c s' t hMem
+    exact ⟨sc, by rw [hSc]; exact hS, tid, hb⟩
+  · rw [hSc] at hS
+    rw [hAux.determineTargetCore_eq]
+    exact h.replenishAffinity c s' t hMem sc hS tid hb'
+
+/-- **The thread-side cut keeps every scheduling-link invariant** (WS-ZA
+ZA6.34): the reply stored over itself and the context's head and origin cleared
+write nothing the invariants read; the holder's loan made its own is
+`ownerCleared_preserves_schedContextLinkInvariant`; the key hook writes the
+scheduler's flags alone. -/
+theorem cutCancelledCallerHead_preserves_schedContextLinkInvariant (s : SystemState) (t : TCB)
+    (hInv : s.objects.invExt) (h : schedContextLinkInvariant s) :
+    schedContextLinkInvariant (Lifecycle.Suspend.cutCancelledCallerHead s t) :=
+  (Lifecycle.Suspend.cutCancelledCallerHead_closed
+    (fun s => s.objects.invExt ∧ schedContextLinkInvariant s)
+    (fun s0 s1 rid r scId h0 _ hR hS => by
+      have hRo := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+      have F1 := SchedLinkFrame.storeObject h0.1 hS (by rw [hRo]; rfl) (by rw [hRo]; rfl)
+        (by rw [hRo]; rfl)
+      have hI1 := storeObject_preserves_objects_invExt s0 s1 _ _ h0.1 hS
+      have F2 := SchedLinkFrame.updateSchedContext s1 scId
+        (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 (fun _ => rfl)
+      exact ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1,
+        (F1.trans F2).preserves h0.2⟩)
+    (fun s0 scId holder ht o h0 hBt hT hb => by
+      have hI1 := SystemState.updateTcb_preserves_objects_invExt s0 holder
+        (fun t => { t with scBindingOwnerCode := 0 }) h0.1
+      refine ⟨by rw [markKeyChangeFrom_objects]; exact hI1, ?_⟩
+      exact (SchedLinkFrame.markKeyChangeFrom _ _ holder).preserves
+        (ownerCleared_preserves_schedContextLinkInvariant s0 holder ht scId o h0.1 hT hb hBt h0.2))
+    s t ⟨hInv, h⟩).2
+
 /-- **A property every finalisation step keeps, the pop off an unheld context
 reading the scheduling links, holds after the finalisation with the links**
 (`finaliseFinalObject_closed` on the property paired with the table's
@@ -1484,6 +1591,7 @@ theorem finaliseFinalObject_closed_linked (P : SystemState → Prop)
       P s → s.objects.invExt → schedContextLinkInvariant s →
       s.getObject? x = some (.reply r) → r.callerCode = c.val + 1 → s.getTcb? c = some t →
       replyUnheldPopAdmitted s x r c t = true → P (finaliseReplyUnheldPop s r c))
+    (hCut : FinaliseCutStep P)
     (target : Nat) (st : SystemState) (h : P st) (hInv : st.objects.invExt)
     (hL : schedContextLinkInvariant st) :
     P (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt ∧
@@ -1551,6 +1659,10 @@ theorem finaliseFinalObject_closed_linked (P : SystemState → Prop)
     (fun s x r c t h a b d e =>
       ⟨hUnheld s x r c t h.1 h.2.1 h.2.2 a b d e, (FinaliseFrameAny.finaliseReplyUnheldPop s r c h.2.1).invExt,
         finaliseReplyUnheldPop_preserves_schedContextLinkInvariant s r c h.2.1 h.2.2⟩)
+    (fun s x r c t h a b d e =>
+      ⟨hCut s x r c t h.1 a b d e,
+        (FinaliseFrameAny.cutStep s s x r c t (.refl h.2.1) a b d e).invExt,
+        cutCancelledCallerHead_preserves_schedContextLinkInvariant s t h.2.1 h.2.2⟩)
     target st ⟨h, hInv, hL⟩
 
 /-- **The finalisation keeps every scheduling-link invariant**
@@ -1566,7 +1678,8 @@ theorem finaliseFinalObject_preserves_schedContextLinkInvariant (target : Nat) (
     (fun _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => trivial)
     (fun _ _ _ _ _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ => trivial)
     ⟨fun _ _ _ => trivial, fun _ _ _ => trivial⟩ (fun _ _ _ _ _ _ _ _ => trivial)
-    (fun _ _ _ _ _ _ _ _ _ _ _ _ => trivial) target st trivial hInv h).2.2
+    (fun _ _ _ _ _ _ _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ _ => trivial)
+    target st trivial hInv h).2.2
 
 -- ============================================================================
 -- §9  The retire

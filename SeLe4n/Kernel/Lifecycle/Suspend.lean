@@ -2342,6 +2342,37 @@ theorem cancelledCallerDonation?_blockedOnReply (st : SystemState)
 -- payoff needs of the reclaim's deschedule is `cancelUnboundHolder?_ne_victim`,
 -- above, which is structural rather than derived from two `ipcState` reads.
 
+/-- WS-ZA ZA6.33: **the head cut keeps every thread's TCB but for the holder's
+owner code**, so any reading of a TCB that ignores that code reads every thread
+alike across it. -/
+theorem cutCancelledCallerHead_getTcb?_map {β : Type} (st : SystemState) (tcb : TCB)
+    (g : TCB → β) (hg : ∀ t, g { t with scBindingOwnerCode := 0 } = g t)
+    (hInv : st.objects.invExt) (y : SeLe4n.ThreadId) :
+    ((cutCancelledCallerHead st tcb).getTcb? y).map g = (st.getTcb? y).map g :=
+  (cutCancelledCallerHead_closed
+    (fun s => s.objects.invExt ∧ ∀ y, (s.getTcb? y).map g = (st.getTcb? y).map g)
+    (fun s s1 rid r scId ⟨hI, hP⟩ _ hR hS => by
+      have hI1 := storeObject_preserves_objects_invExt s _ _ _ hI hS
+      refine ⟨SystemState.updateSchedContext_preserves_objects_invExt _ scId _ hI1, fun y => ?_⟩
+      rw [SystemState.updateSchedContext_getTcb? _ _ _ hI1,
+        storeObject_replyAt_getTcb?_eq s s1 rid r _ hR hI hS]
+      exact hP y)
+    (fun s _ holder _ _ ⟨hI, hP⟩ _ _ _ => by
+      refine ⟨by
+        rw [markKeyChangeFrom_objects]
+        exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hI, fun y => ?_⟩
+      rw [markKeyChangeFrom_getTcb?]
+      by_cases hy : holder = y
+      · subst hy
+        rw [SystemState.updateTcb_getTcb?_self _ _ _ hI, Option.map_map, ← hP holder]
+        cases s.getTcb? holder with
+        | none => rfl
+        | some t => exact congrArg some (hg t)
+      · rw [SystemState.updateTcb_getTcb?_ne _ _ _ hI y
+          (fun h => hy (SeLe4n.ThreadId.toObjId_injective _ _ h))]
+        exact hP y)
+    st tcb ⟨hInv, fun _ => rfl⟩).2 y
+
 end SeLe4n.Kernel
 
 namespace SeLe4n.Kernel.Lifecycle.Suspend

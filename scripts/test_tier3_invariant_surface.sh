@@ -4235,8 +4235,11 @@ run_check "INVARIANT" rg -n '^    notificationUnbindAdmitted st tid t &&$' SeLe4
 run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_readsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadCancel_carries($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReplyCallerCancel_carries($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
-run_check "INVARIANT" rg -n '^theorem finaliseReplyCallerCancel_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
-run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_replies($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem cutCancelledCallerHead_bindingBack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem finaliseCutReplyCaller_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem finaliseCutReplyCaller_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem cutCancelledCallerHead_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+run_check "INVARIANT" rg -n '^      finaliseCutReplyCaller \(Lifecycle\.Suspend\.cutCancelledCallerHead st t\) c$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^def bindingBack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadSuspend($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
 run_check "INVARIANT" rg -n 't\.tid\.val = x\.val ∧ threadLinksQuiescent t = true ∧' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
@@ -4312,7 +4315,7 @@ run_check "INVARIANT" rg -n '^theorem replyPopsInPlace_pop($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingReclaimed_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean
 run_check "INVARIANT" rg -n '^theorem cancelHeadReplyCaller_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem donatedReturnCommits_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean
-run_check "INVARIANT" rg -n '^    finaliseReplyRevert \(cancelHeadReplyCaller st c t\) \(SeLe4n\.ThreadId\.ofOptCode serverCode\)$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^          \(if replyStackLinkIsHead r\.next then cancelHeadReplyCaller st c t$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^    finaliseThreadSuspend \(finaliseReplyRevert \(cancelHeadReplyCaller st c t\)$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem Notification\.waitHeadCode_beq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # WS-ZA ZA6.34: a queue with a waiter behind its head is read by its link codes,

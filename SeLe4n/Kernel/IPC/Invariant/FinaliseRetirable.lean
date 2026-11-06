@@ -291,7 +291,7 @@ earlier step has written — checks before writes.
   naming no context names no lender — the context unbind's guard: the
   admission reads it on the pre-state, the unbind keeps every context
   (`CancelReadsKept`), the cancel carries it (`finaliseThreadCancel_carries`:
-  a head reply's own pop hands the context back as the thread's own), and the
+  a head reply's cut keeps every context with its holder), and the
   walk, the suspend and the release write no binding. -/
 theorem finaliseThread_admissionCarried (x : SeLe4n.ObjId) (st : SystemState)
     (hI : finaliseStepInvariant st) (hBd : runCodeBounded st ⟨x.val⟩)
@@ -302,7 +302,7 @@ theorem finaliseThread_admissionCarried (x : SeLe4n.ObjId) (st : SystemState)
   have hCancel := threadIpcCancelAdmitted_after_unbind hI.2.1 hA
   refine ⟨hCancel, ?_⟩
   unfold finaliseThreadAfterRelease finaliseThreadAfterCancel
-  obtain ⟨tx0, hX0, -, -, -, -, -, -, hPA, hBnc, hSBA⟩ := threadFinaliseAdmitted_parts hA
+  obtain ⟨tx0, hX0, -, -, -, -, -, -, hBnc, hSBA⟩ := threadFinaliseAdmitted_parts hA
   have hBB0 : bindingBack st ⟨x.val⟩ := by
     intro t ht
     rw [hX0] at ht; cases ht
@@ -315,11 +315,6 @@ theorem finaliseThread_admissionCarried (x : SeLe4n.ObjId) (st : SystemState)
   have C1 := finaliseThreadUnbindNotification_closed _ (finaliseCarried.unbindStep st ⟨x.val⟩)
     st ⟨x.val⟩ hX0 hBnc C0
   have K1 := finaliseThreadUnbindNotification_readsKept st ⟨x.val⟩ hI.2.1 hX0 hBnc
-  have hRep := finaliseThreadUnbindNotification_replies st ⟨x.val⟩ hI.2.1 hX0 hBnc
-  have hP1 : tx0.replyObjectCode = 0 ∨
-      replyHeadPopsOwn (finaliseThreadUnbindNotification st ⟨x.val⟩)
-        { tx0 with boundNotificationCode := 0 } = true := by
-    rw [replyHeadPopsOwn_of_replies hRep]; exact hPA
   have hBB1 : bindingBack (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩ := by
     intro t ht
     rw [hX1] at ht; cases ht
@@ -327,13 +322,13 @@ theorem finaliseThread_admissionCarried (x : SeLe4n.ObjId) (st : SystemState)
     refine ⟨hz, fun hc => ?_⟩
     obtain ⟨sc, hS, hb'⟩ := hb hc
     exact ⟨sc, by rw [K1.schedContext]; exact hS, hb'⟩
-  generalize finaliseThreadUnbindNotification st ⟨x.val⟩ = s1 at hX1 C1 hCancel hP1 hBB1
+  generalize finaliseThreadUnbindNotification st ⟨x.val⟩ = s1 at hX1 C1 hCancel hBB1
   -- The cancel.
-  have hBB2 := finaliseThreadCancel_carries s1 ⟨x.val⟩ _ C1.1 hX1 (hCancel _ hX1) hP1 hBB1
+  have hBB2 := finaliseThreadCancel_carries s1 ⟨x.val⟩ _ C1.1 hX1 (hCancel _ hX1) hBB1
   obtain ⟨t2, hX2, k2⟩ := finaliseThreadCancel_quiets C1.1.2.1 hX1 (hCancel _ hX1)
   have C2 := finaliseThreadCancel_closed _ (finaliseCarried.notificationCancelStep st ⟨x.val⟩)
     (finaliseCarried.endpointCancelStep st ⟨x.val⟩) (finaliseCarried.replyStep st ⟨x.val⟩)
-    s1 ⟨x.val⟩ C1
+    (finaliseCarried.cutStep st ⟨x.val⟩) s1 ⟨x.val⟩ C1
   generalize finaliseThreadCancel s1 ⟨x.val⟩ = s2 at hX2 C2 hBB2
   -- The walk orphans the waiters, writing no binding.
   obtain ⟨-, -, hWalkB⟩ := finaliseThreadOrphanWaiters_endsAll s2 ⟨x.val⟩ t2 C2.1 hX2
@@ -383,7 +378,7 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
   unfold finaliseThreadAfterRelease at hBind
   unfold finaliseThreadAfterCancel at hBind
   -- The admission's reads of the thread.
-  obtain ⟨tx0, hX0, hTid, -, hIdle, -, -, -, -, hBnc, -⟩ := threadFinaliseAdmitted_parts hA
+  obtain ⟨tx0, hX0, hTid, -, hIdle, -, -, -, hBnc, -⟩ := threadFinaliseAdmitted_parts hA
   -- The notification unbind.
   have C0 := finaliseCarried.start st ⟨x.val⟩ hI hBd
   have hX1 := finaliseThreadUnbindNotification_self hI.2.1 hX0
@@ -394,7 +389,7 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
   obtain ⟨t2, hX2, k2⟩ := finaliseThreadCancel_quiets C1.1.2.1 hX1 (hCancel _ hX1)
   have C2 := finaliseThreadCancel_closed _ (finaliseCarried.notificationCancelStep st ⟨x.val⟩)
     (finaliseCarried.endpointCancelStep st ⟨x.val⟩) (finaliseCarried.replyStep st ⟨x.val⟩)
-    s1 ⟨x.val⟩ C1
+    (finaliseCarried.cutStep st ⟨x.val⟩) s1 ⟨x.val⟩ C1
   generalize finaliseThreadCancel s1 ⟨x.val⟩ = s2 at hX2 C2 hBind
   -- The walk orphans every waiter and keeps the thread.
   obtain ⟨hNoW4, hK4, -⟩ := finaliseThreadOrphanWaiters_endsAll s2 ⟨x.val⟩ t2 C2.1 hX2
