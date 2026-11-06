@@ -44,8 +44,6 @@ preserved by every SM5 per-core transition:
 * `currentThreadValidOnCore` — no dangling current: a `some` current resolves
   to a real TCB.
 * `runnableThreadsAreTCBsOnCore` — every run-queue member is a real TCB.
-* `runQueueOnCoreWellFormed` — the run queue's internal `byPriority` ↔
-  `membership` ↔ `threadPriority` indices are consistent.
 
 **`contextMatchesCurrentOnCore` is no longer excluded** (SM4.B per-core register
 banks).  SM4.B replaced the single shared `machine.regs` with a per-core register
@@ -92,9 +90,10 @@ invariant.
 
 ## What this module proves (plan §5 SM5.I)
 
-* **SM5.I.1/.2/.3/.4** — suite re-export of `currentThreadValidOnCore` (I.1),
-  `runQueueOnCoreWellFormed` (I.2), `schedContextRunQueueConsistent_perCore`
-  (I.3), `priorityInheritance_perCore` (I.4) under their plan names.
+* **SM5.I.1/.3/.4** — suite re-export of `currentThreadValidOnCore` (I.1),
+  `schedContextRunQueueConsistent_perCore` (I.3), `priorityInheritance_perCore`
+  (I.4) under their plan names.  I.2's run-queue well-formedness is deleted:
+  the intrusive queue's layout makes it hold of every queue.
 * **SM5.I.5/.7** — the aggregate `schedulerInvariant_perCore` and the
   system-wide `schedulerInvariant_smp`, plus the new
   `schedulerInvariantStructural_perCore` / `_smp` and their projections,
@@ -148,7 +147,7 @@ open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores SgiKind)
 -- ============================================================================
 
 /-- WS-SM SM5.I: the **structural** per-core scheduler invariant at core `c` —
-the four register-bank-independent safety conjuncts of the full SM4.C
+the three register-bank-independent safety conjuncts of the full SM4.C
 `schedulerInvariant_perCore` aggregate that are proved preserved by every SM5
 per-core transition (see the module header for the accounting of the other
 seven: register-bank-gated `contextMatchesCurrent`; dispatch/tick-established
@@ -157,8 +156,7 @@ and the clean-extension `runQueueUnique` deferred to bound this cut). -/
 def schedulerInvariantStructural_perCore (st : SystemState) (c : CoreId) : Prop :=
   queueCurrentConsistentOnCore st.scheduler c ∧
   currentThreadValidOnCore st c ∧
-  runnableThreadsAreTCBsOnCore st c ∧
-  runQueueOnCoreWellFormed st.scheduler c
+  runnableThreadsAreTCBsOnCore st c
 
 /-- WS-SM SM5.I.7: the system-wide structural SMP scheduler invariant — the
 structural per-core invariant holding on *every* core.  Unlike the full
@@ -178,12 +176,12 @@ theorem schedulerInvariantStructural_perCore_of_flagOnlyWrite {s1 s2 : SystemSta
     (hCur : ∀ c, s2.scheduler.currentOnCore c = s1.scheduler.currentOnCore c)
     {c : CoreId} (h : schedulerInvariantStructural_perCore s1 c) :
     schedulerInvariantStructural_perCore s2 c := by
-  obtain ⟨hQ, hV, hT, hW⟩ := h
+  obtain ⟨hQ, hV, hT⟩ := h
   -- WS-ZA ZA4.5: the run-queue links may move; whether a thread resolves does not.
   have hGet : ∀ t, (∃ tcb, s1.getTcb? t = some tcb) → ∃ tcb, s2.getTcb? t = some tcb :=
     fun t h => Option.isSome_iff_exists.mp
       ((hA.getTcb?_isSome t).trans (Option.isSome_iff_exists.mpr h))
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · unfold queueCurrentConsistentOnCore at hQ ⊢; rw [hCur, hRq]; exact hQ
   · unfold currentThreadValidOnCore at hV ⊢
     rw [hCur]
@@ -193,7 +191,6 @@ theorem schedulerInvariantStructural_perCore_of_flagOnlyWrite {s1 s2 : SystemSta
   · intro t ht
     rw [hRq] at ht
     exact hGet t (hT t ht)
-  · unfold runQueueOnCoreWellFormed at hW ⊢; rw [hRq]; exact hW
 
 /-- KSC-1: clearing a core's reschedule-pending flag (a scheduling point's last
 write) preserves the structural SMP invariant. -/
@@ -215,11 +212,7 @@ theorem schedulerInvariantStructural_perCore_to_currentThreadValid
 
 theorem schedulerInvariantStructural_perCore_to_runnableThreadsAreTCBs
     {st : SystemState} {c : CoreId} (h : schedulerInvariantStructural_perCore st c) :
-    runnableThreadsAreTCBsOnCore st c := h.2.2.1
-
-theorem schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed
-    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructural_perCore st c) :
-    runQueueOnCoreWellFormed st.scheduler c := h.2.2.2
+    runnableThreadsAreTCBsOnCore st c := h.2.2
 
 /-- The structural per-core slices aggregate to the system-wide structural
 SMP invariant by definition. -/
@@ -237,14 +230,13 @@ theorem schedulerInvariantStructural_smp_at (st : SystemState) (c : CoreId)
 
 /-- WS-SM SM5.I: the full SM4.C per-core aggregate implies the structural
 per-core invariant (the structural conjuncts are a sub-conjunction of the
-full eleven).  This is the non-orphan connection to the live SM4.C surface:
+full ten).  This is the non-orphan connection to the live SM4.C surface:
 every existing full-aggregate witness yields the structural one for free. -/
 theorem schedulerInvariant_perCore_to_structural {st : SystemState} {c : CoreId}
     (h : schedulerInvariant_perCore st c) : schedulerInvariantStructural_perCore st c :=
   ⟨schedulerInvariant_perCore_to_queueCurrentConsistent h,
    schedulerInvariant_perCore_to_currentThreadValid h,
-   schedulerInvariant_perCore_to_runnableThreadsAreTCBs h,
-   schedulerInvariant_perCore_to_runQueueOnCoreWellFormed h⟩
+   schedulerInvariant_perCore_to_runnableThreadsAreTCBs h⟩
 
 /-- WS-SM SM5.I: the full SMP aggregate implies the structural SMP invariant. -/
 theorem schedulerInvariant_smp_to_structural {st : SystemState}
@@ -295,8 +287,8 @@ theorem schedulerInvariantStructural_perCore_frame
     (hTcbSome : ∀ tid, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome)
     (h : schedulerInvariantStructural_perCore st c) :
     schedulerInvariantStructural_perCore st' c := by
-  obtain ⟨hQCC, hCTV, hRAT, hWf⟩ := h
-  refine ⟨?_, ?_, ?_, ?_⟩
+  obtain ⟨hQCC, hCTV, hRAT⟩ := h
+  refine ⟨?_, ?_, ?_⟩
   · -- queueCurrentConsistentOnCore: reads only current/runQueue.
     unfold queueCurrentConsistentOnCore at hQCC ⊢
     rw [hCur, hRQ]; exact hQCC
@@ -317,9 +309,6 @@ theorem schedulerInvariantStructural_perCore_frame
     obtain ⟨tcb, htcb⟩ := hRAT tid htid
     have : (st'.getTcb? tid).isSome := hTcbSome tid (by rw [htcb]; rfl)
     exact Option.isSome_iff_exists.mp this
-  · -- runQueueOnCoreWellFormed: reads only the run queue.
-    unfold runQueueOnCoreWellFormed at hWf ⊢
-    rw [hRQ]; exact hWf
 
 /-- WS-SM SM5.I.8: the **per-core SMP-preservation engine**.
 
@@ -585,12 +574,11 @@ theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructural_smp
     schedulerInvariantStructural_smp (enqueueRunnableOnCore st c₀ tid) := by
   refine schedulerInvariantStructural_smp_of_establish_and_frame (c₀ := c₀) hPre ?_ ?_ ?_ ?_
   · -- structural establishment on the operated core
-    refine ⟨?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_⟩
     · exact enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self st c₀ tid hNotCur
         (hPre c₀).1
     · exact enqueueRunnableOnCore_preserves_currentThreadValidOnCore st c₀ c₀ tid hInv (hPre c₀).2.1
-    · exact enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore st c₀ tid hInv (hPre c₀).2.2.1
-    · exact enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed st c₀ tid (hPre c₀).2.2.2
+    · exact enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore st c₀ tid hInv (hPre c₀).2.2
   · exact fun c' _ => enqueueRunnableOnCore_currentOnCore st c₀ tid c'
   · exact fun c' hc => enqueueRunnableOnCore_runQueueOnCore_ne st c₀ c' tid hc
   · intro t hsome
@@ -634,12 +622,11 @@ theorem scheduleEffectiveOnCore_preserves_schedulerInvariantStructural_smp
     (hStep : scheduleEffectiveOnCore st c₀ = .ok st') :
     schedulerInvariantStructural_smp st' := by
   refine schedulerInvariantStructural_smp_of_establish_and_frame (c₀ := c₀) hPre ?_ ?_ ?_ ?_
-  · refine ⟨?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
     · exact scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore st c₀ st' hStep
     · exact scheduleEffectiveOnCore_establishes_currentThreadValidOnCore st c₀ st' hInv hStep
     · exact scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore st c₀ st' hInv hStep
-        (hPre c₀).2.2.1
-    · exact scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed st c₀ st' (hPre c₀).2.2.2 hStep
+        (hPre c₀).2.2
   · exact fun c' hc => (scheduleEffectiveOnCore_independent_of_other_core st c₀ c' st' hc hStep).1
   · exact fun c' hc => (scheduleEffectiveOnCore_independent_of_other_core st c₀ c' st' hc hStep).2
   · intro t hsome
@@ -684,12 +671,11 @@ theorem switchToThreadOnCore_preserves_schedulerInvariantStructural_smp
     (h : switchToThreadOnCore st c₀ tid = .ok st') :
     schedulerInvariantStructural_smp st' := by
   refine schedulerInvariantStructural_smp_of_establish_and_frame (c₀ := c₀) hPre ?_ ?_ ?_ ?_
-  · refine ⟨?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
     · exact switchToThreadOnCore_establishes_queueCurrentConsistentOnCore st c₀ tid st' h
     · exact switchToThreadOnCore_establishes_currentThreadValidOnCore st c₀ tid st' hInv h
     · exact switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore st c₀ tid st' hInv
-        (hPre c₀).2.2.1 (hPre c₀).2.1 h
-    · exact switchToThreadOnCore_preserves_runQueueOnCore_wellFormed st c₀ tid st' (hPre c₀).2.2.2 h
+        (hPre c₀).2.2 (hPre c₀).2.1 h
   · exact fun c' hc => (switchToThreadOnCore_independent_of_other_core st c₀ c' tid st' hc h).1
   · exact fun c' hc => (switchToThreadOnCore_independent_of_other_core st c₀ c' tid st' hc h).2
   · intro t hsome
@@ -709,10 +695,7 @@ theorem dropCurrentOnCore_preserves_schedulerInvariantStructural_smp
   refine schedulerInvariantStructural_smp_of_establish_and_frame (c₀ := c₀) hPre ?_ ?_ ?_ ?_
   · refine ⟨dropCurrentOnCore_queueCurrentConsistentOnCore st c₀,
       dropCurrentOnCore_currentThreadValidOnCore st c₀,
-      dropCurrentOnCore_runnableThreadsAreTCBsOnCore st c₀ hInv (hPre c₀).2.2.1 (hPre c₀).2.1, ?_⟩
-    unfold runQueueOnCoreWellFormed
-    rw [dropCurrentOnCore_runQueueOnCore]
-    exact preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed st c₀ _ (hPre c₀).2.2.2
+      dropCurrentOnCore_runnableThreadsAreTCBsOnCore st c₀ hInv (hPre c₀).2.2 (hPre c₀).2.1⟩
   · exact fun c' hc => dropCurrentOnCore_currentOnCore_ne st c₀ c' hc
   · exact fun c' hc => (dropCurrentOnCore_runQueueOnCore st c₀ c').trans
       (preemptCurrentOnCore_runQueueOnCore_ne st c₀ _ c' hc)
@@ -839,7 +822,7 @@ theorem decrementDomainTimeOnCore_preserves_schedulerInvariantStructural_smp
 --
 -- These compositions are the SM5.I closure follow-on (the plan's "5 PRs"): the
 -- executing-core establishment is already provided by SM5.D's
--- `timerTickOnCore_preserves_{currentThreadValid,queueCurrentConsistent,runQueueOnCoreWellFormed}OnCore`
+-- `timerTickOnCore_preserves_{currentThreadValid,queueCurrentConsistent}OnCore`
 -- and the §3 primitives; the remaining work is the mechanical fold composition.
 -- Items deferred past v1.0.0 with correctness impact: NONE (the structural
 -- safety core is established on the executing core; the sibling-core obligations
@@ -863,13 +846,6 @@ theorem currentOnCore_validThreadIfSome {st : SystemState} {c : CoreId}
     (hcur : st.scheduler.currentOnCore c = some tid) :
     ∃ tcb : TCB, st.getTcb? tid = some tcb := by
   unfold currentThreadValidOnCore at h; rw [hcur] at h; exact h
-
-/-- WS-SM SM5.I.2 (`runQueueOnCore_wellFormed`): the run-queue well-formedness
-projection of the structural invariant. -/
-theorem runQueueOnCore_wellFormed_of_structural {st : SystemState} {c : CoreId}
-    (h : schedulerInvariantStructural_perCore st c) :
-    (st.scheduler.runQueueOnCore c).wellFormed :=
-  schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed h
 
 /-- WS-SM SM5.I.3 (`schedContextRunQueueConsistent_perCore`): the SchedContext ↔
 run-queue per-core coherence predicate is carried by the cross-subsystem per-core
@@ -1324,11 +1300,11 @@ theorem storeIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
 -- `runQueueUniqueOnCore` (run-queue `toList.Nodup`) is both register-bank-
 -- independent and transition-stable.  The `RunQueue` API maintains it
 -- structurally (`insert` guards on `contains`, `remove` filters), so every SM5
--- per-core transition preserves it — mirroring the `runQueueOnCoreWellFormed`
--- preservation with `RunQueue.{insert,remove}_preserves_toList_nodup`.
+-- per-core transition preserves it, through
+-- `RunQueue.{insert,remove}_preserves_toList_nodup`.
 
 /-- WS-SM SM5.I: the idle fallback preserves core `c`'s run-queue `Nodup` (idle arm
-`remove`s, `none` arm frames).  Mirror of `idleFallbackOnCore_preserves_runQueueOnCoreWellFormed`. -/
+`remove`s, `none` arm frames). -/
 theorem idleFallbackOnCore_preserves_runQueueUniqueOnCore_self (st : SystemState) (c : CoreId)
     (hN : (st.scheduler.runQueueOnCore c).toList.Nodup) :
     ((idleFallbackOnCore st c).scheduler.runQueueOnCore c).toList.Nodup := by
@@ -1339,7 +1315,7 @@ theorem idleFallbackOnCore_preserves_runQueueUniqueOnCore_self (st : SystemState
   · simpa [SchedulerState.setCurrentOnCore_runQueueOnCore] using hN
 
 /-- WS-SM SM5.I: the preempt preserves core `c`'s run-queue `Nodup` (the re-enqueue
-is a `RunQueue.insert`).  Mirror of `preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed`. -/
+is a `RunQueue.insert`). -/
 theorem preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self (st : SystemState)
     (c : CoreId) (incoming : SeLe4n.ThreadId)
     (hN : (st.scheduler.runQueueOnCore c).toList.Nodup) :
@@ -1968,19 +1944,18 @@ theorem switchDomainOnCore_operated_currentOnCore_none (st : SystemState) (c : C
     st'.scheduler.currentOnCore c = none :=
   switchDomainOnCore_sets_currentOnCore_none st c st' h hSched
 
-/-- The operated core's run queue after `switchDomainOnCore` is well-formed,
-duplicate-free, and all-TCB whenever the pre-state base safety invariant held on
+/-- The operated core's run queue after `switchDomainOnCore` is
+duplicate-free and all-TCB whenever the pre-state base safety invariant held on
 `c`: the only change is re-enqueuing the (TCB) current thread, which `RunQueue.insert`
 preserves; all members stay TCBs across the outgoing-context save. -/
 theorem switchDomainOnCore_operated_runQueue_props (st : SystemState) (c : CoreId)
     (st' : SystemState) (hInv : st.objects.invExt) (h : switchDomainOnCore st c = .ok st')
     (hSched : st.scheduler.domainSchedule ≠ [])
     (hPre : schedulerInvariantStructuralRegNodup_perCore st c) :
-    (st'.scheduler.runQueueOnCore c).wellFormed ∧
-      (st'.scheduler.runQueueOnCore c).toList.Nodup ∧
+    (st'.scheduler.runQueueOnCore c).toList.Nodup ∧
       runnableThreadsAreTCBsOnCore st' c := by
   -- Pre-state base conjuncts on `c`.
-  obtain ⟨⟨⟨_hQCC, _hCTV, hRAT, hWf⟩, _hCtx⟩, hNodup⟩ := hPre
+  obtain ⟨⟨⟨_hQCC, _hCTV, hRAT⟩, _hCtx⟩, hNodup⟩ := hPre
   -- TCB preservation across the step (derived from the *original* `h` before it
   -- is consumed by the unfold/subst below).
   have hgoal : ∀ tid, (st.getTcb? tid).isSome = true → ∃ tcb, st'.getTcb? tid = some tcb :=
@@ -1998,20 +1973,7 @@ theorem switchDomainOnCore_operated_runQueue_props (st : SystemState) (c : CoreI
       obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
       simp only [hE]
       unfold requeueOutgoingQueue
-      refine ⟨?_, ?_, ?_⟩
-      · -- wellFormed
-        simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
-          SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
-          SchedulerState.setActiveDomainOnCore_runQueueOnCore,
-          SchedulerState.setCurrentOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        split
-        · exact hWf
-        · split
-          · split
-            · exact RunQueue.insert_preserves_wellFormed _ hWf _ _
-            · exact hWf
-          · exact hWf
+      refine ⟨?_, ?_⟩
       · -- Nodup
         simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
           SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
@@ -2140,7 +2102,7 @@ theorem switchDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     subst heq; exact hPre
   · -- rotate path.
     have hCurNone := switchDomainOnCore_sets_currentOnCore_none st c₀ st' h hDS
-    obtain ⟨hWf', hNodup', hRAT'⟩ :=
+    obtain ⟨hNodup', hRAT'⟩ :=
       switchDomainOnCore_operated_runQueue_props st c₀ st' hInv h hDS (hPre c₀)
     have hFrameCur := fun c' (hc : c₀ ≠ c') =>
       switchDomainOnCore_currentOnCore_ne st c₀ c' st' hc h
@@ -2149,7 +2111,7 @@ theorem switchDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     have hTcbSome := switchDomainOnCore_getTcb?_isSome st c₀ st' hInv h
     -- operated-core structural establishment (current = none).
     have hC0Struct : schedulerInvariantStructural_perCore st' c₀ := by
-      refine ⟨?_, ?_, hRAT', hWf'⟩
+      refine ⟨?_, ?_, hRAT'⟩
       · simp only [queueCurrentConsistentOnCore, hCurNone]
       · simp only [currentThreadValidOnCore, hCurNone]
     have hBase : schedulerInvariantStructural_smp st' :=
@@ -2380,8 +2342,8 @@ theorem ensureRunnable_preserves_schedulerInvariantStructuralRegNodup_smp
   · exact hPre c'
   by_cases hc : c' = bootCoreId
   · subst hc
-    obtain ⟨⟨⟨hQCC, hCTV, hRAT, hWf⟩, hCtx⟩, hNod⟩ := hPre bootCoreId
-    refine ⟨⟨⟨?_, ?_, ?_, ?_⟩, ?_⟩, ?_⟩
+    obtain ⟨⟨⟨hQCC, hCTV, hRAT⟩, hCtx⟩, hNod⟩ := hPre bootCoreId
+    refine ⟨⟨⟨?_, ?_, ?_⟩, ?_⟩, ?_⟩
     · -- queueCurrentConsistent on boot: current ∉ (oldRq.insert tid)
       simp only [queueCurrentConsistentOnCore,
         SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
@@ -2409,10 +2371,6 @@ theorem ensureRunnable_preserves_schedulerInvariantStructuralRegNodup_smp
         ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heq
       · exact hRAT t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
       · exact ⟨tcb, by rw [heq]; exact htcb⟩
-    · -- runQueueWellFormed: insert preserves
-      simp only [runQueueOnCoreWellFormed, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      exact RunQueue.insert_preserves_wellFormed _ hWf _ _
     · -- contextMatches: current + regs + objects unchanged
       refine contextMatchesCurrentOnCore_frame_at ?_ rfl
         (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) hCTV hCtx
@@ -2485,12 +2443,12 @@ theorem objects_insert_tcb_sameReg_preserves_schedulerInvariantStructuralRegNodu
   · exact (runQueueUniqueOnCore_frame (rfl : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') } : SystemState).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)).mpr (hPre c).2
 
 /-- WS-SM SM5.I.8 (reusable run-queue atom): replacing core `c₀`'s run queue with
-a well-formed, duplicate-free, all-TCB queue that excludes `c₀`'s current thread
+a duplicate-free, all-TCB queue that excludes `c₀`'s current thread
 preserves the base safety invariant.  Objects/registers untouched; siblings frame.
 Used by `updatePipBoost`'s priority-bucket migration. -/
 theorem setRunQueueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId) (newRq : SeLe4n.Kernel.RunQueue)
-    (hWf : newRq.wellFormed) (hNod : newRq.toList.Nodup)
+    (hNod : newRq.toList.Nodup)
     (hTcbs : ∀ t : SeLe4n.ThreadId, t ∈ newRq.toList → ∃ tcb, st.getTcb? t = some tcb)
     (hQCC : ∀ t : SeLe4n.ThreadId, st.scheduler.currentOnCore c₀ = some t → t ∉ newRq.toList)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
@@ -2499,7 +2457,7 @@ theorem setRunQueueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
   intro c
   by_cases hc : c₀ = c
   · subst hc
-    refine ⟨⟨⟨?_, ?_, ?_, ?_⟩, ?_⟩, ?_⟩
+    refine ⟨⟨⟨?_, ?_, ?_⟩, ?_⟩, ?_⟩
     · simp only [queueCurrentConsistentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       cases hcur : st.scheduler.currentOnCore c₀ with
@@ -2510,8 +2468,6 @@ theorem setRunQueueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     · intro tid htid
       simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at htid
       exact hTcbs tid htid
-    · simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      exact hWf
     · refine contextMatchesCurrentOnCore_frame_at ?_ ?_ ?_ ((hPre c₀).1.1.2.1) ((hPre c₀).1.2)
       · simp only [SchedulerState.setRunQueueOnCore_currentOnCore]
       · rfl
@@ -2587,15 +2543,14 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
           refine fun c' => hS c' ?_
           revert c'
           refine setRunQueueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
-            s1 bootCoreId _ ?_ ?_ ?_ ?_ hst'
-          · exact RunQueue.wellFormed_holds _
+            s1 bootCoreId _ ?_ ?_ ?_ hst'
           · exact RunQueue.toList_nodup _
           · -- members are TCBs: the re-key moves no thread in or out
             intro t ht
             have hmem := (RunQueue.mem_rekey _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp ht)
             by_cases hnetid : t = tid
             · exact ⟨tcb', by rw [hnetid]; exact hself⟩
-            · obtain ⟨tcbt, htcbt⟩ := (hPre bootCoreId).1.1.2.2.1 t
+            · obtain ⟨tcbt, htcbt⟩ := (hPre bootCoreId).1.1.2.2 t
                 ((RunQueue.mem_toList_iff_mem _ t).mpr hmem)
               exact ⟨tcbt, by rw [hne t hnetid]; exact htcbt⟩
           · -- current ∉ re-keyed queue
@@ -3008,29 +2963,28 @@ theorem timeoutBlockedThreads_preserves_schedulerInvariantStructuralRegNodup_smp
 -- `hNotCur`), so the capstone needs no budget hypotheses.
 
 /-- WS-SM SM5.I.8: the qcc-free run-queue safety conjuncts on core `c` —
-runnable-threads-are-TCBs, run-queue well-formedness, run-queue uniqueness.
-These three conjuncts of the base structural invariant never read `current`, so
+runnable-threads-are-TCBs and run-queue uniqueness.
+These two conjuncts of the base structural invariant never read `current`, so
 they survive the budget tick's current-thread re-enqueue (which breaks `qcc`). -/
 def runQueueSafetyOnCore (st : SystemState) (c : CoreId) : Prop :=
   runnableThreadsAreTCBsOnCore st c ∧
-  runQueueOnCoreWellFormed st.scheduler c ∧
   runQueueUniqueOnCore st.scheduler c
 
 /-- Project the qcc-free run-queue safety bundle out of the full base invariant. -/
 theorem schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety
     {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralRegNodup_perCore st c) :
     runQueueSafetyOnCore st c :=
-  ⟨h.1.1.2.2.1, h.1.1.2.2.2, h.2⟩
+  ⟨h.1.1.2.2, h.2⟩
 
 /-- WS-SM SM5.I.8 (objects frame): an objects-only change that fixes the scheduler
 and keeps every `getTcb?` resolvable preserves the qcc-free run-queue safety
-bundle (run queue unchanged ⇒ wellFormed/Nodup; members still resolve ⇒ rat). -/
+bundle (run queue unchanged ⇒ Nodup; members still resolve ⇒ rat). -/
 theorem objects_frame_preserves_runQueueSafetyOnCore (st st' : SystemState) (c : CoreId)
     (hsch : st'.scheduler = st.scheduler)
     (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
     (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore st' c := by
-  obtain ⟨hRat, hWf, hNd⟩ := h
-  refine ⟨?_, ?_, ?_⟩
+  obtain ⟨hRat, hNd⟩ := h
+  refine ⟨?_, ?_⟩
   · intro t ht
     rw [hsch] at ht
     obtain ⟨tcbt, htcbt⟩ := hRat t ht
@@ -3038,8 +2992,6 @@ theorem objects_frame_preserves_runQueueSafetyOnCore (st st' : SystemState) (c :
     cases h' : st'.getTcb? t with
     | none => rw [h'] at hs; exact absurd hs (by simp)
     | some tcb' => exact ⟨tcb', rfl⟩
-  · show runQueueOnCoreWellFormed st'.scheduler c
-    rw [hsch]; exact hWf
   · show runQueueUniqueOnCore st'.scheduler c
     rw [hsch]; exact hNd
 
@@ -3067,8 +3019,8 @@ theorem runQueue_frame_preserves_runQueueSafetyOnCore (st st' : SystemState) (c 
     (hrq : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
     (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
     (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore st' c := by
-  obtain ⟨hRat, hWf, hNd⟩ := h
-  refine ⟨?_, ?_, ?_⟩
+  obtain ⟨hRat, hNd⟩ := h
+  refine ⟨?_, ?_⟩
   · intro t ht
     rw [hrq] at ht
     obtain ⟨tcbt, htcbt⟩ := hRat t ht
@@ -3076,8 +3028,6 @@ theorem runQueue_frame_preserves_runQueueSafetyOnCore (st st' : SystemState) (c 
     cases h' : st'.getTcb? t with
     | none => rw [h'] at hs; exact absurd hs (by simp)
     | some tcb' => exact ⟨tcb', rfl⟩
-  · show runQueueOnCoreWellFormed st'.scheduler c
-    simp only [runQueueOnCoreWellFormed, hrq]; exact hWf
   · show runQueueUniqueOnCore st'.scheduler c
     simp only [runQueueUniqueOnCore, hrq]; exact hNd
 
@@ -3090,8 +3040,8 @@ theorem runQueue_insert_preserves_runQueueSafetyOnCore (st st' : SystemState) (c
     (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
     (hNew : (st'.getTcb? tid).isSome)
     (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore st' c := by
-  obtain ⟨hRat, hWf, hNd⟩ := h
-  refine ⟨?_, ?_, ?_⟩
+  obtain ⟨hRat, hNd⟩ := h
+  refine ⟨?_, ?_⟩
   · intro t ht
     rw [hrq] at ht
     rcases (RunQueue.mem_insert _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp ht) with
@@ -3099,9 +3049,6 @@ theorem runQueue_insert_preserves_runQueueSafetyOnCore (st st' : SystemState) (c
     · obtain ⟨tcbt, htcbt⟩ := hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
       exact Option.isSome_iff_exists.mp (hSome t (by simp [htcbt]))
     · subst heq; exact Option.isSome_iff_exists.mp hNew
-  · show runQueueOnCoreWellFormed st'.scheduler c
-    simp only [runQueueOnCoreWellFormed, hrq]
-    exact RunQueue.insert_preserves_wellFormed _ hWf _ _
   · show runQueueUniqueOnCore st'.scheduler c
     simp only [runQueueUniqueOnCore, hrq]
     exact RunQueue.insert_preserves_toList_nodup _ _ _ hNd
@@ -3217,14 +3164,13 @@ theorem updatePipBoost_getTcb?_isSome (st : SystemState) (tid : SeLe4n.ThreadId)
 
 open SeLe4n.Kernel.PriorityInheritance in
 /-- WS-SM SM5.I.8: `updatePipBoost` preserves the qcc-free run-queue safety bundle
-on core `c`: the boot rebucket keeps run-queue membership, well-formedness and
-uniqueness, and every resolving thread still resolves. -/
+on core `c`: the boot rebucket keeps run-queue membership and uniqueness, and every resolving thread still resolves. -/
 theorem updatePipBoost_preserves_runQueueSafetyOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (hInv : st.objects.invExt)
     (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (updatePipBoost st tid) c := by
-  obtain ⟨hRat, _, hNd⟩ := h
-  refine ⟨?_, RunQueue.wellFormed_holds _,
+  obtain ⟨hRat, hNd⟩ := h
+  refine ⟨?_,
     updatePipBoostOnCore_runQueueUniqueOnCore st bootCoreId tid c hNd⟩
   intro t ht
   have hm : t ∈ st.scheduler.runQueueOnCore c :=
@@ -4287,10 +4233,10 @@ theorem timerTickOnCorePrepared_preserves_contextMatchesCurrentOnCore (st : Syst
 
 /-- WS-SM SM5.I.8 (capstone): the per-core timer tick preserves the full
 register-bank+Nodup base safety invariant on the operated core `c`, composing the
-six per-conjunct `timerTickOnCore_preserves_*` lemmas.  `currentThreadValid` is
-unconditional; the other five are supplied their `prepared`-state conjunct
+five per-conjunct `timerTickOnCore_preserves_*` lemmas.  `currentThreadValid` is
+unconditional; the other four are supplied their `prepared`-state conjunct
 (`hPrep*`) — the prepared (cross-core replenishment-wake) discharge is the SM5
-cross-core follow-on — and `wellFormed` / `runnableTCBs` / `Nodup` additionally
+cross-core follow-on — and `runnableTCBs` / `Nodup` additionally
 take their budget-tick preservation (`hBudget*`), discharged for ALL four budget
 outcomes — including the budget-exhausted `timeoutBlockedThreads` path, whose
 target-aware wake and PIP reversion preserve the qcc-free safety bundle — by
@@ -4298,17 +4244,11 @@ target-aware wake and PIP reversion preserve the qcc-free safety bundle — by
 theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
     (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hPrepQcc : queueCurrentConsistentOnCore (timerTickOnCorePrepared st c).scheduler c)
     (hPrepRat : runnableThreadsAreTCBsOnCore (timerTickOnCorePrepared st c) c)
     (hPrepCtx : contextMatchesCurrentOnCore (timerTickOnCorePrepared st c) c)
     (hPrepNd : ((timerTickOnCorePrepared st c).scheduler.runQueueOnCore c).toList.Nodup)
     (hPrepCtv : currentThreadValidOnCore (timerTickOnCorePrepared st c) c)
-    (hBudgetRqWf : ∀ tid tcb st3 b,
-       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
-       (st3.scheduler.runQueueOnCore c).wellFormed)
     (hBudgetRat : ∀ tid tcb st3 b,
        (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
        ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
@@ -4325,8 +4265,7 @@ theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
   exact ⟨⟨⟨timerTickOnCore_preserves_queueCurrentConsistentOnCore st c hPrepQcc,
             timerTickOnCore_preserves_currentThreadValidOnCore st c hInv hPrepCtv,
             timerTickOnCore_preserves_runnableThreadsAreTCBsOnCore st c
-              hPrepInv hPrepRat hPrepCtv hBudgetRat,
-            timerTickOnCore_preserves_runQueueOnCoreWellFormed st c hwf hBudgetRqWf⟩,
+              hPrepInv hPrepRat hPrepCtv hBudgetRat⟩,
            timerTickOnCore_preserves_contextMatchesCurrentOnCore st c hPrepInv hPrepCtx⟩,
           timerTickOnCore_preserves_runQueueUniqueOnCore st c hPrepNd hBudgetNd⟩
 
@@ -4337,7 +4276,7 @@ loose `hPrep*` obligations) and discharging the four prepared-phase obligations
 automatically via the prepared-discharge cascade (qcc / Nodup / rat / ctx —
 `timerTickOnCorePrepared_preserves_*`).
 
-The three `hBudget*` budget-tick hypotheses remain parameterized — discharged for
+The two `hBudget*` budget-tick hypotheses remain parameterized — discharged for
 ALL four budget outcomes (including the budget-exhausted `timeoutBlockedThreads`
 path, whose target-aware `wakeThread` re-enqueue and `revertPriorityInheritance`
 walk preserve the qcc-free safety bundle) by
@@ -4346,11 +4285,6 @@ theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_o
     (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt)
     (hPre : schedulerInvariantStructuralRegNodup_perCore st c)
-    (hBudgetRqWf : ∀ tid tcb st3 b,
-       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
-       (st3.scheduler.runQueueOnCore c).wellFormed)
     (hBudgetRat : ∀ tid tcb st3 b,
        (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
        ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
@@ -4363,38 +4297,37 @@ theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_o
        (st3.scheduler.runQueueOnCore c).toList.Nodup)
     :
     schedulerInvariantStructuralRegNodup_perCore (timerTickOnCore st c) c := by
-  obtain ⟨⟨⟨hQcc, hCtv, hRat, hRqwf⟩, hCtx⟩, hNd⟩ := hPre
+  obtain ⟨⟨⟨hQcc, hCtv, hRat⟩, hCtx⟩, hNd⟩ := hPre
   exact timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
-    st c hInv hRqwf
+    st c hInv
     (timerTickOnCorePrepared_preserves_queueCurrentConsistentOnCore st c hQcc)
     (timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore st c hInv hRat)
     (timerTickOnCorePrepared_preserves_contextMatchesCurrentOnCore st c hInv hCtx)
     (timerTickOnCorePrepared_preserves_runQueueUnique st c hNd)
     (timerTickOnCorePrepared_preserves_currentThreadValidOnCore st c hInv hCtv)
-    hBudgetRqWf hBudgetRat hBudgetNd
+    hBudgetRat hBudgetNd
 
 /-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves the qcc-free
-run-queue safety bundle on core `c` — bundles the three prepared dischargers (rat /
-rqWf / Nodup). -/
+run-queue safety bundle on core `c` — bundles the two prepared dischargers (rat /
+Nodup). -/
 theorem timerTickOnCorePrepared_preserves_runQueueSafetyOnCore (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (timerTickOnCorePrepared st c) c :=
   ⟨timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore st c hInv h.1,
-   timerTickOnCorePrepared_runQueueOnCore_wellFormed st c h.2.1,
-   timerTickOnCorePrepared_preserves_runQueueUnique st c h.2.2⟩
+   timerTickOnCorePrepared_preserves_runQueueUnique st c h.2⟩
 
 /-- WS-SM SM5.I.8 (capstone, FULLY CLOSED): the per-core timer tick preserves the
 full register-bank+Nodup base safety invariant on the operated core `c`, taking
 ONLY the bundled pre-state invariant `schedulerInvariantStructuralRegNodup_perCore
 st c` (and `hInv`) — **no budget hypotheses**.
 
-The three budget-tick obligations (`hBudget*` of `…_of_pre`) are discharged by
+The two budget-tick obligations (`hBudget*` of `…_of_pre`) are discharged by
 `timerTickBudgetOnCore_preserves_runQueueSafetyOnCore`, which covers ALL four
 `timerTickBudgetOnCore` outcomes — including the bound-budget-exhausted
 `timeoutBlockedThreads` path that was the SM5.F per-core-PIP tracked gap.  The
 qcc-free `runQueueSafetyOnCore` sub-bundle is what makes this work: the budget
-tick's preempt paths re-enqueue the current thread (breaking `qcc`), but the three
-run-queue conjuncts (rat / rqWf / Nodup) never read `current`, so they survive —
+tick's preempt paths re-enqueue the current thread (breaking `qcc`), but the two
+run-queue conjuncts (rat / Nodup) never read `current`, so they survive —
 and the dispatch phase re-establishes `qcc`.  This is the unconditional per-core
 SM5.I.8 preservation result. -/
 theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed
@@ -4408,16 +4341,13 @@ theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_c
     timerTickOnCorePrepared_preserves_runQueueSafetyOnCore st c hInv
       (schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety hPre)
   refine timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre
-    st c hInv hPre ?_ ?_ ?_
-  · intro tid tcb st3 b _hCur hTid hBud
-    exact (timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
-      (timerTickOnCorePrepared st c) c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).2.1
+    st c hInv hPre ?_ ?_
   · intro tid tcb st3 b _hCur hTid hBud
     exact (timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
       (timerTickOnCorePrepared st c) c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).1
   · intro tid tcb st3 b _hCur hTid hBud
     exact (timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
-      (timerTickOnCorePrepared st c) c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).2.2
+      (timerTickOnCorePrepared st c) c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).2
 
 -- ── §8.5  Global strengthening (step 3): the per-core timer-tick capstone for
 --          `allThreadsTimeSlicePositive` — composes the prepared (replenishment)

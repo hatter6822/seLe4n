@@ -34,8 +34,8 @@ Seven categories matching the plan §3.4/§4.4/§5 sub-tasks:
 * `.tick` — SM5.D.2/.9 `timerTickOnCore` semantics / headlines + machine /
   lastTimeoutErrors frames.
 * `.preservation` — §7 B1/B2/B3 per-core invariant preservation (the SM5.C-parity
-  coverage: `currentThreadValidOnCore` unconditional, `runQueueOnCoreWellFormed`
-  and `queueCurrentConsistentOnCore` modulo the SM5.F-tracked bound-exhausted
+  coverage: `currentThreadValidOnCore` unconditional,
+  `queueCurrentConsistentOnCore` modulo the SM5.F-tracked bound-exhausted
   timeout gap).
 * `.decidability` — SM5.D.8 decidable witnesses + the SM5.D.1 export seam.
 -/
@@ -176,18 +176,10 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
     -- ── .replenish ──
     pctt! "refillSchedContext_preserves_objects_invExt: refill preserves object-store invariant"
       refillSchedContext_preserves_objects_invExt .replenish,
-    pctt! "enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed_anyCore: wake enqueue preserves run-queue well-formedness (any core)"
-      enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed_anyCore .replenish,
-    pctt! "wakeThread_preserves_runQueueOnCore_wellFormed_anyCore: wake preserves run-queue well-formedness (any core)"
-      wakeThread_preserves_runQueueOnCore_wellFormed_anyCore .replenish,
     pctt! "processOneReplenishmentOnCore_preserves_objects_invExt: one replenishment preserves object-store invariant"
       processOneReplenishmentOnCore_preserves_objects_invExt .replenish,
-    pctt! "processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed: one replenishment preserves run-queue well-formedness"
-      processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed .replenish,
     pctt! "processReplenishmentsDueOnCore_preserves_objects_invExt: SM5.D.4 all-replenishments preserves object-store invariant"
       processReplenishmentsDueOnCore_preserves_objects_invExt .replenish,
-    pctt! "processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed: SM5.D.4 all-replenishments preserves run-queue well-formedness"
-      processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed .replenish,
     pctt! "processOneReplenishmentOnCore_of_no_target: no wake target is the refill under its key hook"
       processOneReplenishmentOnCore_of_no_target .replenish,
     pctt! "processOneReplenishmentOnCore_wake_eq: a wake enqueues on the home core and raises its flag, under the refill key hook"
@@ -269,8 +261,6 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
       decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore .preservation,
     pctt! "decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore: B1: domain decrement preserves runnable-threads-are-TCBs"
       decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore .preservation,
-    pctt! "decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed: B2: domain decrement preserves run-queue well-formedness"
-      decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed .preservation,
     pctt! "saveOutgoingContextOnCore_scheduler_eq: context save frames the scheduler"
       saveOutgoingContextOnCore_scheduler_eq .preservation,
     pctt! "saveOutgoingContextOnCore_getTcb?_isSome: context save preserves TCB-resolvability"
@@ -279,8 +269,6 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
       scheduleEffectiveOnCore_objectsAgreeOffRunLinks .preservation,
     pctt! "scheduleEffectiveOnCore_getTcb?_isSome: reschedule preserves TCB-resolvability"
       scheduleEffectiveOnCore_getTcb?_isSome .preservation,
-    pctt! "scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed: B2: reschedule preserves run-queue well-formedness"
-      scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed .preservation,
     pctt! "scheduleEffectiveOnCore_establishes_currentThreadValidOnCore: B1: reschedule establishes current-thread validity"
       scheduleEffectiveOnCore_establishes_currentThreadValidOnCore .preservation,
     pctt! "scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore: B1: reschedule establishes dequeue-on-dispatch consistency"
@@ -293,14 +281,8 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
       timerTickBudgetOnCore_notPreempted_scheduler_eq .preservation,
     pctt! "timerTickBudgetOnCore_notPreempted_getTcb?_tid: not-preempted budget tick keeps the charged thread a TCB"
       timerTickBudgetOnCore_notPreempted_getTcb?_tid .preservation,
-    pctt! "timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed: B2 discharge: not-preempted budget tick preserves run-queue well-formedness"
-      timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed .preservation,
     pctt! "timerTickOnCore_preserves_currentThreadValidOnCore: B1 headline: the tick preserves current-thread validity (unconditional)"
       timerTickOnCore_preserves_currentThreadValidOnCore .preservation,
-    pctt! "timerTickOnCorePrepared_runQueueOnCore_wellFormed: B2: the prepared state preserves run-queue well-formedness"
-      timerTickOnCorePrepared_runQueueOnCore_wellFormed .preservation,
-    pctt! "timerTickOnCore_preserves_runQueueOnCoreWellFormed: B2 headline: the tick preserves run-queue well-formedness (parameterized)"
-      timerTickOnCore_preserves_runQueueOnCoreWellFormed .preservation,
     pctt! "timerTickOnCore_preserves_queueCurrentConsistentOnCore: the tick preserves dequeue-on-dispatch consistency (parameterized)"
       timerTickOnCore_preserves_queueCurrentConsistentOnCore .preservation,
     pctt! "saveOutgoingContextOnCore_getTcb?_domain: context save preserves a thread's domain"
@@ -321,12 +303,12 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
     pctt! "perCoreTimerTickEntry_def: SM5.I entry-driver body-shape marker (flagged step + commit-coupled shadow advance + fire-SGIs)"
       perCoreTimerTickEntry_def .decidability  ]
 
-/-- WS-SM SM5.D: the inventory has 100 substantive entries (audit-pass-2: removed
+/-- WS-SM SM5.D: the inventory has 92 substantive entries (audit-pass-2: removed
 5 obsolete in-tick domain-rotation theorems + the retired `timerTickOnCore_rotates_domain`;
 added 2 pure-decrement frames + 5 `currentThreadInActiveDomain` preservation theorems).
 A regression that adds a new SM5.D theorem without registering it fails this count
 witness at the Tier-3 surface check. -/
-theorem perCoreTimerTheorems_count : perCoreTimerTheorems.length = 101 := by decide
+theorem perCoreTimerTheorems_count : perCoreTimerTheorems.length = 92 := by decide
 
 theorem perCoreTimerTheorems_lockSet_count :
     (perCoreTimerTheorems.filter (fun t => t.category == .lockSet)).length = 20 := by decide
@@ -335,7 +317,7 @@ theorem perCoreTimerTheorems_domain_count :
     (perCoreTimerTheorems.filter (fun t => t.category == .domain)).length = 10 := by decide
 
 theorem perCoreTimerTheorems_replenish_count :
-    (perCoreTimerTheorems.filter (fun t => t.category == .replenish)).length = 12 := by decide
+    (perCoreTimerTheorems.filter (fun t => t.category == .replenish)).length = 8 := by decide
 
 theorem perCoreTimerTheorems_budget_count :
     (perCoreTimerTheorems.filter (fun t => t.category == .budget)).length = 12 := by decide
@@ -344,7 +326,7 @@ theorem perCoreTimerTheorems_tick_count :
     (perCoreTimerTheorems.filter (fun t => t.category == .tick)).length = 19 := by decide
 
 theorem perCoreTimerTheorems_preservation_count :
-    (perCoreTimerTheorems.filter (fun t => t.category == .preservation)).length = 25 := by decide
+    (perCoreTimerTheorems.filter (fun t => t.category == .preservation)).length = 20 := by decide
 
 theorem perCoreTimerTheorems_decidability_count :
     (perCoreTimerTheorems.filter (fun t => t.category == .decidability)).length = 3 := by decide

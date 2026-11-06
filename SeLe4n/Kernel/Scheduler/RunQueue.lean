@@ -1638,35 +1638,9 @@ theorem mem_maxPriorityBucket_of_priorityOf (rq : RunQueue) (t : ThreadId) (prio
   unfold maxPriorityBucket; rw [hMP]
   exact (mem_atPriority _ _ _).mpr ⟨hMem, hTP⟩
 
-/-- Every bucket member is queued at that bucket's priority, and every queued
-thread is in the bucket of its priority.  The structure carries it (`layout`),
-so it holds of every run queue (`wellFormed_holds`). -/
-def wellFormed (rq : RunQueue) : Prop :=
-  (∀ prio tid, tid ∈ rq.atPriority prio → rq.contains tid = true ∧ rq.priorityOf tid = some prio) ∧
-  (∀ tid, rq.contains tid = true → ∃ prio, rq.priorityOf tid = some prio ∧ tid ∈ rq.atPriority prio)
-
-theorem wellFormed_holds (rq : RunQueue) : rq.wellFormed := by
-  refine ⟨fun prio tid h => (mem_atPriority _ _ _).mp h, fun tid hc => ?_⟩
-  refine ⟨(linkOf rq.links tid).prio, by simp [priorityOf, hc], (mem_atPriority _ _ _).mpr
-    ⟨hc, by simp [priorityOf, hc]⟩⟩
-
 /-- V7-J: a run queue holding `entries`, built with `insert`. -/
 def ofList (entries : List (ThreadId × Priority)) : RunQueue :=
   entries.foldl (fun rq (tid, prio) => rq.insert tid prio) empty
-
-theorem empty_wellFormed : (empty : RunQueue).wellFormed := wellFormed_holds _
-
-theorem insert_preserves_wellFormed (rq : RunQueue) (_ : rq.wellFormed)
-    (tid : ThreadId) (prio : Priority) : (rq.insert tid prio).wellFormed := wellFormed_holds _
-
-theorem remove_preserves_wellFormed (rq : RunQueue) (_ : rq.wellFormed) (tid : ThreadId) :
-    (rq.remove tid).wellFormed := wellFormed_holds _
-
-theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (_ : rq.wellFormed) (tid : ThreadId) :
-    (rq.rotateToBack tid).wellFormed := wellFormed_holds _
-
-theorem ofList_wellFormed (entries : List (ThreadId × Priority)) : (ofList entries).wellFormed :=
-  wellFormed_holds _
 
 -- ============================================================================
 -- Tables for the frozen snapshot (built once, at freeze)

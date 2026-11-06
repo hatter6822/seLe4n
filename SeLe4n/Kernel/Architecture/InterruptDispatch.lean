@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.IPC.Operations
+import SeLe4n.Kernel.IPC.CrossCore.InterruptDelivery
 
 /-!
 # AG3-D (FINDING-06): Interrupt Dispatch Model
@@ -19,10 +20,10 @@ Integrates with the GIC-400 interrupt controller on Raspberry Pi 5.
 ## Interrupt Flow
 
 1. **Acknowledge**: Read GICC_IAR to get the interrupt ID (INTID)
-2. **Dispatch**: Route to handler based on INTID
-   - Timer interrupt (PPI 30) → `timerTick`
-   - Mapped IRQ → `notificationSignal` to registered handler
-   - Unmapped IRQ → error
+2. **Dispatch**: Route to handler based on INTID, on the executing core
+   - Timer interrupt (PPI 30) → `timerTickOnCore`
+   - Any other line → `handleInterruptOnCore` (the bound handler's
+     notification signalled and the line masked; an unbound line masked)
 3. **End-of-Interrupt**: Write GICC_EOIR to signal completion
 
 ## GIC-400 Interrupt ID Space
@@ -150,82 +151,33 @@ theorem ack_eoi_round_trip_empty (st : SystemState) (intId : InterruptId)
 -- AG3-D-iii: Interrupt handler dispatch
 -- ============================================================================
 
-/-- WS-ZA ZA4.5: `handleInterrupt` with the timer handler `tick` as a parameter.
-The reference model's handler is the single-core `timerTick`
-(`handleInterrupt`), which writes the run queue only through its proof-only
-ghost; the suites run the sequence with the live per-core tick on the boot core,
-so both run this one body. -/
-def handleInterruptWith (tick : Kernel Unit) (st : SystemState) (intId : InterruptId) :
-    Except KernelError (Unit × SystemState) :=
-  if intId = timerInterruptId then
-    tick st
-  else
-    match irqBinding? st intId.val with
-    | some (ntfn, badge) =>
-        -- Signal the notification the line's interrupt node slot names, with
-        -- that capability's badge (seL4's `handleInterrupt`, `IRQSignal`).
-        notificationSignal ntfn badge st
-    | none => .error .invalidIrq
-
-/-- AG3-D: Handle a single interrupt by ID.
-    Routes based on interrupt type:
-    - Timer interrupt (PPI 30): Delegate to `timerTick`
-    - A line at IRQSignal whose interrupt node slot holds a notification
-      capability with the send right: deliver via `notificationSignal`
-    - Any other line: Return `.invalidIrq` error
+/-- AG3-D: Handle a single interrupt by ID on the executing core `c`, as the
+kernel's live entries do (WS-ZA ZA6.37):
+    - Timer interrupt (PPI 30): the per-core tick (`timerTickOnCore`), the one
+      the live timer entry runs.
+    - Any other line: seL4's `handleInterrupt` on core `c`
+      (`handleInterruptOnCore`): a line at IRQSignal whose interrupt node slot
+      holds a notification capability has that notification signalled with the
+      capability's badge (`irqBinding?`, seL4's `IRQSignal`) and is masked
+      until `seL4_IRQHandler_Ack`; an unbound line is masked, as seL4's
+      `handleInterrupt` masks a line with no handler.
 
     Design notes:
-    - Uses `timerTick` with no `withOutgoingContextChecked` guard because the
+    - The tick runs with no `withOutgoingContextChecked` guard because the
       timer interrupt is a hardware event, not a user-initiated syscall. Context save is
       the responsibility of the exception entry path in ExceptionModel, not
       the interrupt handler. This matches seL4's design where `handleInterrupt`
       is called after exception context has already been saved.
-    - WS-ZA ZA6.32: the badge is the badge of the capability
-      `seL4_IRQHandler_SetNotification` copied into the line's node slot
-      (`irqBinding?`), as seL4's `handleInterrupt` signals with it.
-    - AI2-A (H-03): EOI is always sent regardless of handler outcome to
-      prevent GIC lockup. Handler errors are non-fatal — the interrupt was
-      acknowledged and EOI must complete the cycle. This matches Linux's
-      unconditional EOI pattern. -/
-noncomputable def handleInterrupt (st : SystemState) (intId : InterruptId) :
-    Except KernelError (Unit × SystemState) :=
-  handleInterruptWith timerTick st intId
-
-theorem handleInterruptWith_timerTick (st : SystemState) (intId : InterruptId) :
-    handleInterruptWith timerTick st intId = handleInterrupt st intId := rfl
+    - The handler is total: neither arm refuses, so the dispatch's absorbing
+      of handler errors (AI2-A, H-03) has nothing left to absorb. -/
+def handleInterrupt (st : SystemState) (c : Concurrency.CoreId) (intId : InterruptId) :
+    SystemState :=
+  if intId = timerInterruptId then timerTickOnCore st c
+  else handleInterruptOnCore st c intId.val
 
 -- ============================================================================
 -- AG3-D-iv: Full dispatch sequence
 -- ============================================================================
-
-/-- WS-ZA ZA4.5: `interruptDispatchSequence` with the timer handler `tick` as a
-parameter (`handleInterruptWith`). Routing the reference model's timer arm through
-`timerTickOnCore` on the executing core, and dropping the parameter, is a
-registered debt row (`docs/REGISTERED_DEBT.md` §C, "The model's interrupt and
-exception dispatch run the single-core reference tick"). -/
-def interruptDispatchSequenceWith (tick : Kernel Unit) (st : SystemState) (rawIntId : Nat) :
-    Except KernelError (Unit × SystemState) :=
-  match acknowledgeInterrupt rawIntId with
-  | .ok intId =>
-    -- AK3-L: record the ack in the audit trail before dispatch.
-    let stAck := ackInterruptAudit st intId.val
-    -- AN8-C.2 (H-19): EOI fires BEFORE the handler body so a panicking
-    -- or long-running handler cannot leave the INTID active on the GIC.
-    let stEoi := endOfInterrupt stAck intId
-    match handleInterruptWith tick stEoi intId with
-    | .ok ((), st') => .ok ((), st')
-    | .error _ =>
-      -- AI2-A (H-03): handler errors are absorbed; the interrupt cycle
-      -- has already closed at EOI time.
-      .ok ((), stEoi)
-  | .error .spurious =>
-    -- AK3-C: spurious — no EOI per GIC-400 spec, no audit entry
-    .ok ((), st)
-  | .error (.outOfRange _) =>
-    -- AK3-C: out-of-range — no handler dispatch at Lean layer; HAL emits
-    -- EOI with raw IAR value. No audit-trail change at Lean layer because
-    -- no `InterruptId : Fin 320` witness can be produced.
-    .ok ((), st)
 
 /-- AK3-C (A-H02 / HIGH) + AK3-L (A-M10 / MEDIUM) + AN8-C (H-19): Full
     interrupt dispatch sequence: **acknowledge → EOI → handle**.
@@ -249,8 +201,8 @@ def interruptDispatchSequenceWith (tick : Kernel Unit) (st : SystemState) (rawIn
     Per GIC-400 spec + AI2-A (H-03) + AK3-C + AK3-L audit trail + AN8-C:
     - Successful ack: record ack in `eoiPending`, IMMEDIATELY EOI
       (filters `eoiPending`), then run the handler on the post-EOI
-      state. Handler errors are absorbed — the interrupt cycle has
-      already closed at EOI time.
+      state, on the executing core `c`.  The handler is total, so the
+      interrupt cycle closes at EOI time whatever it does.
     - Spurious interrupt (INTID ≥ 1020): no EOI per GIC spec; no ack
       record, no state change.
     - Out-of-range INTID (∈ [320, 1020)): **EOI is still emitted at HAL
@@ -267,9 +219,24 @@ def interruptDispatchSequenceWith (tick : Kernel Unit) (st : SystemState) (rawIn
     strengthens this: `eoiPending` is already empty when the handler
     body executes, so the handler cannot observe a state in which an
     unacknowledged EOI is pending for the INTID it's servicing. -/
-noncomputable def interruptDispatchSequence (st : SystemState) (rawIntId : Nat) :
+def interruptDispatchSequence (st : SystemState) (c : Concurrency.CoreId) (rawIntId : Nat) :
     Except KernelError (Unit × SystemState) :=
-  interruptDispatchSequenceWith timerTick st rawIntId
+  match acknowledgeInterrupt rawIntId with
+  | .ok intId =>
+    -- AK3-L: record the ack in the audit trail before dispatch.
+    let stAck := ackInterruptAudit st intId.val
+    -- AN8-C.2 (H-19): EOI fires BEFORE the handler body so a panicking
+    -- or long-running handler cannot leave the INTID active on the GIC.
+    let stEoi := endOfInterrupt stAck intId
+    .ok ((), handleInterrupt stEoi c intId)
+  | .error .spurious =>
+    -- AK3-C: spurious — no EOI per GIC-400 spec, no audit entry
+    .ok ((), st)
+  | .error (.outOfRange _) =>
+    -- AK3-C: out-of-range — no handler dispatch at Lean layer; HAL emits
+    -- EOI with raw IAR value. No audit-trail change at Lean layer because
+    -- no `InterruptId : Fin 320` witness can be produced.
+    .ok ((), st)
 
 -- ============================================================================
 -- AG3-D-vi: Preservation theorems
@@ -277,19 +244,20 @@ noncomputable def interruptDispatchSequence (st : SystemState) (rawIntId : Nat) 
 
 /-- AG3-D / AK3-C: Spurious interrupts preserve state unchanged. No EOI
     emitted per GIC-400 spec. -/
-theorem interruptDispatchSequence_spurious (st : SystemState) (rawIntId : Nat)
-    (hSpurious : rawIntId ≥ spuriousInterruptThreshold) :
-    interruptDispatchSequence st rawIntId = .ok ((), st) := by
-  simp [interruptDispatchSequence, interruptDispatchSequenceWith, acknowledgeInterrupt, hSpurious]
+theorem interruptDispatchSequence_spurious (st : SystemState) (c : Concurrency.CoreId)
+    (rawIntId : Nat) (hSpurious : rawIntId ≥ spuriousInterruptThreshold) :
+    interruptDispatchSequence st c rawIntId = .ok ((), st) := by
+  simp [interruptDispatchSequence, acknowledgeInterrupt, hSpurious]
 
 /-- AK3-C (A-H02 / HIGH): Out-of-range INTIDs preserve Lean-layer state;
     the HAL emits EOI with the raw IAR value to prevent GIC lockup. -/
-theorem interruptDispatchSequence_outOfRange (st : SystemState) (rawIntId : Nat)
+theorem interruptDispatchSequence_outOfRange (st : SystemState) (c : Concurrency.CoreId)
+    (rawIntId : Nat)
     (hInRange : rawIntId < spuriousInterruptThreshold)
     (hOutOfRange : ¬(rawIntId < 320)) :
-    interruptDispatchSequence st rawIntId = .ok ((), st) := by
+    interruptDispatchSequence st c rawIntId = .ok ((), st) := by
   have hNot : ¬(spuriousInterruptThreshold ≤ rawIntId) := Nat.not_le.mpr hInRange
-  simp only [interruptDispatchSequence, interruptDispatchSequenceWith, acknowledgeInterrupt,
+  simp only [interruptDispatchSequence, acknowledgeInterrupt,
              if_neg hNot, dif_neg hOutOfRange]
 
 /-- AG3-D / AK3-L: End-of-interrupt preserves all non-machine state.
@@ -312,45 +280,50 @@ theorem endOfInterrupt_removes_from_eoiPending
   have := List.mem_filter.mp hMem
   simp at this
 
-/-- AG3-D: An unbound line returns `.invalidIrq`. -/
-theorem handleInterrupt_unmapped (st : SystemState) (intId : InterruptId)
+/-- AG3-D: an unbound device line is masked, and nothing else is written, as
+seL4's `handleInterrupt` masks a line with no handler (WS-ZA ZA6.37: the
+reference dispatch refused it with `.invalidIrq` until the dispatch ran the
+live entry's handler). -/
+theorem handleInterrupt_unmapped (st : SystemState) (c : Concurrency.CoreId)
+    (intId : InterruptId)
     (hNotTimer : intId ≠ timerInterruptId)
     (hNoHandler : irqBinding? st intId.val = none) :
-    handleInterrupt st intId = .error .invalidIrq := by
-  unfold handleInterrupt handleInterruptWith
-  simp [hNotTimer, hNoHandler]
+    handleInterrupt st c intId = setInterruptLineMask st intId.val true := by
+  simp [handleInterrupt, handleInterruptOnCore, hNotTimer, hNoHandler]
+
+/-- AG3-D: a bound device line signals its handler's notification on core `c`
+and is masked until acknowledged. -/
+theorem handleInterrupt_bound (st : SystemState) (c : Concurrency.CoreId)
+    (intId : InterruptId) (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hNotTimer : intId ≠ timerInterruptId)
+    (hHandler : irqBinding? st intId.val = some (ntfn, badge)) :
+    handleInterrupt st c intId =
+      setInterruptLineMask (interruptSignal ntfn badge c st) intId.val true := by
+  simp [handleInterrupt, handleInterruptOnCore, hNotTimer, hHandler]
 
 /-- AI2-A (H-03) + AK3-C (A-H02 / HIGH) + AN8-C (H-19):
-    `interruptDispatchSequence` always succeeds at the Kernel layer. Handler
-    errors are absorbed (EOI already emitted before dispatch); spurious
-    interrupts skip EOI per GIC spec; out-of-range INTIDs use the HAL's
-    raw-IAR EOI path.
+    `interruptDispatchSequence` always succeeds at the Kernel layer.  The
+    handler is total; spurious interrupts skip EOI per GIC spec; out-of-range
+    INTIDs use the HAL's raw-IAR EOI path.
 
     The key safety invariant — "EOI is emitted unless spurious" — is
     captured by `interruptDispatchSequence_eoi_unless_spurious` below.
     AN8-C strengthens this to "EOI is emitted BEFORE the handler body
     runs unless spurious". -/
-theorem interruptDispatchSequence_always_ok (st : SystemState) (rawIntId : Nat) :
-    ∃ st', interruptDispatchSequence st rawIntId = .ok ((), st') := by
-  simp only [interruptDispatchSequence, interruptDispatchSequenceWith,
-    handleInterruptWith_timerTick]
-  cases hAck : acknowledgeInterrupt rawIntId with
+theorem interruptDispatchSequence_always_ok (st : SystemState) (c : Concurrency.CoreId)
+    (rawIntId : Nat) :
+    ∃ st', interruptDispatchSequence st c rawIntId = .ok ((), st') := by
+  unfold interruptDispatchSequence
+  cases acknowledgeInterrupt rawIntId with
   | error e =>
     cases e with
     | spurious => exact ⟨st, rfl⟩
     | outOfRange _ => exact ⟨st, rfl⟩
-  | ok intId =>
-    simp only []
-    -- AN8-C.2: handler runs on the post-EOI state, not the post-ack state
-    cases hHandle : handleInterrupt
-        (endOfInterrupt (ackInterruptAudit st intId.val) intId) intId with
-    | ok val => exact ⟨val.2, by rfl⟩
-    | error e =>
-      exact ⟨endOfInterrupt (ackInterruptAudit st intId.val) intId, by rfl⟩
+  | ok intId => exact ⟨_, rfl⟩
 
 /-- AK3-C.3 (A-H02 / HIGH) + AN8-C (H-19): `eoiEmitted` — captures the
     proof-layer invariant that `endOfInterrupt` was invoked for a given
-    INTID during a dispatch sequence. At the Lean model level,
+    INTID during a dispatch sequence on core `c`. At the Lean model level,
     `endOfInterrupt` filters the shadow `machine.eoiPending` audit trail;
     the hardware-level EOI is emitted by the Rust HAL (AK3-C.4).
 
@@ -361,41 +334,31 @@ theorem interruptDispatchSequence_always_ok (st : SystemState) (rawIntId : Nat) 
        callers that reasoned about the pre-AN8-C ordering.
     2. `∃ stInner, stOut = endOfInterrupt stInner intId` — EOI was the
        last step, for some intermediate state. Matches the pre-AN8-C
-       `ack → handle → EOI` ordering AND the AN8-C error branch (handler
-       failed, dispatch returns `stEoi` directly).
-    3. `∃ stInner, handleInterrupt (endOfInterrupt stInner intId) intId =
-       .ok ((), stOut)` — EOI happened before the handler, which ran
-       successfully to produce `stOut`. Matches the AN8-C `ack → EOI →
-       handle` success branch. -/
-def eoiEmitted (intId : InterruptId) (st stOut : SystemState) : Prop :=
+       `ack → handle → EOI` ordering.
+    3. `∃ stInner, stOut = handleInterrupt (endOfInterrupt stInner intId) c
+       intId` — EOI happened before the handler, which produced `stOut`.
+       Matches the AN8-C `ack → EOI → handle` order. -/
+def eoiEmitted (c : Concurrency.CoreId) (intId : InterruptId) (st stOut : SystemState) : Prop :=
   stOut = endOfInterrupt st intId ∨
   (∃ stInner, stOut = endOfInterrupt stInner intId) ∨
-  (∃ stInner, handleInterrupt (endOfInterrupt stInner intId) intId = .ok ((), stOut))
+  (∃ stInner, stOut = handleInterrupt (endOfInterrupt stInner intId) c intId)
 
 /-- AK3-C.3 (A-H02 / HIGH) + AN8-C (H-19): EOI is emitted unless the
     interrupt was spurious.
 
     Formalizes the GIC-400 safety property: every acknowledged interrupt
-    (regardless of handler outcome) must have a matching EOI to avoid
-    GIC lockup. Only truly spurious (INTID ≥ 1020) interrupts skip EOI;
-    out-of-range INTIDs skip the Lean-layer EOI path because the HAL emits
-    directly from the raw IAR value.
-
-    AN8-C.2 strengthens the witness: under the new `ack → EOI → handle`
-    ordering, the `eoiEmitted` predicate fires on BOTH the handler-success
-    and handler-error branches. On success, the handler observes the
-    post-EOI state; its output state `st'` inherits the EOI through the
-    handler's preservation properties. On error, the dispatch returns
-    the post-EOI state directly. Either way, `∃ stInner, stOut =
-    endOfInterrupt stInner intId` witnesses the EOI emission. -/
+    must have a matching EOI to avoid GIC lockup. Only truly spurious
+    (INTID ≥ 1020) interrupts skip EOI; out-of-range INTIDs skip the
+    Lean-layer EOI path because the HAL emits directly from the raw IAR
+    value.  Under the `ack → EOI → handle` ordering the handler observes
+    the post-EOI state (the third disjunct of `eoiEmitted`). -/
 theorem interruptDispatchSequence_eoi_unless_spurious
-    (st stOut : SystemState) (rawIntId : Nat)
-    (hStep : interruptDispatchSequence st rawIntId = .ok ((), stOut)) :
+    (st stOut : SystemState) (c : Concurrency.CoreId) (rawIntId : Nat)
+    (hStep : interruptDispatchSequence st c rawIntId = .ok ((), stOut)) :
     acknowledgeInterrupt rawIntId = .error .spurious ∨
     acknowledgeInterrupt rawIntId = .error (.outOfRange rawIntId) ∨
-    ∃ intId, eoiEmitted intId st stOut := by
-  unfold interruptDispatchSequence interruptDispatchSequenceWith at hStep
-  simp only [handleInterruptWith_timerTick] at hStep
+    ∃ intId, eoiEmitted c intId st stOut := by
+  unfold interruptDispatchSequence at hStep
   cases hAck : acknowledgeInterrupt rawIntId with
   | error e =>
     cases e with
@@ -414,116 +377,56 @@ theorem interruptDispatchSequence_eoi_unless_spurious
     right; right
     refine ⟨intId, ?_⟩
     rw [hAck] at hStep
-    simp only at hStep
-    -- AN8-C.2: EOI fires BEFORE the handler. Case split on the handler
-    -- outcome: success uses the 3rd disjunct of `eoiEmitted`; error
-    -- uses the 2nd (since stOut = endOfInterrupt stAck intId).
-    cases hHandle : handleInterrupt
-        (endOfInterrupt (ackInterruptAudit st intId.val) intId) intId with
-    | ok val =>
-      rw [hHandle] at hStep
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      -- AN8-C.2 success branch: stOut = val.2, and
-      -- handleInterrupt (endOfInterrupt stAck intId) intId = .ok ((), val.2).
-      -- Witness: 3rd disjunct, stInner = ackInterruptAudit st intId.val.
-      right; right
-      refine ⟨ackInterruptAudit st intId.val, ?_⟩
-      -- Show val = ((), stOut) via Prod eta + val.snd = stOut from hStep.
-      obtain ⟨uSt, sSt⟩ := val
-      cases uSt
-      simp only at hStep
-      rw [← hStep.2]
-      exact hHandle
-    | error _ =>
-      rw [hHandle] at hStep
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      -- AN8-C.2 error branch: stOut = endOfInterrupt stAck intId directly.
-      -- Witness: 2nd disjunct, stInner = ackInterruptAudit st intId.val.
-      right; left
-      exact ⟨ackInterruptAudit st intId.val, hStep.2.symm⟩
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+    exact Or.inr (Or.inr ⟨ackInterruptAudit st intId.val, hStep.symm⟩)
 
-/-- AN8-C.2 (H-19): The `interruptDispatchSequence` semantics now embed the
-    `ack → EOI → handle` ordering. This theorem witnesses the structural
-    property: whenever the handler is invoked for a given INTID, its input
-    state is `endOfInterrupt` applied to the ack-audit state — i.e. the
-    INTID has already been retired from `machine.eoiPending` by the time
-    the handler body runs.
+/-- AN8-C.2 (H-19): The `interruptDispatchSequence` semantics embed the
+    `ack → EOI → handle` ordering: whenever the handler is invoked for a
+    given INTID, its input state is `endOfInterrupt` applied to the
+    ack-audit state — i.e. the INTID has already been retired from
+    `machine.eoiPending` by the time the handler body runs.
 
     Combined with the hardware-level HAL contract in
     `rust/sele4n-hal/src/gic.rs::dispatch_irq`, this formalises the GIC-400
     §3.1 ordering that eliminates the "handler panic leaves INTID active"
-    class of failure modes.
-
-    The conclusion is phrased with `.snd` rather than a `Prod.mk` literal
-    to sidestep `Unit.unit` vs `PUnit.unit` definitional quirks during
-    unification with `handleInterrupt`'s output. -/
+    class of failure modes. -/
 theorem interruptDispatchSequence_eoi_before_handler
-    (st : SystemState) (rawIntId : Nat) (intId : InterruptId)
+    (st : SystemState) (c : Concurrency.CoreId) (rawIntId : Nat) (intId : InterruptId)
     (hAck : acknowledgeInterrupt rawIntId = .ok intId) :
-    ∀ stOut, interruptDispatchSequence st rawIntId = .ok ((), stOut) →
-      -- Either the handler errored (returns stAck-after-EOI directly) or
-      -- the handler ran on an already-EOI'd state and its output state
-      -- equals `stOut`.
-      stOut = endOfInterrupt (ackInterruptAudit st intId.val) intId ∨
-      (∃ v, handleInterrupt
-              (endOfInterrupt (ackInterruptAudit st intId.val) intId) intId
-                = .ok v ∧ v.2 = stOut) := by
+    ∀ stOut, interruptDispatchSequence st c rawIntId = .ok ((), stOut) →
+      stOut = handleInterrupt (endOfInterrupt (ackInterruptAudit st intId.val) intId) c intId := by
   intro stOut hStep
-  unfold interruptDispatchSequence interruptDispatchSequenceWith at hStep
-  simp only [handleInterruptWith_timerTick] at hStep
+  unfold interruptDispatchSequence at hStep
   rw [hAck] at hStep
-  simp only at hStep
-  cases hHandle : handleInterrupt
-      (endOfInterrupt (ackInterruptAudit st intId.val) intId) intId with
-  | ok val =>
-    rw [hHandle] at hStep
-    simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-    right
-    -- After `cases hHandle`, the goal's `handleInterrupt ... = .ok v`
-    -- has been rewritten to `Except.ok val = .ok v`, so witnessing
-    -- `v := val` makes the first conjunct `rfl`-closed and the second
-    -- comes from hStep.2 (val.snd = stOut).
-    exact ⟨val, rfl, hStep.2⟩
-  | error _ =>
-    rw [hHandle] at hStep
-    simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-    left; exact hStep.2.symm
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+  exact hStep.symm
 
 -- ============================================================================
 -- AG5-E: Timer interrupt handler (model-level binding)
 -- ============================================================================
 
-/-- AG5-E: Timer interrupt handler — the model-level function that the
+/-- AG5-E: Timer interrupt handler on core `c` — the model-level function the
     Rust HAL's timer interrupt path calls via FFI (AG7).
 
     Composes:
     1. Acknowledge timer interrupt (modeled as identity — hardware-level)
-    2. Execute `timerTick` to advance the model timer
+    2. Run the per-core tick (`timerTickOnCore`), the live timer entry's
     3. Reprogram comparator (modeled as identity — hardware-level)
 
-    Steps 1 and 3 are hardware operations with no kernel state effect.
-    The only state-affecting operation is `timerTick`, which is the existing
-    scheduler tick function. This handler therefore inherits all `timerTick`
-    preservation theorems automatically.
+    Steps 1 and 3 are hardware operations with no kernel state effect, so
+    this handler inherits every `timerTickOnCore` theorem. -/
+def timerInterruptHandler (c : Concurrency.CoreId) : Kernel Unit :=
+  fun st => .ok ((), timerTickOnCore st c)
 
-    Note: uses `timerTick` to match the seL4 design where the basic timer
-    tick is the hardware interrupt handler's responsibility. Budget-aware
-    processing is the live per-core tick's concern (`timerTickOnCore`). -/
-noncomputable def timerInterruptHandler : Kernel Unit :=
-  fun st => timerTick st
-
-/-- AG5-E: Timer interrupt handler is equivalent to `timerTick`.
-    This allows all existing `timerTick` preservation theorems to be
-    reused directly for the timer interrupt path. -/
-theorem timerInterruptHandler_eq_timerTick :
-    timerInterruptHandler = timerTick := rfl
+/-- AG5-E: the timer interrupt handler is the per-core tick. -/
+theorem timerInterruptHandler_eq_timerTickOnCore (c : Concurrency.CoreId) (st : SystemState) :
+    timerInterruptHandler c st = .ok ((), timerTickOnCore st c) := rfl
 
 /-- AG5-E: Timer interrupt handler dispatched via handleInterrupt
     when INTID = timerInterruptId (30). -/
-theorem handleInterrupt_timer (st : SystemState) :
-    handleInterrupt st timerInterruptId = timerTick st := by
-  unfold handleInterrupt handleInterruptWith
-  simp [timerInterruptId]
+theorem handleInterrupt_timer (st : SystemState) (c : Concurrency.CoreId) :
+    handleInterrupt st c timerInterruptId = timerTickOnCore st c := by
+  simp [handleInterrupt]
 
 -- ============================================================================
 -- AK3-M (A-L1..A-L9): LOW-tier architecture batch documentation

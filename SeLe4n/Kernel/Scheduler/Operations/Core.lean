@@ -412,8 +412,8 @@ AK2-L (S-L13..S-L18) — Scheduler LOW-tier documentation batch.
   `Priority.ofNat?` with clamp to `numPriorities - 1`) is tracked for AK7.
 - S-L18 `runQueueUnique` flat-list only: the predicate asserts `Nodup` on
   the projected flat list; per-bucket uniqueness is implied by
-  `RunQueue.wellFormed` (distinct priority per tid ⇒ a thread appears in
-  exactly one bucket). A dedicated per-bucket lemma is tracked for AK2.5
+  the run queue's layout (`RunQueue.mem_atPriority`: a thread is in the bucket of
+  its one priority). A dedicated per-bucket lemma is tracked for AK2.5
   alongside the fused priority-match predicate (AK2-B).
 -/
 noncomputable def handleYield : Kernel Unit :=

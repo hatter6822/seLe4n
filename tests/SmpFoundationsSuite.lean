@@ -176,7 +176,6 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.perCoreRescheduleStep_ok
 #check @SeLe4n.Kernel.perCoreRescheduleStep_error
 #check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_objects_invExt
-#check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_runQueue_wellFormed
 #check @SeLe4n.Kernel.perCoreRescheduleStep_switches_current
 
 /-! ## SM1.E.4 — Sharing-domain-routed TLBI dispatcher Lean wrapper -/

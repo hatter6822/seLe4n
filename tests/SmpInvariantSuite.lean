@@ -50,7 +50,6 @@ open SeLe4n.Testing
 #check @schedulerInvariantStructural_perCore_to_queueCurrentConsistent
 #check @schedulerInvariantStructural_perCore_to_currentThreadValid
 #check @schedulerInvariantStructural_perCore_to_runnableThreadsAreTCBs
-#check @schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed
 #check @schedulerInvariantStructural_perCore_aggregateForall
 #check @schedulerInvariantStructural_smp_at
 #check @schedulerInvariant_perCore_to_structural
@@ -82,7 +81,6 @@ open SeLe4n.Testing
 
 -- §4 suite index (SM5.I.1–I.7/I.9):
 #check @currentOnCore_validThreadIfSome
-#check @runQueueOnCore_wellFormed_of_structural
 #check @schedContextRunQueueConsistent_perCore_of_crossSubsystem
 #check @priorityInheritance_perCore_iff_blockingAcyclic
 #check @schedulerInvariant_smp_dominates_structural
@@ -412,14 +410,14 @@ private def runMultiCoreRegisterBankChecks : IO Unit := do
 /-- §3.4: the SM5.I inventory partition counts. -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.4 SM5.I inventory partition counts ---"
-  assertBool "inventory has 95 entries"
-    (decide (perCoreInvariantSuiteTheorems.length = 95))
-  assertBool "structural category has 14 entries"
-    (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .structural)).length = 14))
+  assertBool "inventory has 93 entries"
+    (decide (perCoreInvariantSuiteTheorems.length = 93))
+  assertBool "structural category has 13 entries"
+    (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .structural)).length = 13))
   assertBool "preservation category has 18 entries"
     (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .preservation)).length = 18))
-  assertBool "suite category has 8 entries"
-    (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .suite)).length = 8))
+  assertBool "suite category has 7 entries"
+    (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .suite)).length = 7))
   assertBool "registerBank category has 39 entries (SM4.B payoff)"
     (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .registerBank)).length = 39))
   assertBool "budgetClosure category has 16 entries (SM5.I.8 / SM5.F gap closure)"

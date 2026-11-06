@@ -101,15 +101,6 @@ def queueCurrentConsistentOnCore (s : SchedulerState) (c : CoreId) : Prop :=
 def runQueueUniqueOnCore (s : SchedulerState) (c : CoreId) : Prop :=
   (s.runQueueOnCore c).toList.Nodup
 
-/-- SM4.C (plan §5.6): per-core run-queue well-formedness.  Asserts that
-core `c`'s `RunQueue` satisfies its internal `RunQueue.wellFormed` invariant
-(`byPriority` ↔ `membership` / `threadPriority` consistency).  This is the
-per-core analog of "the queue's priority index is in sync with its
-membership index" — the property the WS-G4 bucketed-RunQueue structure
-provides intrinsically and that SM5's per-core scheduler will preserve. -/
-def runQueueOnCoreWellFormed (s : SchedulerState) (c : CoreId) : Prop :=
-  (s.runQueueOnCore c).wellFormed
-
 /-- SM4.C: per-core current-thread validity.  Per-core form of
 `currentThreadValid`: core `c`'s current thread (if any) resolves to a
 TCB in the object store.  Uses the typed `getTcb?` accessor (AK7
@@ -538,18 +529,7 @@ def schedulerInvariant_perCore (st : SystemState) (c : CoreId) : Prop :=
   contextMatchesCurrentOnCore st c ∧
   runnableThreadsAreTCBsOnCore st c ∧
   schedulerPriorityMatchOnCore st c ∧
-  domainTimeRemainingPositiveOnCore st c ∧
-  -- audit-pass-9 (PR #801, reviewer comment 2): include the per-core
-  -- RunQueue.wellFormed structural invariant.  Pre-pass-9 the aggregate
-  -- excluded this conjunct, meaning `schedulerInvariant_smp` could hold
-  -- for a core whose RunQueue had inconsistent membership/priority
-  -- indices.  Per implement-the-improvement, the conjunct is now first-
-  -- class so SM5 consumers receive the structural guarantee directly.
-  -- Appended at the END (not adjacent to `runQueueUniqueOnCore`) to
-  -- minimise index shifts in the per-conjunct projection family — only
-  -- `domainTimeRemainingPositiveOnCore`'s index shifts (h.2.2.2.2.2.2.2.2.2
-  -- → h.2.2.2.2.2.2.2.2.2.1).
-  runQueueOnCoreWellFormed st.scheduler c
+  domainTimeRemainingPositiveOnCore st c
 
 /-- WS-SM SM4.C.29: the system-wide SMP scheduler invariant — the per-core
 invariant holding on *every* core.  This is the form cross-subsystem
@@ -605,15 +585,7 @@ theorem schedulerInvariant_perCore_to_schedulerPriorityMatch {st : SystemState} 
 
 theorem schedulerInvariant_perCore_to_domainTimeRemainingPositive {st : SystemState} {c : CoreId}
     (h : schedulerInvariant_perCore st c) : domainTimeRemainingPositiveOnCore st c :=
-  h.2.2.2.2.2.2.2.2.2.1
-
-/-- audit-pass-9 (PR #801, reviewer comment 2): per-core run-queue
-well-formedness projection.  Extracts the new 11th conjunct of the
-aggregate (appended at the end of the conjunction). -/
-theorem schedulerInvariant_perCore_to_runQueueOnCoreWellFormed
-    {st : SystemState} {c : CoreId} (h : schedulerInvariant_perCore st c) :
-    runQueueOnCoreWellFormed st.scheduler c :=
-  h.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2
 
 -- ============================================================================
 -- §3.4  Base per-core invariant (mirroring `schedulerInvariantBundle`)
@@ -1089,21 +1061,10 @@ equivalent to the full bundle's corresponding conjunct (see §2 bridges);
 the bundle's system-wide `domainScheduleEntriesPositive` conjunct is
 dropped (it is not per-core). -/
 theorem schedulerInvariantBundleFull_to_perCore_bootCore {st : SystemState}
-    (h : schedulerInvariantBundleFull st)
-    -- audit-pass-9 (PR #801, reviewer comment 2): explicit per-core
-    -- run-queue well-formedness hypothesis.  `schedulerInvariantBundleFull`
-    -- does NOT carry `RunQueue.wellFormed` (it is preserved at the
-    -- per-API-call level but not aggregated at the bundle level), so the
-    -- bridge into the new 11-conjunct per-core aggregate must take it
-    -- explicitly.  Every existing per-op preservation theorem in
-    -- `Scheduler/Operations/Preservation.lean` already requires
-    -- `hwf : RunQueue.wellFormed (s.runQueueOnCore bootCoreId)` as input,
-    -- so the obligation is no net new burden on callers — it surfaces
-    -- the existing implicit precondition through the SM4.C aggregate.
-    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
+    (h : schedulerInvariantBundleFull st) :
     schedulerInvariant_perCore st bootCoreId := by
   obtain ⟨⟨hQCC, hRQU, hCTV⟩, hTSP, hCTSP, hEDF, hCMC, hRAT, hSPM, hDTR, _hDSE⟩ := h
-  refine ⟨hQCC, hRQU, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hDTR, hWf⟩
+  refine ⟨hQCC, hRQU, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hDTR⟩
   · exact (currentThreadValidOnCore_bootCore_iff st).mpr hCTV
   · exact (timeSlicePositiveOnCore_bootCore_iff st).mpr hTSP
   · exact (currentTimeSlicePositiveOnCore_bootCore_iff st).mpr hCTSP
@@ -1119,10 +1080,7 @@ content. -/
 theorem schedulerInvariant_perCore_bootCore_to_bundleFull {st : SystemState}
     (h : schedulerInvariant_perCore st bootCoreId)
     (hDSE : domainScheduleEntriesPositive st) : schedulerInvariantBundleFull st := by
-  -- audit-pass-9: aggregate now has 11 conjuncts; the new wellFormed conjunct
-  -- (`_hWf`) is discarded because `schedulerInvariantBundleFull` does not
-  -- carry it.
-  obtain ⟨hQCC, hRQU, hCTV, hTSP, hCTSP, hEDF, hCMC, hRAT, hSPM, hDTR, _hWf⟩ := h
+  obtain ⟨hQCC, hRQU, hCTV, hTSP, hCTSP, hEDF, hCMC, hRAT, hSPM, hDTR⟩ := h
   refine ⟨⟨hQCC, hRQU, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, hDTR, hDSE⟩
   · exact (currentThreadValidOnCore_bootCore_iff st).mp hCTV
   · exact (timeSlicePositiveOnCore_bootCore_iff st).mp hTSP
@@ -1137,11 +1095,9 @@ bundle) likewise implies the **base** per-core invariant at the boot
 core (projects through `.1` to the `Full` subset, which the previous
 bridge handles). -/
 theorem schedulerInvariantBundleExtended_to_perCore_bootCore {st : SystemState}
-    (h : schedulerInvariantBundleExtended st)
-    -- audit-pass-9: forwarded `hWf` for the audit-pass-9 11-conjunct aggregate
-    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
+    (h : schedulerInvariantBundleExtended st) :
     schedulerInvariant_perCore st bootCoreId :=
-  schedulerInvariantBundleFull_to_perCore_bootCore h.1 hWf
+  schedulerInvariantBundleFull_to_perCore_bootCore h.1
 
 /-- WS-SM SM4.C: the extended single-core bundle implies the **extended**
 per-core invariant at the boot core.  This is the tight bridge: each of
@@ -1152,12 +1108,9 @@ per-core conjuncts) or is dropped (for the three system-wide ones:
 `boundThreadDomainConsistent`).  The dropped conjuncts are restored in
 the converse bridge below. -/
 theorem schedulerInvariantBundleExtended_to_perCore_extended_bootCore {st : SystemState}
-    (h : schedulerInvariantBundleExtended st)
-    -- audit-pass-9: forwarded `hWf` for the audit-pass-9 11-conjunct base
-    -- aggregate that the extended aggregate composes via `.1`.
-    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
+    (h : schedulerInvariantBundleExtended st) :
     schedulerInvariant_perCore_extended st bootCoreId := by
-  refine ⟨schedulerInvariantBundleFull_to_perCore_bootCore h.1 hWf, ?_, ?_, ?_, ?_⟩
+  refine ⟨schedulerInvariantBundleFull_to_perCore_bootCore h.1, ?_, ?_, ?_, ?_⟩
   · exact (currentBudgetPositiveOnCore_bootCore_iff st).mpr
       (schedulerInvariantBundleExtended_to_currentBudgetPositive h)
   · exact (budgetPositiveOnCore_bootCore_iff st).mpr
@@ -1215,7 +1168,7 @@ theorem default_schedulerInvariant_perCore (c : CoreId) :
       tid ∉ ((default : SystemState).scheduler.runQueueOnCore c) := by
     intro tid hMem
     exact hNotMemList tid ((RunQueue.mem_toList_iff_mem _ tid).2 hMem)
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simp only [queueCurrentConsistentOnCore, hCur]
   · simp only [runQueueUniqueOnCore, hRQ, RunQueue.toList_empty]; exact List.nodup_nil
   · simp only [currentThreadValidOnCore, hCur]
@@ -1226,8 +1179,6 @@ theorem default_schedulerInvariant_perCore (c : CoreId) :
   · intro tid hMem; exact absurd hMem (hNotMemList tid)
   · intro tid hMem; exact absurd hMem (hNotMem tid)
   · simp only [domainTimeRemainingPositiveOnCore, hDTR]; decide
-  · show RunQueue.wellFormed _
-    rw [hRQ]; exact RunQueue.empty_wellFormed
 
 /-- WS-SM SM4.C: the freshly-booted system satisfies the system-wide SMP
 scheduler invariant — the per-core invariant on every core. -/
@@ -1315,11 +1266,6 @@ theorem runQueueUniqueOnCore_frame {s s' : SchedulerState} {c : CoreId}
     (hRQ : s'.runQueueOnCore c = s.runQueueOnCore c) :
     runQueueUniqueOnCore s' c ↔ runQueueUniqueOnCore s c := by
   unfold runQueueUniqueOnCore; rw [hRQ]
-
-theorem runQueueOnCoreWellFormed_frame {s s' : SchedulerState} {c : CoreId}
-    (hRQ : s'.runQueueOnCore c = s.runQueueOnCore c) :
-    runQueueOnCoreWellFormed s' c ↔ runQueueOnCoreWellFormed s c := by
-  unfold runQueueOnCoreWellFormed; rw [hRQ]
 
 theorem currentThreadValidOnCore_frame {st st' : SystemState} {c : CoreId}
     (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
@@ -1448,16 +1394,15 @@ theorem schedulerInvariant_perCore_frame {st st' : SystemState} {c : CoreId}
     (hObj  : st'.objects = st.objects) :
     schedulerInvariant_perCore st' c ↔ schedulerInvariant_perCore st c := by
   -- The aggregate predicates of §3 read only through `getTcb?` (not
-  -- `getSchedContext?` — none of the 11 conjuncts in the aggregate look
+  -- `getSchedContext?` — none of the 10 conjuncts in the aggregate look
   -- up SchedContext objects); `hTcb` is the only object-store congruence
-  -- needed.  `hObj` flows in through `getTcb?_congr_objects`.  audit-pass-9:
-  -- added `runQueueOnCoreWellFormed` to the simp set for the new conjunct.
+  -- needed.  `hObj` flows in through `getTcb?_congr_objects`.
   have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
   simp only [schedulerInvariant_perCore, queueCurrentConsistentOnCore, runQueueUniqueOnCore,
     currentThreadValidOnCore, timeSlicePositiveOnCore, currentTimeSlicePositiveOnCore,
     edfCurrentHasEarliestDeadlineOnCore, contextMatchesCurrentOnCore,
     runnableThreadsAreTCBsOnCore, schedulerPriorityMatchOnCore,
-    domainTimeRemainingPositiveOnCore, runQueueOnCoreWellFormed,
+    domainTimeRemainingPositiveOnCore,
     hCur, hRQ, hDTR, hRegs, hTcb]
 
 /-- WS-SM SM4.C.30: writing a *different* core's current-thread slot leaves
@@ -1575,14 +1520,12 @@ theorem schedulerInvariant_perCore_frame_idle {st st' : SystemState} {c : CoreId
     (hDTR : st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c)
     (hObj : st'.objects = st.objects) :
     schedulerInvariant_perCore st' c ↔ schedulerInvariant_perCore st c := by
-  -- audit-pass-9: added `runQueueOnCoreWellFormed` to the simp set
-  -- (the new 11th conjunct of the aggregate; covered by the `hRQ` frame).
   have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
   simp only [schedulerInvariant_perCore, queueCurrentConsistentOnCore, runQueueUniqueOnCore,
     currentThreadValidOnCore, timeSlicePositiveOnCore, currentTimeSlicePositiveOnCore,
     edfCurrentHasEarliestDeadlineOnCore, contextMatchesCurrentOnCore,
     runnableThreadsAreTCBsOnCore, schedulerPriorityMatchOnCore,
-    domainTimeRemainingPositiveOnCore, runQueueOnCoreWellFormed,
+    domainTimeRemainingPositiveOnCore,
     hCurNone', hCurNone, hRQ, hDTR, hTcb]
 
 /-- WS-SM SM4.C: the **single-core-preservation-lifts-to-SMP** skeleton.
@@ -1950,12 +1893,9 @@ separately). -/
 theorem crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore {st : SystemState}
     (hExt : schedulerInvariantBundleExtended st)
     (hCSI : crossSubsystemInvariant st)
-    (hADS : activeDomainOnCore_isInDomainSchedule st bootCoreId)
-    -- audit-pass-9: forwarded `hWf` for the audit-pass-9 wellFormed
-    -- conjunct in the base aggregate the extended one composes.
-    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
+    (hADS : activeDomainOnCore_isInDomainSchedule st bootCoreId) :
     schedulerInvariant_perCore_crossSubsystem st bootCoreId := by
-  refine ⟨schedulerInvariantBundleExtended_to_perCore_extended_bootCore hExt hWf, ?_, ?_, hADS⟩
+  refine ⟨schedulerInvariantBundleExtended_to_perCore_extended_bootCore hExt, ?_, ?_, hADS⟩
   · exact (schedContextRunQueueConsistent_perCore_bootCore_iff st).mpr
       (crossSubsystemInvariant_to_schedContextRunQueueConsistent _ hCSI)
   · exact (priorityInheritance_perCore_iff st bootCoreId).mpr
@@ -1993,10 +1933,7 @@ invariant: they are perma-idle (default state) until SM5 activates them. -/
 theorem schedulerInvariant_perCore_holds_if_idle (st : SystemState) (c : CoreId)
     (hCurNone : st.scheduler.currentOnCore c = none)
     (hRQEmpty : (st.scheduler.runQueueOnCore c).toList = [])
-    (hDTRPos : st.scheduler.domainTimeRemainingOnCore c > 0)
-    -- audit-pass-9: `toList = []` doesn't entail wellFormed structurally;
-    -- the caller supplies it.  SM5 discharges via `RunQueue.empty_wellFormed`.
-    (hWf : (st.scheduler.runQueueOnCore c).wellFormed) :
+    (hDTRPos : st.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_perCore st c := by
   have hNotMemList : ∀ tid : SeLe4n.ThreadId,
       tid ∉ (st.scheduler.runQueueOnCore c).toList := by
@@ -2005,7 +1942,7 @@ theorem schedulerInvariant_perCore_holds_if_idle (st : SystemState) (c : CoreId)
       tid ∉ (st.scheduler.runQueueOnCore c) := by
     intro tid hMem
     exact hNotMemList tid ((RunQueue.mem_toList_iff_mem _ tid).2 hMem)
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simp only [queueCurrentConsistentOnCore, hCurNone]
   · simp only [runQueueUniqueOnCore, hRQEmpty]; exact List.nodup_nil
   · simp only [currentThreadValidOnCore, hCurNone]
@@ -2016,11 +1953,6 @@ theorem schedulerInvariant_perCore_holds_if_idle (st : SystemState) (c : CoreId)
   · intro tid hMem; exact absurd hMem (hNotMemList tid)
   · intro tid hMem; exact absurd hMem (hNotMem tid)
   · exact hDTRPos
-  · -- `toList = []` does not entail `wellFormed`: a RunQueue can have
-    -- empty `flat` while `byPriority` carries inconsistent buckets.  SM5
-    -- discharges `hWf` from "this core's RunQueue = `RunQueue.empty`"
-    -- via `RunQueue.empty_wellFormed`.
-    exact hWf
 
 /-- Strong-idle variant of §6's `schedulerInvariant_perCore_frame_idle`:
 when core `c`'s scheduler slots are *all* in the idle shape (no current,
@@ -2031,30 +1963,13 @@ neither matters. -/
 theorem schedulerInvariant_perCore_idle_on_post_state {st' : SystemState} {c : CoreId}
     (hCurNone : st'.scheduler.currentOnCore c = none)
     (hRQEmpty : (st'.scheduler.runQueueOnCore c).toList = [])
-    (hDTRPos : st'.scheduler.domainTimeRemainingOnCore c > 0)
-    -- audit-pass-9: forwarded wellFormed hypothesis from `_holds_if_idle`.
-    (hWf : (st'.scheduler.runQueueOnCore c).wellFormed) :
+    (hDTRPos : st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_perCore st' c :=
-  schedulerInvariant_perCore_holds_if_idle st' c hCurNone hRQEmpty hDTRPos hWf
+  schedulerInvariant_perCore_holds_if_idle st' c hCurNone hRQEmpty hDTRPos
 
-/-- audit-pass-11 (post-audit improvement): convenience form of
-`schedulerInvariant_perCore_holds_if_idle` taking the *stronger structural*
-hypothesis `runQueueOnCore c = RunQueue.empty` instead of the pair
-`(toList = []) ∧ wellFormed`.
-
-The trade-off this resolves: pre-audit-11, the SM5-bridge skeleton's
-`hNonBootIdle` had to carry 4 conjuncts including `wellFormed`,
-because `toList = []` alone cannot derive `wellFormed` (the
-`RunQueue.byPriority` index is structurally independent of `flat`).
-Under the SM5 contract, non-boot cores ARE the default-replicate
-`RunQueue.empty` — a strictly stronger fact that DOES entail
-`wellFormed` (via `RunQueue.empty_wellFormed`) and `toList = []`
-(via `RunQueue.toList_empty`).  This wrapper exposes that path so
-SM5 callers with `rq = empty` skip the manual conversion.
-
-The underlying `_holds_if_idle` is retained as the *minimal* form
-(takes only the necessary facts; no over-constraint), and remains
-the public API for callers that only have the weaker facts. -/
+/-- Convenience form of `schedulerInvariant_perCore_holds_if_idle` taking
+`runQueueOnCore c = RunQueue.empty` instead of `toList = []` (derived by
+`RunQueue.toList_empty`), the shape non-boot cores have at boot. -/
 theorem schedulerInvariant_perCore_holds_if_idle_default
     (st : SystemState) (c : CoreId)
     (hCurNone : st.scheduler.currentOnCore c = none)
@@ -2064,7 +1979,6 @@ theorem schedulerInvariant_perCore_holds_if_idle_default
   schedulerInvariant_perCore_holds_if_idle st c hCurNone
     (hRQEqEmpty ▸ RunQueue.toList_empty)
     hDTRPos
-    (hRQEqEmpty ▸ RunQueue.empty_wellFormed)
 
 /-- WS-SM SM4.C: **the per-operation SMP-preservation composition** — the
 SM5 migration bridge for any boot-core scheduler operation.
@@ -2088,26 +2002,16 @@ cores, those changes are simply invisible. -/
 theorem schedulerInvariant_smp_of_bootCore_preservation
     {st' : SystemState}
     (hBoot' : schedulerInvariant_perCore st' bootCoreId)
-    -- audit-pass-9 (PR #801, reviewer comment 2): the non-boot idle
-    -- witness now bundles four facts (no current, empty run queue,
-    -- positive DTR, **wellFormed run queue**) — the fourth needed by
-    -- the audit-pass-9 conjunct in the per-core aggregate.  Discharged
-    -- in SM5 from "the non-boot core's runQueueOnCore is the default
-    -- replicate slot, which is `RunQueue.empty`, whose wellFormed
-    -- holds by the empty-RHTable lookup pattern (see
-    -- `default_schedulerInvariant_perCore`'s discharge for the new
-    -- conjunct)".
     (hNonBootIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' := by
   intro c
   by_cases hc : c = bootCoreId
   · subst hc; exact hBoot'
-  · obtain ⟨hCN, hRQE, hDTR, hWf⟩ := hNonBootIdle c hc
-    exact schedulerInvariant_perCore_holds_if_idle st' c hCN hRQE hDTR hWf
+  · obtain ⟨hCN, hRQE, hDTR⟩ := hNonBootIdle c hc
+    exact schedulerInvariant_perCore_holds_if_idle st' c hCN hRQE hDTR
 
 /-- The extended analog of `schedulerInvariant_smp_of_bootCore_preservation`.
 For non-boot cores, the extended invariant holds when the core is fully

@@ -132,9 +132,7 @@ open SeLe4n.Testing
 
 -- SM5.H.4 (§6c/§11) the full-thread-migration run-queue move + scheduler preservation:
 #check @migrateRunQueueOnAffinityChange
-#check @migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
 #check @migrateSchedContextReplenishment_runQueueOnCore
-#check @setThreadCpuAffinityWithMigration_preserves_runQueueOnCoreWellFormed
 #check @migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
 
 -- SM5.H.4 (§9) object-store invariant preservation:
@@ -291,12 +289,6 @@ example (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option Core
     ∀ c, perCoreCbsInvariant st'.1 c :=
   setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp st targetTid affinity
     executingCore tcb scId sc st' hTcb hInv hBind hSc hBound hBindCons hCbs hStep
-
--- SM5.H.4 (§11): the run-queue migration preserves run-queue well-formedness on every core.
-example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
-    (h : runQueueOnCoreWellFormed st.scheduler c') :
-    runQueueOnCoreWellFormed (migrateRunQueueOnAffinityChange st tid fromCore toCore).scheduler c' :=
-  migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed st tid fromCore toCore c' h
 
 -- SM5.H.4 (§16 D15): the run-queue migration preserves SM4.C run-queue↔budget consistency.
 example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
@@ -737,8 +729,8 @@ private def runLiveTickScenarios : IO Unit := do
 /-- §3.8: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.7 SM5.H inventory partition counts ---"
-  assertBool "inventory has 116 entries"
-    (decide (perCoreCbsTheorems.length = 116))
+  assertBool "inventory has 114 entries"
+    (decide (perCoreCbsTheorems.length = 114))
   assertBool "predicate category has 6 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .predicate)).length = 6))
   assertBool "replenish category has 14 entries"
@@ -749,8 +741,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 25))
   assertBool "affinityWrite category has 4 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 4))
-  assertBool "consistency category has 22 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 22))
+  assertBool "consistency category has 20 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 20))
   assertBool "budget category has 6 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .budget)).length = 6))
   assertBool "lockSet category has 20 entries"

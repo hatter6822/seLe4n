@@ -1740,14 +1740,13 @@ theorem copyThreadSpacesZombie_closed {ec : Concurrency.CoreId} {st st' : System
 until the source has none.  Each delete splices its slot out of the tree, so
 the deleted child's children become the source's, and the loop reaches every
 descendant without building a list of them; `fuel` bounds it by the tree's
-edges, one of which each splice removes.  Each delete is admitted when its
-CNode exists (`cspaceDeleteFinalisingAdmitted`) and is then the zombie delete
+edges, one of which each splice removes.  Each delete is the zombie delete
 (`zombieDeleteAt`, seL4's `cteDelete`), which empties a child's CNode or
-thread before the child itself goes, and always empties the child's slot.  A
-child outside every CNode ends the loop,
-which on a state the capability invariants hold in never happens: there the
-loop ends with the source childless (`cspaceRevokeCdtFinalising_ok_childless`).
-Retiring the stop is a `docs/REGISTERED_DEBT.md` table C row (ZA5.4). -/
+thread before the child itself goes, and always empties the child's slot.  As
+seL4's `cteRevoke`, the loop checks nothing per child: on a state the
+capability invariants hold in every child's CNode is live (`cdtCompleteness`),
+and the loop ends with the source childless
+(`cspaceRevokeCdtFinalising_ok_childless`). -/
 def revokeFirstChildLoop (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
     (slot : SeLe4n.Slot) : Nat → SystemState → SystemState
   | 0, st => st
@@ -1757,9 +1756,7 @@ def revokeFirstChildLoop (executingCore : Concurrency.CoreId) (cnode : SeLe4n.Ob
     else
       let cc := SeLe4n.ObjId.ofNat (fc - 1)
       let cs := SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)
-      if cspaceDeleteFinalisingAdmitted { cnode := cc, slot := cs } st then
-        revokeFirstChildLoop executingCore cnode slot n (zombieDeleteAt executingCore cc cs st)
-      else st
+      revokeFirstChildLoop executingCore cnode slot n (zombieDeleteAt executingCore cc cs st)
 
 /-- **The loop is a run of finalising deletes.** -/
 theorem revokeFirstChildLoop_chain (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
@@ -1772,10 +1769,8 @@ theorem revokeFirstChildLoop_chain (ec : Concurrency.CoreId) (cnode : SeLe4n.Obj
     dsimp only
     split
     · exact .refl st
-    · split
-      · exact (zombieDeleteAt_run ec _ _ _).choose_spec.2.chain.trans
-          (revokeFirstChildLoop_chain ec cnode slot n _)
-      · exact .refl st
+    · exact (zombieDeleteAt_run ec _ _ _).choose_spec.2.chain.trans
+        (revokeFirstChildLoop_chain ec cnode slot n _)
 
 /-- WS-ZA ZA5.3 part 8: **`.cspaceRevoke`'s check**, read before any write: the
 source slot holds a capability. -/

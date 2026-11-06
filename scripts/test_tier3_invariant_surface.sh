@@ -4937,7 +4937,10 @@ run_check "INVARIANT" rg -n -U 'def backshiftLoopImpl[^\n]*(\n([ \t][^\n]*)?){0,
 run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match SystemState\.lookupSlotCap st addr with\n    \| some _ => \.ok \(\(\), cspaceRevokePerformAt executingCore addr\.cnode addr\.slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.111: every revoke is seL4's cteRevoke, a run of finalising deletes; the
 # general revocation's batch teardown is gone.
-run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then\n        revokeFirstChildLoop executingCore cnode slot n \(zombieDeleteAt executingCore cc cs st\)\n      else st' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '      let cs := SeLe4n\.Slot\.ofNat \(st\.slotLinkSlotWord cnode slot \.firstChild - 1\)\n      revokeFirstChildLoop executingCore cnode slot n \(zombieDeleteAt executingCore cc cs st\)\n' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# The loop checks nothing per child, as seL4's cteRevoke: no admission test
+# stands between the first-child read and the zombie delete.
+run_negative_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.139: a compiled slot writer reads the slot's occupancy before it
 # writes the slot array, out of line, so both stay in place.
 run_check "INVARIANT" rg -n -U '  let i := slot\.toNat\n  let w := occupiedAt node\.cells i\n  if ha : i < a\.size then' SeLe4n/Model/Object/Structures.lean
@@ -5329,7 +5332,6 @@ run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_preserves_not_dispatc
 # never traps, and the entry delivers nothing for one).
 run_check "INVARIANT" rg -n -U '^    \(tid : SeLe4n\.ThreadId\) \(hCur : st\.scheduler\.currentOnCore c = some tid\)\n    \(hNI : isIdleThreadId tid = false\) \(hInv : st\.objects\.invExt\) \(hR : st\.runQueueRefined\)\n    \(hAct : st\.activeAt tid\) \(hHeads : endpointHeadsWakeable st\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem faultDeliveredState_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
-run_negative_check "INVARIANT" rg -n 'runQueueOnCoreWellFormed \(faultDeliveredState' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'runQueueRefined[A-Za-z]* \(faultDeliveredState|\(faultDeliveredState [^)]*\)\.runQueueRefined' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^    Platform\.FFI\.restoreTrapFrameParts kind context tableBase asid\n    Concurrency\.recordCommittedCurrentThreadHw \(some \(c, SeLe4n\.ThreadId\.ofOptCode code\)\)$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '^    Platform\.FFI\.restoreTrapFrameParts kind context tableBase asid\n    Concurrency\.recordCommittedCurrentThreadHw \(some \(c, SeLe4n\.ThreadId\.ofOptCode code\)\)$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
@@ -13983,7 +13985,6 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.perCoreRescheduleStep_ok
 #check @SeLe4n.Kernel.perCoreRescheduleStep_error
 #check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_objects_invExt
-#check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_runQueue_wellFormed
 #check @SeLe4n.Kernel.perCoreRescheduleStep_switches_current
 -- SM1.E.4 — Typed TLBI dispatcher wrapper (post-SM7 cross-core call sites)
 #check @SeLe4n.Kernel.Architecture.TlbInvalidation
@@ -15629,11 +15630,9 @@ open SeLe4n.Kernel
 #check @schedulerInvariant_perCore_pairwise
 #check @schedulerInvariant_smp_of_bootCore_and_idle_frame
 -- SM4.C plan §5.6 missing predicate.
-#check @runQueueOnCoreWellFormed
 -- SM4.C §5.5 per-conjunct frame lemmas (17 total).
 #check @queueCurrentConsistentOnCore_frame
 #check @runQueueUniqueOnCore_frame
-#check @runQueueOnCoreWellFormed_frame
 #check @currentThreadValidOnCore_frame
 #check @currentThreadInActiveDomainOnCore_frame
 #check @timeSlicePositiveOnCore_frame
@@ -15970,7 +15969,6 @@ open SeLe4n.Kernel
 
 -- SM5.A.6 — selection soundness + preservation form + invariant corollary.
 #check @chooseThreadOnCore_some_mem_runQueueOnCore
-#check @chooseThread_preserves_runQueueOnCore_wellFormed
 
 -- SM5.A.7 — decidable selection predicates.
 #check @chooseThreadOnCoreSelects
@@ -15978,7 +15976,6 @@ open SeLe4n.Kernel
 
 -- SM5.A.3 — selection optimality (§3.1.1) + literal preserves-wellFormed anchor.
 #check @chooseThreadOnCore_selects_highest
-#check @chooseThreadOnCore_preserves_wellFormed
 
 -- SM5.A.2 — run-queue-lock order within the arm + §4.4 level (the ladder
 -- level of the runQueue kind since the lock-state separation).
@@ -16007,7 +16004,6 @@ open SeLe4n.Kernel
 #check @chooseThreadEffectiveOnCoreLockSet_read_only
 
 -- SM5.A support: RunQueue.ofList well-formedness (production helper).
-#check @SeLe4n.Kernel.RunQueue.ofList_wellFormed
 EOF'
 
 # WS-SM SM5.B — per-core switchToThread surface anchors.  Covers the SM5.B.4
@@ -16058,7 +16054,6 @@ open SeLe4n.Kernel.Concurrency
 #check @preemptCurrentOnCore_runQueueOnCore_ne
 #check @preemptCurrentOnCore_runQueueOnCore_self_active
 #check @preemptCurrentOnCore_preserves_objects_invExt
-#check @preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed
 #check @preemptCurrentOnCore_active_under_valid
 
 -- SM5.B.1/.3/.4/.5/.6 switch-semantics theorems.
@@ -16071,7 +16066,6 @@ open SeLe4n.Kernel.Concurrency
 
 -- §3b invariant preservation + object frame (structural foundations for SM5.I.8).
 #check @switchToThreadOnCore_preserves_objects_invExt
-#check @switchToThreadOnCore_preserves_runQueueOnCore_wellFormed
 #check @switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
 #check @switchToThreadOnCore_establishes_currentThreadValidOnCore
 #check @preemptCurrentOnCore_getTcb?_incoming
@@ -16309,7 +16303,6 @@ open SeLe4n.Kernel.Concurrency
 
 -- SM5.C.1 enqueueRunnableOnCore lemmas.
 #check @enqueueRunnableOnCore_preserves_objects_invExt
-#check @enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed
 #check @enqueueRunnableOnCore_mem_runQueueOnCore
 #check @enqueueRunnableOnCore_makes_ready
 #check @enqueueRunnableOnCore_preserves_woken_thread_fields
@@ -16328,7 +16321,6 @@ open SeLe4n.Kernel.Concurrency
 #check @wakeThread_target_runQueue_contains
 #check @wakeThread_target_admits_thread
 #check @wakeThread_preserves_objects_invExt
-#check @wakeThread_preserves_target_runQueue_wellFormed
 #check @wakeThread_independent_of_other_core
 
 -- SM5.C.6 losslessness.
@@ -16343,7 +16335,6 @@ open SeLe4n.Kernel.Concurrency
 #check @handleRescheduleSgiOnCore_eq_switch_of_choose_some
 #check @handleRescheduleSgiOnCore_switches_current
 #check @handleRescheduleSgiOnCore_preserves_objects_invExt
-#check @handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed
 #check @handleRescheduleSgiOnCore_independent_of_other_core
 #check @handleRescheduleSgiOnCore_keeps_current_when_outranked
 #check @candidateOutranksCurrentOnCore
@@ -16520,7 +16511,6 @@ open SeLe4n.Kernel
 #check @processReplenishmentsDueOnCore_flags_wake_target
 #check @processOneReplenishmentOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_objects_invExt
-#check @processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
 #check @processReplenishmentsDueOnCore_machine_eq
 -- SM5.D.5 budget tick + IPC-timeout objects preservation chain.
 #check @timerTickBudgetOnCore_unbound_not_preempted
@@ -16597,19 +16587,14 @@ open SeLe4n.Kernel
 #check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
 #check @decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore
 #check @decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore
-#check @decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
 #check @saveOutgoingContextOnCore_scheduler_eq
 #check @saveOutgoingContextOnCore_getTcb?_isSome
 #check @scheduleEffectiveOnCore_establishes_currentThreadValidOnCore
 #check @scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore
-#check @scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed
 #check @scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore
 #check @timerTickBudgetOnCore_notPreempted_scheduler_eq
 #check @timerTickBudgetOnCore_notPreempted_getTcb?_tid
-#check @timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed
 #check @timerTickOnCore_preserves_currentThreadValidOnCore
-#check @timerTickOnCorePrepared_runQueueOnCore_wellFormed
-#check @timerTickOnCore_preserves_runQueueOnCoreWellFormed
 #check @timerTickOnCore_preserves_queueCurrentConsistentOnCore
 EOF
 lake env lean /tmp/sm5d_surface.lean'
@@ -16735,7 +16720,6 @@ example (config : SeLe4n.Platform.Boot.PlatformConfig) (ist : SeLe4n.Model.Inter
 #check @scheduleOrIdleOnCore_preserves_objects_invExt
 #check @scheduleOrIdleOnCore_establishes_currentThreadValidOnCore
 #check @scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore
-#check @scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed
 #check @scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore
 #check @scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore
 #check @dispatchIdleOnCore_currentOnCore
@@ -17072,9 +17056,7 @@ open SeLe4n.Kernel
 #check @SchedContext.chargeBudget_refillsFit
 -- SM5.H.4 (§6c/§11) the full-thread-migration run-queue move + scheduler preservation.
 #check @migrateRunQueueOnAffinityChange
-#check @migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
 #check @migrateSchedContextReplenishment_runQueueOnCore
-#check @setThreadCpuAffinityWithMigration_preserves_runQueueOnCoreWellFormed
 #check @migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
 -- SM5.H.4 (§9) object-store invariant preservation.
 #check @replenishOnCore_preserves_objects_invExt
@@ -17208,7 +17190,6 @@ open SeLe4n.Kernel
 #check @schedulerInvariantStructural_perCore_to_queueCurrentConsistent
 #check @schedulerInvariantStructural_perCore_to_currentThreadValid
 #check @schedulerInvariantStructural_perCore_to_runnableThreadsAreTCBs
-#check @schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed
 #check @schedulerInvariantStructural_perCore_aggregateForall
 #check @schedulerInvariantStructural_smp_at
 #check @schedulerInvariant_perCore_to_structural
@@ -17238,7 +17219,6 @@ open SeLe4n.Kernel
 #check @decrementDomainTimeOnCore_preserves_schedulerInvariantStructural_smp
 -- §4 suite index (SM5.I.1–I.4/I.6/I.9).
 #check @currentOnCore_validThreadIfSome
-#check @runQueueOnCore_wellFormed_of_structural
 #check @schedContextRunQueueConsistent_perCore_of_crossSubsystem
 #check @priorityInheritance_perCore_iff_blockingAcyclic
 #check @schedulerInvariant_smp_dominates_structural
@@ -23451,6 +23431,15 @@ run_check "INVARIANT" rg -n '^theorem settleThenActivateOnCore_linkedOnUnlinked(
 # The dispatch arm: the capability-only route to the operation.
 run_check "INVARIANT" rg -n '^  \| \.schedContextYieldTo =>$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^          match SchedContextOps\.schedContextYieldToOnCore$' SeLe4n/Kernel/API.lean
+# WS-ZA ZA6.37: the reference interrupt dispatch runs the live entries' handlers
+# on the executing core — the timer arm the per-core tick, every other line
+# seL4's handleInterrupt on that core — and takes no handler parameter.
+run_check "INVARIANT" rg -n -U '^def handleInterrupt \(st : SystemState\) \(c : Concurrency\.CoreId\) \(intId : InterruptId\) :\n    SystemState :=\n  if intId = timerInterruptId then timerTickOnCore st c\n  else handleInterruptOnCore st c intId\.val$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
+run_check "INVARIANT" rg -n '^    \.ok \(\(\), handleInterrupt stEoi c intId\)$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
+run_check "INVARIANT" rg -n '^      match interruptDispatchSequence st executingCore rawIntId with$' SeLe4n/Kernel/Architecture/ExceptionModel.lean
+run_check "INVARIANT" rg -n '^theorem handleInterrupt_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
+run_check "INVARIANT" rg -n '^theorem timerTickOnCore_machine_interruptsEnabled($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/ExceptionModel.lean
+run_negative_check "INVARIANT" rg -n '^(noncomputable )?def (handleInterruptWith|interruptDispatchSequenceWith|dispatchExceptionWith) ' SeLe4n/Kernel/Architecture
 # WS-ZA ZA6.32: seL4's handleInterrupt — a bound line's notification signalled
 # and the line masked until the handler's acknowledge, an unbound line masked —
 # entered from the HAL in ZA3.1's form, with its entry-level carries.

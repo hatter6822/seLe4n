@@ -378,32 +378,6 @@ theorem perCoreRescheduleStep_preserves_objects_invExt (st : SystemState)
         exact handleRescheduleSgiOnCore_preserves_objects_invExt st _ st' hInv hR
   · rw [perCoreRescheduleStep_invalid_core st coreId h]; exact hInv
 
-/-- **WS-SM SM5.C.5** (soundness): the reschedule step preserves **every** core's
-run-queue well-formedness.  The rescheduled core lifts
-`handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed`; every other core
-lifts the cross-core-independence frame
-(`handleRescheduleSgiOnCore_independent_of_other_core`); the failure /
-out-of-range paths return `st` unchanged. -/
-theorem perCoreRescheduleStep_preserves_runQueue_wellFormed (st : SystemState)
-    (coreId : UInt64)
-    (hwf : ∀ c : CoreId, (st.scheduler.runQueueOnCore c).wellFormed) :
-    ∀ c : CoreId,
-      ((perCoreRescheduleStep st coreId).scheduler.runQueueOnCore c).wellFormed := by
-  intro c
-  by_cases h : coreId.toNat < numCores
-  · cases hR : handleRescheduleSgiOnCore st ⟨coreId.toNat, h⟩ with
-    | error e => rw [perCoreRescheduleStep_error st coreId h e hR]; exact hwf c
-    | ok st' =>
-        rw [perCoreRescheduleStep_ok st coreId h st' hR]
-        by_cases hc : (⟨coreId.toNat, h⟩ : CoreId) = c
-        · subst hc
-          exact handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed
-            st _ st' (hwf _) hR
-        · rw [(handleRescheduleSgiOnCore_independent_of_other_core
-            st _ c st' hc hR).2]
-          exact hwf c
-  · rw [perCoreRescheduleStep_invalid_core st coreId h]; exact hwf c
-
 /-- **WS-SM SM5.C.5** (the substantive bring-up / dispatch witness): on a valid
 core, when the budget-aware re-choose selects `tid` and `tid` outranks the
 current thread (vacuously true at secondary bring-up, where

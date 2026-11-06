@@ -73,7 +73,6 @@ open SeLe4n.Testing
 -- SM5.C.1 enqueueRunnableOnCore:
 #check @enqueueRunnableOnCore_preserves_objects_invExt
 #check @enqueueRunnableOnCore_preserves_woken_thread_fields
-#check @enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed
 #check @enqueueRunnableOnCore_mem_runQueueOnCore
 #check @enqueueRunnableOnCore_makes_ready
 #check @enqueueRunnableOnCore_runQueueOnCore_ne
@@ -93,7 +92,6 @@ open SeLe4n.Testing
 #check @wakeThread_target_runQueue_contains
 #check @wakeThread_target_admits_thread
 #check @wakeThread_preserves_objects_invExt
-#check @wakeThread_preserves_target_runQueue_wellFormed
 #check @wakeThread_independent_of_other_core
 
 -- SM5.C.6 losslessness:
@@ -108,7 +106,6 @@ open SeLe4n.Testing
 #check @handleRescheduleSgiOnCore_eq_switch_of_choose_some
 #check @handleRescheduleSgiOnCore_switches_current
 #check @handleRescheduleSgiOnCore_preserves_objects_invExt
-#check @handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed
 #check @handleRescheduleSgiOnCore_independent_of_other_core
 #check @handleRescheduleSgiOnCore_keeps_current_when_outranked
 #check @candidateOutranksCurrentOnCore
@@ -685,8 +682,8 @@ private def runAuditPass1Checks : IO Unit := do
     (wakeStateAnd stWake tidW bootCoreId
       (fun st' => (st'.runQueueWalk ⟨3, by decide⟩).isEmpty))
   -- gap (m): the inventory size + partition witnesses are decidably consistent.
-  assertBool "SM5.C inventory has 83 entries"
-    (decide (crossCoreWakeTheorems.length = 83))
+  assertBool "SM5.C inventory has 80 entries"
+    (decide (crossCoreWakeTheorems.length = 80))
   assertBool "SM5.C inventory per-category counts partition the total"
     (decide ((crossCoreWakeTheorems.filter (fun t => t.category == .lockSet)).length +
              (crossCoreWakeTheorems.filter (fun t => t.category == .target)).length +
