@@ -561,6 +561,14 @@ theorem replyRecvPostReceiveDonation_replyViews_eq {t srv nxt : SeLe4n.ThreadId}
         (descheduleAtPlacement_preserves_objects_invExt _ _ hInv),
         descheduleAtPlacement_replyViews_eq]
 
+/-- Answering the `.replyRecv` caller keeps the reply views, on both answers. -/
+theorem replyRecvAnswerCaller_replyViews_eq (answer : Option Architecture.FaultReplyOutcome)
+    (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (replyRecvAnswerCaller answer st t).replyViews = st.replyViews := by
+  cases answer with
+  | none => exact stageDeliveredMessage_replyViews_eq _ _ _ hInv
+  | some o => exact faultReplyApplyOnCore_replyViews_eq _ _ _ hInv
+
 /-- **The live reply-receive keeps the reply-waiter queues consistent**: the
 reply leg unlinks the answered caller, the receive leg links the next caller to
 the server, and every step between and after them (the donation pop, the
@@ -571,6 +579,7 @@ The receive leg's two facts are stated at the state it runs on, the reply leg's
 commit with the donation pop applied (`replyRecvPostPopState`), as the arm's
 other composite theorems state theirs. -/
 theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
+    {answer : Option Architecture.FaultReplyOutcome}
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (root : SeLe4n.ObjId)
     (base : SeLe4n.Slot) (ec : CoreId) (st stOut : SystemState) (summary : CapTransferSummary)
@@ -581,12 +590,12 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
         (endpointReplyOnCore tid prevCaller msg ec st).1).objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head = some s → s ≠ tid ∧ ReplyViews.serverFree (replyRecvPostPopState rid
         prevCaller (endpointReplyOnCore tid prevCaller msg ec st).1).replyViews s)
-    (h : endpointReplyRecvOnCore epId tid rid prevCaller msg root base ec st
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg root base ec st
       = .ok (summary, stOut)) :
     stOut.replyWaitersConsistent := by
   have hB1 := endpointReplyOnCore_preserves_replyWaitersConsistent tid prevCaller msg ec st hInv hC
   have hI1 := endpointReplyOnCore_preserves_objects_invExt tid prevCaller msg ec st hInv
-  unfold endpointReplyRecvOnCore at h
+  unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
   cases hR : endpointReplyOnCore tid prevCaller msg ec st with
   | mk st1 res1 =>
@@ -621,8 +630,8 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
               ((recordedReplyServer? st prevCaller).getD tid) ec hI3
             refine replyWaitersConsistent.of_views ?_ hB2
             rw [stageWokenSendCompletion_replyViews_eq _ _
-                (stageDeliveredMessage_preserves_objects_invExt _ _ _ hI4),
-              stageDeliveredMessage_replyViews_eq _ _ _ hI4,
+                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _ hI4),
+              replyRecvAnswerCaller_replyViews_eq _ _ _ hI4,
               applyReceiveLegPipHandoff_replyViews_eq _ _ _ _ _ hI3,
               replyRecvPostReceiveDonation_replyViews_eq hI2 hD]
 

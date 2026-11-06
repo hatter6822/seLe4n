@@ -477,7 +477,7 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     have hSnd : (receiveRendezvousSender? S1 epId).isNone = true := by
       simp [receiveRendezvousSender?, hEp1, hS]
     simp only [hSnd, ↓reduceIte]
-  unfold endpointReplyRecvOnCore
+  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
   simp only [hRec, Option.getD_some, hEq, hPop, hRecv, hEp1, Option.bind_some, hS]
   simp [replyRecvPostReceiveDonation, applyReceiveLegPipHandoff,
     Architecture.stageWokenSendCompletion_none]

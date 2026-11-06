@@ -95,8 +95,8 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
             let msg : IpcMessage :=
               { registers := full.extract 1 full.size, badge := replyBadge }
             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
-              match endpointReplyRecvOnCore epId tid rid prevCaller msg (callerCspaceRoot st tid)
-                  (SeLe4n.Slot.ofNat 0) executingCore st with
+              match replyRecvTransferOnCore epId tid rid prevCaller mi.label msg
+                  (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore st with
               | .ok (summary, st') =>
                   .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
               | .error e => .error (e, st)
@@ -130,8 +130,8 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
         obtain ⟨rid, prevCaller, replyBadge⟩ := r
         simp only [← hRoot, hSlot]
         split
-        · rcases endpointReplyRecvOnCore epId tid rid prevCaller _ gate.cspaceRoot
-            (SeLe4n.Slot.ofNat 0) executingCore st with _ | ⟨summary, st'⟩ <;> rfl
+        · rcases replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label _
+            gate.cspaceRoot (SeLe4n.Slot.ofNat 0) executingCore st with _ | ⟨summary, st'⟩ <;> rfl
         · rfl
   | _ => rfl
 
@@ -301,14 +301,15 @@ theorem replyRecvBlocksFast_spec {st : SystemState} {epId : SeLe4n.ObjId}
   · simp only [receiveQueueTailCode, hEp]
 
 /-- The checked reply-receive once its reply capability is resolved, through the
-specification's path.  Out of line, so the reply's message record is built only
+specification's path (`replyRecvTransferOnCore`, which answers a faulted caller
+with its fault reply).  Out of line, so the reply's message record is built only
 here. -/
 @[noinline] def replyRecvRendezvousR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-    match endpointReplyRecvOnCore epId tid rid c
+    match replyRecvTransferOnCore epId tid rid c label
         { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }
         (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore st with
     | .ok (summary, st') =>
@@ -415,14 +416,14 @@ the context the reply object heads to the caller): in place when
 caller's home read on the pre-state; the specification's otherwise. -/
 @[inline] def replyRecvUnheldArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
     if replyRecvUnheldAdmits epId tid c rid layout len st then
       .ok ((), performReplyRecvUnheldDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) epId (receiveQueueTailCode st epId) layout rf len badge
         executingCore)
-    else replyRecvRendezvousR epId tid c rid badge layout rf len executingCore st
+    else replyRecvRendezvousR epId tid c rid badge layout rf len label executingCore st
 
 /-- WS-ZA ZA6.33: whether a donated reply-receive of at most four words may
 block in place (`replyRecvDonatedBlocks`).  Out of line, so the checks are one
@@ -439,31 +440,36 @@ in place when `replyRecvDonatedAdmits` passes (`performReplyRecvDonatedDelivered
 the caller's home read on the pre-state; the specification's otherwise. -/
 @[inline] def replyRecvDonatedArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
     if replyRecvDonatedAdmits epId tid c rid layout len st then
       .ok ((), performReplyRecvDonatedDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) epId (receiveQueueTailCode st epId) layout rf len badge
         executingCore)
-    else replyRecvUnheldArmR epId tid c rid badge layout rf len executingCore st
+    else replyRecvUnheldArmR epId tid c rid badge layout rf len label executingCore st
 
 /-- The checked reply-receive once its reply capability resolved to reply object
-`rid`, answering caller `c` with badge `badge`: the reply leg's flow gate, then
-the in-place path when it may be taken (`replyRecvBlocksFast`, a reply of at
-most four words; `replyRecvDonatedArmR` on a donated reply), the
-specification's otherwise. -/
+`rid`, answering caller `c` with badge `badge`: the reply leg's flow gate, then a
+caller carrying a fault answered through the specification's path (its fault
+reply, `replyRecvTransferOnCore`), and for any other caller the in-place path when
+it may be taken (`replyRecvBlocksFast`, a reply of at most four words;
+`replyRecvDonatedArmR` on a donated reply), the specification's otherwise.  Every
+in-place path delivers the reply as a message, which is the answer only for a
+caller carrying no fault, so the fault test runs first. -/
 @[inline] def replyRecvResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
-      if decide (Architecture.regMessageLength layout len - 1 ≤ 4) &&
+      if threadHasPendingFault st c then
+        replyRecvRendezvousR epId tid c rid badge layout rf len label executingCore st
+      else if decide (Architecture.regMessageLength layout len - 1 ≤ 4) &&
           replyRecvBlocksFast st epId tid c rid then
         .ok ((), performReplyRecvBlockDelivered st c tid rid epId (receiveQueueTailCode st epId)
           layout rf len badge executingCore)
-      else replyRecvDonatedArmR epId tid c rid badge layout rf len executingCore st
+      else replyRecvDonatedArmR epId tid c rid badge layout rf len label executingCore st
     else .error (.replyCapInvalid, st)
 
 /-- The general reply-receive arm on a message read in registers. -/
@@ -492,7 +498,7 @@ resolved in continuation form; a reply-receive that may block in place
       else
       if h0 : 0 < layout.msgRegs.size then
         let resolved := fun rid c badge =>
-          replyRecvResolvedR ctx epId tid c rid badge layout rf len executingCore st
+          replyRecvResolvedR ctx epId tid c rid badge layout rf len label executingCore st
         resolveReplyRecvK st tid len
           (SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf (layout.msgRegs[0]'h0)))
           (fun e => .error (e, st)) resolved
@@ -532,6 +538,10 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
           simp only [replyRecvResolvedR]
           split
           · next hFlow =>
+            split
+            · simp only [replyRecvRendezvousR]
+            rename_i hNoFault
+            rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)]
             split
             · next hG =>
               simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
@@ -620,6 +630,7 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                   · show ¬ (Architecture.regReplyRecvBody layout rf len).size > maxMessageRegisters
                     unfold maxMessageRegisters; omega
                 · simp only [replyRecvRendezvousR]
+                  rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)]
           · rfl
       · rfl
   · next hTgt =>

@@ -4519,7 +4519,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       -- WS-SM SM6.D (faithful seL4-MCS `.replyRecv`): resolve the server-supplied
       -- reply cap (`ReplyRecvArgs.replyCPtr`) to its `(rid, prevCaller)` — authority
       -- flows from *holding* the reply cap (`reply.caller`), exactly like `.reply`,
-      -- closing the prior raw-thread bypass.  `endpointReplyRecvOnCore` then replies to the
+      -- closing the prior raw-thread bypass.  `replyRecvTransferOnCore` then replies to the
       -- prev caller, **consumes** the answered reply link, receives the next
       -- message, and **re-links** the same reply object to the next caller.
       fun st =>
@@ -4538,8 +4538,12 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             -- into the caller's `pendingMessage`; stage it as the return frame.
             -- A caller that blocked on the receive leg stages nothing (the
             -- `.ready` guard inside `stageDeliveredMessage`).
-            match endpointReplyRecvOnCore epId tid rid prevCaller msg gate.cspaceRoot
-                decoded.capRecvSlot executingCore st with
+            -- A caller carrying a fault (fault delivery is a Call, so a faulted
+            -- thread is the Reply's recorded caller) is answered as `.reply`
+            -- answers it — restart or abandon, fault record cleared
+            -- (`replyRecvTransferOnCore`, seL4's `doReplyTransfer` fault branch).
+            match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
+                gate.cspaceRoot decoded.capRecvSlot executingCore st with
             -- PR #873 round 7: the receive leg inside `endpointReplyRecvOnCore` now runs
             -- the **WithCaps** per-core receive, so a capability-bearing sender
             -- that parked before this `.replyRecv` delivers its capabilities
@@ -5018,7 +5022,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
     | .object epId =>
       -- WS-SM SM6.D (faithful checked `.replyRecv`): gate BOTH legs — the receive leg
       -- (`securityFlowsTo endpoint→receiver`) and the reply leg (`securityFlowsTo
-      -- receiver→prevCaller`) — around the *same* `endpointReplyRecvOnCore` as the unchecked
+      -- receiver→prevCaller`) — around the *same* `replyRecvTransferOnCore` as the unchecked
       -- arm, so `checkedDispatch_replyRecv_eq_unchecked_when_allowed` stays provable.
       -- WS-SM SM6.D (PR #822 review, IF-ordering): the receive-leg flow is independent
       -- of the reply cap, so it is checked **first** — a denied receive returns
@@ -5048,8 +5052,8 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
                 -- twin of the unchecked arm's staging; the receive leg's own
                 -- flow gate governs the consumed message).
-                match endpointReplyRecvOnCore epId tid rid prevCaller msg gate.cspaceRoot
-                    decoded.capRecvSlot executingCore st with
+                match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
+                    gate.cspaceRoot decoded.capRecvSlot executingCore st with
                 -- PR #873 round 7: the checked twin of the unchecked arm's
                 -- WithCaps receive leg — the endpoint→receiver flow is gated
                 -- above, so the *unchecked* per-core WithCaps receive inside
@@ -5927,7 +5931,7 @@ results.  Faithful seL4-MCS: the reply target is the reply object's recorded
 `caller` resolved from the server-supplied reply cap
 (`resolveReplyRecvReply … = .ok (rid, prevCaller)`); the checked arm gates both
 legs — (1) endpoint → receiver (receive leg, checked first, ahead of the reply
-probe), (2) receiver → prevCaller (reply leg) — around the *same* `endpointReplyRecvOnCore`
+probe), (2) receiver → prevCaller (reply leg) — around the *same* `replyRecvTransferOnCore`
 the unchecked arm runs, so when both flows hold the two arms coincide. -/
 theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
@@ -5950,9 +5954,9 @@ theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
     hSyscall, hCap, hResolve]
   -- The checked arm now gates in two nested steps: the receive leg (`!flowRecv →
-  -- .flowDenied`) outermost, then the reply leg (`flowReply → endpointReplyRecvOnCore`,
+  -- .flowDenied`) outermost, then the reply leg (`flowReply → replyRecvTransferOnCore`,
   -- else `.replyCapInvalid`).  With both flows `true` the outer `!true` is `false`
-  -- (else branch) and the inner `if true` selects the same `endpointReplyRecvOnCore` the
+  -- (else branch) and the inner `if true` selects the same `replyRecvTransferOnCore` the
   -- unchecked arm runs.
   simp [hGate, hFlowReply]
 
@@ -6956,7 +6960,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
     (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge))
-    (hBody : endpointReplyRecvOnCore epId tid rid prevCaller
+    (hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
             (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           badge := replyBadge }

@@ -1,3 +1,60 @@
+## v0.36.206 — A ReplyRecv answer to a faulted caller is the fault reply
+
+Fault delivery is a Call, so a faulted thread is the recorded caller of its
+handler's Reply.  When the handler answered with `ReplyRecv`, the reply leg
+woke the thread `.ready` with its fault record still set and no restart
+applied.  The next ordinary `.reply` it received, from any server it later
+called, was then routed to `faultReplyOnCore`, so that server could set the
+thread's PC.  `ReplyRecv`'s reply leg now answers a faulted caller exactly as
+`.reply` does: the handler's label and payload are decoded with
+`decodeFaultReply`, the fault record is cleared, and the thread is restarted
+or abandoned.  The receive leg runs unchanged.
+
+- **One composite over every answer.**  `endpointReplyRecvAnsweringOnCore`
+  takes the answer (`Option FaultReplyOutcome`) and ends with
+  `replyRecvAnswerCaller`: the delivered-message staging on `none`,
+  `faultReplyApplyOnCore` on a decoded outcome.  `endpointReplyRecvOnCore`
+  is it at `none`.  The arm's transition `replyRecvTransferOnCore` reads
+  the caller's fault record off the pre-state
+  (`replyRecvCallerFaultAnswer?`) and gives the reply leg the empty message
+  the fault branch delivers (`replyRecvLegMessage`).  On an unfaulted
+  caller it is the old composite (`replyRecvTransferOnCore_of_no_fault`).
+- **Both dispatch tables and the compiled arm.**  `API.dispatchWithCap` and
+  `dispatchWithCapChecked` call `replyRecvTransferOnCore` with the
+  `MessageInfo` label.  In `RefusalCarryingReplyRecv.lean`,
+  `endpointReplyRecvCheckedArmGeneralR` and `replyRecvRendezvousR` call it
+  too.  `replyRecvResolvedR` sends a faulted caller to it before the in-place
+  fast paths (a read, before any write).  The fast/spec equalities are
+  restated over the new transition.
+- **Theorems generalised to every answer.**  The run-queue entry stage
+  (the woken caller is ready and is not the replier, so the abandon may
+  deschedule it), readiness, saved-register, object-invariant, IPC bundle,
+  reply-waiter, slot-confinement, mapping-stage, step-cover, replenish-queue
+  and cross-core non-interference theorems.  New:
+  `replyRecvAnswerCaller_*` per property,
+  `faultReplyApplyOnCore_stepCovers` and `faultReplyApplyOnCore_mappingStage`
+  (now shared with `faultReplyOnCore`'s proofs),
+  `schedLockSet_replyRecvTransferOnCore_coversWrites`,
+  `replyRecvTransferOnCore_crossCoreNonInterference` and
+  `schedLockSet_replyRecvTransferOnCore_of_no_fault`.  The readiness frame
+  (`readyKeptStage` and its send and receive lemmas) moves to
+  `RunQueueAgreement/Readiness.lean` so the entry-stage proof can use it.
+- **Footprint.**  The `.replyRecv` scheduler footprint is
+  `schedLockSet_replyRecvTransferOnCore`, whose write set appends the
+  abandon's core.  `abiEntryLockOperands` now carries the `MessageInfo` for
+  `.replyRecv`.  `schedLockSet_endpointReplyRecvOnCore` is registered in the
+  scheduler-footprint census as the unfaulted specialisation.
+- **Tests.**  `tests/FaultHandlingSuite.lean` §7g delivers a fault, has the
+  handler answer with `ReplyRecv` through the compiled syscall entry, and
+  checks that the fault record is cleared, the restart applied and the
+  registers equal those `.reply` installs.  The restarted thread then Calls a
+  second server, whose ordinary `.reply` leaves its PC alone and delivers the
+  message.  A nonzero label abandons it.  With the fault answer disabled, the
+  section fails.
+- **Docs.**  The debt row is closed in `docs/REGISTERED_DEBT.md`, and
+  `replyTransferOnCore`'s docstring no longer describes the gap.
+  `docs/spec/SELE4N_SPEC.md` describes the reply leg's answer.
+
 ## v0.36.205 — WS-ZA ZA6.36: the other plans re-read against the tree WS-ZA leaves
 
 Every plan under `docs/planning/` except the zero-allocation plan and its

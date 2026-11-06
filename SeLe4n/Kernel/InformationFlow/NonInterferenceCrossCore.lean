@@ -114,15 +114,16 @@ kernel really runs on a cross-core `ReplyRecv` is invisible to any core outside
 its write set, with no hypothesis on the clearance of the answered caller, the
 rendezvousing sender, the recorded server or any chain member. -/
 theorem endpointReplyRecvOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    {answer : Option Architecture.FaultReplyOutcome}
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg receiverCspaceRoot
-        receiverSlotBase executingCore st
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
+        receiverCspaceRoot receiverSlotBase executingCore st
       = .ok (summary, st'))
-    (hne : c ∉ endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg
+    (hne : c ∉ endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg
       receiverCspaceRoot receiverSlotBase executingCore st)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
@@ -130,6 +131,25 @@ theorem endpointReplyRecvOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
       receiverSlotBase executingCore st st' summary hObjInv hStep)
     hShared
+
+/-- The `.replyRecv` arm's transition at the answer its caller's fault record
+selects: a faulted caller's restart or abandon lands on the cores
+`replyRecvTransferWriteSet` names, so it too is invisible outside them. -/
+theorem replyRecvTransferOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg
+        receiverCspaceRoot receiverSlotBase executingCore st = .ok (summary, st'))
+    (hne : c ∉ replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg
+      receiverCspaceRoot receiverSlotBase executingCore st)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  endpointReplyRecvOnCore_crossCoreNonInterference ctx observer endpointId receiver replyId
+    prevCaller _ receiverCspaceRoot receiverSlotBase executingCore st st' summary c hObjInv hStep
+    hne hShared
 
 /-- SM8.B.2 (**the live `.tcbSuspend` non-interference**): the syscall arm the
 kernel really runs on a cross-core `TCBSuspend` is invisible to any core outside
@@ -1295,8 +1315,9 @@ inductive CrossCoreTransition where
   capabilities, which `.receive` reaches directly and `.replyRecv` reaches as its
   second leg (PR #873 rounds 6 and 7). -/
   | endpointReceiveDualWithCaps
-  /-- SM6.C — the **live** `.replyRecv` arm, `endpointReplyRecvOnCore`: both legs,
-  the donation pop and re-donation, and the priority hand-off.  (Audit IPC-2,
+  /-- SM6.C — the **live** `.replyRecv` arm, `replyRecvTransferOnCore`: both legs,
+  the donation pop and re-donation, the priority hand-off, and a faulted caller's
+  fault answer.  (Audit IPC-2,
   `v0.36.49`: the separate entry for a two-leg composite below the donation is
   gone with that composite, which no arm ran.) -/
   | endpointReplyRecvDispatch
@@ -1707,7 +1728,7 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .readOffTheArm "below-API transition; live arm is .endpointReceiveDualWithCaps"
   | .endpointReceiveDualWithCaps => .delegationProof .receive syscallDelegates_receive
   | .endpointReplyRecvDispatch =>
-      .readOffTheArm "checked `.replyRecv` arm calls endpointReplyRecvOnCore; delegation theorem pending"
+      .readOffTheArm "checked `.replyRecv` arm calls replyRecvTransferOnCore; delegation theorem pending"
   | .deschedule => .readOffTheArm "below-API primitive, not a syscall arm"
   | .cancelIpcBlocking => .readOffTheArm "below-API composite; live arm is .suspendThreadDispatch"
   | .suspendThreadDispatch => .delegationProof .tcbSuspend syscallDelegates_tcbSuspend

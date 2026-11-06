@@ -41,23 +41,6 @@ def _root_.SeLe4n.Model.SystemState.blockedNotResident (st : SystemState) : Prop
   ∀ (d : CoreId) (tid : SeLe4n.ThreadId) (t : TCB),
     st.machine.residentOnCore d = some tid → st.getTcb? tid = some t → t.ipcState = .ready
 
-/-! ### The IPC-state frame an entry keeps -/
-
-/-- WS-ZA ZA6.18: **a step that blocks no thread outside `S`**: a thread outside
-`S` ready in IPC, or with no TCB, stays so.  Every run-queue stage is one for
-every `S` (its `StateMono`); a block is one for a set holding the thread it
-blocks. -/
-def readyKeptExcept (S : SeLe4n.ThreadId → Prop) (st st' : SystemState) : Prop :=
-  ∀ t, ¬ S t → st.readyOrAbsent t → st'.readyOrAbsent t
-
-theorem readyKeptExcept.trans {S : SeLe4n.ThreadId → Prop} {a b c : SystemState}
-    (h1 : readyKeptExcept S a b) (h2 : readyKeptExcept S b c) : readyKeptExcept S a c :=
-  fun t hS h => h2 t hS (h1 t hS h)
-
-theorem readyKeptExcept.of_stateMono {S : SeLe4n.ThreadId → Prop} {st st' : SystemState}
-    (h : SystemState.StateMono st st') : readyKeptExcept S st st' :=
-  fun _ _ hr => h.readyOrAbsent hr
-
 namespace BlockedNotResident
 
 /-- A state no core holds a resident in satisfies it. -/
@@ -595,75 +578,6 @@ A fault delivery blocks the faulting thread and no other: the handler call
 blocks its caller (the blocking arm's IPC-state store, `readyKeptStage` off the
 caller), and every other step of the delivery is a run-queue stage or a
 dispatch, which keeps `StateMono`. -/
-
-/-- **A step that keeps readiness off the threads `S`**, given the link
-invariants at its start: the readiness frame a blocking arm composes. -/
-def readyKeptStage (S : SeLe4n.ThreadId → Prop) (st st' : SystemState) : Prop :=
-  st.objects.invExt → st.runQueueRefined → readyKeptExcept S st st'
-
-namespace readyKeptStage
-
-variable {S : SeLe4n.ThreadId → Prop}
-
-theorem refl (st : SystemState) : readyKeptStage S st st := fun _ _ _ _ h => h
-
-theorem of_stage {st st' : SystemState} (h : SystemState.RunQueueStage st st') :
-    readyKeptStage S st st' := fun hI hR => .of_stateMono (h.2.2 hI hR)
-
-theorem of_dispatch {c : CoreId} {st st' : SystemState}
-    (h : SystemState.RunQueueDispatchStage c st st') : readyKeptStage S st st' :=
-  fun hI hR => .of_stateMono (h.2.2 hI hR)
-
-/-- Two readiness frames compose over the link invariants the first step keeps. -/
-theorem trans {a b c : SystemState} (L : SystemState.RunQueueLinkStage a b)
-    (h1 : readyKeptStage S a b) (h2 : readyKeptStage S b c) : readyKeptStage S a c :=
-  fun hI hR => let ⟨hI', hR'⟩ := L.links hI hR; (h1 hI hR).trans (h2 hI' hR')
-
-/-- ...over a frame stage's link half. -/
-theorem transFrame {P : SeLe4n.SchedContextId → Prop} {a b c : SystemState}
-    (L : SystemState.RunQueueFrameStage P a b)
-    (h1 : readyKeptStage S a b) (h2 : readyKeptStage S b c) : readyKeptStage S a c :=
-  fun hI hR => let ⟨hI', hR'⟩ := L.1.links hI hR; (h1 hI hR).trans (h2 hI' hR')
-
-/-- A frame stage keeps every thread's readiness: its activity half. -/
-theorem of_frame {P : SeLe4n.SchedContextId → Prop} {st st' : SystemState}
-    (h : SystemState.RunQueueFrameStage P st st') : readyKeptStage S st st' :=
-  fun hI hR => .of_stateMono (h.2.2 hI hR)
-
-theorem mono {S' : SeLe4n.ThreadId → Prop} {st st' : SystemState} (hS : ∀ t, S t → S' t)
-    (h : readyKeptStage S st st') : readyKeptStage S' st st' :=
-  fun hI hR t hn => h hI hR t fun hs => hn (hS t hs)
-
-end readyKeptStage
-
-/-- **A TCB update that keeps a ready thread ready keeps every thread's
-readiness.** -/
-theorem readyKeptExcept_updateTcb {S : SeLe4n.ThreadId → Prop} (st : SystemState)
-    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hInv : st.objects.invExt)
-    (hf : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready) :
-    readyKeptExcept S st (st.updateTcb tid f) := fun t _ h x hx => by
-  by_cases e : t = tid
-  · subst e
-    rw [SystemState.updateTcb_getTcb?_self st t f hInv] at hx
-    cases hT : st.getTcb? t with
-    | none => rw [hT] at hx; cases hx
-    | some y =>
-      rw [hT] at hx; cases hx
-      exact hf y (h y hT)
-  · rw [SystemState.updateTcb_getTcb?_ne st tid f hInv t
-      (fun h' => e (ThreadId.toObjId_injective _ _ h').symm)] at hx
-    exact h x hx
-
-/-- **The blocking arm's IPC-state store keeps every other thread's readiness**:
-it writes the one TCB. -/
-theorem storeTcbIpcStateAndMessage_readyKeptStage {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {s : ThreadIpcState} {m : Option IpcMessage}
-    (h : storeTcbIpcStateAndMessage st tid s m = .ok st') :
-    readyKeptStage (· = tid) st st' := fun hI _ t hn hr x hx => by
-  obtain ⟨_, _, hS⟩ := modifyTcb_ok_decompose h
-  rw [storeObject_getTcb?_ne st st' _ _ t
-    (fun h' => hn (ThreadId.toObjId_injective _ _ h')) hI hS] at hx
-  exact hr x hx
 
 /-- **The cross-core call blocks only its caller**: the receiver's hand-over
 and wake are run-queue stages, the caller's block is its IPC-state store, and

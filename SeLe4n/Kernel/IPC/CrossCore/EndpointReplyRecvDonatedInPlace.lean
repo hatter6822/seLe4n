@@ -791,7 +791,7 @@ theorem replyRecvOnCore_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     unfold rendezvousDequeuedCall lookupTcb
     simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
   refine ⟨?_, tb, hTb, hBk⟩
-  unfold endpointReplyRecvOnCore
+  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
   simp only [hRecS, Option.getD_some, hEq, hPop, hRecv, hEp1, Option.bind_some, hS]
   simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff,
     Architecture.stageWokenSendCompletion_none]

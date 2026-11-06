@@ -448,7 +448,7 @@ theorem replyRecvOnCore_unheld_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
   obtain ⟨tb, hTb, hBk⟩ := receiveBlock_receiver_blocked P epId ep tid rt1 (some rid) core hE1 hR1
     hA1 hG1
   refine ⟨?_, tb, hTb, hBk⟩
-  unfold endpointReplyRecvOnCore
+  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
   simp only [hRecS, Option.getD_none, hEq, hPopR, hRecv, hEp1, Option.bind_some, hS]
   simp [replyRecvPostReceiveDonation, applyReceiveLegPipHandoff,
     Architecture.stageWokenSendCompletion_none]
