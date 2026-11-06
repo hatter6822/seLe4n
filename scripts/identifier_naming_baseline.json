@@ -551,9 +551,6 @@
  "h14": {
   "SeLe4n/Kernel/Architecture/Invariant.lean": 6
  },
- "h16": {
-  "SeLe4n/Kernel/Architecture/Invariant.lean": 6
- },
  "h16AuthSlot": {
   "tests/NegativeStateSuite.lean": 2
  },

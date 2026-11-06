@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.202` (`lakefile.toml`) |
+| **Package version** | `0.36.203` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 581,733 across 547 Lean files |
 | **Test LoC** | 88,464 across 70 Lean test suites |
@@ -6512,7 +6512,7 @@ Every kernel object has a decidable well-formedness predicate:
   (seL4's `reply_pop`: `returnDonatedSchedContextInPlace`,
   `popDonationSettledInPlace`, `replyTransferChecked_donated_inPlace`,
   `replyRecvOnCore_donated_delivered`).
-  Since `v0.36.202` (ZA6.34) the final deletes that end a reply stack's
+  Since `v0.36.203` (ZA6.34) the final deletes that end a reply stack's
   callers write in place, as seL4-MCS's `reply_remove` does: a head reply's
   pops the loaned context back to its caller (`cancelHeadReplyCaller`), a
   middle reply's severs the stack at the frame, and a context's

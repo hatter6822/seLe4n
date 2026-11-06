@@ -444,7 +444,7 @@ object is carved with (`TCB.idCell`, `Reply.idCell`, `Reply.frameLinkCell`,
 `SchedContext.headLinkCell`) rather than building one, and new code between
 a pop and a receive keeps to what the pop writes (`popFrame`) or carries the
 receive's checks across it.
-Since `v0.36.202` (ZA6.34) a compiled guard or store reads an optional link
+Since `v0.36.203` (ZA6.34) a compiled guard or store reads an optional link
 by its code or off the link itself and never builds the `Option` to compare or
 decode it: a queue's successor through `sendWakesInPlaceCode` and
 `queueSuccessorDiffers`, an enqueue behind a tail through

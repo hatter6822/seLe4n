@@ -1781,7 +1781,7 @@ def ipc_invariant_full_named_projection_signatures : IO Unit := do
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> donationBudgetTransfer st :=
     @ipcInvariantFull.donationBudgetTransfer
   -- WS-RC R4.C.7: uniqueWaiters projection removed (conjunct retired in C2);
-  -- `blockedOnReplyHasTarget` retired at v0.36.202 (a deleted server's callers
+  -- `blockedOnReplyHasTarget` retired at v0.36.203 (a deleted server's callers
   -- wait with no recorded server).
   -- WS-SM SM6.D: the 16th (reply linkage) and 17th (PR #822 review:
   -- server-first stash well-formedness) conjuncts.

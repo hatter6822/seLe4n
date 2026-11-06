@@ -1,10 +1,11 @@
-## v0.36.202 — WS-ZA ZA6.34: a third thread, and the final deletes it issues allocate nothing
+## v0.36.203 — WS-ZA ZA6.34: a server's final delete is seL4-MCS's, and the deletes around it allocate nothing
 
 The QEMU exerciser gains a third and a fourth thread, so the final deletes
 that stop the threads they are about can be issued from outside the stack and
-measured.  Every allocation the new steps found was removed, in the forms
-seL4-MCS gives, and each new step now reads 0 on its first call and in steady
-state.
+measured.  A server's own final delete now follows seL4-MCS's `finaliseCap`,
+and the orphans it leaves are answered or ended as seL4 answers or ends them.
+Every allocation the new steps found was removed, in the forms seL4-MCS gives,
+and each new step now reads 0 on its first call and in steady state.
 
 - **The scenarios** (`rust/sele4n-hal/src/smp_exercisers.rs`).  After the
   chain scenario, the root task issues four deletes.  `head-reply-delete` is
@@ -43,6 +44,43 @@ state.
   (`resumeReadyMidState_eq_impl`, 1 to 0).  **A finalised context** lets go of
   its stack in the head reply's slot (`finaliseSchedContextUnstack_eq_impl`,
   4 to 0).
+- **A server's final delete is seL4-MCS's `finaliseCap`.**  The thread's own
+  reply is cut as `reply_remove_tcb` cuts it, and the context it holds, bound
+  or on loan, goes back to no one (`schedContext_unbindTCB`).  Every caller
+  waiting on it is left blocked with no server recorded
+  (`finaliseThreadOrphanWaiters`).  The loan return and the waiter walk that
+  ended those callers (`finaliseThreadReturnLoan`, `finaliseThreadEndWaiters`)
+  are retired.
+- **A caller recording no server is answered.**  Both reply spines answer it as
+  `doReplyTransfer` does: the reply leg, then the pop at the answered frame,
+  with no chain walk.  The AK1-B `.replyCapInvalid` refusal on that arm is
+  retired.  It was fail-closed under an assumption that the server finalise now
+  retires.  The model keeps its `some expected` replier check as a
+  confused-deputy hardening, which seL4 does not have.
+- **The unheld pop is `reply_pop` as written** (`popUnheldReplyHead`,
+  `finaliseReplyUnheldPop`).  A caller holding no context is handed it and
+  settled on its home core.  A caller holding a context of its own has only the
+  head taken off the context, which is bound to no one
+  (`severUnheldSchedContext`).  The sever keeps `ipcInvariantFull`, the
+  donation chain, the lent-context heads and the projection.
+- **The frozen mirror** gains the unheld return, the sever and the pop
+  (`frozenPopUnheldReplyHead`), and its reply answers a caller recording no
+  server.  FO-041 is flipped, the refusal witness is retired, and FO-045 drives
+  both of the pop's arms.
+- **In place.**
+  - A reply to a caller recording no server, whose reply object heads a context
+    no thread holds, writes in place (`IPC/CrossCore/EndpointReplyUnheldInPlace.lean`:
+    `performReplyUnheldDelivered`, `replyTransferChecked_unheld_inPlace`).  The
+    reply leg is factored out of the rendezvous store (`storeReplyLeg`,
+    `replyOnCore_eq_storeLeg`), and the unheld pop's gate is carried across it
+    (`unheldPopsInPlace_transport`).  It read 55, and now reads 0.
+  - The orphan's head-reply delete asks the commit test through the in-place
+    gate first (`unheldPopCommits_eq_impl`).  It read 5, and now reads 0.
+- **The holder's-delete scenario** (`orphan-*`).  The fourth thread holds the
+  partner's context under a two-frame stack and is deleted.  The partner's
+  reply below the head is deleted (the sever), and the root task answers the
+  server through the head reply's capability (the pop).  Every step reads
+  (0, 0), and the carves keep a carve's counts.
 - **Pins** (`scripts/qemu_exerciser_lib.sh`).  Every new step is pinned at
   (0, 0) except the carves, which keep a carve's counts: a thread 26, a reply
   15, an endpoint 11, and a context 15 on both calls

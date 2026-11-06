@@ -6124,7 +6124,7 @@ became structural (since WS-ZA ZA4.4, through the intrusive TCB queue).
 `v0.36.136` retired `passiveServerIdle`, which stated that no unbound thread
 off the boot core's queue is blocked sending or calling: seL4 MCS lets such a
 thread wait unbound (`schedContext_unbindTCB` leaves it blocked), and the
-final delete of its context now does the same.  `v0.36.202` retired
+final delete of its context now does the same.  `v0.36.203` retired
 `blockedOnReplyHasTarget`, which stated that every reply-blocked thread records
 the server it waits on: seL4 MCS's thread finalisation leaves a deleted
 server's callers `BlockedOnReply` with no server, answerable through their
@@ -6808,7 +6808,7 @@ theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept
 -- every existing consumer that destructures `ipcInvariantFull` via tuple
 -- projections continues to typecheck.  The block below layers a named
 -- `structure IpcInvariantFull` over the same conjuncts (twenty since
--- v0.36.202: 13 structural — `uniqueWaiters`, `passiveServerIdle` and
+-- v0.36.203: 13 structural — `uniqueWaiters`, `passiveServerIdle` and
 -- `blockedOnReplyHasTarget` retired — plus
 -- the reply-linkage/stash/hardening quintet added through the SM6.D
 -- reply-object audits, plus notification binding reciprocity and the endpoint-queue link
