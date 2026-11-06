@@ -1336,15 +1336,24 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
       .notificationSignal, .notificationWait,
       .send, .receive, .call, .reply, .replyRecv].filter
         (fun sid => declaredSchedFootprintSyscall sid)).length = 15))
-  -- (vi) WS-ZA ZA5.4 part 23: the finalising delete and the revocation declare
-  -- whatever the operands — every core's run queue, since a destroyed
-  -- endpoint's or notification's cancelled waiters wake on their own cores.
-  -- Part 26: and the space change, whose old CSpace root may be deleted by the
-  -- zombie loop.
-  assertBool "the capability destroys and the space change declare unconditionally"
-    ([SyscallId.cspaceDelete, .cspaceRevoke, .tcbSetSpace].all fun sid =>
+  -- (vi) WS-ZA ZA5.4 part 23: the revocation declares whatever the operands —
+  -- every core's run queue, since a destroyed endpoint's or notification's
+  -- cancelled waiters wake on their own cores.  Part 26: and the space change,
+  -- whose old CSpace root may be deleted by the zombie loop.
+  assertBool "the revocation and the space change declare unconditionally"
+    ([SyscallId.cspaceRevoke, .tcbSetSpace].all fun sid =>
       declaredSchedFootprintSyscall sid &&
         (schedLockSetForSyscall sid { caller := tid0 } bootCoreId st).isSome)
+  -- (vii) WS-ZA ZA6.37: the delete reads its cores off the slot it empties, so
+  -- it declares exactly when the CNode and the slot are supplied.
+  assertBool "the delete declares exactly when its CNode and slot are supplied"
+    (declaredSchedFootprintSyscall .cspaceDelete &&
+      (schedLockSetForSyscall .cspaceDelete { caller := tid0 } bootCoreId st).isNone &&
+      (schedLockSetForSyscall .cspaceDelete
+        { caller := tid0, targetObject := some scId0.toObjId } bootCoreId st).isNone &&
+      (schedLockSetForSyscall .cspaceDelete
+        { caller := tid0, targetObject := some scId0.toObjId,
+          targetSlot := some (SeLe4n.Slot.ofNat 0) } bootCoreId st).isSome)
 
 /-- WS-ZA ZA6.4: **the no-stranded-refill check bites**.  The check reads the
 links: a bound context with its head used up must be on a core's chain at its
