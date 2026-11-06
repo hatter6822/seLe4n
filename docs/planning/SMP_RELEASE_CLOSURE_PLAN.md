@@ -5,6 +5,21 @@
 > Re-baselined against the pre-SM10 completeness audit at
 > `v0.34.3`; §1 states what the phase actually owns, which is a boot path
 > as well as a release cut.
+>
+> **Re-read at `v0.36.205`** (WS-ZA ZA6.36).  SM10.1's content is WS-BP's and
+> has landed except the board boot (`SMP_BOOT_PATH_PLAN.md` BP8.6): the image
+> exists (BP5), boots four PEs under QEMU (BP8.1, BP8.2) and runs the Tier-4
+> gates (BP8.4), so SM10.3's "State at `v0.34.26`" column and SM10.3.10's
+> "NOT RUN until the image exists" are dated, and each row re-reads its state
+> when it starts.  WS-ZA's exerciser (`scripts/qemu_exerciser_lib.sh`, driver
+> `heap-allocations-per-syscall`) issues a user-space `svc` round trip for every
+> pinned scenario on the `virt` image, which covers part of SM10.3.17's
+> procedure; SM10.3.17 owes the per-`SyscallId` sweep and derives the ids the
+> exerciser does not reach from `SyscallId.all` rather than listing them.
+> **Zero allocation**: no row here adds or changes a kernel entry, an object
+> or a type — they are documentation, tests, scripts and the version cut — so
+> each reads the QEMU gate unchanged, and SM10.5.4's "all tiers green"
+> includes it.
 
 > **Phase**: SM10 of WS-SM
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)

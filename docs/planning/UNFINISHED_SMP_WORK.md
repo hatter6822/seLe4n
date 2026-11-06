@@ -16,6 +16,18 @@
 > absent from `docs/REGISTERED_DEBT.md`, when in fact they closed at `v0.34.57` —
 > absence from the register meant *done*, not *forgotten*, which is worth knowing
 > before reading any other row's silence as a gap.
+> **Re-read at `v0.36.205`** (WS-ZA ZA6.36): the register's three open residuals
+> were re-checked against the tree and still hold — §2's cancellation queue arms
+> still take `hTeardownProj` (`IPC/CrossCore/CancellationNI.lean`), and
+> `Scheduler/Liveness/TraceModel.lean` still reads `bootCoreId` (27 sites), so
+> WS-SL's residual stands.  The findings and their verification notes name the
+> tree of their audit: `Notification.waitingThreads` is retired (WS-ZA ZA4.4,
+> waiters linked through the TCB), the replenish queue is a ghost view over the
+> contexts' release links (WS-ZA ZA6.3, `Model/State.lean:161`), `SchedLockId`
+> is retired (WS-LS LS1.2) and the lock words are ghost (LS3.1); a finding
+> citing them is read at its own version.  No row here adds a kernel entry,
+> an object or a type, so the zero-allocation rule (ZA6.35) asks nothing of
+> this register.
 > **The findings themselves are left as the audit wrote them**; a status marker is
 > appended to each.  This register is a record of what was found, not a status
 > board — the status board is `docs/REGISTERED_DEBT.md`.

@@ -7,6 +7,12 @@
 > **Audited cut**: `v0.31.2` (the `lakefile.toml::version` at plan time;
 > the tree has since moved well past it — see §9 for per-phase landings).
 >
+> **Re-read at `v0.36.205`** (WS-ZA ZA6.36): this overview holds no open row
+> of its own (SM10's rows are `SMP_RELEASE_CLOSURE_PLAN.md`'s); two present-
+> tense passages were restated — §2.1's bracket note and SM3's lock fields,
+> both changed by WS-LS, which made the lock words a ghost the compiled
+> kernel never builds.
+>
 > **Branch (this audit)**: `claude/audit-multicore-implementation-sUcIx`.
 >
 > **Release target**: **v1.0.0 "bootable verified SMP microkernel
@@ -126,6 +132,9 @@ elaborates the subset relevant to it.
 > `UncoveredLockDomain.syscallSeamSchedulerDomain`. So the per-object locks
 > are still a model-level discipline on the arms neither domain declares,
 > and the shipping worst case is the global lock's, not §7.2's.
+> Since **WS-LS** (LS2.2–LS3.1, `v0.36.66`–`v0.36.70`) the brackets are
+> ghost: `SchedLockId` and every object's lock word are deleted, the keys are
+> `LockKey`s, and the compiled entries run no bracket at all.
 >
 > Removing the entry lock is scheduled, not assumed: **RR7.39** (the
 > scheduler domain), **RR7.40** (the dynamic PIP chain) and **RR7.41**
@@ -369,7 +378,9 @@ hierarchy; lock-set extraction; two-phase locking discipline;
 prove `deadlockFreedom_under_2pl_and_ordering` (Thm 2.1.9) and
 `serializability_under_2pl` (Thm 2.1.10) and
 `singleCore_proof_preservation` (Cor 2.1.11). **Closes**:
-SMP-C3 (formal foundation).
+SMP-C3 (formal foundation).  The `lock` fields it added were deleted by
+WS-LS LS3.1 (`v0.36.70`); the order and the 2PL theorems survive over
+`LockKey`.
 
 ### SM4 — Path-a per-core state replacement
 

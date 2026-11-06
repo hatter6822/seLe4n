@@ -1435,7 +1435,7 @@ after the install and immediately before it mints the `SecondaryReleasePermit`,
 so no secondary is released, and the boot core reaches no scheduling point,
 before the clean; a Tier 3 anchor holds the order, and a clean moved after the
 permit or commented out fails it.  The clean executes on every PR since BP8.1 (`v0.36.26`, on QEMU);
-observing it on the board is BP8.3's.
+observing it on the board is BP8.6's.
 
 **BP4.6 — the verified board's RAM outside the kernel's extent is mapped, and
 the boot map is sealed before a secondary exists** (`v0.36.2`; its lower bound
@@ -1810,7 +1810,7 @@ how both sides agreed on the wrong board.  (3) **The window is block aligned**,
 so the boot map's device-tail L3 table is deleted and a Tier 3 negative refuses
 it returning.  (4) **Cross-checked is not validated**: the constants are the
 device-tree source's (`raspberrypi/linux` `rpi-6.6.y`, read 2026-09-25), and
-what a real board's firmware reports is BP8.3's readback to confirm.
+what a real board's firmware reports is BP8.6's readback to confirm.
 
 **BP7.1, slice 1 — memory is authority, and `.vspaceMap` maps only a frame the
 caller holds** (`v0.36.4`).  A table base a PE can be told to use is a page the

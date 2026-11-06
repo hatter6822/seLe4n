@@ -651,7 +651,7 @@ the boot path because its extent is the link's rather than the model's.
 - **The marker.**  `kernelCodeWriteEmitted` is `true` at all three sites and
   `kernelCodeWriteSites_all_emitted` states it, replacing the partition marker
   `kernelCodeWriteSites_emission_pending`.  The clean executes on every PR since
-  BP8.1 (v0.36.26, §6.2.18), on QEMU; observing it on the board is BP8.3's.
+  BP8.1 (v0.36.26, §6.2.18), on QEMU; observing it on the board is BP8.6's.
 
 ### 6.2.12 The verified board's RAM outside the kernel's extent (WS-BP BP4.6, v0.36.2; BP7.10, v0.36.3)
 
@@ -851,7 +851,7 @@ the Lean suite writes `mmio uart|gicd|gicc <base> <size>` into
 tests read them (`mmu::lean_mmio_window`) and require the constant to equal the
 Lean base and to lie inside the device window.  What this does **not** establish
 is what a real board's firmware reports: the variant maps follow the device-tree
-source, and the first-boot readback on the board (BP8.3) is what confirms them on hardware.
+source, and the first-boot readback on the board (BP8.6) is what confirms them on hardware.
 
 ### 6.2.15 The firmware's entry level (WS-BP BP5.5, v0.36.2)
 
