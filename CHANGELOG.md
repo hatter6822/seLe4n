@@ -25,6 +25,10 @@ now run in place.
   - The live arm decodes the request into words (`carveRequestWordsK`) and
     carves from them (`untypedRetypePerformCode`, `untypedRetypeAdmittedCode`,
     `CarveRequest.heapAdmittedW`).
+  - The compiled-only wrapper `untypedRetypePerformImpl` and its `@[csimp]`
+    are retired; `untypedRetypePerformAt_eq_words` relates the statement to
+    its words form, and the reachability census records the carve's
+    specification forms.
   - Each is proven equal to `untypedRetypePerformAt` and to the admission
     checks (`untypedRetypePerformCode_eq`, `carveRequestWordsK_eq`).
   - A tcb, scheduling-context or CNode carve goes from 2 cells over its
