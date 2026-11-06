@@ -4107,7 +4107,7 @@ run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_liveMappi
 # Every entry keeps the mappings recorded: the arms' premises, the dispatchers
 # and the committing entries, each a `MappingStage`.
 run_check "INVARIANT" rg -n '^structure MappingArmPremises($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
-run_check "INVARIANT" rg -n '^theorem of_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem of_kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotZombie_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
@@ -4127,6 +4127,36 @@ run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_mappingStage($
 run_check "INVARIANT" rg -n '^theorem faultEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+# The records every kernel entry carries (`kernelRecordsSound`): the boot
+# installs them, and each stage, dispatcher and committing entry keeps them.
+run_check "INVARIANT" rg -n '^def _root_\.SeLe4n\.Model\.SystemState\.kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^def RecordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^structure RecordsFrame($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^structure RecordsStep($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^theorem RecordsStage\.of_step($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^theorem bootTcbShape_replyView_idle($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Boot.lean
+run_check "INVARIANT" rg -n '^theorem replyWaitersConsistent_of_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_physicalAddressWidthWithinBound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Boot.lean
+run_check "INVARIANT" rg -n '^def WaitersStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/LifecycleWaiters.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_waitersStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/LifecycleWaiters.lean
+run_check "INVARIANT" rg -n '^theorem resumeThreadOnCore_waitersStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/LifecycleWaiters.lean
+run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_waitersStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/LifecycleWaiters.lean
+run_check "INVARIANT" rg -n '^def CallerReady($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/IpcStages.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/IpcStages.lean
+run_check "INVARIANT" rg -n '^structure RecordsArmPremises($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
+run_check "INVARIANT" rg -n '^def CurrentReady($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
+run_check "INVARIANT" rg -n '^theorem currentReady_of_currentDequeuedUnique($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
 # WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it made.  The
 # map records it on the capability, and refuses a capability whose mapping is
 # still live; a copy or an IPC transfer carries no record (seL4's `deriveCap`);

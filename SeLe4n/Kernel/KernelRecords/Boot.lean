@@ -64,4 +64,45 @@ theorem bootFromPlatformCheckedStartedFor_physicalAddressWidthWithinBound
       · cases hBase
     · cases hBase
 
+/-- A boot-shaped thread waits on no reply and heads no reply-waiter queue. -/
+theorem bootTcbShape_replyView_idle {tcb : TCB} (h : bootTcbShape tcb) :
+    tcb.replyView = ReplyView.idle := by
+  obtain ⟨-, hIpc, -, -, -, -, -, -, -, -, -, hP, hN, hH, hC, -⟩ := h
+  have hP' : tcb.replyWaiterPrevCode = 0 := by
+    rw [← TCB.optCode_replyWaiterPrev, hP]; rfl
+  have hN' : tcb.replyWaiterNextCode = 0 := by
+    rw [← TCB.optCode_replyWaiterNext, hN]; rfl
+  have hH' : tcb.replyWaitersHeadCode = 0 := by
+    rw [← TCB.optCode_replyWaitersHead, hH]; rfl
+  unfold TCB.replyView ReplyView.idle
+  rw [hP', hN', hH', hC]
+  simp only [TCB.blockingServer?_eq, hIpc]
+
+/-- **A state of linked boot shape keeps the reply-waiter queues consistent**:
+every thread is boot shaped, so every view is idle and every queue empty. -/
+theorem replyWaitersConsistent_of_bootLinkedShape (ist : IntermediateState)
+    (h : bootLinkedShape ist) : ist.state.replyWaitersConsistent :=
+  SystemState.replyWaitersConsistent_of_idle fun _ _ hv => by
+    obtain ⟨t, hO, rfl⟩ := SystemState.tcb_of_replyViews hv
+    exact bootTcbShape_replyView_idle ((h.1 _ _ hO).2.2.2.1 t rfl)
+
+/-- **The started boot installs every record the kernel entries carry**
+(`kernelRecordsSound`): the object and ASID tables well formed and the VSpace
+bundle (the intermediate state's table facts and the proof-layer bundle), the
+reply-waiter queues consistent and no fault record outside a parked thread (the
+boot shape), and the machine's physical-address width within the bound (the
+checked boot's width gate).  Every kernel entry keeps it, so it holds of every
+state the kernel reaches. -/
+theorem bootFromPlatformCheckedStartedFor_kernelRecordsSound
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
+    ist.state.kernelRecordsSound := by
+  have hShape := bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h
+  have hB := bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle cores hNodup config ist h
+  exact ⟨⟨ist.hAllTables.objects.1, ist.hAllTables.asidTable, hB.2.2.2.2.2.2.1⟩,
+    replyWaitersConsistent_of_bootLinkedShape ist hShape,
+    bootFromPlatformCheckedStartedFor_faultRecordParked cores hNodup config ist h,
+    bootFromPlatformCheckedStartedFor_physicalAddressWidthWithinBound cores config ist h⟩
+
 end SeLe4n.Platform.Boot
