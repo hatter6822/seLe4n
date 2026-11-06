@@ -1242,25 +1242,33 @@ theorem answeredFrameHeadContext?_none_of_frameAbove (st : SystemState)
     exact replyFrameHeadHolder?_of_no_head st rid
       (replyFrameHeadContext?_of_frameAbove st rid above hAbove)
 
-/-- And the converse exclusion, at the member HP3 declares: a reply that pops a
-donation splices nothing. -/
+/-- And the converse exclusion, at the member HP3 declares: a reply whose frame
+heads a context -- held or not -- splices nothing. -/
 theorem answeredReplyFrameBelow?_none_of_headContext (st : SystemState)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (h : answeredFrameHeadContextId? st target = some scId) :
     answeredReplyFrameBelow? st target = none := by
-  obtain ⟨rid, hRid, hHead, _⟩ := answeredFrameHeadContext?_eq_some h
-  rw [answeredReplyFrameBelow?_eq st target rid hRid,
-    replyFrameBelow?_of_headContext st rid scId hHead]
+  unfold answeredFrameHeadContextId? at h
+  cases hRid : answeredReplyObject? st target with
+  | none => rw [hRid] at h; cases h
+  | some rid =>
+    rw [hRid] at h
+    rw [answeredReplyFrameBelow?_eq st target rid hRid,
+      replyFrameBelow?_of_headContext st rid scId h]
 
 /-- And the frame above is absent there too, which is the same exclusion read from
 the other side. -/
 theorem answeredReplyFrameAbove?_none_of_headContext (st : SystemState)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (h : answeredFrameHeadContextId? st target = some scId) :
     answeredReplyFrameAbove? st target = none := by
-  obtain ⟨rid, hRid, hHead, _⟩ := answeredFrameHeadContext?_eq_some h
-  rw [answeredReplyFrameAbove?_eq_bind, hRid]
-  exact replyFrameAbove?_of_headContext st rid scId hHead
+  unfold answeredFrameHeadContextId? at h
+  cases hRid : answeredReplyObject? st target with
+  | none => rw [hRid] at h; cases h
+  | some rid =>
+    rw [hRid] at h
+    rw [answeredReplyFrameAbove?_eq_bind, hRid]
+    exact replyFrameAbove?_of_headContext st rid scId h
 
 /-- **WS-HP HP1.2: the trigger is a function of the store projections it reads** --
 the answered caller's TCB, every Reply and every SchedContext.  The frame lemma
@@ -1315,6 +1323,11 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
   -- `answeredReplyObject?` with `replyFrameHeadHolder?` that
   -- `applyReplyDonationOnCore` itself reads, so the footprint and the transition
   -- cannot disagree about which context is popped or which thread is unbound.
+  -- **WS-ZA ZA6.34**: the context members (the context, its stack head, the
+  -- frames below it and the recorded origin) read the context half alone,
+  -- `answeredFrameHeadContextId?`, because the pop writes them whether or not a
+  -- thread holds the context (`popUnheldReplyHead` where none does); only the
+  -- holder member reads the holder.
   -- The first TCB **write** lock stays keyed on the **recorded** server
   -- (`server`), because that is the thread `propagatePipChainCrossCore` walks
   -- from and rewrites; the splice can make it a different thread from the
@@ -1329,11 +1342,11 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
   -- footprint was unchanged until OD4.1 (`v0.35.2`) wrote a `scReply`; it is
   -- load-bearing at depth >= 2 and inert at depth 1.
   let server := (recordedReplyServer? st target).getD replier
-  let belowHead := match (answeredFrameHeadContext? st target).map (·.1) with
+  let belowHead := match answeredFrameHeadContextId? st target with
     | none => (none, none)
     | some scId => replyStackBelowHead? st scId
   lockSet_endpointReply server cnodeRootObjId target
-    ((answeredFrameHeadContext? st target).map (·.1))
+    (answeredFrameHeadContextId? st target)
     ((answeredFrameHeadContext? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
     belowHead.1 belowHead.2
@@ -1344,7 +1357,7 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     -- no hypothesis), where the binding reading needed a stated coherence fact to
     -- say so -- one HP7 (`v0.35.46`) deleted, its content having become that
     -- theorem.
-    (((answeredFrameHeadContext? st target).map (·.1)).bind (replyStackHead? st))
+    ((answeredFrameHeadContextId? st target).bind (replyStackHead? st))
     -- **WS-RM (`v0.35.6`)**: and the frame above the answered one, which the
     -- removal splices out before it consumes the caller link.
     (answeredReplyFrameAbove? st target)
@@ -1369,7 +1382,7 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     -- not.  That is precisely the state HP10.7's pop writes a different TCB on, so
     -- the widening is the declaration catching up with the write -- one row before
     -- the code, which is the plan's own numbering rule.
-    (((answeredFrameHeadContext? st target).map (·.1)).bind
+    ((answeredFrameHeadContextId? st target).bind
       (donationOriginRecipient? st))
     -- **WS-ZA ZA4.6**: and the answered caller's reply-waiter predecessor and
     -- successor, which `unlinkReplyWaiter target expected` links past it.
@@ -1724,11 +1737,11 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
   -- arm pops — the same resolver the `.reply` arm uses, for the same
   -- question.  This is the arm the ceiling moved for: at depth ≥ 2 they are two
   -- keys nothing else covers, taking the widest declared footprint to thirteen.
-  let belowHead := match (answeredFrameHeadContext? st target).map (·.1) with
+  let belowHead := match answeredFrameHeadContextId? st target with
     | none => (none, none)
     | some scId => replyStackBelowHead? st scId
   lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender?
-    ((answeredFrameHeadContext? st target).map (·.1))
+    (answeredFrameHeadContextId? st target)
     ((answeredFrameHeadContext? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
     (receiveInstallsCaps st endpointObjId)
@@ -1743,7 +1756,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- stack, which the reply leg's pop clears.  Both resolved by
     -- `replyStackHead?` on the contexts the members above already name.
     ((receiveRendezvousDonatedSc? st endpointObjId replier).bind (replyStackHead? st))
-    (((answeredFrameHeadContext? st target).map (·.1)).bind (replyStackHead? st))
+    ((answeredFrameHeadContextId? st target).bind (replyStackHead? st))
     -- **PR #894 review — the INVOKING receiver's own pre-receive return.**  The
     -- receive leg is `.receive`'s transition, so with no sender queued it runs
     -- `cleanupPreReceiveDonationChecked` on `replier`, and the donation return
@@ -1769,7 +1782,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- write, since this arm's reply leg *is* that transition.  Live at depth 1
     -- and merged there; a distinct key on the out-of-order removal, for the
     -- reason `lockSet_endpointReplyOnCore` records.
-    (((answeredFrameHeadContext? st target).map (·.1)).bind
+    ((answeredFrameHeadContextId? st target).bind
       (donationOriginRecipient? st))
     -- **WS-ZA ZA4.6**: and the reply leg's reply-waiter neighbours -- the same
     -- resolvers the `.reply` arm reads, since this arm's reply leg *is* that
@@ -2861,17 +2874,20 @@ to the answered caller, which is `target`, a non-optional argument of this
 footprint. -/
 theorem lockSet_endpointReplyOnCore_covers_donationPop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hHead : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId) :
     (schedContextLock scId, AccessMode.write)
       ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs ∧
-    (tcbLock holder, AccessMode.write)
-      ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
+    ∀ holder, answeredFrameHeadContext? st target = some (scId, holder) →
+      (tcbLock holder, AccessMode.write)
+        ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
   unfold lockSet_endpointReplyOnCore
+  rw [hCtx]
+  refine ⟨lockSet_endpointReply_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
+    fun holder hHead => ?_⟩
   rw [hHead]
   simp only [Option.map_some]
-  exact ⟨lockSet_endpointReply_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
-    lockSet_endpointReply_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _⟩
+  exact lockSet_endpointReply_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
 /-- **WS-HP HP6.2**: and `.replyRecv`'s, which is the same pop because its reply
@@ -2881,21 +2897,23 @@ hottest IPC arm's pop wrote under declared locks. -/
 theorem lockSet_endpointReplyRecvOnCore_covers_donationPop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hHead : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (scId : SeLe4n.SchedContextId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId) :
     (schedContextLock scId, AccessMode.write)
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
            endpointObjId).pairs ∧
-    (tcbLock holder, AccessMode.write)
-      ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
-           endpointObjId).pairs := by
+    ∀ holder, answeredFrameHeadContext? st target = some (scId, holder) →
+      (tcbLock holder, AccessMode.write)
+        ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+             endpointObjId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
-  rw [hHead]
-  simp only [Option.map_some]
-  refine ⟨?_, ?_⟩
+  rw [hCtx]
+  refine ⟨?_, fun holder hHead => ?_⟩
   · exact lockSet_replyRecv_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _
-  · exact lockSet_replyRecv_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · rw [hHead]
+    simp only [Option.map_some]
+    exact lockSet_replyRecv_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: the reply-stack pop's two Reply writes -- the head it
@@ -2907,8 +2925,8 @@ recorded server's binding, which is not what the pop reads, so on a state where
 the two disagree this said nothing about the objects the transition writes. -/
 theorem lockSet_endpointReplyOnCore_covers_pop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hDon : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId) :
     (∀ head, replyStackHead? st scId = some head →
       (replyLock head, AccessMode.write)
         ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs) ∧
@@ -2916,8 +2934,8 @@ theorem lockSet_endpointReplyOnCore_covers_pop
       (replyLock below, AccessMode.write)
         ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs) := by
   unfold lockSet_endpointReplyOnCore
-  rw [hDon]
-  simp only [Option.map_some]
+  rw [hCtx]
+  dsimp only
   constructor
   · intro head hHead
     have h2 : Option.bind (some scId) (replyStackHead? st) = some head := hHead
@@ -2953,8 +2971,8 @@ on the pop's own trigger, for the reason its `.reply` twin records. -/
 theorem lockSet_endpointReplyRecvOnCore_covers_pop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
-    (hDon : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (scId : SeLe4n.SchedContextId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId) :
     (∀ head, replyStackHead? st scId = some head →
       (replyLock head, AccessMode.write)
         ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
@@ -2964,8 +2982,8 @@ theorem lockSet_endpointReplyRecvOnCore_covers_pop
         ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
              endpointObjId).pairs) := by
   unfold lockSet_endpointReplyRecvOnCore
-  rw [hDon]
-  simp only [Option.map_some]
+  rw [hCtx]
+  dsimp only
   constructor
   · intro head hHead
     have h2 : Option.bind (some scId) (replyStackHead? st) = some head := hHead
@@ -3080,15 +3098,15 @@ members for one; what moved is `maxLockSetSize`, which bounds the union over all
 argument values and is what `boundedWait_under_2pl` and the WCRT surface consume. -/
 theorem lockSet_endpointReplyOnCore_covers_originRecipient
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
     (origin : SeLe4n.ThreadId)
-    (hHead : answeredFrameHeadContext? st target = some (scId, holder))
+    (hCtx : answeredFrameHeadContextId? st target = some scId)
     (hOrigin : donationOriginRecipient? st scId = some origin) :
     (tcbLock origin, AccessMode.write)
       ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
   unfold lockSet_endpointReplyOnCore
-  rw [hHead]
-  simp only [Option.map_some, Option.bind_some, hOrigin]
+  rw [hCtx]
+  simp only [Option.bind_some, hOrigin]
   exact lockSet_endpointReply_originRecipient_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
@@ -3097,15 +3115,15 @@ reply leg is the `.reply` arm's transition. -/
 theorem lockSet_endpointReplyRecvOnCore_covers_originRecipient
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId) (origin : SeLe4n.ThreadId)
-    (hHead : answeredFrameHeadContext? st target = some (scId, holder))
+    (scId : SeLe4n.SchedContextId) (origin : SeLe4n.ThreadId)
+    (hCtx : answeredFrameHeadContextId? st target = some scId)
     (hOrigin : donationOriginRecipient? st scId = some origin) :
     (tcbLock origin, AccessMode.write)
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
            endpointObjId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
-  rw [hHead]
-  simp only [Option.map_some, Option.bind_some, hOrigin]
+  rw [hCtx]
+  simp only [Option.bind_some, hOrigin]
   exact lockSet_replyRecv_originRecipient_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     _ _ _ _ _ _ _ _
 

@@ -811,6 +811,53 @@ private def runDonationChecks : IO Unit := do
           assertBool "the donation return succeeds on the queued-server shape" false
   | none => assertBool "clientLocalTid is a valid thread id" false
 
+-- ============================================================================
+-- WS-ZA ZA6.34: a reply-cap holder answers an ORPHAN, whose head no thread holds
+-- ============================================================================
+--
+-- The caller's server was finalised (`.blockedOnReply _ none`) and the context
+-- its Call lent sits at the head of the caller's reply stack, held by nobody.
+-- seL4-MCS's `doReplyTransfer` reads only the reply's `replyTCB`, so a holder of
+-- the reply capability still delivers, and `reply_pop` hands the unheld context
+-- back to the caller.  The decisive rows: the holder-keyed resolver sees nothing
+-- here while the context-keyed one names the context, and the footprint declares
+-- that context's write, which the holder-keyed spelling left out.
+private def stUnheldOrphan : SystemState :=
+  BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject wrongTid.toObjId (.tcb (mkTcb 604 40 none .ready))
+    |>.withObject clientLocalTid.toObjId
+        (.tcb { mkTcb 602 30 none (.blockedOnReply epId none) with
+                  replyObjectCode := SeLe4n.ReplyId.optCode (some replyId709) })
+    |>.withObject replyId709.toObjId
+        (.reply { replyId := replyId709, callerCode := SeLe4n.ThreadId.optCode (some clientLocalTid),
+                  next := some (.head scId) })
+    |>.withObject scId.toObjId
+        (.schedContext { SchedContext.empty scId with scReply := some replyId709 })
+    |>.withRunnable [wrongTid]
+    |>.build
+
+private def runUnheldOrphanChecks : IO Unit := do
+  IO.println "--- ZA6.34 a reply-cap holder answers an orphan with an unheld head ---"
+  assertBool "PRECONDITION: the orphan's head context is held by no thread"
+    (decide (answeredFrameHeadContext? stUnheldOrphan clientLocalTid = none
+             ∧ answeredFrameHeadContextId? stUnheldOrphan clientLocalTid = some scId))
+  assertBool "the reply footprint declares the unheld context's write"
+    (decide ((schedContextLock scId, AccessMode.write)
+      ∈ (lockSet_endpointReplyOnCore stUnheldOrphan wrongTid cnRoot clientLocalTid).pairs))
+  let (st', res) := endpointReplyCrossCoreDispatch wrongTid clientLocalTid replyMsg
+    bootCoreId stUnheldOrphan
+  assertBool "the reply-cap holder's reply to the orphan is delivered"
+    (match res with | .ok _ => true | .error _ => false)
+  assertBool "…the orphan wakes and has the unheld context back, bound"
+    (match st'.getTcb? clientLocalTid with
+     | some t => decide (t.ipcState = .ready ∧ t.schedContextBinding = .bound scId)
+     | none => false)
+  assertBool "…and the context names it and has left the reply stack"
+    (match st'.getSchedContext? scId with
+     | some sc => decide (sc.boundThread = some clientLocalTid ∧ sc.scReply = none)
+     | none => false)
+
 private def runDispatchChecks : IO Unit := do
   IO.println "--- §3.6 SM6.C cross-core dispatch + SM6.C.9 chain bound ---"
   -- The live cross-core reply dispatch wakes the remote caller on its home core.
@@ -836,6 +883,7 @@ def runSmpCrossCoreReplyChecks : IO Unit := do
   runFrameSpliceChecks
   runReplyRecvChecks
   runDonationChecks
+  runUnheldOrphanChecks
   runDispatchChecks
   IO.println "===================================="
   IO.println "All SM6.C cross-core reply checks PASS."

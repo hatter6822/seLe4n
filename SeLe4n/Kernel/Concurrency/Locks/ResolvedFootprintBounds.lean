@@ -207,9 +207,9 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo (st : SystemState)
   -- context contributes neither; one that does contributes the origin exactly when
   -- the pop is at the bottom of its stack, and there the below-head pair is absent
   -- (`replyStackBelowHead?_of_originRecipient`).
-  cases hHead : answeredFrameHeadContext? st target with
+  cases hHead : answeredFrameHeadContextId? st target with
   | none =>
-      simp only [Option.map_none, Option.bind_none]
+      simp only [Option.bind_none]
       cases hS : receiveRendezvousSender? st endpointObjId with
       | some sender =>
           rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
@@ -228,9 +228,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo (st : SystemState)
             (lockSet_replyRecv_size_le_twentytwo_of_no_sender_of_no_origin
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
-  | some pr =>
-      obtain ⟨scId, holder⟩ := pr
-      simp only [Option.map_some, Option.bind_some]
+  | some scId =>
+      simp only [Option.bind_some]
       cases hOrigin : donationOriginRecipient? st scId with
       | none =>
           cases hS : receiveRendezvousSender? st endpointObjId with
@@ -306,12 +305,12 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentyone (st : SystemState)
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ 21 := by
   unfold lockSet_endpointReplyRecvOnCore
-  cases hHead : answeredFrameHeadContext? st target with
+  cases hHead : answeredFrameHeadContextId? st target with
   | none =>
-      -- The pop contributes nothing -- no context, no holder, no head, no
-      -- below-head pair and (WS-HP HP10.6) no origin, since the origin member is
-      -- `bind`ed on this very answer.
-      simp only [Option.map_none, Option.bind_none]
+      -- The pop contributes nothing -- no context, no head, no below-head pair
+      -- and (WS-HP HP10.6) no origin, since the origin member is `bind`ed on this
+      -- very answer.
+      simp only [Option.bind_none]
       cases hS : receiveRendezvousSender? st endpointObjId with
       | some sender =>
           rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
@@ -333,15 +332,14 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentyone (st : SystemState)
             (lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_head_of_no_origin
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
-  | some pr =>
-      obtain ⟨scId, holder⟩ := pr
+  | some scId =>
       -- **WS-HP HP6.2**: the exclusion is structural under this trigger.  A
       -- frame that heads a context has no frame above it and none below it,
       -- so the removal's two members are absent on exactly the states the
       -- pop's three are present -- no coherence fact required.
-      rw [answeredReplyFrameAbove?_none_of_headContext st target scId holder hHead,
-        answeredReplyFrameBelow?_none_of_headContext st target scId holder hHead]
-      simp only [Option.map_some, Option.bind_some]
+      rw [answeredReplyFrameAbove?_none_of_headContext st target scId hHead,
+        answeredReplyFrameBelow?_none_of_headContext st target scId hHead]
+      simp only [Option.bind_some]
       cases hOrigin : donationOriginRecipient? st scId with
       | none =>
           cases hS : receiveRendezvousSender? st endpointObjId with

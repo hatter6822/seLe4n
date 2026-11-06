@@ -2513,8 +2513,8 @@ run_check "INVARIANT" rg -n '^theorem donationOriginRecipient\?_eq_some_iff' SeL
 # Both reply footprints read it, and they read it off the SAME context the pop's
 # own trigger names -- relation, not presence: the mutation keeps the resolver and
 # resolves it on a context the arm does not pop.
-run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(\(answeredFrameHeadContext\? st target\)\.map \(·\.1\)\)\.bind\n[ \t]*\(donationOriginRecipient\? st\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(\(answeredFrameHeadContext\? st target\)\.map \(·\.1\)\)\.bind\n[ \t]*\(donationOriginRecipient\? st\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(answeredFrameHeadContextId\? st target\)\.bind\n[ \t]*\(donationOriginRecipient\? st\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(answeredFrameHeadContextId\? st target\)\.bind\n[ \t]*\(donationOriginRecipient\? st\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 # ...and declaring is not proving the transition writes it.  These are the
 # relations, at full arity, and the resolved coverage on both arms.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_originRecipient_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
@@ -5787,7 +5787,7 @@ run_negative_check "INVARIANT" rg -n '^def fdtDefaultSizeCells : Nat := 2$' SeLe
 # WS-HP HP6.2 (`v0.35.44`): repointed onto the pop's own trigger.  The member is
 # still resolved rather than inlined, and the pair's second component is now the
 # thread the pop UNBINDS rather than the one that gains the context.
-run_check "INVARIANT" rg -n -U 'lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender\?\n    \(\(answeredFrameHeadContext\? st target\)\.map \(·\.1\)\)\n    \(\(answeredFrameHeadContext\? st target\)\.map \(·\.2\)\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n -U 'lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender\?\n    \(answeredFrameHeadContextId\? st target\)\n    \(\(answeredFrameHeadContext\? st target\)\.map \(·\.2\)\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # NEGATIVE: the delegate-derived donation.
 run_negative_check "INVARIANT" rg -n -U '\(\(endpointReplyDonation\? st replier\)\.map \(·\.1\)\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # PR #892 review round 6: a peripheral's `reg` is a LIST of blocks (a GIC node
@@ -17716,6 +17716,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^
 # SchedContext member had none either.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_donationPop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_donationPop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# WS-ZA ZA6.34: the context members are keyed on the context the answered frame
+# heads, not on its holder's answer, because the pop writes that context, its
+# stack head and the frame below whether or not a thread holds it.  NEGATIVE: the
+# holder-keyed reading of the context, which declares nothing at an unheld head.
+run_check "INVARIANT" rg -n '^def answeredFrameHeadContextId\? ' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_negative_check "INVARIANT" rg -n -F '(answeredFrameHeadContext? st target).map (·.1)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_donatedHolder_tcb_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donatedHolder_tcb_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donatedSc_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean

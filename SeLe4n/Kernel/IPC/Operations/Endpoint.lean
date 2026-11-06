@@ -6334,6 +6334,24 @@ theorem answeredFrameHeadContext?_eq_some {st : SystemState} {target : SeLe4n.Th
     intro h
     exact ⟨rid, rfl, (replyFrameHeadHolder?_eq_some h).1, (replyFrameHeadHolder?_eq_some h).2⟩
 
+/-- **WS-ZA ZA6.34: the context the answered frame heads, whoever holds it** --
+the first half of `answeredFrameHeadContext?` without its holder, and the
+expression the reply footprints' context members read: the pop writes that
+context, its stack head and the frame below whether or not a thread holds it
+(`popUnheldReplyHead` where none does), so a member keyed on the holder's answer
+would leave the unheld pop's writes undeclared. -/
+def answeredFrameHeadContextId? (st : SystemState) (target : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  (answeredReplyObject? st target).bind (replyFrameHeadContext? st)
+
+/-- A held head names its context here too. -/
+theorem answeredFrameHeadContextId?_of_holder {st : SystemState} {target : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {holder : SeLe4n.ThreadId}
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    answeredFrameHeadContextId? st target = some scId := by
+  obtain ⟨rid, hRid, hHead, -⟩ := answeredFrameHeadContext?_eq_some h
+  unfold answeredFrameHeadContextId?; rw [hRid]; exact hHead
+
 /-- WS-RM (`v0.35.6`): **the splice folded to the identity on a refusal** — the
 one spelling of "take the frame above off this frame's stack, or leave the state
 alone".  Both removal paths need it and neither may fail on it, so it is defined
