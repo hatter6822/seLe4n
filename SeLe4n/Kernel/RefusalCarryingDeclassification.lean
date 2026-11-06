@@ -1860,11 +1860,11 @@ writing the records its one or two downgrades owe), or else the general one
                 -- No waiter: a bound thread blocked receiving takes the badge.
                 match ntfn.boundTCBCode with
                 | k + 1 =>
-                  match st.objects[(⟨k⟩ : SeLe4n.ThreadId).toObjId]? with
-                  | some (.tcb tcb) =>
+                  match st.getTcb? ⟨k⟩ with
+                  | some tcb =>
                     if tcb.ipcStateCode = 1 then
-                      match st.objects[(⟨tcb.ipcObjectCode⟩ : SeLe4n.ObjId)]? with
-                      | some (.endpoint ep) =>
+                      match st.getEndpoint? ⟨tcb.ipcObjectCode⟩ with
+                      | some ep =>
                         if declassifySignalBoundAdmitted ctx st tid signaler nid ⟨k⟩
                             ⟨tcb.ipcObjectCode⟩ ep tcb then
                           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -2102,11 +2102,13 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
               split
               · next k hB =>
                 split
-                · next tcb hTT =>
+                · next tcb hTT0 =>
+                  have hTT := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTT0
                   split
                   · next hSt =>
                     split
-                    · next ep hE =>
+                    · next ep hE0 =>
+                      have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE0
                       split
                       · next hA =>
                         have hBT : boundDeliveryTarget? st nid =

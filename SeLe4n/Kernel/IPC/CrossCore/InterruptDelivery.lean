@@ -135,11 +135,11 @@ signal's own state; every other signal runs the specification. -/
     | some n =>
         match n.waitHeadCode, n.boundTCBCode with
         | 0, k + 1 =>
-            match st.objects[(⟨k⟩ : SeLe4n.ThreadId).toObjId]? with
-            | some (.tcb tcb) =>
+            match st.getTcb? ⟨k⟩ with
+            | some tcb =>
                 if tcb.ipcStateCode = 1 then
-                  match st.objects[(⟨tcb.ipcObjectCode⟩ : SeLe4n.ObjId)]? with
-                  | some (.endpoint ep) =>
+                  match st.getEndpoint? ⟨tcb.ipcObjectCode⟩ with
+                  | some ep =>
                       if queueRemoveInPlace st ⟨tcb.ipcObjectCode⟩ true ⟨k⟩ ep tcb then
                         performSignalBoundDelivered c ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb badge st
                       else interruptSignalGeneral ntfn badge c st
@@ -187,11 +187,13 @@ signal's own state; every other signal runs the specification. -/
       split
       · next k hK0 hB =>
         split
-        · next tcb hTT =>
+        · next tcb hTT0 =>
+          have hTT := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTT0
           split
           · next hSt =>
             split
-            · next ep hE =>
+            · next ep hE0 =>
+              have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE0
               split
               · next hQ =>
                 have hBT := boundDeliveryTarget?_of_codes st ntfn n k tcb hN hK0 hB hTT hSt
