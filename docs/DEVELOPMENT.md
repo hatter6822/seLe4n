@@ -438,7 +438,7 @@ shared by the two scripts, and the `virt` images build under `rust/target/qemu-v
 so the Raspberry Pi 5 image in `rust/target/<target>/release` is never
 overwritten.  A console line is one lock acquisition, and a PE prints nothing
 before its own MMU is on.  The other QEMU scripts and the board need artefacts
-BP8.3–BP8.5 produce.
+BP8.4 and BP8.5 produced and the board boot, BP8.6, produces.
 
 ---
 

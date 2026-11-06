@@ -7,8 +7,35 @@ original v0.22.0–v0.22.9 target range predates the current tree)
 **Hardware target**: Raspberry Pi 5 successor SoCs (BCM2712 successor with ARMv9-A)
 **Prerequisite**: RPi5 hardware binding foundation (complete since WS-AG);
 post-v1.0.0 scheduling
-**Sub-task count**: 130 atomic units across 10 phases
-**Axiom budget**: 1 (`realmMemoryIsolation` — hardware GPT guarantee)
+**Sub-task count**: the rows of §4 (126 at `v0.36.205`) across 10 phases
+**Axioms and `sorry`**: none (CLAUDE.md, *Key conventions*).
+
+**Re-read at `v0.36.205`** (WS-ZA ZA6.36).  Written at `v0.22`; every name
+below was re-read against the tree.  Deleted as unnecessary: W5-G (its
+`machineWordBounded` is gone — machine registers are `UInt64`, bounded by
+type), W6-I and W6-N (`projectStateFast`, `computeObservableSet` and their
+lemmas are gone; `projectState`, `InformationFlow/Projection.lean:1004`, is
+the one projection), and their rows renumbered in W5 and W6.  Restated: the
+retype entry (`retypeFromUntyped`), the send wrapper's soundness theorem, the
+adapter frame operations and the bundle's conjunct count (twenty).  The two
+conflicts with `CLAUDE.md` it carried are removed (maintainer's decision at
+the same cut): `realmMemoryIsolation` is a theorem, not an axiom (W4-B), and
+the forward-declared `sorry` of the old W3-H is gone — the statement lands
+with its proof in W6-K, after the projection it is stated over, and W3's later
+rows are renumbered.
+
+**Zero allocation** (CLAUDE.md, *Key conventions*; held by the QEMU gate
+`heap-allocations-per-syscall`, `scripts/qemu_exerciser_lib.sh`).  The rows
+that change a kernel entry, an object or a type, and how each keeps it:
+
+| Row | How | Scenario that reads 0 |
+|-----|-----|-----------------------|
+| W9-A | `activeMpamPartId` stored as a code word (`0` = none), not an `Option` cell (WS-ZA ZA4.7(b4)'s pattern) | every scenario (the field is read on no path until W9-F) |
+| W9-F | the domain switch writes one register word and the code; no `Option` or list is built | `timer-tick`, `yield` |
+| W9-H | the cross-partition flush is a register sequence in the HAL, a no-op on the model; the wrappers build nothing | `send-to-receiver`, `call`, `signal-to-waiter` |
+| W9-J | the partition check reads the creating thread's domain and the contract; the carve still reads exactly the object's cells | `untyped-retype-*`, at the carve pins |
+| W4-E, W4-G | the GPT functions take a page range (base, count), never a `List PAddr`, when a kernel entry calls them | the realm entry's own scenario, added to the gate's pinned set when its syscall lands |
+| W8-E | MMIO writes from a `MpamConfig` passed by value | boot only; no syscall scenario |
 
 ## 1. Motivation
 
@@ -173,9 +200,8 @@ the NI model.
 | W3-E | CC-4 | **Prove `cacheIsolationCorollary`.** From W3-D + `cacheWayDisjoint` (W2-C): if two objects have mutually non-flowing labels, their cache way sets are disjoint. Statement: `mutualNonFlow l₁ l₂ → CacheWayMask.disjoint (cacheWaysOf o₁) (cacheWaysOf o₂) = true`. Proof: apply W3-D to get `p₁ ≠ p₂`, then apply `cacheWayDisjoint`. ~15 lines | `Correctness.lean` | Trivial |
 | W3-F | CC-4 | **Prove `bandwidthIsolationCorollary`.** From W3-D + partition assignment: non-flowing objects map to distinct partitions with independent bandwidth groups. Statement: `mutualNonFlow l₁ l₂ → bandwidthGroupOf o₁ ≠ bandwidthGroupOf o₂`. Proof: apply W3-D, then unfold `bandwidthGroupOf` through `mpamConfig`. ~15 lines | `Correctness.lean` | Trivial |
 | W3-G | — | **Prove `transitivityPreservation`.** If the `DomainFlowPolicy` is well-formed (reflexive + transitive, from `wellFormed` in Policy.lean), then partition assignment respects the transitive closure: `canFlow a b → canFlow b c → partitionOf a = partitionOf c → canFlow a c`. Proof: direct from `DomainFlowPolicy.isTransitive`. ~20 lines | `Correctness.lean` | Small |
-| W3-H | — | **State `partitionAwareNonInterference` (forward declaration).** State the strengthened NI theorem: under a `PartitionBoundaryContract`, `partitionAwareLowEquivalent` (defined in W6-E) is preserved by all `NonInterferenceStep` constructors. The full proof requires W6 (projection strengthening). Mark with `sorry -- TPI-W3H: requires W6-F projection strengthening`. Register in `TRACKED_PROOF_ISSUES.md`. ~15 lines | `Correctness.lean` | Trivial |
-| W3-I | — | **Prove `mutualNonFlow_decidable`.** `mutualNonFlow l₁ l₂` is `securityFlowsTo l₁ l₂ = false ∧ securityFlowsTo l₂ l₁ = false`. Provide a `Decidable` instance so it can be used in runtime branching. Proof: `instDecidableAnd` with `Bool.decEq`. ~10 lines | `Correctness.lean` | Trivial |
-| W3-J | — | **Update re-export hub.** Add `import SeLe4n.Kernel.HardwarePartition.Correctness` to `HardwarePartition.lean`. ~1 line | `HardwarePartition.lean` | Trivial |
+| W3-H | — | **Prove `mutualNonFlow_decidable`.** `mutualNonFlow l₁ l₂` is `securityFlowsTo l₁ l₂ = false ∧ securityFlowsTo l₂ l₁ = false`. Provide a `Decidable` instance so it can be used in runtime branching. Proof: `instDecidableAnd` with `Bool.decEq`. ~10 lines | `Correctness.lean` | Trivial |
+| W3-I | — | **Update re-export hub.** Add `import SeLe4n.Kernel.HardwarePartition.Correctness` to `HardwarePartition.lean`. ~1 line | `HardwarePartition.lean` | Trivial |
 
 **Intra-phase ordering constraints:**
 - W3-A first (bridge function needed by all subsequent tasks)
@@ -185,54 +211,54 @@ the NI model.
 - W3-E depends on W3-D (corollary)
 - W3-F depends on W3-D (corollary)
 - W3-G depends on W3-A (uses domain flow transitivity, independent of W3-D)
-- W3-H depends on W3-D (references the correctness result, but proof is sorry)
-- W3-I is independent (decidability instance for mutual non-flow)
-- W3-J depends on all others
-- **Parallel**: W3-E, W3-F, W3-G, W3-H, W3-I are all independent after W3-D
+- W3-H is independent (decidability instance for mutual non-flow)
+- W3-I depends on all others
+- **Parallel**: W3-E, W3-F, W3-G, W3-H are all independent after W3-D
 
-**Gate**: `lake build SeLe4n.Kernel.HardwarePartition.Correctness`. Exactly one
-tracked `sorry` (W3-H). Zero `axiom`.
+**Gate**: `lake build SeLe4n.Kernel.HardwarePartition.Correctness`. Zero
+`sorry`/`axiom`.
 
 ---
 
 ### Phase W4: CCA Realm Model (v0.22.3)
 
-Model ARM Confidential Compute Architecture realm isolation. The RMM's
-guarantees are modeled as one hardware axiom; the kernel's obligation to
-configure the GPT correctly is a provable property.
+Model ARM Confidential Compute Architecture realm isolation. What the
+kernel proves is over the GPT it configures; that the granule protection
+check enforces the GPT is the hardware's, outside the model, as the MMU's
+enforcement of the page tables is — no axiom states it.
 
 **New file**: `SeLe4n/Kernel/HardwarePartition/Realm.lean`
 
 | ID | Ref | Description | Files | Est. |
 |----|-----|-------------|-------|------|
 | W4-A | CC-4 | **Define `GranuleProtectionTable` type.** Define `GranuleProtectionTable` as `PAddr → GranuleState` (total function — every physical address has a granule state). Add `GranuleProtectionTable.default : GranuleProtectionTable := fun _ => .nonSecure` (all pages start non-secure before realm assignment). ~10 lines | `Realm.lean` | Trivial |
-| W4-B | CC-4 | **Define `realmMemoryIsolation` axiom.** `axiom realmMemoryIsolation (gpt : GranuleProtectionTable) : ∀ (r₁ r₂ : RealmId) (pa : PAddr), r₁ ≠ r₂ → gpt pa = .realm r₁ → gpt pa ≠ .realm r₂`. A physical address cannot belong to two distinct realms simultaneously. This is a **hardware guarantee** enforced by the ARM RME granule protection check unit at the interconnect — the kernel cannot verify this. Documented in ARM DDI0487 §D8. This is the plan's sole axiom. ~10 lines | `Realm.lean` | Trivial |
+| W4-B | CC-4 | **Prove `realmMemoryIsolation`.** `theorem realmMemoryIsolation (gpt : GranuleProtectionTable) : ∀ (r₁ r₂ : RealmId) (pa : PAddr), r₁ ≠ r₂ → gpt pa = .realm r₁ → gpt pa ≠ .realm r₂`: a physical address belongs to at most one realm, because the GPT is a function and `.realm` is injective (restated at `v0.36.205` from an axiom). ~10 lines | `Realm.lean` | Trivial |
 | W4-C | CC-4 | **Define `domainOwnsPage` predicate.** `domainOwnsPage (ctx : LabelingContext) (d : DomainId) (pa : PAddr) : Prop`. When `ctx.memoryOwnership = some mdo`, checks `mdo.regionOwner pa = some d`. When `none`, vacuously false (no ownership model configured). This reuses the existing `MemoryDomainOwnership` from Policy.lean. ~15 lines | `Realm.lean` | Trivial |
 | W4-D | CC-4 | **Define `realmDomainConsistent` proof obligation.** `realmDomainConsistent (contract : PartitionBoundaryContract) (ctx : LabelingContext) (gpt : GranuleProtectionTable) : Prop := ∀ (d : DomainId) (rid : RealmId), contract.realmAssignment.assign d = some rid → ∀ (pa : PAddr), domainOwnsPage ctx d pa → gpt pa = .realm rid`. The kernel must ensure that every page owned by a domain-with-realm is in that realm's GPT entry. This is a proof obligation on the kernel, not an axiom. ~15 lines | `Realm.lean` | Small |
-| W4-E | CC-4 | **Define `realmCreate` transition.** `realmCreate (rid : RealmId) (pages : List PAddr) (gpt : GranuleProtectionTable) : GranuleProtectionTable`. Assigns each page in `pages` to `.realm rid`. Implemented as `pages.foldl (fun g pa => fun addr => if addr == pa then .realm rid else g addr) gpt`. ~15 lines | `Realm.lean` | Small |
-| W4-F | CC-4 | **Prove `realmCreate_preserves_other_realms`.** Statement: `∀ pa, gpt pa = .realm r₂ → r₂ ≠ rid → pa ∉ pages → realmCreate rid pages gpt pa = .realm r₂`. Creating a new realm does not reassign pages belonging to other realms (provided those pages are not in the creation page list). Proof by induction on `pages`, using `if` branch elimination at each fold step. ~30 lines | `Realm.lean` | Small |
+| W4-E | CC-4 | **Define `realmCreate` transition.** `realmCreate (rid : RealmId) (base : PAddr) (count : Nat) (gpt : GranuleProtectionTable) : GranuleProtectionTable := fun pa => if inRange base count pa then .realm rid else gpt pa`, the page range given as a base and a count (restated at `v0.36.205` from a `List PAddr`, which a kernel entry would allocate).  Boundary cell: `count = 0`, which changes nothing. ~15 lines | `Realm.lean` | Small |
+| W4-F | CC-4 | **Prove `realmCreate_preserves_other_realms`.** Statement: `∀ pa, gpt pa = .realm r₂ → r₂ ≠ rid → ¬ inRange base count pa → realmCreate rid base count gpt pa = .realm r₂`. Creating a new realm does not reassign pages belonging to other realms outside its range. Proof by `if` branch elimination. ~30 lines | `Realm.lean` | Small |
 | W4-G | CC-4 | **Define `realmDestroy` transition.** `realmDestroy (rid : RealmId) (gpt : GranuleProtectionTable) : GranuleProtectionTable := fun pa => if gpt pa = .realm rid then .nonSecure else gpt pa`. Releases all pages belonging to the destroyed realm back to `.nonSecure`. ~10 lines | `Realm.lean` | Trivial |
 | W4-H | CC-4 | **Prove `realmDestroy_preserves_other_realms`.** Statement: `∀ pa, gpt pa = .realm r₂ → r₂ ≠ rid → realmDestroy rid gpt pa = .realm r₂`. Destroying one realm does not affect pages belonging to other realms. Proof by unfolding `realmDestroy` and using `r₂ ≠ rid` to show the `if` takes the `else` branch. ~15 lines | `Realm.lean` | Trivial |
-| W4-I | CC-4 | **Prove `realmPartitionBridge`.** Statement: if `realmAssignment d₁ = some r₁` and `realmAssignment d₂ = some r₂` and `r₁ ≠ r₂`, then for all `pa`, `domainOwnsPage d₁ pa → ¬domainOwnsPage d₂ pa`. Combined with `realmMemoryIsolation` (W4-B) and `realmDomainConsistent` (W4-D): `d₁`'s pages are in realm `r₁`, `d₂`'s would be in realm `r₂`, but a page can't be in both (axiom), so they're disjoint. **Proof strategy**: assume both `domainOwnsPage d₁ pa` and `domainOwnsPage d₂ pa`. By `realmDomainConsistent`, `gpt pa = .realm r₁` and `gpt pa = .realm r₂`. Then `r₁ = r₂` by function determinism, contradicting `r₁ ≠ r₂`. ~25 lines | `Realm.lean` | Small |
+| W4-I | CC-4 | **Prove `realmPartitionBridge`.** Statement: if `realmAssignment d₁ = some r₁` and `realmAssignment d₂ = some r₂` and `r₁ ≠ r₂`, then for all `pa`, `domainOwnsPage d₁ pa → ¬domainOwnsPage d₂ pa`. Combined with `realmMemoryIsolation` (W4-B) and `realmDomainConsistent` (W4-D): `d₁`'s pages are in realm `r₁`, `d₂`'s would be in realm `r₂`, but a page can't be in both (W4-B), so they're disjoint. **Proof strategy**: assume both `domainOwnsPage d₁ pa` and `domainOwnsPage d₂ pa`. By `realmDomainConsistent`, `gpt pa = .realm r₁` and `gpt pa = .realm r₂`. Then `r₁ = r₂` by function determinism, contradicting `r₁ ≠ r₂`. ~25 lines | `Realm.lean` | Small |
 | W4-J | — | **Define `trivialRealmAssignment`.** `trivialRealmAssignment : RealmAssignment := ⟨fun _ => none⟩`. For platforms without CCA (including current RPi5). All realm proof obligations (`realmDomainConsistent`) become vacuously true because the `some rid` hypothesis in the ∀ is never satisfied. Prove `trivialRealmConsistent : realmDomainConsistent trivialContract ctx gpt` where `trivialContract.realmAssignment = trivialRealmAssignment`. Proof: intro, `simp [trivialRealmAssignment]` discharges the `some rid` case. ~10 lines | `Realm.lean` | Trivial |
 | W4-K | — | **Update re-export hub.** Add `import SeLe4n.Kernel.HardwarePartition.Realm` to `HardwarePartition.lean`. ~1 line | `HardwarePartition.lean` | Trivial |
 
 **Intra-phase ordering constraints:**
 - W4-A first (GPT type used by everything)
-- W4-B depends on W4-A (axiom about GPT)
+- W4-B depends on W4-A (a theorem about the GPT)
 - W4-C is independent (uses only LabelingContext)
 - W4-D depends on W4-A + W4-C (references GPT + domainOwnsPage)
 - W4-E depends on W4-A (transition over GPT)
 - W4-F depends on W4-E (preservation proof for create)
 - W4-G depends on W4-A (transition over GPT)
 - W4-H depends on W4-G (preservation proof for destroy)
-- W4-I depends on W4-B + W4-D (bridge uses axiom + consistency)
+- W4-I depends on W4-B + W4-D (bridge uses W4-B + consistency)
 - W4-J is independent after W4-A (trivial assignment)
 - **Parallel chains**: {W4-E→W4-F} and {W4-G→W4-H} are independent; W4-I depends on both chain outputs conceptually but only on W4-B + W4-D directly
 
-**Gate**: `lake build SeLe4n.Kernel.HardwarePartition.Realm`. Zero `sorry`.
-Exactly one `axiom` (`realmMemoryIsolation`). Axiom documented in
-`CLAIM_EVIDENCE_INDEX.md` with ARM DDI0487 §D8 reference.
+**Gate**: `lake build SeLe4n.Kernel.HardwarePartition.Realm`. Zero
+`sorry`/`axiom`.  The hardware's enforcement of the GPT is recorded in
+`CLAIM_EVIDENCE_INDEX.md` as outside the model, with ARM DDI0487 §D8.
 
 ---
 
@@ -254,20 +280,18 @@ mechanism that makes that exclusion physically enforceable.
 | W5-D | CC-2 | **Prove `timerNonInterference`.** Statement: given `config.offsets d₁ ≠ config.offsets d₂`, the absolute values `projectDomainTimer config d₁ phys` and `projectDomainTimer config d₂ phys` differ by a constant (`config.offsets d₂ - config.offsets d₁`) regardless of `phys`. Therefore, observing one virtual counter reveals no information about the other domain's execution pattern beyond the public offset difference. Proof: unfold both, subtract, show the difference is independent of `phys`. ~20 lines | `TimerIsolation.lean` | Small |
 | W5-E | CC-2 | **Prove `timerOffsetSeparation`.** Statement: given a `PartitionBoundaryContract` with `timerOffsetDistinct` (W2-E), non-flowing domains (via `partitionCorrectness` from W3-D) have distinct timer offsets. Proof: chain W3-D (mutual non-flow → distinct partitions) with `timerOffsetDistinct` (distinct partitions → distinct offsets). ~15 lines | `TimerIsolation.lean` | Trivial |
 | W5-F | CC-2 | **Define `domainSwitchTimerUpdate`.** `domainSwitchTimerUpdate (config : TimerOffsetConfig) (oldDomain newDomain : DomainId) (ms : MachineState) : MachineState`. Models what happens on domain switch: the physical counter is unchanged, but the visible timer value becomes `projectDomainTimer config newDomain ms.timer`. In the abstract model, this is a no-op on `MachineState` (the offset is conceptual — the hardware applies it transparently). Return `ms` unchanged. ~10 lines | `TimerIsolation.lean` | Trivial |
-| W5-G | CC-2 | **Prove `domainSwitchTimerUpdate_preserves_machineWordBounded`.** Statement: `machineWordBounded ms → machineWordBounded (domainSwitchTimerUpdate config old new ms)`. Since W5-F returns `ms` unchanged, proof is `id`. ~5 lines | `TimerIsolation.lean` | Trivial |
-| W5-H | — | **Extend `RuntimeBoundaryContract` with optional timer isolation.** Add field `timerIsolation : Option TimerOffsetConfig := none` to `RuntimeBoundaryContract` in `Assumptions.lean`. When `some config`, the `timerMonotonic` predicate is understood to hold for virtual counters per-domain (documentation-level strengthening; the `Prop` signature is unchanged — monotonicity of `phys + offset` follows from monotonicity of `phys`). The `:= none` default preserves backward compatibility. ~5 lines | `SeLe4n/Kernel/Architecture/Assumptions.lean` | Trivial |
-| W5-I | — | **Verify backward compatibility.** Build all existing platform contracts that reference `RuntimeBoundaryContract`: `lake build SeLe4n.Platform.RPi5.RuntimeContract`, `lake build SeLe4n.Platform.Sim.RuntimeContract`. Both must compile without changes. Verification-only — no code changes. | — | Trivial |
-| W5-J | — | **Update re-export hub.** Add `import SeLe4n.Kernel.HardwarePartition.TimerIsolation` to `HardwarePartition.lean`. ~1 line | `HardwarePartition.lean` | Trivial |
+| W5-G | — | **Extend `RuntimeBoundaryContract` with optional timer isolation.** Add field `timerIsolation : Option TimerOffsetConfig := none` to `RuntimeBoundaryContract` in `Assumptions.lean`. When `some config`, the `timerMonotonic` predicate is understood to hold for virtual counters per-domain (documentation-level strengthening; the `Prop` signature is unchanged — monotonicity of `phys + offset` follows from monotonicity of `phys`). The `:= none` default preserves backward compatibility. ~5 lines | `SeLe4n/Kernel/Architecture/Assumptions.lean` | Trivial |
+| W5-H | — | **Verify backward compatibility.** Build all existing platform contracts that reference `RuntimeBoundaryContract`: `lake build SeLe4n.Platform.RPi5.RuntimeContract`, `lake build SeLe4n.Platform.Sim.RuntimeContract`. Both must compile without changes. Verification-only — no code changes. | — | Trivial |
+| W5-I | — | **Update re-export hub.** Add `import SeLe4n.Kernel.HardwarePartition.TimerIsolation` to `HardwarePartition.lean`. ~1 line | `HardwarePartition.lean` | Trivial |
 
 **Intra-phase ordering constraints:**
 - W5-A → W5-B (VirtualCounter used by projectDomainTimer)
 - W5-B → W5-C → W5-D (projection function → uniform increment → NI)
 - W5-B → W5-E (uses projectDomainTimer indirectly via W3-D chain)
-- W5-F → W5-G (function → preservation proof)
 - W5-F is independent of W5-C/D/E (domain switch update is separate from NI proofs)
-- W5-H is independent of W5-A through W5-G (modifies a different file)
-- W5-I depends on W5-H
-- **Parallel chains**: {W5-A→W5-B→W5-C→W5-D, W5-E} and {W5-F→W5-G} and {W5-H→W5-I}
+- W5-G is independent of W5-A through W5-F (modifies a different file)
+- W5-H depends on W5-G
+- **Parallel chains**: {W5-A→W5-B→W5-C→W5-D, W5-E} and {W5-F} and {W5-G→W5-H}
 
 **Gate**: `lake build SeLe4n.Kernel.HardwarePartition.TimerIsolation`,
 `lake build SeLe4n.Kernel.Architecture.Assumptions`. Zero `sorry`/`axiom`.
@@ -277,7 +301,8 @@ mechanism that makes that exclusion physically enforceable.
 ### Phase W6: Projection Strengthening (v0.22.5)
 
 The central model-level change: extend `ObservableState` and `projectState` to
-account for hardware partition boundaries, and close the W3-H sorry. This is the
+account for hardware partition boundaries, and state and prove the
+partition-aware NI theorem over them (W6-K). This is the
 highest-risk phase because it modifies the core information flow infrastructure.
 
 **Modified files**: `SeLe4n/Kernel/InformationFlow/Projection.lean`,
@@ -294,12 +319,10 @@ highest-risk phase because it modifies the core information flow infrastructure.
 | W6-F | CC-4 | **Strengthen `projectObjectIndex` with partition gate.** Object index entries filtered by `objectObservable && partitionObservable`. When `contract = none`, existing behavior preserved. ~3 lines changed | `Projection.lean` | Trivial |
 | W6-G | — | **Thread `contract` parameter through `projectState`.** Add `(contract : Option PartitionBoundaryContract := none)` parameter to `projectState`. Pass it to `projectObjects`, `projectMemory`, `projectIrqSignalLines`, `projectObjectIndex`. Fill in `partitionId` and `cachePartition` fields of the result from `contract`. When `none`, all partition fields are `none` and all sub-projections behave as before. ~15 lines changed | `Projection.lean` | Small |
 | W6-H | — | **Prove `projectState_partition_none_eq` (backward compatibility).** Statement: `projectState none ctx observer st = projectState_original ctx observer st` (where `projectState_original` is the pre-W6 definition, or equivalently, `projectState none` computes the same result as the old function). **Proof strategy**: unfold `projectState`, show each sub-projection with `contract = none` matches the original via `simp [partitionObservable]` (the `none` branch returns `true`, so the `&&` collapses). This is the **critical safety theorem** — if it fails, all existing NI proofs break. ~40 lines | `Projection.lean` | Medium |
-| W6-I | — | **Update `projectStateFast` to match.** Thread the same `contract` parameter through `projectStateFast` (the precomputed-observable-set variant). Update `projectObjectsFast` and `projectIrqSignalLinesFast` to accept and apply the partition gate. Prove `projectStateFast_eq` still holds (the fast path agrees with the slow path including partition filtering). ~30 lines | `Projection.lean` | Small |
-| W6-J | — | **Define `partitionAwareLowEquivalent`.** `partitionAwareLowEquivalent (contract : PartitionBoundaryContract) (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) : Prop := projectState (some contract) ctx observer s₁ = projectState (some contract) ctx observer s₂`. This is strictly stronger than `lowEquivalent` (which uses `projectState none`). ~5 lines | `Projection.lean` | Trivial |
-| W6-K | — | **Prove `partitionAwareLowEquivalent_implies_lowEquivalent`.** Statement: `partitionAwareLowEquivalent contract ctx observer s₁ s₂ → lowEquivalent ctx observer s₁ s₂`. **Proof strategy**: `partitionAwareLowEquivalent` means `projectState (some c)` agrees. Since `partitionObservable (some c)` is a *strengthening* (filters more), agreement on the strengthened projection implies agreement on the original. Formally: if the partition-filtered projection is equal, then applying the weaker filter (which makes more things visible) cannot introduce inequality because both states have the same underlying objects — the weaker filter just reveals more of what's already equal. This requires a monotonicity lemma: `partitionObservable (some c) oid = true → objectObservable ctx observer oid = true → ∃ the projected objects agree`. ~30 lines | `Projection.lean` | Medium |
-| W6-L | — | **Close W3-H sorry: prove `partitionAwareNonInterference`.** Complete the proof in `Correctness.lean`. Under a `PartitionBoundaryContract`, `partitionAwareLowEquivalent` is preserved by all `NonInterferenceStep` constructors. **Proof strategy**: for each constructor, the existing per-operation NI proof already shows the operation's state changes are localized to non-observable targets (via `hEndpointHigh`, `hSenderHigh`, etc.). With partition-aware projection, these targets are *even more* filtered (by partition in addition to label). Since the existing proof shows the change is invisible under the weaker filter, it is a fortiori invisible under the stronger filter. Formally: compose each existing `_preserves_lowEquivalent` theorem with `partitionAwareLowEquivalent_implies_lowEquivalent` (W6-K). ~40 lines | `Correctness.lean` | Medium |
-| W6-M | CC-1 | **Update covert channel documentation (scheduling).** Add structured doc comment to `projectActiveDomain` explaining that under hardware partitioning, while scheduling state is still visible (scheduling transparency is by design), the cache-timing amplification vector is eliminated: an observer in partition A cannot infer partition B's memory access patterns from cache pressure because MPAM isolates the cache ways. ~15 lines (doc comment only) | `Projection.lean` | Trivial |
-| W6-N | — | **Update `computeObservableSet` to include partition gate.** The precomputed hash set (WS-G9) must also filter by `partitionObservable` when a contract is active. Thread `contract` parameter. Prove `foldl_observable_set_mem` still holds with the strengthened filter. ~20 lines | `Projection.lean` | Small |
+| W6-I | — | **Define `partitionAwareLowEquivalent`.** `partitionAwareLowEquivalent (contract : PartitionBoundaryContract) (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) : Prop := projectState (some contract) ctx observer s₁ = projectState (some contract) ctx observer s₂`. This is strictly stronger than `lowEquivalent` (which uses `projectState none`). ~5 lines | `Projection.lean` | Trivial |
+| W6-J | — | **Prove `partitionAwareLowEquivalent_implies_lowEquivalent`.** Statement: `partitionAwareLowEquivalent contract ctx observer s₁ s₂ → lowEquivalent ctx observer s₁ s₂`. **Proof strategy**: `partitionAwareLowEquivalent` means `projectState (some c)` agrees. Since `partitionObservable (some c)` is a *strengthening* (filters more), agreement on the strengthened projection implies agreement on the original. Formally: if the partition-filtered projection is equal, then applying the weaker filter (which makes more things visible) cannot introduce inequality because both states have the same underlying objects — the weaker filter just reveals more of what's already equal. This requires a monotonicity lemma: `partitionObservable (some c) oid = true → objectObservable ctx observer oid = true → ∃ the projected objects agree`. ~30 lines | `Projection.lean` | Medium |
+| W6-K | — | **State and prove `partitionAwareNonInterference`** in `Correctness.lean` (the old W3-H's forward declaration, deleted at `v0.36.205`, lands here with its proof, after the projection it is stated over). Under a `PartitionBoundaryContract`, `partitionAwareLowEquivalent` is preserved by all `NonInterferenceStep` constructors. **Proof strategy**: for each constructor, the existing per-operation NI proof already shows the operation's state changes are localized to non-observable targets (via `hEndpointHigh`, `hSenderHigh`, etc.). With partition-aware projection, these targets are *even more* filtered (by partition in addition to label). Since the existing proof shows the change is invisible under the weaker filter, it is a fortiori invisible under the stronger filter. Formally: compose each existing `_preserves_lowEquivalent` theorem with `partitionAwareLowEquivalent_implies_lowEquivalent` (W6-J). ~40 lines | `Correctness.lean` | Medium |
+| W6-L | CC-1 | **Update covert channel documentation (scheduling).** Add structured doc comment to `projectActiveDomain` explaining that under hardware partitioning, while scheduling state is still visible (scheduling transparency is by design), the cache-timing amplification vector is eliminated: an observer in partition A cannot infer partition B's memory access patterns from cache pressure because MPAM isolates the cache ways. ~15 lines (doc comment only) | `Projection.lean` | Trivial |
 
 **Intra-phase ordering constraints:**
 - W6-A first (structure fields must exist before any projection function changes)
@@ -308,17 +331,15 @@ highest-risk phase because it modifies the core information flow infrastructure.
 - W6-C through W6-F all depend on W6-B (use `partitionObservable`)
 - W6-G depends on W6-C through W6-F (threads parameter through to all sub-projections)
 - W6-H depends on W6-G (backward compatibility proof over the threaded `projectState`)
-- W6-I depends on W6-G (fast-path variant mirrors slow path)
-- W6-J depends on W6-G (uses `projectState` with `some contract`)
-- W6-K depends on W6-J + W6-H (strengthened equiv implies original equiv)
-- W6-L depends on W6-K (uses `partitionAwareLowEquivalent_implies_lowEquivalent`)
-- W6-M is independent (doc comment only)
-- W6-N depends on W6-B (uses `partitionObservable`)
-- **Critical path**: W6-A → W6-B → W6-C → W6-G → W6-H → W6-K → W6-L
+- W6-I depends on W6-G (uses `projectState` with `some contract`)
+- W6-J depends on W6-I + W6-H (strengthened equiv implies original equiv)
+- W6-K depends on W6-J (uses `partitionAwareLowEquivalent_implies_lowEquivalent`)
+- W6-L is independent (doc comment only)
+- **Critical path**: W6-A → W6-B → W6-C → W6-G → W6-H → W6-J → W6-K
 
 **Gate**: `lake build SeLe4n.Kernel.InformationFlow.Projection`,
 `lake build SeLe4n.Kernel.HardwarePartition.Correctness`,
-`./scripts/test_full.sh`. Zero `sorry`/`axiom` (W3-H sorry is now closed).
+`./scripts/test_full.sh`. Zero `sorry`/`axiom`.
 
 ---
 
@@ -430,20 +451,20 @@ branches are dead and existing proofs apply unchanged.
 | ID | Ref | Description | Files | Est. |
 |----|-----|-------------|-------|------|
 | W9-A | CC-1 | **Add `activeMpamPartId` field to `MachineState`.** Add `activeMpamPartId : Option PartitionId := none` to `MachineState` in `Machine.lean`. This tracks which MPAM PARTID is currently active in the hardware register. The `:= none` default preserves all existing `MachineState` construction sites. ~3 lines | `SeLe4n/Machine.lean` | Trivial |
-| W9-B | CC-1 | **Prove `activeMpamPartId` is frame-transparent.** Prove that all existing `MachineState` operations (`advanceTimerState`, `writeRegisterState`, `readMemoryState`) preserve `activeMpamPartId` (they don't touch it). Statement: `(advanceTimerState ticks st).machine.activeMpamPartId = st.machine.activeMpamPartId`. Similar for write/read. Proof: unfold each operation, show the new field is not in the modified record fields. ~20 lines | `SeLe4n/Machine.lean` | Small |
+| W9-B | CC-1 | **Prove `activeMpamPartId` is frame-transparent.** Prove that all existing `MachineState` operations (`advanceTimerState`, `writeRegisterState`, `Kernel/Architecture/Adapter.lean:29,33`, and `readMem`, `Machine.lean:1932`) preserve `activeMpamPartId` (they don't touch it). Statement: `(advanceTimerState ticks st).machine.activeMpamPartId = st.machine.activeMpamPartId`. Similar for write/read. Proof: unfold each operation, show the new field is not in the modified record fields. ~20 lines | `SeLe4n/Machine.lean` | Small |
 | W9-C | — | **Define `adapterSwitchPartition`.** `adapterSwitchPartition (pid : PartitionId) (ms : MachineState) : MachineState := { ms with activeMpamPartId := some pid }`. Sets the active MPAM PARTID. ~5 lines | `SeLe4n/Kernel/Architecture/Adapter.lean` | Trivial |
 | W9-D | — | **Define `adapterFlushCacheWays`.** `adapterFlushCacheWays (ways : CacheWayMask) (ms : MachineState) : MachineState := ms`. In the abstract model, cache flushing is a no-op on `MachineState` (the abstract model does not model cache contents — cache isolation is captured by the partition contract proofs, not by state mutation). The flush is modeled as a state annotation that the platform contract can reference. ~10 lines | `SeLe4n/Kernel/Architecture/Adapter.lean` | Trivial |
 | W9-E | — | **Add partition hooks to `AdapterProofHooks`.** Add optional fields: `preserveSwitchPartition : Option (∀ pid st, proofLayerInvariantBundle st → proofLayerInvariantBundle (adapterSwitchPartition pid st).machine.toSystemState) := none`, `preserveFlushCacheWays : Option (∀ ways st, proofLayerInvariantBundle st → proofLayerInvariantBundle (adapterFlushCacheWays ways st).machine.toSystemState) := none`. Existing platform hooks (`simRestrictiveAdapterProofHooks`, `rpi5RestrictiveAdapterProofHooks`) pass `none` — unchanged. ~15 lines | `SeLe4n/Kernel/Architecture/Invariant.lean` | Small |
 | W9-F | CC-1 | **Extend `schedule` with partition switch.** In `Scheduler/Operations/Core.lean`, after the domain switch logic (where `activeDomain` changes), add: `match partitionContract with | none => pure () | some c => let oldPart := c.partitionAssignment.assign oldDomain; let newPart := c.partitionAssignment.assign newDomain; if oldPart != newPart then do adapterFlushCacheWays (flushSpec oldDomain newDomain); adapterSwitchPartition newPart else pure ()`. **Sub-steps**: (1) Read lines around domain switch in `Core.lean` to identify insertion point. (2) Add `partitionContract` parameter (defaulting to `none`). (3) Add partition switch logic guarded by `match`. (4) Verify existing proofs compile. ~20 lines added | `Scheduler/Operations/Core.lean` | Medium |
 | W9-G | CC-1 | **Prove `schedule` partition switch preserves `schedulerInvariantBundleFull`.** The partition switch modifies only `machine.activeMpamPartId` (via `adapterSwitchPartition`) and performs a conceptual cache flush (no-op in abstract model). Since `schedulerInvariantBundleFull` does not reference `activeMpamPartId` (it concerns run queues, current thread, domain time), the invariant is frame-preserved. **Proof strategy**: show `activeMpamPartId` is not in any field read by the scheduler invariant predicates, then apply W9-B (frame transparency). ~30 lines | `Scheduler/Operations/Preservation.lean` | Medium |
 | W9-H | CC-4 | **Extend IPC enforcement with cross-partition flush.** In `Enforcement/Wrappers.lean`, for each policy-gated wrapper (9 when this plan was written; 12 since WS-SM SM8.C — read `enforcementBoundaryExtended_count`), add after the `securityFlowsTo` check: if `partitionContract = some c` and sender and receiver are in different partitions, apply `adapterFlushCacheWays` before the IPC operation. This prevents cache-based data exfiltration during cross-partition IPC. Modification pattern: `if partitionCrossCheck c sender receiver then adapterFlushCacheWays ... >>= fun _ => uncheckedOp else uncheckedOp`. ~5 lines per wrapper × 9 = ~45 lines total, but each is mechanical | `Enforcement/Wrappers.lean` | Medium |
-| W9-I | CC-4 | **Prove IPC flush preserves `coreIpcInvariantBundle`.** The cache flush is a no-op in the abstract model (`adapterFlushCacheWays` returns `ms`), so `coreIpcInvariantBundle` is trivially preserved. Statement: `coreIpcInvariantBundle st → coreIpcInvariantBundle (afterFlush st)` where `afterFlush st = st` (definitionally). Proof: `id`. The wrapper correctness theorems (e.g., `endpointSendDualChecked_eq_endpointSendDual_when_allowed`) need a new case for the partition-check branch; when `partitionContract = none`, they reduce to the existing proof. ~30 lines | `Enforcement/Soundness.lean` | Small |
-| W9-J | CC-4 | **Extend `lifecycleRetypeObject` with partition binding.** When a new object is created via `retypeFromUntyped`, if `partitionContract = some c`, the new object's backing domain must match the creating thread's domain (and thus partition). Add a check: `if partitionContract matches some c then verify partitionOfThread caller = expected partition`. If CCA realms are active, assign the object's pages to the domain's realm via `realmCreate`. ~15 lines added | `Lifecycle/Operations.lean` | Small |
-| W9-K | CC-4 | **Prove `lifecycleRetypeObject` partition binding preserves `lifecycleInvariantBundle`.** The partition check is a guard (returns error on failure, no state change). The realm page assignment modifies the GPT (which is not part of `SystemState` — it's a hardware-level structure). Therefore `lifecycleInvariantBundle` is frame-preserved. Proof: case split on partition check success/failure; failure is trivial; success delegates to existing preservation proof. ~25 lines | `Lifecycle/Invariant.lean` | Small |
+| W9-I | CC-4 | **Prove IPC flush preserves `coreIpcInvariantBundle`.** The cache flush is a no-op in the abstract model (`adapterFlushCacheWays` returns `ms`), so `coreIpcInvariantBundle` is trivially preserved. Statement: `coreIpcInvariantBundle st → coreIpcInvariantBundle (afterFlush st)` where `afterFlush st = st` (definitionally). Proof: `id`. The wrapper correctness theorems (e.g., `endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed`, `Enforcement/Wrappers.lean:72`) need a new case for the partition-check branch; when `partitionContract = none`, they reduce to the existing proof. ~30 lines | `Enforcement/Soundness.lean` | Small |
+| W9-J | CC-4 | **Extend the retype with partition binding.** When a new object is created via `retypeFromUntyped` (`Lifecycle/Operations/ScrubAndUntyped.lean:286`; the `lifecycleRetypeObject` entry this row named is gone), if `partitionContract = some c`, the new object's backing domain must match the creating thread's domain (and thus partition). Add a check: `if partitionContract matches some c then verify partitionOfThread caller = expected partition`. If CCA realms are active, assign the object's pages to the domain's realm via `realmCreate`. ~15 lines added | `Lifecycle/Operations.lean` | Small |
+| W9-K | CC-4 | **Prove the retype's partition binding preserves `lifecycleInvariantBundle`.** The partition check is a guard (returns error on failure, no state change). The realm page assignment modifies the GPT (which is not part of `SystemState` — it's a hardware-level structure). Therefore `lifecycleInvariantBundle` is frame-preserved. Proof: case split on partition check success/failure; failure is trivial; success delegates to existing preservation proof. ~25 lines | `Lifecycle/Invariant.lean` | Small |
 | W9-L | — | **Define `partitionCrossSubsystemInvariant`.** Add to `CrossSubsystem.lean`: `partitionCrossSubsystemInvariant (contract : Option PartitionBoundaryContract) (st : SystemState) : Prop`. When `none`: `True` (vacuously satisfied). When `some c`: (1) `activeMpamPartId st.machine = some (c.partitionAssignment.assign st.scheduler.activeDomain)` — PARTID register matches active domain's partition, (2) `∀ oid obj, st.objects[oid]? = some obj → partitionOf oid = c.partitionAssignment.assign (domainOf oid)` — all objects are in their domain's partition. ~20 lines | `CrossSubsystem.lean` | Small |
 | W9-M | — | **Prove `partitionCrossSubsystemInvariant_none`.** When `contract = none`, the invariant is `True`. Proof: `trivial`. This is the backward compatibility lemma — existing proofs that carry `crossSubsystemInvariant st` can discharge the new partition component by `exact True.intro`. ~5 lines | `CrossSubsystem.lean` | Trivial |
-| W9-N | — | **Extend `proofLayerInvariantBundle` with partition invariant.** Add `partitionCrossSubsystemInvariant contract st` as the 10th conjunct in `proofLayerInvariantBundle`. The bundle signature gains a `(contract : Option PartitionBoundaryContract := none)` parameter. When `none`, the 10th conjunct is `True` (W9-M). ~5 lines modified | `Architecture/Invariant.lean` | Small |
-| W9-O | — | **Prove existing `preserves_proofLayerInvariantBundle` theorems still hold.** Each existing preservation theorem (`adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle`, etc.) must discharge the new 10th conjunct. When `contract = none`: apply `partitionCrossSubsystemInvariant_none` (W9-M). When `some c`: the existing adapter operations don't modify `activeMpamPartId` (W9-B frame transparency), so the partition invariant is frame-preserved. **This is the critical backward compatibility proof.** ~40 lines total across 3 adapter theorems | `Architecture/Invariant.lean` | Medium |
+| W9-N | — | **Extend `proofLayerInvariantBundle` with partition invariant.** Add `partitionCrossSubsystemInvariant contract st` as the 21st conjunct in `proofLayerInvariantBundle` (twenty at `v0.36.205`, `Architecture/Invariant.lean:196`; re-read at the row's start). The bundle signature gains a `(contract : Option PartitionBoundaryContract := none)` parameter. When `none`, the new conjunct is `True` (W9-M). ~5 lines modified | `Architecture/Invariant.lean` | Small |
+| W9-O | — | **Prove existing `preserves_proofLayerInvariantBundle` theorems still hold.** Each existing preservation theorem (`adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle`, etc.) must discharge the new conjunct. When `contract = none`: apply `partitionCrossSubsystemInvariant_none` (W9-M). When `some c`: the existing adapter operations don't modify `activeMpamPartId` (W9-B frame transparency), so the partition invariant is frame-preserved. **This is the critical backward compatibility proof.** ~40 lines total across 3 adapter theorems | `Architecture/Invariant.lean` | Medium |
 | W9-P | — | **Run full regression.** Execute `./scripts/test_full.sh`. This is mandatory — W9 touches the proof core. If any Tier 3 invariant surface anchor fails, investigate and fix before proceeding. Verification-only — no code changes. | — | Small |
 
 **Intra-phase ordering constraints:**
@@ -489,16 +510,16 @@ closure report.
 | W10-F | — | **Add cross-partition IPC negative tests.** Verify: (1) IPC between domains in different partitions triggers cache flush (trace output shows flush), (2) IPC between domains in same partition does not trigger flush. Uses trace harness. ~20 lines | `tests/PartitionSuite.lean` | Small |
 | W10-G | — | **Wire `PartitionSuite` into test infrastructure.** Add to `tests/` build target in `lakefile.lean`. Ensure `test_smoke.sh` runs the new suite. ~10 lines | `lakefile.lean`, `scripts/test_smoke.sh` | Trivial |
 | W10-H | — | **Extend `MainTraceHarness.lean` with partition trace.** Add a partition-aware trace scenario: create 4 domains, assign partitions, perform domain switches, output partition IDs and flush specs. Update `tests/fixtures/main_trace_smoke.expected` with new expected output. ~30 lines | `SeLe4n/Testing/MainTraceHarness.lean`, `tests/fixtures/main_trace_smoke.expected` | Small |
-| W10-I | — | **Sorry/axiom audit.** Scan all new `.lean` files for `sorry` and `axiom`. Expected result: zero `sorry`, exactly one `axiom` (`realmMemoryIsolation` in `Realm.lean`). Run: `grep -r 'sorry' SeLe4n/Kernel/HardwarePartition/` and `grep -r 'axiom' SeLe4n/Kernel/HardwarePartition/`. Document results. | — | Trivial |
+| W10-I | — | **Sorry/axiom audit.** Scan all new `.lean` files for `sorry` and `axiom`. Expected result: zero `sorry`, zero `axiom`. Run: `grep -r 'sorry' SeLe4n/Kernel/HardwarePartition/` and `grep -r 'axiom' SeLe4n/Kernel/HardwarePartition/`. Document results. | — | Trivial |
 | W10-J | CC-1,2,3,4 | **Update covert channel documentation.** Rewrite the accepted covert channel block in `Projection.lean`. Under a `PartitionBoundaryContract`: CC-2 (timer) **CLOSED** by `CNTVOFF_EL2` offset isolation (W5); CC-4 (object metadata) **CLOSED** by MPAM cache partitioning (W3-E); CC-1 (scheduling) **NARROWED** — schedule is still visible but cache amplification eliminated; CC-3 (TCB metadata) **NARROWED** — priority visible to label-observable threads but preemption-pattern inference bounded by partition isolation. Document residual bandwidth for CC-1 and CC-3. ~30 lines | `Projection.lean` | Small |
 | W10-K | — | **Update `README.md`.** Add hardware partition isolation to the metrics section. Update the "Covert channel status" row. Add WS-W to the workstream table. Sync from `docs/codebase_map.json`. ~15 lines | `README.md` | Trivial |
 | W10-L | — | **Update `docs/spec/SELE4N_SPEC.md`.** Add section "§X. Hardware Partition Isolation" covering: partition correctness theorem, MPAM integration, CCA realm model, timer isolation. Reference the new Lean modules. ~40 lines | `docs/spec/SELE4N_SPEC.md` | Small |
 | W10-M | — | **Update `docs/DEVELOPMENT.md`.** Add WS-W to active workstream list. Update "Next workstreams" section. Add new module paths to source layout. ~15 lines | `docs/DEVELOPMENT.md` | Trivial |
 | W10-N | — | **Update `docs/REGISTERED_DEBT.md`.** Add WS-W entry with all 10 phases, sub-task counts, version numbers, and status. Follow existing format (WS-U entry is the template). ~30 lines | `docs/REGISTERED_DEBT.md` | Small |
-| W10-O | — | **Update `docs/CLAIM_EVIDENCE_INDEX.md`.** Add claims: (1) `partitionCorrectness` — partition assignment reflects flow policy, (2) `cacheIsolationCorollary` — non-flowing objects have disjoint caches, (3) `realmMemoryIsolation` (axiom) — hardware GPT isolation. Link each claim to the Lean source location. ~15 lines | `docs/CLAIM_EVIDENCE_INDEX.md` | Trivial |
+| W10-O | — | **Update `docs/CLAIM_EVIDENCE_INDEX.md`.** Add claims: (1) `partitionCorrectness` — partition assignment reflects flow policy, (2) `cacheIsolationCorollary` — non-flowing objects have disjoint caches, (3) `realmMemoryIsolation` (theorem) — one realm per page, with the GPT's hardware enforcement recorded as outside the model. Link each claim to the Lean source location. ~15 lines | `docs/CLAIM_EVIDENCE_INDEX.md` | Trivial |
 | W10-P | — | **Regenerate `docs/codebase_map.json`.** Run the codebase map generator (if automated) or manually add entries for `SeLe4n/Kernel/HardwarePartition/*` and `SeLe4n/Platform/ARMv9/*`. ~20 lines | `docs/codebase_map.json` | Trivial |
 | W10-Q | — | **Update `scripts/website_link_manifest.txt`.** Add any new paths referenced from the website. Run `scripts/check_website_links.sh` to verify all links resolve. ~5 lines | `scripts/website_link_manifest.txt` | Trivial |
-| W10-R | — | **Write closure report.** `docs/dev_history/audits/WS_W_CLOSURE_REPORT.md` summarizing: phases delivered, sub-tasks completed, theorems proved (count), axioms introduced (1), covert channels closed (2) / narrowed (2), test coverage added, remaining limitations, hardware prerequisites for full deployment. Follow WS-U closure report format. ~60 lines | `WS_W_CLOSURE_REPORT.md` | Small |
+| W10-R | — | **Write closure report.** `docs/dev_history/audits/WS_W_CLOSURE_REPORT.md` summarizing: phases delivered, sub-tasks completed, theorems proved (count), axioms introduced (0), covert channels closed (2) / narrowed (2), test coverage added, remaining limitations, hardware prerequisites for full deployment. Follow WS-U closure report format. ~60 lines | `WS_W_CLOSURE_REPORT.md` | Small |
 | W10-S | — | **Run nightly validation.** Execute `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` (full Tier 0–4 suite). Verification-only — no code changes. | — | Small |
 
 **Intra-phase ordering constraints:**
@@ -514,7 +535,7 @@ closure report.
 - **Parallel chains**: {W10-B,C,D,E,F} are 5 independent test sub-tasks; {W10-K through W10-Q} are 7 independent doc updates
 
 **Gate**: `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` passes
-(all tiers 0–4). Zero `sorry`. Exactly one tracked `axiom`. All documentation
+(all tiers 0–4). Zero `sorry`/`axiom`. All documentation
 synchronized.
 
 ---
@@ -526,28 +547,21 @@ synchronized.
 |-------|---------|-----------|------------|--------|
 | W1 — Foundation Types | v0.22.0 | 11 | Low | Type definitions only |
 | W2 — Partition Contract | v0.22.1 | 11 | Low | Contract structure + PlatformBinding extension |
-| W3 — Correctness Proofs | v0.22.2 | 10 | Medium | Core theorems (key lemma + corollaries) |
-| W4 — CCA Realm Model | v0.22.3 | 11 | Medium | Hardware axiom + transition proofs |
-| W5 — Timer Isolation | v0.22.4 | 10 | Medium | Timer model + NI proofs |
-| W6 — Projection Strengthening | v0.22.5 | 14 | High | Core IF infrastructure modification |
+| W3 — Correctness Proofs | v0.22.2 | 9 | Medium | Core theorems (key lemma + corollaries) |
+| W4 — CCA Realm Model | v0.22.3 | 11 | Medium | Realm theorems + transition proofs |
+| W5 — Timer Isolation | v0.22.4 | 9 | Medium | Timer model + NI proofs |
+| W6 — Projection Strengthening | v0.22.5 | 12 | High | Core IF infrastructure modification |
 | W7 — Sim Instantiation | v0.22.6 | 12 | Low | Concrete proofs by computation |
 | W8 — ARMv9 Instantiation | v0.22.7 | 16 | Medium | Hardware platform definition |
 | W9 — Cross-Subsystem Integration | v0.22.8 | 16 | High | Proof-core modifications |
 | W10 — Validation & Documentation | v0.22.9 | 19 | Low | Tests + docs + closure |
-| **Total** | | **130** | | |
+| **Total** | | **126** | | |
 
 ## 6. Effort Distribution
 
-| Estimate | W1 | W2 | W3 | W4 | W5 | W6 | W7 | W8 | W9 | W10 | Total |
-|----------|----|----|----|----|----|----|----|----|----|----|-------|
-| Trivial | 9 | 9 | 7 | 7 | 8 | 5 | 8 | 4 | 4 | 8 | **69** |
-| Small | 2 | 2 | 3 | 4 | 2 | 6 | 4 | 11 | 8 | 11 | **53** |
-| Medium | 0 | 0 | 0 | 0 | 0 | 3 | 0 | 1 | 4 | 0 | **8** |
-| Large | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| **Total** | **11** | **11** | **10** | **11** | **10** | **14** | **12** | **16** | **16** | **19** | **130** |
-
-No sub-task is rated Large — every original complex task has been decomposed
-into Small or Medium atomic units.
+Each row of §4 carries its own estimate; no sub-task is rated Large.  (A
+hand-summed table stood here and went stale when the `v0.36.205` re-read
+deleted four rows; the rows are the count.)
 
 ## 7. File Inventory
 
@@ -580,7 +594,7 @@ into Small or Medium atomic units.
 | `SeLe4n/Machine.lean` | W9 | Add `activeMpamPartId` field + frame proofs |
 | `SeLe4n/Kernel/Architecture/Assumptions.lean` | W5 | Add `timerIsolation` field |
 | `SeLe4n/Kernel/Architecture/Adapter.lean` | W9 | Add partition adapter ops |
-| `SeLe4n/Kernel/Architecture/Invariant.lean` | W9 | Extend proof bundle (10th conjunct) |
+| `SeLe4n/Kernel/Architecture/Invariant.lean` | W9 | Extend proof bundle (one conjunct) |
 | `SeLe4n/Kernel/InformationFlow/Projection.lean` | W6 | Strengthen projection + doc update |
 | `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` | W6 | Thread partition contract |
 | `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` | W9 | Cross-partition IPC flush |
@@ -602,21 +616,18 @@ to a different region of the file.
 
 ## 8. Axiom Budget
 
-| Axiom | Location | Justification |
-|-------|----------|---------------|
-| `realmMemoryIsolation` | `Realm.lean` (W4-B) | Hardware guarantee enforced by ARM RME granule protection check unit at the interconnect. The kernel cannot verify this — it is enforced by the physical address check at the bus level before memory access reaches the cache/DRAM controller. Analogous to trusting the MMU to enforce page table translations. Documented in ARM DDI0487 §D8. |
-
-All other proof obligations are **theorems** derived from contract fields. The
-contract fields are `Prop` values — the platform instantiator must provide
-evidence (a proof term) when constructing the `PartitionBoundaryContract`.
+None.  Every obligation is a theorem, or a `Prop` field of the contract the
+platform instantiator proves when it builds the `PartitionBoundaryContract`.
+That the granule protection check enforces the GPT is the hardware's, outside
+the model, as the MMU's enforcement of the page tables is.
 
 ## 9. Dependency Graph
 
 ```
 W1 (Types)
  └──→ W2 (Contract)
-       ├──→ W3 (Correctness) ──────────────────→ W6-L (close sorry)
-       │     └── W3-H: sorry (needs W6)                ↑
+       ├──→ W3 (Correctness) ──────────────────→ W6-K (partition NI)
+       │                                               ↑
        ├──→ W4 (Realm) ────────────────────────────────┤
        ├──→ W5 (Timer) ────────────────────────────────┤
        ├──→ W7 (Sim) ──────────────────→ W10           │
@@ -631,7 +642,7 @@ W1 (Types)
 **Parallelizable after W2 completes**:
 - W3, W4, W5, W7, W8 can all start simultaneously
 - W4, W5, W7, W8 can complete independently of W3
-- W6 requires W3 (for W6-L sorry closure), W4, W5 (for complete partition model)
+- W6 requires W3 (W6-K's proof uses W3-D), W4, W5 (for complete partition model)
 - W9 requires W6 (for projection-aware integration)
 
 **Optimal execution order with maximum parallelism**:
@@ -653,13 +664,12 @@ Time ──→
 | `coreIpcInvariantBundle` | — | — | — | — | W9-I: trivially preserved (flush is no-op) | — |
 | `ipcSchedulerCouplingInvariantBundle` | — | — | — | — | Frame-preserved | — |
 | `lifecycleInvariantBundle` | — | — | — | — | W9-K: case-split preservation | — |
-| `serviceLifecycleCapabilityInvariantBundle` | — | — | — | — | Frame-preserved | — |
 | `vspaceInvariantBundle` | — | — | — | — | Frame-preserved | — |
 | `crossSubsystemInvariant` | — | — | — | — | W9-L: extended with partition predicate | — |
 | `tlbConsistent` | — | — | — | — | Frame-preserved | — |
 | `partitionCrossSubsystemInvariant` (**new**) | — | — | — | — | W9-L/M/N: defined + backward compat | — |
-| `ObservableState` projection | — | W6-A through W6-N: strengthened | W7: instantiated | W8: instantiated | — | W10-J: doc update |
-| `lowEquivalent` / NI | — | W6-K/L: strengthened variant | — | — | — | — |
+| `ObservableState` projection | — | W6-A through W6-L: strengthened | W7: instantiated | W8: instantiated | — | W10-J: doc update |
+| `lowEquivalent` / NI | — | W6-J/L: strengthened variant | — | — | — | — |
 
 ## 11. Risk Assessment
 
@@ -667,19 +677,18 @@ Time ──→
 |------|-----------|--------|------------|
 | W6-H backward compatibility proof fails | Low | Critical | `Option`-gating ensures `none` branch is syntactically identical. W6-H is prioritized early in W6 to detect issues before dependent work proceeds |
 | W9-O reproof of adapter preservation fails | Medium | High | All W9 modifications are `Option`-gated. Frame transparency (W9-B) provides the key lemma. Run `test_full.sh` after every W9 sub-task |
-| W6-L sorry closure is harder than expected | Medium | Medium | The proof structure delegates to existing per-operation NI proofs via W6-K (strengthened implies original). If delegation fails, fall back to per-constructor case analysis (more tedious but mechanically straightforward) |
+| W6-K's proof is harder than expected | Medium | Medium | The proof structure delegates to existing per-operation NI proofs via W6-J (strengthened implies original). If delegation fails, fall back to per-constructor case analysis (more tedious but mechanically straightforward) |
 | BCM2712 successor lacks MPAM support | Medium | Medium | W8 is the only phase affected. Simulation (W7), proofs (W3/W6), and all other phases are hardware-independent |
 | MPAM specification complexity exceeds model | Low | Medium | Model only CPBM + MBW_MAX. Ignore monitoring counters, overflow interrupts, QoS priority levels |
 | Lean 4.28.0 limitations for parameterized invariant bundle | Low | Low | `proofLayerInvariantBundle` gains one `Option` parameter. Lean handles optional parameters well; existing callers use the default `none` |
 | CCA realm model too abstract | Medium | Low | Accepted: captures security-relevant properties (memory isolation per realm) without full RMM state machine. Full integration is WS-X scope |
-| `projectStateFast_eq` proof breaks under partition threading | Low | Medium | W6-I is dedicated to this. The fast path mirrors the slow path structurally; threading the same `contract` parameter preserves the equivalence argument |
 
 ## 12. Success Criteria
 
 At WS-W completion:
 
 1. **Zero sorry** in all new `.lean` files
-2. **Exactly one axiom** (`realmMemoryIsolation`) with ARM DDI0487 §D8 justification
+2. **Zero axiom**: `realmMemoryIsolation` is a theorem; the GPT's hardware enforcement (ARM DDI0487 §D8) is recorded as outside the model
 3. **`partitionAwareNonInterference` proven**: under a valid
    `PartitionBoundaryContract`, the NI guarantee extends from functional-only
    to functional + cache-partition + timer isolation
@@ -694,6 +703,6 @@ At WS-W completion:
    hardware bring-up
 9. **Covert channels**: CC-2 and CC-4 marked CLOSED; CC-1 and CC-3 marked
    NARROWED with residual bandwidth documented
-10. **130/130 sub-tasks complete** with all gates passed
+10. **Every row of §4 complete** with all gates passed
 11. **All documentation synchronized**: README, spec, development guide,
     workstream history, claim evidence index, codebase map

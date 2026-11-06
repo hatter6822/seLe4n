@@ -11,7 +11,7 @@ kernel linked in and `./scripts/build_rpi5_image.sh` cuts `kernel8.img` +
 `config.txt` to `.lake/build/rpi5-image/`; CI publishes them as the
 `rpi5-kernel-image` artifact.  What has not run yet is a **boot** of that
 image (WS-BP BP8): QEMU ships no machine that models the BCM2712 the image
-programs, and the first board boot is BP8.3.  The procedures below are
+programs, and the first board boot is BP8.6.  The procedures below are
 therefore still the contract those runs will be held to, and two things the
 `v0.36.2` audit found must be read before the first one: the binding refuses
 every real board's firmware memory account until plan row BP7.10 derives the
@@ -134,7 +134,7 @@ The deployable image (`kernel8.img` + `config.txt`) is built by
 (`rust/sele4n-hal/src/bin/sele4n_kernel.rs`, `--features
 hw_target,kernel_image`); `cargo build -p sele4n-hal` alone still produces
 only the HAL's `.rlib`.  Copy the two files to the SD card's boot partition
-and boot the board — the first time that is done is WS-BP BP8.3, after BP7.10
+and boot the board — the first time that is done is WS-BP BP8.6, after BP7.10
 has made the binding accept the firmware's memory account.  All Section 2
 tests
 that require real silicon (TLB coherence, OSH multi-cluster,
@@ -414,7 +414,7 @@ the archive `scripts/test_lean_aarch64_archive.sh` builds) and:
    the start of a line is a torn line and fails the run.
 
 On the board there is no QEMU; read the same banners off the serial console
-(BP8.3).
+(BP8.6).
 
 The cross-core SGI round trip, the per-core console stress, the TLB
 shootdown round trip and the shootdown stress are **in-image drivers** (WS-BP

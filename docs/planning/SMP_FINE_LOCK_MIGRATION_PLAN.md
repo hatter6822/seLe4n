@@ -23,6 +23,8 @@
 > (RR7.10), the eight declared IPC footprints at `v0.34.64` (RR7.11), the
 > **syscall seam's bracket** at `v0.34.65` (RR7.12) and the export-commit
 > census at `v0.34.66` (RR7.13).
+> **Re-read at `v0.36.205`** (WS-ZA ZA6.36): Track D restated against WS-LS
+> and WS-ZA, with its zero-allocation statement (Track D's preamble).
 > **Track D** (commit partitioning, **4 PRs**) is **unstarted** and was
 > **restructured at `v0.34.133`** — see its own section for the four findings
 > that drove it.  Its first two rows are Lean and gated on **nothing**: the
@@ -437,6 +439,28 @@ bare-commit body and asserts detection. Precedent:
 
 ### Track D — Commit partitioning (the end-state)
 
+**Re-read at `v0.36.205`** (WS-ZA ZA6.36), against WS-LS and WS-ZA.  Lock
+names are `LockKey`s since WS-LS LS1.2 (`Locks/LockKey.lean:38`) and the
+words are ghost since LS3.1, so the footprints below are ghost sets the
+compiled kernel never builds; WS-LS LS3.4 re-points this track's naming.
+`stateLevelLock` is a `LockKey` (`LockSetTransitions.lean:418`).  The
+`scThreadIndex` table is retired (no code reads it); the derivation tree's
+edges are ghost and its links live in the slots (WS-ZA ZA5.3,
+`CapDerivationTree`, `Model/Object/Structures.lean:2619`), so the CDT is no
+longer a whole-structure `List` in the compiled state.  An object update at a
+resident key is in its slot (`RHTable.modify`, `RobinHood/Core.lean:1129`,
+WS-ZA ZA1.6); `RHTable.insert` (`:999`) still tests the load factor first.
+`taintWordsPerKeyCommit` is still registered (`InformationFlow/FineLockFlow.lean:2706`).
+**Zero allocation**: PRs 10 and 11 are proof-only.  PRs 12 and 13 change the
+commit every kernel entry runs, so each states it: PR 12's stripe table is a
+`static` array sized at build time, acquired and released in place; PR 13
+commits under the acquired stripes without building a footprint (the ghost
+`LockKey` set stays ghost — the compiled seam reads the stripes from the
+decoded arguments) and its per-key structures are the ones WS-ZA already
+lays out in place.  Both re-run the QEMU gate `heap-allocations-per-syscall`
+(`scripts/qemu_exerciser_lib.sh`) with every scenario reading 0, under both
+seam-flag settings in PR 13.
+
 **Restructured at `v0.34.133`**, after reading the track back against the code
 it is about.  Four findings drove it, and each is answered by the shape below
 rather than by a note.
@@ -555,19 +579,22 @@ rather than beside it.
 - *Step 1:* classify every field in `storeObject_modifiedFields ++
   ipcEndpointOp_modifiedFields ++ capabilityOp_modifiedFields` as **per-key
   realisable** or **whole-structure**, with the classification *derived* from
-  the operation's own definition rather than asserted.  The three already
-  known: `objectIndex` is a `List` whose head is shared; the CDT maps and
-  `scThreadIndex` are the `stateLevelLock` precedent (RR7.9, WS-OD OD3.5).
+  the operation's own definition rather than asserted.  Known at
+  `v0.36.205`: `objectIndex` is a `List` whose head is shared; the derivation
+  tree's slot links are per-key (WS-ZA ZA5.3) and its edge bound is one word
+  under `stateLevelLock` (RR7.9); `scThreadIndex` is retired.
   (`lifecycle.capabilityRefs`, rebuilt by a `filter` over every entry on
   **every** `storeObject`, was the fourth until `v0.35.78` retired the table.)
 - *Step 2:* **the `RHTable` locality theorem, with its real side condition.**
   `insertLoop`'s key-match arm is one `Array.set` of the value alone and returns
   at once, so two updates at distinct **resident** keys are slot-disjoint and
-  the probe reads only `key`/`dist`, which neither writes.  But `RHTable.insert`
-  tests the load factor *before* it knows whether the key is resident
-  (`if t.size * 4 ≥ t.capacity * 3 then t.resize`), so a store at a resident key
-  on a three-quarters-full table **rebuilds the whole table** — locality is
-  conditional on the load factor, not on the key being new.  State it that way;
+  the probe reads only `key`/`dist`, which neither writes.  `RHTable.modify` (WS-ZA ZA1.6, `RobinHood/Core.lean:1129`) updates a
+  resident key in its slot with no load-factor test, so its locality is
+  unconditional; `RHTable.insert` (`:999`) tests the load factor *before* it
+  knows whether the key is resident (`if t.size * 4 ≥ t.capacity * 3 then
+  t.resize`), so an insert at a resident key on a three-quarters-full table
+  **rebuilds the whole table** — and `rewriteObject` (`Model/State.lean:6398`)
+  is still spelled as an insert.  State both;
   the runtime consequence (pre-size the table, or take `stateLevelLock` on any
   store that may resize) is PR 13's to choose, and it cannot choose without
   this.
@@ -629,9 +656,10 @@ gated on BP6, validated at BP8).**  Consumes PR 12.
 ## 5. Cross-cutting design notes
 
 - **CDT coverage = one `(stateLevelLock, .write)` member**, chosen over per-key
-  decomposition. It covers `cdt.edges` (List cons) and the tree's child and
-  parent maps (until `v0.36.103` also the node counter and the two slot/node
-  maps) — including the sender-side keyed entry — in one member, so the caller-root member stays READ (no read→write
+  decomposition. It covered `cdt.edges` (List cons) and the tree's child and
+  parent maps when chosen; since WS-ZA ZA5.3 the edges are ghost and the links
+  live in the slots the footprint already names, so the member covers the
+  edge-bound word (`CapDerivationTree.edgeBound`) — in one member, so the caller-root member stays READ (no read→write
   upgrade that would break the shared "caller root read" shape). `stateLevelLock`
   (`LockSetTransitions.lean`) is already the declared serialization subject
   for the audit trail's List, so this is the established SM3.A.10 convention, not
