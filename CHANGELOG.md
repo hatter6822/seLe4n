@@ -1,3 +1,84 @@
+## v0.36.204 — WS-ZA ZA6.35: the gate pins every entry at 0 and a carve at its object's cells, and `CLAUDE.md` states the rule
+
+The QEMU heap gate now fails on any kernel entry that reads other than 0.
+The one exception is an untyped retype's carve, which must read exactly the
+new object's own cells (owner's decision, 2026-10-20).  `CLAUDE.md` gains the
+standing rule under *Key conventions*.  The VSpace mappings, the
+declassified signal that wakes a waiter, and every audit-read opcode family
+now run in place.
+
+- **The gate** (`scripts/qemu_exerciser_lib.sh`, `heap-allocations-per-syscall`).
+  - A retype's round trip names what it carved (`carved {kind}/{size}`,
+    printed by `smp_exercisers.rs`).
+  - The gate pins the carve at that kind's object cells (`carve_cells`) and
+    fails closed on a kind it does not know.
+  - Every other reading is pinned at 0, at first call and in steady state.
+- **VSpace** (`vspace-map` 9 to 0, `vspace-map-copy` 7/5 to 0,
+  `vspace-unify-instruction` 4/3 to 0).
+  - The mapping and epoch records come from per-root pools
+    (`rootMappingFromSpares`, `rootEpochFromSpares`); an unmap returns its
+    cell to the pool.
+  - The TLB and instruction-cache ledgers take their cells from spares
+    seeded at boot (`withFreshCoreCaches`).
+  - A capability's target is written in place (`CapTarget.copyOver`).
+- **A retype builds no request.**
+  - The live arm decodes the request into words (`carveRequestWordsK`) and
+    carves from them (`untypedRetypePerformCode`, `untypedRetypeAdmittedCode`,
+    `CarveRequest.heapAdmittedW`).
+  - Each is proven equal to `untypedRetypePerformAt` and to the admission
+    checks (`untypedRetypePerformCode_eq`, `carveRequestWordsK_eq`).
+  - A tcb, scheduling-context or CNode carve goes from 2 cells over its
+    object to 0.
+- **A capability with a fieldless target is stored shared**
+  (`CNode.insertCellShared`, `CNode.insertCellSharedOf`, `SpareCells.keepCell`).
+  - An audit-trail or IRQ-control capability is stored as it is, and the
+    slot's own record stays in the spares.
+  - Before this, its scalar target took the place of the record's target
+    cell, and the next carve into that slot built one.
+  - `CapTarget.objectOver` also reuses the cell of a scheduling-control or
+    interrupt-handler target.
+- **The declassified signal that wakes a waiter runs in place.**
+  - Admitted when the waiter is woken in place (`signalWakesInPlace`), the
+    second hop is an ordinary flow, and the first hop is ordinary or a
+    permitted downgrade with room (`declassifySignalWokenAdmitted`).
+  - The wake is delivered without building a message, the record is written
+    over the trail, and the fused taint step follows
+    (`declassifySignalWokenWrites`, `declassifySignalWokenPerform`).
+  - Proven equal to the specification (`auditedArmSpec_declassifySignal_woken`,
+    `declassifySignalWoken_eq_writes`, `declassifySignalOperandArmR_eq`).
+- **Every audit-read opcode walks the ring in place** (`auditReadFastCode`,
+  opcodes 0 to 29, `auditReadFastCode_spec`).
+  - Covered: the authorization basis (bytes read off the rendered
+    designation, `auditBasisByteAt`), the refusal ledger's status, counters,
+    slot fields and refused receiver, and the causality verdicts
+    (`auditChainCode`, `TaintWords.containsCode`).
+  - A field chunk is read off the value's word halves, so no chunk builds a
+    power or a big number (`auditFieldChunkCode`, `divChunk`).
+  - A refusal's requested target is read off its address word
+    (`refusalFieldCount`, `refusalFieldChunk`).
+- **New exerciser scenarios** (`smp_exercisers.rs`).
+  - Signals: `declassified-wait-pending`, `declassified-wait-blocks`,
+    `declassified-signal-wakes`.
+  - Drain and reads: `audit-drain-first`, plus the basis count and a basis
+    chunk past the first.
+  - Refusal ledger: status, counters, tags, and the count and chunk 0 of the
+    subject, domain and target, plus the receiver count.
+  - Causality verdicts: predecessor, entry and archived.
+  - The ledger's slot comes from an unmeasured declassification refused with
+    `flowDenied`.
+- **Residuals** (registered in `docs/REGISTERED_DEBT.md`; the gate fails on
+  them).
+  - `resume-carved-tcb` reads 3 at first call: the first entry of a new
+    priority into a core's run-queue bucket table.
+  - A carve into a slot whose kept record cannot give up its target cell
+    reads one cell over its object: a reply capability's target, shared
+    with the reply, or a fieldless record left where the slot had no spare.
+    This covers `untyped-retype-space-cnode` (29 over 28) and the first call
+    of `untyped-retype-sched-context` and `untyped-retype-page-table-3`
+    (14 over 13).
+  - A send of more than four message words has no in-place route and no
+    scenario yet.
+
 ## v0.36.203 — WS-ZA ZA6.34: a server's final delete is seL4-MCS's, and the deletes around it allocate nothing
 
 The QEMU exerciser gains a third and a fourth thread, so the final deletes

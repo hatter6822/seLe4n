@@ -454,6 +454,16 @@ decode it: a queue's successor through `sendWakesInPlaceCode` and
 `Reply.nextNamesFrame`, a blocked thread's server as the cell its state holds
 (`TCB.blockingServer?_eq_impl`).  New compiled code on those paths keeps that
 form, or the exerciser's multi-waiter and stacked-reply steps read nonzero.
+Since `v0.36.204` (ZA6.35) the heap gate fails on any entry that reads other
+than 0, and on a carve that reads other than its object's cells (`CLAUDE.md`,
+*A kernel entry allocates nothing*).  New code keeps three forms.  A carve
+reads its request as words (`carveRequestWordsK`).  A capability with a
+fieldless target is stored shared and leaves the slot's record in the spares
+(`CNode.insertCellShared`).  A word-valued field is read off its word, not
+its `Nat` (`refusalFieldChunk`).  A scenario added for a new entry is named in
+the gate's pinned set.  Five residuals stay open on their own debt rows: the
+run-queue bucket, the shared carve target, the long send, the bound
+declassified delivery, and opcode 26.
 Since `v0.36.164` (ZA6.1) the timer tick, the reschedule SGI and
 each core's first entry allocate nothing: the tick's dispatch and domain
 accounting never refuse (`scheduleEffectiveOnCore_eq_state`,

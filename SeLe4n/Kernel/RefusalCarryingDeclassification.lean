@@ -547,8 +547,14 @@ theorem auditDrainOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
 
 /-! ## `.auditRead` -/
 
-/-- `auditFieldChunkCount?` as a code: `0` for `none`, else the count. -/
-@[inline] def auditChunkCountN (v : Nat) : Nat :=
+/-- A number below `2 ^ 64` as its word: the word reads back the number. -/
+theorem toNat_toUInt64_of_lt (v : Nat) (h : v < 18446744073709551616) :
+    v.toUInt64.toNat = v := by
+  simp only [Nat.toUInt64_eq]
+  exact Nat.mod_eq_of_lt h
+
+/-- `auditFieldChunkCount?` by repeated division (`auditChunkCountN_eq_div`). -/
+@[inline] def auditChunkCountDiv (v : Nat) : Nat :=
   if v < auditFieldChunkModulus then 1
   else if v / auditFieldChunkModulus < auditFieldChunkModulus then 2
   else if v / auditFieldChunkModulus / auditFieldChunkModulus < auditFieldChunkModulus then 3
@@ -556,10 +562,34 @@ theorem auditDrainOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
       auditFieldChunkModulus then 4
   else 0
 
+/-- `auditFieldChunkCount?` as a code: `0` for `none`, else the count.  A
+number below `2 ^ 64` (every value a field holds) is compared as its word, so
+a number past `2 ^ 63`, which the runtime holds as a big number, is never
+divided (`auditChunkCountN_eq_div`). -/
+@[inline] def auditChunkCountN (v : Nat) : Nat :=
+  if v < 18446744073709551616 then (if v.toUInt64 < 4294967296 then 1 else 2)
+  else auditChunkCountDiv v
+
+theorem auditChunkCountN_eq_div (v : Nat) : auditChunkCountN v = auditChunkCountDiv v := by
+  unfold auditChunkCountN auditChunkCountDiv
+  split
+  · next h =>
+    have hu := toNat_toUInt64_of_lt v h
+    have hlt : (v.toUInt64 < 4294967296) ↔ v < 4294967296 := by
+      rw [UInt64.lt_iff_toNat_lt, hu]; rfl
+    show _ = if v < 4294967296 then 1 else if v / 4294967296 < 4294967296 then 2 else _
+    by_cases h1 : v < 4294967296
+    · simp only [hlt.mpr h1, ↓reduceIte, h1]
+    · have h2 : v / 4294967296 < 4294967296 := by omega
+      have h1' : ¬ (v.toUInt64 < 4294967296) := fun h' => h1 (hlt.mp h')
+      simp only [h1', ↓reduceIte, h1, h2]
+  · rfl
+
 theorem auditFieldChunkCount?_eq_code (v : Nat) :
     auditFieldChunkCount? v =
       if auditChunkCountN v = 0 then none else some (auditChunkCountN v) := by
-  unfold auditFieldChunkCount? auditChunkCountN
+  rw [auditChunkCountN_eq_div]
+  unfold auditFieldChunkCount? auditChunkCountDiv
   simp only [maxAuditFieldChunks, auditChunkCountUpTo]
   by_cases h1 : v < auditFieldChunkModulus
   · simp [h1]
@@ -603,11 +633,48 @@ theorem divChunk_eq (K v i : Nat) : divChunk K v i = v / K ^ i % K := by
       ← Nat.pow_succ]
   · rfl
 
-/-- `auditFieldChunk` by repeated division (`auditFieldChunkCode_eq`). -/
-@[inline] def auditFieldChunkCode (v i : Nat) : Nat := divChunk auditFieldChunkModulus v i
-
-theorem auditFieldChunkCode_eq (v i : Nat) : auditFieldChunkCode v i = auditFieldChunk v i :=
-  divChunk_eq auditFieldChunkModulus v i
+/-- `auditFieldChunk` without forming a power: a number below `2 ^ 64` read as
+its word's halves, so a number past `2 ^ 63` is never divided, and any other by
+repeated division (`auditFieldChunkCode_eq`). -/
+@[inline] def auditFieldChunkCode (v i : Nat) : Nat :=
+  if v < 18446744073709551616 then
+    if i = 0 then (v.toUInt64 &&& 0xffffffff).toNat
+    else if i = 1 then (v.toUInt64 >>> 32).toNat
+    else if i < 4 then 0
+    else divChunk auditFieldChunkModulus v i
+  else divChunk auditFieldChunkModulus v i
+theorem auditFieldChunkCode_eq (v i : Nat) : auditFieldChunkCode v i = auditFieldChunk v i := by
+  rw [show auditFieldChunk v i = divChunk auditFieldChunkModulus v i from
+    (divChunk_eq _ v i).symm]
+  unfold auditFieldChunkCode
+  split
+  · next h =>
+    have hu := toNat_toUInt64_of_lt v h
+    split
+    · next h0 =>
+      subst h0
+      rw [UInt64.toNat_and, hu]
+      show v &&& (2 ^ 32 - 1) = v % 2 ^ 32
+      exact Nat.and_two_pow_sub_one_eq_mod v 32
+    split
+    · next h1 =>
+      subst h1
+      rw [UInt64.toNat_shiftRight, hu]
+      show v >>> (32 % 64) = v / 4294967296 % 4294967296
+      rw [Nat.shiftRight_eq_div_pow]
+      have : v / 2 ^ 32 < 2 ^ 32 := by omega
+      exact (Nat.mod_eq_of_lt this).symm
+    split
+    · next h4 =>
+      have h0 : v / 4294967296 / 4294967296 = 0 := by omega
+      have : i = 2 ∨ i = 3 := by omega
+      rcases this with rfl | rfl
+      · show 0 = v / 4294967296 / 4294967296 % 4294967296
+        rw [h0]
+      · show 0 = v / 4294967296 / 4294967296 / 4294967296 % 4294967296
+        rw [h0]
+    · rfl
+  · rfl
 
 /-- A field's chunk, read off the `index`th visible entry, as a code: `0` when
 the entry is missing or the chunk is out of range, `w + 1` for word `w`. -/
@@ -719,17 +786,66 @@ theorem auditBasisChunkCode_eq (e : DeclassificationEvent) (i : Nat) :
     | some r => f r
   else 0
 
+/-- A word's chunk count: a word never needs more than two chunks. -/
+@[inline] def wordChunkCount (w : UInt64) : Nat := if w < 4294967296 then 1 else 2
+
+theorem auditChunkCountN_toNat (w : UInt64) : auditChunkCountN w.toNat = wordChunkCount w := by
+  unfold auditChunkCountN wordChunkCount
+  rw [if_pos w.toNat_lt]
+  simp only [Nat.toUInt64_eq, UInt64.ofNat_toNat]
+
+/-- A word's chunk `i`, read off its halves. -/
+@[inline] def wordChunk (w : UInt64) (i : Nat) : Nat :=
+  if i = 0 then (w &&& 0xffffffff).toNat
+  else if i = 1 then (w >>> 32).toNat
+  else if i < 4 then 0
+  else divChunk auditFieldChunkModulus w.toNat i
+
+theorem auditFieldChunkCode_toNat (w : UInt64) (i : Nat) :
+    auditFieldChunkCode w.toNat i = wordChunk w i := by
+  unfold auditFieldChunkCode wordChunk
+  rw [if_pos w.toNat_lt]
+  simp only [Nat.toUInt64_eq, UInt64.ofNat_toNat]
+
+/-- A refusal field's chunk count: the requested target read off its word, so an
+address past `2 ^ 63` builds no number (`refusalFieldCount_eq`). -/
+@[inline] def refusalFieldCount (r : DeclassificationRefusal) (f : RefusalReadField) : Nat :=
+  match f with
+  | .requestedTarget => wordChunkCount r.requestedTarget.word
+  | _ => auditChunkCountN (refusalExportedFieldValue r f)
+
+theorem refusalFieldCount_eq (r : DeclassificationRefusal) (f : RefusalReadField) :
+    refusalFieldCount r f = auditChunkCountN (refusalExportedFieldValue r f) := by
+  cases f
+  · rfl
+  · rfl
+  · exact (auditChunkCountN_toNat _).symm
+
+/-- A refusal field's chunk, the requested target read off its word
+(`refusalFieldChunk_eq`). -/
+@[inline] def refusalFieldChunk (r : DeclassificationRefusal) (f : RefusalReadField)
+    (chunk : Nat) : Nat :=
+  match f with
+  | .requestedTarget => wordChunk r.requestedTarget.word chunk
+  | _ => auditFieldChunkCode (refusalExportedFieldValue r f) chunk
+
+theorem refusalFieldChunk_eq (r : DeclassificationRefusal) (f : RefusalReadField) (chunk : Nat) :
+    refusalFieldChunk r f chunk = auditFieldChunkCode (refusalExportedFieldValue r f) chunk := by
+  cases f
+  · rfl
+  · rfl
+  · exact (auditFieldChunkCode_toNat _ _).symm
+
 /-- A refusal's field chunk count, as a code. -/
 @[inline] def refusalFieldCountCode (r : DeclassificationRefusal) (f : RefusalReadField) : Nat :=
-  let n := auditChunkCountN (refusalExportedFieldValue r f)
+  let n := refusalFieldCount r f
   if n = 0 then 0 else n + 1
 
 /-- A refusal's field chunk, as a code. -/
 @[inline] def refusalFieldWordCode (r : DeclassificationRefusal) (f : RefusalReadField)
     (chunk : Nat) : Nat :=
-  let v := refusalExportedFieldValue r f
-  let n := auditChunkCountN v
-  if n ≠ 0 ∧ chunk < n then auditFieldChunkCode v chunk + 1 else 0
+  let n := refusalFieldCount r f
+  if n ≠ 0 ∧ chunk < n then refusalFieldChunk r f chunk + 1 else 0
 
 /-- A refusal's receiver chunk count, as a code (`1` for no receiver: count 0). -/
 @[inline] def refusalReceiverCountCode (r : DeclassificationRefusal) : Nat :=
@@ -939,6 +1055,7 @@ theorem refusalFieldCountCode_spec (ctx : LabelingContext) (m reader : SecurityD
   obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
   simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
   unfold refusalFieldCountCode at hf
+  rw [refusalFieldCount_eq] at hf
   by_cases hn : auditChunkCountN (refusalExportedFieldValue r f) = 0
   · simp only [hn, ↓reduceIte] at hf; cases hf
   · simp only [hn, ↓reduceIte, Nat.add_right_cancel_iff] at hf ⊢
@@ -954,6 +1071,7 @@ theorem refusalFieldWordCode_spec (ctx : LabelingContext) (m reader : SecurityDo
   obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
   simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
   unfold refusalFieldWordCode at hf
+  rw [refusalFieldCount_eq, refusalFieldChunk_eq] at hf
   by_cases hc : auditChunkCountN (refusalExportedFieldValue r f) ≠ 0 ∧
       chunk < auditChunkCountN (refusalExportedFieldValue r f)
   · obtain ⟨hn, hlt⟩ := hc
