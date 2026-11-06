@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/za54-part88",
-      "commit_sha": "229e8cad01769bf850a050f51973e1852fb1153c",
-      "tree_sha": "ed4bb1e57cba9eeeddbdd58b4351ef591e42cd97",
-      "committed_at_utc": "2026-11-06T15:12:25+00:00"
+      "commit_sha": "db2f6fb1b30314163f71add67af72ca2dde11ff7",
+      "tree_sha": "7c4b73a060c3a501ccf7e232c5b6e4c557904f3d",
+      "committed_at_utc": "2026-11-06T15:37:55+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "70db45b4c769283a4f95117f0368240e0626afb56d8c715c7817867619da9d1d"
+    "source_digest": "4c67cb4e9ff7e31c0478f2c5805460b6f930900072c727a81295fa9b82193fe1"
   },
   "summary": {
     "module_count": 627,
