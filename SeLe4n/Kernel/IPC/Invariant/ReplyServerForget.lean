@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 import SeLe4n.Kernel.IPC.Operations.CancelAll
+import SeLe4n.Kernel.IPC.Invariant.UnheldContextPop
 
 /-!
 # A reply-blocked caller's server forgotten keeps the IPC bundle
@@ -420,5 +421,69 @@ theorem orphanReplyWaiter_runQueueStage {st : SystemState} {w x : SeLe4n.ThreadI
   let ⟨_, _, hB⟩ := replyCallerServerCode_blocked hS
   (mapTcbInPlace_serverForgotten_runQueueStage hT hB).trans
     (SystemState.unlinkReplyWaiter_runQueueStage _ w x)
+
+/-- **The donation-stack head pop is a run-queue stage**: at most two replies
+stored over replies. -/
+theorem storeDonationHeadPop_runQueueStage {st st' : SystemState} {scId : SeLe4n.SchedContextId}
+    {head? : Option (SeLe4n.ReplyId × Reply)}
+    (h : storeDonationHeadPop scId head? st = .ok st') : RunQueueStage st st' := by
+  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, rh, s1, _, hClear, hReHead⟩
+  · exact .refl _
+  · have f1 : RunQueueStage st s1 := by
+      rcases storeDonationHeadClear_cases hClear with rfl | ⟨rid0, r0, _, hRead, hS0⟩
+      · exact .refl _
+      · exact RunQueueStage.storeObject_nonTcb hS0 hRead (fun _ e => by cases e)
+          (fun _ e => by cases e)
+    have f2 : RunQueueStage s1 st' := by
+      rcases storeReplyReHead_cases hReHead with rfl | ⟨below, b, _, hReadB, hS2⟩
+      · exact .refl _
+      · exact RunQueueStage.storeObject_nonTcb hS2 hReadB (fun _ e => by cases e)
+          (fun _ e => by cases e)
+    exact f1.trans f2
+
+/-- **The unheld pop is a run-queue frame stage off the context it rebinds**:
+the context stored over itself with a new holder and head, the head pop, the
+recipient's binding codes, and the key-change flags. -/
+theorem returnUnheldSchedContext_runQueueFrameStage {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    SystemState.RunQueueFrameStage (· = scId) st st' := by
+  obtain ⟨sc, head?, ot, s1, s2, s3, hSc, -, -, -, -, hS1, hS2, hL, hS3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  have f1 : SystemState.RunQueueFrameStage (· = scId) st s1 := by
+    have f := SystemState.RunQueueFrameStage.storeObject hS1 (fun c => by rw [hSc]; rfl)
+      (by rw [hSc]; simp [objStateMono, objTcb?])
+      (hR := fun c => by rw [hSc]; rfl) (hY := by rw [hSc]; rfl)
+    exact f.mono (fun x e => e.trans rfl)
+  have f2 := storeDonationHeadPop_runQueueStage hS2
+  have hO2 : s2.objects[owner.toObjId]? = some (.tcb ot) := lookupTcb_some_objects s2 owner ot hL
+  have f3 : RunQueueStage s2 s3 := RunQueueStage.storeObject_tcb hS3 hO2 (fun _ => rfl)
+  rw [hEq]
+  exact (f1.trans (f2.toFrame _)).trans ((f3.trans (markKeyChangeFrom_runQueueStage st s3 owner)).toFrame _)
+
+/-- **A finalised reply's pop off an unheld context, and its settle, is a
+run-queue stage**: the pop a frame stage off the context
+(`returnUnheldSchedContext_runQueueFrameStage`), closed by the settle
+(`settleReturnedContext_runQueueStage`) on a context whose refills the pop kept,
+so well formed. -/
+theorem finaliseReplyUnheldPop_runQueueStage (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
+    RunQueueStage st (finaliseReplyUnheldPop st r c) := by
+  unfold finaliseReplyUnheldPop
+  split
+  · split
+    · rename_i hOk
+      unfold returnUnheldSchedContextResolved at hOk
+      split at hOk
+      · cases hOk
+      · refine SchedContextOps.settleReturnedContext_runQueueStage
+          (returnUnheldSchedContext_runQueueFrameStage hOk) ?_
+        intro S hS hInv hSnd _ a ha
+        obtain ⟨sc, _, _, hSc, -, -, -, -, -, hSc', -⟩ := returnUnheldSchedContext_objects hInv hOk
+        rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp ha] at hSc'
+        cases hSc'
+        exact schedContextWellFormed_of_refillsView rfl
+          (hSnd.1 _ sc hS ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc))
+    · exact .refl _
+  · exact .refl _
 
 end SeLe4n.Kernel

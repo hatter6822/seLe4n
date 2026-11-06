@@ -1779,6 +1779,170 @@ theorem finaliseReplyUnstash_hidden (ctx : LabelingContext) (observer : IfObserv
       · rfl
     · rfl
 
+/-- **The unheld pop is invisible to every observer**, as the donation return is
+(`returnDonationToCancelledCaller_preserves_projection`): the projection erases
+the two fields it writes, the context's binding and the recipient's
+(`projectKernelObject_schedContext_donationWrite_invariant`,
+`projectKernelObject_tcb_schedContextBinding_invariant`), and the pop's reply
+stores are stack links (`storeDonationHeadPop_preserves_projection`).  Each store
+is at an indexed key, so the object index stays complete and well formed. -/
+theorem returnUnheldSchedContext_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) {st st' : SystemState} {s : SeLe4n.SchedContextId}
+    {c : SeLe4n.ThreadId} {n : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
+    (hPop : returnUnheldSchedContext st s c n = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st ∧
+      SeLe4n.Model.objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
+  obtain ⟨sc, head?, ot, s1, s2, s3, hSc, -, -, -, -, hS1, hClear, hL1, hS3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain _ _ s c n hPop
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInv hS1
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
+  have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _ hSet hS1
+  have hSet2 := storeDonationHeadPop_preserves_objectIndexSet_invExt hSet1 hClear
+  have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
+  have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInv
+    hSet hIdx hS1
+  have hC2 := storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
+  have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
+    hSet2 hC2 hS3
+  have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
+    s.toObjId _ (.schedContext sc) hSc
+    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
+    (hIdx s.toObjId (by rw [hSc]; intro hx; cases hx)) hObjInv hS1
+  have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
+  have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
+    c.toObjId _ (.tcb ot) (lookupTcb_some_objects s2 c ot hL1)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer ot _ _)
+    (hC2 c.toObjId (by
+      rw [lookupTcb_some_objects s2 c ot hL1]
+      intro hx
+      cases hx))
+    hInv2 hS3
+  subst hEq
+  refine ⟨?_, fun k hk => ?_, by rw [markKeyChangeFrom_objectIndexSet]; exact hSet3⟩
+  · rw [markKeyChangeFrom_extract_frame (projectState ctx observer) _ _ _
+      (fun s c => markReschedulePendingOnCore_preserves_projection ctx observer s c)]
+    exact hP3.trans (hP2.trans hP1)
+  · rw [markKeyChangeFrom_objects] at hk
+    rw [markKeyChangeFrom_objectIndexSet]
+    exact hC3 k hk
+
+/-- **The unheld pop, settled, is invisible** when the context it pops is
+hidden — the settle moves that context's release entry
+(`settleReturnedContext_preserves_projection`) — and leaves the reply it pops
+heading nothing (`returnUnheldSchedContext_head_unlinked`; the settle writes no
+reply), or the state unchanged where it refuses. -/
+theorem finaliseReplyUnheldPop_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {st : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.ThreadId} {t : TCB}
+    (hInv : st.objects.invExt) (hIdx : SeLe4n.Model.objectIndexSetComplete st)
+    (hSet : st.objectIndexSet.table.invExt) (hU : replyUnheldPopAdmitted st x r c t = true)
+    (hScHigh : ∀ sc, r.next = some (.head sc) → objectObservable ctx observer sc.toObjId = false) :
+    projectState ctx observer (finaliseReplyUnheldPop st r c) = projectState ctx observer st ∧
+      SeLe4n.Model.objectIndexSetComplete (finaliseReplyUnheldPop st r c) ∧
+      (finaliseReplyUnheldPop st r c).objectIndexSet.table.invExt ∧
+      (finaliseReplyUnheldPop st r c = st ∨
+        ∃ rx : Reply, (finaliseReplyUnheldPop st r c).getObject? x =
+          some (.reply { rx with prev := none, next := none })) := by
+  rcases finaliseReplyUnheldPop_cases st r c with e | ⟨s, n, st', hN, hRes, hPop, e⟩
+  · rw [e]; exact ⟨rfl, hIdx, hSet, Or.inl rfl⟩
+  rw [e]
+  obtain ⟨hP, hC, hS⟩ := returnUnheldSchedContext_preserves_projection ctx observer hInv hIdx hSet hPop
+  have hInv' := (FinaliseFrameAny.returnUnheldSchedContext hInv hPop).invExt
+  have hRo := SchedContextOps.settleReturnedContext_releaseOnlyWrite st' (determineTargetCore st' c) s
+  have hF := FinaliseFrame.of_releaseOnlyWrite hRo
+    (SchedContextOps.settleReturnedContext_agree _ _ _)
+    (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv')
+  have hIx : (SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s).objectIndexSet =
+      st'.objectIndexSet := by rw [hRo.1]
+  obtain ⟨hC', hS'⟩ := objectIndexFacts_of_writeAny hF.any.write hIx hC hS
+  refine ⟨(settleReturnedContext_preserves_projection ctx observer st' _ s (hScHigh s hN)).trans hP,
+    hC', hS', Or.inr ?_⟩
+  -- The head the context names is this reply.
+  unfold replyUnheldPopAdmitted at hU
+  rw [hN] at hU
+  simp only [Bool.and_eq_true] at hU
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hHd, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := hU
+  cases hG : st.getSchedContext? s with
+  | none => rw [hG] at hHd; cases hHd
+  | some sc =>
+    rw [hG] at hHd
+    simp only [] at hHd
+    cases hR : sc.scReply with
+    | none => rw [hR] at hHd; cases hHd
+    | some rid =>
+      rw [hR] at hHd
+      have hv : rid.val = x.val := by simpa using hHd
+      obtain ⟨rx, hx⟩ := returnUnheldSchedContext_head_unlinked hInv hRes hPop hG hR
+      have eX : rid.toObjId = x := by
+        cases rid; cases x; simp only at hv; subst hv; rfl
+      rw [eX] at hx
+      exact ⟨rx, hF.write.keeps hx (by
+        simp [finaliseWritable, KernelObject.objectType])⟩
+
+/-- **A reply's finalisation off a context no thread holds is invisible** when
+its caller and the context it heads are hidden: the settled pop
+(`finaliseReplyUnheldPop_hidden`), then, the popped reply heading nothing, the
+caller's reply-arm cancel (`cancelIpcBlocking_blockedOnReply_preserves_projection`),
+the boost revert along its blocking chain, and its suspend
+(`finaliseThreadSuspend_hidden`). -/
+theorem finaliseReplyUnheld_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {st : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.ThreadId} {t : TCB}
+    (hInv : st.objects.invExt) (hValid : LabelingContextValid ctx)
+    (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
+    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
+      threadObservable ctx observer t = false →
+      PriorityInheritance.blockingServer s t = some server →
+      threadObservable ctx observer server = false)
+    (hX : st.getObject? x = some (.reply r)) (hT : st.getTcb? c = some t)
+    (hF0 : replyCallerFinalisable st x r c t = false)
+    (hU : replyUnheldPopAdmitted st x r c t = true)
+    (hHigh : threadObservable ctx observer c = false)
+    (hScHigh : ∀ sc, r.next = some (.head sc) → objectObservable ctx observer sc.toObjId = false) :
+    projectState ctx observer (finaliseReplyUnheld st x r c) = projectState ctx observer st := by
+  obtain ⟨hP, hC1, hS1, hCase⟩ := finaliseReplyUnheldPop_hidden ctx observer hInv hIdx hSet hU hScHigh
+  have hI1 := (FinaliseFrameAny.finaliseReplyUnheldPop st r c hInv).invExt
+  unfold finaliseReplyUnheld
+  dsimp only
+  generalize hSt1 : finaliseReplyUnheldPop st r c = st1 at hP hC1 hS1 hCase hI1
+  split
+  · next r1 hX1 =>
+    split
+    · next t1 hT1 =>
+      split
+      · next hG =>
+        simp only [Bool.and_eq_true] at hG
+        obtain ⟨-, hF⟩ := hG
+        have hHead : replyStackLinkIsHead r1.next = false := by
+          rcases hCase with e | ⟨rx, hx⟩
+          · subst e
+            rw [hX] at hX1; cases hX1
+            rw [hT] at hT1; cases hT1
+            rw [hF0] at hF; cases hF
+          · rw [hx] at hX1; cases hX1; rfl
+        obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hF
+        have hP1 := cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st1
+          c t1 ep rt hB hValid hHigh hI1 hC1 hS1
+        have hI2 := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st1 c t1 hI1
+        have eC : finaliseReplyCancel st1 r1 c t1 = Lifecycle.Suspend.cancelIpcBlocking st1 c t1 := by
+          unfold finaliseReplyCancel; rw [hHead]; rfl
+        have hRev : projectState ctx observer
+            (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking st1 c t1) t1.blockingServer?) =
+            projectState ctx observer (Lifecycle.Suspend.cancelIpcBlocking st1 c t1) := by
+          unfold finaliseReplyRevert
+          cases hSv : t1.blockingServer? with
+          | none => rfl
+          | some sv =>
+            exact propagatePipChainCrossCore_preserves_projection ctx observer
+              (hValid.coherenceImpliesObjectHigh observer) hBlockingChainHigh _ sv _ _
+              (hBlockingChainHigh st1 _ sv hHigh (by
+                unfold PriorityInheritance.blockingServer; rw [hT1]; exact hSv)) hI2
+        rw [eC, finaliseThreadSuspend_hidden ctx observer _ _
+          (FinaliseFrame.finaliseReplyRevert _ _ hI2).invExt
+          (hValid.coherenceImpliesObjectHigh observer _ hHigh) hHigh, hRev, hP1, hP]
+      · exact hP
+    · exact hP
+  · exact hP
+
 /-- **A reply's finalisation is invisible** when the caller waiting on it is
 hidden: the cancel's reply arm, with the donation return a head reply makes
 (`cancelIpcBlocking_blockedOnReply_preserves_projection`), the replenishment
@@ -1842,7 +2006,13 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
           rw [finaliseReplyCancel_eq hX hF, finaliseThreadSuspend_hidden ctx observer _ _
             (FinaliseFrame.finaliseReplyRevert _ _ hI1).invExt
             (hValid.coherenceImpliesObjectHigh observer _ hHigh) hHigh, hRev, hPR]
-        · rfl
+        · next hF0 =>
+          split
+          · next hU =>
+            exact finaliseReplyUnheld_hidden ctx observer hInv hValid hIdx hSet hBlockingChainHigh
+              hX hT (by simpa using hF0) hU (hH.1 r hX (by simpa using h0))
+              (fun sc => hH.2.2 r sc hX)
+          · rfl
       · rfl
   · rfl
 

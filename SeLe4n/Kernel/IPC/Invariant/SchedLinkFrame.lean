@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 import SeLe4n.Kernel.SchedContext.BindingAffinity
 import SeLe4n.Kernel.IPC.Invariant.CancelAllFrame
 import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
+import SeLe4n.Kernel.IPC.Invariant.UnheldContextPop
 
 /-!
 # The scheduling links a final delete carries
@@ -1205,6 +1206,206 @@ theorem finaliseReplyCancel_preserves_schedContextLinkInvariant {s : SystemState
     (cancelIpcBlockingReclaimed_objects_invExt c t s hInvC)).preserves (FD.preserves hM)
 
 -- ============================================================================
+-- §7b  The pop of a context no thread holds
+-- ============================================================================
+
+/-- **The donation-stack head pop writes no scheduling link**: it rewrites at
+most two replies, each over a reply. -/
+theorem SchedLinkFrame.storeDonationHeadPop {st st' : SystemState} {scId : SeLe4n.SchedContextId}
+    {head? : Option (SeLe4n.ReplyId × Reply)} (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.storeDonationHeadPop scId head? st = .ok st') : SchedLinkFrame st st' := by
+  have key : ∀ {α : Type} (p : Option KernelObject → α),
+      (∀ r r' : Reply, p (some (.reply r')) = p (some (.reply r))) →
+      ∀ oid : SeLe4n.ObjId, p st'.objects[oid]? = p st.objects[oid]? := by
+    intro α p hp oid
+    by_cases hR : ∃ r : Reply, st.objects[oid]? = some (.reply r)
+    · obtain ⟨r, hr⟩ := hR
+      obtain ⟨r', hr', _⟩ := storeDonationHeadPop_reply_rewrite hInv h oid r hr
+      rw [hr', hr]; exact hp r r'
+    · rw [storeDonationHeadPop_non_reply_eq hInv h oid (fun r e => hR ⟨r, e⟩)]
+  exact ⟨key _ (fun _ _ => rfl), key _ (fun _ _ => rfl), key _ (fun _ _ => rfl),
+    by rw [storeDonationHeadPop_scheduler_eq h]⟩
+
+/-- **The unheld pop keeps every scheduling-link invariant**: it writes no
+budget, affinity, release field or release slot, and no replenishment queue;
+the binding pair it adds is reciprocal (the context names its recipient, the
+recipient, unbound before, names the context).  No replenishment names the
+context, which was bound to no thread (`replenishQueueEntriesBound_smp`), so
+the context's new holder misplaces none. -/
+theorem returnUnheldSchedContext_preserves_schedContextLinkInvariant {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (hI : schedContextLinkInvariant st)
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    schedContextLinkInvariant st' := by
+  obtain ⟨sc, head?, ot, s1, s2, s3, hSc, _, _, _, _, hS1, hS2, hL, hS3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  obtain ⟨sc0, head0, ot0, hSc0, hB0, -, hRcp, hO, hNR, hSc', hO', tBwd, tFwd, cBwd, cFwd⟩ :=
+    returnUnheldSchedContext_objects hInv h
+  rw [hSc] at hSc0; cases hSc0
+  -- the frame of everything but the binding codes
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hInv hS1
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
+  have hO2 : s2.objects[owner.toObjId]? = some (.tcb ot) := lookupTcb_some_objects s2 owner ot hL
+  have F2 := SchedLinkFrame.storeDonationHeadPop hInv1 hS2
+  have hNeOS : owner.toObjId ≠ scId.toObjId := by intro e; rw [e, hSc] at hO; cases hO
+  have hOt : ot0 = ot := by
+    have h1 := storeDonationHeadPop_tcb_backward hInv1 hS2 _ _ hO2
+    rw [storeObject_objects_ne st s1 _ _ _ hNeOS hInv hS1, hO] at h1; cases h1; rfl
+  subst hOt
+  have eO : st'.objects = s3.objects := by rw [hEq, markKeyChangeFrom_objects]
+  have p1 : ∀ {α : Type} (p : Option KernelObject → α),
+      (p (some (.schedContext (donationReturnSchedContext sc owner
+        (head?.bind (fun q => q.2.prev)) newOwner?))) = p (some (.schedContext sc))) →
+      ∀ oid : SeLe4n.ObjId, p s1.objects[oid]? = p st.objects[oid]? := by
+    intro α p hp oid
+    by_cases e : oid = scId.toObjId
+    · subst e; rw [storeObject_objects_eq st s1 _ _ hInv hS1, hSc]; exact hp
+    · rw [storeObject_objects_ne st s1 _ _ _ e hInv hS1]
+  have p3 : ∀ {α : Type} (p : Option KernelObject → α),
+      (∀ t : TCB, p (some (.tcb { t with
+          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
+          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }))
+        = p (some (.tcb t))) →
+      ∀ oid : SeLe4n.ObjId, p s3.objects[oid]? = p s2.objects[oid]? := by
+    intro α p hp oid
+    by_cases e : oid = owner.toObjId
+    · subst e; rw [storeObject_objects_eq s2 s3 _ _ hInv2 hS3, hO2]; exact hp ot0
+    · rw [storeObject_objects_ne s2 s3 _ _ _ e hInv2 hS3]
+  have hAux : schedAuxAgree st st' := fun oid => by
+    rw [eO, p3 tcbSchedAuxOf (fun _ => rfl), F2.aux, p1 tcbSchedAuxOf rfl]
+  have hRel : ∀ oid : SeLe4n.ObjId, schedReleaseOf st'.objects[oid]? = schedReleaseOf st.objects[oid]? :=
+    fun oid => by rw [eO, p3 schedReleaseOf (fun _ => rfl), F2.release, p1 schedReleaseOf rfl]
+  have hSched : st'.scheduler.releaseSlots = st.scheduler.releaseSlots ∧
+      ∀ c, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+    have e3 : s3.scheduler = st.scheduler := by
+      rw [storeObject_scheduler_eq s2 s3 _ _ hS3, storeDonationHeadPop_scheduler_eq hS2,
+        storeObject_scheduler_eq st s1 _ _ hS1]
+    refine ⟨by rw [hEq, markKeyChangeFrom_releaseSlots, e3], fun c => ?_⟩
+    rw [hEq, markKeyChangeFrom_replenishQueueOnCore, e3]
+  have hRS : SystemState.releaseStateAgree st' st :=
+    ⟨.of_objReleaseLinkOn fun k c => objReleaseLinkOn_of_schedReleaseOf (hRel k) c, hSched.1⟩
+  -- the context was bound to no thread, so no replenishment names it
+  have hUnheld : ∀ tid, sc.boundThread ≠ some tid := by
+    intro tid e; unfold SchedContext.boundThread at e; rw [hB0] at e; cases e
+  have hNoEntry : ∀ c n, (scId, n) ∉ (st.scheduler.replenishQueueOnCore c).entries := by
+    intro c n hMem
+    obtain ⟨x, hx, tid, hb⟩ := hI.replenishBound c scId n hMem
+    have := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hx
+    rw [hSc] at this; cases this; exact hUnheld tid hb
+  have hScNe : ∀ (s0 : SeLe4n.SchedContextId) c n,
+      (s0, n) ∈ (st.scheduler.replenishQueueOnCore c).entries → s0.toObjId ≠ scId.toObjId := by
+    intro s0 c n hMem e
+    have := SeLe4n.SchedContextId.toObjId_injective _ _ e
+    subst this; exact hNoEntry c n hMem
+  have hOwnU : ot0.schedContextBinding = .unbound := by
+    have e := donationRecipientAcceptable_eq_of_some st owner ot0
+      (lookupTcb_of_objects_of_not_reserved st owner ot0 hO hNR)
+    rw [‹donationRecipientAcceptable st owner = true›] at e
+    revert e; cases ot0.schedContextBinding <;> simp [BEq.beq]
+  have hBd := donationReturnBinding_stored ot0 scId newOwner?
+  have hPostBt : ∀ nh, (donationReturnSchedContext sc owner nh newOwner?).boundThread
+      = some owner := by
+    intro nh
+    unfold SchedContext.boundThread donationReturnSchedContext
+    simp only [SeLe4n.ThreadId.optCode, SeLe4n.ThreadId.ofOptCode]
+  -- the binding pair
+  have hCons : schedContextBindingConsistent st' := by
+    refine ⟨fun u tu hU s0 hb => ?_, fun s0 sc1 hS1' y hy => ?_⟩
+    · by_cases e : u.toObjId = owner.toObjId
+      · have eu := SeLe4n.ThreadId.toObjId_injective _ _ e
+        subst eu
+        rw [hO'] at hU; cases hU
+        rw [hBd] at hb
+        have : s0 = scId := by
+          have e2 := donationReturnBinding_scId? scId newOwner?
+          rw [hb] at e2; exact (Option.some.inj e2)
+        subst this
+        exact ⟨_, hSc', hPostBt _⟩
+      · have hU0 := tBwd _ _ e hU
+        obtain ⟨x, hx, hbx⟩ := hI.binding.1 u tu hU0 s0 hb
+        by_cases es : s0.toObjId = scId.toObjId
+        · rw [es, hSc] at hx; cases hx; exact absurd hbx (hUnheld u)
+        · exact ⟨x, cFwd _ _ es hx, hbx⟩
+    · by_cases es : s0.toObjId = scId.toObjId
+      · have e0 := SeLe4n.SchedContextId.toObjId_injective _ _ es
+        subst e0
+        rw [hSc'] at hS1'; cases hS1'
+        rw [hPostBt] at hy; cases hy
+        refine ⟨_, hO', ?_⟩
+        rw [hBd]; cases newOwner? with
+        | none => exact Or.inl rfl
+        | some o => exact Or.inr ⟨o, rfl⟩
+      · have hS0 := cBwd _ _ es hS1'
+        obtain ⟨ty, hty, hbb⟩ := hI.binding.2 s0 sc1 hS0 y hy
+        by_cases ey : y.toObjId = owner.toObjId
+        · rw [ey, hO] at hty; cases hty
+          rw [hOwnU] at hbb
+          rcases hbb with hbb | ⟨_, hbb⟩ <;> cases hbb
+        · exact ⟨ty, tFwd _ _ ey hty, hbb⟩
+  refine ⟨allTimeoutBudgetsNone_of_aux hAux hI.budgets, hCons, ?_, ?_, hRS.refined hI.refined⟩
+  · intro c s0 n hMem
+    rw [hSched.2 c] at hMem
+    obtain ⟨x, hx, tid, hb⟩ := hI.replenishBound c s0 n hMem
+    refine ⟨x, (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+      (cFwd _ _ (hScNe s0 c n hMem) ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hx)),
+      tid, hb⟩
+  · intro c s0 n hMem x hx tid hb
+    rw [hSched.2 c] at hMem
+    have hx0 := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+      (cBwd _ _ (hScNe s0 c n hMem) ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hx))
+    rw [hAux.determineTargetCore_eq]
+    exact hI.replenishAffinity c s0 n hMem x hx0 tid hb
+
+/-- **The settle of a context bound to `c`, on `c`'s home core, keeps every
+scheduling-link invariant**: it writes release fields and release queues alone,
+and the placement it makes is on the home core of the context's holder. -/
+theorem settleReturnedContext_preserves_schedContextLinkInvariant {st : SystemState}
+    {s : SeLe4n.SchedContextId} {c : SeLe4n.ThreadId} (hI : schedContextLinkInvariant st)
+    (hB : ∀ sc, st.getSchedContext? s = some sc → sc.boundThread = some c) :
+    schedContextLinkInvariant
+      (SchedContextOps.settleReturnedContext st (determineTargetCore st c) s) := by
+  have hA := SchedContextOps.settleReturnedContext_agree st (determineTargetCore st c) s
+  refine ⟨allTimeoutBudgetsNone_of_aux (schedAuxAgree.of_objectsAgreeOffReleaseLinks hA)
+      hI.budgets,
+    schedContextBindingConsistent_of_binding
+      (fun o => proj_eq_of_map_eq _ _ (fun x => by cases x <;> rfl) (hA o)) hI.binding,
+    settleReturnedContext_preserves_replenishQueueEntriesBound_smp _ _ _ hI.replenishBound,
+    settleReturnedContext_preserves_affinityConsistent_smp st _ s hI.refined
+      (fun sc hSc t ht => by rw [hB sc hSc] at ht; cases ht; rfl)
+      (fun c' s0 t0 _ hMem sc hSc tid hb => hI.replenishAffinity c' s0 t0 hMem sc hSc tid hb),
+    SchedContextOps.settleReturnedContext_refined hI.refined _ _⟩
+
+/-- The unheld pop binds the context to its recipient. -/
+theorem returnUnheldSchedContext_boundThread {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    ∀ sc, st'.getSchedContext? scId = some sc → sc.boundThread = some owner := by
+  intro sc hSc
+  obtain ⟨_, _, _, -, -, -, -, -, -, hSc', -⟩ := returnUnheldSchedContext_objects hInv h
+  rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc] at hSc'
+  cases hSc'
+  unfold SchedContext.boundThread donationReturnSchedContext
+  simp only [SeLe4n.ThreadId.optCode, SeLe4n.ThreadId.ofOptCode]
+
+/-- ...and so does a finalised reply's pop off such a context with its settle,
+or its refusal. -/
+theorem finaliseReplyUnheldPop_preserves_schedContextLinkInvariant (st : SystemState) (r : Reply)
+    (c : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hI : schedContextLinkInvariant st) :
+    schedContextLinkInvariant (finaliseReplyUnheldPop st r c) := by
+  unfold finaliseReplyUnheldPop
+  split
+  · split
+    · rename_i hOk
+      unfold returnUnheldSchedContextResolved at hOk
+      split at hOk
+      · cases hOk
+      · exact settleReturnedContext_preserves_schedContextLinkInvariant
+          (returnUnheldSchedContext_preserves_schedContextLinkInvariant hInv hI hOk)
+          (returnUnheldSchedContext_boundThread hInv hOk)
+    · exact hI
+  · exact hI
+
+-- ============================================================================
 -- §8  The finalisation
 -- ============================================================================
 
@@ -1252,57 +1453,120 @@ theorem SchedLinkFrame.orphanReplyWaiter (st : SystemState) (w x : SeLe4n.Thread
       | some o => cases o <;> rfl
     · rfl
 
-/-- **The finalisation keeps every scheduling-link invariant**, every step of
-it (`finaliseFinalObject_closed`): each step a frame (`SchedLinkFrame`) but the
-context's release of its holder
-(`finaliseScRelease_preserves_schedContextLinkInvariant`) and the reply's caller
-cancel (`finaliseReplyCancel_preserves_schedContextLinkInvariant`). -/
+/-- **A property every finalisation step keeps, the pop off an unheld context
+reading the scheduling links, holds after the finalisation with the links**
+(`finaliseFinalObject_closed` on the property paired with the table's
+well-formedness and `schedContextLinkInvariant`): each step keeps the links as a
+frame (`SchedLinkFrame`) but the context's release of its holder
+(`finaliseScRelease_preserves_schedContextLinkInvariant`), the reply's caller
+cancel (`finaliseReplyCancel_preserves_schedContextLinkInvariant`) and the pop
+(`finaliseReplyUnheldPop_preserves_schedContextLinkInvariant`).  The pop is the
+one step whose property may read the links: the context it hands back is bound
+to no thread, which the binding pair says of every thread's binding. -/
+theorem finaliseFinalObject_closed_linked (P : SystemState → Prop)
+    (hEp : ∀ (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (s : SystemState) (ep : Endpoint)
+      (t : SeLe4n.ThreadId) (tcb : TCB), P s →
+      s.getEndpoint? endpointId = some ep → (endpointWaitQueue ep isReceiveQ).head = some t →
+      s.getTcb? t = some tcb → endpointWaiterCancellable s endpointId t tcb = true →
+      P (storeEndpointWaiterCancelled s endpointId isReceiveQ t tcb.queueNext))
+    (hNtfn : ∀ (notificationId : SeLe4n.ObjId) (s : SystemState) (n : Notification)
+      (t : SeLe4n.ThreadId) (tcb : TCB), P s →
+      s.getNotification? notificationId = some n → n.waitHead = some t →
+      s.getTcb? t = some tcb → notificationWaiterCancellable s notificationId t tcb = true →
+      P (wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking s t tcb) t))
+    (hUnbind : FinaliseUnbindStep P) (hDes : FinaliseScDescheduleStep P)
+    (hRel : FinaliseScReleaseStep P)
+    (hCancel : FinaliseNotificationCancelStep P) (hEndpoint : FinaliseEndpointCancelStep P)
+    (hSuspend : FinaliseSuspendStep P)
+    (hRelease : FinaliseReleaseStep P) (hUn : FinaliseUnstackStep P) (hRep : FinaliseReplyStep P)
+    (hSt : FinaliseUnstashStep P) (hYield : FinaliseYieldStep P) (hOrph : FinaliseOrphanStep P)
+    (hUnheld : ∀ (s : SystemState) (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.ThreadId) (t : TCB),
+      P s → s.objects.invExt → schedContextLinkInvariant s →
+      s.getObject? x = some (.reply r) → r.callerCode = c.val + 1 → s.getTcb? c = some t →
+      replyUnheldPopAdmitted s x r c t = true → P (finaliseReplyUnheldPop s r c))
+    (target : Nat) (st : SystemState) (h : P st) (hInv : st.objects.invExt)
+    (hL : schedContextLinkInvariant st) :
+    P (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt ∧
+      schedContextLinkInvariant (finaliseFinalObject target st) :=
+  finaliseFinalObject_closed (fun s => P s ∧ s.objects.invExt ∧ schedContextLinkInvariant s)
+    (fun e q s ep t tcb h a b c d =>
+      ⟨hEp e q s ep t tcb h.1 a b c d,
+        (FinaliseFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext h.2.1).invExt,
+        (SchedLinkFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext h.2.1).preserves h.2.2⟩)
+    (fun n s nt t tcb h a b c hC =>
+      have hB := notificationWaiterCancellable_blocked hC
+      have F := FinaliseFrame.notificationCancel s t tcb n h.2.1 hB
+      ⟨hNtfn n s nt t tcb h.1 a b c hC,
+        (F.trans (FinaliseFrame.wakeCancelledWaiter _ t F.invExt)).invExt,
+        ((SchedLinkFrame.notificationCancel s t tcb n h.2.1 hB).trans
+          (SchedLinkFrame.wakeCancelledWaiter _ t F.invExt)).preserves h.2.2⟩)
+    (fun n s nt t h a b c d =>
+      ⟨hUnbind n s nt t h.1 a b c d, (FinaliseFrame.storeUnbindNotification s t n h.2.1).invExt,
+        (SchedLinkFrame.storeUnbindNotification s t n h.2.1).preserves h.2.2⟩)
+    (fun s t tcb h a b c d =>
+      ⟨hDes s t tcb h.1 a b c d, (FinaliseFrame.descheduleAt s t _ h.2.1).invExt,
+        (SchedLinkFrame.descheduleAtPlacement s t).preserves h.2.2⟩)
+    (fun s s' t tcb sc x h hT hS hSc hB hOk =>
+      ⟨hRel s s' t tcb sc x h.1 hT hS hSc hB hOk,
+        (FinaliseFrame.cancelBoundDonationOnCore h.2.1 hOk).invExt,
+        finaliseScRelease_preserves_schedContextLinkInvariant h.2.1 h.2.2 hT hS hSc hB hOk⟩)
+    (fun s n t tcb nt h a hI b c =>
+      ⟨hCancel s n t tcb nt h.1 a hI b c,
+        (FinaliseFrame.notificationCancel s t tcb n h.2.1 hI).invExt,
+        (SchedLinkFrame.notificationCancel s t tcb n h.2.1 hI).preserves h.2.2⟩)
+    (fun s e q t ep tcb h a b c =>
+      ⟨hEndpoint s e q t ep tcb h.1 a b c,
+        (FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb h.2.1).invExt,
+        (SchedLinkFrame.storeEndpointBlockedCancelled s e q t ep tcb h.2.1).preserves h.2.2⟩)
+    (fun s t tcb h a b c d e =>
+      ⟨hSuspend s t tcb h.1 a b c d e, (FinaliseFrame.suspend s t h.2.1).invExt,
+        (SchedLinkFrame.suspend s t h.2.1).preserves h.2.2⟩)
+    (fun s t h =>
+      ⟨hRelease s t h.1, (FinaliseFrame.releaseCores s t h.2.1).invExt,
+        (SchedLinkFrame.releaseCores s t).preserves h.2.2⟩)
+    (fun s s1 x sc rid r h hSc hRp hR hN hS s₀ h₀ hA hS₀ =>
+      ⟨hUn s s1 x sc rid r h.1 hSc hRp hR hN hS s₀ h₀.1 hA hS₀,
+        (FinaliseFrameAny.unstack h.2.1 hR hS).invExt,
+        (SchedLinkFrame.unstack h.2.1 hR hS).preserves h.2.2⟩)
+    (fun s x r c t h hX hC hT hF =>
+      have hB := (replyCallerFinalisable_parts hF).2.2.2.2.1
+      ⟨hRep s x r c t h.1 hX hC hT hF,
+        (FinaliseFrameAny.replyStep s s x r c t (.refl h.2.1) hX hC hT hF).invExt,
+        finaliseReplyCancel_preserves_schedContextLinkInvariant h.2.1 h.2.2
+          hB.choose_spec.choose_spec⟩)
+    (fun s s1 x tid t h a b e =>
+      ⟨hSt s s1 x tid t h.1 a b e, e ▸ SystemState.updateTcb_preserves_objects_invExt _ _ _ h.2.1,
+        e ▸ (SchedLinkFrame.updateTcb s tid _ h.2.1).preserves h.2.2⟩)
+    ⟨fun s t h => ⟨hYield.cancel s t h.1, SystemState.cancelYieldTo_preserves_objects_invExt _ _ h.2.1,
+        (SchedLinkFrame.of_objectsAgreeOffYield (SystemState.cancelYieldTo_objectsAgreeOffYield s t h.2.1)
+          (SystemState.cancelYieldTo_scheduler s t)).preserves h.2.2⟩,
+     fun s c h => ⟨hYield.complete s c h.1,
+        SystemState.completeYieldFrom_preserves_objects_invExt _ _ h.2.1,
+        (SchedLinkFrame.of_objectsAgreeOffYield
+          (SystemState.completeYieldFrom_objectsAgreeOffYield s c h.2.1)
+          (SystemState.completeYieldFrom_scheduler s c)).preserves h.2.2⟩⟩
+    (fun s w x t h a b c =>
+      ⟨hOrph s w x t h.1 a b c, (FinaliseFrame.orphanReplyWaiter s w x h.2.1).invExt,
+        (SchedLinkFrame.orphanReplyWaiter s w x).preserves h.2.2⟩)
+    (fun s x r c t h a b d e =>
+      ⟨hUnheld s x r c t h.1 h.2.1 h.2.2 a b d e, (FinaliseFrameAny.finaliseReplyUnheldPop s r c h.2.1).invExt,
+        finaliseReplyUnheldPop_preserves_schedContextLinkInvariant s r c h.2.1 h.2.2⟩)
+    target st ⟨h, hInv, hL⟩
+
+/-- **The finalisation keeps every scheduling-link invariant**
+(`finaliseFinalObject_closed_linked` on the trivial property). -/
 theorem finaliseFinalObject_preserves_schedContextLinkInvariant (target : Nat) (st : SystemState)
     (hInv : st.objects.invExt) (h : schedContextLinkInvariant st) :
     schedContextLinkInvariant (finaliseFinalObject target st) :=
-  (finaliseFinalObject_closed (fun s => s.objects.invExt ∧ schedContextLinkInvariant s)
-    (fun e q s _ t tcb h _ _ _ _ =>
-      ⟨(FinaliseFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext h.1).invExt,
-        (SchedLinkFrame.storeEndpointWaiterCancelled s e q t tcb.queueNext h.1).preserves h.2⟩)
-    (fun n s _ t tcb h _ _ _ hC =>
-      have hB := notificationWaiterCancellable_blocked hC
-      have F := FinaliseFrame.notificationCancel s t tcb n h.1 hB
-      ⟨(F.trans (FinaliseFrame.wakeCancelledWaiter _ t F.invExt)).invExt,
-        ((SchedLinkFrame.notificationCancel s t tcb n h.1 hB).trans
-          (SchedLinkFrame.wakeCancelledWaiter _ t F.invExt)).preserves h.2⟩)
-    (fun n s _ t h _ _ _ _ =>
-      ⟨(FinaliseFrame.storeUnbindNotification s t n h.1).invExt,
-        (SchedLinkFrame.storeUnbindNotification s t n h.1).preserves h.2⟩)
-    (fun s t _ h _ _ _ _ =>
-      ⟨(FinaliseFrame.descheduleAt s t _ h.1).invExt,
-        (SchedLinkFrame.descheduleAtPlacement s t).preserves h.2⟩)
-    (fun _ _ _ _ _ _ h hT hS hSc hB hOk =>
-      ⟨(FinaliseFrame.cancelBoundDonationOnCore h.1 hOk).invExt,
-        finaliseScRelease_preserves_schedContextLinkInvariant h.1 h.2 hT hS hSc hB hOk⟩)
-    (fun s n t tcb _ h _ hI _ _ =>
-      ⟨(FinaliseFrame.notificationCancel s t tcb n h.1 hI).invExt,
-        (SchedLinkFrame.notificationCancel s t tcb n h.1 hI).preserves h.2⟩)
-    (fun s e q t ep tcb h _ _ _ =>
-      ⟨(FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb h.1).invExt,
-        (SchedLinkFrame.storeEndpointBlockedCancelled s e q t ep tcb h.1).preserves h.2⟩)
-    (fun s t _ h _ _ _ _ _ =>
-      ⟨(FinaliseFrame.suspend s t h.1).invExt, (SchedLinkFrame.suspend s t h.1).preserves h.2⟩)
-    (fun s t h =>
-      ⟨(FinaliseFrame.releaseCores s t h.1).invExt, (SchedLinkFrame.releaseCores s t).preserves h.2⟩)
-    (fun _ _ _ _ _ _ h _ _ hR _ hS _ _ _ _ =>
-      ⟨(FinaliseFrameAny.unstack h.1 hR hS).invExt, (SchedLinkFrame.unstack h.1 hR hS).preserves h.2⟩)
-    (fun s x r c t h hX hC hT hF =>
-      have hB := (replyCallerFinalisable_parts hF).2.2.2.2.1
-      ⟨(FinaliseFrameAny.replyStep s s x r c t (.refl h.1) hX hC hT hF).invExt,
-        finaliseReplyCancel_preserves_schedContextLinkInvariant h.1 h.2 hB.choose_spec.choose_spec⟩)
-    (fun s _ _ tid _ h _ _ e => e ▸
-      ⟨SystemState.updateTcb_preserves_objects_invExt _ _ _ h.1,
-        (SchedLinkFrame.updateTcb s tid _ h.1).preserves h.2⟩)
-    SchedLinkFrame.yieldStep
-    (fun s w x _ h _ _ _ =>
-      ⟨(FinaliseFrame.orphanReplyWaiter s w x h.1).invExt,
-        (SchedLinkFrame.orphanReplyWaiter s w x).preserves h.2⟩)
-    target st ⟨hInv, h⟩).2
+  (finaliseFinalObject_closed_linked (fun _ => True)
+    (fun _ _ _ _ _ _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ _ => trivial)
+    (fun _ _ _ _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ => trivial)
+    (fun _ _ _ _ _ _ _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ _ => trivial)
+    (fun _ _ _ _ _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ => trivial)
+    (fun _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => trivial)
+    (fun _ _ _ _ _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ => trivial)
+    ⟨fun _ _ _ => trivial, fun _ _ _ => trivial⟩ (fun _ _ _ _ _ _ _ _ => trivial)
+    (fun _ _ _ _ _ _ _ _ _ _ _ _ => trivial) target st trivial hInv h).2.2
 
 -- ============================================================================
 -- §9  The retire

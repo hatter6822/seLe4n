@@ -804,6 +804,7 @@ theorem finaliseFinalObject_readyEntry {S : SeLe4n.ThreadId → Prop} (target : 
     ⟨fun s t h => readyEntry_stage h (SystemState.cancelYieldTo_runQueueStage s t),
      fun s c h => readyEntry_stage h (SystemState.completeYieldFrom_runQueueStage s c)⟩
     (fun _ _ _ _ h hT _ hS => readyEntry_stage h (orphanReplyWaiter_runQueueStage hT hS))
+    (fun s _ r c _ h _ _ _ _ => readyEntry_stage h (finaliseReplyUnheldPop_runQueueStage s r c))
     target s h
 
 theorem cspaceDeleteSlotFinalising_readyEntry {S : SeLe4n.ThreadId → Prop} {ec : CoreId}

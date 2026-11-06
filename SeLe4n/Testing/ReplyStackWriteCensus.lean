@@ -919,6 +919,14 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- that pop's result.
   , (`SeLe4n.Kernel.returnDonatedSchedContextInPlace,
       .states [`SeLe4n.Kernel.returnDonatedSchedContextInPlace_preserves_donationChainWellFormed])
+    -- WS-ZA ZA6.34: the pop of a context no thread holds (seL4-MCS's
+    -- `reply_pop` after its holder's `schedContext_unbindTCB`), back to the
+    -- popped reply's caller: the donation return's stores less the holder's.
+  , (`SeLe4n.Kernel.returnUnheldSchedContext,
+      .states [`SeLe4n.Kernel.returnUnheldSchedContext_preserves_donationChainWellFormed])
+    -- Its in-place form: on the states its gate admits it is that pop.
+  , (`SeLe4n.Kernel.returnUnheldSchedContextInPlace,
+      .states [`SeLe4n.Kernel.returnUnheldSchedContextInPlace_preserves_donationChainWellFormed])
     -- ---------------------------------------------------------------------
     -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
     -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects

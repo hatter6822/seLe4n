@@ -2952,7 +2952,7 @@ private def runReplyWaiterFinaliseChecks : IO Unit := do
               t.replyWaitersCount == 2) == some true)
           match runAll stL [decodeDelete 12] with
           | .error e => assertBool s!"deleting the borrowing server's last capability succeeds (got {repr e})" false
-          | .ok st1 =>
+          | .ok st1 => do
             assertBool "deleting a borrowing server orphans its lender and its other waiter, unbinds the borrowed context without returning it, and retires the server"
               (!storedAt st1 962 && !recordsChildAt st1 carveUt 962 &&
                 waiterOrphaned st1 960 961 && waiterOrphaned st1 964 965 &&
@@ -2960,6 +2960,20 @@ private def runReplyWaiterFinaliseChecks : IO Unit := do
                 (st1.getSchedContext? ⟨963⟩).map (fun sc => sc.scReply == some ⟨961⟩ &&
                   sc.boundThreadCode == 0) == some true &&
                 (replyAt st1 961).map (·.next == some (.head ⟨963⟩)) == some true)
+            -- The lender's reply, heading the context no thread holds, then
+            -- goes: seL4-MCS's `reply_remove` pops it (`reply_pop`: the context
+            -- to the lender, which holds none) and `reply_unlink` ends the
+            -- lender's call, and the retire takes the reply.
+            match runAll st1 [decodeDelete 11] with
+            | .error e => assertBool s!"deleting the orphaned lender's reply succeeds (got {repr e})" false
+            | .ok st2 =>
+              assertBool "deleting an orphaned caller's head reply pops the unheld context back to it, ends its call and retires the reply"
+                (!storedAt st2 961 &&
+                  (st2.getTcb? ⟨960⟩).map (fun t => t.schedContextBinding == .bound ⟨963⟩ &&
+                    t.threadState == .Inactive && t.replyObjectCode == 0) == some true &&
+                  (st2.getSchedContext? ⟨963⟩).map (fun sc => sc.scReply.isNone &&
+                    sc.boundThreadCode == 961) == some true &&
+                  waiterOrphaned st2 964 965)
   -- A server holding no loan, with two waiters: its delete orphans both.
   match runAll carveScenario
       [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 11,

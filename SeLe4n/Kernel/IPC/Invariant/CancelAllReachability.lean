@@ -2105,6 +2105,46 @@ theorem orphan {s : SystemState} {w x : SeLe4n.ThreadId} {t : TCB}
     orphanReplyWaiter_replyWaitersConsistent h.2.2.2.1 hT hS, h.chain_of_frame F,
     h.loan_of_frame F⟩, q.2⟩
 
+/-- **A reply's pop off a context no thread holds, and its settle, carry it**
+(WS-ZA ZA6.34): the bundle and the lent-context fact by the loan bundle's step
+(`finaliseUnheldStep_keepsFinaliseLoanBundle`, which reads the scheduling links);
+the pop rewrites one thread's binding, which neither the notification queues,
+the budgets nor the reply-waiter queues read; the chains by the head pop's chain
+writes (`returnUnheldSchedContext_preserves_donationChainWellFormed`); the
+settle writes release fields and queues alone. -/
+theorem unheld {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.ThreadId} {t : TCB}
+    (h : finaliseStepInvariant s) (hL : schedContextLinkInvariant s)
+    (hX : s.getObject? x = some (.reply r)) (hT : s.getTcb? c = some t)
+    (hA : replyUnheldPopAdmitted s x r c t = true) :
+    finaliseStepInvariant (finaliseReplyUnheldPop s r c) ∧
+      timeoutBudgetFrame s (finaliseReplyUnheldPop s r c) := by
+  have hB := finaliseUnheldStep_keepsFinaliseLoanBundle s x r c t ⟨h.1, h.2.1, h.2.2.2.2.2⟩ hL hX hT hA
+  rcases finaliseReplyUnheldPop_cases s r c with e | ⟨sId, n, st', -, -, hPop, e⟩
+  · rw [e]; exact ⟨h, fun _ tcb' hx => ⟨tcb', hx, rfl⟩⟩
+  · rw [e] at hB ⊢
+    obtain ⟨tF, tB⟩ := returnUnheldSchedContext_tcb_rewrite h.2.1 hPop
+    have N : NtfnFrame s st' :=
+      ⟨fun k nt => returnUnheldSchedContext_notification_iff h.2.1 hPop k nt,
+        fun k ty hy => let ⟨tx, hx, hR⟩ := tF k ty hy; ⟨tx, hx, .of_bindingRewrite hR⟩,
+        fun k tx hx => let ⟨ty, hy, hR⟩ := tB k tx hx; ⟨ty, hy, .of_bindingRewrite hR⟩⟩
+    have q1 := N.parts h.2.2.1
+    have R := ReachFieldFrame.of_agreeOffReleaseLinks
+      (SchedContextOps.settleReturnedContext_agree st' (determineTargetCore st' c) sId)
+    have q2 := R.parts q1.1
+    have hViews : st'.replyViews = s.replyViews := SystemState.replyViews_eq_of_tcbs
+      (fun k t0 hk => let ⟨t', h', hR⟩ := tF k t0 hk; ⟨t', h', SystemState.replyView_of_tcbBindingRewrite hR⟩)
+      (fun k t' hk => let ⟨t0, h0, _⟩ := tB k t' hk; ⟨t0, h0⟩)
+    have hInv1 := (FinaliseFrameAny.returnUnheldSchedContext h.2.1 hPop).invExt
+    have hCh1 := returnUnheldSchedContext_preserves_donationChainWellFormed h.2.1 h.2.2.2.2.1 hPop
+    have F := FinaliseFrame.of_releaseOnlyWrite
+      (SchedContextOps.settleReturnedContext_releaseOnlyWrite st' (determineTargetCore st' c) sId)
+      (SchedContextOps.settleReturnedContext_agree _ _ _)
+      (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv1)
+    exact ⟨⟨hB.1, hB.2.1, q2.1,
+      SystemState.replyWaitersConsistent.of_views (q2.2.2.trans hViews) h.2.2.2.1,
+      donationChainWellFormed_of_frame (finaliseWrite.donationChainFrame F.write) hCh1, hB.2.2⟩,
+      q1.2.trans q2.2.1⟩
+
 /-- WS-ZA ZA6.6: a yield step carries it, and frames every budget: the yield
 codes, a context's consumed count and a yielder's two return registers. -/
 theorem yieldStep {s s' : SystemState} (h : finaliseStepInvariant s)
@@ -2128,12 +2168,14 @@ theorem timeoutBudget_isNone_of_ipcReachable {st : SystemState} (h : ipcReachabl
 
 /-- **The finalisation keeps the reachable state**: the bundle, the notification
 queues, the budgets, the reply-waiter queues and the donation chains carried one
-walk step at a time (`finaliseFinalObject_closed`, `finaliseStepInvariant`); the
-run queues' agreement by its run-queue stage. -/
+walk step at a time (`finaliseFinalObject_closed_linked`, `finaliseStepInvariant`;
+the pop off an unheld context reads the scheduling links); the run queues'
+agreement by its run-queue stage. -/
 theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemState}
-    (h : ipcReachable st) (hW : lentContextHeadsLenderFrame st) :
+    (h : ipcReachable st) (hW : lentContextHeadsLenderFrame st)
+    (hL : schedContextLinkInvariant st) :
     ipcReachable (finaliseFinalObject target st) := by
-  obtain ⟨⟨hFull', hInv', hNC', hRW', hCh', -⟩, hB'⟩ := finaliseFinalObject_closed
+  obtain ⟨⟨⟨hFull', hInv', hNC', hRW', hCh', -⟩, hB'⟩, -, -⟩ := finaliseFinalObject_closed_linked
     (fun s => finaliseStepInvariant s ∧ timeoutBudgetFrame st s)
     (fun _ _ _ _ _ _ h hE hH hT hC =>
       have r := h.1.endpointCancel hE hH hT hC
@@ -2182,7 +2224,10 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
     (fun _ _ _ _ h hT _ hS =>
       have r := h.1.orphan hT hS
       ⟨r.1, h.2.trans r.2⟩)
-    target st ⟨.of_ipcReachable h hW, .refl st⟩
+    (fun _ _ _ _ _ h _ hLk hX _ hT hA =>
+      have r := h.1.unheld hLk hX hT hA
+      ⟨r.1, h.2.trans r.2⟩)
+    target st ⟨.of_ipcReachable h hW, .refl st⟩ h.2.1 hL
   exact ⟨hFull', hInv', allTimeoutBudgetsNone_of_frame hB' h.2.2.1, hNC', hCh',
     ((finaliseFinalObject_runQueueEntryStage target st).1 h.2.1 h.2.2.2.2.2.1).2, hRW'⟩
 
@@ -2251,18 +2296,18 @@ release's (`revokeService_preserves_ipcReachable`), the finalisation's
 (`retireFinalObject_preserves_ipcReachable`). -/
 theorem retireFinalisedObject_preserves_ipcReachable (ec : Concurrency.CoreId)
     (target recorder : Nat) {st : SystemState} (h : ipcReachable st)
-    (hW : lentContextHeadsLenderFrame st) :
+    (hB : finalisingDeleteBundle st) :
     ipcReachable (retireFinalisedObject ec target recorder st) := by
   rcases retireFinalisedObject_cases ec target recorder st with ⟨-, hE⟩ | ⟨-, hE⟩
   · exact hE ▸ setIrqLineSignal_preserves_ipcReachable st _ false h
   rw [hE]
   have h0 := releaseFinalRegistration_closed
-    (fun s => ipcReachable s ∧ lentContextHeadsLenderFrame s)
+    (fun s => ipcReachable s ∧ finalisingDeleteBundle s)
     (fun _ _ _ hs hR => ⟨revokeService_preserves_ipcReachable hs.1 hR,
-      hs.2.of_loanWrite (revokeService_loanWrite hR hs.1.objects_invExt)⟩)
-    target st ⟨h, hW⟩
+      revokeService_preserves_finalisingDeleteBundle hs.2 hR⟩)
+    target st ⟨h, hB⟩
   exact retireFinalObject_preserves_ipcReachable ec target recorder
-    (finaliseFinalObject_preserves_ipcReachable target h0.1 h0.2)
+    (finaliseFinalObject_preserves_ipcReachable target h0.1 h0.2.1.2.2 h0.2.2)
 
 
 /-- **The compiled splice keeps the donation chain.**  The in-place form a final

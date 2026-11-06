@@ -7,6 +7,7 @@ import SeLe4n.Kernel.IPC.DualQueue.PopInPlace
 import SeLe4n.Kernel.IPC.DualQueue.RemoveInPlace
 import SeLe4n.Kernel.IPC.Operations.NotificationBind
 import SeLe4n.Kernel.IPC.Operations.DonationPopInPlace
+import SeLe4n.Kernel.IPC.Operations.UnheldContextPopInPlace
 
 /-!
 # Cancelling every waiter of an endpoint or a notification
@@ -1387,6 +1388,94 @@ def finaliseReplyUnstash (st : SystemState) (x : SeLe4n.ObjId) (r : Reply) : Sys
       else st
     | none => st
 
+/-- **Whether a final delete may pop the reply at `x` off a context no thread
+holds**, its caller `c` (TCB `t`) waiting on it, read on the pre-state before any
+write: the reply heads the stack of a context that names it back as its head,
+the pop of that context back to `c` commits (`unheldReturnCommits`: the context
+is bound to no thread — its holder's finalisation unbound it, seL4-MCS's
+`schedContext_unbindTCB` — and `c` holds no context of its own), and `c` passes
+the caller checks `replyCallerFinalisable` reads.  Each read is `O(1)`. -/
+@[inline] def replyUnheldPopAdmitted (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
+    (c : SeLe4n.ThreadId) (t : TCB) : Bool :=
+  match r.next with
+  | some (.head s) =>
+    (match st.getSchedContext? s with
+     | some sc =>
+       match sc.scReply with
+       | some rid => rid.val == x.val
+       | none => false
+     | none => false) &&
+      unheldReturnCommits st s c && !c.isReserved && !isIdleThreadId c &&
+      t.runCoreCode == 0 && decide (4 ≤ t.ipcStateCode) &&
+      t.replyObjectCode == x.val + 1 && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
+      t.timeoutBudget.isNone
+  | _ => false
+
+/-- **The pop of a reply heading a context no thread holds** (seL4-MCS's
+`reply_remove` head branch, `reply_pop`): the context back to the reply's caller
+`c`, the frame below its new head (`returnUnheldSchedContextResolved`), then
+settled as every returned context is (`settleReturnedContext`, the tail of
+`schedContext_donate`): placed on `c`'s home core's release queue by its refills
+while `c` is not suspended.  The state unchanged where the pop refuses. -/
+@[inline] def finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
+    SystemState :=
+  match r.next with
+  | some (.head s) =>
+    match returnUnheldSchedContextResolved st s c with
+    | .ok st' => SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
+    | .error _ => st
+  | _ => st
+
+/-- **The unheld pop, as compiled**: in place where its gate admits it
+(`unheldPopsInPlace`, under which it is the specification's pop,
+`unheldPopsInPlace_pop`), every check read as a code before the first write;
+the specification's pop otherwise. -/
+@[inline] def finaliseReplyUnheldPopImpl (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) :
+    SystemState :=
+  match r.next with
+  | some (.head s) =>
+    if unheldPopsInPlace st s c then
+      let st' := returnUnheldSchedContextInPlace st c s
+      SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
+    else
+      match returnUnheldSchedContextResolved st s c with
+      | .ok st' => SchedContextOps.settleReturnedContext st' (determineTargetCore st' c) s
+      | .error _ => st
+  | _ => st
+
+@[csimp] theorem finaliseReplyUnheldPop_eq_impl :
+    @finaliseReplyUnheldPop = @finaliseReplyUnheldPopImpl := by
+  funext st r c
+  unfold finaliseReplyUnheldPop finaliseReplyUnheldPopImpl
+  split
+  · next s _ =>
+    cases hG : unheldPopsInPlace st s c with
+    | false => rfl
+    | true => simp only [(unheldPopsInPlace_pop st s c hG).2, ↓reduceIte]
+  · rfl
+
+/-- **A finalised reply heading a context no thread holds**: the pop
+(`finaliseReplyUnheldPop`), then — the popped reply heading no stack — the
+caller cancelled as the reply finalisation cancels it there (`finaliseReplyCancel`:
+the caller restored, its reply link and the reply's caller link cleared, the
+caller off any server's reply-waiter queue), the boost it lent a server reverted,
+and the caller made `.Inactive` (seL4's `reply_unlink`).  The cancel reads the
+reply and the caller again on the popped state and keeps its own guard
+(`replyCallerFinalisable`), which the pop keeps on every admitted state. -/
+def finaliseReplyUnheld (st : SystemState) (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.ThreadId) :
+    SystemState :=
+  let st1 := finaliseReplyUnheldPop st r c
+  match st1.getObject? x with
+  | some (.reply r1) =>
+    match st1.getTcb? c with
+    | some t1 =>
+      if r1.callerCode == c.val + 1 && replyCallerFinalisable st1 x r1 c t1 then
+        finaliseThreadSuspend (finaliseReplyRevert (finaliseReplyCancel st1 r1 c t1)
+          t1.blockingServer?) c
+      else st1
+    | none => st1
+  | _ => st1
+
 /-- **seL4's `finaliseCap` on the final capability to a reply whose caller
 still waits on it** (`reply_remove`, then `reply_unlink`): the caller's blocked
 call is cancelled (`finaliseReplyCancel`: a head reply popped, its context
@@ -1396,7 +1485,10 @@ caller's reply link cleared, the caller off its server's reply-waiter queue), th
 (`finaliseReplyRevert`), and the caller made `.Inactive`
 (`finaliseThreadSuspend`, seL4's `setThreadState Inactive`).  Only when the
 pre-state admits it (`replyCallerFinalisable`), checks before writes; a reply
-with no caller but stashed by a receiver is unlinked from it
+heading a context no thread holds — its holder's finalisation unbound it — is
+popped, the context back to the caller, then the caller cancelled and made
+`.Inactive` (`finaliseReplyUnheld`, when `replyUnheldPopAdmitted` admits it); a
+reply with no caller but stashed by a receiver is unlinked from it
 (`finaliseReplyUnstash`), and the retire then takes it if it is quiescent. -/
 def finaliseReply (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   match st.getObject? x with
@@ -1408,6 +1500,7 @@ def finaliseReply (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
       | some t =>
         if replyCallerFinalisable st x r c t then
           finaliseThreadSuspend (finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer?) c
+        else if replyUnheldPopAdmitted st x r c t then finaliseReplyUnheld st x r c
         else st
       | none => st
   | _ => st
@@ -1447,13 +1540,24 @@ def finaliseReplyImpl (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
       match st.getTcb? c with
       | some t =>
         if replyCallerFinalisable st x r c t then finaliseReplyCaller st r c t
+        else if replyUnheldPopAdmitted st x r c t then
+          let st1 := finaliseReplyUnheldPop st r c
+          match st1.getObject? x with
+          | some (.reply r1) =>
+            match st1.getTcb? c with
+            | some t1 =>
+              if r1.callerCode == c.val + 1 && replyCallerFinalisable st1 x r1 c t1 then
+                finaliseReplyCaller st1 r1 c t1
+              else st1
+            | none => st1
+          | _ => st1
         else st
       | none => st
   | _ => st
 
 @[csimp] theorem finaliseReply_eq_impl : @finaliseReply = @finaliseReplyImpl := by
   funext x st
-  unfold finaliseReply finaliseReplyImpl
+  unfold finaliseReply finaliseReplyImpl finaliseReplyUnheld
   simp only [finaliseReplyCaller_eq]
 
 -- ============================================================================

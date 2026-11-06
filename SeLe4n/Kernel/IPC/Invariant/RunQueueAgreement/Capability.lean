@@ -844,8 +844,10 @@ context's reply-stack unlink (a reply and a context rewritten), a reply's
 caller cancel (a head reply's with its loan returned and its holder
 descheduled: `cancelIpcBlockingReclaimed_runQueueStage`) with its boost
 reverted, a stashed reply's unlink (a stash
-field rewritten, off the run links), and the yield steps (the yield-link
-codes, a context's consumed count and a yielder's return registers). -/
+field rewritten, off the run links), the yield steps (the yield-link
+codes, a context's consumed count and a yielder's return registers), and a
+reply's pop off an unheld context with its settle
+(`finaliseReplyUnheldPop_runQueueStage`). -/
 theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState) :
     SystemState.RunQueueEntryStage st (finaliseFinalObject target st) :=
   finaliseFinalObject_closed (SystemState.RunQueueEntryStage st)
@@ -869,6 +871,7 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
     ⟨fun s t h => h.trans (SystemState.cancelYieldTo_runQueueStage s t).entry,
      fun s c h => h.trans (SystemState.completeYieldFrom_runQueueStage s c).entry⟩
     (fun _ _ _ _ h hT _ hS => h.trans (orphanReplyWaiter_runQueueStage hT hS).entry)
+    (fun s _ r c _ h _ _ _ _ => h.trans (finaliseReplyUnheldPop_runQueueStage s r c).entry)
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
 /-- A line's state change writes the tree's issued lines and the mask alone. -/
