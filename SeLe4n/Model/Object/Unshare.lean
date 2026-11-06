@@ -120,6 +120,31 @@ its `some`, its entry and the entry's value pair (WS-ZA ZA5.4). -/
   | some e => some { e with dist := opaqueId e.dist }
   | none => none
 
+/-- WS-ZA ZA6.35: one spare mapping cell, its own: built out of line, its address
+the cell's index, so no two cells are one constant. -/
+@[noinline] def mappingSpareCell (i : Nat) :
+    Option (RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)) :=
+  some ⟨SeLe4n.VAddr.ofNat i, (SeLe4n.PAddr.ofNat i, {}), 0⟩
+
+/-- WS-ZA ZA6.35: one spare epoch cell, its own (as `mappingSpareCell`). -/
+@[noinline] def epochSpareCell (i : Nat) : Option (RHEntry SeLe4n.VAddr Nat) :=
+  some ⟨SeLe4n.VAddr.ofNat i, i, 0⟩
+
+/-- WS-ZA ZA6.35: a root's spare mapping cells topped up to `k` more, so a root
+entering the store holds one cell for every slot of its mapping table that no
+mapping holds. -/
+def mappingSpareCells :
+    Nat → Array (Option (RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))) →
+      Array (Option (RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)))
+  | 0, a => a
+  | k + 1, a => mappingSpareCells k (a.push (mappingSpareCell a.size))
+
+/-- WS-ZA ZA6.35: a root's spare epoch cells topped up to `k` more. -/
+def epochSpareCells :
+    Nat → Array (Option (RHEntry SeLe4n.VAddr Nat)) → Array (Option (RHEntry SeLe4n.VAddr Nat))
+  | 0, a => a
+  | k + 1, a => epochSpareCells k (a.push (epochSpareCell a.size))
+
 /-- A page table's slot cell, rebuilt when shared so the table owns its list
 cell and its slot record (WS-ZA ZA5.4). -/
 @[inline] def unshareTableSlot (s : PageTableSlot) : PageTableSlot :=
@@ -165,9 +190,13 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
       asid := opaqueId v.asid
       mappings := v.mappings.unshare
       mappingEpochs := v.mappingEpochs.unshare
-      mappingSpare := Quot.lift (fun a => Squash.mk (unshareMappingCell a))
+      mappingSpare := Quot.lift
+        (fun a => Squash.mk (mappingSpareCells (v.mappings.capacity - v.mappings.size)
+          (a.map unshareMappingCell)))
         (fun _ _ _ => Subsingleton.elim _ _) v.mappingSpare
-      epochSpare := Quot.lift (fun a => Squash.mk (unshareEpochCell a))
+      epochSpare := Quot.lift
+        (fun a => Squash.mk (epochSpareCells (v.mappingEpochs.capacity - v.mappingEpochs.size)
+          (a.map unshareEpochCell)))
         (fun _ _ _ => Subsingleton.elim _ _) v.epochSpare }
   | .untyped u => .untyped { u with regionBase := opaqueId u.regionBase }
   | .schedContext sc => .schedContext { sc with scId := opaqueId sc.scId }

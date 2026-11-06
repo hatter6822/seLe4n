@@ -97,23 +97,26 @@ theorem storeVSpaceRootWith_recordPhysicalWrites (st : SystemState) (ws : List A
 
 open SeLe4n.Kernel.RobinHood in
 /-- WS-ZA ZA5.4: the epoch entry of `vaddr` erased from a root as compiled:
-its slot found as a bare index, and the cell erased from it becomes the root's
-spare epoch cell (`VSpaceRoot.epochSpare`), which the next map's epoch writes
-over (`rootWithEpochCells`). -/
+its slot found as a bare index, and the cell erased from it is handed back to
+the root's spare epoch cells (`VSpaceRoot.epochSpare`), which the next map's
+epoch writes over (`rootWithEpochCells`). -/
 @[inline] def rootWithoutEpochCells (vaddr : SeLe4n.VAddr) (r : VSpaceRoot) : VSpaceRoot :=
   let t := r.mappingEpochs
   let i := findIdxLoop t.capacity (idealIndex vaddr t.capacity t.hCapPos) vaddr 0 t.slots
     t.capacity t.hSlotsLen t.hCapPos
   if h : i < t.capacity then
     let old := t.slots[i]'(by rw [t.hSlotsLen]; exact h)
-    { r with mappingEpochs := t.eraseAt i h, epochSpare := Squash.mk old }
+    let sp := r.epochSpare
+    let r0 := { r with mappingEpochs := t.eraseAt i h, epochSpare := Squash.mk #[] }
+    Quot.lift (fun a => { r0 with epochSpare := Squash.mk (a.push old) })
+      (fun _ _ _ => by simp only [VSpaceRoot.with_epochSpare]) sp
   else r
 
 open SeLe4n.Kernel.RobinHood in
 /-- WS-ZA ZA5.4: `rootWithoutMapping` as compiled: the mapping's slot is found
 as a bare index, and the cell erased from it (its `some`, its entry and its
-value pair) becomes the root's spare (`VSpaceRoot.mappingSpare`), which the
-next map writes over, so no slot `Option` is built and the cell is not freed;
+value pair) is handed back to the root's spares (`VSpaceRoot.mappingSpare`),
+which the next map writes over, so no slot `Option` is built and the cell is not freed;
 the epoch entry goes the same way (`rootWithoutEpochCells`).  Out of line:
 inlined into the object update, the root would be checked for sole ownership
 while its object still held it, and so be rebuilt. -/
@@ -123,7 +126,11 @@ while its object still held it, and so be rebuilt. -/
     t.capacity t.hSlotsLen t.hCapPos
   if h : i < t.capacity then
     let old := t.slots[i]'(by rw [t.hSlotsLen]; exact h)
-    rootWithoutEpochCells vaddr { r with mappings := t.eraseAt i h, mappingSpare := Squash.mk old }
+    let sp := r.mappingSpare
+    let r0 := { r with mappings := t.eraseAt i h, mappingSpare := Squash.mk #[] }
+    rootWithoutEpochCells vaddr
+      (Quot.lift (fun a => { r0 with mappingSpare := Squash.mk (a.push old) })
+        (fun _ _ _ => by simp only [VSpaceRoot.with_mappingSpare]) sp)
   else rootWithoutEpochCells vaddr r
 
 open SeLe4n.Kernel.RobinHood in
@@ -133,9 +140,13 @@ theorem rootWithoutEpochCells_eq (vaddr : SeLe4n.VAddr) (r : VSpaceRoot) :
   rw [RHTable.erase_eq_eraseAt]
   dsimp only
   split
-  · cases r
-    simp only [VSpaceRoot.mk.injEq, and_true, true_and]
-    exact Subsingleton.elim _ _
+  · cases r with
+    | mk asid mappings tableBase tables mappingEpochs sp esp tsp =>
+      induction esp using Squash.ind with
+      | h a =>
+        show VSpaceRoot.mk _ _ _ _ _ _ _ _ = _
+        simp only [VSpaceRoot.mk.injEq, and_true, true_and]
+        exact Subsingleton.elim _ _
   · rfl
 
 open SeLe4n.Kernel.RobinHood in
@@ -147,9 +158,13 @@ open SeLe4n.Kernel.RobinHood in
   dsimp only
   split
   · rw [rootWithoutEpochCells_eq]
-    cases r
-    simp only [VSpaceRoot.mk.injEq, and_true, true_and]
-    exact Subsingleton.elim _ _
+    cases r with
+    | mk asid mappings tableBase tables mappingEpochs sp esp tsp =>
+      induction sp using Squash.ind with
+      | h a =>
+        show VSpaceRoot.mk _ _ _ _ _ _ _ _ = _
+        simp only [Squash.mk, VSpaceRoot.mk.injEq, true_and, and_true]
+        exact Subsingleton.elim _ _
   · rw [rootWithoutEpochCells_eq]
 
 /-- WS-ZA ZA5.4: **an admitted unmap's writes**: the mapping erased in the

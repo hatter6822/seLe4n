@@ -222,25 +222,27 @@ def indexOf (level : Nat) (vaddr : SeLe4n.VAddr) : Nat := vaddr.toNat >>> shift 
 
 end PageTableSlot
 
-/-- WS-ZA ZA5.4: the cell an unmap took out of a root's mapping table (its
-`some` and its entry, the entry's value pair among them), kept for the root's
-next mapping to be written over, as a hardware page table's freed entry is
-the next one written.  A `Squash`, so logically one value: no theorem reads it,
-and a root with any spare is the root with any other
-(`VSpaceRoot.with_mappingSpare`). -/
+/-- WS-ZA ZA5.4, ZA6.35: the cells a root keeps for its mappings to be written
+over — each a `some`, its entry and the entry's value pair, as a hardware page
+table's entries are its own memory.  A root is given one for every slot of its
+mapping table when it enters the store (`KernelObject.unshare`), so a map
+writes its translation over one of them; an unmap hands its cells back.  An
+array, so a cell is taken and handed back in place.  A `Squash`, so logically
+one value: no theorem reads it, and a root with any spares is the root with
+any other (`VSpaceRoot.with_mappingSpare`). -/
 abbrev MappingSpare :=
-  Squash (Option (SeLe4n.Kernel.RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)))
+  Squash (Array (Option
+    (SeLe4n.Kernel.RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))))
 
-instance : Repr MappingSpare := ⟨fun _ _ => "spare mapping cell"⟩
+instance : Repr MappingSpare := ⟨fun _ _ => "spare mapping cells"⟩
 
-/-- WS-ZA ZA5.4: the cell an unmap took out of a root's epoch table (its
-`some` and its entry), kept for the root's next mapping's epoch to be written
-over, as `MappingSpare` is for the translation.  Logically one value
-(`VSpaceRoot.with_epochSpare`). -/
+/-- WS-ZA ZA5.4, ZA6.35: the cells a root keeps for its mappings' epochs (each a
+`some` and its entry), given and handed back as `MappingSpare`'s are.
+Logically one value (`VSpaceRoot.with_epochSpare`). -/
 abbrev EpochSpare :=
-  Squash (Option (SeLe4n.Kernel.RobinHood.RHEntry SeLe4n.VAddr Nat))
+  Squash (Array (Option (SeLe4n.Kernel.RobinHood.RHEntry SeLe4n.VAddr Nat)))
 
-instance : Repr EpochSpare := ⟨fun _ _ => "spare epoch cell"⟩
+instance : Repr EpochSpare := ⟨fun _ _ => "spare epoch cells"⟩
 
 /-- WS-ZA ZA5.4: the cell a page table's slot takes in the address space that
 holds it — the list cell of `VSpaceRoot.tables` and its slot record — kept by
@@ -289,12 +291,12 @@ structure VSpaceRoot where
       (`unmapPage`) erases both, so the table never holds more entries than
       the root has mappings. -/
   mappingEpochs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr Nat := {}
-  /-- WS-ZA ZA5.4: the cell the root's last unmap took out of `mappings`
-      (`MappingSpare`), which its next map writes over. -/
-  mappingSpare : MappingSpare := Squash.mk none
-  /-- WS-ZA ZA5.4: the cell the root's last unmap took out of `mappingEpochs`
-      (`EpochSpare`), which its next map's epoch writes over. -/
-  epochSpare : EpochSpare := Squash.mk none
+  /-- WS-ZA ZA5.4, ZA6.35: the cells the root's maps write their translations
+      over (`MappingSpare`). -/
+  mappingSpare : MappingSpare := Squash.mk #[]
+  /-- WS-ZA ZA5.4, ZA6.35: the cells the root's maps write their epochs over
+      (`EpochSpare`). -/
+  epochSpare : EpochSpare := Squash.mk #[]
   /-- WS-ZA ZA5.4: the slot cell a table removal has just taken out of
       `tables`, on its way back to the table (`TableSlotCell`). -/
   tableSlotSpare : TableSlotCell := Squash.mk []

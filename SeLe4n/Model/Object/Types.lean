@@ -1239,16 +1239,44 @@ end QueuePPrev
 first child, next sibling, previous sibling; a CNode word and a slot word each). -/
 def slotLinkWords : Nat := 8
 
+/-- WS-ZA ZA6.35: the target `src`, written over the record's own target `t` when
+both name an object or a reply (constructors of one field, the same cell size,
+so the compiler reuses `t`'s cell): a copy or mint then leaves its slot a target
+cell of its own, which the next capability written there, a carve's among
+them, writes over in turn (`CapTarget.objectOver`).  Any other target is
+`src` itself, shared.  Out of line, so `t` is the only cell it can write.
+Equal to `src` (`copyOver_eq`). -/
+@[noinline] def CapTarget.copyOver (t src : CapTarget) : CapTarget :=
+  match src with
+  | .object id =>
+    match t with
+    | .object _ => .object id
+    | .replyCap _ => .object id
+    | _ => src
+  | .replyCap rid =>
+    match t with
+    | .object _ => .replyCap rid
+    | .replyCap _ => .replyCap rid
+    | _ => src
+  | _ => src
+
+theorem CapTarget.copyOver_eq (t src : CapTarget) : t.copyOver src = src := by
+  unfold CapTarget.copyOver
+  split <;> (try split) <;> rfl
+
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, written over the
 record `r` (a slot's spare): out of line, so `r` is the only record the
-compiler can write it into, and its rights read back through `r` so that `r`
-stays live, since an update of every field would drop `r` and build a fresh
-record.  Equal to the capability of those fields (`overwrite_eq`). -/
+compiler can write it into, its fields matched apart and rebuilt with no join
+point between, and its rights read back through `r`'s own, so that `r` is the
+cell written; its target is written over `r`'s own (`CapTarget.copyOver`).
+Equal to the capability of those fields (`overwrite_eq`). -/
 @[noinline] def Capability.overwrite (r : Capability) (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
     (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) : Capability :=
-  { target, rights := if r.rights = rights then r.rights else rights, badgeWord, badged,
-    mapAsid, mapVaddr, mapEpoch, mapped, freeIndex }
+  match r with
+  | ⟨t, rr, _, _, _, _, _, _, _⟩ =>
+    ⟨t.copyOver target, if rr = rights then rr else rights, badgeWord, badged,
+      mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩
 
 /-- WS-ZA ZA5.4: the target naming object `id`, built fresh, out of line. -/
 @[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
@@ -1359,7 +1387,11 @@ theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : 
     (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) :
     r.overwrite target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped freeIndex =
       ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩ := by
-  unfold overwrite; split <;> simp_all
+  obtain ⟨t, rr, _, _, _, _, _, _, _⟩ := r
+  unfold overwrite
+  dsimp only
+  rw [CapTarget.copyOver_eq]
+  split <;> simp_all
 
 /-- WS-ZA ZA5.3 part 6: **the records a CNode's slots keep while empty** (seL4's
 `cte_t`, which a slot owns for the CNode's life).  Entry `i` is the capability

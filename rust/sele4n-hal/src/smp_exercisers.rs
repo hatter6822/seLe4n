@@ -6467,11 +6467,25 @@ fn heap_allocations_round_trip(trip: &RoundTrip, which: &str) -> Option<bool> {
         }
     }
     match outcome {
-        Dispatched::Returned(regs) if !trip.blocks => crate::kprintln!(
-            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
-            regs[0],
-            regs[1]
-        ),
+        Dispatched::Returned(regs) if !trip.blocks => {
+            crate::kprintln!(
+                "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
+                regs[0],
+                regs[1]
+            );
+            // A retype that succeeded names the object it carved, its kind and
+            // its size bits as the tag word gave them: the host-side gate holds
+            // the reading to that object's own cells.
+            if trip.syscall == UNTYPED_RETYPE
+                && regs[1] >> 9 < crate::svc_dispatch::ERROR_LABEL_BASE
+            {
+                crate::kprintln!(
+                    "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{}",
+                    carved_kind(trip.msg[0] & 0xff),
+                    trip.msg[0] >> 8
+                );
+            }
+        }
         Dispatched::Blocked if trip.blocks => crate::kprintln!(
             "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: blocked, the other thread restored"
         ),
@@ -6492,6 +6506,24 @@ fn heap_allocations_round_trip(trip: &RoundTrip, which: &str) -> Option<bool> {
     }
     print_reading(name, core, which, before, after, window_start());
     Some(true)
+}
+
+/// The name of a `KernelObjectType` tag (Lean's `KernelObjectType.ofNat?`).
+#[cfg(feature = "hw_target")]
+const fn carved_kind(tag: u64) -> &'static str {
+    match tag {
+        0 => "tcb",
+        1 => "endpoint",
+        2 => "notification",
+        3 => "cnode",
+        4 => "vspace-root",
+        5 => "untyped",
+        6 => "sched-context",
+        7 => "reply",
+        8 => "frame",
+        9 => "page-table",
+        _ => "unknown",
+    }
 }
 
 /// The HAL-only image links no Lean kernel, so there is no syscall to measure.
