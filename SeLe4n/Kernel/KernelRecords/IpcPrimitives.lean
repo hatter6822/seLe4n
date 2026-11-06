@@ -70,7 +70,8 @@ theorem storeObject_tcb {st st' : SystemState} {t : SeLe4n.ThreadId} {x y : TCB}
     (hInv : st.objects.invExt) (hOld : st.objects[t.toObjId]? = some (.tcb x))
     (h : storeObject t.toObjId (.tcb y) st = .ok ((), st')) (hS : TcbStaysParked x y) :
     RecordsStep st st' := by
-  refine ⟨fun k => ?_, ?_, storeObject_preserves_objects_invExt st st' _ _ hInv h, ?_⟩
+  refine ⟨fun k => ?_, ?_, storeObject_preserves_objects_invExt st st' _ _ hInv h, ?_,
+    by rw [storeObject_machine_eq st st' _ _ h]⟩
   · by_cases hk : k = t.toObjId
     · subst hk; rw [storeObject_objects_eq st st' _ _ hInv h, hOld]; rfl
     · rw [storeObject_objects_ne st st' _ k _ hk hInv h]
@@ -115,7 +116,7 @@ theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) {f : TCB → TCB}
     have hInv' := SystemState.updateTcb_preserves_objects_invExt st t f hInv
     rw [SystemState.updateTcb_eq_of_some hT] at hF hInv' ⊢
     have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
-    refine ⟨fun k => ?_, rfl, hInv', hF⟩
+    refine ⟨fun k => ?_, rfl, hInv', hF, rfl⟩
     show rootViewOf (st.objects.insert t.toObjId _)[k]? = _
     simp only [RHTable_getElem?_eq_get?] at hO ⊢
     by_cases hx : t.toObjId = k
@@ -283,7 +284,7 @@ namespace RecordsStep
 theorem mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) {g : TCB → TCB}
     (hInv : st.objects.invExt) (hS : ∀ x, st.getTcb? t = some x → TcbStaysParked x (g x)) :
     RecordsStep st (st.mapTcbInPlace t g) := by
-  refine ⟨fun k => ?_, rfl, SystemState.mapTcbInPlace_objects_invExt _ _ _ hInv, ?_⟩
+  refine ⟨fun k => ?_, rfl, SystemState.mapTcbInPlace_objects_invExt _ _ _ hInv, ?_, rfl⟩
   · rw [SystemState.objects_mapTcbInPlace]
     split
     · cases st.objects[k]? with
@@ -309,7 +310,7 @@ namespace RecordsFrame
 theorem mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) {g : TCB → TCB}
     (hInv : st.objects.invExt) (hf : ∀ x, (g x).recordView = x.recordView) :
     RecordsFrame st (st.mapTcbInPlace t g) := by
-  refine ⟨fun k => ?_, rfl, SystemState.mapTcbInPlace_objects_invExt _ _ _ hInv⟩
+  refine ⟨fun k => ?_, rfl, SystemState.mapTcbInPlace_objects_invExt _ _ _ hInv, rfl⟩
   rw [SystemState.objects_mapTcbInPlace]
   split
   · cases st.objects[k]? with

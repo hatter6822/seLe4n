@@ -113,6 +113,10 @@ theorem settleReturnedContext (st : SystemState) (c : CoreId) (scId : SeLe4n.Sch
         (SchedContextOps.settleReturnedContext_releaseOnlyWrite st c scId).1
       exact h)
     (SchedContextOps.settleReturnedContext_objects_invExt st c scId hInv)
+    (by
+      have h := congrArg (fun x : SystemState => x.machine.physicalAddressWidth)
+        (SchedContextOps.settleReturnedContext_releaseOnlyWrite st c scId).1
+      exact h)
 
 theorem descheduleAt (st : SystemState) (t : SeLe4n.ThreadId) (p : Option CoreId)
     (hInv : st.objects.invExt) : RecordsFrame st (_root_.SeLe4n.Kernel.descheduleAt st t p) := by
@@ -202,17 +206,19 @@ structure RecordsStepOff (t : SeLe4n.ThreadId) (st st' : SystemState) : Prop whe
   invExt : st'.objects.invExt
   others : ∀ u tcb', u.toObjId ≠ t.toObjId → st'.getTcb? u = some tcb' → tcb'.pendingFault.isSome →
     (∀ tcb, st.getTcb? u = some tcb → tcb.pendingFault.isSome → tcb.faultParked) → tcb'.faultParked
+  width : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth
 
 namespace RecordsStepOff
 
 theorem of_step {t : SeLe4n.ThreadId} {st st' : SystemState} (S : RecordsStep st st') :
     RecordsStepOff t st st' :=
-  ⟨S.rootViews, S.asid, S.invExt, fun u tcb' _ hT hF H => S.faults u tcb' hT hF H⟩
+  ⟨S.rootViews, S.asid, S.invExt, fun u tcb' _ hT hF H => S.faults u tcb' hT hF H, S.width⟩
 
 theorem trans {t : SeLe4n.ThreadId} {a b c : SystemState} (h₁ : RecordsStepOff t a b)
     (h₂ : RecordsStepOff t b c) : RecordsStepOff t a c :=
   ⟨fun k => (h₂.rootViews k).trans (h₁.rootViews k), h₂.asid.trans h₁.asid, h₂.invExt,
-    fun u tcb' hne hT hF H => h₂.others u tcb' hne hT hF (fun x hx hxF => h₁.others u x hne hx hxF H)⟩
+    fun u tcb' hne hT hF H => h₂.others u tcb' hne hT hF (fun x hx hxF => h₁.others u x hne hx hxF H),
+    h₂.width.trans h₁.width⟩
 
 /-- Closed by a state where the thread carries no fault record. -/
 theorem close {t : SeLe4n.ThreadId} {st st' : SystemState} (S : RecordsStepOff t st st')
@@ -221,13 +227,14 @@ theorem close {t : SeLe4n.ThreadId} {st st' : SystemState} (S : RecordsStepOff t
     by_cases hk : u.toObjId = t.toObjId
     · have hu : u = t := SeLe4n.ThreadId.toObjId_injective _ _ hk
       subst hu; rw [hT tcb' hU] at hF; cases hF
-    · exact S.others u tcb' hk hU hF H⟩
+    · exact S.others u tcb' hk hU hF H, S.width⟩
 
 /-- A store of thread `t`'s TCB over its TCB. -/
 theorem storeObject_self {st st' : SystemState} {t : SeLe4n.ThreadId} {x y : TCB}
     (hInv : st.objects.invExt) (hOld : st.objects[t.toObjId]? = some (.tcb x))
     (h : storeObject t.toObjId (.tcb y) st = .ok ((), st')) : RecordsStepOff t st st' := by
-  refine ⟨fun k => ?_, ?_, storeObject_preserves_objects_invExt st st' _ _ hInv h, ?_⟩
+  refine ⟨fun k => ?_, ?_, storeObject_preserves_objects_invExt st st' _ _ hInv h, ?_,
+    by rw [storeObject_machine_eq st st' _ _ h]⟩
   · by_cases hk : k = t.toObjId
     · subst hk; rw [storeObject_objects_eq st st' _ _ hInv h, hOld]; rfl
     · rw [storeObject_objects_ne st st' _ k _ hk hInv h]

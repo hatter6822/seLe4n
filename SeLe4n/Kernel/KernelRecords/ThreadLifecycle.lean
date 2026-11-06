@@ -60,6 +60,10 @@ theorem releaseRemoveThread (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.
         (Lifecycle.Suspend.releaseRemoveThread_releaseOnlyWrite st t).1
       exact h)
     (Lifecycle.Suspend.releaseRemoveThread_objects_invExt st t hInv)
+    (by
+      have h := congrArg (fun x : SystemState => x.machine.physicalAddressWidth)
+        (Lifecycle.Suspend.releaseRemoveThread_releaseOnlyWrite st t).1
+      exact h)
 
 theorem resumeContext (st : SystemState) (t : SeLe4n.ThreadId) (home : CoreId)
     (hInv : st.objects.invExt) : RecordsFrame st (Lifecycle.Suspend.resumeContext st t home) := by

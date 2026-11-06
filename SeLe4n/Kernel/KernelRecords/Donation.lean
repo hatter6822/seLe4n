@@ -43,10 +43,28 @@ theorem _root_.SeLe4n.Model.SystemState.releaseInsertOn_asidTable (st : SystemSt
   · rfl
   · dsimp only; split <;> rfl
 
+@[records_width_simp]
+theorem _root_.SeLe4n.Model.SystemState.releaseRemoveOn_machine (st : SystemState) (c : CoreId)
+    (s : SeLe4n.SchedContextId) : (st.releaseRemoveOn c s).machine = st.machine := by
+  unfold SystemState.releaseRemoveOn SystemState.releaseUnlinkOn
+  split
+  · dsimp only; split <;> rfl
+  · rfl
+
+@[records_width_simp]
+theorem _root_.SeLe4n.Model.SystemState.releaseInsertOn_machine (st : SystemState) (c : CoreId)
+    (s : SeLe4n.SchedContextId) (t : Nat) : (st.releaseInsertOn c s t).machine = st.machine := by
+  unfold SystemState.releaseInsertOn SystemState.releaseInsertFresh SystemState.releaseLinkIn
+  split
+  · rfl
+  · dsimp only; split <;> rfl
+
 /-- A key-change mark raises reschedule flags only. -/
 theorem markKeyChangeFrom (pre st : SystemState) (t : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) : RecordsFrame st (_root_.SeLe4n.Kernel.markKeyChangeFrom pre st t) :=
   of_objects_eq hInv (markKeyChangeFrom_objects pre st t) (markKeyChangeFrom_asidTable pre st t)
+    (markKeyChangeFrom_extract_frame (fun s => s.machine.physicalAddressWidth) pre st t
+      (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore]))
 
 /-- A reply re-linked by its id. -/
 theorem storeReplyAt {st st' : SystemState} {rid : SeLe4n.ReplyId} {r r' : Reply}
@@ -118,7 +136,7 @@ theorem returnDonatedSchedContext {st st' : SystemState} {serverTid : SeLe4n.Thr
   have F2 := F1.trans (storeDonationHeadPop F1.invExt hClear)
   have F3 := F2.trans (storeTcbBinding F2.invExt hL1 hS3)
   have F4 := F3.trans (storeTcbBinding F3.invExt hL2 hS4)
-  exact F4.congr (by rw [hEq]) (by rw [hEq])
+  exact F4.congr (by rw [hEq]) (by rw [hEq]) (by rw [hEq])
 
 theorem returnDonatedSchedContextResolved {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
     {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId} (hInv : st.objects.invExt)
@@ -152,6 +170,14 @@ theorem migrateSchedContextReplenishment (st : SystemState) (scId : SeLe4n.Sched
           rw [SystemState.releaseInsertOn_asidTable, SystemState.releaseRemoveOn_asidTable]
         · rfl)
     (migrateSchedContextReplenishment_preserves_objects_invExt st scId fromCore toCore hInv)
+    (by
+      unfold _root_.SeLe4n.Kernel.migrateSchedContextReplenishment
+      split
+      · rfl
+      · dsimp only; split
+        · show (((st.releaseRemoveOn fromCore scId).releaseInsertOn toCore scId _)).machine.physicalAddressWidth = _
+          rw [SystemState.releaseInsertOn_machine, SystemState.releaseRemoveOn_machine]
+        · rfl)
 
 theorem cleanupPreReceiveDonationMigrated {st st' : SystemState} {receiver : SeLe4n.ThreadId}
     (hInv : st.objects.invExt)
@@ -171,7 +197,8 @@ theorem propagatePipChainCrossCore (st : SystemState) (t : SeLe4n.ThreadId) (ec 
     RecordsFrame st (PriorityInheritance.propagatePipChainCrossCore st t ec fuel).1 := by
   refine ⟨fun k => ?_, asid_of_onlyObjectsScheduler
     (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer fuel st t ec),
-    PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st t ec fuel hInv⟩
+    PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st t ec fuel hInv,
+    width_of_onlyObjectsScheduler (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer fuel st t ec)⟩
   rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st t ec hInv k with
     e | ⟨pre, post, hPre, hPost, -⟩
   · rw [e]
@@ -226,7 +253,7 @@ theorem donateSchedContext {st st' : SystemState} {clientTid serverTid : SeLe4n.
     (by rw [lookupTcb_some_objects _ _ _ hL1]; rfl) (fun _ h => by cases h))
   have F4 := F3.trans (storeObject F3.invExt hS4
     (by rw [lookupTcb_some_objects _ _ _ hL2]; rfl) (fun _ h => by cases h))
-  exact F4.congr (by rw [hEq]) (by rw [hEq])
+  exact F4.congr (by rw [hEq]) (by rw [hEq]) (by rw [hEq])
 
 theorem applyCallDonation {st st' : SystemState} {callerVtid receiverVtid : SeLe4n.ValidThreadId}
     (hInv : st.objects.invExt)

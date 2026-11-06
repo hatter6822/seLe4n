@@ -72,13 +72,17 @@ theorem of_kept {st st' : SystemState}
     (hR : ∀ (k : SeLe4n.ObjId) (r : VSpaceRoot), st'.objects[k]? = some (.vspaceRoot r) ↔
       st.objects[k]? = some (.vspaceRoot r))
     (hA : st'.asidTable = st.asidTable) (hI : st'.objects.invExt)
-    (hK : tcbProjKept faultFields st' st) : RecordsStep st st' :=
-  ⟨rootViews_of_roots_iff hR, hA, hI, FaultsStayParked.of_kept hK⟩
+    (hK : tcbProjKept faultFields st' st)
+    (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
+      records_width) : RecordsStep st st' :=
+  ⟨rootViews_of_roots_iff hR, hA, hI, FaultsStayParked.of_kept hK, hW⟩
 
 /-- **A finalisation-shaped write keeping every thread's fault fields.** -/
 theorem of_finaliseKept {st st' : SystemState} (F : FinaliseFrameAny st st')
-    (hK : tcbProjKept faultFields st' st) : RecordsStep st st' :=
-  of_kept F.write.roots_iff F.asidTable F.invExt hK
+    (hK : tcbProjKept faultFields st' st)
+    (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
+      records_width) : RecordsStep st st' :=
+  of_kept F.write.roots_iff F.asidTable F.invExt hK hW
 
 /-- **The restore** retires the restored thread's fault record. -/
 theorem restoreToReadyStaging (st : SystemState) (t : SeLe4n.ThreadId)
@@ -124,10 +128,12 @@ view is a frame.** -/
 theorem RecordsFrame.of_kept {st st' : SystemState}
     (hR : ∀ k : SeLe4n.ObjId, rootViewOf st'.objects[k]? = rootViewOf st.objects[k]?)
     (hA : st'.asidTable = st.asidTable) (hI : st'.objects.invExt)
-    (hK : tcbProjKept TCB.recordView st' st) : RecordsFrame st st' :=
+    (hK : tcbProjKept TCB.recordView st' st)
+    (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
+      records_width) : RecordsFrame st st' :=
   ⟨fun k => recordViewOf_congr (by
       have := hK ⟨k.val⟩
-      rwa [getTcb?_eq_tcbAt, getTcb?_eq_tcbAt] at this) (hR k), hA, hI⟩
+      rwa [getTcb?_eq_tcbAt, getTcb?_eq_tcbAt] at this) (hR k), hA, hI, hW⟩
 
 -- ============================================================================
 -- §1  The cancellation's writes
@@ -163,6 +169,47 @@ theorem removeFromBlockingEndpoint_asidTable (st : SystemState) (t : SeLe4n.Thre
   · exact spliceOutMidQueueNode_asidTable st t
   · exact (SystemState.rewriteObject_asidTable _ _ _ _).trans (spliceOutMidQueueNode_asidTable st t)
 
+theorem removeFromBlockingEndpoint_width (st : SystemState) (t : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) :
+    (removeFromBlockingEndpoint st t e).machine.physicalAddressWidth =
+      st.machine.physicalAddressWidth := by
+  rcases removeFromBlockingEndpoint_cases st t e with hc | ⟨ep, hA, hE, hc⟩ <;> rw [hc]
+  · rw [spliceOutMidQueueNode_machine_eq]
+  · rw [SystemState.rewriteObject_machine, spliceOutMidQueueNode_machine_eq]
+
+/-- The finalisation writes a cancellation reuses keep the machine's width:
+each is a chain of the records frames' writes. -/
+theorem cutThreadReplyFrameOut_width (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
+    (SeLe4n.Kernel.cutThreadReplyFrameOut st t).machine.physicalAddressWidth =
+      st.machine.physicalAddressWidth := by
+  unfold SeLe4n.Kernel.cutThreadReplyFrameOut
+  cases t.replyObject with
+  | none => rfl
+  | some rid => exact (RecordsFrame.cutReplyFrameOutOrSelf st rid hInv).width
+
+theorem consumeReplyLink_width (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    (hInv : st.objects.invExt) :
+    (Lifecycle.Suspend.consumeReplyLink st c t).machine.physicalAddressWidth =
+      st.machine.physicalAddressWidth := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  split
+  · rfl
+  · rename_i rid _
+    exact (RecordsFrame.consumeCallerReply hInv (SystemState.consumeCallerReply_eq_link st c rid)).width
+
+theorem returnDonationToCancelledCaller_width (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    (hInv : st.objects.invExt) :
+    (Lifecycle.Suspend.returnDonationToCancelledCaller st c t).machine.physicalAddressWidth =
+      st.machine.physicalAddressWidth := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  split
+  · split
+    · rename_i hOk
+      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
+      exact (RecordsFrame.returnDonatedSchedContext hInv hPop).width
+    · rfl
+  · rfl
+
 namespace RecordsStep
 
 /-- The targeted dequeue writes queue links and an endpoint. -/
@@ -176,6 +223,7 @@ theorem removeFromBlockingEndpoint (st : SystemState) (t : SeLe4n.ThreadId) (e :
     (removeFromBlockingEndpoint_asidTable st t e)
     (removeFromBlockingEndpoint_preserves_objects_invExt st t e hInv)
     (tcbProjKept.removeFromBlockingEndpoint st t e hInv)
+    (removeFromBlockingEndpoint_width st t e)
 
 /-- **The IPC teardown keeps the records**: every arm restores the cancelled
 thread with its fault record retired, and its other writes keep every thread's
@@ -193,12 +241,15 @@ theorem cancelIpcBlocking (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
     have F0 := FinaliseFrameAny.returnDonationToCancelledCaller st t tcb hInv
     have S0 := of_finaliseKept F0
       (tcbProjKept.returnDonationToCancelledCaller st t tcb hInv fun _ _ _ => rfl)
+      (returnDonationToCancelledCaller_width st t tcb hInv)
     have F1 := FinaliseFrameAny.cutThreadReplyFrameOut _ tcb S0.invExt
-    have S1 := S0.trans (of_finaliseKept F1 (tcbProjKept.cutThreadReplyFrameOut _ tcb S0.invExt))
+    have S1 := S0.trans (of_finaliseKept F1 (tcbProjKept.cutThreadReplyFrameOut _ tcb S0.invExt)
+      (cutThreadReplyFrameOut_width _ tcb S0.invExt))
     have S2 := S1.trans (restoreToReadyCancelled _ t S1.invExt)
     have F3 := FinaliseFrameAny.consumeReplyLink _ t tcb S2.invExt
     have S3 := S2.trans (of_finaliseKept F3
-      (tcbProjKept.consumeReplyLink _ t tcb S2.invExt fun _ => rfl))
+      (tcbProjKept.consumeReplyLink _ t tcb S2.invExt fun _ => rfl)
+      (consumeReplyLink_width _ t tcb S2.invExt))
     exact S3.trans (unlinkReplyWaiterOpt _ t _ S3.invExt)
   | blockedOnNotification n =>
     have F := FinaliseFrame.notificationCancel st t tcb n hInv hB
@@ -206,7 +257,8 @@ theorem cancelIpcBlocking (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
         Lifecycle.Suspend.restoreToReadyCancelled (SeLe4n.Kernel.removeFromNotificationWaitQueue st t) t := by
       unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
     have hI1 := removeFromNotificationWaitQueue_preserves_objects_invExt st t hInv
-    refine ⟨(rootViews_of_roots_iff F.any.write.roots_iff), F.asidTable, F.invExt, ?_⟩
+    refine ⟨(rootViews_of_roots_iff F.any.write.roots_iff), F.asidTable, F.invExt, ?_,
+      by rw [F.rest]⟩
     rw [hEq]
     exact (FaultsStayParked.of_kept (tcbProjKept.removeFromNotificationWaitQueue st t hInv)).trans
       (restoreToReadyCancelled _ t hI1).faults

@@ -50,11 +50,15 @@ theorem markKeyChangeFor (st : SystemState) (t : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (hInv : st.objects.invExt) :
     RecordsFrame st (_root_.SeLe4n.Kernel.markKeyChangeFor st t k) :=
   of_objects_eq hInv (markKeyChangeFor_objects st t k) (markKeyChangeFor_extract_frame SystemState.asidTable st t k fun _ _ => rfl)
+    (markKeyChangeFor_extract_frame (fun x : SystemState => x.machine.physicalAddressWidth) st t k
+      fun _ _ => rfl)
 
 theorem markCandidacyGainFor (st : SystemState) (t : SeLe4n.ThreadId) (b : Bool)
     (hInv : st.objects.invExt) :
     RecordsFrame st (_root_.SeLe4n.Kernel.markCandidacyGainFor st t b) :=
   of_objects_eq hInv (markCandidacyGainFor_objects st t b) (markCandidacyGainFor_extract_frame SystemState.asidTable st t b fun _ _ => rfl)
+    (markCandidacyGainFor_extract_frame (fun x : SystemState => x.machine.physicalAddressWidth) st t b
+      fun _ _ => rfl)
 
 /-! ### Priorities -/
 
@@ -161,12 +165,20 @@ theorem releasePlace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
   of_agreeOffReleaseLinks (SystemState.releasePlace_agree st c s)
     (by have h := congrArg SystemState.asidTable (SystemState.releasePlace_releaseOnlyWrite st c s).1; exact h)
     (SystemState.releasePlace_objects_invExt st c s hInv)
+    (by
+      have h := congrArg (fun x : SystemState => x.machine.physicalAddressWidth)
+        (SystemState.releasePlace_releaseOnlyWrite st c s).1
+      exact h)
 
 theorem purgeReplenishment (st : SystemState) (s : SeLe4n.SchedContextId)
     (hInv : st.objects.invExt) : RecordsFrame st (SchedContextOps.purgeReplenishment st s) :=
   of_agreeOffReleaseLinks (SchedContextOps.purgeReplenishment_agree st s)
     (by have h := congrArg SystemState.asidTable (SchedContextOps.purgeReplenishment_releaseOnlyWrite st s).1; exact h)
     (SchedContextOps.purgeReplenishment_objects_invExt st s hInv)
+    (by
+      have h := congrArg (fun x : SystemState => x.machine.physicalAddressWidth)
+        (SchedContextOps.purgeReplenishment_releaseOnlyWrite st s).1
+      exact h)
 
 /-- `setConsumed` rewrites a context and a thread's two return registers in
 place. -/
@@ -570,7 +582,9 @@ theorem updatePipBoostOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadI
     ((updatePipBoostOnCore_replyViews_eq st c t hInv).trans P.replyViews.symm)
     ((asid_of_onlyObjectsScheduler
       (PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c t)).trans P.asid.symm)
-    (PriorityInheritance.updatePipBoostOnCore_preserves_objects_invExt st c t hInv))
+    (PriorityInheritance.updatePipBoostOnCore_preserves_objects_invExt st c t hInv)
+    ((width_of_onlyObjectsScheduler
+      (PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c t)).trans P.width.symm))
 
 /-- The chain revert: one boost per link. -/
 theorem revertPriorityInheritance (st : SystemState) (t : SeLe4n.ThreadId) (fuel : Nat)

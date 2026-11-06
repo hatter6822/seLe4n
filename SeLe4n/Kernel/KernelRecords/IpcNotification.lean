@@ -162,7 +162,7 @@ theorem endpointQueueRemoveDual {st st' : SystemState} {endpointId : SeLe4n.ObjI
 theorem of_ntfnLinksRewritten {st s : SystemState} (h : ntfnLinksRewritten st s) :
     RecordsFrame st s := by
   obtain ⟨hEq, hInv, hK⟩ := h
-  refine ⟨fun k => ?_, by rw [hEq], hInv⟩
+  refine ⟨fun k => ?_, by rw [hEq], hInv, by rw [hEq]⟩
   rcases hK k with e | ⟨t, t', ht, ht', np, nn, rfl⟩
   · rw [e]
   · rw [ht, ht']; rfl
@@ -300,7 +300,8 @@ theorem notificationSignalDeclassifiedOnCore {ctx : GenericLabelingContext}
     | exact refl hInv
     | (rename_i hRec
        have hEq := recordDeclassifiedHops_frame _ _ _ _ _ hRec
-       exact S.trans (of_frame (RecordsFrame.of_objects_eq S.invExt (by rw [hEq]) (by rw [hEq]))))
+       exact S.trans (of_frame (RecordsFrame.of_objects_eq S.invExt (by rw [hEq]) (by rw [hEq])
+         (by rw [hEq]))))
 
 /-- The wait, from a waiter parked on nothing. -/
 theorem notificationWaitOnCore {nid : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId} {c : CoreId}

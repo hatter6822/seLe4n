@@ -52,7 +52,7 @@ theorem erasure_links (o o' : KernelObject) (h : o.withoutLinks = o'.withoutLink
 /-- **Slot-link writes keep every record view.** -/
 theorem of_linkReach {st₀ st : SystemState} (hR : SystemState.linkReach st₀ st)
     (hInv : st₀.objects.invExt) : RecordsFrame st₀ st := by
-  refine ⟨fun k => ?_, by rw [hR.fields], hR.invExt hInv⟩
+  refine ⟨fun k => ?_, by rw [hR.fields], hR.invExt hInv, by rw [hR.fields]⟩
   rcases hR.agree hInv k with e | ⟨_, _, ha, hb, _⟩ | ⟨t, t', ha, hb, hw⟩
   · rw [e]
   · rw [ha, hb]; rfl

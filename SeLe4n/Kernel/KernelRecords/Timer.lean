@@ -195,6 +195,8 @@ theorem processOneReplenishmentOnCore (st : SystemState) (c : CoreId)
   refine RecordsFrame.andThen (b := refillWakeOnCore st c scId now) ?_ fun h =>
     of_objects_eq h (markRefillKeyChange_objects _ _ _)
       (markRefillKeyChange_extract_frame SystemState.asidTable _ _ _ fun _ _ => rfl)
+      (markRefillKeyChange_extract_frame (fun x : SystemState => x.machine.physicalAddressWidth)
+        _ _ _ fun _ _ => rfl)
   unfold refillWakeOnCore
   dsimp only
   split

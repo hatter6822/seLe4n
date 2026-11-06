@@ -161,18 +161,21 @@ theorem clearLedgers (st : SystemState) (hInv : st.objects.invExt) :
 theorem activateThreadOnCore (st : SystemState) (c : CoreId) (hInv : st.objects.invExt) :
     RecordsFrame st (activateThreadOnCore st c) := by
   refine of_agreeOffYield (activateThreadOnCore_objectsAgreeOffYield st c hInv) ?_
-    (activateThreadOnCore_preserves_objects_invExt st c hInv)
-  unfold _root_.SeLe4n.Kernel.activateThreadOnCore
-  split
-  · split
+    (activateThreadOnCore_preserves_objects_invExt st c hInv) ?_
+  all_goals
+    unfold _root_.SeLe4n.Kernel.activateThreadOnCore
+    split
     · split
+      · split
+        · rfl
+        · rename_i tid _ t _ k _
+          unfold completeCurrentYield completeYieldTo cancelYieldTo setConsumed
+          repeat' split
+          all_goals first
+            | records_width
+            | simp only [SystemState.updateTcb_asidTable, SystemState.updateSchedContext_asidTable]
       · rfl
-      · rename_i tid _ t _ k _
-        unfold completeCurrentYield completeYieldTo cancelYieldTo setConsumed
-        repeat' split
-        all_goals simp only [SystemState.updateTcb_asidTable, SystemState.updateSchedContext_asidTable]
     · rfl
-  · rfl
 
 theorem activateThreadAt (st : SystemState) (coreId : UInt64) (hInv : st.objects.invExt) :
     RecordsFrame st (activateThreadAt st coreId) := by

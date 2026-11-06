@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.Fault
 import SeLe4n.Kernel.Architecture.PageTeardownClears
+import SeLe4n.Kernel.KernelRecords.WidthSimp
 
 /-!
 # The records every kernel entry carries, and the frame that keeps them
@@ -22,10 +23,15 @@ objects they relate, and each reads a small view of the store:
   is fault-blocked or `.Inactive`) read every TCB's IPC state, thread state and
   whether it carries a fault;
 * the address-space records (`teardownWellFormed`: the object and ASID tables
-  well formed and the VSpace bundle) read the ASID table and the VSpace roots.
+  well formed and the VSpace bundle) read the ASID table and the VSpace roots;
+* the physical-address width the machine reports stays within the 52-bit bound
+  the VSpace bundle's address check assumes
+  (`SystemState.physicalAddressWidthWithinBound`), so a map checked against the
+  machine's own width keeps the bundle.
 
-`SystemState.kernelRecordsSound` is the three together.  A step that keeps every
-slot's record view (`recordViewOf`) and the ASID table keeps it
+`SystemState.kernelRecordsSound` is the four together.  A step that keeps every
+slot's record view (`recordViewOf`), the ASID table and the machine's
+physical-address width keeps it
 (`RecordsFrame.preserves`), whatever else it writes: a CNode, an endpoint, a
 notification, a scheduling context, a register file, a run-queue link, the
 scheduler record.  The steps that write a view — the IPC arms, the cancellations,
@@ -163,9 +169,29 @@ theorem teardownWellFormed_of_rootViews {st st' : SystemState} (hInv : st'.objec
     obtain ⟨x, hx, -, hm, he⟩ := B h
     rw [← hm, ← he]; exact c8 o x hx
 
+/-- The machine's physical-address width is within the 52-bit bound the VSpace
+bundle's address check assumes (`Architecture.physicalAddressBound`).  The started boot
+establishes it (the checked boot refuses a wider configuration). -/
+def _root_.SeLe4n.Model.SystemState.physicalAddressWidthWithinBound (st : SystemState) : Prop :=
+  st.machine.physicalAddressWidth ≤ 52
+
 /-- **The records every kernel entry carries.** -/
 def _root_.SeLe4n.Model.SystemState.kernelRecordsSound (st : SystemState) : Prop :=
-  teardownWellFormed st ∧ st.replyWaitersConsistent ∧ st.faultRecordParked
+  teardownWellFormed st ∧ st.replyWaitersConsistent ∧ st.faultRecordParked ∧
+    st.physicalAddressWidthWithinBound
+
+/-- An address below the machine's width is below the bundle's bound. -/
+theorem _root_.SeLe4n.Model.SystemState.physicalAddressWidthWithinBound.lt_bound
+    {st : SystemState} (h : st.physicalAddressWidthWithinBound) {n : Nat}
+    (hn : n < 2 ^ st.machine.physicalAddressWidth) : n < Architecture.physicalAddressBound :=
+  by unfold Architecture.physicalAddressBound; exact Nat.lt_of_lt_of_le hn (Nat.pow_le_pow_right (by decide) h)
+
+/-- A step that keeps the machine's width keeps the bound. -/
+theorem _root_.SeLe4n.Model.SystemState.physicalAddressWidthWithinBound.of_eq
+    {st st' : SystemState}
+    (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth)
+    (h : st.physicalAddressWidthWithinBound) : st'.physicalAddressWidthWithinBound := by
+  unfold SystemState.physicalAddressWidthWithinBound; rw [hW]; exact h
 
 namespace KernelRecords
 
@@ -222,37 +248,63 @@ theorem objReplyView_eq_of_view {a b : Option KernelObject}
 end KernelRecords
 
 
+theorem _root_.SeLe4n.MachineState.modifyRegsOnCore_physicalAddressWidth (ms : MachineState)
+    (c : Concurrency.CoreId) (f : RegisterFile → RegisterFile) :
+    (ms.modifyRegsOnCore c f).physicalAddressWidth = ms.physicalAddressWidth := rfl
+
+theorem _root_.SeLe4n.MachineState.setRegsOnCore_physicalAddressWidth (ms : MachineState)
+    (c : Concurrency.CoreId) (r : RegisterFile) :
+    (ms.setRegsOnCore c r).physicalAddressWidth = ms.physicalAddressWidth := rfl
+
+/-- Closes a goal that a step keeps the machine's physical-address width: no
+kernel write sets it, so it is definitional through a structure update and
+through the object writes' machine lemmas. -/
+macro "records_width" : tactic => `(tactic| first
+  | rfl
+  | assumption
+  | (simp only [records_width_simp, SystemState.updateTcb_machine,
+      SystemState.updateSchedContext_machine, SystemState.rewriteObject_machine,
+      MachineState.modifyRegsOnCore_physicalAddressWidth,
+      MachineState.setRegsOnCore_physicalAddressWidth]; done))
+
 -- ============================================================================
 -- §2  The frame
 -- ============================================================================
 
-/-- **A step that keeps the records' reads**: every slot's record view and the
-ASID table, with the store's invariant. -/
+/-- **A step that keeps the records' reads**: every slot's record view, the
+ASID table and the machine's physical-address width, with the store's
+invariant. -/
 structure RecordsFrame (st st' : SystemState) : Prop where
   views : ∀ k : SeLe4n.ObjId, recordViewOf st'.objects[k]? = recordViewOf st.objects[k]?
   asid : st'.asidTable = st.asidTable
   invExt : st'.objects.invExt
+  width : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth
 
 namespace RecordsFrame
 
 theorem refl {st : SystemState} (hInv : st.objects.invExt) : RecordsFrame st st :=
-  ⟨fun _ => rfl, rfl, hInv⟩
+  ⟨fun _ => rfl, rfl, hInv, rfl⟩
 
 theorem trans {a b c : SystemState} (h₁ : RecordsFrame a b) (h₂ : RecordsFrame b c) :
     RecordsFrame a c :=
-  ⟨fun k => (h₂.views k).trans (h₁.views k), h₂.asid.trans h₁.asid, h₂.invExt⟩
+  ⟨fun k => (h₂.views k).trans (h₁.views k), h₂.asid.trans h₁.asid, h₂.invExt,
+    h₂.width.trans h₁.width⟩
 
 theorem of_objects_eq {st st' : SystemState} (hInv : st.objects.invExt)
-    (hO : st'.objects = st.objects) (hA : st'.asidTable = st.asidTable) : RecordsFrame st st' :=
-  ⟨fun k => by rw [hO], hA, hO ▸ hInv⟩
+    (hO : st'.objects = st.objects) (hA : st'.asidTable = st.asidTable)
+    (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
+      records_width) : RecordsFrame st st' :=
+  ⟨fun k => by rw [hO], hA, hO ▸ hInv, hW⟩
 
 theorem of_eq {st st' : SystemState} (hInv : st.objects.invExt) (h : st' = st) :
     RecordsFrame st st' := by subst h; exact refl hInv
 
 /-- A state with another's objects and ASID table is in the same frame. -/
 theorem congr {st s s' : SystemState} (h : RecordsFrame st s) (hO : s'.objects = s.objects)
-    (hA : s'.asidTable = s.asidTable) : RecordsFrame st s' :=
-  ⟨fun k => by rw [hO]; exact h.views k, hA.trans h.asid, hO ▸ h.invExt⟩
+    (hA : s'.asidTable = s.asidTable)
+    (hW : s'.machine.physicalAddressWidth = s.machine.physicalAddressWidth := by
+      records_width) : RecordsFrame st s' :=
+  ⟨fun k => by rw [hO]; exact h.views k, hA.trans h.asid, hO ▸ h.invExt, hW.trans h.width⟩
 
 /-- The record views of every thread are the frame's. -/
 theorem getTcb?_view {st st' : SystemState} (F : RecordsFrame st st') {t : SeLe4n.ThreadId}
@@ -289,7 +341,7 @@ theorem preserves {st st' : SystemState} (F : RecordsFrame st st')
     (h : st.kernelRecordsSound) : st'.kernelRecordsSound :=
   ⟨teardownWellFormed_of_rootViews F.invExt F.asid F.rootViews h.1,
    SystemState.replyWaitersConsistent.of_views F.replyViews h.2.1,
-   F.faultRecordParked h.2.2⟩
+   F.faultRecordParked h.2.2.1, h.2.2.2.of_eq F.width⟩
 
 end RecordsFrame
 
@@ -327,7 +379,7 @@ root (the ASID table is untouched). -/
 theorem insert {st : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (hV : recordViewOf (some o) = recordViewOf st.objects[k]?) :
     RecordsFrame st { st with objects := st.objects.insert k o } := by
-  refine ⟨fun x => ?_, rfl, RHTable_insert_preserves_invExt _ _ _ hInv⟩
+  refine ⟨fun x => ?_, rfl, RHTable_insert_preserves_invExt _ _ _ hInv, rfl⟩
   show recordViewOf (st.objects.insert k o)[x]? = _
   simp only [RHTable_getElem?_eq_get?] at hV ⊢
   by_cases hx : k = x
@@ -339,7 +391,8 @@ theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st'))
     (hV : recordViewOf (some o) = recordViewOf st.objects[k]?)
     (hNR : ∀ r, o ≠ .vspaceRoot r) : RecordsFrame st st' := by
-  refine ⟨fun x => ?_, ?_, storeObject_preserves_objects_invExt st st' k o hInv h⟩
+  refine ⟨fun x => ?_, ?_, storeObject_preserves_objects_invExt st st' k o hInv h,
+    by rw [storeObject_machine_eq st st' k o h]⟩
   · by_cases hx : x = k
     · subst hx; rw [storeObject_objects_eq st st' x o hInv h]; exact hV
     · rw [storeObject_objects_ne st st' k x o hx hInv h]
@@ -433,17 +486,23 @@ theorem erasure_release (o o' : KernelObject) (h : o.withoutRelease = o'.without
     first | rfl | (subst h; rfl)
 
 theorem of_agreeOffTaint {st st' : SystemState} (h : st.objectsAgreeOffTaint st')
-    (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt) : RecordsFrame st st' :=
-  ⟨views_of_erasure erasure_taint h, hA, hInv⟩
+    (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt)
+    (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
+      records_width) : RecordsFrame st st' :=
+  ⟨views_of_erasure erasure_taint h, hA, hInv, hW⟩
 
 theorem of_agreeOffYield {st st' : SystemState} (h : SystemState.objectsAgreeOffYield st' st)
-    (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt) : RecordsFrame st st' :=
-  ⟨views_of_erasure erasure_yield h, hA, hInv⟩
+    (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt)
+    (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
+      records_width) : RecordsFrame st st' :=
+  ⟨views_of_erasure erasure_yield h, hA, hInv, hW⟩
 
 theorem of_agreeOffReleaseLinks {st st' : SystemState}
     (h : SystemState.objectsAgreeOffReleaseLinks st' st)
-    (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt) : RecordsFrame st st' :=
-  ⟨views_of_erasure erasure_release h, hA, hInv⟩
+    (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt)
+    (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
+      records_width) : RecordsFrame st st' :=
+  ⟨views_of_erasure erasure_release h, hA, hInv, hW⟩
 
 /-- Two slots agreeing off the run links, with the same reply view, have the same
 record view: the run links clear the reply links, so the reply view is read on
@@ -469,8 +528,10 @@ theorem view_of_runLinks {a b : Option KernelObject}
 
 theorem of_agreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st)
     (hR : st'.replyViews = st.replyViews)
-    (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt) : RecordsFrame st st' := by
-  refine ⟨fun k => view_of_runLinks (h k) ?_, hA, hInv⟩
+    (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt)
+    (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
+      records_width) : RecordsFrame st st' := by
+  refine ⟨fun k => view_of_runLinks (h k) ?_, hA, hInv, hW⟩
   have := congrFun hR k
   unfold SystemState.replyViews SystemState.getObject? at this
   simpa only [RHTable_getElem?_eq_get?] using this
@@ -565,19 +626,20 @@ structure RecordsStep (st st' : SystemState) : Prop where
   asid : st'.asidTable = st.asidTable
   invExt : st'.objects.invExt
   faults : FaultsStayParked st st'
+  width : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth
 
 namespace RecordsStep
 
 theorem refl {st : SystemState} (hInv : st.objects.invExt) : RecordsStep st st :=
-  ⟨fun _ => rfl, rfl, hInv, FaultsStayParked.refl st⟩
+  ⟨fun _ => rfl, rfl, hInv, FaultsStayParked.refl st, rfl⟩
 
 theorem trans {a b c : SystemState} (h₁ : RecordsStep a b) (h₂ : RecordsStep b c) :
     RecordsStep a c :=
   ⟨fun k => (h₂.rootViews k).trans (h₁.rootViews k), h₂.asid.trans h₁.asid, h₂.invExt,
-    h₁.faults.trans h₂.faults⟩
+    h₁.faults.trans h₂.faults, h₂.width.trans h₁.width⟩
 
 theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : RecordsStep st st' :=
-  ⟨F.rootViews, F.asid, F.invExt, FaultsStayParked.of_frame F⟩
+  ⟨F.rootViews, F.asid, F.invExt, FaultsStayParked.of_frame F, F.width⟩
 
 /-- A kind-preserving write keeps every root's address-space view. -/
 theorem rootViews_of_kindPreservingWrite {st st' : SystemState} (h : kindPreservingWrite st st') :
@@ -598,7 +660,7 @@ theorem preserves {st st' : SystemState} (S : RecordsStep st st')
     (hRW : st.replyWaitersConsistent → st'.replyWaitersConsistent)
     (h : st.kernelRecordsSound) : st'.kernelRecordsSound :=
   ⟨teardownWellFormed_of_rootViews S.invExt S.asid S.rootViews h.1, hRW h.2.1,
-   S.faults.preserves h.2.2⟩
+   S.faults.preserves h.2.2.1, h.2.2.2.of_eq S.width⟩
 
 end RecordsStep
 

@@ -34,12 +34,18 @@ theorem asid_of_onlyObjectsScheduler {st st' : SystemState}
     (h : SystemState.onlyObjectsSchedulerDiffer st' st) : st'.asidTable = st.asidTable := by
   rw [h]
 
+theorem width_of_onlyObjectsScheduler {st st' : SystemState}
+    (h : SystemState.onlyObjectsSchedulerDiffer st' st) :
+    st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
+  rw [h]
+
 /-- A step that writes run-queue links (and the scheduler) and keeps the reply
 views. -/
 theorem of_runLinkStep {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st)
     (hR : st'.replyViews = st.replyViews) (hD : SystemState.onlyObjectsSchedulerDiffer st' st)
     (hInv : st'.objects.invExt) : RecordsFrame st st' :=
   of_agreeOffRunLinks h hR (asid_of_onlyObjectsScheduler hD) hInv
+    (width_of_onlyObjectsScheduler hD)
 
 theorem runEnqueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (hInv : st.objects.invExt) :
@@ -60,9 +66,11 @@ theorem runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
 theorem withScheduler (st : SystemState) (s : SchedulerState) (hInv : st.objects.invExt) :
     RecordsFrame st { st with scheduler := s } := of_objects_eq hInv rfl rfl
 
-/-- A write of the machine alone. -/
-theorem withMachine (st : SystemState) (m : MachineState) (hInv : st.objects.invExt) :
-    RecordsFrame st { st with machine := m } := of_objects_eq hInv rfl rfl
+/-- A write of the machine alone that keeps its physical-address width. -/
+theorem withMachine (st : SystemState) (m : MachineState) (hInv : st.objects.invExt)
+    (hW : m.physicalAddressWidth = st.machine.physicalAddressWidth := by
+      records_width) :
+    RecordsFrame st { st with machine := m } := of_objects_eq hInv rfl rfl hW
 
 theorem preemptCurrentOnCore (st : SystemState) (c : CoreId) (incoming : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) : RecordsFrame st (preemptCurrentOnCore st c incoming) := by
