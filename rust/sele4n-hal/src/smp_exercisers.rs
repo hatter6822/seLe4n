@@ -4446,7 +4446,14 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
     // signal that wakes the notification's next waiter: its first hop the
     // caller's downgrade into the notification (one record), its second the
     // notification's ordinary flow into the waiter.
-    partner_step("declassified-wait-pending", WAIT, FRAME_CAP, 0, [0, 0], false),
+    partner_step(
+        "declassified-wait-pending",
+        WAIT,
+        FRAME_CAP,
+        0,
+        [0, 0],
+        false,
+    ),
     partner_step("declassified-wait-blocks", WAIT, FRAME_CAP, 0, [0, 0], true),
     partner_step(
         "declassified-signal-wakes",

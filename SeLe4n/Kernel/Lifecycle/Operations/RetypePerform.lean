@@ -311,19 +311,15 @@ def untypedRetypePerformWords (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     | _ => st
   | none => st
 
-/-- `untypedRetypePerformAt` as compiled: the slots handed on as words to
-`untypedRetypePerformWords`, out of line, where the destination CNode's write is
-specialised to its function (no closure is built for it). -/
-@[inline] def untypedRetypePerformImpl (src dst : CSpaceAddr) (childId : SeLe4n.ObjId)
-    (req : CarveRequest) (st : SystemState) : SystemState :=
-  untypedRetypePerformWords src.cnode src.slot dst.cnode dst.slot childId req st
-
-@[csimp] theorem untypedRetypePerformAt_eq_impl :
-    @untypedRetypePerformAt = @untypedRetypePerformImpl := by
-  funext src dst childId req st
+/-- `untypedRetypePerformAt` is its words form, with the slots handed on as
+words. -/
+theorem untypedRetypePerformAt_eq_words (src dst : CSpaceAddr) (childId : SeLe4n.ObjId)
+    (req : CarveRequest) (st : SystemState) :
+    untypedRetypePerformAt src dst childId req st =
+      untypedRetypePerformWords src.cnode src.slot dst.cnode dst.slot childId req st := by
   obtain ⟨sc, ss⟩ := src
   obtain ⟨dc, ds⟩ := dst
-  unfold untypedRetypePerformAt untypedRetypePerformImpl untypedRetypePerformWords
+  unfold untypedRetypePerformAt untypedRetypePerformWords
   dsimp only
   split
   · next utCap _ =>
@@ -604,8 +600,7 @@ theorem untypedRetypePerformCode_eq (src dst : CSpaceAddr) (childId : SeLe4n.Obj
     untypedRetypePerformCode src.cnode src.slot dst.cnode dst.slot childId req.kindWord
         req.sizeWord (req.domainWord dom0) (req.coreWord core0) (req.asidWord asid0) st =
       untypedRetypePerformAt src dst childId req st := by
-  rw [untypedRetypePerformCode_eq_words, CarveRequest.ofWords_words, untypedRetypePerformAt_eq_impl]
-  rfl
+  rw [untypedRetypePerformCode_eq_words, CarveRequest.ofWords_words, untypedRetypePerformAt_eq_words]
 
 /-- **`untypedRetypeAdmittedAt` read off the request's words.** -/
 @[inline] def untypedRetypeAdmittedCode (st : SystemState) (src dst : CSpaceAddr)

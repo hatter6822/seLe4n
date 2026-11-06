@@ -239,8 +239,8 @@ for driver in drivers:
         # shape changes its count, and a kind the exerciser carves that has no
         # count fails.
         carve_cells = {
-            "endpoint/0": 11, "notification/0": 11, "reply/0": 15, "tcb/0": 26,
-            "sched-context/7": 15, "cnode/2": 30, "frame/0": 11, "page-table/0": 13,
+            "endpoint/0": 11, "notification/0": 11, "reply/0": 15, "tcb/0": 24,
+            "sched-context/7": 13, "cnode/2": 28, "frame/0": 11, "page-table/0": 13,
         }
         # The scenario set is pinned: a round trip renamed or dropped from
         # the exerciser (smp_exercisers.rs) must change this set too, so the

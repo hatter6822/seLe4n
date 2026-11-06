@@ -225,6 +225,9 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.declassifyPerform",
     "SeLe4n.Kernel.declassifyGeneralR",
     "SeLe4n.Kernel.declassifySignalStoredPerform",
+    # WS-ZA ZA6.35: the woken signal's admitted writes in place, proven the
+    # specification's arm (`auditedArmSpec_declassifySignal_woken`).
+    "SeLe4n.Kernel.declassifySignalWokenPerform",
     "SeLe4n.Kernel.declassifySignalGeneralR",
     "SeLe4n.Kernel.signalResolvedArmThenTaintR",
     "SeLe4n.Kernel.waitOperandArmThenTaintR",
@@ -303,6 +306,8 @@ TAINT_WORD_CONSTRUCTIONS = {
         ("builds", "the object a carve request builds, with no provenance"),
     "SeLe4n.Kernel.CarveRequest.objectImpl":
         ("builds", "the compiled form of `CarveRequest.object`"),
+    "SeLe4n.Kernel.CarveRequest.objectW":
+        ("builds", "`CarveRequest.object` read off the request's words"),
     "SeLe4n.Kernel.createIdleThread": ("builds", "the boot idle thread"),
     "SeLe4n.Platform.RPi5.rpi5InitialThread": ("builds", "the RPi5 boot thread"),
     "private@SeLe4n.Platform.QemuVirt.notificationEntry":
