@@ -118,7 +118,7 @@ allocation), and the HAL hands its in-flight context over as a
 | Tier 3 anchor lines touching register terms | 78 (`contextMatchesCurrent` 18, `saveOutgoingContext` 13, `registerContext` 11, `writeReturnFrameToTcb` 9, `FaultRegisterWindow`/`spill` 7, `writeFaultRegistersToTcb` 6, `writeFfiRegistersToTcb` 6, …; none on `writeReg`, `readReg`, `RegName`) | |
 
 Stores: `TCB.registerContext : RegisterFile := default`
-(`Model/Object/Types.lean:1007` then, `:1551` at `v0.36.205`, the only TCB register field); `MachineState.coreRegs
+(`Model/Object/Types.lean:1007` then, `:1597` at `v0.36.205`, the only TCB register field); `MachineState.coreRegs
 : Vector RegisterFile numCores` (`Machine.lean:836` then, `:924` at `v0.36.205`) with `regsOnCore` /
 `setRegsOnCore`; `FrozenSystemState` shares `MachineState` and `TCB`;
 `ObservableState.machineRegs : Option RegisterFile` (`InformationFlow/Projection.lean:82` then, `:84` at `v0.36.205`);

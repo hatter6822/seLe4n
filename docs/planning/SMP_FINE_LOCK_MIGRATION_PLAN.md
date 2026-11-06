@@ -446,7 +446,7 @@ compiled kernel never builds; WS-LS LS3.4 re-points this track's naming.
 `stateLevelLock` is a `LockKey` (`LockSetTransitions.lean:418`).  The
 `scThreadIndex` table is retired (no code reads it); the derivation tree's
 edges are ghost and its links live in the slots (WS-ZA ZA5.3,
-`CapDerivationTree`, `Model/Object/Structures.lean:2662`), so the CDT is no
+`CapDerivationTree`, `Model/Object/Structures.lean:2619`), so the CDT is no
 longer a whole-structure `List` in the compiled state.  An object update at a
 resident key is in its slot (`RHTable.modify`, `RobinHood/Core.lean:1129`,
 WS-ZA ZA1.6); `RHTable.insert` (`:999`) still tests the load factor first.
