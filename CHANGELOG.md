@@ -36,22 +36,35 @@ signal, and the refused-receiver read.
     checks (`untypedRetypePerformCode_eq`, `carveRequestWordsK_eq`).
   - A tcb, scheduling-context or CNode carve goes from 2 cells over its
     object to 0.
-- **A capability with a fieldless target is stored shared**
-  (`CNode.insertCellShared`, `CNode.insertCellSharedOf`, `SpareCells.keepCell`).
-  - An audit-trail or IRQ-control capability is stored as it is, and the
-    slot's own record stays in the spares.
-  - Before this, its scalar target took the place of the record's target
-    cell, and the next carve into that slot built one.
+- **Every capability target is a cell: the audit-trail and interrupt-control
+  targets carry a word** (a model type change; `CapTarget.auditTrail code`,
+  `CapTarget.irqControl code`, the word `CapTarget.authorityCode`).
+  - The two were the only targets with no field, so the compiled kernel held
+    them as scalars and a record holding one owned no target cell.  Written
+    over a slot's record, such a target dropped that record's target cell, and
+    the next carve into the slot built one.  Copied or minted, it built the
+    capability and its `some` (`irq-control-copy`, `irq-control-mint` 2/2,
+    found in review).
+  - Each now carries one word, which no check reads: the boot writes
+    `CapTarget.authorityCode` and a copy or mint carries it over.  The record
+    owns its target cell, so a copy, a mint with the source's rights, with
+    other rights or with a badge writes the slot's spare record and its target
+    cell in place through the one-field family (`CapTarget.auditTrailOver`,
+    `CapTarget.irqControlOver`, and an arm for each in `objectOver`,
+    `replyCapOver`, `schedControlOver`, `irqHandlerOver`, `copyOver`,
+    `isOneField`), and boot unshares them (`unshareTarget`).
+  - The model's rights check on interrupt control stays (`irqControlGet`
+    needs `.write`).  Theorems that named the bare target now name it with its
+    word: `extractAuditAuthority_eq_ok_iff`, `mintDerivedCap_no_audit_forgery`
+    and the `.auditRead`, `.auditDrain` and `.irqControlGet` obligations of
+    `syscallDelegates`, and the audit-arm theorems in `API.lean` and
+    `RefusalCarryingDeclassification.lean`.
+  - Retired: the shared storage of a fieldless capability
+    (`CNode.insertCellShared`, `CNode.insertCellSharedOf`,
+    `CapTarget.isFieldless`, `SpareCells.keepCell`).  A copy and a mint write
+    their fields over the slot's record as before (`CNode.insertFields`).
   - `CapTarget.objectOver` also reuses the cell of a scheduling-control or
     interrupt-handler target.
-  - A copy or mint of one that leaves it unchanged stores the cell read from
-    the source slot, shared with it, into a destination that keeps a record
-    (`CNode.insertDerivedFields`, `CNode.insertCellOf`, `derivesUnchanged`;
-    `insertDerivedFields_eq`, used by the copy's and the mint's `@[csimp]`).
-    Before this the copy and the mint built the capability and its `some`
-    (`irq-control-copy`, `irq-control-mint` 2/2, now 0/0; found in review).
-    The derived-fields insert is out of line, so the caller's CNode object
-    keeps its cell.
 - **The declassified signal that wakes a waiter runs in place.**
   - Admitted when the waiter is woken in place (`signalWakesInPlace`) and
     each hop is ordinary or a permitted downgrade, with room for the records
