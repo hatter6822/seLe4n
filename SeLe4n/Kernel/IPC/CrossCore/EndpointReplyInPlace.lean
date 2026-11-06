@@ -206,7 +206,7 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
     endpointReplyOnCore replier c msg core st =
         (storeReplyRendezvous st c server rid msg,
          .ok (wakeThread (st.updateTcb c (callReceiverTcb msg)) c core).2) ∧
-      replyFrameHeadHolder? (storeReplyRendezvous st c server rid msg) rid = none := by
+      replyFrameHeadContext? (storeReplyRendezvous st c server rid msg) rid = none := by
   simp only [replyWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
   obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG
   obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
@@ -220,7 +220,6 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
   obtain ⟨hEq, hR5⟩ := replyOnCore_eq_store st replier c server ct ep rid rp msg core hSz hT hIpc
     hRO hCRes hLC hFC hLR hFR hRo (Or.inl ⟨hNext, hPrev⟩)
   refine ⟨hEq, ?_⟩
-  apply replyFrameHeadHolder?_of_no_head
   unfold replyFrameHeadContext?
   rw [hR5]
   simp only [Reply.consumed, hNext]
@@ -259,7 +258,8 @@ theorem replyDispatch_inPlace (st : SystemState) (replier c server : SeLe4n.Thre
   rw [hEq]
   simp only [hRec, hsv, hAns, hcv]
   unfold applyReplyDonationOnCore
-  rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, hHead]
+  rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, replyFrameHeadHolder?_of_no_head _ _ hHead]
+  simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
   exact ⟨_, rfl⟩
 
 /-- **The checked reply transfer, in place**: under the flow gate and

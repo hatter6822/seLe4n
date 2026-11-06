@@ -486,4 +486,21 @@ theorem finaliseReplyUnheldPop_runQueueStage (st : SystemState) (r : Reply) (c :
     · exact .refl _
   · exact .refl _
 
+/-- **The pop at an unheld head is a run-queue stage** (WS-ZA ZA6.34): the
+unheld pop a frame stage off the context, closed by the settle on a context
+whose refills the pop kept. -/
+theorem popUnheldReplyHead_runQueueStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} {home : Concurrency.CoreId}
+    (h : popUnheldReplyHead st rid target home = .ok st') : RunQueueStage st st' := by
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨scId, _, st1, -, -, hOk, rfl⟩
+  · exact .refl _
+  · refine SchedContextOps.settleReturnedContext_runQueueStage
+      (returnUnheldSchedContext_runQueueFrameStage hOk) ?_
+    intro S hS hInv hSnd _ a ha
+    obtain ⟨sc, _, _, hSc, -, -, -, -, -, hSc', -⟩ := returnUnheldSchedContext_objects hInv hOk
+    rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp ha] at hSc'
+    cases hSc'
+    exact schedContextWellFormed_of_refillsView rfl
+      (hSnd.1 _ sc hS ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc))
+
 end SeLe4n.Kernel

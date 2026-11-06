@@ -3,6 +3,7 @@ Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.Operations.Endpoint
+import SeLe4n.Kernel.SchedContext.ReturnSettle
 
 /-!
 # seL4-MCS's `reply_pop` on a context no thread holds
@@ -281,5 +282,213 @@ theorem returnUnheldSchedContextResolved_ok_of_commits {st : SystemState}
         exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr (keep2 _ _ (keep1 _ _ hOwO))
       rw [hOw2]
       exact ⟨_, rfl⟩
+
+/-- **seL4-MCS's `reply_pop` at a reply heading a context no thread holds**,
+keyed on the reply `rid` and the caller `target` it answers (WS-ZA ZA6.34).  A
+server's finalisation unbinds the context it held and returns it to no one, so
+the reply its lender is blocked on keeps heading that context; answering or
+removing that reply pops the head (`sc->scReply = prev`) and, the caller
+holding no context, donates it to the caller (`schedContext_donate`), whose
+replenishments the settle places on `home`.  The identity where the reply heads
+no context; the pop's own refusal otherwise (it refuses a context bound to a
+thread, so this arm is the unheld one).  The recipient is the answered caller,
+as in `reply_pop`. -/
+def popUnheldReplyHead (st : SystemState) (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (home : Concurrency.CoreId) : Except KernelError SystemState :=
+  match replyFrameHeadContext? st rid with
+  | none => .ok st
+  | some scId =>
+    match returnUnheldSchedContextResolved st scId target with
+    | .error e => .error e
+    | .ok st' => .ok (SchedContextOps.settleReturnedContext st' home scId)
+
+/-- A reply heading no context pops nothing. -/
+@[simp] theorem popUnheldReplyHead_of_no_head (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (home : Concurrency.CoreId) (h : replyFrameHeadContext? st rid = none) :
+    popUnheldReplyHead st rid target home = .ok st := by
+  unfold popUnheldReplyHead; rw [h]
+
+/-- **What a successful pop at an unheld head is**: the identity where the reply
+heads no context, or the unheld pop of the context it heads, settled on `home`. -/
+theorem popUnheldReplyHead_ok_cases {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} {home : Concurrency.CoreId}
+    (h : popUnheldReplyHead st rid target home = .ok st') :
+    (replyFrameHeadContext? st rid = none ∧ st' = st) ∨
+    ∃ (scId : SeLe4n.SchedContextId) (st1 : SystemState),
+      replyFrameHeadContext? st rid = some scId ∧
+      returnUnheldSchedContextResolved st scId target = .ok st1 ∧
+      st' = SchedContextOps.settleReturnedContext st1 home scId := by
+  unfold popUnheldReplyHead at h
+  cases hH : replyFrameHeadContext? st rid with
+  | none => rw [hH] at h; exact .inl ⟨rfl, (Except.ok.inj h).symm⟩
+  | some scId =>
+    rw [hH] at h
+    simp only [] at h
+    cases hR : returnUnheldSchedContextResolved st scId target with
+    | error e => rw [hR] at h; cases h
+    | ok st1 => rw [hR] at h; exact .inr ⟨scId, st1, rfl, hR, (Except.ok.inj h).symm⟩
+
+/-- The unheld pop writes no machine state. -/
+theorem returnUnheldSchedContext_machine_eq {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    st'.machine = st.machine := by
+  obtain ⟨_, _, _, s1, s2, s3, _, _, _, _, _, h1, h2, _, h3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  rw [hEq, markKeyChangeFrom_machine, SeLe4n.Model.storeObject_machine_eq s2 s3 _ _ h3,
+    storeDonationHeadPop_machine_eq h2, SeLe4n.Model.storeObject_machine_eq st s1 _ _ h1]
+
+theorem returnUnheldSchedContextResolved_machine_eq {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : returnUnheldSchedContextResolved st scId owner = .ok st') :
+    st'.machine = st.machine := by
+  unfold returnUnheldSchedContextResolved at h
+  split at h
+  · cases h
+  · exact returnUnheldSchedContext_machine_eq h
+
+/-- The pop at an unheld head writes no machine state. -/
+theorem popUnheldReplyHead_machine_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} {home : Concurrency.CoreId}
+    (h : popUnheldReplyHead st rid target home = .ok st') : st'.machine = st.machine := by
+  rcases popUnheldReplyHead_ok_cases h with ⟨_, rfl⟩ | ⟨scId, st1, _, hR, rfl⟩
+  · rfl
+  · rw [SchedContextOps.settleReturnedContext_machine]
+    exact returnUnheldSchedContextResolved_machine_eq hR
+
+/-- **The resolved unheld pop, decomposed**: the reply stack's outer caller it
+resolved, and the pop at it. -/
+theorem returnUnheldSchedContextResolved_ok_decompose {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : returnUnheldSchedContextResolved st scId owner = .ok st') :
+    ∃ newOwner?, replyStackOuterCaller? st scId = .ok newOwner? ∧
+      returnUnheldSchedContext st scId owner newOwner? = .ok st' := by
+  unfold returnUnheldSchedContextResolved at h
+  split at h
+  · cases h
+  · next n hN => exact ⟨n, hN, h⟩
+
+/-- The unheld pop keeps the object store's extended invariant: three stores. -/
+theorem returnUnheldSchedContext_objects_invExt {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    st'.objects.invExt := by
+  obtain ⟨_, _, _, s1, s2, s3, _, _, _, _, _, h1, h2, _, h3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 h2
+  have i3 := storeObject_preserves_objects_invExt s2 s3 _ _ i2 h3
+  rw [hEq, markKeyChangeFrom_objects]; exact i3
+
+/-- The pop at an unheld head keeps the object store's extended invariant. -/
+theorem popUnheldReplyHead_objects_invExt {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} {home : Concurrency.CoreId} (hObjInv : st.objects.invExt)
+    (h : popUnheldReplyHead st rid target home = .ok st') : st'.objects.invExt := by
+  rcases popUnheldReplyHead_ok_cases h with ⟨_, rfl⟩ | ⟨scId, st1, _, hR, rfl⟩
+  · exact hObjInv
+  · obtain ⟨_, _, hP⟩ := returnUnheldSchedContextResolved_ok_decompose hR
+    exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _
+      (returnUnheldSchedContext_objects_invExt hObjInv hP)
+
+/-- The unheld pop holds the release queues: its context store keeps the
+release fields, and its other stores are a reply's and a thread's. -/
+theorem returnUnheldSchedContext_releaseStateAgree {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    SystemState.releaseStateAgree st' st := by
+  obtain ⟨_, _, ot, s1, s2, s3, hSc, _, _, _, _, h1, hClear, hL3, h3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 hClear
+  have a1 := SystemState.releaseStateAgree.storeObject hObjInv h1 fun _ => by rw [hSc]; rfl
+  have a2 : SystemState.releaseStateAgree s2 s1 :=
+    .of_getSchedContext? (storeDonationHeadPop_getSchedContext?_eq i1 hClear)
+      (by rw [storeDonationHeadPop_scheduler_eq hClear])
+  have a3 := SystemState.releaseStateAgree.storeObject_tcb i2 h3
+    (lookupTcb_some_objects _ _ _ hL3)
+  have a4 : SystemState.releaseStateAgree st' s3 :=
+    .of_objects_eq (by rw [hEq, markKeyChangeFrom_objects])
+      (by rw [hEq, markKeyChangeFrom_releaseSlots])
+  exact a4.trans (a3.trans (a2.trans a1))
+
+/-- The unheld pop writes no replenish queue: its stores are objects, and its
+reschedule hook raises flags. -/
+theorem returnUnheldSchedContext_replenishQueueOnCore {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') (c : Concurrency.CoreId) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  obtain ⟨_, _, _, s1, s2, s3, _, _, _, _, _, h1, h2, _, h3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  rw [hEq, markKeyChangeFrom_replenishQueueOnCore, SeLe4n.Model.storeObject_scheduler_eq s2 s3 _ _ h3,
+    storeDonationHeadPop_scheduler_eq h2, SeLe4n.Model.storeObject_scheduler_eq st s1 _ _ h1]
+
+/-- The unheld pop writes the scheduler's reschedule flags alone. -/
+theorem returnUnheldSchedContext_scheduler_eq {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    st'.scheduler = { st.scheduler with reschedulePending := st'.scheduler.reschedulePending } := by
+  obtain ⟨_, _, _, s1, s2, s3, _, _, _, _, _, h1, h2, _, h3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  have e3 : s3.scheduler = st.scheduler := by
+    rw [SeLe4n.Model.storeObject_scheduler_eq s2 s3 _ _ h3, storeDonationHeadPop_scheduler_eq h2,
+      SeLe4n.Model.storeObject_scheduler_eq st s1 _ _ h1]
+  subst hEq
+  have e := markKeyChangeFrom_extract_frame
+    (fun s => ({ s.scheduler with
+      reschedulePending := (markKeyChangeFrom st s3 owner).scheduler.reschedulePending } :
+        SchedulerState)) st s3 owner (fun _ _ => rfl)
+  rw [← e3]; exact e
+
+/-- The unheld pop is a kind-preserving write: a context for a context, a reply
+for a reply, a thread for a thread. -/
+theorem returnUnheldSchedContext_kindPreservingWrite {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    kindPreservingWrite st st' := by
+  obtain ⟨_, _, ot, s1, s2, s3, hSc, _, _, _, _, hS1, hClear, hL, hS3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  have hW1 : kindPreservingWrite st s1 :=
+    storeObject_kindPreservingWrite hObjInv hS1 hSc rfl (by simp [KernelObject.objectType])
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hW2 : kindPreservingWrite s1 s2 := storeDonationHeadPop_kindPreservingWrite hInv1 hClear
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
+  have hW3 : kindPreservingWrite s2 s3 :=
+    storeObject_kindPreservingWrite hInv2 hS3 (lookupTcb_some_objects s2 owner ot hL) rfl
+      (by simp [KernelObject.objectType])
+  have hLast : kindPreservingWrite s3 st' :=
+    kindPreservingWrite.of_objects_eq (by rw [hEq, markKeyChangeFrom_objects])
+  exact ((hW1.trans hW2).trans hW3).trans hLast
+
+/-- The unheld pop writes no capability derivation edge. -/
+theorem returnUnheldSchedContext_cdt_eq {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') : st'.cdt = st.cdt := by
+  obtain ⟨_, _, _, s1, s2, s3, _, _, _, _, _, h1, h2, _, h3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  rw [hEq, markKeyChangeFrom_cdt, SeLe4n.Model.storeObject_cdt_eq s2 s3 _ _ h3,
+    storeDonationHeadPop_cdt_eq h2, SeLe4n.Model.storeObject_cdt_eq st s1 _ _ h1]
+
+/-- The pop at an unheld head keeps every object off the scheduler links of the
+unheld pop it commits, or the whole store where the reply heads nothing. -/
+theorem popUnheldReplyHead_objects_frame {st st' : SystemState}
+    {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId} {home : Concurrency.CoreId}
+    (h : popUnheldReplyHead st rid target home = .ok st') :
+    (replyFrameHeadContext? st rid = none ∧ st' = st) ∨
+    ∃ (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId) (st1 : SystemState),
+      replyFrameHeadContext? st rid = some scId ∧
+      replyStackOuterCaller? st scId = .ok newOwner? ∧
+      returnUnheldSchedContext st scId target newOwner? = .ok st1 ∧
+      st' = SchedContextOps.settleReturnedContext st1 home scId := by
+  rcases popUnheldReplyHead_ok_cases h with hId | ⟨scId, st1, hH, hR, hEq⟩
+  · exact .inl hId
+  · obtain ⟨n, hN, hP⟩ := returnUnheldSchedContextResolved_ok_decompose hR
+    exact .inr ⟨scId, n, st1, hH, hN, hP, hEq⟩
 
 end SeLe4n.Kernel

@@ -361,14 +361,31 @@ theorem endpointReplyOnCore_mappingStage {replier target : SeLe4n.ThreadId} {msg
         (fun h => endpointReplyOnCore_preserves_objects_invExt _ _ _ _ _ h)
         (fun h => endpointReply_kindPreservingWrite _ _ _ _ _ h hS) hA hInv
 
+/-- **The pop at an unheld head is a mapping stage**: the unheld pop's three
+stores keep every object's kind, and the settle writes scheduler links alone. -/
+theorem popUnheldReplyHead_mappingStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} {home : CoreId}
+    (h : popUnheldReplyHead st rid target home = .ok st') : MappingStage st st' := by
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨_, _, st1, -, -, hP, rfl⟩
+  · exact MappingStage.refl _
+  · exact (MappingStage.of_kindPreservingWrite
+      (fun hI => returnUnheldSchedContext_objects_invExt hI hP)
+      (fun hI => returnUnheldSchedContext_kindPreservingWrite hI hP)).trans
+      (MappingStage.of_kindPreservingWrite
+        (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
+        fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+          (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)
+
 theorem applyReplyDonationOnCore_mappingStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId}
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     MappingStage st st' := by
   refine MappingStage.of_kindPreservingWrite
     (fun hI => applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hI h) fun hI => ?_
-  rcases applyReplyDonationOnCore_objects_frame _ _ _ _ _ h with ⟨-, hO⟩ | ⟨_, _, _, s, hR, hA⟩
+  rcases applyReplyDonationOnCore_objects_frame _ _ _ _ _ h with
+    ⟨-, hO⟩ | ⟨_, _, _, -, -, -, hR, hA⟩ | ⟨_, _, _, s, hR, hA⟩
   · exact kindPreservingWrite.of_objects_eq hO
+  · exact (returnUnheldSchedContext_kindPreservingWrite hI hR).trans hA.kindPreserving
   · exact (returnDonatedSchedContext_kindPreservingWrite hI hR).trans hA.kindPreserving
 
 theorem endpointReplyCrossCoreDispatch_mappingStage {replier target : SeLe4n.ThreadId}
@@ -387,10 +404,13 @@ theorem endpointReplyCrossCoreDispatch_mappingStage {replier target : SeLe4n.Thr
     repeat' split
     all_goals first
       | exact MappingStage.refl _
+      | exact hR
       | exact hR.trans propagatePipChainCrossCore_mappingStage
       | (rename_i hD
          exact (hR.trans (applyReplyDonationOnCore_mappingStage hD)).trans
            propagatePipChainCrossCore_mappingStage)
+      | (rename_i hD
+         exact hR.trans (applyReplyDonationOnCore_mappingStage hD))
 
 theorem endpointReplyCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
     {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {executingCore : CoreId}
@@ -573,7 +593,11 @@ theorem replyRecvPopDonation_mappingStage {rid : SeLe4n.ReplyId} {target : SeLe4
             fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
               (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)
     · cases h
-  · cases h; exact MappingStage.refl _
+  · split at h
+    · cases h
+    · rename_i st1 hPop
+      cases h
+      exact popUnheldReplyHead_mappingStage hPop
 
 theorem replyRecvPostReceiveDonation_mappingStage
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}

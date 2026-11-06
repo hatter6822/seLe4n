@@ -414,6 +414,10 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
     -- state and quantified over the answered frame like the trigger's own fields.
     (hOriginCoherent : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
       redirectedOriginFrameCoherent
+        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted)
+    -- **WS-ZA ZA6.34**: the unheld pop's coherence obligation, at the same state.
+    (hUnheld : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
+      unheldReplyPopCoherent
         (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted) :
     ipcInvariantFull (faultReplyOnCore replier faulted mi regs c st).1 := by
   cases hTcb : st.getTcb? faulted with
@@ -424,7 +428,7 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
       | some tf =>
           have hRep := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier
             faulted IpcMessage.empty c st hInv hObjInv hDonationReturned hHolderDonation
-            hAllBudgetsNone hStackValid hOriginCoherent
+            hAllBudgetsNone hStackValid hOriginCoherent hUnheld
           have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
             faulted IpcMessage.empty c st hObjInv
           rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
@@ -545,17 +549,15 @@ headless unless the donation pop beneath it re-heads the frame below.
 
 **WS-HP HP4.4**: under the head-driven trigger the pop resolves that context from
 the very frame the relaxation sits at, so the coherence relation this composite
-used to carry was no longer needed; what remains is `replyFrameHeadIsBound`, which
-rules out a head context bound to nobody.  That relation --
+used to carry was no longer needed, and since WS-ZA ZA6.34 pops a head context
+bound to nobody too, no condition remains beyond the chain itself.  That relation --
 `answeredHeadContextIsServerDonation` -- was **deleted** at HP7 (`v0.35.46`), once
 HP6.8's splice had also falsified it on reachable states; see the tombstone beside
 the `WS-HP HP7` banner in `IPC/CrossCore/EndpointReplyDispatchInvariant.lean`. -/
 theorem faultReplyOnCore_preserves_donationChainWellFormed
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hHeadBound : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
-      replyFrameHeadIsBound (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid) :
+    (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
     donationChainWellFormed (faultReplyOnCore replier faulted mi regs c st).1 := by
   unfold faultReplyOnCore
   cases hTcb : st.getTcb? faulted with
@@ -565,7 +567,7 @@ theorem faultReplyOnCore_preserves_donationChainWellFormed
     | none => simpa only [hTcb, hFault] using hChain
     | some tf =>
       have hRepChain := endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
-        replier faulted IpcMessage.empty c st hObjInv hChain hHeadBound
+        replier faulted IpcMessage.empty c st hObjInv hChain
       have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
         faulted IpcMessage.empty c st hObjInv
       rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
@@ -583,30 +585,21 @@ theorem faultReplyOnCore_preserves_donationChainWellFormed
 /-- **WS-RM RM5.2**: and so does the reply *transfer* — seL4's
 `doReplyTransfer`, whose two branches are the two theorems above.
 
-**One** chain hypothesis, not one per branch: the fault branch replies with
-`IpcMessage.empty` and the ordinary branch with `msg`, which differed only in the
-post-state expression the condition used to be written over.  The message is not
-something the question reads — it asks which scheduling context a *pre-state*
-reply frame heads — so at the pre-state the two spellings are one proposition,
-and a caller supplies it once. -/
+No hypothesis beyond the chain: both branches answer the caller through the
+`.reply` chain, which pops a head context whether or not a thread holds it
+(WS-ZA ZA6.34). -/
 theorem replyTransferOnCore_preserves_donationChainWellFormed
     (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (c : CoreId)
     (st st' : SystemState) (u : Unit)
     (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    -- **WS-HP HP4.4**: the fault arm and the ordinary arm reply with different
-    -- messages and the same *frame*, so the one condition still serves both.
-    (hHeadBoundFault : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some rid →
-      replyFrameHeadIsBound (endpointReplyOnCore replier callerTid IpcMessage.empty c st).1 rid)
-    (hHeadBound : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some rid →
-      replyFrameHeadIsBound (endpointReplyOnCore replier callerTid msg c st).1 rid)
     (hStep : replyTransferOnCore replier callerTid mi regs msg c st = .ok (u, st')) :
     donationChainWellFormed st' := by
   unfold replyTransferOnCore at hStep
   by_cases hF : threadHasPendingFault st callerTid
   · rw [if_pos hF] at hStep
     have hChainF := faultReplyOnCore_preserves_donationChainWellFormed replier callerTid
-      mi regs c st hObjInv hChain hHeadBoundFault
+      mi regs c st hObjInv hChain
     rcases hFR : faultReplyOnCore replier callerTid mi regs c st with ⟨stF, resF⟩
     rw [hFR] at hStep hChainF
     simp only at hChainF
@@ -617,7 +610,7 @@ theorem replyTransferOnCore_preserves_donationChainWellFormed
         exact hStep.2 ▸ hChainF
   · rw [if_neg hF] at hStep
     have hChainR := endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
-      replier callerTid msg c st hObjInv hChain hHeadBound
+      replier callerTid msg c st hObjInv hChain
     have hObjR := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier callerTid
       msg c st hObjInv
     rcases hRD : endpointReplyCrossCoreDispatch replier callerTid msg c st with ⟨stR, resR⟩

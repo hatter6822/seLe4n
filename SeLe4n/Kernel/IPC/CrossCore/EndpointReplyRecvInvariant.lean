@@ -82,7 +82,7 @@ theorem replyRecvPopDonation_holder_eq_frameHead (rid : SeLe4n.ReplyId)
     replyFrameHeadHolder? st rid = some (scId, holder) := by
   unfold replyRecvPopDonation at h
   cases hHead : replyFrameHeadHolder? st rid with
-  | none => rw [hHead] at h; simp at h
+  | none => rw [hHead] at h; simp only [] at h; split at h <;> simp at h
   | some pair =>
     obtain ⟨scId0, holder0⟩ := pair
     rw [hHead] at h
@@ -141,19 +141,27 @@ theorem replyRecvPopDonation_ok_some_decompose (rid : SeLe4n.ReplyId)
         simp only [] at h
         exact ⟨st1', rfl, ((Prod.mk.inj (Except.ok.inj h)).2).symm⟩
 
-/-- **WS-RR RR8.12 Cut C2**: and a pop that hands nothing back commits nothing —
-the only `none` arm is the identity, so a `.replyRecv` whose answered frame heads no
-context runs its receive leg on the reply leg's own post-state.  What licenses the
-footprint's empty pop pair. -/
-theorem replyRecvPopDonation_ok_none_eq (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+/-- **WS-ZA ZA6.34: a pop that hands no context back is the pop at an unheld
+head** — the frame resolves no holder, and the pop of the context it heads, if
+any, as seL4-MCS's `reply_pop` runs it with no thread losing a context.  The
+identity where the frame heads nothing (`replyRecvPopDonation_ok_none_eq`). -/
+theorem replyRecvPopDonation_ok_none_decompose (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
     (st st' : SystemState)
-    (h : replyRecvPopDonation rid target st = .ok (none, st')) : st' = st := by
+    (h : replyRecvPopDonation rid target st = .ok (none, st')) :
+    replyFrameHeadHolder? st rid = none ∧
+      popUnheldReplyHead st rid target (determineTargetCore st target) = .ok st' := by
   unfold replyRecvPopDonation at h
   cases hHead : replyFrameHeadHolder? st rid with
   | none =>
       rw [hHead] at h
       simp only [] at h
-      exact ((Prod.mk.inj (Except.ok.inj h)).2).symm
+      refine ⟨rfl, ?_⟩
+      cases hP : popUnheldReplyHead st rid target (determineTargetCore st target) with
+      | error e => rw [hP] at h; cases h
+      | ok s =>
+        rw [hP] at h
+        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+        rw [h]
   | some pair =>
     obtain ⟨oldScId, holder⟩ := pair
     rw [hHead] at h
@@ -174,6 +182,17 @@ theorem replyRecvPopDonation_ok_none_eq (rid : SeLe4n.ReplyId) (target : SeLe4n.
           simp only [] at h
           exact absurd (Prod.mk.inj (Except.ok.inj h)).1 (by simp)
 
+/-- **WS-RR RR8.12 Cut C2**: and a pop that hands nothing back at a frame heading
+nothing commits nothing, so a `.replyRecv` whose answered frame heads no context
+runs its receive leg on the reply leg's own post-state.  What licenses the
+footprint's empty pop pair. -/
+theorem replyRecvPopDonation_ok_none_eq (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (st st' : SystemState) (hNoHead : replyFrameHeadContext? st rid = none)
+    (h : replyRecvPopDonation rid target st = .ok (none, st')) : st' = st := by
+  have hP := (replyRecvPopDonation_ok_none_decompose rid target st st' h).2
+  rw [popUnheldReplyHead_of_no_head st rid _ _ hNoHead] at hP
+  cases hP; rfl
+
 /-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the pop writes no replenish
 queue outside `replyDonationReturnReplenishCores` — the FOOTPRINT's own first
 segment, and the one the `.reply` spine's pop reads too (Cut C3a gave that pair one
@@ -193,7 +212,15 @@ theorem replyRecvPopDonation_replenishQueueOnCore_ne (rid : SeLe4n.ReplyId)
   cases hRet : returned? with
   | none =>
     subst hRet
-    rw [replyRecvPopDonation_ok_none_eq rid target st st' h]
+    obtain ⟨hNoH, hP⟩ := replyRecvPopDonation_ok_none_decompose rid target st st' h
+    cases hH : replyFrameHeadContext? st rid with
+    | none =>
+      rw [popUnheldReplyHead_of_no_head st rid _ _ hH] at hP; cases hP; rfl
+    | some scId =>
+      rw [replyDonationReturnReplenishCores_of_unheld st rid target scId hNoH hH] at hne
+      simp only [List.mem_append, List.mem_singleton, not_or] at hne
+      exact popUnheldReplyHead_replenishQueueOnCore_ne hObjInv
+        (fun s hs => by rw [hH] at hs; cases hs; exact hne.1) hne.2 hP
   | some pair =>
     obtain ⟨scId, holder⟩ := pair
     subst hRet
@@ -220,29 +247,8 @@ The other direction is `replyRecvPopDonation_holder_eq_frameHead`. -/
 theorem replyRecvPopDonation_ok_none_frameHead (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
     (st st' : SystemState)
     (h : replyRecvPopDonation rid target st = .ok (none, st')) :
-    replyFrameHeadHolder? st rid = none := by
-  unfold replyRecvPopDonation at h
-  cases hHead : replyFrameHeadHolder? st rid with
-  | none => rfl
-  | some pair =>
-    obtain ⟨oldScId, holder⟩ := pair
-    rw [hHead] at h
-    simp only [] at h
-    cases hHV : holder.toValid? with
-    | none => rw [hHV] at h; simp only [] at h; cases h
-    | some holderV =>
-      cases hTV : target.toValid? with
-      | none => rw [hHV, hTV] at h; simp only [] at h; cases h
-      | some targetV =>
-        rw [hHV, hTV] at h
-        simp only [] at h
-        cases hRet : returnDonatedSchedContextResolved st holder oldScId
-            (replyDonationRecipient st oldScId target) with
-        | error e => rw [hRet] at h; simp only [] at h; cases h
-        | ok st1' =>
-          rw [hRet] at h
-          simp only [] at h
-          exact absurd (Prod.mk.inj (Except.ok.inj h)).1 (by simp)
+    replyFrameHeadHolder? st rid = none :=
+  (replyRecvPopDonation_ok_none_decompose rid target st st' h).1
 
 /-- **WS-RM (`v0.35.6`)**: the pop preserves object-store integrity — the return
 is a store chain over existing keys and the settle writes release links alone. -/
@@ -252,11 +258,17 @@ theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
     (hStep : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     st'.objects.invExt := by
+  by_cases hR : returned? = none
+  · subst hR
+    exact popUnheldReplyHead_objects_invExt hObjInv
+      (replyRecvPopDonation_ok_none_decompose rid target st st' hStep).2
   unfold replyRecvPopDonation at hStep
   cases hHead : replyFrameHeadHolder? st rid with
   | none =>
       rw [hHead] at hStep
-      exact (by simpa using hStep : none = returned? ∧ st = st').2 ▸ hObjInv
+      simp only [] at hStep
+      split at hStep <;> simp at hStep
+      exact absurd hStep.1.symm hR
   | some pair =>
     obtain ⟨oldScId, holder⟩ := pair
     rw [hHead] at hStep
@@ -300,11 +312,21 @@ theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
     (hCons : replenishQueueAffinityConsistent_smp st)
     (h : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     replenishQueueAffinityConsistent_smp st' := by
+  by_cases hR : returned? = none
+  · subst hR
+    rcases popUnheldReplyHead_objects_frame
+        (replyRecvPopDonation_ok_none_decompose rid target st st' h).2 with
+      ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩
+    · exact hCons
+    · exact returnUnheldSchedContext_settle_preserves_replenishQueueAffinityConsistent_smp
+        hObjInv hRef hCons rfl hP
   unfold replyRecvPopDonation at h
   cases hHead : replyFrameHeadHolder? st rid with
   | none =>
       rw [hHead] at h
-      exact (by simpa using h : none = returned? ∧ st = st').2 ▸ hCons
+      simp only [] at h
+      split at h <;> simp at h
+      exact absurd h.1.symm hR
   | some pair =>
     obtain ⟨oldScId, holder⟩ := pair
     rw [hHead] at h
@@ -471,6 +493,9 @@ inductive PerCoreDonationStep (st st' : SystemState) : Prop
       (ownerHome : Concurrency.CoreId)
       (hOwnerHome : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
           determineTargetCore st (replyDonationRecipient st scId targetVtid.val) = ownerHome)
+      (hUnheldHome : ∀ scId, replyFrameHeadHolder? st rid = none →
+          replyFrameHeadContext? st rid = some scId →
+          determineTargetCore st targetVtid.val = ownerHome)
       (hStep : applyReplyDonationOnCore st rid targetVtid ownerHome
           = .ok st')
   /-- `.replyRecv` returns the answered client's context before its receive leg.
@@ -522,9 +547,9 @@ theorem donation_perCore_consistent (st st' : SystemState)
   | call callerVtid receiverVtid donorHome doneeHome hDonorHome hDoneeHome h =>
       exact applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
         st st' callerVtid receiverVtid donorHome doneeHome hObjInv hCons hDonorHome hDoneeHome h
-  | reply rid targetVtid ownerHome hOwnerHome h =>
+  | reply rid targetVtid ownerHome hOwnerHome hUnheldHome h =>
       exact applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
-        st st' rid targetVtid ownerHome hObjInv hRef hCons hOwnerHome h
+        st st' rid targetVtid ownerHome hObjInv hRef hCons hOwnerHome hUnheldHome h
   | replyRecvPop rid target returned? h =>
       exact replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
         rid target st st' returned? hObjInv hRef hCons h
@@ -576,14 +601,22 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
     -- **`v0.35.157`**: the origin redirect's coherence obligation -- see
     -- `applyReplyDonation_preserves_ipcInvariantFull`.
     (hOriginCoherent : redirectedOriginFrameCoherent st rid target)
+    -- **WS-ZA ZA6.34**: the unheld pop's coherence obligation -- see
+    -- `applyReplyDonation_preserves_ipcInvariantFull`.
+    (hUnheld : unheldReplyPopCoherent st rid target)
     (h : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     ipcInvariantFull st' := by
+  by_cases hR : returned? = none
+  · subst hR
+    obtain ⟨hNoH, hP⟩ := replyRecvPopDonation_ok_none_decompose rid target st st' h
+    exact popUnheldReplyHead_preserves_ipcInvariantFull hObjInv hInv hStackValid hUnheld hNoH hP
   unfold replyRecvPopDonation at h
   cases hHead : replyFrameHeadHolder? st rid with
   | none =>
       rw [hHead] at h
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h
-      exact h.2 ▸ hInv
+      simp only [] at h
+      split at h <;> simp at h
+      exact absurd h.1.symm hR
   | some pair =>
     obtain ⟨oldScId, holder⟩ := pair
     rw [hHead] at h
@@ -999,13 +1032,13 @@ theorem replyRecvHandoffReplenishCores_of_no_donation (endpointId : SeLe4n.ObjId
     (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
+    (hNoHead : replyFrameHeadContext? st1 replyId = none)
     (hPre : receivePreReturn? st1p endpointId receiver = none) :
     replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
       receiverSlotBase executingCore st = [] := by
   rw [replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg
     receiverCspaceRoot receiverSlotBase executingCore st st1 st1p sgi none hReply hPop,
-    replyDonationReturnReplenishCores_of_no_head st1 replyId prevCaller
-      (replyRecvPopDonation_ok_none_frameHead replyId prevCaller st1 st1p hPop),
+    replyDonationReturnReplenishCores_of_no_head st1 replyId prevCaller hNoHead,
     receivePreReturnReplenishCores_of_none st1p endpointId
     receiver hPre, List.nil_append, List.nil_append]
   split <;> rfl
@@ -1022,6 +1055,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation
     (st st1 st1p : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
+    (hNoHead : replyFrameHeadContext? st1 replyId = none)
     (hPre : receivePreReturn? st1p endpointId receiver = none) (c : Concurrency.CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
@@ -1029,7 +1063,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [replyRecvHandoffReplenishCores_of_no_donation endpointId receiver replyId prevCaller msg
-    receiverCspaceRoot receiverSlotBase executingCore st st1 st1p sgi hReply hPop hPre] at this
+    receiverCspaceRoot receiverSlotBase executingCore st st1 st1p sgi hReply hPop hNoHead hPre] at this
   simp at this
 
 /-- **WS-RR RR8.12 Cut C2 (frame)**: the receive leg writes no replenish queue where
@@ -1256,6 +1290,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
     (hObjInv : st.objects.invExt)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
+    (hNoHead : replyFrameHeadContext? st1 replyId = none)
     (hRecv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
         receiverCspaceRoot receiverSlotBase executingCore st1p
       = (st2, .ok (nextThread, summary, sgi2)))
@@ -1268,7 +1303,8 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
     (c : Concurrency.CoreId) :
     stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   -- the pop hands nothing back, so it commits nothing
-  have hPopEq : st1p = st1 := replyRecvPopDonation_ok_none_eq replyId prevCaller st1 st1p hPop
+  have hPopEq : st1p = st1 :=
+    replyRecvPopDonation_ok_none_eq replyId prevCaller st1 st1p hNoHead hPop
   rw [hPopEq] at hPop hRecv hPre
   -- object-store integrity along the spine, for the two walks' frames
   have hInv1 : st1.objects.invExt := by

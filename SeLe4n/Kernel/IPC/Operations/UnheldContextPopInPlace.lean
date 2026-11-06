@@ -367,4 +367,32 @@ def unheldReturnCommitsImpl (st : SystemState) (scId : SeLe4n.SchedContextId)
   | false => rfl
   | true => rw [(unheldPopsInPlace_pop st scId owner hG).1]; rfl
 
+/-- **The pop at a reply heading an unheld context, as compiled**: in place
+where `unheldPopsInPlace` admits it, every check read as a code before the
+first write; the specification's pop otherwise. -/
+@[inline] def popUnheldReplyHeadImpl (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (home : CoreId) : Except KernelError SystemState :=
+  match replyFrameHeadContext? st rid with
+  | none => .ok st
+  | some scId =>
+    if unheldPopsInPlace st scId target then
+      .ok (SchedContextOps.settleReturnedContext
+        (returnUnheldSchedContextInPlace st target scId) home scId)
+    else
+      match returnUnheldSchedContextResolved st scId target with
+      | .error e => .error e
+      | .ok st' => .ok (SchedContextOps.settleReturnedContext st' home scId)
+
+@[csimp] theorem popUnheldReplyHead_eq_impl :
+    @popUnheldReplyHead = @popUnheldReplyHeadImpl := by
+  funext st rid target home
+  unfold popUnheldReplyHead popUnheldReplyHeadImpl
+  cases replyFrameHeadContext? st rid with
+  | none => rfl
+  | some scId =>
+    simp only []
+    cases hG : unheldPopsInPlace st scId target with
+    | false => simp only [Bool.false_eq_true, ↓reduceIte]; rfl
+    | true => simp only [(unheldPopsInPlace_pop st scId target hG).2, ↓reduceIte]
+
 end SeLe4n.Kernel

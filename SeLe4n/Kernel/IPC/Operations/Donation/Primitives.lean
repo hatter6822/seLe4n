@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.Operations.Endpoint
 import SeLe4n.Kernel.SchedContext.ReturnSettle
+import SeLe4n.Kernel.IPC.Operations.UnheldContextPop
 
 /-! # Z7: Donation Primitives (AN3-A / H-01)
 
@@ -221,7 +222,11 @@ def applyReplyDonation (st : SystemState) (rid : SeLe4n.ReplyId)
     : Except KernelError SystemState :=
   let target : SeLe4n.ThreadId := targetVtid.val
   match replyFrameHeadHolder? st rid with
-  | none => .ok st                          -- No-op: the answered frame heads nothing
+  -- **WS-ZA ZA6.34**: a frame heading a context no thread holds (its server was
+  -- finalised) is popped as seL4-MCS's `reply_pop` pops it, the context donated
+  -- to the answered caller (`popUnheldReplyHead`); a frame heading nothing pops
+  -- nothing.
+  | none => popUnheldReplyHead st rid target Concurrency.bootCoreId
   | some (scId, holder) =>
       -- The thread that loses the context is the context's own `boundThread`,
       -- so `returnDonatedSchedContext`'s `boundThread` guard is satisfied by
@@ -523,7 +528,7 @@ theorem applyReplyDonation_machine_eq
   -- case analysis is two arms rather than four, and the thread the deschedule
   -- names is the pair's `holder` rather than the argument.
   cases hTrig : replyFrameHeadHolder? st rid with
-  | none => simp only [hTrig] at h; cases h; rfl
+  | none => simp only [hTrig] at h; exact popUnheldReplyHead_machine_eq h
   | some pair =>
     obtain ⟨scId, holder⟩ := pair
     simp only [hTrig] at h

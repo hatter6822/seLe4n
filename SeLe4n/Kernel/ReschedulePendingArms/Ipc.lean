@@ -1043,6 +1043,51 @@ theorem endpointReplyOnCore_stepCovers (e : CoreId) {replier target : SeLe4n.Thr
           · exact hRefl
     · exact hRefl
 
+/-- **The unheld pop covers**: it rebinds the context's recipient, writes no
+other thread's key input, and ends in the recipient's key hook. -/
+theorem returnUnheldSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨sc, head?, ot, s1, s2, s3, hSc, -, -, -, -, hS1, hS2, hL, hS3, hEq⟩ :=
+    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
+  have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
+  have k1 : keyInputsEq st s1 := keyInputsEq_storeObject hInv hS1 (by rw [hSc]; rfl)
+  have k2 := keyInputsEq_trans k1 (storeDonationHeadPop_keyInputsEq hInv1 hS2)
+  have hO2 := lookupTcb_some_objects _ _ _ hL
+  have k3 := keyInputsEqExcept_storeObject_tcb hInv2 hO2 hS3
+  have hSch : s3.scheduler = st.scheduler := by
+    rw [storeObject_scheduler_eq _ _ _ _ hS3, storeDonationHeadPop_scheduler_eq hS2,
+      storeObject_scheduler_eq _ _ _ _ hS1]
+  have hMach : s3.machine = st.machine := by
+    rw [storeObject_machine_eq _ _ _ _ hS3, storeDonationHeadPop_machine_eq hS2,
+      storeObject_machine_eq _ _ _ _ hS1]
+  rw [hEq]
+  exact ⟨stepCovers_markKeyChangeFrom
+      (fun t ho => ⟨by rw [schedKeyView_eq_of_keyInputsEqExcept k3 ho,
+          schedKeyView_eq_of_keyInputsEq k2],
+        by rw [budgetEligibleView_eq_of_keyInputsEqExcept k3 ho,
+          budgetEligibleView_eq_of_keyInputsEq k2]⟩)
+      ((runCoresAgree_storeObject_tcb hInv2 hO2 hS3 rfl).trans k2.runCoresAgree)
+      (fun c => by rw [hSch]) (fun c hc => by rw [hSch]; exact hc)
+      ((tcbsKept.of_keyInputsEq k2).trans (tcbsKept_storeObject_tcb hInv2 hO2 hS3))
+      (by rw [hMach]) (banksKeptOffCore_of_eq (by rw [hMach])),
+    by simp only [markKeyChangeFrom_objects]
+       exact storeObject_preserves_objects_invExt _ _ _ _ hInv2 hS3⟩
+
+/-- The pop at an unheld head covers: the unheld pop and the returned context's
+settle. -/
+theorem popUnheldReplyHead_stepCovers (e : CoreId) {st st' : SystemState}
+    {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId} {home : CoreId}
+    (hInv : st.objects.invExt) (h : popUnheldReplyHead st rid target home = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  rcases popUnheldReplyHead_objects_frame h with ⟨-, rfl⟩ | ⟨_, _, st1, -, -, hP, rfl⟩
+  · exact ⟨stepCovers_refl e _, hInv⟩
+  · obtain ⟨h1, h1Inv⟩ := returnUnheldSchedContext_stepCovers e hInv hP
+    exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
+      SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv⟩
+
 /-- The reply's donation return covers: the resolved return, the returned
 context's settle, and the holder's deschedule. -/
 theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
@@ -1053,7 +1098,7 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
   unfold applyReplyDonationOnCore at h
   dsimp only at h
   split at h
-  · cases h; exact ⟨stepCovers_refl e st, hInv⟩
+  · exact popUnheldReplyHead_stepCovers e hInv h
   · split at h
     · split at h
       · cases h
@@ -1088,12 +1133,16 @@ theorem endpointReplyCrossCoreDispatch_stepCovers (e : CoreId) {replier target :
     repeat' split
     all_goals first
       | exact hRefl
+      | exact ⟨hR, hRInv⟩
       | exact propagatePipChainCrossCore_stepCovers e executingCore _ _ _ hRInv |>.imp_left
           (stepCovers_trans hR)
       | (rename_i hD
          obtain ⟨hDc, hDInv⟩ := applyReplyDonationOnCore_stepCovers e hRInv hD
          exact (propagatePipChainCrossCore_stepCovers e executingCore _ _ _ hDInv).imp_left
            (stepCovers_trans (stepCovers_trans hR hDc)))
+      | (rename_i hD
+         obtain ⟨hDc, hDInv⟩ := applyReplyDonationOnCore_stepCovers e hRInv hD
+         exact ⟨stepCovers_trans hR hDc, hDInv⟩)
 
 theorem endpointReplyCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {executingCore : CoreId}
@@ -1536,7 +1585,11 @@ theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
         exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
           SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv⟩
     · cases h
-  · cases h; exact ⟨stepCovers_refl e st, hInv⟩
+  · split at h
+    · cases h
+    · rename_i st1 hPop
+      cases h
+      exact popUnheldReplyHead_stepCovers e hInv hPop
 
 theorem replyRecvPostReceiveDonation_stepCovers (e : CoreId)
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}

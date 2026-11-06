@@ -830,39 +830,6 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
      (tcbsKept_enqueueRunnableOnCore _ _ _
        (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st t tcb hInv)).residentTcbKept⟩
 
-/-- **The unheld pop covers**: it rebinds the context's recipient, writes no
-other thread's key input, and ends in the recipient's key hook. -/
-theorem returnUnheldSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
-    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
-    (hInv : st.objects.invExt) (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
-    stepCovers e st st' ∧ st'.objects.invExt := by
-  obtain ⟨sc, head?, ot, s1, s2, s3, hSc, -, -, -, -, hS1, hS2, hL, hS3, hEq⟩ :=
-    returnUnheldSchedContext_ok_storeChain st st' scId owner newOwner? h
-  have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
-  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
-  have k1 : keyInputsEq st s1 := keyInputsEq_storeObject hInv hS1 (by rw [hSc]; rfl)
-  have k2 := keyInputsEq_trans k1 (storeDonationHeadPop_keyInputsEq hInv1 hS2)
-  have hO2 := lookupTcb_some_objects _ _ _ hL
-  have k3 := keyInputsEqExcept_storeObject_tcb hInv2 hO2 hS3
-  have hSch : s3.scheduler = st.scheduler := by
-    rw [storeObject_scheduler_eq _ _ _ _ hS3, storeDonationHeadPop_scheduler_eq hS2,
-      storeObject_scheduler_eq _ _ _ _ hS1]
-  have hMach : s3.machine = st.machine := by
-    rw [storeObject_machine_eq _ _ _ _ hS3, storeDonationHeadPop_machine_eq hS2,
-      storeObject_machine_eq _ _ _ _ hS1]
-  rw [hEq]
-  exact ⟨stepCovers_markKeyChangeFrom
-      (fun t ho => ⟨by rw [schedKeyView_eq_of_keyInputsEqExcept k3 ho,
-          schedKeyView_eq_of_keyInputsEq k2],
-        by rw [budgetEligibleView_eq_of_keyInputsEqExcept k3 ho,
-          budgetEligibleView_eq_of_keyInputsEq k2]⟩)
-      ((runCoresAgree_storeObject_tcb hInv2 hO2 hS3 rfl).trans k2.runCoresAgree)
-      (fun c => by rw [hSch]) (fun c hc => by rw [hSch]; exact hc)
-      ((tcbsKept.of_keyInputsEq k2).trans (tcbsKept_storeObject_tcb hInv2 hO2 hS3))
-      (by rw [hMach]) (banksKeptOffCore_of_eq (by rw [hMach])),
-    by simp only [markKeyChangeFrom_objects]
-       exact storeObject_preserves_objects_invExt _ _ _ _ hInv2 hS3⟩
-
 /-- **A finalised reply's pop off an unheld context, and its settle, cover**:
 the pop (`returnUnheldSchedContext_stepCovers`), then a release-only write
 (`settleReturnedContext_stepCovers`). -/

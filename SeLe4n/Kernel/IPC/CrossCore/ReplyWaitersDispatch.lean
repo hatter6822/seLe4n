@@ -263,6 +263,24 @@ theorem applyReceiveLegPipHandoff_replyViews_eq (st : SystemState) (r d w : SeLe
     · exact applyReceiverPipHandoff_replyViews_eq _ _ _ hInv
     · rfl
 
+/-- **The pop at an unheld head keeps the reply views**: it rewrites the
+recipient's binding and settles the context — no reply-view field. -/
+theorem popUnheldReplyHead_replyViews_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} {home : CoreId} (hInv : st.objects.invExt)
+    (h : popUnheldReplyHead st rid target home = .ok st') : st'.replyViews = st.replyViews := by
+  rcases popUnheldReplyHead_ok_cases h with ⟨-, rfl⟩ | ⟨scId, st1, -, h1, rfl⟩
+  · rfl
+  · obtain ⟨n, -, hPop⟩ := returnUnheldSchedContextResolved_ok_decompose h1
+    obtain ⟨hF, hB⟩ := returnUnheldSchedContext_tcb_rewrite hInv hPop
+    rw [settleReturnedContext_replyViews_eq]
+    exact replyViews_eq_of_tcbs
+      (fun k t0 hk => by
+        obtain ⟨t', h', hR⟩ := hF k t0 hk
+        exact ⟨t', h', replyView_of_tcbBindingRewrite hR⟩)
+      (fun k t' hk => by
+        obtain ⟨t0, h0, -⟩ := hB k t' hk
+        exact ⟨t0, h0⟩)
+
 /-- The reply path's donation return: the context goes back and settles, the
 holder is descheduled — no reply-view field. -/
 theorem applyReplyDonationOnCore_replyViews_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
@@ -271,7 +289,7 @@ theorem applyReplyDonationOnCore_replyViews_eq {st st' : SystemState} {rid : SeL
   unfold applyReplyDonationOnCore at h
   dsimp only at h
   split at h
-  · cases h; rfl
+  · exact popUnheldReplyHead_replyViews_eq hInv h
   · split at h
     · split at h
       · cases h
@@ -395,6 +413,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent
       repeat' split
       all_goals first
         | exact hC
+        | exact hB
         | exact replyWaitersConsistent.of_views
             (propagatePipChainCrossCore_replyViews_eq _ _ _ _ hI) hB
         | (rename_i hD
@@ -402,6 +421,9 @@ theorem endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent
             ((propagatePipChainCrossCore_replyViews_eq _ _ _ _
               (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hI hD)).trans
               (applyReplyDonationOnCore_replyViews_eq hI hD)) hB)
+        | (rename_i hD
+           exact replyWaitersConsistent.of_views
+            (applyReplyDonationOnCore_replyViews_eq hI hD) hB)
 
 /-- **Fault delivery keeps the reply-waiter queues consistent**: it is the live
 call on the handler's endpoint, or the fail-closed suspend; the fault record and
@@ -490,7 +512,11 @@ theorem replyRecvPopDonation_replyViews_eq {rid : SeLe4n.ReplyId} {t : SeLe4n.Th
         rw [settleReturnedContext_replyViews_eq,
           returnDonatedSchedContextResolved_replyViews_eq hInv h1]
     · cases h
-  · cases h; rfl
+  · split at h
+    · cases h
+    · rename_i s1 h1
+      cases h
+      exact popUnheldReplyHead_replyViews_eq hInv h1
 
 theorem replyRecvHolderDeschedule_replyViews_eq (t h : SeLe4n.ThreadId) (st : SystemState) :
     (replyRecvHolderDeschedule t h st).replyViews = st.replyViews := by

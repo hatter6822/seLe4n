@@ -466,7 +466,8 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
   generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hHead hE1 hR1 hG1
   have hPop : replyRecvPopDonation rid c S1 = .ok (none, S1) := by
     unfold replyRecvPopDonation
-    rw [hHead]
+    rw [replyFrameHeadHolder?_of_no_head _ _ hHead]
+    simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
   have hEp1 : S1.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE1
   have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) root slot core S1 =
       (removeRunnableOnCore (storeReceiveBlock S1 epId tid ep.recvTailCode

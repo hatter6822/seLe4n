@@ -2614,7 +2614,7 @@ run_negative_check "INVARIANT" rg -n 'donationOriginRebindable_not_blockedOnRepl
 # in the pop's own state -- so a reply that redirects nothing owes nothing, and
 # both dispatch packs' reply stages carry the conjunct.
 run_check "INVARIANT" rg -n '^def redirectedOriginFrameCoherent ' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonation_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*\(hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid\.val\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonation_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*\(hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid\.val\)" SeLe4n/Kernel/IPC/Invariant/ReplyPopPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvPopDonation_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*\(hOriginCoherent : redirectedOriginFrameCoherent st rid target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*redirectedOriginFrameCoherent" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^structure syscallDispatchQuiescence[^\n]*(\n([ \t][^\n]*)?)*replyStage :[^\n]*(\n([ \t][^\n]*)?)*redirectedOriginFrameCoherent \(endpointReplyOnCore tid callerTid" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
@@ -18026,16 +18026,17 @@ run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_preserves_donationChai
 # fact that nothing consumes and the live kernel refutes is not a weaker
 # obligation; it is a false one.  NEGATIVE in its place: it must not come back.
 run_negative_check "INVARIANT" rg -n 'answeredHeadContextIsServerDonation' SeLe4n/
-# ...and what the composite carries instead is pinned positively, so "strictly
-# weaker" is checkable rather than asserted.
-run_check "INVARIANT" rg -n '^def replyFrameHeadIsBound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# ...and what the composite carried instead, `replyFrameHeadIsBound`, is
+# retired at WS-ZA ZA6.34: the pop handles a head bound to nobody, so the
+# composite carries no condition beyond the chain.  NEGATIVE: it must not come back.
+run_negative_check "INVARIANT" rg -n 'replyFrameHeadIsBound' SeLe4n/Kernel/IPC/Operations/Endpoint.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
 # ...and it is EXHIBITED on a state the live operations reach, beside the retired
 # condition it replaced, so "strictly weaker" and "they coincide on this shape" are
 # both measured.  A hypothesis nothing exhibits is indistinguishable from one that
 # cannot hold -- which is why §3.21 keeps both rows rather than swapping one for
 # the other: a cut that changed only the live condition would leave the retired
 # rows passing, and one that changed only the trigger would leave this row passing.
-run_check "INVARIANT" bash -lc 'rg -n "the LIVE chain condition: the head context is bound, and here to that server" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "the head-bound reading: the head context is bound, and here to that server" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -n "the RETIRED chain condition.s premise: the answered caller records the server" tests/SmpIpcSuite.lean'
 
 # (5) `.replyRecv`'s donation pop runs BETWEEN the legs -- seL4-MCS's own
@@ -18369,11 +18370,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonationChecked[
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonation \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*replyFrameHeadHolder\?" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonationChecked[^\n]*(\n([ \t][^\n]*)?)*replyFrameHeadHolder\?" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 
-# (7) The `.replyCapInvalid` arm stays, and stays distinguishable from "no head
-# context": the first is a malformed reply and the second an ordinary reply with
-# no donation to return.  Collapsing them would turn every donation-free reply
-# into an error.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*\(st, \.error \.replyCapInvalid\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# (7) WS-ZA ZA6.34: a caller recording no server -- its server finalised -- is
+# answered as seL4-MCS's `doReplyTransfer` answers it: the reply leg, then the pop
+# at the answered frame, with no chain walk (no server is recorded to walk from).
+# The AK1-B `.replyCapInvalid` refusal that arm carried was fail-closed under the
+# assumption the unheld pop retires, and it is gone.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*\(st, \.error \.replyCapInvalid\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*      \| none =>\n(([ \t][^\n]*)?\n)*          match answeredReplyObject\? st target with\n          \| none => \(st1, \.ok replySgi\?\)\n          \| some rid =>\n(([ \t][^\n]*)?\n)*              match applyReplyDonationOnCore st1 rid targetV" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 
 # (8) HP4.6 -- the pop validates the thread it is about to rewrite.  The
 # head-driven recipient is the answered caller, which no binding the operation
@@ -18389,9 +18392,10 @@ run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_recipient_unb
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def returnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*if !donationRecipientAcceptable st serverTid then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 
 # (9) The chain composite no longer carries `answeredHeadContextIsServerDonation`
-# -- the pop and the relaxation name one frame by construction now -- and what
-# replaced it is strictly weaker.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*replyFrameHeadIsBound" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
+# -- the pop and the relaxation name one frame by construction now -- nor, since
+# WS-ZA ZA6.34, the head-bound condition that replaced it: the pop handles a head
+# bound to nobody.  The statement carries the chain and nothing else.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*hObjInv : st.objects.invExt\)\n[^\n]*\(hChain : donationChainWellFormed st\) :" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*hHeadReturned : answeredHeadContextIsServerDonation" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
 
 # (10) The witnesses exhibit the head-driven shape, so a fixture that carried no
@@ -22040,7 +22044,7 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_co
 # rather than a second reading of the transition.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyCallDonationOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hFrom : c ≠ donorHome" SeLe4n/Kernel/IPC/Operations/Donation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ endpointCallDispatchReplenishCores" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hFrom : ∀ scId holder, replyFrameHeadHolder\? st rid = some \(scId, holder\) →\n *c ∉ SchedContextOps\.purgeReplenishCores st scId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hFrom : ∀ scId, replyFrameHeadContext\? st rid = some scId →\n *c ∉ SchedContextOps\.purgeReplenishCores st scId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ endpointReplyDispatchReplenishCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultReplyOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ endpointReplyDispatchReplenishCores replier faulted IpcMessage\.empty" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyTransferOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ replyTransferReplenishCores" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'

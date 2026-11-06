@@ -2966,22 +2966,23 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
       -- **WS-HP HP4.4 and HP7 (`v0.35.46`).**  HP4.4 replaced that condition in the
       -- composite with the strictly weaker `replyFrameHeadIsBound`, and HP7 deleted
       -- it -- so these two rows now exhibit the **retired** reading, kept because
-      -- they are what shows the retired and live conditions coincide on this shape,
-      -- and the row after them exhibits what the composite actually carries.  Both
-      -- are worth having: a cut that changed only the live condition would leave
-      -- the first two passing, and a cut that changed only the trigger would leave
-      -- the third passing.
+      -- they are what shows the retired and the head-bound readings coincide on this
+      -- shape, and the row after them exhibits the head-bound reading.  WS-ZA ZA6.34
+      -- retired that one too: the pop now handles a head bound to nobody, so the
+      -- composite carries no condition beyond the chain.  Both are worth
+      -- having: a cut that changed only the head-bound reading would leave the
+      -- first two passing, and a cut that changed only the trigger would leave the
+      -- third passing.
       assertBool "the RETIRED chain condition's premise: the answered caller records the server"
         (recordedReplyServer? stQueued donClient == some donServer)
       assertBool "...and its conclusion: that server holds the context that frame heads"
         (replyDonationReturn? stQueued donServer == some (scClient, donClient))
-      -- ...and the LIVE condition, which is what
-      -- `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` carries:
-      -- the context the answered frame heads is bound to *some* thread.  Weaker by
-      -- construction -- it names no particular server -- and here the holder it
-      -- names is the recorded server, which is the coincidence HP6.8's splice can
-      -- break at an orphan head.
-      assertBool "the LIVE chain condition: the head context is bound, and here to that server"
+      -- ...and the head-bound reading the chain composite carried until WS-ZA
+      -- ZA6.34: the context the answered frame heads is bound to *some* thread.
+      -- Weaker by construction -- it names no particular server -- and here the
+      -- holder it names is the recorded server, which is the coincidence HP6.8's
+      -- splice can break at an orphan head.
+      assertBool "the head-bound reading: the head context is bound, and here to that server"
         (replyFrameHeadContext? stQueued donReply == some scClient
          && replyFrameHeadHolder? stQueued donReply == some (scClient, donServer))
       -- Leg one alone: the caller is answered and the Reply is NOT free, because
