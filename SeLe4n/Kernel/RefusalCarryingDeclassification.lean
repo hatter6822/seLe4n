@@ -402,7 +402,7 @@ entry of the trail (`auditDrainViewComplete`, walked in place). -/
 @[inline] def auditDrainAdmitted (ctx : LabelingContext) (st : SystemState)
     (executingCore : Concurrency.CoreId) (cap : Capability) : Bool :=
   match cap.target, ctx.auditMonitorClearance, st.scheduler.currentOnCore executingCore with
-  | .auditTrail, some m, some reader =>
+  | .auditTrail _, some m, some reader =>
       cap.hasRight (syscallRequiredRight .auditDrain) && auditClearanceDominates m &&
         DomainFlowPolicy.legacyLattice.canFlow m (embedLegacyLabel (ctx.threadLabelOf reader)) &&
         auditWindowAllVisible ctx (embedLegacyLabel (ctx.threadLabelOf reader))
@@ -1255,7 +1255,7 @@ dominates the reader, and the read is covered, succeeds and fits a word. -/
 theorem auditedArmSpec_auditRead_admitted (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) (st : SystemState) (m : SecurityDomain) (reader : SeLe4n.ThreadId)
-    (hT : cap.target = .auditTrail) (hM : ctx.auditMonitorClearance = some m)
+    {code : Nat} (hT : cap.target = .auditTrail code) (hM : ctx.auditMonitorClearance = some m)
     (hCur : st.scheduler.currentOnCore executingCore = some reader)
     (hA : auditReadAdmitted cap m (embedLegacyLabel (ctx.threadLabelOf reader))
       (auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs) = true) :
@@ -1302,7 +1302,7 @@ ring's live window and staged in place — or the general one
       if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
       else
         match cap.target, ctx.auditMonitorClearance, st.scheduler.currentOnCore executingCore with
-        | .auditTrail, some m, some reader =>
+        | .auditTrail _, some m, some reader =>
           let code := auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs
           if auditReadAdmitted cap m (embedLegacyLabel (ctx.threadLabelOf reader)) code then
             .ok ((), auditReadPerform tid (code - 1) st)

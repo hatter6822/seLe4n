@@ -460,9 +460,11 @@ than 0, and on a carve that reads other than its object's cells (`CLAUDE.md`,
 `docs/planning/` states, for each row that adds or changes a kernel entry,
 an object or a type, how it keeps that rule and which scenario reads 0; a
 new plan row does the same.  New code keeps three forms.  A carve
-reads its request as words (`carveRequestWordsK`).  A capability with a
-fieldless target is stored shared and leaves the slot's record in the spares
-(`CNode.insertCellShared`).  A word-valued field is read off its word, not
+reads its request as words (`carveRequestWordsK`).  Every capability target
+is a constructor with a field, so the record that holds it owns a target cell
+that the next capability written there writes over (`CapTarget.copyOver`); a
+new target kind keeps that form (the audit trail and interrupt control carry
+`CapTarget.authorityCode`).  A word-valued field is read off its word, not
 its `Nat` (`refusalFieldChunk`).  A scenario added for a new entry is named in
 the gate's pinned set.  A queue removal's guard reads the endpoint's end
 codes (`dualQueueRemovalEnabledCode`), a run queue's buckets are a fixed

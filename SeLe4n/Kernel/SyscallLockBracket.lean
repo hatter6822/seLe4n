@@ -619,10 +619,10 @@ theorem abiEntryLockOperands_tcbSuspend_target_valid (decoded : SyscallDecodeRes
       cases hTgt : cap.target with
       | cnodeSlot _ => rw [hTgt] at h; exact absurd h (by simp)
       | replyCap _ => rw [hTgt] at h; exact absurd h (by simp)
-      | auditTrail => rw [hTgt] at h; exact absurd h (by simp)
+      | auditTrail _ => rw [hTgt] at h; exact absurd h (by simp)
       | schedControl _ => rw [hTgt] at h; exact absurd h (by simp)
       | irqHandler _ => rw [hTgt] at h; exact absurd h (by simp)
-      | irqControl => rw [hTgt] at h; exact absurd h (by simp)
+      | irqControl _ => rw [hTgt] at h; exact absurd h (by simp)
       | object objId =>
       rw [hTgt] at h
       simp only at h

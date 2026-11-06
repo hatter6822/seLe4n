@@ -120,7 +120,7 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   -- observer, exactly as a fieldless authority should be: the *content* it
   -- unlocks is gated by the reader's clearance at the read
   -- (`auditLogVisibleTo`), never by whether the capability is visible.
-  | .auditTrail => true
+  | .auditTrail _ => true
   -- WS-ZA ZA6.4: a scheduling-control capability names a core, which every
   -- observer knows; the authority it carries is the configure's, whose writes
   -- are the context's.
@@ -128,7 +128,7 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   -- WS-ZA ZA6.32: the interrupt-control capability names no object; a handler
   -- capability is observable where its line's interrupt node is, seL4's IRQ
   -- label (`pasIRQAbs`), as the line's state is (`projectIrqSignalLines`).
-  | .irqControl => true
+  | .irqControl _ => true
   | .irqHandler l => objectObservable ctx observer (irqNodeId l)
 
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.

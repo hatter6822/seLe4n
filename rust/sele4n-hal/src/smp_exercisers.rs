@@ -1779,7 +1779,7 @@ const SCHED_CONTROL_SLOT: u64 = 16;
 /// (`qemuVirtExerciserAuditSlot`, WS-ZA ZA5.13): the copy slot, deleted once
 /// the declassification scenario ends.  Its next use is the invocation
 /// scenarios' copy, which writes the copied capability's target over the
-/// slot's record, so no carve meets the audit capability's fieldless target.
+/// slot's record and its target cell.
 #[cfg(feature = "hw_target")]
 const AUDIT_SLOT: u64 = COPY_SLOT;
 /// The slot of the root task's interrupt-control capability
@@ -1787,6 +1787,13 @@ const AUDIT_SLOT: u64 = COPY_SLOT;
 /// exerciser holds is issued from (`seL4_IRQControl_Get`).
 #[cfg(feature = "hw_target")]
 const IRQ_CONTROL_SLOT: u64 = 20;
+/// The rights the boot gives the interrupt-control capability (`write` alone,
+/// `Capability.irqControl`), as a mint's rights word.
+#[cfg(feature = "hw_target")]
+const IRQ_CONTROL_RIGHTS: u64 = 0x2;
+/// The badge a badged mint of the interrupt-control capability writes.
+#[cfg(feature = "hw_target")]
+const IRQ_CONTROL_BADGE: u64 = 7;
 /// The free slots the exerciser issues its two interrupt-handler capabilities
 /// into (WS-ZA ZA6.32): the bound line's and the unbound line's.  The boot
 /// issues no handler (`bootIssuesNoInterruptHandler`), as seL4's does not.
@@ -2348,6 +2355,8 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   capability minted over the record the copy left (its target shared with
 ///   the frame's capability) and deleted, named as the partner's IPC buffer,
 ///   unmapped and deleted; the tables taken out deepest first and
+///   deleted; the interrupt-control capability copied, and minted with its
+///   own rights, with none and with a badge, into the frame's slot, each
 ///   deleted; an endpoint, a notification, a reply and a CNode each carved
 ///   and its only capability deleted, which retires it; and the untyped
 ///   reset.  While the frame is mapped it is also the
@@ -4222,6 +4231,63 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             CSPACE_DELETE,
             CNODE_CAP,
             [PAGE_TABLE_SLOTS[0], 0, 0, 0],
+        ),
+        // WS-ZA ZA6.35: the root task's interrupt-control capability copied,
+        // minted with its own rights, with none and with a badge, into the slot
+        // the next carve reuses, and deleted each time; the carve's pin reads
+        // that slot's record after.
+        invocation(
+            "irq-control-copy",
+            CSPACE_COPY,
+            CNODE_CAP,
+            [IRQ_CONTROL_SLOT, FRAME_SLOT, 0, 0],
+        ),
+        invocation(
+            "irq-control-copy-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "irq-control-mint",
+            CSPACE_MINT,
+            CNODE_CAP,
+            [IRQ_CONTROL_SLOT, FRAME_SLOT, IRQ_CONTROL_RIGHTS, 0],
+        ),
+        invocation(
+            "irq-control-mint-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "irq-control-mint-attenuated",
+            CSPACE_MINT,
+            CNODE_CAP,
+            [IRQ_CONTROL_SLOT, FRAME_SLOT, 0, 0],
+        ),
+        invocation(
+            "irq-control-mint-attenuated-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "irq-control-mint-badged",
+            CSPACE_MINT,
+            CNODE_CAP,
+            [
+                IRQ_CONTROL_SLOT,
+                FRAME_SLOT,
+                IRQ_CONTROL_RIGHTS,
+                IRQ_CONTROL_BADGE,
+            ],
+        ),
+        invocation(
+            "irq-control-mint-badged-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
         ),
         // WS-ZA ZA5.4 part 22: each passive kernel kind carved and its only
         // capability deleted, which retires it, quiescent and unreferenced.

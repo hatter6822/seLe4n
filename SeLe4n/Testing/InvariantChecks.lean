@@ -314,11 +314,11 @@ private def slotTargetBacked (st : SystemState) (cap : Capability) : Bool :=
   -- there is nothing in the store for it to be backed by.  Vacuously
   -- coherent — and deliberately not "check the trail exists", since a
   -- `SystemState` always has one.
-  | .auditTrail => true
+  | .auditTrail _ => true
   -- WS-ZA ZA6.4: a scheduling-control capability names a core, not an object.
   | .schedControl _ => true
   -- WS-ZA ZA6.32: the interrupt authorities name no object.
-  | .irqControl => true
+  | .irqControl _ => true
   | .irqHandler _ => true
 
 /-- One check per occupied capability slot of every listed object: a CNode's
