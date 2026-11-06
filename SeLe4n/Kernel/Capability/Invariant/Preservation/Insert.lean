@@ -279,9 +279,9 @@ theorem mintReplyCap_preserves_capabilityBundleOffCoverage
                   simp only [CapTarget.replyCap.injEq] at h; subst h; rw [hRep]; simp) hInsert
       | cnodeSlot a b => simp [hSrc, hTgt] at hStep
       | replyCap rid => simp [hSrc, hTgt] at hStep
-      | auditTrail => simp [hSrc, hTgt] at hStep
+      | auditTrail _ => simp [hSrc, hTgt] at hStep
       | schedControl _ => simp [hSrc, hTgt] at hStep
-      | irqControl => simp [hSrc, hTgt] at hStep
+      | irqControl _ => simp [hSrc, hTgt] at hStep
       | irqHandler _ => simp [hSrc, hTgt] at hStep
 
 /-- A slot `lookupSlotCap` reads a capability from is occupied in a live CNode. -/

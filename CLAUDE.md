@@ -11,7 +11,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.203.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.204.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -229,6 +229,18 @@ Full text and examples for these three sections:
   kept beside its replacement. "Unused" is measured over the code view and
   over by-name consumers (Tier 1 censuses, Tier 3 anchors), not by textual
   references alone; sweep what was *pinning* the deleted thing.
+- **A kernel entry allocates nothing.** The compiled kernel's syscall, fault
+  and interrupt entries make no heap allocation. The one exception is an
+  untyped retype's carve, and it allocates only the new object's own cells:
+  the object record and the cells it is built from, the object's entries in
+  the object store's tables and index, and its child record in the untyped.
+  Every other part of a retype makes no allocation, and so does every untyped
+  reset. New kernel code keeps to this rule. Write a fast form that works in
+  place and join it to the specification with a `@[csimp]` or `_eq` proof;
+  do not weaken the specification to fit the fast form. The QEMU heap gate
+  (`scripts/qemu_exerciser_lib.sh`, `heap-allocations-per-syscall`) fails if
+  any entry reads other than 0, or if a carve reads other than its object's
+  cells.
 
 **Writing gates and checks** (the project's gates are mostly text scanners;
 these rules are what keeps them honest):

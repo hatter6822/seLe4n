@@ -24,8 +24,9 @@ the shipped labeling before they do anything: its declassification policy
 denies every downgrade and it configures no audit monitor
 (`qemuVirt_shippedLabeling_denies`).  A refusal measures nothing, so the test
 image boots this deployment instead: the shipped one with three differences,
-each the least the four calls need, and a fourth for the interrupt entry's
-scenarios (WS-ZA ZA6.32), and nothing else.
+each the least the four calls need, a fourth for the interrupt entry's
+scenarios (WS-ZA ZA6.32), and a fifth for the declassified signal's second hop
+(WS-ZA ZA6.35), and nothing else.
 
 * **The labeling** (`qemuVirtExerciserDeploymentLabeling`): the same partition
   at the same boundary with the same witnesses, its lower half labeled
@@ -36,9 +37,16 @@ scenarios (WS-ZA ZA6.32), and nothing else.
   (the boot guard's `verifiesDeclaredSeparation`).  Information may now flow up
   into the boot domain, which the shipped confinement forbids — this image is a
   test image, and the shipped image keeps the confinement.
-* **One downgrade** (`qemuVirtExerciserDeclassificationPolicy`): from the boot
+* **Two downgrades** (`qemuVirtExerciserDeclassificationPolicy`): from the boot
   domain to the upper one, the one pair the base lattice refuses that a boot
-  thread can reach.
+  thread can reach, and from the upper one to the low band below, so a
+  declassified signal can owe two records (WS-ZA ZA6.35).
+* **A low band** (`qemuVirtExerciserInLowBand`, WS-ZA ZA6.35): the ids from
+  `qemuVirtExerciserLowBandBase`, which no boot object holds, labeled
+  `lowTrusted`, entity and endpoint alike.  The exerciser carves a thread and
+  an endpoint there, so a declassified signal's second hop can be a downgrade
+  the policy permits (the upper domain into the band) or one it refuses (the
+  boot domain into the band), which no boot thread's label can be.
 * **The audit monitor**: the clearance is the top, so the boot domain's threads
   qualify, and the root task holds the boot audit capability in slot 10
   (`qemuVirtExerciserAuditSlot`, the exerciser's copy slot), which the
@@ -78,20 +86,46 @@ open SeLe4n.Platform.FFI
 /-- The allocation exerciser's `virt` deployment. -/
 structure QemuVirtExerciserPlatform where
 
-/-- The exerciser's one authorized downgrade: from the boot domain
-    (`kernelTrusted`, domain 3) to the upper one (`highUntrusted`, domain 2). -/
+/-- The exerciser's two authorized downgrades: from the boot domain
+    (`kernelTrusted`, domain 3) to the upper one (`highUntrusted`, domain 2),
+    and from the upper one to the low band (`lowTrusted`, domain 1). -/
 def qemuVirtExerciserDeclassificationPolicy : SeLe4n.Kernel.DeclassificationPolicy :=
   { canDeclassify := fun src dst =>
-      src.id == (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted).id &&
-        dst.id == (SeLe4n.Kernel.embedLegacyLabel .highUntrusted).id }
+      (src.id == (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted).id &&
+        dst.id == (SeLe4n.Kernel.embedLegacyLabel .highUntrusted).id) ||
+      (src.id == (SeLe4n.Kernel.embedLegacyLabel .highUntrusted).id &&
+        dst.id == (SeLe4n.Kernel.embedLegacyLabel .lowTrusted).id) }
+
+/-- The first id of the exerciser's low band: below the upper domain's base and
+    above every boot object, so the band holds only what the exerciser carves
+    there. -/
+def qemuVirtExerciserLowBandBase : Nat := 0x8_0000
+
+/-- The number of ids in the exerciser's low band. -/
+def qemuVirtExerciserLowBandSize : Nat := 0x100
+
+/-- Whether an entity index is in the exerciser's low band. -/
+def qemuVirtExerciserInLowBand (index : Nat) : Bool :=
+  qemuVirtExerciserLowBandBase ≤ index && index < qemuVirtExerciserLowBandBase + qemuVirtExerciserLowBandSize
+
+/-- The exerciser's entity labels: the shipped partition, its lower half at the
+    top of the lattice, and the low band at `lowTrusted`. -/
+def qemuVirtExerciserEntityLabel (index : Nat) : SeLe4n.Kernel.SecurityLabel :=
+  if qemuVirtExerciserInLowBand index then .lowTrusted
+  else SeLe4n.Kernel.indexPartitionedLabel qemuVirtUpperDomainBase .kernelTrusted .highUntrusted index
 
 /-- The exerciser's labeling: the shipped partition at the shipped boundary and
-    witnesses, its lower half at the top of the lattice, with one downgrade and
-    the top as the audit monitor's clearance. -/
+    witnesses, its lower half at the top of the lattice, a low band, two
+    downgrades and the top as the audit monitor's clearance.  An endpoint's flow
+    label is its entity label, so the two agree everywhere. -/
 def qemuVirtExerciserDeploymentLabeling : SeLe4n.Kernel.DeploymentLabeling :=
   { SeLe4n.Kernel.indexPartitionedDeploymentLabeling qemuVirtUpperDomainBase
       qemuVirtLowerWitnessIndex .kernelTrusted .highUntrusted (by decide)
       qemuVirtLowerWitnessIndex_admissible qemuVirtLowerWitnessIndex_below_boundary with
+    entityLabelOf := qemuVirtExerciserEntityLabel
+    endpointLabelOf := fun oid => qemuVirtExerciserEntityLabel oid.toNat
+    hSeparated := by decide
+    hEndpointObjectCoherence := fun _ => SeLe4n.Kernel.securityFlowsTo_refl _
     declassificationPolicy := qemuVirtExerciserDeclassificationPolicy
     auditMonitorClearance := some (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted) }
 
@@ -184,17 +218,20 @@ theorem qemuVirt_shippedLabeling_denies :
         (PlatformBinding.labeling (platform := QemuVirtPlatform)) = none :=
   ⟨fun _ _ => rfl, rfl, rfl⟩
 
-/-- The exerciser's policy authorizes exactly one pair: the boot domain to the
-    upper one. -/
+/-- The exerciser's policy authorizes exactly two pairs: the boot domain to the
+    upper one, and the upper one to the low band. -/
 theorem qemuVirtExerciserDeclassificationPolicy_canDeclassify_iff
     (src dst : SeLe4n.Kernel.SecurityDomain) :
     qemuVirtExerciserDeclassificationPolicy.canDeclassify src dst = true ↔
-      src = SeLe4n.Kernel.embedLegacyLabel .kernelTrusted ∧
-        dst = SeLe4n.Kernel.embedLegacyLabel .highUntrusted := by
+      (src = SeLe4n.Kernel.embedLegacyLabel .kernelTrusted ∧
+        dst = SeLe4n.Kernel.embedLegacyLabel .highUntrusted) ∨
+      (src = SeLe4n.Kernel.embedLegacyLabel .highUntrusted ∧
+        dst = SeLe4n.Kernel.embedLegacyLabel .lowTrusted) := by
   obtain ⟨s⟩ := src
   obtain ⟨d⟩ := dst
   simp [qemuVirtExerciserDeclassificationPolicy, SeLe4n.Kernel.embedLegacyLabel,
-    SeLe4n.Kernel.SecurityLabel.kernelTrusted, SeLe4n.Kernel.SecurityLabel.highUntrusted]
+    SeLe4n.Kernel.SecurityLabel.kernelTrusted, SeLe4n.Kernel.SecurityLabel.highUntrusted,
+    SeLe4n.Kernel.SecurityLabel.lowTrusted]
 
 /-- The exerciser's monitor clearance validates — it is the top — so its audit
     calls are not refused for want of a monitor. -/

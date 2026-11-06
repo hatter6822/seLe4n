@@ -1,3 +1,147 @@
+## v0.36.204 — WS-ZA ZA6.35: the gate pins every entry at 0 and a carve at its object's cells, and `CLAUDE.md` states the rule
+
+The QEMU heap gate now fails on any kernel entry that reads other than 0.
+The one exception is an untyped retype's carve, which must read exactly the
+new object's own cells (owner's decision, 2026-10-20).  `CLAUDE.md` gains the
+standing rule under *Key conventions*.  The VSpace mappings, the
+declassified signal that wakes a waiter or delivers to a bound receiver, and
+every audit-read opcode family now run in place.  Every reading the gate found
+non-zero is fixed in this row, none registered as debt: the run-queue bucket,
+the shared carve target, the long send, the bound and two-hop declassified
+signal, and the refused-receiver read.
+
+- **The gate** (`scripts/qemu_exerciser_lib.sh`, `heap-allocations-per-syscall`).
+  - A retype's round trip names what it carved (`carved {kind}/{size}`,
+    printed by `smp_exercisers.rs`).
+  - The gate pins the carve at that kind's object cells (`carve_cells`) and
+    fails closed on a kind it does not know.
+  - Every other reading is pinned at 0, at first call and in steady state.
+- **VSpace** (`vspace-map` 9 to 0, `vspace-map-copy` 7/5 to 0,
+  `vspace-unify-instruction` 4/3 to 0).
+  - The mapping and epoch records come from per-root pools
+    (`rootMappingFromSpares`, `rootEpochFromSpares`); an unmap returns its
+    cell to the pool.
+  - The TLB and instruction-cache ledgers take their cells from spares
+    seeded at boot (`withFreshCoreCaches`).
+  - A capability's target is written in place (`CapTarget.copyOver`).
+- **A retype builds no request.**
+  - The live arm decodes the request into words (`carveRequestWordsK`) and
+    carves from them (`untypedRetypePerformCode`, `untypedRetypeAdmittedCode`,
+    `CarveRequest.heapAdmittedW`).
+  - The compiled-only wrapper `untypedRetypePerformImpl` and its `@[csimp]`
+    are retired; `untypedRetypePerformAt_eq_words` relates the statement to
+    its words form, and the reachability census records the carve's
+    specification forms.
+  - Each is proven equal to `untypedRetypePerformAt` and to the admission
+    checks (`untypedRetypePerformCode_eq`, `carveRequestWordsK_eq`).
+  - A tcb, scheduling-context or CNode carve goes from 2 cells over its
+    object to 0.
+- **Every capability target is a cell: the audit-trail and interrupt-control
+  targets carry a word** (a model type change; `CapTarget.auditTrail code`,
+  `CapTarget.irqControl code`, the word `CapTarget.authorityCode`).
+  - The two were the only targets with no field, so the compiled kernel held
+    them as scalars and a record holding one owned no target cell.  Written
+    over a slot's record, such a target dropped that record's target cell, and
+    the next carve into the slot built one.  Copied or minted, it built the
+    capability and its `some` (`irq-control-copy`, `irq-control-mint` 2/2,
+    found in review).
+  - Each now carries one word, which no check reads: the boot writes
+    `CapTarget.authorityCode` and a copy or mint carries it over.  The record
+    owns its target cell, so a copy, a mint with the source's rights, with
+    other rights or with a badge writes the slot's spare record and its target
+    cell in place through the one-field family (`CapTarget.auditTrailOver`,
+    `CapTarget.irqControlOver`, and an arm for each in `objectOver`,
+    `replyCapOver`, `schedControlOver`, `irqHandlerOver`, `copyOver`,
+    `isOneField`), and boot unshares them (`unshareTarget`).
+  - The model's rights check on interrupt control stays (`irqControlGet`
+    needs `.write`).  Theorems that named the bare target now name it with its
+    word: `extractAuditAuthority_eq_ok_iff`, `mintDerivedCap_no_audit_forgery`
+    and the `.auditRead`, `.auditDrain` and `.irqControlGet` obligations of
+    `syscallDelegates`, and the audit-arm theorems in `API.lean` and
+    `RefusalCarryingDeclassification.lean`.
+  - Retired: the shared storage of a fieldless capability
+    (`CNode.insertCellShared`, `CNode.insertCellSharedOf`,
+    `CapTarget.isFieldless`, `SpareCells.keepCell`).  A copy and a mint write
+    their fields over the slot's record as before (`CNode.insertFields`).
+  - `CapTarget.objectOver` also reuses the cell of a scheduling-control or
+    interrupt-handler target.
+- **The declassified signal that wakes a waiter runs in place.**
+  - Admitted when the waiter is woken in place (`signalWakesInPlace`) and
+    each hop is ordinary or a permitted downgrade, with room for the records
+    the downgrades owe (`declassifySignalWokenAdmitted`).
+  - The wake is delivered without building a message, the records are written
+    over the trail, and the fused taint step follows
+    (`declassifySignalWokenWrites`, `declassifySignalWokenPerform`).
+  - Proven equal to the specification (`auditedArmSpec_declassifySignal_woken`,
+    `declassifySignalWoken_eq_writes`, `declassifySignalOperandArmR_eq`).
+- **Every audit-read opcode walks the ring in place** (`auditReadFastCode`,
+  opcodes 0 to 29, `auditReadFastCode_spec`).
+  - Covered: the authorization basis (bytes read off the rendered
+    designation, `auditBasisByteAt`), the refusal ledger's status, counters,
+    slot fields and refused receiver, and the causality verdicts
+    (`auditChainCode`, `TaintWords.containsCode`).
+  - A field chunk is read off the value's word halves, so no chunk builds a
+    power or a big number (`auditFieldChunkCode`, `divChunk`).
+  - A refusal's requested target is read off its address word
+    (`refusalFieldCount`, `refusalFieldChunk`).
+- **New exerciser scenarios** (`smp_exercisers.rs`).
+  - Signals: `declassified-wait-pending`, `declassified-wait-blocks`,
+    `declassified-signal-wakes`.
+  - Drain and reads: `audit-drain-first`, plus the basis count and a basis
+    chunk past the first.
+  - Refusal ledger: status, counters, tags, and the count and chunk 0 of the
+    subject, domain and target, plus the receiver count.
+  - Causality verdicts: predecessor, entry and archived.
+  - The ledger's slot comes from an unmeasured declassification refused with
+    `flowDenied`.
+- **The run-queue bucket** (`resume-carved-tcb` 3/0 to 0/0).  A core's
+  buckets are a fixed array indexed by priority, as seL4's `ksReadyQueues`
+  is (`BucketTable`, `bucketTableEmpty`, `numPriorities`, 256), each
+  bucket's ends cells of their own from boot (`RunQueueEnds.fresh`).  The
+  Robin Hood bucket table, `setEndsImpl` and its `@[csimp]`, and the table
+  invariant the run queue carried for it are retired.
+- **The shared carve target** (`untyped-retype-space-cnode` 29 to 28, the
+  first calls of `untyped-retype-sched-context` and
+  `untyped-retype-page-table-3` 14 to 13).  A copy, mint or move writes the
+  destination slot's own target cell (`CapTarget.copyOver`, dispatching by
+  one-field kind to `objectOver`, `replyCapOver`, `schedControlOver` and
+  `irqHandlerOver`), where it returned the source's cell, which the next
+  carve into either slot then had to rebuild.  Boot unshares every one-field
+  target (`unshareTarget`).
+- **The long send** (more than four words, seL4's `copyMRs`).
+  - Routed (`RegisterRoutedSyscall.sendLong`, `sendLongRoutedArm`,
+    `RoutedArms/SendLong.lean`): the overflow words are copied from the
+    sender's IPC buffer into the receiver's as physical writes, in place
+    (`IPC/CrossCore/LongSendInPlace.lean`, `performSendDeliveredLong`).
+  - Scenario: a six-word send to a waiting receiver (`long-send-*`).
+- **The bound delivery** (seL4's `sendSignal`, a bound TCB blocked on
+  receive), in place for all three signals.
+  - The declassified signal: `declassifySignalBoundAdmitted`,
+    `declassifySignalBoundPerform`, `auditedArmSpec_declassifySignal_bound`
+    (`IPC/CrossCore/SignalBoundInPlace.lean`).
+  - The plain signal and the interrupt: `performSignalBoundDelivered`,
+    `signalBound_eq_writes`, in `notificationSignalCheckedArmR` and
+    `interruptSignalImpl`.
+  - The removal's guard is read off the queue's end codes
+    (`dualQueueRemovalEnabledCode`, `queueRemoveInPlace_eq_impl`), and the
+    bound target is inlined into its callers (`boundDeliveryTarget?_eq_impl`):
+    the record, the `some` cells and the pair they built read 9 and 11.
+- **The two-hop downgrade.**  Both records are written over the trail, the
+  second stamped with the words the first extended
+  (`declassifySignalHopsRecord`, `recordDeclassifiedHops_hopsRecord`), in
+  the bound and the woken form.
+- **The refused-receiver read (opcode 26)** is measured.  The exerciser
+  labeling gains a low band in the lower trusted domain
+  (`qemuVirtExerciserInLowBand`) and a second downgrade, from the upper
+  domain to it; both are exerciser-only and the shipped labeling stays
+  deny-all.  A thread and an endpoint carved there give a declassified
+  signal refused at its second hop, whose ledger record names the receiver.
+- **Scenarios** (`smp_exercisers.rs`, run twice, the partner suspended and
+  the timer masked): `declassified-signal-bound`, `signal-bound`,
+  `irq-signal-bound`, `declassified-signal-two-hop` and
+  `audit-read-refusal-receiver`, whose word is checked to be the low
+  thread's id.  The gate's pinned set names each.
+
 ## v0.36.203 — WS-ZA ZA6.34: a server's final delete is seL4-MCS's, and the deletes around it allocate nothing
 
 The QEMU exerciser gains a third and a fourth thread, so the final deletes

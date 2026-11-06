@@ -925,10 +925,10 @@ capability exists in a deployment exactly where the boot/CSpace layer put one ‚Ä
 which is why an unconfigured deployment has no audit reader at all. -/
 theorem mintDerivedCap_no_audit_forgery
     (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-    (child : Capability)
+    (child : Capability) {code : Nat}
     (hMint : mintDerivedCap parent rights badge = .ok child)
-    (hChild : child.target = .auditTrail) :
-    parent.val.target = .auditTrail := by
+    (hChild : child.target = .auditTrail code) :
+    parent.val.target = .auditTrail code := by
   rw [‚Üê mintDerivedCap_preserves_target parent rights badge child hMint]
   exact hChild
 

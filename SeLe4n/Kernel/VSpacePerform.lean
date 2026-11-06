@@ -106,29 +106,55 @@ theorem mappingCellOver_eq
   · rw [mappingEntryOver_eq]
   · rfl
 
-/-- WS-ZA ZA5.4: `rootWithMapping` as compiled: the root's spare cell is taken
-out of its field before the insert, and the mapping written over it
-(`mappingCellOver`) is the cell the table places (`RHTable.insertCell`), so a
-map after an unmap builds no table entry. -/
+/-- WS-ZA ZA6.35: a root's mapping table with the translation written over its
+last spare cell, given the spares `a` taken out of their field: the cell is read
+and the array popped before the cell is written, so the cell is the array's
+alone when `mappingCellOver` writes it (with no spare it is built). -/
+@[inline] def rootMappingFromSpares (r0 : VSpaceRoot) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (a : Array (Option (RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)))) :
+    VSpaceRoot :=
+  if h : 0 < a.size then
+    let o := a[a.size - 1]
+    let a' := a.pop
+    { r0 with mappings := r0.mappings.insertCell (mappingCellOver o vaddr paddr perms),
+              mappingSpare := Squash.mk a' }
+  else { r0 with mappings := r0.mappings.insertCell (mappingCellOver none vaddr paddr perms) }
+
+theorem rootMappingFromSpares_eq (r0 : VSpaceRoot) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (a : Array (Option (RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)))) :
+    rootMappingFromSpares r0 vaddr paddr perms a =
+      { r0 with mappings := r0.mappings.insert vaddr (paddr, perms) } := by
+  unfold rootMappingFromSpares
+  split <;>
+  · cases r0
+    simp only [mappingCellOver_eq, RobinHood.RHTable.insertCell_eq, VSpaceRoot.mk.injEq,
+      true_and, and_true]
+    try exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA5.4: `rootWithMapping` as compiled: the root's spare cells are taken
+out of their field before the insert, and the mapping written over the last of
+them (`rootMappingFromSpares`) is the cell the table places
+(`RHTable.insertCell`), so a map onto a root holding a spare builds no table
+entry. -/
 @[inline] def rootWithMappingCells (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions) (r : VSpaceRoot) : VSpaceRoot :=
   let sp := r.mappingSpare
-  let r0 := { r with mappingSpare := Squash.mk none }
-  Quot.lift
-    (fun o => { r0 with mappings := r0.mappings.insertCell (mappingCellOver o vaddr paddr perms) })
-    (fun a b _ => by dsimp only; rw [mappingCellOver_eq, mappingCellOver_eq]) sp
+  let r0 := { r with mappingSpare := Squash.mk #[] }
+  Quot.lift (rootMappingFromSpares r0 vaddr paddr perms)
+    (fun a b _ => by rw [rootMappingFromSpares_eq, rootMappingFromSpares_eq]) sp
 
 @[csimp] theorem rootWithMapping_eq_cells : @rootWithMapping = @rootWithMappingCells := by
   funext vaddr paddr perms r
   unfold rootWithMapping rootWithMappingCells
-  cases r with
-  | mk asid mappings tableBase tables mappingEpochs sp esp =>
-    induction sp using Squash.ind with
-    | h o =>
-      simp only [Squash.mk]
-      rw [mappingCellOver_eq, RobinHood.RHTable.insertCell_eq]
-      simp only [VSpaceRoot.mk.injEq, and_true, true_and]
-      exact Subsingleton.elim _ _
+  induction r.mappingSpare using Squash.ind with
+  | h a =>
+    show _ = rootMappingFromSpares _ vaddr paddr perms a
+    rw [rootMappingFromSpares_eq]
+    cases r
+    simp only [VSpaceRoot.mk.injEq, true_and, and_true]
+    exact Subsingleton.elim _ _
 
 /-- WS-ZA ZA5.4: the root a mapping's epoch tag leaves (`tagFrameMapping`). -/
 @[inline] def rootWithEpoch (vaddr : SeLe4n.VAddr) (epoch : Nat) (r : VSpaceRoot) :
@@ -170,29 +196,49 @@ theorem epochCellOver_eq (o : Option (RobinHood.RHEntry SeLe4n.VAddr Nat))
   · rw [epochEntryOver_eq]
   · rfl
 
-/-- WS-ZA ZA5.4: `rootWithEpoch` as compiled: the root's spare epoch cell, which
-the unmap before it left (`rootWithoutEpochCells`), taken out of its field and
-written over (`epochCellOver`) as the cell the table places, so a map after an
-unmap builds no epoch entry, whatever address it maps. -/
+/-- WS-ZA ZA6.35: a root's epoch table with the epoch written over its last
+spare epoch cell (as `rootMappingFromSpares`). -/
+@[inline] def rootEpochFromSpares (r0 : VSpaceRoot) (vaddr : SeLe4n.VAddr) (epoch : Nat)
+    (a : Array (Option (RobinHood.RHEntry SeLe4n.VAddr Nat))) : VSpaceRoot :=
+  if h : 0 < a.size then
+    let o := a[a.size - 1]
+    let a' := a.pop
+    { r0 with mappingEpochs := r0.mappingEpochs.insertCell (epochCellOver o vaddr epoch),
+              epochSpare := Squash.mk a' }
+  else { r0 with mappingEpochs := r0.mappingEpochs.insertCell (epochCellOver none vaddr epoch) }
+
+theorem rootEpochFromSpares_eq (r0 : VSpaceRoot) (vaddr : SeLe4n.VAddr) (epoch : Nat)
+    (a : Array (Option (RobinHood.RHEntry SeLe4n.VAddr Nat))) :
+    rootEpochFromSpares r0 vaddr epoch a =
+      { r0 with mappingEpochs := r0.mappingEpochs.insert vaddr epoch } := by
+  unfold rootEpochFromSpares
+  split <;>
+  · cases r0
+    simp only [epochCellOver_eq, RobinHood.RHTable.insertCell_eq, VSpaceRoot.mk.injEq,
+      true_and, and_true]
+    try exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA5.4: `rootWithEpoch` as compiled: the root's spare epoch cells taken
+out of their field and the last written over (`rootEpochFromSpares`) as the
+cell the table places, so a map onto a root holding a spare builds no epoch
+entry, whatever address it maps. -/
 @[inline] def rootWithEpochCells (vaddr : SeLe4n.VAddr) (epoch : Nat) (r : VSpaceRoot) :
     VSpaceRoot :=
   let sp := r.epochSpare
-  let r0 := { r with epochSpare := Squash.mk none }
-  Quot.lift
-    (fun o => { r0 with mappingEpochs := r0.mappingEpochs.insertCell (epochCellOver o vaddr epoch) })
-    (fun a b _ => by dsimp only; rw [epochCellOver_eq, epochCellOver_eq]) sp
+  let r0 := { r with epochSpare := Squash.mk #[] }
+  Quot.lift (rootEpochFromSpares r0 vaddr epoch)
+    (fun a b _ => by rw [rootEpochFromSpares_eq, rootEpochFromSpares_eq]) sp
 
 @[csimp] theorem rootWithEpoch_eq_cells : @rootWithEpoch = @rootWithEpochCells := by
   funext vaddr epoch r
   unfold rootWithEpoch rootWithEpochCells
-  cases r with
-  | mk asid mappings tableBase tables mappingEpochs sp esp =>
-    induction esp using Squash.ind with
-    | h o =>
-      simp only [Squash.mk]
-      rw [epochCellOver_eq, RobinHood.RHTable.insertCell_eq]
-      simp only [VSpaceRoot.mk.injEq, and_true, true_and]
-      exact Subsingleton.elim _ _
+  induction r.epochSpare using Squash.ind with
+  | h a =>
+    show _ = rootEpochFromSpares _ vaddr epoch a
+    rw [rootEpochFromSpares_eq]
+    cases r
+    simp only [VSpaceRoot.mk.injEq, true_and, and_true]
+    exact Subsingleton.elim _ _
 
 /-- WS-ZA ZA5.4: the frame a mapping's epoch tag leaves: its counter advanced. -/
 @[inline] def frameWithNextEpoch (f : FrameObject) : FrameObject :=
@@ -544,6 +590,50 @@ def vspaceUnifyPerformAt (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (st : Syste
         (.unifyPage paddr)
     | none => st
   | none => st
+
+/-- WS-ZA ZA6.35: `vspaceUnifyPerformAt` as compiled.  The ledger is empty at
+every entry (the seam drains it), so the operand is recorded first, written
+over the drained ledger's cells (`Architecture.recordIcacheUnifyCells`), and the
+broadcast reads it back from the ledger: neither builds an operand or a list
+cell.  The record and the broadcast write different fields, so their order is
+the specification's (`vspaceUnifyPerformAt_eq_cells`).  A ledger that is not
+empty takes the specification's writes. -/
+def vspaceUnifyPerformAtCells (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st : SystemState) : SystemState :=
+  match Architecture.resolveAsidRoot st asid with
+  | some (_, root) =>
+    match VSpaceRoot.lookup root vaddr with
+    | some (paddr, _) =>
+      match st.pendingIcacheMaintenance with
+      | [] =>
+        let st1 := Architecture.recordIcacheUnifyCells st paddr
+        match st1.pendingIcacheMaintenance with
+        | op :: _ => Architecture.icInvalidateBroadcast st1 Architecture.icBroadcastReach op
+        | [] => Architecture.icInvalidateBroadcast st1 Architecture.icBroadcastReach
+            (.unifyPage paddr)
+      | _ :: _ =>
+        Architecture.recordIcacheMaintenance
+          (Architecture.icInvalidateBroadcast st Architecture.icBroadcastReach (.unifyPage paddr))
+          (.unifyPage paddr)
+    | none => st
+  | none => st
+
+@[csimp] theorem vspaceUnifyPerformAt_eq_cells :
+    @vspaceUnifyPerformAt = @vspaceUnifyPerformAtCells := by
+  funext asid vaddr st
+  unfold vspaceUnifyPerformAt vspaceUnifyPerformAtCells
+  split
+  · split
+    · next paddr _ _ =>
+      cases hP : st.pendingIcacheMaintenance with
+      | nil =>
+        dsimp only
+        rw [Architecture.recordIcacheUnifyCells_eq st paddr hP,
+          Architecture.recordIcacheMaintenance_of_nil hP]
+        rfl
+      | cons _ _ => rfl
+    · rfl
+  · rfl
 
 /-- **WS-ZA ZA5.4: an admitted unify is its writes.** -/
 theorem vspaceUnifyInstructionPage_of_admitted (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)

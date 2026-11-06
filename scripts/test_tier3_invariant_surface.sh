@@ -3921,7 +3921,7 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeOfChecked_heapRefused($|[ ({:
 # The routed retype arm answers the heap refusal itself, before the split carve,
 # so the general path it would fall back to (a second decode) never runs; and a
 # refusal crosses the boundary as scalar words, building no frame or outcome.
-run_check "INVARIANT" rg -n -U '^              \(fun srcCnode srcSlot dstCnode dstSlot =>\n([ \t]*(--[^\n]*)?\n)*                if !req\.heapAdmitted st then \.error \(\.untypedRegionExhausted, st\) else\n                RefusalCarrying\.ofChecked$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '^              \(fun srcCnode srcSlot dstCnode dstSlot =>\n([ \t]*(--[^\n]*)?\n)*                if !CarveRequest\.heapAdmittedW st k n then \.error \(\.untypedRegionExhausted, st\) else\n                RefusalCarrying\.ofChecked$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem errorOutcomeWords_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'fun ke s => \(\(Architecture\.SyscallOutcome\.returns \(Architecture\.errorFrame ke\)\)\.words' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextVSpaceRoot[^\n]*\n  \{ asid := asid, mappings := \{\}, tableBase := some \(untypedNextFrame ut idx\)\.base \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4819,8 +4819,9 @@ run_check "INVARIANT" rg -n -U '@\[inline\] def retireUnrecord \(recorder : Nat\
 run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  let st1 := retireUnrecord recorder x st\n' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_target_gone ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_negative_check "INVARIANT" rg -n 'unrecordChild|untypedWithoutChild' SeLe4n
-# A reply-capability target in a slot's spare record is written over in place.
-run_check "INVARIANT" rg -n -U '@\[noinline\] def CapTarget\.objectOver \(t : CapTarget\) \(id : SeLe4n\.ObjId\) : CapTarget :=\n  match t with\n  \| \.object _ => \.object id\n  \| \.replyCap _ => \.object id\n  \| _ => CapTarget\.ofObject id' SeLe4n/Model/Object/Types.lean
+# A reply-capability, scheduling-control, interrupt-handler, audit-trail or
+# interrupt-control target in a slot's spare record is written over in place.
+run_check "INVARIANT" rg -n -U '@\[noinline\] def CapTarget\.objectOver \(t : CapTarget\) \(id : SeLe4n\.ObjId\) : CapTarget :=\n  match t with\n  \| \.object _ => \.object id\n  \| \.replyCap _ => \.object id\n  \| \.schedControl _ => \.object id\n  \| \.irqHandler _ => \.object id\n  \| \.auditTrail _ => \.object id\n  \| \.irqControl _ => \.object id\n  \| _ => CapTarget\.ofObject id' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => asidReleaseRound executingCore root\.asid \(retireCarvedObject st1 x\)\n  \| none => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
 # v0.36.139: the retire forgets the freed id's declassification provenance.
 # WS-ZA ZA5.12: the provenance is the target's own taint words, which the
@@ -7738,8 +7739,9 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem toList_dropFront($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem bounded \(r : AuditRing\) : auditLogBounded r\.toList' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem recordedSince_eq_ring($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshAuditRing_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n -U '^    \(Architecture\.withShootdownSparesSeeded\n      st\)\.withFreshAuditRing\.withFreshPerCoreSlots\.withFreshPhysicalWrites\.withFreshIrqLines$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    \(\(Architecture\.withShootdownSparesSeeded\n      st\)\.withFreshAuditRing\.withFreshPerCoreSlots\.withFreshPhysicalWrites\.withFreshIrqLines\n      \)\.withFreshCoreCaches$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshIrqLines_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshCoreCaches_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_copy($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_delete($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_ok_cases($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean

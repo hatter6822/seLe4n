@@ -224,6 +224,27 @@ theorem ipcBufferReadMrK_eq {α : Type} (st : SystemState) (tid : ThreadId) (idx
         | none => rfl
         | some p => rfl
 
+/-- A slot in the page of slot 0 reads wherever slot 0 reads: the page is
+looked up once for both, and only the offset into it differs. -/
+theorem ipcBufferReadMr_of_firstPage {st : SystemState} {tid : ThreadId}
+    {tcb : SeLe4n.Model.TCB} {i : Nat} (hT : st.getTcb? tid = some tcb)
+    (hP : ipcBufferSlotPage tcb.ipcBuffer i = ipcBufferSlotPage tcb.ipcBuffer 0)
+    (hi : i < maxOverflowSlots) (h0 : ∃ w, ipcBufferReadMr st tid 0 = .ok w) :
+    ∃ w, ipcBufferReadMr st tid i = .ok w := by
+  obtain ⟨w0, h0⟩ := h0
+  have h0lt : ¬ (0 ≥ maxOverflowSlots) := by decide
+  have hilt : ¬ (i ≥ maxOverflowSlots) := by omega
+  unfold ipcBufferReadMr at h0 ⊢
+  simp only [h0lt, hilt, ↓reduceIte, hT] at h0 ⊢
+  cases hR : st.getVSpaceRoot? tcb.vspaceRoot with
+  | none => simp only [hR] at h0; cases h0
+  | some root =>
+    simp only [hR] at h0 ⊢
+    rw [hP]
+    cases hL : root.lookup (ipcBufferSlotPage tcb.ipcBuffer 0) with
+    | none => simp only [hL] at h0; cases h0
+    | some p => exact ⟨_, rfl⟩
+
 /-- **WS-SM SM7.F.5**: the positive characterisation — what a *successful*
     read resolves to.  The failure-mode theorems below say when the read
     fails; this one pins the physical address it reads from when it succeeds,

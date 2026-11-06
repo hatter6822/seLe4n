@@ -1047,11 +1047,15 @@ physical-write ledger of its own (`SystemState.withFreshPhysicalWrites`, the
 state itself), so the first physical write recorded after boot is stored in
 place instead of copying the shared initial buffer, and an issued-line set of
 its own (`SystemState.withFreshIrqLines`, the state itself), so the first
-interrupt line issued after boot is recorded in place. -/
+interrupt line issued after boot is recorded in place, and per-core TLB and
+instruction-cache views of its own, each TLB given its entry cells
+(`SystemState.withFreshCoreCaches`, the state itself), so the first fill and
+the first maintenance after boot write in place. -/
 def initialiseKernelState (st : SystemState) : BaseIO Unit :=
   kernelStateRef.set
-    (Architecture.withShootdownSparesSeeded
+    ((Architecture.withShootdownSparesSeeded
       st).withFreshAuditRing.withFreshPerCoreSlots.withFreshPhysicalWrites.withFreshIrqLines
+      ).withFreshCoreCaches
 
 /-- WS-RC R2.A.2: Read the current kernel state.
 

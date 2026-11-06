@@ -603,7 +603,7 @@ the caller holds both and the two are told apart by *target*. -/
 private def auditCapPtr : Nat := 7
 
 private def auditCap : Capability :=
-  { target := .auditTrail, rights := AccessRightSet.ofList [.read, .write] }
+  { target := .auditTrail CapTarget.authorityCode, rights := AccessRightSet.ofList [.read, .write] }
 
 /-- A capability with every right, targeting an ordinary object — the shape every
 thread holds to its own TCB.  The confused-deputy negative: it must be rejected
@@ -664,7 +664,7 @@ private def auditWitnessState : SystemState :=
                  { target := .object ntfnId,
                    rights := AccessRightSet.ofList [] }),
                (SeLe4n.Slot.ofNat readOnlyAuditCapPtr,
-                 { target := .auditTrail,
+                 { target := .auditTrail CapTarget.authorityCode,
                    rights := AccessRightSet.ofList [.read] })])))
       |>.withObject ntfnId (.notification
           { state := .idle, 

@@ -1289,6 +1289,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.storeTcbIpcState_fromTcb
   , `SeLe4n.Kernel.storeTcbPendingMessage
   , `SeLe4n.Kernel.sweptAndRestored
+  -- WS-ZA ZA6.35: the carve's writes over a built `CarveRequest` (the
+  -- statement, its untyped-record step, its words form and its scrub), proven
+  -- equal to the code form the dispatch runs off the request's words
+  -- (`untypedRetypePerformCode_eq`, `CarveRequest.scrubAtW_eq`).
+  , `SeLe4n.Kernel.untypedRetypePerformAt
+  , `SeLe4n.Kernel.untypedRetypePerformWords
+  , `SeLe4n.Kernel.retypeFromUntypedWrites
+  , `SeLe4n.Kernel.CarveRequest.scrubAt
   , `SeLe4n.Kernel.switchDomain
   -- WS-ZA ZA6.2: the rotation's `Except` statement, proven equal to the form the
   -- domain accounting runs (`switchDomainOnCore_eq_state`).

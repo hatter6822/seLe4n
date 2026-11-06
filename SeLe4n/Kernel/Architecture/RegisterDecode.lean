@@ -751,6 +751,11 @@ inductive RegisterRoutedSyscall where
       address; its first four arguments are the layout's message registers and
       the fifth is overflow slot 0 of the caller's IPC buffer. -/
   | overflowOne (sid : SyscallId) (capAddr : CPtr)
+  /-- A send with no capabilities to transfer whose message runs past the
+      layout's message registers: its operand address and its message info;
+      the first words are the inline message registers and the rest the
+      overflow slots of the sender's IPC buffer, as the decode reads them. -/
+  | sendLong (capAddr : CPtr) (msgInfo : MessageInfo)
   /-- WS-ZA ZA5.13: a declassification or an audit call (`routedAudited`) with
       no overflow words: the syscall and its operand address; its arguments
       are the layout's message registers. -/
@@ -902,6 +907,9 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
             match routedAuditedSid? (readReg regs layout.syscallNumReg).val with
             | some sid => .audited sid capAddr
             | none => .viaDecode
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat ∧
+          msgInfo.extraCaps = 0 then
+        .sendLong capAddr msgInfo
       else if msgInfo.length = layout.msgRegs.size + 1 then
         match routedOverflowOneSid? (readReg regs layout.syscallNumReg).val with
         | some sid => .overflowOne sid capAddr

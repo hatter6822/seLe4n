@@ -1545,6 +1545,15 @@ structure SystemState where
       (`pendingIcacheMaintenance_write_preserves_projection`). -/
   pendingIcacheMaintenance :
       List SeLe4n.Kernel.Architecture.ICacheInvalidation := []
+  /-- WS-ZA ZA6.35: **the cells the last drained maintenance ledger held** —
+      its list cells and operands, kept by the drain
+      (`Architecture.clearIcacheMaintenanceCells`) so that the next record
+      writes its operand over them in place instead of building a list cell
+      and an operand (`Architecture.recordIcacheUnifyCells`), as the TLB's
+      spares are kept.  Logically a single value (`Squash`), so no theorem
+      reads it (`SystemState.with_icacheLedgerSpare`). -/
+  icacheLedgerSpare : Squash (List SeLe4n.Kernel.Architecture.ICacheInvalidation) :=
+    Squash.mk []
 
   /-- **WS-BP BP7.2: the physical writes a committed transition owes** — the
       stores that make physical memory agree with the address spaces the model
@@ -1743,10 +1752,25 @@ theorem SystemState.withFreshAuditRing_eq (st : SystemState) : st.withFreshAudit
 @[inline] def RegisterFile.fresh (rf : RegisterFile) : RegisterFile :=
   { rf with x0 := opaqueWord rf.x0 }
 
-/-- A run queue's ends rebuilt, its bucket table's slot array its own. -/
+/-- A priority bucket's ends rebuilt: a cell of its own. -/
+@[inline] def _root_.SeLe4n.Kernel.BucketEnds.fresh (b : SeLe4n.Kernel.BucketEnds) :
+    SeLe4n.Kernel.BucketEnds :=
+  { b with head := opaqueId b.head }
+
+/-- A run queue's ends rebuilt, its bucket table and each priority's entry its
+own (WS-ZA ZA6.35): the boot's tables are the shared empty table, one entry
+replicated for every priority, so the first enqueue at a priority would have
+copied the table and built the entry. -/
 @[inline] def _root_.SeLe4n.Kernel.RunQueueEnds.fresh (e : SeLe4n.Kernel.RunQueueEnds) :
     SeLe4n.Kernel.RunQueueEnds :=
-  { e with buckets := e.buckets.unshare, head := opaqueId e.head }
+  { e with buckets := e.buckets.map SeLe4n.Kernel.BucketEnds.fresh, head := opaqueId e.head }
+
+theorem _root_.SeLe4n.Kernel.RunQueueEnds.fresh_eq :
+    SeLe4n.Kernel.RunQueueEnds.fresh = id := by
+  have hB : SeLe4n.Kernel.BucketEnds.fresh = id := rfl
+  funext e
+  simp only [SeLe4n.Kernel.RunQueueEnds.fresh, hB, Array.map_id]
+  rfl
 
 /-- WS-ZA ZA6.1: **the per-core slots prepared at boot.**  The boot state's
 per-core vectors (each core's register bank and its scheduler slots) are built
@@ -1776,7 +1800,7 @@ def SystemState.withFreshPerCoreSlots (st : SystemState) : SystemState :=
 theorem SystemState.withFreshPerCoreSlots_eq (st : SystemState) :
     st.withFreshPerCoreSlots = st := by
   have hR : RegisterFile.fresh = id := rfl
-  have hE : SeLe4n.Kernel.RunQueueEnds.fresh = id := rfl
+  have hE := SeLe4n.Kernel.RunQueueEnds.fresh_eq
   have hN : (opaqueId : Nat → Nat) = id := rfl
   have hD : (opaqueId : SeLe4n.DomainId → SeLe4n.DomainId) = id := rfl
   have hO : (opaqueId : Option SeLe4n.ThreadId → Option SeLe4n.ThreadId) = id := rfl
@@ -1826,6 +1850,61 @@ def SystemState.withFreshIrqLines (st : SystemState) : SystemState :=
 theorem SystemState.withFreshIrqLines_eq (st : SystemState) :
     st.withFreshIrqLines = st := by
   simp only [SystemState.withFreshIrqLines, CapDerivationTree.withFreshIrqLines_eq]
+
+/-- WS-ZA ZA6.35: one spare TLB entry cell, its own: built out of line, its
+generation the cell's index, so no two cells are one constant. -/
+@[noinline] def TlbEntry.spareCell (g : Nat) : TlbEntry :=
+  { asid := ⟨0⟩, vaddr := default, paddr := default, perms := {}, asidGeneration := g }
+
+/-- WS-ZA ZA6.35: one spare maintenance-ledger operand, its own: built out of
+line, its page the cell's index, so it is not a constant. -/
+@[noinline] def _root_.SeLe4n.Kernel.Architecture.ICacheInvalidation.spareCell (g : Nat) :
+    SeLe4n.Kernel.Architecture.ICacheInvalidation :=
+  .unifyPage (SeLe4n.PAddr.ofNat g)
+
+/-- WS-ZA ZA6.35: `k` spare TLB entry cells, numbered from `g`. -/
+def TlbEntry.spareCells (g : Nat) : Nat → List TlbEntry
+  | 0 => []
+  | k + 1 => TlbEntry.spareCell g :: TlbEntry.spareCells (g + 1) k
+
+/-- WS-ZA ZA6.35: the entries a core's TLB holds: the cells the boot gives each
+core's view to write its fills over (`SystemState.withFreshCoreCaches`), as a
+hardware TLB's entries are its own memory.  Cortex-A76's level-one data TLB
+holds 48. -/
+def tlbEntryCells : Nat := 48
+
+/-- WS-ZA ZA6.35: **each core's caches prepared at boot.**  The boot state's
+per-core TLB views, their spare cells and the instruction-cache views are
+`Vector.replicate` constants, so the first fill or maintenance after boot copied
+the vector it wrote; each vector is rebuilt here through `opaqueId`.  Each core
+is also given its TLB's entry cells (`tlbEntryCells`), numbered past the cells
+it already holds so the list is built at boot and not as a constant, which its
+fills write over (`tlbPushWalked`) and its invalidations hand back
+(`tlbDrainLoop`), and the maintenance ledger is given one operand and its list
+cell, which a page unify writes over (`recordIcacheUnifyCells`).  The spares
+are logically one value, so this is the state itself
+(`withFreshCoreCaches_eq`). -/
+def SystemState.withFreshCoreCaches (st : SystemState) : SystemState :=
+  { st with
+    perCoreTlb := st.perCoreTlb.map opaqueId
+    perCoreTlbSpare := st.perCoreTlbSpare.map fun s =>
+      Quot.lift (fun l => Squash.mk (TlbEntry.spareCells l.length tlbEntryCells ++ l))
+        (fun _ _ _ => Subsingleton.elim _ _) s
+    perCoreICache := st.perCoreICache.map opaqueId
+    icacheLedgerSpare :=
+      Quot.lift (β := Squash (List SeLe4n.Kernel.Architecture.ICacheInvalidation))
+        (fun l => Squash.mk (SeLe4n.Kernel.Architecture.ICacheInvalidation.spareCell l.length :: l))
+        (fun _ _ _ => Subsingleton.elim _ _) st.icacheLedgerSpare }
+
+theorem SystemState.withFreshCoreCaches_eq (st : SystemState) :
+    st.withFreshCoreCaches = st := by
+  have hT : (opaqueId : TlbState → TlbState) = id := rfl
+  have hI : (opaqueId : ICacheState → ICacheState) = id := rfl
+  unfold SystemState.withFreshCoreCaches
+  rw [hT, hI, Vector.map_id, Vector.map_id]
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  exact ⟨Vector.ext fun _ _ => Subsingleton.elim _ _, Subsingleton.elim _ _⟩
 
 /-- **WS-BP BP7.2: the physical writes a committed transition owes**, in record
 order — the list the ledger's buffer encodes (`SystemState.physicalWrites`). -/
@@ -1956,6 +2035,7 @@ instance : Inhabited SystemState where
     -- WS-SM SM7.D.1: nothing is owed to the instruction caches at boot.
     -- Explicit listing pins `default_pendingIcacheMaintenance`.
     pendingIcacheMaintenance := []
+    icacheLedgerSpare := Squash.mk []
     -- WS-BP BP7.2: no physical write is owed at boot.
     physicalWrites := .empty
     physicalWritesDrained := false
@@ -2093,6 +2173,15 @@ replacing it leaves the state as it is. -/
 theorem SystemState.with_shootdownOpsSpare (st : SystemState)
     (v : Squash (List SeLe4n.Kernel.Architecture.TlbInvalidation)) :
     { st with shootdownOpsSpare := v } = st := by
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA6.35: a state's maintenance-ledger spares are logically one value —
+replacing them leaves the state as it is. -/
+theorem SystemState.with_icacheLedgerSpare (st : SystemState)
+    (v : Squash (List SeLe4n.Kernel.Architecture.ICacheInvalidation)) :
+    { st with icacheLedgerSpare := v } = st := by
   cases st
   simp only [SystemState.mk.injEq, and_true, true_and]
   exact Subsingleton.elim _ _

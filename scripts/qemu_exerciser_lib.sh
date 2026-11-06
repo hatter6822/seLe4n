@@ -217,508 +217,224 @@ for driver in drivers:
             if lean:
                 require(f"[smp-test] remote-stall: core {core}: its next kernel entry met the request")
     elif driver == "heap-allocations-per-syscall":
-        # WS-CV CV0.1, WS-ZA ZA4.1: a syscall allocates nothing.  Each round
-        # trip runs twice on the boot core, its first call and its steady
-        # state; the gate holds that each run's reading happened once, after
-        # the round trip returned a frame or blocked as it should, is a delta,
-        # and is its pinned reading: zero, or (WS-ZA ZA5.1) for a capability
-        # invocation a later row brings to zero, the reading it has today, so
-        # a change either way has to move the pin.
-        # WS-ZA ZA6.1: a kernel entry other than a syscall (the timer tick, the
-        # reschedule SGI) is measured the same way and reports that it was
-        # entered and restored a thread; the secondary core's entry is
-        # measured once per core, below.
+        # A kernel entry allocates nothing (CLAUDE.md; WS-CV CV0.1, WS-ZA
+        # ZA4.1 to ZA6.35).  Each round trip runs twice on the boot core, its
+        # first call and its steady state, and every other kernel entry (the
+        # timer tick, the reschedule SGI, the fault and interrupt entries) is
+        # measured the same way.  The gate holds that each run's reading
+        # happened once, after the round trip returned a frame or blocked as it
+        # should, is a delta, and is zero, except a retype's: a retype that
+        # succeeded names the object it carved (`carved <kind>/<size bits>`),
+        # and its reading must be exactly that object's own cells.
         readings = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+)") if m.group(1) != "secondary-entry"]
         returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|entered, a thread restored)$")
+        carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+)$")
         names = [m.group(1) for m in readings]
+        # The cells of the object a carve makes, by kind and size bits: the
+        # object's record and the cells it is built of, its entries in the
+        # object store (the object, index-set and type tables and the index
+        # row), and its child record in the untyped.  Nothing else a retype
+        # does may allocate: not its decode, not its carve request, not the
+        # capability it writes.  Pinned here: a kind whose object changes
+        # shape changes its count, and a kind the exerciser carves that has no
+        # count fails.
+        carve_cells = {
+            "endpoint/0": 11, "notification/0": 11, "reply/0": 15, "tcb/0": 24,
+            "sched-context/7": 13, "cnode/2": 28, "frame/0": 11, "page-table/0": 13,
+        }
         # The scenario set is pinned: a round trip renamed or dropped from
-        # `ROUND_TRIPS`, `PARTNER_SCENARIOS` or `INVOCATION_SCENARIOS`
-        # (smp_exercisers.rs) must change this pin too, so the evidence cannot
-        # disappear while the gate stays green.
-        # Each scenario's pinned reading, (first call, steady state).
-        pinned = {name: (0, 0) for name in (
-            "signal", "signal-wide-badge", "wait-pending", "yield",
-            "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
-            "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
-            "send-blocks", "receive-from-sender",
-            # WS-ZA ZA6.32: the interrupt entry's branches — the bound line's
-            # signal with no waiter and to a waiting thread, the handler's
-            # acknowledge, the unbound line and the spurious INTID.
-            "irq-signal-no-waiter", "irq-handler-ack", "irq-signal-waiter",
-            "irq-unbound", "irq-spurious",
-            # the handler capability issued from IRQControl and bound to a
-            # notification, then cleared and deleted (the last handler's
-            # finalisation leaves the line inactive).
-            "irq-control-get", "irq-handler-set-notification",
-            "irq-handler-clear", "irq-handler-delete",
-            # a revoke of the notification's slot deletes the copy in the
-            # line's node, after which the line, raised, signals nothing.
-            "irq-notification-revoke", "irq-revoked-line",
-            # WS-ZA ZA5.3: the same through a badged endpoint capability.
-            "receive-for-badged-send", "badged-send-to-receiver",
-            "badged-send-blocks", "receive-from-badged-sender",
-            "receive-for-badged-call", "badged-call", "reply-to-badged-call",
-            # WS-ZA ZA5.4 part 23: a receive and a wait blocked on a carved
-            # endpoint and notification, the notification bound to the
-            # partner, and each one's only capability deleted: the
-            # finalisation cancels the waiter in place (the waiters are linked
-            # through their TCBs) or unbinds the thread, then the retire.
-            "receive-on-carved", "busy-endpoint-delete",
-            "wait-on-carved", "busy-notification-delete",
-            "bind-carved-notification", "bound-notification-delete",
-            # WS-ZA ZA5.2: the thread and notification arms change their
-            # objects in place.
-            "tcb-set-priority", "tcb-set-mc-priority", "tcb-set-affinity",
-            "tcb-set-fault-handler", "tcb-bind-notification", "tcb-unbind-notification",
-            "tcb-set-space", "tcb-resume", "tcb-suspend", "tcb-set-ipc-buffer",
-            # and the scheduling-context arms (the partner resumed and
-            # suspended while it holds the context, which the suspend leaves
-            # bound, then the context's unbind), behind the root task's own
-            # IPC-buffer set that the configure's fifth word is read through.
-            "root-set-ipc-buffer", "sched-context-configure", "sched-context-bind",
-            "sched-context-unbind", "sched-context-consumed", "sched-context-consumed-reset", "sched-context-rebind",
-            "sched-context-yield-to", "sched-context-unbind-suspended",
-            # WS-ZA ZA6.29's other branches (added at ZA6.30): a schedulable
-            # partner ranked below the caller, requeued at its band's head with
-            # the consumed time returned at once; and one ranked with it on its
-            # core, the yield linked, read across the switch to the partner and
-            # back, the activation writing the consumed time (the requeue's
-            # first call is pinned below).
-            "sched-context-yield-to-linked",
-            # WS-ZA ZA6.33: the partner, blocked on the notification wait and
-            # holding the bound context, suspended: the wait cancelled in
-            # place and the context left bound (seL4's suspend unbinds
-            # nothing), then unbound.
-            "tcb-suspend-waiting", "sched-context-unbind-waiting",
-            "tcb-resume-bound",
-            "tcb-suspend-bound",
-            # WS-ZA ZA6.33: seL4's suspend of a blocked thread, as the root
-            # task: the partner resumed, the root task's receive that blocks,
-            # the partner's send that wakes it and the partner's own blocking
-            # receive, send, wait or call, then the suspend (the wait's cancel
-            # in place; the endpoint and reply arms are pinned below); the
-            # call's again with the partner holding the context, so the call
-            # donates it and the suspend's reply arm leaves it with the
-            # server, which the context's unbind then releases.
-            "suspend-recv-resume", "suspend-recv-root-receives", "suspend-recv-wake-root",
-            "suspend-recv-partner-receives",
-            "suspend-send-resume", "suspend-send-root-receives", "suspend-send-wake-root",
-            "suspend-send-partner-sends",
-            "suspend-wait-resume", "suspend-wait-root-receives", "suspend-wait-wake-root",
-            "suspend-wait-partner-waits", "tcb-suspend-wait-blocked",
-            "suspend-reply-resume", "suspend-reply-root-receives", "suspend-reply-partner-calls",
-            "suspend-donated-configure", "suspend-donated-bind-partner", "suspend-donated-resume",
-            "suspend-donated-root-receives", "suspend-donated-unbind",
-            # and (WS-ZA ZA6.33) a donation across two home cores, then down a
-            # chain: the carved server's space, priority and reply capability,
-            # the context bound to the partner, both resumed, the root task's
-            # receive, homed on core 1 and back around the partner's call, the
-            # server's receive, and the teardown: the root task, its context
-            # handed back, restarted by the partner (the two donating calls
-            # and the two donated replies are pinned below).
-            "chain-tcb-set-space", "chain-tcb-set-priority", "chain-reply-cap-mint",
-            "chain-configure", "chain-bind-partner", "chain-resume-partner",
-            "chain-resume-server", "chain-root-receives", "cross-core-home-root",
-            "cross-core-home-root-back", "chain-server-receives",
-            "chain-suspend-server", "chain-suspend-root", "chain-resume-root",
-            "chain-suspend-partner", "chain-unbind", "chain-tcb-delete", "chain-reply-cap-delete", "chain-reply-delete",
-            # WS-ZA ZA6.34: a third thread issues the final deletes that stop
-            # the other two.  The server and its reply carved again, the
-            # context bound to the partner, the server resumed and the root
-            # task's wait; the server resumes the partner and receives, the
-            # partner's call lends it the context, the server wakes the root
-            # task and waits; the root task deletes the reply's minted
-            # capability, then its last (the head reply popped, the context
-            # back to its caller, which is ended); the same lend through the
-            # server's reply carved and minted again, then the server's last
-            # capability deleted (the context it holds unbound and returned
-            # to no one, its waiter orphaned, its wait cancelled); the
-            # orphan's reply's minted capability, then its last (the head
-            # reply popped, the context to the orphan, which is ended); the
-            # context unbound.
-            "third-tcb-set-space", "third-tcb-set-priority", "third-reply-cap-mint",
-            "third-configure", "third-bind-partner", "third-resume-server", "third-root-waits",
-            "head-server-resumes-partner", "head-server-receives", "head-partner-calls",
-            "head-server-wakes-root", "head-server-waits", "head-reply-cap-delete", "head-reply-delete",
-            "waited-reply-cap-mint", "waited-wake-server", "waited-root-waits", "waited-server-resumes-partner",
-            "waited-server-receives", "waited-partner-calls", "waited-server-wakes-root",
-            "waited-server-waits", "waited-server-delete", "orphan-reply-cap-delete",
-            "orphan-head-reply-delete",
-            # A second orphan, answered by a reply-receive (WS-ZA ZA6.34): the
-            # server carved again and lent the context by the partner's call,
-            # then deleted; the root task's reply-receive through the orphan's
-            # reply (the head popped, the context to the orphan) blocking it on
-            # the endpoint, the orphan's send waking it; the orphan suspended
-            # and its reply deleted.
-            "orphan-recv-server-set-space", "orphan-recv-server-set-priority",
-            "orphan-recv-reply-cap-mint", "orphan-recv-resume-server", "orphan-recv-root-waits",
-            "orphan-recv-server-resumes-partner", "orphan-recv-server-receives",
-            "orphan-recv-partner-calls", "orphan-recv-server-wakes-root", "orphan-recv-server-waits",
-            "orphan-recv-server-delete", "orphan-reply-recv", "orphan-recv-partner-wakes-root",
-            "orphan-recv-partner-waits", "orphan-recv-suspend-partner", "orphan-recv-reply-cap-delete",
-            "orphan-recv-reply-delete", "third-unbind",
-            # A reply stack three frames deep (the partner's context lent to the
-            # root task, on to the server, on to a fourth thread), its middle
-            # reply's final delete issued by the fourth thread (the stack
-            # severed, the root task ended), the three suspended and the
-            # context unbound; then a carved context under a two-frame stack
-            # (partner, server, fourth thread) deleted, the old top's final
-            # delete (its caller ended, the frame below unlinked), the two
-            # carved threads suspended and deleted.
-            "stack-server-set-space", "stack-server-set-priority", "stack-top-set-space",
-            "stack-top-set-priority", "stack-server-reply-cap-mint", "stack-top-reply-cap-mint",
-            "stack-configure", "stack-bind-partner", "stack-resume-server", "stack-root-receives",
-            "stack-server-resumes-top", "stack-server-receives", "stack-top-resumes-partner",
-            "stack-top-receives", "stack-partner-calls", "stack-root-calls", "stack-server-calls",
-            "middle-reply-cap-delete", "middle-reply-delete", "stack-top-resumes-root",
-            "stack-top-waits", "stack-suspend-server", "stack-suspend-partner", "stack-suspend-top",
-            "stack-unbind", "stack-context-configure", "stack-context-bind-partner",
-            "contextless-resume-server", "contextless-root-waits", "contextless-server-resumes-top",
-            "contextless-server-receives", "contextless-top-resumes-partner",
-            "contextless-top-receives", "contextless-partner-calls", "contextless-server-calls",
-            "contextless-top-wakes-root", "contextless-top-waits", "contextless-context-delete",
-            "contextless-top-cap-delete", "contextless-top-delete", "contextless-suspend-partner",
-            "contextless-suspend-top", "stack-server-delete", "stack-top-delete",
-            # The final delete of an endpoint two threads wait on, the queue
-            # cancelled head first with each waiter's successor read as its code
-            # (`cancelEndpointQueue_eq_impl`): 0.
-            "queue-resume-top", "queue-root-waits", "queue-top-resumes-partner",
-            "queue-top-receives", "queue-partner-wakes-root", "queue-partner-receives",
-            "queue-endpoint-delete", "queue-suspend-top", "queue-suspend-partner",
-            # A holder's final delete under a two-frame stack (the fourth
-            # thread's wait cancelled, the context unbound and left heading
-            # the stack, its two callers blocked), the partner's reply below
-            # the head deleted (the stack severed, the partner ended), the
-            # server answered through the head reply's capability (the head
-            # popped, the context to the server), and the teardown: the
-            # server suspended, the context unbound, the head reply deleted
-            # and the fourth thread carved again.
-            "orphan-stack-configure", "orphan-stack-bind-partner", "orphan-server-reply-cap-mint",
-            "orphan-top-reply-cap-mint", "orphan-resume-server", "orphan-root-waits",
-            "orphan-server-resumes-top", "orphan-server-receives", "orphan-top-resumes-partner",
-            "orphan-top-receives", "orphan-partner-calls", "orphan-server-calls",
-            "orphan-top-wakes-root", "orphan-top-waits", "orphan-holder-delete",
+        # the exerciser (smp_exercisers.rs) must change this set too, so the
+        # evidence cannot disappear while the gate stays green.
+        expected = {
+            "audit-drain", "audit-drain-first", "audit-read-basis-chunk",
+            "audit-read-basis-count", "audit-read-chain-archived", "audit-read-chain-entry",
+            "audit-read-chain-predecessor", "audit-read-entry", "audit-read-refusal-counters",
+            "audit-read-refusal-domain", "audit-read-refusal-domain-count",
+            "audit-read-refusal-receiver", "audit-read-refusal-receiver-count",
+            "audit-read-refusal-status",
+            "audit-read-refusal-subject", "audit-read-refusal-subject-count",
+            "audit-read-refusal-tags", "audit-read-refusal-target",
+            "audit-read-refusal-target-count", "audit-read-status", "badged-call",
+            "badged-send-blocks", "badged-send-to-receiver", "bind-carved-notification",
+            "bind-carved-sched-context", "bind-carved-tcb", "bound-notification-delete",
+            "bound-sched-context-delete", "bound-tcb-delete", "busy-endpoint-delete",
+            "busy-notification-delete", "busy-reply-cap-delete", "busy-reply-delete", "call",
+            "call-to-carved-reply", "call-to-reply-receiver", "cap-fault-delivered",
+            "cap-fault-reply", "cap-fault-resume", "cap-fault-suspends", "chain-bind-partner",
+            "chain-configure", "chain-reply-cap-delete", "chain-reply-cap-mint",
+            "chain-reply-delete", "chain-resume-partner", "chain-resume-root",
+            "chain-resume-server", "chain-root-calls-server", "chain-root-receives",
+            "chain-root-replies", "chain-server-receives", "chain-server-reply-recv",
+            "chain-suspend-partner", "chain-suspend-root", "chain-suspend-server",
+            "chain-tcb-delete", "chain-tcb-set-priority", "chain-tcb-set-space",
+            "chain-unbind", "cnode-delete", "contextless-context-delete",
+            "contextless-partner-calls", "contextless-resume-server", "contextless-root-waits",
+            "contextless-server-calls", "contextless-server-receives",
+            "contextless-server-resumes-top", "contextless-suspend-partner",
+            "contextless-suspend-top", "contextless-top-cap-delete", "contextless-top-delete",
+            "contextless-top-receives", "contextless-top-resumes-partner",
+            "contextless-top-waits", "contextless-top-wakes-root", "cross-core-home-root",
+            "cross-core-home-root-back", "cross-core-partner-calls", "cspace-copy",
+            "cspace-delete", "cspace-mint", "cspace-move", "cspace-revoke",
+            "declassified-signal", "declassified-signal-bound", "declassified-signal-two-hop",
+            "declassified-signal-wakes", "declassified-wait-blocks",
+            "declassified-wait-pending",
+            "declassify", "endpoint-delete", "exhaust-drain-tick",
+            "exhaust-tick", "fp-access", "fp-access-partner", "fp-owner-blocks",
+            "fp-owner-wakes-root", "frame-copy-delete", "frame-copy-for-revoke",
+            "frame-copy-mapped", "frame-delete", "frame-revoke", "head-partner-calls",
+            "head-reply-cap-delete", "head-reply-delete", "head-server-receives",
+            "head-server-resumes-partner", "head-server-waits", "head-server-wakes-root",
+            "inactive-tcb-delete", "irq-control-copy", "irq-control-copy-delete", "irq-control-get",
+            "irq-control-mint",
+            "irq-control-mint-attenuated", "irq-control-mint-attenuated-delete",
+            "irq-control-mint-badged", "irq-control-mint-badged-delete", "irq-control-mint-delete", "irq-handler-ack", "irq-handler-clear",
+            "irq-handler-delete", "irq-handler-set-notification", "irq-notification-revoke",
+            "irq-revoked-line", "irq-signal-bound", "irq-signal-no-waiter", "irq-signal-waiter",
+            "irq-spurious",
+            "irq-unbound", "long-send-bind-partner", "long-send-configure",
+            "long-send-partner-yield", "long-send-resume-partner", "long-send-root-receives",
+            "long-send-suspend", "long-send-to-receiver", "long-send-unbind",
+            "middle-reply-cap-delete", "middle-reply-delete",
+            "mint-busy-reply-cap", "mint-stashed-reply-cap", "notification-delete",
+            "orphan-head-reply-delete", "orphan-holder-delete",
             "orphan-middle-reply-cap-delete", "orphan-middle-reply-delete",
-            "orphan-root-answers-server", "orphan-root-waits-server", "orphan-server-wakes-root",
-            "orphan-server-waits", "orphan-suspend-server", "orphan-stack-unbind",
-            "orphan-top-reply-cap-delete", "orphan-top-reply-delete", "orphan-top-set-space",
-            "orphan-top-set-priority",
-            # and seL4's resume of a thread whose refill is not yet due: the
-            # bound partner's yield forfeits its budget, its suspend takes the
-            # context off the release queue, and the resume postpones it there
-            # (`refill_unblock_check`, then the postpone), placing no run queue.
-            "postpone-configure", "postpone-bind-partner", "postpone-resume-partner",
-            "postpone-root-receives", "postpone-wake-root", "postpone-partner-yield",
-            "tcb-suspend-release-queued", "tcb-resume-postpone", "postpone-suspend",
-            "postpone-unbind",
-            # WS-ZA ZA5.5: a service query reads the code its endpoint records,
-            # and a revoke clears it and erases the registry entry in place.
-            "service-query", "service-revoke",
-            # WS-ZA ZA5.3: the capability operations write each slot's own
-            # record in place and the derivation links in the slots.
-            "cspace-copy", "cspace-move", "cspace-delete", "cspace-mint",
-            "cspace-revoke", "reply-cap-delete", "reply-cap-mint",
-            # a mapped capability copied, and a reply capability minted over
-            # a record whose target another capability shares.
-            "frame-copy-mapped", "frame-copy-delete", "reply-cap-mint-over-copy",
-            "reply-cap-over-copy-delete", "frame-copy-for-revoke",
-            # WS-ZA ZA5.4: a mapped frame's capability deleted, its record
-            # read as words and its page unmapped in place.
-            "frame-delete",
-            # a page table installed over the slot cell it carries, removed
-            # with that cell handed back, and its capability deleted.
-            "page-table-map-1", "page-table-map-2", "page-table-map-3",
-            "page-table-unmap-3", "page-table-unmap-2", "page-table-unmap-1",
-            "page-table-delete-3", "page-table-delete-2", "page-table-delete-1",
-            # WS-ZA ZA5.4 part 22: a quiescent endpoint, notification, reply
-            # and CNode retired by their only capability's delete.
-            "endpoint-delete", "notification-delete", "reply-delete", "cnode-delete",
-            # WS-ZA ZA5.4 part 24: a carved thread's only capability deleted
-            # while it is inactive and while it is bound to the boot
-            # notification, a carved scheduling context's while it is bound
-            # to a carved thread, then that thread's: each finalised in place
-            # (the unbinds and the suspend write the objects' own cells) and
-            # retired.  Two carved threads resumed onto one run queue, the
-            # first suspended and its only capability deleted, then the
-            # second's: the suspends unlink each from the queue in place (the
-            # run links live in the TCBs).
-            "inactive-tcb-delete", "bind-carved-tcb", "bound-tcb-delete",
-            "bind-carved-sched-context", "bound-sched-context-delete",
-            "unbound-tcb-delete", "resume-shared-tcb", "suspend-queued-tcb",
-            "suspended-tcb-delete", "queued-tcb-delete",
-            # WS-ZA ZA5.4 part 25: a carved reply's minted capability received
-            # through and the partner's call that blocks on it, the minted
-            # capability's delete; and a carved reply stashed by a blocked
-            # receive, both its capabilities deleted by the partner: the final
-            # delete clears the receiver's stash in its own TCB and retires
-            # the reply, and the partner's send then finds the receiver waiting.
-            # The busy reply's final delete cancels its caller in place: the
-            # finalise reads the caller's codes before any write and stores
-            # the splice, the consumed reply and the caller's cleared link in
-            # their slots (`finaliseReply_eq_impl`, an @[csimp] over the
-            # specification's `cancelIpcBlocking` reply arm).
-            "mint-busy-reply-cap", "receive-with-carved-reply", "call-to-carved-reply",
-            "busy-reply-cap-delete", "busy-reply-delete",
-            "mint-stashed-reply-cap", "receive-stashing-reply", "stashed-reply-cap-delete",
-            "stashed-reply-delete", "send-to-unstashed-receiver",
-            # WS-ZA ZA5.4 part 26: a carved CNode holding an endpoint's only
-            # capability, deleted: the loop deletes the endpoint's slot, which
-            # retires it, and then retires the CNode; a carved thread holding
-            # the last capability to its CNode root, deleted: the loop deletes
-            # its space slots after the finalisation, retiring the CNode, and
-            # retires the thread.  Each delete writes in place, and so does
-            # the carved thread's first space set, over the space-slot records
-            # its carve made (`TCB.spaceCellFilled`).
-            "populated-cnode-delete", "space-cnode-cap-delete", "spaced-tcb-delete",
-            "set-carved-tcb-space",
-            # WS-ZA ZA5.13: on the exerciser image's labeling, an upper-domain
-            # notification declassified and signalled through the declassifying
-            # signal (each writes its audit record in its ring slot and tags the
-            # caller), the tainted path — a blocked send carrying the caller's
-            # tags and the receive that takes them — the audit monitor's two
-            # reads and its drain, and the notification's delete.
-            "declassify", "declassified-signal", "send-tainted-blocks",
-            "receive-tainted", "audit-read-status", "audit-read-entry",
-            "audit-drain", "upper-notification-delete",
-            # WS-ZA ZA6.1: the timer tick and the reschedule SGI, each entered
-            # over an EL0 frame on the boot core.
-            "timer-tick", "reschedule-sgi",
-            # WS-ZA ZA6.2: the refill scenario: the context configured and
-            # bound to the root task, the tick that finds no refill due, the
-            # tick that drains the yield's refill and switches back to the root
-            # task, and the unbind.
-            "refill-configure", "refill-bind-root", "refill-wait-tick",
-            "refill-drain-tick", "refill-unbind-root",
-            # WS-ZA ZA6.3: the bound yield's forfeit and an exhausting tick
-            # link the context into the release queue in place and write its
-            # refill in its own fields; the next tick drains it (ZA6.4: seL4's
-            # used refill is due one period on, which is that tick).
-            "refill-yield", "exhaust-tick", "exhaust-drain-tick")}
-        # WS-ZA ZA5.1: the memory invocations' readings today, each the
-        # operation's own cells (object writes, the store's copy); the rows
-        # that bring them to zero lower these pins.
-        pinned.update({
-            # WS-ZA ZA5.4: a retype reads its new object's own cells in
-            # steady state (a table 13, a frame 11: the object, its store,
-            # index and type entries, the untyped's child record).  Since part
-            # 26 a boot CNode's spare records own their object targets
-            # (`unshareSpareCell`), so neither first call builds the record's
-            # target (`CapTarget.objectOver`).  ZA6.32: the first table's
-            # first call read 2 more, the copy of the boot's shared
-            # physical-write ledger (its buffer and record) that the first
-            # write recorded after boot made; the installed state now owns
-            # its ledger (`SystemState.withFreshPhysicalWrites`).
-            "untyped-retype-page-table-1": (13, 13),
-            "untyped-retype-page-table-2": (13, 13),
-            "untyped-retype-page-table-3": (14, 13),
-            # The first carve after boot takes one cell more than its steady
-            # state; since v0.36.134 that is the busy-endpoint carve, which
-            # now runs first, so the frame carve reads 11 both times.
-            "untyped-retype-frame": (11, 11), "vspace-map": (9, 0),
-            # WS-ZA ZA5.4 part 22: each passive kind's carve, read at its own
-            # cells (attributed by a QEMU trace of lean_alloc_small's callers).
-            # 9 are the store's: the untyped's record and child cell written
-            # in place (2), the object, index-set and type-table inserts (2
-            # each) and the index row (1).  An endpoint and a notification
-            # add their own record and object cell (2): since v0.36.134 the
-            # carve rebuilds the shared constant it is built from
-            # (`CarveRequest.object_eq_impl`, `KernelObject.unshareFresh`), so
-            # the first receive or wait on it writes in place.  A reply adds its
-            # record (2) and the carve request (1); a CNode adds the carve
-            # request and its decode (3), its spare slot cells (12) and the
-            # CNode record (1), and 4 larger cells the heap serves as page
-            # runs, which the small-object trace does not see.
-            "untyped-retype-endpoint": (11, 11), "untyped-retype-notification": (11, 11),
-            # WS-ZA ZA5.4 part 23: the same carves at the finalising deletes'
-            # own ids; the busy endpoint's is the run's first carve, which
-            # since part 26 writes over its slot's boot record and that
-            # record's own target as later carves do (11).
-            "untyped-retype-busy-endpoint": (11, 11),
-            "untyped-retype-queue-endpoint": (11, 11),
-            "untyped-retype-busy-notification": (11, 11),
-            "untyped-retype-bound-notification": (11, 11),
-            # Since v0.36.139 a CNode carries its occupancy link array
-            # (`CNode.occ`), one cell of its own: 30.  WS-ZA ZA6.33: a reply
-            # is carved with the cells a donation's push links it by, its id
-            # (`Reply.idCell`) and its frame link (`Reply.frameLinkCell`, a
-            # link and its `some`), so the push builds none: 15.
-            "untyped-retype-reply": (15, 15), "untyped-retype-cnode": (30, 30),
-            # WS-ZA ZA5.4 part 25: the busy and the stashed reply's carves,
-            # at the passive reply's id once that reply is retired.
-            "untyped-retype-busy-reply": (15, 15), "untyped-retype-stashed-reply": (15, 15),
-            # WS-ZA ZA5.4 part 24: a thread's and a scheduling context's carve
-            # (same trace).  Past the store's 9, a thread adds its TCB cell and
-            # two 16-byte cells built with it (`CarveRequest.objectImpl`, 3)
-            # and the carve request and its decode (`carveRequestOf?`, 2): 14.
-            # Part 26 makes the thread's space-slot cells at the carve, as
-            # seL4 makes a TCB's CTEs at the retype (QEMU trace of
-            # lean_alloc_small's callers, `KernelObject.unshareFresh`): a
-            # spare record, its `some` cell and its object target for each of
-            # the two space slots (6), the thread's own slot, link and spare
-            # arrays (3), its own register file (1) and, since WS-ZA ZA6.31,
-            # its own FP/SIMD context (1): 25, and since WS-ZA ZA6.33 its id
-            # cell (`TCB.idCell`, the donation origin a push records): 26.
-            # seL4 likewise allocates a
-            # thread's FPU state with its TCB; the FP/SIMD trap then captures
-            # into that cell rather than building one.  Each is the new
-            # thread's own; its first space set then writes over them.
-            # A scheduling context adds its record (`SchedContext.empty`), its
-            # object cell and the request and decode (4): 13, and 14 on its
-            # first call, which also builds the capability's target record
-            # (`CapTarget.objectOver`).  Since WS-ZA ZA6.33 it is carved with
-            # the head link a donation's push stores (`SchedContext.headLinkCell`,
-            # a link and its `some`): 15 and 16.
-            "untyped-retype-tcb": (26, 26), "untyped-retype-bound-tcb": (26, 26),
-            "untyped-retype-queued-tcb": (26, 26), "untyped-retype-shared-tcb": (26, 26),
-            # The first resume of a carved thread enqueues a run-queue key no
-            # thread has held (a QEMU trace of lean_alloc_small's callers):
-            # the run queue's membership table builds the new key's entry
-            # (`RHTable.insertNoResizeImpl` under `RunQueue.insert`, 2) and
-            # the queue's ends record its new priority bucket
-            # (`RunQueueEnds.appendImpl`, 1).  The steady state reuses both.
-            "resume-carved-tcb": (3, 0),
-            "untyped-retype-sched-context": (16, 15), "untyped-retype-sc-thread": (26, 26),
-            "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
-            "vspace-unify-instruction": (4, 3),
-            "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),
-            "vspace-unmap": (0, 0),
-            # a map at a second address after an unmap: the root's retained
-            # mapping and epoch cells take the new address.
-            "vspace-map-moved": (0, 0), "vspace-unmap-moved": (0, 0),
-            # WS-ZA ZA5.4 part 26: the populated CNode's carve (a CNode's 30)
-            # and the endpoint's into its slot (an endpoint's 11), the spaced
-            # thread's carve (a thread's 24) and its CNode root's into the
-            # move slot (a CNode's 30, and the capability's target cell, 31:
-            # traced, the slot's spare record last held a reply capability
-            # whose target is the boot reply object's own (`replyCapTargetIn`
-            # shares it), so `CapTarget.objectOver` builds the new one).  The
-            # carved thread's first space set writes over the records the
-            # carve made, and the thread's cell in place (0).  The spaced
-            # thread's carve also makes its FP/SIMD context (25) and, since
-            # WS-ZA ZA6.33, its id cell (26).
-            "untyped-retype-populated-cnode": (30, 30), "untyped-retype-into-cnode": (11, 11),
-            "untyped-retype-spaced-tcb": (26, 26), "untyped-retype-space-cnode": (31, 31),
-            # The reset is seL4's (WS-ZA ZA5.4 part 36, `v0.36.149`; 30 before):
-            # every refusal precedes its one write, the in-place rewind of the
-            # invoked capability's free index, so its dispatch runs through
-            # `RefusalCarrying.ofChecked` and keeps no pre-state.
-            "untyped-reset": (0, 0),
-            # A carve the kernel heap cannot hold (the free bytes the kernel
-            # is told capped at one page by the exerciser's hook) is refused
-            # with untypedRegionExhausted before any write: nothing allocated.
-            "untyped-retype-heap-refused": (0, 0),
-            # WS-ZA ZA5.9 (`v0.36.159`; 6 and 4 before, 9 and 7 before
-            # ZA5.5): the registry table is retired, so a register's one write
-            # is its endpoint's record, set in its slot from the decoded words
-            # (`registerServiceWordsPerform`), and its compiled arm builds no
-            # registration (`dispatchServiceRegisterByR_eq_impl`).
-            "service-register": (0, 0),
-            # WS-ZA ZA6.33: the suspend no longer takes the general path (no
-            # copy of the store is held for a refusal), its endpoint arm
-            # dequeues from the one endpoint the thread state names, and each
-            # arm writes the neighbours' links, the endpoint's ends, the reply
-            # and the victim over their own records
-            # (`removeFromBlockingEndpointImpl`, `cancelIpcBlockingImpl`,
-            # `cutHeadFrameKeepingContextImpl`, each proven equal to the
-            # specification's): 0.
-            "tcb-suspend-receive-blocked": (0, 0),
-            "tcb-suspend-send-blocked": (0, 0),
-            "tcb-suspend-reply-blocked": (0, 0),
-            "tcb-suspend-reply-donated": (0, 0),
-            # The call that donates the partner's context to the root task:
-            # the rendezvous, `schedContext_donate` and `reply_push` each in
-            # its slot, the links the push stores the cells its objects were
-            # carved with (`performCallDonating`,
-            # `callDispatchChecked_donating_inPlace`): 0.
-            "suspend-donated-partner-calls": (0, 0),
-            # The partner's call to the root task homed on core 1: the
-            # donation, then the replenishment migration from core 0's home to
-            # core 1's, its release link moved in its slot
-            # (`migrateReplenishmentWrite`): 0.
-            "cross-core-partner-calls": (0, 0),
-            # The root task's call to the server with the context still on
-            # loan: the push links the server's reply onto a stack that already
-            # holds the root task's, the frame below rewritten in its slot: 0.
-            "chain-root-calls-server": (0, 0),
-            # The server's reply-receive and the root task's reply, each
-            # handing the loaned context back down the stack: seL4's
-            # `reply_pop`, the popped frame cleared and the one below re-headed
-            # in their slots, the context settled on its new holder's home and
-            # the holder taken off its core (`performReplyRecvDonatedDelivered`,
-            # `performReplyDonatedDelivered`): 0.
-            "chain-server-reply-recv": (0, 0), "chain-root-replies": (0, 0),
-            # The chain's carves, a thread's and a reply's as above.
-            "untyped-retype-chain-tcb": (26, 26), "untyped-retype-chain-reply": (15, 15),
-            # and the third thread's (WS-ZA ZA6.34), the same carves.
-            "untyped-retype-third-tcb": (26, 26), "untyped-retype-third-reply": (15, 15),
-            "untyped-retype-stack-server": (26, 26), "untyped-retype-stack-top": (26, 26),
-            "untyped-retype-stack-server-reply": (15, 15), "untyped-retype-stack-top-reply": (15, 15),
-            # and the server's reply carved again for the orphan's call
-            # (WS-ZA ZA6.34), the same carve.
-            "untyped-retype-waited-reply": (15, 15),
-            # and the holder's-delete scenario's: both replies and the fourth
-            # thread carved again, the same carves.
-            "untyped-retype-orphan-server-reply": (15, 15),
-            "untyped-retype-orphan-top-reply": (15, 15), "untyped-retype-orphan-top": (26, 26),
-            # and the reply-receive orphan's server and reply, the same carves.
-            "untyped-retype-orphan-recv-server": (26, 26),
-            "untyped-retype-orphan-recv-reply": (15, 15),
-            # and a context's: 15 on both calls, `untyped-retype-sched-context`'s
-            # steady state, the capability's target record already built.
-            "untyped-retype-stack-context": (15, 15),
-            # The affinity change of a thread running on core 1 (seL4's
-            # `setAffinity`: the thread taken off core 1's current slot, a
-            # reschedule raised there, the remote stall until core 1 has
-            # saved it): the vacate writes the scheduler in its cell
-            # (`vacatedScheduler`): 0.
-            "tcb-set-affinity-running": (0, 0),
-            # The requeue's first call follows the suspend and resume
-            # scenarios, which now leave nothing shared: 0.
-            "sched-context-yield-to-requeue": (0, 0),
-        })
-        # WS-ZA ZA6.31: the fault entries (each fault kind with no handler, a
-        # VM fault queued on a handler not yet waiting, each kind delivered to
-        # a waiting handler and its reply, the resume of a suspended thread)
-        # and the FP/SIMD access trap allocate nothing.  The entries cross
-        # their commit as words; the fault record is kept as words in the
-        # thread's own cell; a capability fault is named from the decode and
-        # lookup the syscall entry already ran (`syscallEntryCheckedK`), an
-        # empty slot refused before the arm runs; delivery, a queued fault's
-        # receive and the reply write the handler's and the faulter's cells
-        # in place; and the FP/SIMD switch captures a switched-out owner's
-        # registers into the context its TCB was created with.
-        pinned.update({
-            name: (0, 0) for name in (
-                "vm-fault-data-suspends", "vm-fault-instruction-suspends",
-                "cap-fault-suspends", "unknown-syscall-suspends", "user-exception-suspends",
-                "vm-fault-data-resume", "vm-fault-instruction-resume",
-                "cap-fault-resume", "unknown-syscall-resume", "user-exception-resume",
-                "vm-fault-queued", "receive-queued-fault", "reply-queued-fault",
-                "vm-fault-data-delivered", "vm-fault-instruction-delivered",
-                "cap-fault-delivered", "unknown-syscall-delivered", "user-exception-delivered",
-                "vm-fault-data-reply", "vm-fault-instruction-reply",
-                "cap-fault-reply", "unknown-syscall-reply", "user-exception-reply",
-                "fp-access", "fp-owner-blocks", "fp-access-partner", "fp-owner-wakes-root",
-            )
-        })
-        expected = set(pinned)
+            "orphan-partner-calls", "orphan-recv-partner-calls", "orphan-recv-partner-waits",
+            "orphan-recv-partner-wakes-root", "orphan-recv-reply-cap-delete",
+            "orphan-recv-reply-cap-mint", "orphan-recv-reply-delete",
+            "orphan-recv-resume-server", "orphan-recv-root-waits", "orphan-recv-server-delete",
+            "orphan-recv-server-receives", "orphan-recv-server-resumes-partner",
+            "orphan-recv-server-set-priority", "orphan-recv-server-set-space",
+            "orphan-recv-server-waits", "orphan-recv-server-wakes-root",
+            "orphan-recv-suspend-partner", "orphan-reply-cap-delete", "orphan-reply-recv",
+            "orphan-resume-server", "orphan-root-answers-server", "orphan-root-waits",
+            "orphan-root-waits-server", "orphan-server-calls", "orphan-server-receives",
+            "orphan-server-reply-cap-mint", "orphan-server-resumes-top", "orphan-server-waits",
+            "orphan-server-wakes-root", "orphan-stack-bind-partner", "orphan-stack-configure",
+            "orphan-stack-unbind", "orphan-suspend-server", "orphan-top-receives",
+            "orphan-top-reply-cap-delete", "orphan-top-reply-cap-mint",
+            "orphan-top-reply-delete", "orphan-top-resumes-partner", "orphan-top-set-priority",
+            "orphan-top-set-space", "orphan-top-waits", "orphan-top-wakes-root",
+            "page-table-delete-1", "page-table-delete-2", "page-table-delete-3",
+            "page-table-map-1", "page-table-map-2", "page-table-map-3", "page-table-unmap-1",
+            "page-table-unmap-2", "page-table-unmap-3", "populated-cnode-delete",
+            "postpone-bind-partner", "postpone-configure", "postpone-partner-yield",
+            "postpone-resume-partner", "postpone-root-receives", "postpone-suspend",
+            "postpone-unbind", "postpone-wake-root", "queue-endpoint-delete",
+            "queue-partner-receives", "queue-partner-wakes-root", "queue-resume-top",
+            "queue-root-waits", "queue-suspend-partner", "queue-suspend-top",
+            "queue-top-receives", "queue-top-resumes-partner", "queued-tcb-delete",
+            "receive-blocks", "receive-for-badged-call", "receive-for-badged-send",
+            "receive-for-call", "receive-from-badged-sender", "receive-from-sender",
+            "receive-on-carved", "receive-queued-fault", "receive-stashing-reply",
+            "receive-tainted", "receive-with-carved-reply", "refill-bind-root",
+            "refill-configure", "refill-drain-tick", "refill-unbind-root", "refill-wait-tick",
+            "refill-yield", "reply", "reply-cap-delete", "reply-cap-mint",
+            "reply-cap-mint-over-copy", "reply-cap-over-copy-delete", "reply-delete",
+            "reply-queued-fault", "reply-recv", "reply-to-badged-call", "reschedule-sgi",
+            "resume-carved-tcb", "resume-shared-tcb", "root-set-ipc-buffer",
+            "sched-context-bind", "sched-context-configure", "sched-context-consumed",
+            "sched-context-consumed-reset", "sched-context-rebind", "sched-context-unbind",
+            "sched-context-unbind-suspended", "sched-context-unbind-waiting",
+            "sched-context-yield-to", "sched-context-yield-to-linked",
+            "sched-context-yield-to-requeue", "send-blocks", "send-tainted-blocks",
+            "send-to-receiver", "send-to-unstashed-receiver", "service-query",
+            "service-register", "service-revoke", "set-carved-tcb-space", "signal",
+            "signal-bound",
+            "signal-to-waiter", "signal-wide-badge", "space-cnode-cap-delete",
+            "spaced-tcb-delete", "stack-bind-partner", "stack-configure",
+            "stack-context-bind-partner", "stack-context-configure", "stack-partner-calls",
+            "stack-resume-server", "stack-root-calls", "stack-root-receives",
+            "stack-server-calls", "stack-server-delete", "stack-server-receives",
+            "stack-server-reply-cap-mint", "stack-server-resumes-top",
+            "stack-server-set-priority", "stack-server-set-space", "stack-suspend-partner",
+            "stack-suspend-server", "stack-suspend-top", "stack-top-delete",
+            "stack-top-receives", "stack-top-reply-cap-mint", "stack-top-resumes-partner",
+            "stack-top-resumes-root", "stack-top-set-priority", "stack-top-set-space",
+            "stack-top-waits", "stack-unbind", "stashed-reply-cap-delete",
+            "stashed-reply-delete", "suspend-donated-bind-partner",
+            "suspend-donated-configure", "suspend-donated-partner-calls",
+            "suspend-donated-resume", "suspend-donated-root-receives",
+            "suspend-donated-unbind", "suspend-queued-tcb", "suspend-recv-partner-receives",
+            "suspend-recv-resume", "suspend-recv-root-receives", "suspend-recv-wake-root",
+            "suspend-reply-partner-calls", "suspend-reply-resume",
+            "suspend-reply-root-receives", "suspend-send-partner-sends", "suspend-send-resume",
+            "suspend-send-root-receives", "suspend-send-wake-root",
+            "suspend-wait-partner-waits", "suspend-wait-resume", "suspend-wait-root-receives",
+            "suspend-wait-wake-root", "suspended-tcb-delete", "tcb-bind-notification",
+            "tcb-resume", "tcb-resume-bound", "tcb-resume-postpone", "tcb-set-affinity",
+            "tcb-set-affinity-running", "tcb-set-fault-handler", "tcb-set-ipc-buffer",
+            "tcb-set-mc-priority", "tcb-set-priority", "tcb-set-space", "tcb-suspend",
+            "tcb-suspend-bound", "tcb-suspend-receive-blocked", "tcb-suspend-release-queued",
+            "tcb-suspend-reply-blocked", "tcb-suspend-reply-donated",
+            "tcb-suspend-send-blocked", "tcb-suspend-wait-blocked", "tcb-suspend-waiting",
+            "tcb-unbind-notification", "third-bind-partner", "third-configure",
+            "third-reply-cap-mint", "third-resume-server", "third-root-waits",
+            "third-tcb-set-priority", "third-tcb-set-space", "third-unbind", "timer-tick",
+            "unbound-tcb-delete", "unknown-syscall-delivered", "unknown-syscall-reply",
+            "unknown-syscall-resume", "unknown-syscall-suspends", "untyped-reset",
+            "untyped-retype-bound-notification", "untyped-retype-bound-tcb",
+            "untyped-retype-busy-endpoint", "untyped-retype-busy-notification",
+            "untyped-retype-busy-reply", "untyped-retype-chain-reply",
+            "untyped-retype-chain-tcb", "untyped-retype-cnode", "untyped-retype-endpoint",
+            "untyped-retype-frame", "untyped-retype-heap-refused", "untyped-retype-into-cnode",
+            "untyped-retype-notification", "untyped-retype-orphan-recv-reply",
+            "untyped-retype-orphan-recv-server", "untyped-retype-orphan-server-reply",
+            "untyped-retype-orphan-top", "untyped-retype-orphan-top-reply",
+            "untyped-retype-page-table-1", "untyped-retype-page-table-2",
+            "untyped-retype-page-table-3", "untyped-retype-populated-cnode",
+            "untyped-retype-queue-endpoint", "untyped-retype-queued-tcb",
+            "untyped-retype-reply", "untyped-retype-sc-thread", "untyped-retype-sched-context",
+            "untyped-retype-shared-tcb", "untyped-retype-space-cnode",
+            "untyped-retype-spaced-tcb", "untyped-retype-stack-context",
+            "untyped-retype-stack-server", "untyped-retype-stack-server-reply",
+            "untyped-retype-stack-top", "untyped-retype-stack-top-reply",
+            "untyped-retype-stashed-reply", "untyped-retype-tcb", "untyped-retype-third-reply",
+            "untyped-retype-third-tcb", "untyped-retype-waited-reply",
+            "upper-notification-delete", "user-exception-delivered", "user-exception-reply",
+            "user-exception-resume", "user-exception-suspends", "vm-fault-data-delivered",
+            "vm-fault-data-reply", "vm-fault-data-resume", "vm-fault-data-suspends",
+            "vm-fault-instruction-delivered", "vm-fault-instruction-reply",
+            "vm-fault-instruction-resume", "vm-fault-instruction-suspends", "vm-fault-queued",
+            "vspace-map", "vspace-map-again", "vspace-map-copy", "vspace-map-moved",
+            "vspace-unify-instruction", "vspace-unmap", "vspace-unmap-first",
+            "vspace-unmap-moved", "wait-blocks", "wait-on-carved", "wait-pending",
+            "waited-partner-calls", "waited-reply-cap-mint", "waited-root-waits",
+            "waited-server-delete", "waited-server-receives", "waited-server-resumes-partner",
+            "waited-server-waits", "waited-server-wakes-root", "waited-wake-server", "yield",
+        }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
-            failures.append(f"heap-allocations-per-syscall: scenarios {sorted(observed)} are not the pinned set {sorted(expected)}")
+            failures.append(f"heap-allocations-per-syscall: scenarios {sorted(observed ^ expected)} differ from the pinned set")
         runs = [(m.group(1), m.group(2) is not None) for m in readings]
         trips = [(m.group(1), m.group(2) is not None) for m in returned]
+        carved = {}
+        for m in carves:
+            key = (m.group(1), m.group(2) is not None)
+            if key in carved:
+                failures.append(f"heap-allocations-per-syscall: {m.group(1)}: named two carves in one run")
+            carved[key] = m.group(3)
         for name in sorted(observed | expected):
             for first in (True, False):
                 which = "first call" if first else "steady state"
                 if runs.count((name, first)) != 1 or trips.count((name, first)) != 1:
                     failures.append(f"heap-allocations-per-syscall: {name} ({which}): expected one reading and one returned or blocked round trip on core 0")
+        for key in carved:
+            if key not in trips:
+                failures.append(f"heap-allocations-per-syscall: {key[0]}: a carve named with no returned round trip")
         for m in readings:
             before, after, delta = (int(g) for g in m.groups()[2:])
-            pin = pinned.get(m.group(1), (0, 0))[0 if m.group(2) else 1]
+            kind = carved.get((m.group(1), m.group(2) is not None))
+            if kind is not None and kind not in carve_cells:
+                failures.append(f"heap-allocations-per-syscall: {m.group(1)} carved {kind}, whose cells the gate does not know: {m.group(0)!r}")
+                continue
+            pin = carve_cells[kind] if kind is not None else 0
             if after < before or delta != after - before:
                 failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
+            elif delta != pin and kind is not None:
+                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {delta}, the object's own cells are {pin}: {m.group(0)!r}")
             elif delta != pin:
-                failures.append(f"heap-allocations-per-syscall: a syscall read {delta}, pinned at {pin}: {m.group(0)!r}")
+                failures.append(f"heap-allocations-per-syscall: a kernel entry read {delta}, not 0: {m.group(0)!r}")
         # WS-ZA ZA6.1: each core's first entry, its bring-up reschedule, read
         # once per core (the boot core's after boot, each secondary's as it
         # comes up), each a delta of zero.

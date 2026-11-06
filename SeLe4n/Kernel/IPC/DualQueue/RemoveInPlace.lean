@@ -109,6 +109,86 @@ threads distinct unreserved TCBs. -/
        storeLeavesIndexAndTypes st n.toObjId .tcb && st.objects.findsInPlace n.toObjId &&
        (st.getTcb? n).isSome)
 
+/-- `dualQueueRemovalEnabled` read off a queue's two end codes and the thread's
+link codes (WS-ZA ZA6.35): the same answer (`dualQueueRemovalEnabled_ofCodes`),
+building neither the queue record nor any `some` to compare. -/
+@[inline] def dualQueueRemovalEnabledCode (headCode tailCode : Nat) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (pprev : QueuePPrev) : Bool :=
+  !(headCode == 0 || tailCode == 0) &&
+    ((tailCode == tid.val + 1) == (tcb.queueNextCode == 0)) &&
+    match pprev with
+    | .endpointHead => headCode == tid.val + 1 && tcb.queuePrevCode == 0
+    | .tcbNext p => !(headCode == tid.val + 1) && tcb.queuePrevCode == p.val + 1
+
+/-- A code is a thread's exactly when it decodes to that thread. -/
+theorem ofOptCode_eq_some_iff (c : Nat) (t : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId.ofOptCode c = some t ↔ c = t.val + 1 := by
+  cases c with
+  | zero => simp [SeLe4n.ThreadId.ofOptCode]
+  | succ k =>
+    cases t with
+    | mk v => simp [SeLe4n.ThreadId.ofOptCode]
+
+theorem dualQueueRemovalEnabled_ofCodes (headCode tailCode : Nat) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (pprev : QueuePPrev) :
+    dualQueueRemovalEnabled (IntrusiveQueue.mk (SeLe4n.ThreadId.ofOptCode headCode)
+        (SeLe4n.ThreadId.ofOptCode tailCode)) tid tcb pprev =
+      dualQueueRemovalEnabledCode headCode tailCode tid tcb pprev := by
+  have hN : ∀ c : Nat, (SeLe4n.ThreadId.ofOptCode c).isNone = (c == 0) := by
+    intro c; cases c <;> rfl
+  have hS : ∀ (c : Nat) (t : SeLe4n.ThreadId),
+      decide (SeLe4n.ThreadId.ofOptCode c = some t) = (c == t.val + 1) := by
+    intro c t
+    rw [Bool.eq_iff_iff, decide_eq_true_iff, beq_iff_eq]
+    exact ofOptCode_eq_some_iff c t
+  unfold dualQueueRemovalEnabled dualQueueRemovalGuard queueTailPairAgrees queueBoundariesEmpty
+    dualQueueRemovalEnabledCode
+  simp only [hN, TCB.queueNext, TCB.queuePrev]
+  cases pprev with
+  | endpointHead => simp only [hS, Bool.and_assoc]
+  | tcbNext p => simp only [hS, decide_not, Bool.and_assoc]
+
+/-- `queueRemoveInPlace` as compiled: the removal's own checks read off the
+endpoint's end codes (`dualQueueRemovalEnabledCode`) and the thread's link
+codes, so the check builds no queue record and no `some`. -/
+@[inline] def queueRemoveInPlaceImpl (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB) : Bool :=
+  !tid.isReserved &&
+  storeLeavesIndexAndTypes st endpointId .endpoint && st.objects.findsInPlace endpointId &&
+  storeLeavesIndexAndTypes st tid.toObjId .tcb && st.objects.findsInPlace tid.toObjId &&
+  (match tcb.queuePPrev with
+   | none => false
+   | some pprev =>
+     dualQueueRemovalEnabledCode (ep.headCodeOf isReceiveQ) (ep.tailCodeOf isReceiveQ) tid tcb
+       pprev &&
+     match pprev with
+     | .endpointHead => true
+     | .tcbNext p => !p.isReserved && p != tid &&
+         storeLeavesIndexAndTypes st p.toObjId .tcb && st.objects.findsInPlace p.toObjId &&
+         match st.getTcb? p with
+         | some pt => queuePredecessorNamesSuccessor pt tid
+         | none => false) &&
+  (match tcb.queueNext with
+   | none => true
+   | some n => !n.isReserved && n != tid && tcb.queuePrevCode != n.val + 1 &&
+       storeLeavesIndexAndTypes st n.toObjId .tcb && st.objects.findsInPlace n.toObjId &&
+       (st.getTcb? n).isSome)
+
+@[csimp] theorem queueRemoveInPlace_eq_impl : @queueRemoveInPlace = @queueRemoveInPlaceImpl := by
+  funext st endpointId isReceiveQ tid ep tcb
+  have hQ : (if isReceiveQ then ep.receiveQ else ep.sendQ) =
+      IntrusiveQueue.mk (SeLe4n.ThreadId.ofOptCode (ep.headCodeOf isReceiveQ))
+        (SeLe4n.ThreadId.ofOptCode (ep.tailCodeOf isReceiveQ)) := by
+    cases isReceiveQ <;> rfl
+  have hP : ∀ n : SeLe4n.ThreadId, (tcb.queuePrev != some n) = (tcb.queuePrevCode != n.val + 1) := by
+    intro n
+    simp only [bne, TCB.queuePrev]
+    congr 1
+    rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
+    exact ofOptCode_eq_some_iff _ n
+  unfold queueRemoveInPlace queueRemoveInPlaceImpl
+  simp only [hQ, dualQueueRemovalEnabled_ofCodes, hP]
+
 /-- **Whether `t` is blocked on the side of the endpoint `endpointId` a removal
 from its receive queue (`isReceiveQ`) or its send queue acts on**, read from its
 two IPC codes (`ThreadIpcState.ofCodes`): receiving there, or sending or calling

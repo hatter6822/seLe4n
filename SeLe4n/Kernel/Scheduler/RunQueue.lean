@@ -47,19 +47,36 @@ def RunQueueLink.none : RunQueueLink := {}
 @[inline] def linkOf (links : RHTable ThreadId RunQueueLink) (t : ThreadId) : RunQueueLink :=
   (links.get? t).getD RunQueueLink.none
 
+/-- WS-ZA ZA6.35: the number of priorities a bucket table holds an entry for
+from the start, seL4's `CONFIG_NUM_PRIORITIES` (priorities 0 to 255). -/
+def numPriorities : Nat := 256
+
+/-- WS-ZA ZA6.35: **a core's bucket table**, seL4's `ksReadyQueues`: one entry of
+bucket ends per priority, indexed by the priority.  The table is made with an
+entry for each of `numPriorities` priorities (`bucketTableEmpty`), so no
+enqueue at a priority below it adds one; a priority at or above it extends the
+table (`setEnds`). -/
+abbrev BucketTable := Array BucketEnds
+
+/-- The table of `numPriorities` empty buckets. -/
+def bucketTableEmpty : BucketTable := Array.replicate numPriorities ({} : BucketEnds)
+
 /-- A priority's bucket ends, `0`/`0` for a priority with none. -/
-@[inline] def endsOf (buckets : RHTable Priority BucketEnds) (p : Priority) : BucketEnds :=
-  (buckets.get? p).getD {}
+@[inline] def endsOf (buckets : BucketTable) (p : Priority) : BucketEnds :=
+  buckets.getD p.val {}
 
 /-- Rewrite a thread's entry. -/
 @[inline] def setLink (links : RHTable ThreadId RunQueueLink) (t : ThreadId)
     (f : RunQueueLink → RunQueueLink) : RHTable ThreadId RunQueueLink :=
   links.insert t (f (linkOf links t))
 
-/-- Rewrite a priority's bucket ends. -/
-@[inline] def setEnds (buckets : RHTable Priority BucketEnds) (p : Priority)
-    (f : BucketEnds → BucketEnds) : RHTable Priority BucketEnds :=
-  buckets.insert p (f (endsOf buckets p))
+/-- Rewrite a priority's bucket ends: the entry rewritten where it stands
+(`Array.modify`, which hands `f` the entry exclusively, so `f`'s record update
+reuses it); a priority past the table's end extends it. -/
+@[inline] def setEnds (buckets : BucketTable) (p : Priority)
+    (f : BucketEnds → BucketEnds) : BucketTable :=
+  if p.val < buckets.size then buckets.modify p.val f
+  else (buckets ++ Array.replicate (p.val - buckets.size) ({} : BucketEnds)).push (f {})
 
 theorem linkOf_setLink {links : RHTable ThreadId RunQueueLink} (h : links.invExt)
     (t : ThreadId) (f : RunQueueLink → RunQueueLink) (x : ThreadId) :
@@ -71,22 +88,31 @@ theorem linkOf_setLink {links : RHTable ThreadId RunQueueLink} (h : links.invExt
   · have : (t == x) = false := by simp; exact Ne.symm hx
     simp [this, hx]
 
-theorem endsOf_setEnds {buckets : RHTable Priority BucketEnds} (h : buckets.invExt)
+theorem endsOf_setEnds (buckets : BucketTable)
     (p : Priority) (f : BucketEnds → BucketEnds) (q : Priority) :
     endsOf (setEnds buckets p f) q = if q = p then f (endsOf buckets p) else endsOf buckets q := by
+  have hv : (q = p) ↔ q.val = p.val := by cases q; cases p; simp
   unfold endsOf setEnds
-  rw [RHTable_getElem?_insert _ _ _ h]
-  by_cases hq : q = p
-  · subst hq; simp; rfl
-  · have : (p == q) = false := by simp; exact Ne.symm hq
-    simp [this, hq]
+  simp only [Array.getD_eq_getD_getElem?]
+  by_cases hp : p.val < buckets.size
+  · rw [if_pos hp, Array.getElem?_modify]
+    by_cases hq : q.val = p.val
+    · rw [if_pos (hv.mpr hq), hq, if_pos rfl, Array.getElem?_eq_getElem hp]; rfl
+    · rw [if_neg (fun h => hq (hv.mp h)), if_neg (Ne.symm hq)]
+  · rw [if_neg hp]
+    have hp' : buckets.size ≤ p.val := Nat.le_of_not_lt hp
+    rw [Array.getElem?_push, Array.getElem?_append, Array.getElem?_replicate]
+    simp only [Array.size_append, Array.size_replicate]
+    by_cases hq : q.val = p.val
+    · rw [if_pos (hv.mpr hq), hq, if_pos (by omega), Array.getElem?_eq_none hp']; rfl
+    · rw [if_neg (fun h => hq (hv.mp h)), if_neg (by omega)]
+      by_cases hs : q.val < buckets.size
+      · rw [if_pos hs]
+      · rw [if_neg hs, Array.getElem?_eq_none (Nat.le_of_not_lt hs)]
+        split <;> rfl
 
 theorem setLink_invExtK {links : RHTable ThreadId RunQueueLink} (h : links.invExtK)
     (t : ThreadId) (f : RunQueueLink → RunQueueLink) : (setLink links t f).invExtK :=
-  RHTable_insert_preserves_invExtK _ _ _ h
-
-theorem setEnds_invExtK {buckets : RHTable Priority BucketEnds} (h : buckets.invExtK)
-    (p : Priority) (f : BucketEnds → BucketEnds) : (setEnds buckets p f).invExtK :=
   RHTable_insert_preserves_invExtK _ _ _ h
 
 /-- WS-ZA ZA4.5: the compiled `setLink`.  A present entry is rewritten where it
@@ -100,18 +126,6 @@ record update reuses it); only a thread's first entry inserts a key. -/
   funext links t f
   unfold setLink setLinkImpl linkOf
   cases h : links.get? t with
-  | none => simp [RHTable.contains, h]
-  | some v => simp [RHTable.contains, h, RHTable.modify_of_get? h]
-
-/-- WS-ZA ZA4.5: the compiled `setEnds`, as `setLinkImpl`. -/
-@[inline] def setEndsImpl (buckets : RHTable Priority BucketEnds) (p : Priority)
-    (f : BucketEnds → BucketEnds) : RHTable Priority BucketEnds :=
-  if buckets.contains p then buckets.modify p f else buckets.insert p (f {})
-
-@[csimp] theorem setEnds_eq_impl : @setEnds = @setEndsImpl := by
-  funext buckets p f
-  unfold setEnds setEndsImpl endsOf
-  cases h : buckets.get? p with
   | none => simp [RHTable.contains, h]
   | some v => simp [RHTable.contains, h, RHTable.modify_of_get? h]
 
@@ -173,7 +187,7 @@ queue of every runnable thread, in the order they joined it; each priority's
 bucket is the queue of `l`'s threads at that priority, in the same order; a
 thread is marked queued exactly when it is in `l`; `size` counts `l` and
 `maxCode` is its highest priority. -/
-structure Layout (links : RHTable ThreadId RunQueueLink) (buckets : RHTable Priority BucketEnds)
+structure Layout (links : RHTable ThreadId RunQueueLink) (buckets : BucketTable)
     (head tail size maxCode : Nat) (l : List ThreadId) : Prop where
   queue : IsQueue (fun t => (linkOf links t).next) (fun t => (linkOf links t).prev) head tail l
   nodup : l.Nodup
@@ -205,34 +219,33 @@ handful of entries and words in place; the list of queued threads
 off the links, and `layout` is the proof that they describe one queue. -/
 structure RunQueue where
   links : RHTable ThreadId RunQueueLink
-  buckets : RHTable Priority BucketEnds
+  buckets : RunQueue.BucketTable
   head : Nat
   tail : Nat
   size : Nat
   maxCode : Nat
   links_invExtK : links.invExtK
-  buckets_invExtK : buckets.invExtK
   layout : RunQueue.Layout links buckets head tail size maxCode
     (LinkedQueue.walk (RunQueue.nextOf links) size head)
 
 namespace RunQueue
 
 theorem layout_empty_tables :
-    Layout (RHTable.empty 16 (by omega)) (RHTable.empty 16 (by omega)) 0 0 0 0 [] := by
+    Layout (RHTable.empty 16 (by omega)) bucketTableEmpty 0 0 0 0 [] := by
   have hl : ∀ t, linkOf (RHTable.empty 16 (by omega) : RHTable ThreadId RunQueueLink) t = {} := by
     intro t; unfold linkOf; rw [RHTable_get?_empty]; rfl
-  have he : ∀ p, endsOf (RHTable.empty 16 (by omega) : RHTable Priority BucketEnds) p = {} := by
-    intro p; unfold endsOf; rw [RHTable_get?_empty]; rfl
+  have he : ∀ p, endsOf bucketTableEmpty p = {} := by
+    intro p; unfold endsOf bucketTableEmpty
+    rw [Array.getD_eq_getD_getElem?, Array.getElem?_replicate]; split <;> rfl
   refine ⟨isQueue_nil _ _, List.nodup_nil, rfl, fun t => ?_, fun p => ?_, rfl⟩
   · rw [hl]; simp
   · rw [he]; exact isQueue_nil _ _
 
 @[inline] def empty : RunQueue where
   links := RHTable.empty 16 (by omega)
-  buckets := RHTable.empty 16 (by omega)
+  buckets := bucketTableEmpty
   head := 0; tail := 0; size := 0; maxCode := 0
   links_invExtK := RHTable.empty_invExtK 16 (by omega)
-  buckets_invExtK := RHTable.empty_invExtK 16 (by omega)
   layout := layout_empty_tables.self
 
 instance : Inhabited RunQueue where default := empty
@@ -458,7 +471,7 @@ theorem code_ne_end {l : List ThreadId} {e : Nat} (he : e = lastCode 0 l) {t : T
 /-- Appending a thread not in the queue at priority `p`. -/
 theorem layout_append {links buckets head tail size maxCode l}
     (hL : Layout links buckets head tail size maxCode l) (hK : links.invExtK)
-    (hKb : buckets.invExtK) (t : ThreadId) (p : Priority) (ht : t ∉ l) :
+    (t : ThreadId) (p : Priority) (ht : t ∉ l) :
     Layout (appendLinks links t p tail (endsOf buckets p).tail)
       (setEnds buckets p (appendEnds t (endsOf buckets p).tail))
       (if tail = 0 then code t else head) (code t) (size + 1) (max maxCode (p.val + 1))
@@ -491,7 +504,7 @@ theorem layout_append {links buckets head tail size maxCode l}
   · intro q
     rw [List.filter_append, List.filter_congr (q := fun x => (linkOf links x).prio == q)
       (fun x hx => by rw [hprio x hx])]
-    rw [endsOf_setEnds hKb.1]
+    rw [endsOf_setEnds]
     by_cases hq : q = p
     · subst hq
       simp only [appendEnds]
@@ -601,7 +614,7 @@ theorem code_ne_head {l : List ThreadId} {e : Nat} (he : e = lastCode 0 l.revers
 queue of `t :: l`, `t` first in its bucket. -/
 theorem layout_prepend {links buckets head tail size maxCode l}
     (hL : Layout links buckets head tail size maxCode l) (hK : links.invExtK)
-    (hKb : buckets.invExtK) (t : ThreadId) (p : Priority) (ht : t ∉ l) :
+    (t : ThreadId) (p : Priority) (ht : t ∉ l) :
     Layout (prependLinks links t p head (endsOf buckets p).head)
       (setEnds buckets p (prependEnds t (endsOf buckets p).head))
       (code t) (if head = 0 then code t else tail) (size + 1) (max maxCode (p.val + 1))
@@ -631,7 +644,7 @@ theorem layout_prepend {links buckets head tail size maxCode l}
     · subst hx; rw [hlk, if_pos rfl]; simp
     · rw [hlk, if_neg hx, hL.queued x]; simp [hx]
   · intro q
-    rw [endsOf_setEnds hKb.1]
+    rw [endsOf_setEnds]
     by_cases hq : q = p
     · subst hq
       simp only [prependEnds]
@@ -764,7 +777,7 @@ theorem filter_mid_neg {A B : List ThreadId} {t : ThreadId} {f : ThreadId → Bo
 equal to the remaining threads' highest priority. -/
 theorem layout_unlink {links buckets head tail size maxCode} {A B : List ThreadId} {t : ThreadId}
     (hL : Layout links buckets head tail size maxCode (A ++ t :: B)) (hK : links.invExtK)
-    (hKb : buckets.invExtK) (M : Nat)
+    (M : Nat)
     (hM : M = maxPrioCode (linkOf links) (A ++ B)) :
     let x := linkOf links t
     Layout (unlinkLinks links t x.prev x.next x.bucketPrev x.bucketNext)
@@ -817,7 +830,7 @@ theorem layout_unlink {links buckets head tail size maxCode} {A B : List ThreadI
     · subst hz; rw [hlk, if_pos rfl]; simp [htA, htB]
     · rw [hlk, if_neg hz, hL.queued z]; simp [hz]
   · intro q
-    rw [List.filter_congr (fun z hz => by rw [hprio z hz]), endsOf_setEnds hKb.1]
+    rw [List.filter_congr (fun z hz => by rw [hprio z hz]), endsOf_setEnds]
     by_cases hq : q = x.prio
     · subst hq
       rw [if_pos rfl, List.filter_append]
@@ -875,15 +888,14 @@ def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
       size := rq.size + 1
       maxCode := max rq.maxCode (prio.val + 1)
       links_invExtK := appendLinks_invExtK rq.links_invExtK _ _ _ _
-      buckets_invExtK := setEnds_invExtK rq.buckets_invExtK _ _
-      layout := (layout_append rq.layout rq.links_invExtK rq.buckets_invExtK tid prio
+      layout := (layout_append rq.layout rq.links_invExtK tid prio
         (fun h => hc ((rq.layout.queued tid).mpr h))).self }
 
 theorem toList_insert_not_mem (rq : RunQueue) (tid : ThreadId) (prio : Priority)
     (h : ¬(tid ∈ rq)) : (rq.insert tid prio).toList = rq.toList ++ [tid] := by
   unfold insert
   rw [dif_neg (show ¬(rq.contains tid = true) from h)]
-  exact (layout_append rq.layout rq.links_invExtK rq.buckets_invExtK tid prio
+  exact (layout_append rq.layout rq.links_invExtK tid prio
     (fun h' => h ((rq.layout.queued tid).mpr h'))).walk_eq
 
 theorem contains_insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
@@ -918,15 +930,14 @@ def insertHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
       size := rq.size + 1
       maxCode := max rq.maxCode (prio.val + 1)
       links_invExtK := prependLinks_invExtK rq.links_invExtK _ _ _ _
-      buckets_invExtK := setEnds_invExtK rq.buckets_invExtK _ _
-      layout := (layout_prepend rq.layout rq.links_invExtK rq.buckets_invExtK tid prio
+      layout := (layout_prepend rq.layout rq.links_invExtK tid prio
         (fun h => hc ((rq.layout.queued tid).mpr h))).self }
 
 theorem toList_insertHead_not_mem (rq : RunQueue) (tid : ThreadId) (prio : Priority)
     (h : ¬(tid ∈ rq)) : (rq.insertHead tid prio).toList = tid :: rq.toList := by
   unfold insertHead
   rw [dif_neg (show ¬(rq.contains tid = true) from h)]
-  exact (layout_prepend rq.layout rq.links_invExtK rq.buckets_invExtK tid prio
+  exact (layout_prepend rq.layout rq.links_invExtK tid prio
     (fun h' => h ((rq.layout.queued tid).mpr h'))).walk_eq
 
 theorem insertHead_of_mem (rq : RunQueue) (tid : ThreadId) (prio : Priority) (h : tid ∈ rq) :
@@ -1026,12 +1037,11 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
         then maxPrioCodeWalk links' (rq.size - 1) head' 0
         else rq.maxCode
       links_invExtK := unlinkLinks_invExtK rq.links_invExtK _ _ _ _ _
-      buckets_invExtK := setEnds_invExtK rq.buckets_invExtK _ _
       layout := by
         obtain ⟨A, B, hAB⟩ := rq.split_of_contains hc
         have hL := rq.layout
         rw [show walk (nextOf rq.links) rq.size rq.head = rq.toList from rfl, hAB] at hL
-        have h0 := layout_unlink hL rq.links_invExtK rq.buckets_invExtK _ rfl
+        have h0 := layout_unlink hL rq.links_invExtK _ rfl
         apply Layout.self
         refine h0.with_maxCode ?_
         split
@@ -1060,7 +1070,7 @@ theorem toList_remove (rq : RunQueue) (tid : ThreadId) :
     have hL := rq.layout
     rw [show walk (nextOf rq.links) rq.size rq.head = rq.toList from rfl, hAB] at hL
     rw [hAB, filter_ne_mid (hAB ▸ rq.toList_nodup)]
-    exact (layout_unlink hL rq.links_invExtK rq.buckets_invExtK _ rfl).walk_eq
+    exact (layout_unlink hL rq.links_invExtK _ rfl).walk_eq
   · rw [dif_neg hc]
     refine (List.filter_eq_self.mpr fun x hx => ?_).symm
     simp only [ne_eq, decide_eq_true_eq]
@@ -1114,12 +1124,11 @@ def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
       size := rq.size
       maxCode := rq.maxCode
       links_invExtK := appendLinks_invExtK (unlinkLinks_invExtK rq.links_invExtK _ _ _ _ _) _ _ _ _
-      buckets_invExtK := setEnds_invExtK (setEnds_invExtK rq.buckets_invExtK _ _) _ _
       layout := by
         obtain ⟨A, B, hAB⟩ := rq.split_of_contains hc
         have hL := rq.layout
         rw [show walk (nextOf rq.links) rq.size rq.head = rq.toList from rfl, hAB] at hL
-        have h0 := layout_unlink hL rq.links_invExtK rq.buckets_invExtK _ rfl
+        have h0 := layout_unlink hL rq.links_invExtK _ rfl
         have htAB : tid ∉ A ++ B := by
           obtain ⟨_, hndtB, hAtB⟩ := List.nodup_append.mp hL.nodup
           intro h
@@ -1127,7 +1136,7 @@ def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
           · exact hAtB tid h tid (List.mem_cons_self ..) rfl
           · exact (List.nodup_cons.mp hndtB).1 h
         have h1 := layout_append h0 (unlinkLinks_invExtK rq.links_invExtK _ _ _ _ _)
-          (setEnds_invExtK rq.buckets_invExtK _ _) tid (linkOf rq.links tid).prio htAB
+          tid (linkOf rq.links tid).prio htAB
         apply Layout.self
         refine (h1.with_size ?_).with_maxCode ?_
         · have := hL.length; simp at this; omega
@@ -1152,7 +1161,7 @@ result (`insertImpl_eq`, `removeImpl_eq`, `rotateToBackImpl_eq`). -/
 @[noinline] def insertFresh (rq : RunQueue) (tid : ThreadId) (prio : Priority)
     (hc : ¬rq.contains tid) : RunQueue :=
   match rq, hc with
-  | ⟨links, buckets, head, tail, size, maxCode, hl, hb, lay⟩, hc =>
+  | ⟨links, buckets, head, tail, size, maxCode, hl, lay⟩, hc =>
     let btail := (endsOf buckets prio).tail
     { links := appendLinks links tid prio tail btail
       buckets := setEnds buckets prio (appendEnds tid btail)
@@ -1161,8 +1170,7 @@ result (`insertImpl_eq`, `removeImpl_eq`, `rotateToBackImpl_eq`). -/
       size := size + 1
       maxCode := max maxCode (prio.val + 1)
       links_invExtK := appendLinks_invExtK hl _ _ _ _
-      buckets_invExtK := setEnds_invExtK hb _ _
-      layout := (layout_append lay hl hb tid prio
+      layout := (layout_append lay hl tid prio
         (fun h => hc ((lay.queued tid).mpr h))).self }
 
 def insertImpl (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
@@ -1175,7 +1183,7 @@ def insertImpl (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
 @[noinline] def removeQueued (rq : RunQueue) (tid : ThreadId) (hc : rq.contains tid) :
     RunQueue :=
   match rq, hc with
-  | ⟨links, buckets, head, tail, size, maxCode, hl, hb, lay⟩, hc =>
+  | ⟨links, buckets, head, tail, size, maxCode, hl, lay⟩, hc =>
     let x := linkOf links tid
     let pv := x.prev
     let nx := x.next
@@ -1193,9 +1201,8 @@ def insertImpl (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
         then maxPrioCodeWalk links' (size - 1) head' 0
         else maxCode
       links_invExtK := unlinkLinks_invExtK hl _ _ _ _ _
-      buckets_invExtK := setEnds_invExtK hb _ _
       layout := by
-        let q : RunQueue := ⟨links, buckets, head, tail, size, maxCode, hl, hb, lay⟩
+        let q : RunQueue := ⟨links, buckets, head, tail, size, maxCode, hl, lay⟩
         have h := (remove q tid).layout
         unfold remove at h
         rw [dif_pos (show q.contains tid = true from hc)] at h
@@ -1211,7 +1218,7 @@ def removeImpl (rq : RunQueue) (tid : ThreadId) : RunQueue :=
 @[noinline] def rotateQueued (rq : RunQueue) (tid : ThreadId) (hc : rq.contains tid) :
     RunQueue :=
   match rq, hc with
-  | ⟨links, buckets, head, tail, size, maxCode, hl, hb, lay⟩, hc =>
+  | ⟨links, buckets, head, tail, size, maxCode, hl, lay⟩, hc =>
     let x := linkOf links tid
     let pv := x.prev
     let nx := x.next
@@ -1230,9 +1237,8 @@ def removeImpl (rq : RunQueue) (tid : ThreadId) : RunQueue :=
       size := size
       maxCode := maxCode
       links_invExtK := appendLinks_invExtK (unlinkLinks_invExtK hl _ _ _ _ _) _ _ _ _
-      buckets_invExtK := setEnds_invExtK (setEnds_invExtK hb _ _) _ _
       layout := by
-        let q : RunQueue := ⟨links, buckets, head, tail, size, maxCode, hl, hb, lay⟩
+        let q : RunQueue := ⟨links, buckets, head, tail, size, maxCode, hl, lay⟩
         have h := (rotateToBack q tid).layout
         unfold rotateToBack at h
         rw [dif_pos (show q.contains tid = true from hc)] at h
@@ -1331,7 +1337,7 @@ theorem toList_rotateToBack (rq : RunQueue) (tid : ThreadId) :
     obtain ⟨A, B, hAB⟩ := rq.split_of_contains hc
     have hL := rq.layout
     rw [show walk (nextOf rq.links) rq.size rq.head = rq.toList from rfl, hAB] at hL
-    have h0 := layout_unlink hL rq.links_invExtK rq.buckets_invExtK _ rfl
+    have h0 := layout_unlink hL rq.links_invExtK _ rfl
     have htAB : tid ∉ A ++ B := by
       obtain ⟨_, hndtB, hAtB⟩ := List.nodup_append.mp hL.nodup
       intro h
@@ -1339,7 +1345,7 @@ theorem toList_rotateToBack (rq : RunQueue) (tid : ThreadId) :
       · exact hAtB tid h tid (List.mem_cons_self ..) rfl
       · exact (List.nodup_cons.mp hndtB).1 h
     have h1 := layout_append h0 (unlinkLinks_invExtK rq.links_invExtK _ _ _ _ _)
-      (setEnds_invExtK rq.buckets_invExtK _ _) tid (linkOf rq.links tid).prio htAB
+      tid (linkOf rq.links tid).prio htAB
     rw [hAB, filter_ne_mid (hAB ▸ rq.toList_nodup)]
     have hs : rq.size = rq.size - 1 + 1 := by have := hL.length; simp at this; omega
     have hw := h1.walk_eq
@@ -1992,7 +1998,7 @@ links live in its TCB (as seL4's `tcbSchedNext`/`tcbSchedPrev`): the ends of
 the queue of runnable threads, the ends of each priority's bucket, the count
 and the highest queued priority.  `RunQueue.ends` reads them off a queue. -/
 structure RunQueueEnds where
-  buckets : RHTable Priority BucketEnds
+  buckets : RunQueue.BucketTable
   head : Nat
   tail : Nat
   size : Nat

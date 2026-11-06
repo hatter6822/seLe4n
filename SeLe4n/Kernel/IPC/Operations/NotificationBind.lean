@@ -396,6 +396,29 @@ def boundDeliveryTarget? (st : SystemState) (notificationId : SeLe4n.ObjId) :
       else none
   | none => none
 
+/-- `boundDeliveryTarget?` as compiled (WS-ZA ZA6.35): the same definition,
+inlined into each caller, so a caller that only tests or takes apart the
+answer builds neither the pair nor its `some`. -/
+@[inline] def boundDeliveryTargetImpl? (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    Option (SeLe4n.ThreadId × SeLe4n.ObjId) :=
+  match st.getNotification? notificationId with
+  | some ntfn =>
+      if ntfn.waitHeadCode = 0 then
+        match ntfn.boundTCB with
+        | some t =>
+            match st.getTcb? t with
+            | some tcb =>
+                match tcb.ipcState with
+                | .blockedOnReceive epId => some (t, epId)
+                | _ => none
+            | none => none
+        | none => none
+      else none
+  | none => none
+
+@[csimp] theorem boundDeliveryTarget?_eq_impl :
+    @boundDeliveryTarget? = @boundDeliveryTargetImpl? := rfl
+
 /-- WS-SM SM6.B: what a resolved bound-delivery target says about the state —
 the bound TCB exists and is blocked on exactly the endpoint the resolution
 names.

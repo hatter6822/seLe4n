@@ -17,6 +17,7 @@ import SeLe4n.Kernel.RoutedArms.Receive
 import SeLe4n.Kernel.RoutedArms.ReplyRecv
 import SeLe4n.Kernel.RoutedArms.Invocation
 import SeLe4n.Kernel.RoutedArms.OverflowOne
+import SeLe4n.Kernel.RoutedArms.SendLong
 import SeLe4n.Kernel.RoutedArms.Audited
 import SeLe4n.Kernel.RoutedArms.Decoded
 
@@ -85,6 +86,9 @@ continuations are compiled once. -/
         finish sid capAddr.word (invocationRoutedArm ctx executingCore tid sid capAddr.word st)
       | .overflowOne sid capAddr =>
         finish sid capAddr.word (overflowOneRoutedArm ctx executingCore tid sid capAddr.word st)
+      | .sendLong capAddr msgInfo =>
+        finish .send capAddr.word
+          (sendLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
       | .audited sid capAddr =>
         finish sid capAddr.word (auditedRoutedArm ctx executingCore tid sid capAddr.word st)
       | .viaDecode => finish .yield 0 (decodedRoutedArm ctx executingCore st)
@@ -148,6 +152,12 @@ compiled form `syscallEntryCheckedK` runs as. -/
       simp only [overflowOneRoutedArm, hO]
       rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
       simp only [entryReportOutcome_general]; rfl
+    | sendLong capAddr msgInfo =>
+      simp only [sendLongRoutedArm, hO]
+      split
+      · rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
+        simp only [entryReportOutcome_general]; rfl
+      · simp only [entryReportOutcome_general]
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl
     | viaDecode => simp only [decodedRoutedArm, entryReportOutcome_general]

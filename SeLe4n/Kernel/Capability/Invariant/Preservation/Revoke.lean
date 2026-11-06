@@ -385,9 +385,9 @@ theorem slotRetireTarget_names {st : SystemState} {cnode : SeLe4n.ObjId} {slot :
         simp only [Bool.and_eq_true] at hc
         exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hc.2⟩
       · exact absurd rfl hT
-    | auditTrail => rw [hTg] at hT; exact absurd rfl hT
+    | auditTrail _ => rw [hTg] at hT; exact absurd rfl hT
     | schedControl _ => rw [hTg] at hT; exact absurd rfl hT
-    | irqControl => rw [hTg] at hT; exact absurd rfl hT
+    | irqControl _ => rw [hTg] at hT; exact absurd rfl hT
     | irqHandler l =>
       rw [hTg] at hT
       dsimp only at hT ⊢

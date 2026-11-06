@@ -374,6 +374,8 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
     · repeat' (first | (cases h; done) | split at h)
     · next hLen =>
       split at h
+      · cases h
+      split at h
       · next hLen1 =>
         split at h
         · next sid' hSid =>
@@ -391,6 +393,72 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
           cases readOverflowWord st tid 0 <;> rfl
         · cases h
       · cases h
+  · cases h
+
+/-- What a routed long send pins about the decode: as `.send`, at `capAddr`,
+with the routed message info, which carries no capabilities and runs past the
+layout's message registers to at most `maxMessageRegisters` words; the decode
+merges the overflow words (`mergeOverflowWords`) onto the mapped layout
+registers. -/
+theorem decodeSyscallArgsFromState_of_routedSendLong
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (capAddr : CPtr) (msgInfo : MessageInfo)
+    (h : registerRoutedSyscall layout regs regCount = .sendLong capAddr msgInfo) :
+    layout.msgRegs.size < msgInfo.length ∧ msgInfo.length ≤ maxMessageRegisters ∧
+    msgInfo.extraCaps = 0 ∧
+    decodeSyscallArgsFromState st tid layout regs regCount =
+      mergeOverflowWords st tid
+        { capAddr, msgInfo, syscallId := .send,
+          msgRegs := layout.msgRegs.map (readReg regs),
+          inlineCount := layout.msgRegs.size, overflowCount := 0 } := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · next hB =>
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
+    split at h
+    · repeat' (first | (cases h; done) | split at h)
+    · next hLen =>
+      split at h
+      · next hS =>
+        cases h
+        have hWf : msgInfo.length ≤ maxMessageRegisters := by
+          unfold decodeMsgInfo at hM
+          split at hM
+          · next mi' hD =>
+            cases hM
+            exact (MessageInfo.decode_wellFormed hD).1
+          · cases hM
+        refine ⟨by omega, hWf, hS.2, ?_⟩
+        rw [decodeSyscallArgsFromState_eq_impl]
+        unfold decodeSyscallArgsFromStateImpl
+        rw [if_pos hB]
+        have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok .send := by
+          simp only [decodeSyscallId, hS.1, SyscallId.ofNat_toNat]
+        simp only [hC, hM, hId, hLen, ↓reduceIte]
+      · repeat' (first | (cases h; done) | split at h)
+  · cases h
+
+/-- A routed send's message fits the layout's message registers. -/
+theorem registerRoutedSyscall_send_length
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (capAddr : CPtr) (msgInfo : MessageInfo)
+    (h : registerRoutedSyscall layout regs regCount = .send capAddr msgInfo) :
+    msgInfo.length ≤ layout.msgRegs.size := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
+    split at h
+    · next hLen =>
+      repeat' (first | (cases h; done) | split at h)
+      cases h
+      exact hLen
+    · repeat' (first | (cases h; done) | split at h)
   · cases h
 
 end SeLe4n.Kernel.Architecture.RegisterDecode

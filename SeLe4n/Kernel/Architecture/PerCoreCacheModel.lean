@@ -1350,6 +1350,90 @@ theorem clearIcacheMaintenance_frame (st : SystemState) :
     (clearIcacheMaintenance st).perCoreICache = st.perCoreICache :=
   ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
+/-- WS-ZA ZA6.35: **the drain as compiled**: the drained ledger's cells are kept
+as the state's spare (`SystemState.icacheLedgerSpare`) rather than freed, so the
+next record writes over them (`recordIcacheUnifyCells`); a ledger already empty
+leaves the state, its spares included, as it is.  The spares are logically one
+value, so this is the drain (`clearIcacheMaintenance_eq_cells`). -/
+def clearIcacheMaintenanceCells (st : SystemState) : SystemState :=
+  match st.pendingIcacheMaintenance with
+  | [] => st
+  | l => { st with pendingIcacheMaintenance := [], icacheLedgerSpare := Squash.mk l }
+
+@[csimp] theorem clearIcacheMaintenance_eq_cells :
+    @clearIcacheMaintenance = @clearIcacheMaintenanceCells := by
+  funext st
+  unfold clearIcacheMaintenance clearIcacheMaintenanceCells
+  split
+  · next h => cases st; simp_all
+  · cases st; simp only [SystemState.mk.injEq, and_true, true_and]
+    exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA6.35: the operand `.unifyPage p` written over a spare operand `c`:
+out of line, so `c` is the cell the compiler writes it into, and a spare of the
+same operand keeps its address through `c` (as `mappingValueOver`).  Equal to
+the operand (`unifyPageOver_eq`). -/
+@[noinline] def ICacheInvalidation.unifyPageOver (c : ICacheInvalidation)
+    (p : SeLe4n.PAddr) : ICacheInvalidation :=
+  match c with
+  | .unifyPage q => .unifyPage (if q.val = p.val then q else p)
+  | _ => .unifyPage p
+
+theorem ICacheInvalidation.unifyPageOver_eq (c : ICacheInvalidation) (p : SeLe4n.PAddr) :
+    c.unifyPageOver p = .unifyPage p := by
+  unfold ICacheInvalidation.unifyPageOver
+  split
+  · next q =>
+    split
+    · next h => cases q; cases p; simp_all
+    · rfl
+  · rfl
+
+/-- WS-ZA ZA6.35: an empty ledger's record of `.unifyPage p`, given the spares
+`spare` the caller took out of their field: the first spare and its list cell
+become the operand and the ledger's cell; with no spare they are built. -/
+@[inline] def recordIcacheUnifyFrom (st : SystemState) (p : SeLe4n.PAddr)
+    (spare : List ICacheInvalidation) : SystemState :=
+  match spare with
+  | c :: rest =>
+    { st with pendingIcacheMaintenance := c.unifyPageOver p :: [],
+              icacheLedgerSpare := Squash.mk rest }
+  | [] => { st with pendingIcacheMaintenance := [.unifyPage p] }
+
+theorem recordIcacheUnifyFrom_eq (st : SystemState) (p : SeLe4n.PAddr)
+    (spare : List ICacheInvalidation) :
+    recordIcacheUnifyFrom st p spare = { st with pendingIcacheMaintenance := [.unifyPage p] } := by
+  unfold recordIcacheUnifyFrom
+  cases spare with
+  | nil => rfl
+  | cons c rest =>
+    simp only [ICacheInvalidation.unifyPageOver_eq]
+    cases st; simp only [SystemState.mk.injEq, and_true, true_and]
+    exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA6.35: **an empty ledger's record of a page unify, written over its
+spares**: the spares are read and their field cleared before they are matched,
+so the operand and its cell are the drained ledger's when it held one
+(`recordIcacheUnifyFrom`).  The record of the operand into an empty ledger
+(`recordIcacheUnifyCells_eq`). -/
+@[noinline] def recordIcacheUnifyCells (st : SystemState) (p : SeLe4n.PAddr) : SystemState :=
+  let sp := st.icacheLedgerSpare
+  Quot.lift (recordIcacheUnifyFrom { st with icacheLedgerSpare := Squash.mk [] } p)
+    (fun a b _ => by rw [recordIcacheUnifyFrom_eq, recordIcacheUnifyFrom_eq]) sp
+
+theorem recordIcacheUnifyCells_eq (st : SystemState) (p : SeLe4n.PAddr)
+    (h : st.pendingIcacheMaintenance = []) :
+    recordIcacheUnifyCells st p = recordIcacheMaintenance st (.unifyPage p) := by
+  unfold recordIcacheUnifyCells
+  induction st.icacheLedgerSpare using Squash.ind with
+  | h l =>
+    show recordIcacheUnifyFrom _ p l = _
+    rw [recordIcacheUnifyFrom_eq]
+    unfold recordIcacheMaintenance
+    rw [h, recordIcacheMaintenanceList_nil]
+    cases st; simp only [SystemState.mk.injEq, and_true, true_and]
+    exact Subsingleton.elim _ _
+
 /-- **WS-SM SM7.D.1**: the drain preserves the 14th conjunct — it removes no
 line and changes no page table. -/
 theorem clearIcacheMaintenance_preserves_icacheCoherent_perCore

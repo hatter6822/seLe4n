@@ -952,6 +952,75 @@ def decode (w : TaintWords) : DeclassificationTaint :=
 /-- WS-ZA ZA5.11: carved words name no provenance. -/
 @[simp] theorem decode_default : ({} : TaintWords).decode = DeclassificationTaint.empty := rfl
 
+/-- WS-ZA ZA6.35: whether word `x` is the identity `t`, read without widening `x`
+to a number. -/
+@[inline] def wordNamesNat (x : UInt64) (t : Nat) : Bool :=
+  decide (t < 2 ^ 64) && x == UInt64.ofNat t
+
+theorem wordNamesNat_iff (x : UInt64) (t : Nat) : wordNamesNat x t = true ↔ x.toNat = t := by
+  unfold wordNamesNat
+  constructor
+  · intro h
+    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at h
+    obtain ⟨ht, rfl⟩ := h
+    simp [Nat.mod_eq_of_lt ht]
+  · intro h; subst h
+    simp [x.toNat_lt_size]
+
+/-- WS-ZA ZA6.35: `tagsCanonicalB` of the words in use, read off the words
+(`canonicalCode_eq`), so no list is built. -/
+def canonicalCode (w : TaintWords) : Bool :=
+  (decide (w.count ≤ 1) || decide (w.tag0 < w.tag1)) &&
+  (decide (w.count ≤ 2) || decide (w.tag1 < w.tag2)) &&
+  (decide (w.count ≤ 3) || decide (w.tag2 < w.tag3)) &&
+  (decide (w.count ≤ 4) || decide (w.tag3 < w.tag4)) &&
+  (decide (w.count ≤ 5) || decide (w.tag4 < w.tag5)) &&
+  (decide (w.count ≤ 6) || decide (w.tag5 < w.tag6)) &&
+  (decide (w.count ≤ 7) || decide (w.tag6 < w.tag7))
+
+/-- WS-ZA ZA6.35: whether `t` is among the words in use, read off the words
+(`memCode_eq`). -/
+def memCode (w : TaintWords) (t : Nat) : Bool :=
+  (decide (0 < w.count) && wordNamesNat w.tag0 t) ||
+  (decide (1 < w.count) && wordNamesNat w.tag1 t) ||
+  (decide (2 < w.count) && wordNamesNat w.tag2 t) ||
+  (decide (3 < w.count) && wordNamesNat w.tag3 t) ||
+  (decide (4 < w.count) && wordNamesNat w.tag4 t) ||
+  (decide (5 < w.count) && wordNamesNat w.tag5 t) ||
+  (decide (6 < w.count) && wordNamesNat w.tag6 t) ||
+  (decide (7 < w.count) && wordNamesNat w.tag7 t)
+
+theorem canonicalCode_eq (w : TaintWords) :
+    tagsCanonicalB (w.toList.map UInt64.toNat) = w.canonicalCode := by
+  obtain ⟨a0, a1, a2, a3, a4, a5, a6, a7, n, s⟩ := w
+  rcases n with _|_|_|_|_|_|_|_|n <;>
+    simp [toList, canonicalCode, tagsCanonicalB, tagsAboveB, UInt64.lt_iff_toNat_lt,
+      Bool.and_assoc]
+
+theorem memCode_eq (w : TaintWords) (t : Nat) :
+    decide (t ∈ w.toList.map UInt64.toNat) = w.memCode t := by
+  obtain ⟨a0, a1, a2, a3, a4, a5, a6, a7, n, s⟩ := w
+  have h : ∀ x, wordNamesNat x t = decide (x.toNat = t) := fun x => by
+    rw [Bool.eq_iff_iff, wordNamesNat_iff, decide_eq_true_iff]
+  rcases n with _|_|_|_|_|_|_|_|n <;>
+    simp [toList, memCode, h, Bool.or_assoc, eq_comm]
+
+/-- WS-ZA ZA6.35: **whether the taint the words name carries `t`**, read off the
+words (`decode_contains_eq`): a decode that would build the tag list is never
+run. -/
+@[inline] def containsCode (w : TaintWords) (t : Nat) : Bool :=
+  if w.canonicalCode then w.saturated || w.memCode t else true
+
+theorem decode_contains_eq (w : TaintWords) (t : Nat) :
+    w.decode.contains t = w.containsCode t := by
+  unfold containsCode
+  rw [← canonicalCode_eq, ← memCode_eq]
+  unfold decode
+  dsimp only
+  split
+  · simp only [DeclassificationTaint.contains]
+  · simp only [DeclassificationTaint.contains_top]
+
 end TaintWords
 
 namespace DeclassificationTaint

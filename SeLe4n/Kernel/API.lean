@@ -361,13 +361,13 @@ checked first and the right second, with
 `dispatchSyscallChecked_audit_target_first` the composed witness. -/
 def extractAuditAuthority (cap : Capability) : Except KernelError Unit :=
   match cap.target with
-  | .auditTrail => .ok ()
+  | .auditTrail _ => .ok ()
   | _ => .error .invalidCapability
 
 /-- WS-SM SM9.A.9: the authority check succeeds exactly on an audit
 capability. -/
 theorem extractAuditAuthority_eq_ok_iff (cap : Capability) :
-    extractAuditAuthority cap = .ok () ↔ cap.target = .auditTrail := by
+    extractAuditAuthority cap = .ok () ↔ ∃ code, cap.target = .auditTrail code := by
   unfold extractAuditAuthority
   cases cap.target <;> simp
 
@@ -2293,6 +2293,92 @@ theorem carveRequestOf?_ok (st : SystemState) (executingCore : Concurrency.CoreI
     | (right; right; right; right; right; right; right; right; right;
         exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
 
+/-- WS-ZA ZA6.35: `freshAsidFrom` as a code: `0` for no ASID, `a + 1` for
+ASID `a`, so the scan builds no `some`. -/
+def freshAsidCodeFrom (st : SystemState) : Nat → Nat → Nat
+  | 0, _ => 0
+  | fuel + 1, n =>
+      if n < st.machine.maxASID then
+        if (st.asidTable[SeLe4n.ASID.ofNat n]?).isNone then n + 1
+        else freshAsidCodeFrom st fuel (n + 1)
+      else 0
+
+theorem freshAsidFrom_eq_code (st : SystemState) : ∀ (fuel n : Nat),
+    freshAsidFrom st fuel n =
+      match freshAsidCodeFrom st fuel n with
+      | 0 => none
+      | a + 1 => some (SeLe4n.ASID.ofNat a)
+  | 0, _ => rfl
+  | fuel + 1, n => by
+    unfold freshAsidFrom freshAsidCodeFrom
+    split
+    · split
+      · rfl
+      · exact freshAsidFrom_eq_code st fuel (n + 1)
+    · rfl
+
+/-- WS-ZA ZA6.35: **`carveRequestOf?` as words, handed to a continuation** —
+the kind's code, the size, the thread's domain and core and the root's ASID
+(`CarveRequest.ofWords`), so the decode builds neither a request nor an
+`Except` (`carveRequestWordsK_eq`).  A kind other than a thread carries the
+domain `0` and the executing core, and one other than a VSpace root the ASID
+`0`, which nothing reads. -/
+@[inline] def carveRequestWordsK {α : Type} (st : SystemState) (executingCore : Concurrency.CoreId)
+    (newType : KernelObjectType) (sizeBits : Nat) (kErr : KernelError → α)
+    (kOk : Nat → Nat → SeLe4n.DomainId → Concurrency.CoreId → SeLe4n.ASID → α) : α :=
+  match newType with
+  | .frame =>
+      if sizeBits = 0 then kOk 0 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .pageTable =>
+      if sizeBits = 0 then kOk 3 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .untyped =>
+      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
+        kOk 1 sizeBits (.ofNat 0) executingCore (.ofNat 0)
+      else kErr .invalidArgument
+  | .vspaceRoot =>
+      if sizeBits = 0 then
+        match freshAsidCodeFrom st st.machine.maxASID 1 with
+        | 0 => kErr .resourceExhausted
+        | a + 1 => kOk 2 0 (.ofNat 0) executingCore (SeLe4n.ASID.ofNat a)
+      else kErr .invalidArgument
+  | .tcb =>
+      if sizeBits = 0 then
+        kOk 4 0 (st.scheduler.activeDomainOnCore executingCore) executingCore (.ofNat 0)
+      else kErr .invalidArgument
+  | .endpoint =>
+      if sizeBits = 0 then kOk 5 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .notification =>
+      if sizeBits = 0 then kOk 6 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .reply =>
+      if sizeBits = 0 then kOk 8 0 (.ofNat 0) executingCore (.ofNat 0) else kErr .invalidArgument
+  | .cnode =>
+      if minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then
+        kOk 7 sizeBits (.ofNat 0) executingCore (.ofNat 0)
+      else kErr .invalidArgument
+  | .schedContext =>
+      if minSchedContextSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
+        kOk 9 sizeBits (.ofNat 0) executingCore (.ofNat 0)
+      else kErr .invalidArgument
+
+theorem carveRequestWordsK_eq {α : Type} (st : SystemState) (executingCore : Concurrency.CoreId)
+    (newType : KernelObjectType) (sizeBits : Nat) (kErr : KernelError → α)
+    (kOk : Nat → Nat → SeLe4n.DomainId → Concurrency.CoreId → SeLe4n.ASID → α) :
+    carveRequestWordsK st executingCore newType sizeBits kErr kOk =
+      match carveRequestOf? st executingCore newType sizeBits with
+      | .error e => kErr e
+      | .ok req => kOk req.kindWord req.sizeWord (req.domainWord (.ofNat 0))
+          (req.coreWord executingCore) (req.asidWord (.ofNat 0)) := by
+  cases newType
+  case vspaceRoot =>
+    simp only [carveRequestWordsK, carveRequestOf?, freshAsid?,
+      freshAsidFrom_eq_code st st.machine.maxASID 1]
+    split
+    · split <;> rfl
+    · rfl
+  all_goals
+    simp only [carveRequestWordsK, carveRequestOf?]
+    split <;> rfl
+
 /-- **WS-BP BP7.1 (`v0.36.5`, child untypeds at slice 4, `v0.36.8`): the live
 `.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype`, at every
 object kind since WS-ZA ZA5.4 part 14.
@@ -3195,7 +3281,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- MR1 names, as a derivation child of the invoked slot (`irqControlGetFromCap`).
   | .irqControlGet =>
     some <| match cap.target with
-    | .irqControl => irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
+    | .irqControl _ => irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
     | _ => fun _ => .error .invalidCapability
   -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_SetNotification` — the notification
   -- capability at MR0's address bound to the handler's line
@@ -6757,7 +6843,7 @@ theorem dispatchArm_auditRead_matches_returnShape
     (args : Architecture.SyscallArgDecode.AuditReadArgs) (op : AuditReadOp)
     (st st' : SystemState) (w : Nat) (tcb : TCB)
     (hSyscall : decoded.syscallId = .auditRead)
-    (hTarget : cap.target = .auditTrail)
+    {code : Nat} (hTarget : cap.target = .auditTrail code)
     (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args)
     (hOp : decodeAuditReadOp args.opcode args.index args.chunk = some op)
@@ -6786,7 +6872,7 @@ theorem dispatchArm_auditDrain_matches_returnShape
     (args : Architecture.SyscallArgDecode.AuditDrainArgs)
     (st st' : SystemState) (n : Nat) (tcb : TCB)
     (hSyscall : decoded.syscallId = .auditDrain)
-    (hTarget : cap.target = .auditTrail)
+    {code : Nat} (hTarget : cap.target = .auditTrail code)
     (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args)
     (hDrain : auditDrainVisiblePrefix (liftLegacyContext ctx)
@@ -7777,7 +7863,7 @@ theorem dispatchWithCapChecked_auditRead_delegates
     (args : Architecture.SyscallArgDecode.AuditReadArgs) (op : AuditReadOp)
     (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead)
-    (hTarget : cap.target = .auditTrail)
+    {code : Nat} (hTarget : cap.target = .auditTrail code)
     (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args)
     (hOp : decodeAuditReadOp args.opcode args.index args.chunk = some op) :
@@ -7799,7 +7885,7 @@ theorem dispatchWithCapChecked_auditDrain_delegates
     (gate : SyscallGate) (cap : Capability)
     (args : Architecture.SyscallArgDecode.AuditDrainArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .auditDrain)
-    (hTarget : cap.target = .auditTrail)
+    {code : Nat} (hTarget : cap.target = .auditTrail code)
     (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
@@ -7840,7 +7926,7 @@ theorem dispatchWithCapChecked_audit_insufficient_right_denied
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability) (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
-    (hTarget : cap.target = .auditTrail)
+    {code : Nat} (hTarget : cap.target = .auditTrail code)
     (hRight : cap.hasRight gate.requiredRight = false) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .illegalAuthority := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
@@ -7923,7 +8009,7 @@ theorem dispatchSyscallChecked_audit_right_checked_second
     (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
     (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
-    (hTarget : cap.target = .auditTrail)
+    {code : Nat} (hTarget : cap.target = .auditTrail code)
     (hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = false) :
     dispatchSyscallChecked ctx decoded tid executingCore st = .error .illegalAuthority := by
   -- PR #873 round 6: as above — the refusal is rewritten under the seam's
@@ -8204,7 +8290,7 @@ theorem dispatchWithCapChecked_auditDrain_default_denied
     (gate : SyscallGate) (cap : Capability)
     (args : Architecture.SyscallArgDecode.AuditDrainArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .auditDrain)
-    (hTarget : cap.target = .auditTrail)
+    {code : Nat} (hTarget : cap.target = .auditTrail code)
     (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args)
     (hDefault : ctx.auditMonitorClearance = none) :
@@ -8228,7 +8314,7 @@ theorem dispatchWithCapChecked_auditRead_default_denied
     (args : Architecture.SyscallArgDecode.AuditReadArgs) (op : AuditReadOp)
     (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead)
-    (hTarget : cap.target = .auditTrail)
+    {code : Nat} (hTarget : cap.target = .auditTrail code)
     (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args)
     (hOp : decodeAuditReadOp args.opcode args.index args.chunk = some op)
@@ -8316,9 +8402,9 @@ theorem unconfiguredDeployment_has_no_audit_reader
     dispatchWithCapChecked ctx decoded tid executingCore gate
         { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } st = .error .invalidCapability ∧
     (∀ (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-        (child : Capability),
-      mintDerivedCap parent rights badge = .ok child → child.target = .auditTrail →
-        parent.val.target = .auditTrail) ∧
+        (child : Capability) (code : Nat),
+      mintDerivedCap parent rights badge = .ok child → child.target = .auditTrail code →
+        parent.val.target = .auditTrail code) ∧
     auditDrainVisiblePrefix (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
         c count st =
       .error .illegalAuthority ∧
@@ -8328,7 +8414,7 @@ theorem unconfiguredDeployment_has_no_audit_reader
         hSyscall hNoMonitor,
     dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid executingCore gate _ oid st
       hSyscall rfl,
-    fun parent rights badge child hMint hChild =>
+    fun parent rights badge child _ hMint hChild =>
       mintDerivedCap_no_audit_forgery parent rights badge child hMint hChild,
     ?_, Capability.auditTrailRead_cannot_drain.2⟩
   rw [validatedAuditMonitorClearance_none ctx hNoMonitor]
@@ -8756,9 +8842,9 @@ def syscallDelegates : SyscallId → Prop
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability)
         (args : Architecture.SyscallArgDecode.AuditReadArgs) (op : AuditReadOp)
-        (st : SystemState),
+        (st : SystemState) (code : Nat),
         decoded.syscallId = .auditRead →
-        cap.target = .auditTrail →
+        cap.target = .auditTrail code →
         cap.hasRight gate.requiredRight = true →
         Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args →
         decodeAuditReadOp args.opcode args.index args.chunk = some op →
@@ -8772,9 +8858,9 @@ def syscallDelegates : SyscallId → Prop
   | .auditDrain =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability)
-        (args : Architecture.SyscallArgDecode.AuditDrainArgs) (st : SystemState),
+        (args : Architecture.SyscallArgDecode.AuditDrainArgs) (st : SystemState) (code : Nat),
         decoded.syscallId = .auditDrain →
-        cap.target = .auditTrail →
+        cap.target = .auditTrail code →
         cap.hasRight gate.requiredRight = true →
         Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
@@ -8896,9 +8982,9 @@ def syscallDelegates : SyscallId → Prop
   -- capability's slot.
   | .irqControlGet =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-        (gate : SyscallGate) (cap : Capability),
+        (gate : SyscallGate) (cap : Capability) (code : Nat),
         decoded.syscallId = .irqControlGet →
-        cap.target = .irqControl →
+        cap.target = .irqControl code →
         dispatchWithCap decoded tid executingCore gate cap =
           irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
   -- WS-ZA ZA6.32: the bind arm IS the bind of the line the capability names.
@@ -8942,7 +9028,7 @@ theorem syscallDelegates_irqHandlerAck : syscallDelegates .irqHandlerAck := by
 
 /-- WS-ZA ZA6.32: the `.irqControlGet` obligation, discharged. -/
 theorem syscallDelegates_irqControlGet : syscallDelegates .irqControlGet := by
-  intro decoded tid executingCore gate cap hSyscall hTarget
+  intro decoded tid executingCore gate cap code hSyscall hTarget
   funext st
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
@@ -8997,13 +9083,13 @@ theorem syscallDelegates_declassifySignal : syscallDelegates .declassifySignal :
 
 /-- WS-SM SM9.A.10: the `.auditRead` obligation, discharged. -/
 theorem syscallDelegates_auditRead : syscallDelegates .auditRead := by
-  intro ctx decoded tid executingCore gate cap args op st hSyscall hTarget hRight hArgs hOp
+  intro ctx decoded tid executingCore gate cap args op st _ hSyscall hTarget hRight hArgs hOp
   exact dispatchWithCapChecked_auditRead_delegates ctx decoded tid executingCore gate cap args op st
     hSyscall hTarget hRight hArgs hOp
 
 /-- WS-SM SM9.A.10: the `.auditDrain` obligation, discharged. -/
 theorem syscallDelegates_auditDrain : syscallDelegates .auditDrain := by
-  intro ctx decoded tid executingCore gate cap args st hSyscall hTarget hRight hArgs
+  intro ctx decoded tid executingCore gate cap args st _ hSyscall hTarget hRight hArgs
   exact dispatchWithCapChecked_auditDrain_delegates ctx decoded tid executingCore gate cap args st
     hSyscall hTarget hRight hArgs
 

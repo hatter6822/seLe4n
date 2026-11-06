@@ -49,9 +49,9 @@ line's interrupt node. -/
   | .object x => x.val == o
   | .cnodeSlot cn _ => cn.val == o
   | .replyCap r => r.toNat == o
-  | .auditTrail => false
+  | .auditTrail _ => false
   | .schedControl _ => false
-  | .irqControl => false
+  | .irqControl _ => false
   | .irqHandler l => (irqNodeId l).val == o
 
 theorem Capability.namesObjectWord_iff (c : Capability) (o : SeLe4n.ObjId) :
@@ -64,9 +64,9 @@ theorem Capability.namesObjectWord_iff (c : Capability) (o : SeLe4n.ObjId) :
     cases o
     simp only [SeLe4n.ReplyId.toObjId, SeLe4n.ObjId.ofNat, Option.some.injEq, SeLe4n.ObjId.mk.injEq,
       beq_iff_eq]
-  | auditTrail => simp
+  | auditTrail _ => simp
   | schedControl _ => simp
-  | irqControl => simp
+  | irqControl _ => simp
   | irqHandler l => cases o; simp [irqNodeId, SeLe4n.ObjId.ofNat]
 
 namespace SystemState
@@ -101,9 +101,9 @@ def capIsFinal (st : SystemState) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) : 
     | .object x => st.linksMissObject ⟨cnode, slot⟩ x.val
     | .cnodeSlot cn _ => st.linksMissObject ⟨cnode, slot⟩ cn.val
     | .replyCap rp => st.linksMissObject ⟨cnode, slot⟩ rp.toNat
-    | .auditTrail => true
+    | .auditTrail _ => true
     | .schedControl _ => true
-    | .irqControl => true
+    | .irqControl _ => true
     | .irqHandler l => st.linksMissObject ⟨cnode, slot⟩ (irqNodeId l).val
 
 /-- **The specification of finality**: no other slot holds a capability naming
@@ -158,9 +158,9 @@ theorem capIsFinal_eq_true_iff_links (st : SystemState) (r : SlotRef) :
     | object x => simpa using linksMissObject_iff st r x
     | cnodeSlot cn _ => simpa using linksMissObject_iff st r cn
     | replyCap rp => simpa using linksMissObject_iff st r rp.toObjId
-    | auditTrail => simp
+    | auditTrail _ => simp
     | schedControl _ => simp
-    | irqControl => simp
+    | irqControl _ => simp
     | irqHandler l => simpa using linksMissObject_iff st r (irqNodeId l)
 
 /-- A descent followed by a descent is a descent. -/

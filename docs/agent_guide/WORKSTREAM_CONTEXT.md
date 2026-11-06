@@ -454,6 +454,19 @@ decode it: a queue's successor through `sendWakesInPlaceCode` and
 `Reply.nextNamesFrame`, a blocked thread's server as the cell its state holds
 (`TCB.blockingServer?_eq_impl`).  New compiled code on those paths keeps that
 form, or the exerciser's multi-waiter and stacked-reply steps read nonzero.
+Since `v0.36.204` (ZA6.35) the heap gate fails on any entry that reads other
+than 0, and on a carve that reads other than its object's cells (`CLAUDE.md`,
+*A kernel entry allocates nothing*).  New code keeps three forms.  A carve
+reads its request as words (`carveRequestWordsK`).  Every capability target
+is a constructor with a field, so the record that holds it owns a target cell
+that the next capability written there writes over (`CapTarget.copyOver`); a
+new target kind keeps that form (the audit trail and interrupt control carry
+`CapTarget.authorityCode`).  A word-valued field is read off its word, not
+its `Nat` (`refusalFieldChunk`).  A scenario added for a new entry is named in
+the gate's pinned set.  A queue removal's guard reads the endpoint's end
+codes (`dualQueueRemovalEnabledCode`), a run queue's buckets are a fixed
+array by priority (`BucketTable`), and a capability copy writes the
+destination slot's own target cell (`CapTarget.copyOver`).
 Since `v0.36.164` (ZA6.1) the timer tick, the reschedule SGI and
 each core's first entry allocate nothing: the tick's dispatch and domain
 accounting never refuse (`scheduleEffectiveOnCore_eq_state`,

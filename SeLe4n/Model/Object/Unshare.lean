@@ -58,12 +58,18 @@ def KernelObject.unshare (o : KernelObject) : KernelObject := o
 
 @[simp] theorem KernelObject.unshare_eq (o : KernelObject) : o.unshare = o := rfl
 
-/-- A capability's object target, rebuilt when shared, so a record written
-over in place (`Capability.overwriteObject`) owns the target cell it rewrites
-(WS-ZA ZA5.4 part 26).  Every other target is passed through. -/
+/-- A capability's target of one field, rebuilt when shared, so a record written
+over in place (`Capability.overwriteObject`, `CapTarget.copyOver`) owns the
+target cell it rewrites (WS-ZA ZA5.4 part 26; every one-field target since
+ZA6.35).  Every other target is passed through. -/
 @[inline] def unshareTarget (t : CapTarget) : CapTarget :=
   match t with
   | .object id => .object (opaqueId id)
+  | .replyCap rid => .replyCap (opaqueId rid)
+  | .schedControl core => .schedControl (opaqueId core)
+  | .irqHandler line => .irqHandler (opaqueId line)
+  | .auditTrail code => .auditTrail (opaqueId code)
+  | .irqControl code => .irqControl (opaqueId code)
   | t => t
 
 theorem unshareTarget_eq (t : CapTarget) : unshareTarget t = t := by
@@ -76,20 +82,22 @@ its own, and its object target (WS-ZA ZA5.3 part 6, ZA5.4 part 26). -/
   | some r => some { r with rights := opaqueId r.rights, target := unshareTarget r.target }
   | none => none
 
-/-- A CNode's slot cell, rebuilt when shared so the CNode owns its `some` and its
-capability record: since WS-ZA ZA5.4 part 13 a carve writes the invoked untyped
-capability's free index into that record in place (`CNode.setFreeIndexCells`),
-and a boot capability's record is otherwise the boot image's constant, so the
-first carve would copy both. -/
+/-- A CNode's slot cell, rebuilt when shared so the CNode owns its `some`, its
+capability record and the record's target: since WS-ZA ZA5.4 part 13 a carve
+writes the invoked untyped capability's free index into that record in place
+(`CNode.setFreeIndexCells`), and a boot capability's record is otherwise the
+boot image's constant, so the first carve would copy both; since ZA6.35 the
+record a delete keeps as the slot's spare owns its target, so the next write
+there reuses it (`CapTarget.copyOver`). -/
 @[inline] def unshareSlotCell (o : Option Capability) : Option Capability :=
   match o with
-  | some r => some { r with rights := opaqueId r.rights }
+  | some r => some { r with rights := opaqueId r.rights, target := unshareTarget r.target }
   | none => none
 
 theorem unshareSlotCell_eq (o : Option Capability) : unshareSlotCell o = o := by
   cases o with
   | none => rfl
-  | some r => simp only [unshareSlotCell, opaqueId]
+  | some r => simp only [unshareSlotCell, opaqueId, unshareTarget_eq]
 
 /-- A thread's space slot, rebuilt when shared so the thread owns its `some`,
 its capability record and the record's object target (setting the thread's
@@ -119,6 +127,31 @@ its `some`, its entry and the entry's value pair (WS-ZA ZA5.4). -/
   match o with
   | some e => some { e with dist := opaqueId e.dist }
   | none => none
+
+/-- WS-ZA ZA6.35: one spare mapping cell, its own: built out of line, its address
+the cell's index, so no two cells are one constant. -/
+@[noinline] def mappingSpareCell (i : Nat) :
+    Option (RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)) :=
+  some ⟨SeLe4n.VAddr.ofNat i, (SeLe4n.PAddr.ofNat i, {}), 0⟩
+
+/-- WS-ZA ZA6.35: one spare epoch cell, its own (as `mappingSpareCell`). -/
+@[noinline] def epochSpareCell (i : Nat) : Option (RHEntry SeLe4n.VAddr Nat) :=
+  some ⟨SeLe4n.VAddr.ofNat i, i, 0⟩
+
+/-- WS-ZA ZA6.35: a root's spare mapping cells topped up to `k` more, so a root
+entering the store holds one cell for every slot of its mapping table that no
+mapping holds. -/
+def mappingSpareCells :
+    Nat → Array (Option (RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))) →
+      Array (Option (RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)))
+  | 0, a => a
+  | k + 1, a => mappingSpareCells k (a.push (mappingSpareCell a.size))
+
+/-- WS-ZA ZA6.35: a root's spare epoch cells topped up to `k` more. -/
+def epochSpareCells :
+    Nat → Array (Option (RHEntry SeLe4n.VAddr Nat)) → Array (Option (RHEntry SeLe4n.VAddr Nat))
+  | 0, a => a
+  | k + 1, a => epochSpareCells k (a.push (epochSpareCell a.size))
 
 /-- A page table's slot cell, rebuilt when shared so the table owns its list
 cell and its slot record (WS-ZA ZA5.4). -/
@@ -165,9 +198,13 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
       asid := opaqueId v.asid
       mappings := v.mappings.unshare
       mappingEpochs := v.mappingEpochs.unshare
-      mappingSpare := Quot.lift (fun a => Squash.mk (unshareMappingCell a))
+      mappingSpare := Quot.lift
+        (fun a => Squash.mk (mappingSpareCells (v.mappings.capacity - v.mappings.size)
+          (a.map unshareMappingCell)))
         (fun _ _ _ => Subsingleton.elim _ _) v.mappingSpare
-      epochSpare := Quot.lift (fun a => Squash.mk (unshareEpochCell a))
+      epochSpare := Quot.lift
+        (fun a => Squash.mk (epochSpareCells (v.mappingEpochs.capacity - v.mappingEpochs.size)
+          (a.map unshareEpochCell)))
         (fun _ _ _ => Subsingleton.elim _ _) v.epochSpare }
   | .untyped u => .untyped { u with regionBase := opaqueId u.regionBase }
   | .schedContext sc => .schedContext { sc with scId := opaqueId sc.scId }

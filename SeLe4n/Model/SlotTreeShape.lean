@@ -86,9 +86,9 @@ def Capability.namedObject (c : Capability) : Option SeLe4n.ObjId :=
   | .object o => some o
   | .cnodeSlot cn _ => some cn
   | .replyCap r => some r.toObjId
-  | .auditTrail => none
+  | .auditTrail _ => none
   | .schedControl _ => none
-  | .irqControl => none
+  | .irqControl _ => none
   | .irqHandler l => some (irqNodeId l)
 
 /-- A capability's object is read from its target alone. -/
