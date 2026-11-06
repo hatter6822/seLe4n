@@ -5306,7 +5306,14 @@ where a server is recorded, a confused-deputy hardening that seL4 does not have.
 A context that heads a stack no thread holds is popped as `reply_pop` pops it
 (`popUnheldReplyHead`): to the answered caller, settled on its home core, when
 the caller holds no context, and otherwise only the head comes off the context,
-which is bound to no one (`severUnheldSchedContext`).  A reply deleted later is
+which is bound to no one (`severUnheldSchedContext`).  Where the answered
+reply object heads a context no thread holds, both spines write in place: the
+reply (`performReplyUnheldDelivered`, `replyTransferChecked_unheld_inPlace`)
+and the reply-receive, which then blocks the replier on its endpoint
+(`performReplyRecvUnheldDelivered`, `replyRecvOnCore_unheld_delivered`, the
+receive's checks read on the pre-state and carried across the reply leg and the
+pop by `popUnheldSettled_receiveGuard`), so `orphan-root-answers-server` and
+`orphan-reply-recv` read 0.  A reply deleted later is
 `reply_remove`: at a head that pop, elsewhere the sever of the stack.  The head
 pop's recipient check refuses no reachable held state
 (`donationRecipientAcceptable_of_donationOwnerValid`).  A context whose holder is blocked sending or calling is finalised
@@ -5324,9 +5331,11 @@ reply's finalise is compiled in place (`finaliseReply_eq_impl`, an `@[csimp]`
 form that reads the caller's codes before any write and stores the splice, the
 consumed reply and the caller's cleared link in their slots), so
 `busy-reply-delete` and `stashed-reply-delete` read 0.  The thread deletes the
-image runs keep their pins; no scenario deletes a head reply or a server with
-waiters, since each such delete stops both of the image's threads
-(`docs/REGISTERED_DEBT.md`), and the suite witnesses both.
+image runs keep their pins.  Since `v0.36.203` a third and a fourth thread let
+the root task issue the deletes that stop the threads they are about: a head
+reply's (`head-reply-delete`), a server's with a caller waiting
+(`waited-server-delete`) and a holder's under a two-frame stack
+(`orphan-holder-delete`), each reading 0, and the suite witnesses them too.
 
 **The zombie loop and the thread's space-slot deletes** (`v0.36.139`).  A final
 delete of a capability whose object still holds capabilities empties that

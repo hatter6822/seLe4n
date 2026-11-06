@@ -345,7 +345,9 @@ ZA6.34): a reply-blocked thread's frame is cut as `reply_remove_tcb` cuts it
 back to no one, and every caller waiting on it is left blocked with no server
 recorded (`finaliseThreadOrphanWaiters`, bounded by the thread's count), for a
 reply-cap holder to answer or a reply delete to end.  New code must keep the
-no-server caller answerable on both reply spines and keep the unheld pop
+no-server caller answerable on both reply spines, in place on each where the
+reply object heads a context no thread holds (`replyUnheldAdmits`,
+`replyRecvUnheldAdmits`), and keep the unheld pop
 (`popUnheldReplyHead`: the donation to a caller holding no context, the sever
 otherwise) total on the states the packs admit (`unheldReplyHeadBoundByNone`).  Since part
 26 (`v0.36.139`) a final delete runs the zombie loop (`zombieDeleteAt`,

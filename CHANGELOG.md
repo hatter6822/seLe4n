@@ -76,11 +76,24 @@ and each new step now reads 0 on its first call and in steady state.
     (`unheldPopsInPlace_transport`).  It read 55, and now reads 0.
   - The orphan's head-reply delete asks the commit test through the in-place
     gate first (`unheldPopCommits_eq_impl`).  It read 5, and now reads 0.
+  - A reply-receive answering such a caller writes in place too, then blocks
+    the replier on its endpoint (`IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean`:
+    `performReplyRecvUnheldDelivered`, `replyRecvOnCore_unheld_delivered`).
+    The receive's checks are read on the pre-state and carried across the reply
+    leg and the unheld pop, whose writes are a pop's
+    (`popUnheldSettled_receiveGuard`, `returnUnheldSchedContextInPlace_popFrame`).
+    The arm (`replyRecvUnheldAdmits`) runs after the donated one and is covered
+    by `endpointReplyRecvCheckedArmR_eq_general`.  The new `orphan-reply-recv`
+    step reads 0.
 - **The holder's-delete scenario** (`orphan-*`).  The fourth thread holds the
   partner's context under a two-frame stack and is deleted.  The partner's
   reply below the head is deleted (the sever), and the root task answers the
-  server through the head reply's capability (the pop).  Every step reads
-  (0, 0), and the carves keep a carve's counts.
+  server through the head reply's capability (the pop).  A second orphan
+  follows the orphan's head-reply delete (`orphan-recv-*`): the server is carved
+  again, lent the context by the partner's call and deleted, and the root task
+  answers the partner with a reply-receive (`orphan-reply-recv`), which blocks
+  it on the endpoint until the partner's send.  Every step reads (0, 0), and the
+  carves keep a carve's counts.
 - **Pins** (`scripts/qemu_exerciser_lib.sh`).  Every new step is pinned at
   (0, 0) except the carves, which keep a carve's counts: a thread 26, a reply
   15, an endpoint 11, and a context 15 on both calls
