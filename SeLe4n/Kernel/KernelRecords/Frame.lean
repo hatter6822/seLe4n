@@ -9,7 +9,6 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.Fault
 import SeLe4n.Kernel.Architecture.PageTeardownClears
-import SeLe4n.Kernel.KernelRecords.WidthSimp
 
 /-!
 # The records every kernel entry carries, and the frame that keeps them
@@ -247,7 +246,7 @@ theorem objReplyView_eq_of_view {a b : Option KernelObject}
 
 end KernelRecords
 
-
+/-- The register writes keep the machine's physical-address width. -/
 theorem _root_.SeLe4n.MachineState.modifyRegsOnCore_physicalAddressWidth (ms : MachineState)
     (c : Concurrency.CoreId) (f : RegisterFile → RegisterFile) :
     (ms.modifyRegsOnCore c f).physicalAddressWidth = ms.physicalAddressWidth := rfl
@@ -255,17 +254,6 @@ theorem _root_.SeLe4n.MachineState.modifyRegsOnCore_physicalAddressWidth (ms : M
 theorem _root_.SeLe4n.MachineState.setRegsOnCore_physicalAddressWidth (ms : MachineState)
     (c : Concurrency.CoreId) (r : RegisterFile) :
     (ms.setRegsOnCore c r).physicalAddressWidth = ms.physicalAddressWidth := rfl
-
-/-- Closes a goal that a step keeps the machine's physical-address width: no
-kernel write sets it, so it is definitional through a structure update and
-through the object writes' machine lemmas. -/
-macro "records_width" : tactic => `(tactic| first
-  | rfl
-  | assumption
-  | (simp only [records_width_simp, SystemState.updateTcb_machine,
-      SystemState.updateSchedContext_machine, SystemState.rewriteObject_machine,
-      MachineState.modifyRegsOnCore_physicalAddressWidth,
-      MachineState.setRegsOnCore_physicalAddressWidth]; done))
 
 -- ============================================================================
 -- §2  The frame
@@ -293,7 +281,7 @@ theorem trans {a b c : SystemState} (h₁ : RecordsFrame a b) (h₂ : RecordsFra
 theorem of_objects_eq {st st' : SystemState} (hInv : st.objects.invExt)
     (hO : st'.objects = st.objects) (hA : st'.asidTable = st.asidTable)
     (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-      records_width) : RecordsFrame st st' :=
+      first | rfl | assumption) : RecordsFrame st st' :=
   ⟨fun k => by rw [hO], hA, hO ▸ hInv, hW⟩
 
 theorem of_eq {st st' : SystemState} (hInv : st.objects.invExt) (h : st' = st) :
@@ -303,7 +291,7 @@ theorem of_eq {st st' : SystemState} (hInv : st.objects.invExt) (h : st' = st) :
 theorem congr {st s s' : SystemState} (h : RecordsFrame st s) (hO : s'.objects = s.objects)
     (hA : s'.asidTable = s.asidTable)
     (hW : s'.machine.physicalAddressWidth = s.machine.physicalAddressWidth := by
-      records_width) : RecordsFrame st s' :=
+      first | rfl | assumption) : RecordsFrame st s' :=
   ⟨fun k => by rw [hO]; exact h.views k, hA.trans h.asid, hO ▸ h.invExt, hW.trans h.width⟩
 
 /-- The record views of every thread are the frame's. -/
@@ -488,20 +476,20 @@ theorem erasure_release (o o' : KernelObject) (h : o.withoutRelease = o'.without
 theorem of_agreeOffTaint {st st' : SystemState} (h : st.objectsAgreeOffTaint st')
     (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt)
     (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-      records_width) : RecordsFrame st st' :=
+      first | rfl | assumption) : RecordsFrame st st' :=
   ⟨views_of_erasure erasure_taint h, hA, hInv, hW⟩
 
 theorem of_agreeOffYield {st st' : SystemState} (h : SystemState.objectsAgreeOffYield st' st)
     (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt)
     (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-      records_width) : RecordsFrame st st' :=
+      first | rfl | assumption) : RecordsFrame st st' :=
   ⟨views_of_erasure erasure_yield h, hA, hInv, hW⟩
 
 theorem of_agreeOffReleaseLinks {st st' : SystemState}
     (h : SystemState.objectsAgreeOffReleaseLinks st' st)
     (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt)
     (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-      records_width) : RecordsFrame st st' :=
+      first | rfl | assumption) : RecordsFrame st st' :=
   ⟨views_of_erasure erasure_release h, hA, hInv, hW⟩
 
 /-- Two slots agreeing off the run links, with the same reply view, have the same
@@ -530,7 +518,7 @@ theorem of_agreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLi
     (hR : st'.replyViews = st.replyViews)
     (hA : st'.asidTable = st.asidTable) (hInv : st'.objects.invExt)
     (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-      records_width) : RecordsFrame st st' := by
+      first | rfl | assumption) : RecordsFrame st st' := by
   refine ⟨fun k => view_of_runLinks (h k) ?_, hA, hInv, hW⟩
   have := congrFun hR k
   unfold SystemState.replyViews SystemState.getObject? at this

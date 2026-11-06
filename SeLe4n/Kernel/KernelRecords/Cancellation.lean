@@ -74,14 +74,14 @@ theorem of_kept {st st' : SystemState}
     (hA : st'.asidTable = st.asidTable) (hI : st'.objects.invExt)
     (hK : tcbProjKept faultFields st' st)
     (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-      records_width) : RecordsStep st st' :=
+      first | rfl | assumption) : RecordsStep st st' :=
   ⟨rootViews_of_roots_iff hR, hA, hI, FaultsStayParked.of_kept hK, hW⟩
 
 /-- **A finalisation-shaped write keeping every thread's fault fields.** -/
 theorem of_finaliseKept {st st' : SystemState} (F : FinaliseFrameAny st st')
     (hK : tcbProjKept faultFields st' st)
     (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-      records_width) : RecordsStep st st' :=
+      first | rfl | assumption) : RecordsStep st st' :=
   of_kept F.write.roots_iff F.asidTable F.invExt hK hW
 
 /-- **The restore** retires the restored thread's fault record. -/
@@ -130,7 +130,7 @@ theorem RecordsFrame.of_kept {st st' : SystemState}
     (hA : st'.asidTable = st.asidTable) (hI : st'.objects.invExt)
     (hK : tcbProjKept TCB.recordView st' st)
     (hW : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth := by
-      records_width) : RecordsFrame st st' :=
+      first | rfl | assumption) : RecordsFrame st st' :=
   ⟨fun k => recordViewOf_congr (by
       have := hK ⟨k.val⟩
       rwa [getTcb?_eq_tcbAt, getTcb?_eq_tcbAt] at this) (hR k), hA, hI, hW⟩

@@ -172,7 +172,9 @@ theorem activateThreadOnCore (st : SystemState) (c : CoreId) (hInv : st.objects.
           unfold completeCurrentYield completeYieldTo cancelYieldTo setConsumed
           repeat' split
           all_goals first
-            | records_width
+            | rfl
+            | (simp only [SystemState.updateTcb_machine, SystemState.updateSchedContext_machine,
+                MachineState.modifyRegsOnCore_physicalAddressWidth]; done)
             | simp only [SystemState.updateTcb_asidTable, SystemState.updateSchedContext_asidTable]
       · rfl
     · rfl

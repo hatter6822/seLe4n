@@ -43,7 +43,6 @@ theorem _root_.SeLe4n.Model.SystemState.releaseInsertOn_asidTable (st : SystemSt
   · rfl
   · dsimp only; split <;> rfl
 
-@[records_width_simp]
 theorem _root_.SeLe4n.Model.SystemState.releaseRemoveOn_machine (st : SystemState) (c : CoreId)
     (s : SeLe4n.SchedContextId) : (st.releaseRemoveOn c s).machine = st.machine := by
   unfold SystemState.releaseRemoveOn SystemState.releaseUnlinkOn
@@ -51,7 +50,6 @@ theorem _root_.SeLe4n.Model.SystemState.releaseRemoveOn_machine (st : SystemStat
   · dsimp only; split <;> rfl
   · rfl
 
-@[records_width_simp]
 theorem _root_.SeLe4n.Model.SystemState.releaseInsertOn_machine (st : SystemState) (c : CoreId)
     (s : SeLe4n.SchedContextId) (t : Nat) : (st.releaseInsertOn c s t).machine = st.machine := by
   unfold SystemState.releaseInsertOn SystemState.releaseInsertFresh SystemState.releaseLinkIn

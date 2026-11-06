@@ -82,7 +82,6 @@ SeLe4n.Kernel.ReschedulePendingArms.Ipc # infra (KSC-1 PR B2: the send, receive,
 SeLe4n.Kernel.ReschedulePendingArms.Dispatch # infra (KSC-1 PR B2: the checked dispatcher covers — each arm it routes is a covered transition followed by key-preserving stash clears and frame stagings)
 SeLe4n.Kernel.ReschedulePendingArms.Entry # infra (KSC-1 PR B2: the committing seams cover — the ABI syscall step, the fault delivery and the suspend entry are covered transitions followed by the executing core's own scheduling point)
 SeLe4n.Kernel.ReschedulePendingArms.Tick # infra (the per-core timer tick covers — its drain, refill and timeout wakes raise the flag of every core whose decision they stale, and the run-loop step's SGIs are the raised flags)
-SeLe4n.Kernel.KernelRecords.WidthSimp # infra (WS-ZA ZA6.37: the simp set that carries the machine's physical-address width across every kernel write)
 SeLe4n.Kernel.KernelRecords.Frame # infra (WS-ZA ZA6.37: the records every entry carries — reply-waiter queues, fault records, address-space records — and the frame that keeps their reads)
 SeLe4n.Kernel.KernelRecords.Scheduling # infra (WS-ZA ZA6.37: the scheduling points keep the records' reads)
 SeLe4n.Kernel.KernelRecords.Tails # infra (WS-ZA ZA6.37: an entry's saves, stagings, activation and ledger clears keep the records' reads)

@@ -69,7 +69,7 @@ theorem withScheduler (st : SystemState) (s : SchedulerState) (hInv : st.objects
 /-- A write of the machine alone that keeps its physical-address width. -/
 theorem withMachine (st : SystemState) (m : MachineState) (hInv : st.objects.invExt)
     (hW : m.physicalAddressWidth = st.machine.physicalAddressWidth := by
-      records_width) :
+      first | rfl | assumption) :
     RecordsFrame st { st with machine := m } := of_objects_eq hInv rfl rfl hW
 
 theorem preemptCurrentOnCore (st : SystemState) (c : CoreId) (incoming : SeLe4n.ThreadId)
