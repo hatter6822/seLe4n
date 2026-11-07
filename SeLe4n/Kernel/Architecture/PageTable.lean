@@ -80,6 +80,15 @@ structure PageAttributes where
   dirty       : Bool             -- DBM dirty bit (bit 51)
   deriving DecidableEq, Repr, Inhabited
 
+/-- **The MAIR index of a thread's page**, the one owner of the memory type
+every user page descriptor carries: a cacheable page is Normal write-back
+(index 0), a non-cacheable one Device-nGnRnE (index 1), as seL4's AArch64
+`makeUser3rdLevel` picks `NORMAL` or `DEVICE_nGnRnE` from
+`vm_attributes_get_armPageCacheable`.  The live encoding (`userPageAttributes`)
+and the staged ARMv8 backend (`fromPagePermissions`) both read it. -/
+@[inline] def userPageAttrIndex (cacheable : Bool) : Fin 8 :=
+  if cacheable then ⟨0, by omega⟩ else ⟨1, by omega⟩
+
 instance : BEq PageTableLevel where
   beq a b := match a, b with
     | .l0, .l0 | .l1, .l1 | .l2, .l2 | .l3, .l3 => true

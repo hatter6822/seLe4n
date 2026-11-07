@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Architecture.VSpaceARMv8
+import SeLe4n.Kernel.Architecture.HardwareTables
 import SeLe4n.Model.Object.Structures
 import SeLe4n.Testing.Helpers
 
@@ -112,6 +113,19 @@ def test_t08_wxCompliant_R_alone_true : IO Unit := do
   expectCond "wx-defense" "R+X wxCompliant" (rxPerms.wxCompliant == true)
   expectCond "wx-defense" "readOnly wxCompliant" (roPerms.wxCompliant == true)
 
+/-- T09: the staged encoder gives a page the live encoder's memory type —
+`fromPagePermissions` and `userPageAttributes` agree on the MAIR index of a
+cacheable and of a non-cacheable page (seL4's `makeUser3rdLevel`: a
+non-cacheable user page is Device-nGnRnE). -/
+def test_t09_L3_memory_type_is_live : IO Unit := do
+  for cacheable in [true, false] do
+    let perms : PagePermissions := { roPerms with cacheable := cacheable }
+    expectCond "wx-defense" s!"cacheable={cacheable}: staged MAIR index is the live one"
+      ((fromPagePermissions perms).map (·.attrIndex) ==
+        some (userPageAttributes perms).attrIndex)
+  expectCond "wx-defense" "a non-cacheable page's MAIR index differs from a cacheable one's"
+    (userPageAttrIndex false != userPageAttrIndex true)
+
 /-- Running entry. -/
 def runAllTests : IO Unit := do
   IO.println "=== AK3-B W^X Four-Layer Defense regression suite ==="
@@ -123,6 +137,7 @@ def runAllTests : IO Unit := do
   test_t06_L2_accepts_rw
   test_t07_wxCompliant_W_and_X_false
   test_t08_wxCompliant_R_alone_true
+  test_t09_L3_memory_type_is_live
   IO.println "=== All AK3-B W^X tests passed ==="
 
 end SeLe4n.Testing.WxDefense

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/untyped-cells-plan",
-      "commit_sha": "e9d96fc80e4f7d5edb400c2b9a5f942e8c2a5e39",
-      "tree_sha": "c74802ebc903b3b86840a4ed7fecf2b395752518",
-      "committed_at_utc": "2026-11-07T02:58:27+00:00"
+      "commit_sha": "6df364afde25e64a59132c1e24f337bbffa806df",
+      "tree_sha": "4f5d3b54928754743844b0f84b1695126c920d66",
+      "committed_at_utc": "2026-11-07T04:13:40+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5f0796543311c87736263b52beeb92000f3bea10e3816330f8269e4f7a158007"
+    "source_digest": "9947784f130e3081986faffb2bd25db984bf5eea817d71cc8397d9a49f7739e5"
   },
   "summary": {
     "module_count": 661,
-    "declaration_count": 34829
+    "declaration_count": 34832
   },
   "readme_sync": {
     "version": "0.37.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 591,
-    "production_loc": 598966,
+    "production_loc": 598988,
     "test_files": 70,
-    "test_loc": 88869,
-    "proved_theorem_lemma_decls": 23061,
+    "test_loc": 88884,
+    "proved_theorem_lemma_decls": 23062,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9208,6 +9208,7 @@
           "line": 101,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes",
+            "SeLe4n.Kernel.Architecture.userPageAttrIndex",
             "SeLe4n.Model.PagePermissions"
           ]
         },
@@ -13635,7 +13636,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.PageTable",
       "path": "SeLe4n/Kernel/Architecture/PageTable.lean",
-      "declaration_count": 51,
+      "declaration_count": 52,
       "declarations": [
         {
           "kind": "inductive",
@@ -13669,10 +13670,17 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "userPageAttrIndex",
+          "full_name": "SeLe4n.Kernel.Architecture.userPageAttrIndex",
+          "line": 89,
+          "called": []
+        },
+        {
           "kind": "instance",
           "name": "instBEqPageTableLevel",
           "full_name": "SeLe4n.Kernel.Architecture.instBEqPageTableLevel",
-          "line": 83,
+          "line": 92,
           "called": [
             "SeLe4n.Kernel.Architecture.PageTableLevel"
           ]
@@ -13681,7 +13689,7 @@
           "kind": "instance",
           "name": "instBEqShareability",
           "full_name": "SeLe4n.Kernel.Architecture.instBEqShareability",
-          "line": 88,
+          "line": 97,
           "called": [
             "SeLe4n.Kernel.Architecture.Shareability"
           ]
@@ -13690,7 +13698,7 @@
           "kind": "instance",
           "name": "instBEqAccessPermission",
           "full_name": "SeLe4n.Kernel.Architecture.instBEqAccessPermission",
-          "line": 95,
+          "line": 104,
           "called": [
             "SeLe4n.Kernel.Architecture.AccessPermission"
           ]
@@ -13699,7 +13707,7 @@
           "kind": "instance",
           "name": "instBEqPageAttributes",
           "full_name": "SeLe4n.Kernel.Architecture.instBEqPageAttributes",
-          "line": 101,
+          "line": 110,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes"
           ]
@@ -13708,7 +13716,7 @@
           "kind": "inductive",
           "name": "PageTableDescriptor",
           "full_name": "SeLe4n.Kernel.Architecture.PageTableDescriptor",
-          "line": 116,
+          "line": 125,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes",
             "SeLe4n.PAddr"
@@ -13718,7 +13726,7 @@
           "kind": "def",
           "name": "encodeShareability",
           "full_name": "SeLe4n.Kernel.Architecture.encodeShareability",
-          "line": 128,
+          "line": 137,
           "called": [
             "SeLe4n.Kernel.Architecture.Shareability"
           ]
@@ -13727,7 +13735,7 @@
           "kind": "def",
           "name": "encodeAccessPermission",
           "full_name": "SeLe4n.Kernel.Architecture.encodeAccessPermission",
-          "line": 135,
+          "line": 144,
           "called": [
             "SeLe4n.Kernel.Architecture.AccessPermission"
           ]
@@ -13736,7 +13744,7 @@
           "kind": "def",
           "name": "encodePageAttributes",
           "full_name": "SeLe4n.Kernel.Architecture.encodePageAttributes",
-          "line": 152,
+          "line": 161,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes",
             "SeLe4n.Kernel.Architecture.encodeAccessPermission",
@@ -13747,21 +13755,21 @@
           "kind": "def",
           "name": "outputAddrMask",
           "full_name": "SeLe4n.Kernel.Architecture.outputAddrMask",
-          "line": 165,
+          "line": 174,
           "called": []
         },
         {
           "kind": "def",
           "name": "tableAddrMask",
           "full_name": "SeLe4n.Kernel.Architecture.tableAddrMask",
-          "line": 169,
+          "line": 178,
           "called": []
         },
         {
           "kind": "def",
           "name": "descriptorToUInt64",
           "full_name": "SeLe4n.Kernel.Architecture.descriptorToUInt64",
-          "line": 172,
+          "line": 181,
           "called": [
             "SeLe4n.Kernel.Architecture.PageTableDescriptor",
             "SeLe4n.Kernel.Architecture.encodePageAttributes",
@@ -13773,7 +13781,7 @@
           "kind": "def",
           "name": "decodeShareability",
           "full_name": "SeLe4n.Kernel.Architecture.decodeShareability",
-          "line": 190,
+          "line": 199,
           "called": [
             "SeLe4n.Kernel.Architecture.Shareability"
           ]
@@ -13782,7 +13790,7 @@
           "kind": "def",
           "name": "decodeAccessPermission",
           "full_name": "SeLe4n.Kernel.Architecture.decodeAccessPermission",
-          "line": 197,
+          "line": 206,
           "called": [
             "SeLe4n.Kernel.Architecture.AccessPermission"
           ]
@@ -13791,7 +13799,7 @@
           "kind": "def",
           "name": "decodePageAttributes",
           "full_name": "SeLe4n.Kernel.Architecture.decodePageAttributes",
-          "line": 205,
+          "line": 214,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes",
             "SeLe4n.Kernel.Architecture.decodeAccessPermission",
@@ -13802,7 +13810,7 @@
           "kind": "def",
           "name": "uint64ToDescriptor",
           "full_name": "SeLe4n.Kernel.Architecture.uint64ToDescriptor",
-          "line": 218,
+          "line": 227,
           "called": [
             "SeLe4n.Kernel.Architecture.PageTableDescriptor",
             "SeLe4n.Kernel.Architecture.PageTableLevel",
@@ -13817,7 +13825,7 @@
           "kind": "def",
           "name": "AccessPermission.isReadOnly",
           "full_name": "SeLe4n.Kernel.Architecture.AccessPermission.isReadOnly",
-          "line": 244,
+          "line": 253,
           "called": [
             "SeLe4n.Kernel.Architecture.AccessPermission"
           ]
@@ -13826,7 +13834,7 @@
           "kind": "def",
           "name": "toPagePermissions",
           "full_name": "SeLe4n.Kernel.Architecture.toPagePermissions",
-          "line": 251,
+          "line": 260,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes",
             "SeLe4n.Model.PagePermissions"
@@ -13836,7 +13844,7 @@
           "kind": "theorem",
           "name": "hwDescriptor_wxCompliant_bridge",
           "full_name": "SeLe4n.Kernel.Architecture.hwDescriptor_wxCompliant_bridge",
-          "line": 264,
+          "line": 273,
           "called": [
             "SeLe4n.Kernel.Architecture.AccessPermission.isReadOnly",
             "SeLe4n.Kernel.Architecture.PageAttributes",
@@ -13848,7 +13856,7 @@
           "kind": "def",
           "name": "l0Index",
           "full_name": "SeLe4n.Kernel.Architecture.l0Index",
-          "line": 278,
+          "line": 287,
           "called": [
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.toNat"
@@ -13858,7 +13866,7 @@
           "kind": "def",
           "name": "l1Index",
           "full_name": "SeLe4n.Kernel.Architecture.l1Index",
-          "line": 282,
+          "line": 291,
           "called": [
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.toNat"
@@ -13868,7 +13876,7 @@
           "kind": "def",
           "name": "l2Index",
           "full_name": "SeLe4n.Kernel.Architecture.l2Index",
-          "line": 286,
+          "line": 295,
           "called": [
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.toNat"
@@ -13878,7 +13886,7 @@
           "kind": "def",
           "name": "l3Index",
           "full_name": "SeLe4n.Kernel.Architecture.l3Index",
-          "line": 290,
+          "line": 299,
           "called": [
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.toNat"
@@ -13888,7 +13896,7 @@
           "kind": "def",
           "name": "pageOffset",
           "full_name": "SeLe4n.Kernel.Architecture.pageOffset",
-          "line": 294,
+          "line": 303,
           "called": [
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.toNat"
@@ -13898,7 +13906,7 @@
           "kind": "theorem",
           "name": "l0Index_lt",
           "full_name": "SeLe4n.Kernel.Architecture.l0Index_lt",
-          "line": 298,
+          "line": 307,
           "called": [
             "SeLe4n.Kernel.Architecture.l0Index",
             "SeLe4n.VAddr"
@@ -13908,7 +13916,7 @@
           "kind": "theorem",
           "name": "l1Index_lt",
           "full_name": "SeLe4n.Kernel.Architecture.l1Index_lt",
-          "line": 302,
+          "line": 311,
           "called": [
             "SeLe4n.Kernel.Architecture.l1Index",
             "SeLe4n.VAddr"
@@ -13918,7 +13926,7 @@
           "kind": "theorem",
           "name": "l2Index_lt",
           "full_name": "SeLe4n.Kernel.Architecture.l2Index_lt",
-          "line": 306,
+          "line": 315,
           "called": [
             "SeLe4n.Kernel.Architecture.l2Index",
             "SeLe4n.VAddr"
@@ -13928,7 +13936,7 @@
           "kind": "theorem",
           "name": "l3Index_lt",
           "full_name": "SeLe4n.Kernel.Architecture.l3Index_lt",
-          "line": 310,
+          "line": 319,
           "called": [
             "SeLe4n.Kernel.Architecture.l3Index",
             "SeLe4n.VAddr"
@@ -13938,7 +13946,7 @@
           "kind": "theorem",
           "name": "pageOffset_lt",
           "full_name": "SeLe4n.Kernel.Architecture.pageOffset_lt",
-          "line": 314,
+          "line": 323,
           "called": [
             "SeLe4n.Kernel.Architecture.pageOffset",
             "SeLe4n.VAddr"
@@ -13948,7 +13956,7 @@
           "kind": "def",
           "name": "readUInt64",
           "full_name": "SeLe4n.Kernel.Architecture.readUInt64",
-          "line": 323,
+          "line": 332,
           "called": [
             "SeLe4n.Memory",
             "SeLe4n.PAddr",
@@ -13960,7 +13968,7 @@
           "kind": "def",
           "name": "writeUInt64",
           "full_name": "SeLe4n.Kernel.Architecture.writeUInt64",
-          "line": 339,
+          "line": 348,
           "called": [
             "SeLe4n.Memory",
             "SeLe4n.PAddr",
@@ -13971,7 +13979,7 @@
           "kind": "theorem",
           "name": "umod256_getLsbD",
           "full_name": "SeLe4n.Kernel.Architecture.umod256_getLsbD",
-          "line": 350,
+          "line": 359,
           "called": [],
           "private": true
         },
@@ -13979,7 +13987,7 @@
           "kind": "theorem",
           "name": "uint64_bytes_reassemble",
           "full_name": "SeLe4n.Kernel.Architecture.uint64_bytes_reassemble",
-          "line": 357,
+          "line": 366,
           "called": [
             "SeLe4n.Kernel.Architecture.umod256_getLsbD"
           ],
@@ -13989,7 +13997,7 @@
           "kind": "theorem",
           "name": "readUInt64_writeUInt64",
           "full_name": "SeLe4n.Kernel.Architecture.readUInt64_writeUInt64",
-          "line": 390,
+          "line": 399,
           "called": [
             "SeLe4n.Kernel.Architecture.readUInt64",
             "SeLe4n.Kernel.Architecture.uint64_bytes_reassemble",
@@ -14003,7 +14011,7 @@
           "kind": "theorem",
           "name": "writeUInt64_apply_of_outside",
           "full_name": "SeLe4n.Kernel.Architecture.writeUInt64_apply_of_outside",
-          "line": 397,
+          "line": 406,
           "called": [
             "SeLe4n.Kernel.Architecture.writeUInt64",
             "SeLe4n.Memory",
@@ -14015,7 +14023,7 @@
           "kind": "theorem",
           "name": "readUInt64_writeUInt64_of_disjoint",
           "full_name": "SeLe4n.Kernel.Architecture.readUInt64_writeUInt64_of_disjoint",
-          "line": 405,
+          "line": 414,
           "called": [
             "SeLe4n.Kernel.Architecture.readUInt64",
             "SeLe4n.Kernel.Architecture.writeUInt64",
@@ -14030,7 +14038,7 @@
           "kind": "def",
           "name": "readDescriptor",
           "full_name": "SeLe4n.Kernel.Architecture.readDescriptor",
-          "line": 419,
+          "line": 428,
           "called": [
             "SeLe4n.Kernel.Architecture.PageTableDescriptor",
             "SeLe4n.Kernel.Architecture.PageTableLevel",
@@ -14046,7 +14054,7 @@
           "kind": "def",
           "name": "blockOffset1G",
           "full_name": "SeLe4n.Kernel.Architecture.blockOffset1G",
-          "line": 428,
+          "line": 437,
           "called": [
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.toNat"
@@ -14056,7 +14064,7 @@
           "kind": "def",
           "name": "blockOffset2M",
           "full_name": "SeLe4n.Kernel.Architecture.blockOffset2M",
-          "line": 432,
+          "line": 441,
           "called": [
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.toNat"
@@ -14066,7 +14074,7 @@
           "kind": "def",
           "name": "pageTableWalk",
           "full_name": "SeLe4n.Kernel.Architecture.pageTableWalk",
-          "line": 447,
+          "line": 456,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes",
             "SeLe4n.Kernel.Architecture.blockOffset1G",
@@ -14087,7 +14095,7 @@
           "kind": "theorem",
           "name": "pageTableWalk_fault_on_non_table_l0",
           "full_name": "SeLe4n.Kernel.Architecture.pageTableWalk_fault_on_non_table_l0",
-          "line": 485,
+          "line": 494,
           "called": [
             "SeLe4n.Kernel.Architecture.l0Index",
             "SeLe4n.Kernel.Architecture.pageTableWalk",
@@ -14101,7 +14109,7 @@
           "kind": "def",
           "name": "pageTableWalkPerms",
           "full_name": "SeLe4n.Kernel.Architecture.pageTableWalkPerms",
-          "line": 495,
+          "line": 504,
           "called": [
             "SeLe4n.Kernel.Architecture.pageTableWalk",
             "SeLe4n.Kernel.Architecture.toPagePermissions",
@@ -14115,7 +14123,7 @@
           "kind": "theorem",
           "name": "pageTableWalkPerms_wx_bridge",
           "full_name": "SeLe4n.Kernel.Architecture.pageTableWalkPerms_wx_bridge",
-          "line": 505,
+          "line": 514,
           "called": [
             "SeLe4n.Kernel.Architecture.AccessPermission.isReadOnly",
             "SeLe4n.Kernel.Architecture.PageAttributes",
@@ -14133,14 +14141,14 @@
           "kind": "def",
           "name": "maxPageTableLevel",
           "full_name": "SeLe4n.Kernel.Architecture.maxPageTableLevel",
-          "line": 524,
+          "line": 533,
           "called": []
         },
         {
           "kind": "def",
           "name": "pageTableWalkDepth",
           "full_name": "SeLe4n.Kernel.Architecture.pageTableWalkDepth",
-          "line": 535,
+          "line": 544,
           "called": [
             "SeLe4n.Kernel.Architecture.l0Index",
             "SeLe4n.Kernel.Architecture.l1Index",
@@ -14156,7 +14164,7 @@
           "kind": "theorem",
           "name": "pageTableWalk_depth_bound",
           "full_name": "SeLe4n.Kernel.Architecture.pageTableWalk_depth_bound",
-          "line": 555,
+          "line": 564,
           "called": [
             "SeLe4n.Kernel.Architecture.maxPageTableLevel",
             "SeLe4n.Kernel.Architecture.pageTableWalkDepth",
@@ -14169,7 +14177,7 @@
           "kind": "theorem",
           "name": "pageTableWalkDepth_some_of_pageTableWalk_some",
           "full_name": "SeLe4n.Kernel.Architecture.pageTableWalkDepth_some_of_pageTableWalk_some",
-          "line": 593,
+          "line": 602,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes",
             "SeLe4n.Kernel.Architecture.l0Index",
@@ -14188,7 +14196,7 @@
           "kind": "theorem",
           "name": "pageTableWalk_success_within_maxPageTableLevel",
           "full_name": "SeLe4n.Kernel.Architecture.pageTableWalk_success_within_maxPageTableLevel",
-          "line": 633,
+          "line": 642,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes",
             "SeLe4n.Kernel.Architecture.maxPageTableLevel",
@@ -37105,7 +37113,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.VSpaceARMv8",
       "path": "SeLe4n/Kernel/Architecture/VSpaceARMv8.lean",
-      "declaration_count": 24,
+      "declaration_count": 25,
       "declarations": [
         {
           "kind": "structure",
@@ -37199,6 +37207,7 @@
           "line": 174,
           "called": [
             "SeLe4n.Kernel.Architecture.PageAttributes",
+            "SeLe4n.Kernel.Architecture.userPageAttrIndex",
             "SeLe4n.Model.PagePermissions"
           ]
         },
@@ -37214,10 +37223,22 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "fromPagePermissions_attrIndex",
+          "full_name": "SeLe4n.Kernel.Architecture.fromPagePermissions_attrIndex",
+          "line": 210,
+          "called": [
+            "SeLe4n.Kernel.Architecture.PageAttributes",
+            "SeLe4n.Kernel.Architecture.fromPagePermissions",
+            "SeLe4n.Kernel.Architecture.userPageAttrIndex",
+            "SeLe4n.Model.PagePermissions"
+          ]
+        },
+        {
           "kind": "def",
           "name": "ensureTable",
           "full_name": "SeLe4n.Kernel.Architecture.ensureTable",
-          "line": 207,
+          "line": 220,
           "called": [
             "SeLe4n.Kernel.Architecture.BumpAllocator",
             "SeLe4n.Kernel.Architecture.BumpAllocator.allocate",
@@ -37234,7 +37255,7 @@
           "kind": "def",
           "name": "ARMv8VSpace.mapPage",
           "full_name": "SeLe4n.Kernel.Architecture.ARMv8VSpace.mapPage",
-          "line": 232,
+          "line": 245,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ensureTable",
@@ -37255,7 +37276,7 @@
           "kind": "inductive",
           "name": "VSpaceWalkError",
           "full_name": "SeLe4n.Kernel.Architecture.VSpaceWalkError",
-          "line": 267,
+          "line": 280,
           "called": [
             "SeLe4n.Kernel.Architecture.PageTableLevel"
           ]
@@ -37264,7 +37285,7 @@
           "kind": "def",
           "name": "ARMv8VSpace.unmapPage",
           "full_name": "SeLe4n.Kernel.Architecture.ARMv8VSpace.unmapPage",
-          "line": 275,
+          "line": 288,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.VSpaceWalkError",
@@ -37282,7 +37303,7 @@
           "kind": "theorem",
           "name": "ARMv8VSpace.mapPage_preserves_asid",
           "full_name": "SeLe4n.Kernel.Architecture.ARMv8VSpace.mapPage_preserves_asid",
-          "line": 300,
+          "line": 313,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.mapPage",
@@ -37295,7 +37316,7 @@
           "kind": "theorem",
           "name": "ARMv8VSpace.unmapPage_preserves_asid",
           "full_name": "SeLe4n.Kernel.Architecture.ARMv8VSpace.unmapPage_preserves_asid",
-          "line": 321,
+          "line": 334,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.unmapPage",
@@ -37306,7 +37327,7 @@
           "kind": "theorem",
           "name": "ARMv8VSpace.mapPage_shadow_eq",
           "full_name": "SeLe4n.Kernel.Architecture.ARMv8VSpace.mapPage_shadow_eq",
-          "line": 337,
+          "line": 350,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.mapPage",
@@ -37320,7 +37341,7 @@
           "kind": "theorem",
           "name": "ARMv8VSpace.unmapPage_shadow_eq",
           "full_name": "SeLe4n.Kernel.Architecture.ARMv8VSpace.unmapPage_shadow_eq",
-          "line": 361,
+          "line": 374,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.unmapPage",
@@ -37332,7 +37353,7 @@
           "kind": "def",
           "name": "ARMv8VSpace.unmapPageOpt",
           "full_name": "SeLe4n.Kernel.Architecture.ARMv8VSpace.unmapPageOpt",
-          "line": 389,
+          "line": 402,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.unmapPage",
@@ -37344,7 +37365,7 @@
           "kind": "theorem",
           "name": "ARMv8VSpace.unmapPageOpt_some_iff_ok",
           "full_name": "SeLe4n.Kernel.Architecture.ARMv8VSpace.unmapPageOpt_some_iff_ok",
-          "line": 395,
+          "line": 408,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.unmapPage",
@@ -37357,7 +37378,7 @@
           "kind": "instance",
           "name": "armv8VSpaceBackend",
           "full_name": "SeLe4n.Kernel.Architecture.armv8VSpaceBackend",
-          "line": 402,
+          "line": 415,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.mapPage_preserves_asid",
@@ -37382,7 +37403,7 @@
           "kind": "def",
           "name": "simulationRelation",
           "full_name": "SeLe4n.Kernel.Architecture.simulationRelation",
-          "line": 454,
+          "line": 467,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.hwLookupPage",
@@ -37393,7 +37414,7 @@
           "kind": "theorem",
           "name": "hwLookupPage_refines",
           "full_name": "SeLe4n.Kernel.Architecture.hwLookupPage_refines",
-          "line": 458,
+          "line": 471,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.hwLookupPage",
@@ -37406,7 +37427,7 @@
           "kind": "theorem",
           "name": "hwLookupAddr_refines",
           "full_name": "SeLe4n.Kernel.Architecture.hwLookupAddr_refines",
-          "line": 463,
+          "line": 476,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.hwLookupAddr",
@@ -37419,7 +37440,7 @@
           "kind": "theorem",
           "name": "vspaceProperty_transfer",
           "full_name": "SeLe4n.Kernel.Architecture.vspaceProperty_transfer",
-          "line": 470,
+          "line": 483,
           "called": [
             "SeLe4n.Kernel.Architecture.ARMv8VSpace",
             "SeLe4n.Kernel.Architecture.ARMv8VSpace.hwLookupPage",
@@ -548390,13 +548411,13 @@
     {
       "module": "tests.WxDefenseSuite",
       "path": "tests/WxDefenseSuite.lean",
-      "declaration_count": 14,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "def",
           "name": "wxPerms",
           "full_name": "SeLe4n.Testing.WxDefense.wxPerms",
-          "line": 38,
+          "line": 39,
           "called": [
             "SeLe4n.Model.PagePermissions"
           ]
@@ -548405,7 +548426,7 @@
           "kind": "def",
           "name": "roPerms",
           "full_name": "SeLe4n.Testing.WxDefense.roPerms",
-          "line": 42,
+          "line": 43,
           "called": [
             "SeLe4n.Model.PagePermissions",
             "SeLe4n.Model.PagePermissions.readOnly"
@@ -548415,7 +548436,7 @@
           "kind": "def",
           "name": "rwPerms",
           "full_name": "SeLe4n.Testing.WxDefense.rwPerms",
-          "line": 45,
+          "line": 46,
           "called": [
             "SeLe4n.Model.PagePermissions"
           ]
@@ -548424,7 +548445,7 @@
           "kind": "def",
           "name": "rxPerms",
           "full_name": "SeLe4n.Testing.WxDefense.rxPerms",
-          "line": 49,
+          "line": 50,
           "called": [
             "SeLe4n.Model.PagePermissions"
           ]
@@ -548433,7 +548454,7 @@
           "kind": "def",
           "name": "test_t01_L3_rejects_wx",
           "full_name": "SeLe4n.Testing.WxDefense.test_t01_L3_rejects_wx",
-          "line": 53,
+          "line": 54,
           "called": [
             "SeLe4n.Kernel.Architecture.fromPagePermissions",
             "SeLe4n.Testing.WxDefense.wxPerms"
@@ -548443,7 +548464,7 @@
           "kind": "def",
           "name": "test_t02_L3_accepts_ro",
           "full_name": "SeLe4n.Testing.WxDefense.test_t02_L3_accepts_ro",
-          "line": 61,
+          "line": 62,
           "called": [
             "SeLe4n.Kernel.Architecture.fromPagePermissions",
             "SeLe4n.Testing.WxDefense.roPerms"
@@ -548453,7 +548474,7 @@
           "kind": "def",
           "name": "test_t03_L3_accepts_rw",
           "full_name": "SeLe4n.Testing.WxDefense.test_t03_L3_accepts_rw",
-          "line": 69,
+          "line": 70,
           "called": [
             "SeLe4n.Kernel.Architecture.fromPagePermissions",
             "SeLe4n.Testing.WxDefense.rwPerms"
@@ -548463,7 +548484,7 @@
           "kind": "def",
           "name": "test_t04_L3_accepts_rx",
           "full_name": "SeLe4n.Testing.WxDefense.test_t04_L3_accepts_rx",
-          "line": 77,
+          "line": 78,
           "called": [
             "SeLe4n.Kernel.Architecture.fromPagePermissions",
             "SeLe4n.Testing.WxDefense.rxPerms"
@@ -548473,7 +548494,7 @@
           "kind": "def",
           "name": "test_t05_L2_rejects_wx",
           "full_name": "SeLe4n.Testing.WxDefense.test_t05_L2_rejects_wx",
-          "line": 85,
+          "line": 86,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Model.VSpaceRoot",
@@ -548487,7 +548508,7 @@
           "kind": "def",
           "name": "test_t06_L2_accepts_rw",
           "full_name": "SeLe4n.Testing.WxDefense.test_t06_L2_accepts_rw",
-          "line": 95,
+          "line": 96,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Model.VSpaceRoot",
@@ -548501,7 +548522,7 @@
           "kind": "def",
           "name": "test_t07_wxCompliant_W_and_X_false",
           "full_name": "SeLe4n.Testing.WxDefense.test_t07_wxCompliant_W_and_X_false",
-          "line": 105,
+          "line": 106,
           "called": [
             "SeLe4n.Model.PagePermissions.wxCompliant",
             "SeLe4n.Testing.WxDefense.wxPerms",
@@ -548512,7 +548533,7 @@
           "kind": "def",
           "name": "test_t08_wxCompliant_R_alone_true",
           "full_name": "SeLe4n.Testing.WxDefense.test_t08_wxCompliant_R_alone_true",
-          "line": 110,
+          "line": 111,
           "called": [
             "SeLe4n.Model.PagePermissions.wxCompliant",
             "SeLe4n.Testing.WxDefense.roPerms",
@@ -548523,9 +548544,23 @@
         },
         {
           "kind": "def",
+          "name": "test_t09_L3_memory_type_is_live",
+          "full_name": "SeLe4n.Testing.WxDefense.test_t09_L3_memory_type_is_live",
+          "line": 120,
+          "called": [
+            "SeLe4n.Kernel.Architecture.fromPagePermissions",
+            "SeLe4n.Kernel.Architecture.userPageAttrIndex",
+            "SeLe4n.Kernel.Architecture.userPageAttributes",
+            "SeLe4n.Model.PagePermissions",
+            "SeLe4n.Testing.WxDefense.roPerms",
+            "SeLe4n.Testing.expectCond"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runAllTests",
           "full_name": "SeLe4n.Testing.WxDefense.runAllTests",
-          "line": 116,
+          "line": 130,
           "called": [
             "SeLe4n.Testing.WxDefense.test_t01_L3_rejects_wx",
             "SeLe4n.Testing.WxDefense.test_t02_L3_accepts_ro",
@@ -548534,14 +548569,15 @@
             "SeLe4n.Testing.WxDefense.test_t05_L2_rejects_wx",
             "SeLe4n.Testing.WxDefense.test_t06_L2_accepts_rw",
             "SeLe4n.Testing.WxDefense.test_t07_wxCompliant_W_and_X_false",
-            "SeLe4n.Testing.WxDefense.test_t08_wxCompliant_R_alone_true"
+            "SeLe4n.Testing.WxDefense.test_t08_wxCompliant_R_alone_true",
+            "SeLe4n.Testing.WxDefense.test_t09_L3_memory_type_is_live"
           ]
         },
         {
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 132,
+          "line": 147,
           "called": [
             "SeLe4n.Testing.WxDefense.runAllTests"
           ]

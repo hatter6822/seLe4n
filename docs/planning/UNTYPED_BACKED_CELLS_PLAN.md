@@ -424,24 +424,26 @@ The cell counts are the pins at `v0.37.0` (F3). Bytes and the breakdown are
   the index is never pruned. The retire does prune it
   (`CarvedObjectErase.lean:60`; `eraseRetiredObject`, `FinalRetire.lean:698-701`).
   The docstring now says what the code does.
-- **The two MAIR encodings of "non-cacheable" disagree on no live path.**
-  - `fromPagePermissions` (`SeLe4n/Kernel/Architecture/VSpaceARMv8.lean:180`)
-    uses AttrIndx 2, which is Normal non-cacheable in `MAIR_VALUE`
-    (`rust/sele4n-hal/src/mmu.rs:93-97`).
-  - `userPageAttributes`
-    (`SeLe4n/Kernel/Architecture/HardwareTables.lean:101-102`) uses AttrIndx 1,
+- **The two MAIR encodings of "non-cacheable" were fixed in this plan's own
+  PR (`v0.37.1`).** No live path disagreed, but they gave two answers to one
+  question.
+  - The staged backend's `fromPagePermissions`
+    (`SeLe4n/Kernel/Architecture/VSpaceARMv8.lean`) gave a non-cacheable page
+    AttrIndx 2, which is Normal non-cacheable in `MAIR_VALUE`
+    (`rust/sele4n-hal/src/mmu.rs:93-97`). The live `userPageAttributes`
+    (`SeLe4n/Kernel/Architecture/HardwareTables.lean`) gave it AttrIndx 1,
     which is Device-nGnRnE.
-  - `VSpaceARMv8` is outside the import closure of both shipped archives,
-    `SeLe4n` and `SeLe4nQemuVirtExerciser`. Only `Platform/Staged.lean` and
-    `tests/WxDefenseSuite.lean` import it ("integrated into no execution
-    path", spec §8.15.1 item 4). Its descriptors go only to its own model's
-    `pageTableMemory` (`VSpaceARMv8.lean:245-256`).
-  - Every user page descriptor the kernel writes is `userPageDescriptorValue`'s,
-    and Rust re-checks each one (`page_descriptor_admissible`,
-    `rust/sele4n-hal/src/user_translation.rs:195-215`). That check admits
-    AttrIndx 0 (RAM) and 1 (the device window) and refuses every other index.
-    Its host test refuses index 2 (`:883`).
-  - The kernel's own map uses indices 0 and 1 only.
-  - So the second encoding is latent, and it fails closed. It is registered in
-    `docs/REGISTERED_DEBT.md` table C, for the promotion of the staged backend
-    to reconcile.
+  - Index 1 is seL4's: AArch64 `makeUser3rdLevel` picks `NORMAL` or
+    `DEVICE_nGnRnE` from `vm_attributes_get_armPageCacheable`.
+  - The disagreement was latent. `VSpaceARMv8` is outside the import closure of
+    both shipped archives (only `Platform/Staged.lean` and
+    `tests/WxDefenseSuite.lean` import it). Its descriptors went only to its own
+    model's `pageTableMemory`. And the HAL's `page_descriptor_admissible`
+    (`rust/sele4n-hal/src/user_translation.rs:195-215`) refuses every user page
+    descriptor whose AttrIndx is neither 0 nor 1.
+  - **The fix.** Both encoders now read one owner, `userPageAttrIndex`
+    (`SeLe4n/Kernel/Architecture/PageTable.lean`).
+    `fromPagePermissions_attrIndex` states that the staged backend carries it.
+    `tests/WxDefenseSuite.lean` T09 checks that the two encoders agree on a
+    cacheable page and on a non-cacheable one. No theorem or test had pinned
+    index 2.

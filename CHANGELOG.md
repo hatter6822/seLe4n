@@ -1,6 +1,6 @@
 ## v0.37.1 — WS-UC: the plan for untyped-backed object cells
 
-Registers WS-UC, a documentation PR plus one docstring fix.  A carved
+Registers WS-UC, a documentation PR plus two fixes found on the way.  A carved
 object's cells will move from the kernel's Lean heap into its untyped's
 memory, so a carve costs its region's bytes, as seL4's `Untyped_Retype`
 does, and the heap capacity check retires.
@@ -20,10 +20,15 @@ does, and the heap capacity check retires.
   retirement set.  `freeze` lives in `FrozenState.lean`.
 - **Re-homed**: the heap-capacity row of `docs/REGISTERED_DEBT.md` table C
   to WS-UC.  UC9 closes it whole (D6).
-- **Registered**: the staged ARMv8 backend's second encoding of
-  "non-cacheable".  It uses MAIR index 2; the live path uses index 1.  No
-  live path disagrees: the backend is outside both shipped archives, and the
-  HAL refuses any user descriptor with an index other than 0 or 1.
+- **Fixed**: the staged ARMv8 backend's `fromPagePermissions` gave a
+  non-cacheable page MAIR index 2 (Normal non-cacheable).  The live
+  `userPageAttributes` and seL4's `makeUser3rdLevel` give index 1
+  (Device-nGnRnE).  No live path disagreed: the backend is outside both
+  shipped archives, and the HAL refuses any user descriptor with an index
+  other than 0 or 1.  Both encoders now read one owner, `userPageAttrIndex`
+  (`PageTable.lean`).  `fromPagePermissions_attrIndex` states that the
+  staged backend carries it, and `WxDefenseSuite` T09 checks that the two
+  encoders agree.
 - **Fixed**: `SystemState.objectIndex`'s docstring said the index is never
   pruned, but the retire prunes it.  The docstring now says what the code
   does.
