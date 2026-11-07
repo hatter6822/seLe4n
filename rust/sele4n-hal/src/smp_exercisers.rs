@@ -7466,14 +7466,29 @@ fn heap_allocations_round_trip_resuming(
             );
             // A retype that succeeded names the object it carved, its kind and
             // its size bits as the tag word gave them: the host-side gate holds
-            // the reading to that object's own cells.
+            // the reading to that object's own cells.  It names the object's id
+            // and the slot its capability went to, and a delete that succeeded
+            // names the slot it emptied, so the gate can relate each carved
+            // kind to the delete of its capability (WS-UC UC1).
             if trip.syscall == UNTYPED_RETYPE
                 && regs[1] >> 9 < crate::svc_dispatch::ERROR_LABEL_BASE
             {
                 crate::kprintln!(
-                    "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{}",
+                    "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{} at {} into {:#x}/{}",
                     carved_kind(trip.msg[0] & 0xff),
-                    trip.msg[0] >> 8
+                    trip.msg[0] >> 8,
+                    trip.msg[1],
+                    trip.msg[2],
+                    trip.msg[3]
+                );
+            }
+            if trip.syscall == CSPACE_DELETE
+                && regs[1] >> 9 < crate::svc_dispatch::ERROR_LABEL_BASE
+            {
+                crate::kprintln!(
+                    "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: deleted {:#x}/{}",
+                    trip.cptr,
+                    trip.msg[0]
                 );
             }
         }

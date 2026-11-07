@@ -113,16 +113,39 @@ and its table written in place. -/
 @[noinline] def withObjectTypeErased (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
   { st with lifecycle := { st.lifecycle with objectTypes := st.lifecycle.objectTypes.erase id } }
 
-/-- **`retireCarvedObject` as compiled**: a frame, an untyped or a page table is
-erased one table at a time, each write out of line over the state it is handed,
-so every table is written in place and the state record reused; a VSpace root,
-whose ASID leaves the table with it, takes the specification's body
-(`retireCarvedObject_eq_impl`). -/
+/-- WS-UC UC1: `asid` erased from the ASID table, out of line, so the state is
+handed over and the table written in place. -/
+@[noinline] def withAsidErased (st : SystemState) (asid : SeLe4n.ASID) : SystemState :=
+  { st with asidTable := st.asidTable.erase asid }
+
+/-- WS-UC UC1: a VSpace root's ASID released — erased from the ASID table and its
+invalidation recorded after the writes still owed (`recordPhysicalWrite`, whose
+compiled form writes the ledger in place), so the ASID is free for the next
+carve only once its translations are invalidated. -/
+@[inline] def withAsidReleased (st : SystemState) (asid : SeLe4n.ASID) : SystemState :=
+  (withAsidErased st asid).recordPhysicalWrite
+    (SeLe4n.Kernel.Architecture.PhysicalWrite.invalidateAsid asid)
+
+/-- **`retireCarvedObject` as compiled**: a frame, an untyped, a page table or a
+VSpace root is erased one table at a time, each write out of line over the state
+it is handed, so every table is written in place and the state record reused; a
+VSpace root's ASID then leaves the ASID table with its invalidation recorded
+(`withAsidReleased`).  WS-UC UC1: the root took the specification's body before,
+whose every field read the one state, so each table it erased was shared and was
+copied whole (1810 heap cells per root deleted, at the exerciser's object count).
+`retireCarvedObject_eq_impl` is the equality. -/
 def retireCarvedObjectImpl (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
   match st.getObjectType? id with
   | some .frame | some .untyped | some .pageTable =>
     withObjectTypeErased (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id
-  | some .vspaceRoot => retireCarvedObject st id
+  | some .vspaceRoot =>
+    match st.getVSpaceRoot? id with
+    | some root =>
+      withAsidReleased
+        (withObjectTypeErased
+          (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id)
+        root.asid
+    | none => st
   | _ => st
 
 private theorem retireCarvedObject_of_nonRoot {st : SystemState} {id : SeLe4n.ObjId}
@@ -135,6 +158,20 @@ private theorem retireCarvedObject_of_nonRoot {st : SystemState} {id : SeLe4n.Ob
     withObjectErased
   rw [if_pos hG, hR, objIdListDrop_eq_filter]
   simp
+
+private theorem retireCarvedObject_of_root {st : SystemState} {id : SeLe4n.ObjId}
+    {r : VSpaceRoot} (hR : st.getVSpaceRoot? id = some r) :
+    retireCarvedObject st id =
+      withAsidReleased
+        (withObjectTypeErased
+          (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id)
+        r.asid := by
+  unfold retireCarvedObject
+  simp only [hR, Option.isSome_some, Bool.or_true, Bool.true_or, if_true]
+  cases st
+  simp only [withAsidReleased, withAsidErased, SystemState.recordPhysicalWrite,
+    withObjectTypeErased, withObjectIndexSetErased, withObjectUnindexed, withObjectErased,
+    objIdListDrop_eq_filter, List.reverse_nil, List.nil_append]
 
 @[csimp] theorem retireCarvedObject_eq_impl : @retireCarvedObject = @retireCarvedObjectImpl := by
   funext st id
@@ -163,7 +200,10 @@ private theorem retireCarvedObject_of_nonRoot {st : SystemState} {id : SeLe4n.Ob
     | frame f => exact retireCarvedObject_of_nonRoot hG (by unfold SystemState.getVSpaceRoot?; rw [hO])
     | untyped u => exact retireCarvedObject_of_nonRoot hG (by unfold SystemState.getVSpaceRoot?; rw [hO])
     | pageTable p => exact retireCarvedObject_of_nonRoot hG (by unfold SystemState.getVSpaceRoot?; rw [hO])
-    | vspaceRoot r => rfl
+    | vspaceRoot r =>
+      have hR : st.getVSpaceRoot? id = some r := by unfold SystemState.getVSpaceRoot?; rw [hO]
+      simp only [hR]
+      exact retireCarvedObject_of_root hR
     | _ =>
       unfold retireCarvedObject
       rw [if_neg (by rw [hG]; simp)]

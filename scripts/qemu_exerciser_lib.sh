@@ -90,9 +90,20 @@ exerciser_boot() {
 # driver the image runs and the summary tally.  Records a failure per finding;
 # returns 1 on any.
 exerciser_check() {
-    local label="$1" verdict
+    local label="$1" verdict kinds="" kinds_status=0
     shift
-    verdict=$(python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
+    # WS-UC UC1: the object kinds an untyped retype can name, derived from the
+    # retype's own decode (`scripts/retype_object_kinds.lean`, run by Lean) and
+    # not listed here: the allocation gate holds each to a carve scenario and
+    # to a delete of the carved capability.  A derivation that fails, or
+    # answers nothing, fails the gate; it is never read as no kinds.
+    if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+        kinds=$(cd "${REPO_ROOT}" && lake env lean --run scripts/retype_object_kinds.lean 2>&1) \
+            || kinds_status=$?
+    fi
+    verdict=$(RETYPE_OBJECT_KINDS="${kinds}" RETYPE_OBJECT_KINDS_STATUS="${kinds_status}" \
+        python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
+import os
 import re
 import sys
 
@@ -235,7 +246,7 @@ for driver in drivers:
         for m in unparsed:
             failures.append(f"heap-allocations-per-syscall: a reading whose bytes could not be read: {m.group(0)!r}")
         returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|entered, a thread restored)$")
-        carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+)$")
+        carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+) at (\d+) into (0x[0-9a-f]+/\d+)$")
         names = [m.group(1) for m in readings]
         # The cells of the object a carve makes, by kind and size bits, and
         # their bytes: the object's record and the cells it is built of, its
@@ -466,6 +477,66 @@ for driver in drivers:
                 failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {m.group(6)} bytes, the object's own cells' bytes are {byte_pin}: {m.group(0)!r}")
             elif delta != pin:
                 failures.append(f"heap-allocations-per-syscall: a kernel entry read {delta}, not 0: {m.group(0)!r}")
+        # WS-UC UC1: every kind the retype's decode accepts has a carve
+        # scenario and a delete of the carved capability, both pinned.  The
+        # kinds come from the decode (`retype_object_kinds.lean`), each
+        # constructor's name in kebab case, as the driver names a carve.  The
+        # relation is read off the log in order: a first-call carve of the kind
+        # names its object id and its capability's slot; the first delete of
+        # that slot after it, with no other carve into the slot between, is
+        # its delete; and the steady-state run of the same carve succeeded at
+        # the same id afterwards, which a store still holding the object would
+        # have refused, so the delete retired it.
+        kinds = []
+        derived = os.environ.get("RETYPE_OBJECT_KINDS", "")
+        if os.environ.get("RETYPE_OBJECT_KINDS_STATUS", "1") != "0":
+            failures.append(f"heap-allocations-per-syscall: the retype's object kinds could not be derived: {derived!r}")
+        else:
+            for line in derived.split("\n"):
+                if not line.strip():
+                    continue
+                m = re.fullmatch(r"(\d+) SeLe4n\.Model\.KernelObjectType\.([a-zA-Z]+)", line.strip())
+                if m is None:
+                    failures.append(f"heap-allocations-per-syscall: an object kind line the gate cannot read: {line!r}")
+                    continue
+                kinds.append(re.sub(r"([A-Z])", lambda c: "-" + c.group(1).lower(), m.group(2)))
+            if not kinds:
+                failures.append("heap-allocations-per-syscall: the retype's decode answered no object kind")
+        carve_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+)/\d+ at (\d+) into (0x[0-9a-f]+/\d+)$")
+        delete_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: deleted (0x[0-9a-f]+/\d+)$")
+        events = []
+        for line in lines:
+            m = carve_re.fullmatch(line)
+            if m:
+                events.append(("carve", m.group(1), m.group(2) is not None, m.group(3), m.group(4), m.group(5)))
+                continue
+            m = delete_re.fullmatch(line)
+            if m:
+                events.append(("delete", m.group(1), m.group(2) is not None, None, None, m.group(3)))
+        for kind in kinds:
+            carved_by = []
+            deleted_by = []
+            for i, (what, name, first, k, oid, slot) in enumerate(events):
+                if what != "carve" or k != kind or not first or name not in expected:
+                    continue
+                steady = next((j for j in range(i + 1, len(events))
+                               if events[j][:3] == ("carve", name, False) and events[j][4] == oid), None)
+                if steady is None:
+                    continue
+                carved_by.append(name)
+                for j in range(i + 1, steady):
+                    e = events[j]
+                    if e[0] == "carve" and e[5] == slot:
+                        break
+                    if e[0] == "delete" and e[5] == slot:
+                        if e[2] and e[1] in expected:
+                            deleted_by.append(e[1])
+                        break
+            if not carved_by:
+                failures.append(f"heap-allocations-per-syscall: the retype can carve {kind}, and no pinned scenario carves it in both runs")
+            elif not deleted_by:
+                failures.append(f"heap-allocations-per-syscall: no pinned scenario deletes a carved {kind}'s capability before its carve runs again")
+
         # WS-ZA ZA6.1: each core's first entry, its bring-up reschedule, read
         # once per core (the boot core's after boot, each secondary's as it
         # comes up), each a delta of zero.

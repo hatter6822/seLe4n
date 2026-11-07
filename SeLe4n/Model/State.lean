@@ -1381,6 +1381,17 @@ structure SystemState where
       (`SystemState.with_shootdownOpsSpare`), read by no theorem. -/
   shootdownOpsSpare : Squash (List SeLe4n.Kernel.Architecture.TlbInvalidation) :=
     Squash.mk []
+  /-- WS-UC UC1: **the descriptor cells the last ASID round's drain retired** —
+      `shootdownDescriptorSpare`'s counterpart for an ASID round (`.aside1`,
+      the round a VSpace root's final delete posts), held apart because a page
+      descriptor's operand cell cannot hold an ASID operand nor the reverse.
+      Logically one value (`SystemState.with_shootdownAsidDescriptorSpare`). -/
+  shootdownAsidDescriptorSpare : Squash (List SeLe4n.Kernel.Architecture.TlbShootdownDescriptor) :=
+    Squash.mk []
+  /-- WS-UC UC1: `shootdownOpsSpare`'s counterpart for an ASID round's operand
+      list.  Logically one value (`SystemState.with_shootdownAsidOpsSpare`). -/
+  shootdownAsidOpsSpare : Squash (List SeLe4n.Kernel.Architecture.TlbInvalidation) :=
+    Squash.mk []
   /-- WS-SM SM7.C.1: per-core TLB model — every core's independently
       cached address-translation view.
 
@@ -2016,6 +2027,8 @@ instance : Inhabited SystemState where
     tlbShootdown := SeLe4n.Kernel.Architecture.TlbShootdownState.initial
     shootdownDescriptorSpare := Squash.mk []
     shootdownOpsSpare := Squash.mk []
+    shootdownAsidDescriptorSpare := Squash.mk []
+    shootdownAsidOpsSpare := Squash.mk []
     -- WS-SM SM7.C.1: every core's TLB view starts empty (no stale
     -- translations at boot).  Explicit listing pins the default-state
     -- invariant so `default_perCoreTlb` discharges via
@@ -2167,6 +2180,24 @@ replacing it leaves the state as it is. -/
 theorem SystemState.with_shootdownOpsSpare (st : SystemState)
     (v : Squash (List SeLe4n.Kernel.Architecture.TlbInvalidation)) :
     { st with shootdownOpsSpare := v } = st := by
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  exact Subsingleton.elim _ _
+
+/-- WS-UC UC1: a state's ASID-round descriptor spare is logically one value —
+replacing it leaves the state as it is. -/
+theorem SystemState.with_shootdownAsidDescriptorSpare (st : SystemState)
+    (v : Squash (List SeLe4n.Kernel.Architecture.TlbShootdownDescriptor)) :
+    { st with shootdownAsidDescriptorSpare := v } = st := by
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  exact Subsingleton.elim _ _
+
+/-- WS-UC UC1: a state's ASID-round operand spare is logically one value —
+replacing it leaves the state as it is. -/
+theorem SystemState.with_shootdownAsidOpsSpare (st : SystemState)
+    (v : Squash (List SeLe4n.Kernel.Architecture.TlbInvalidation)) :
+    { st with shootdownAsidOpsSpare := v } = st := by
   cases st
   simp only [SystemState.mk.injEq, and_true, true_and]
   exact Subsingleton.elim _ _
