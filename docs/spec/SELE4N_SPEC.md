@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.1` (`lakefile.toml`) |
+| **Package version** | `0.37.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 598,988 across 591 Lean files |
 | **Test LoC** | 88,884 across 70 Lean test suites |
@@ -4988,6 +4988,15 @@ reschedule and teardown invariants (`retireFinalObject_preserves_ipcInvariantFul
 `retireFinalObject_preserves_teardownWellFormed`), all through the retire's
 touched-key frame (`finalRetireWrite.touched`).  The compiled retire erases the
 object's entry, index and type rows in place (`retireCarvedObject_eq_impl`).
+Since `v0.37.2` (WS-UC UC1) that includes a VSpace root: its ASID then leaves
+the ASID table with its invalidation recorded (`withAsidReleased`), and its
+`.aside1` round is written over an ASID-round spare
+(`SystemState.shootdownAsidDescriptorSpare` and `shootdownAsidOpsSpare`, seeded
+at boot; `tlbShootdownBroadcastAsid_eq`, `asidReleaseRound_eq_impl`), as a page
+round is written over the page spare.  Before, the root ran the specification's
+body over one shared state, so each table it erased was copied whole: 1810
+heap cells per root deleted.  The allocation exerciser now reads 0 for the
+root's delete and for a child untyped's.
 
 **Quiescent passive kinds and the space-slot replace** (`v0.36.133`).  The
 retire also takes an endpoint, a notification, a reply or a CNode whose final
@@ -6749,6 +6758,13 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   one table at a time (`storeFresh`) and the capability is written over the
   slot's record (`CNode.insertObjectCap`), so a retype allocates only the new
   object's own cells, as seL4 charges the object to its untyped.
+  Since `v0.37.2` (WS-UC UC1) the allocation exerciser pins each kind's cells
+  and their bytes (`carve_cells`, `scripts/qemu_exerciser_lib.sh`).  Every
+  carve's cells include 5 bookkeeping cells (120 bytes: the index row, the
+  index set and the type table), the object-table entry (2 cells, 48 bytes) and
+  the child record (2 cells, 56 bytes); the per-kind table is
+  `docs/planning/UNTYPED_BACKED_CELLS_PLAN.md` §5.  The kinds the gate holds to
+  a carve and a delete are derived from `decodeUntypedRetypeArgs`.
 - **Child untypeds** (`v0.36.8`, BP7.1 slice 4a): MR0 carries the object's
   size as a power of two in bits `[8, 64)` beside the type tag (seL4's
   `size_bits`); `carveRequestOf?` accepts `.frame` at size `0` and `.untyped`

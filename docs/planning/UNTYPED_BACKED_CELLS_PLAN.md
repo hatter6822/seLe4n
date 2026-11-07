@@ -1,7 +1,7 @@
 # WS-UC — Untyped-backed object cells
 
 > **Workstream**: WS-UC (a carved object's cells in its untyped's memory).
-> **Status**: **PLANNED** — registered at `v0.37.1`; no row started.
+> **Status**: **ACTIVE** — registered at `v0.37.1`; UC1 landed at `v0.37.2`.
 > **Baseline**: the tree at `v0.37.0` (WS-ZA closed, ZA6.37). Every
 > `file:line` below was re-read against it.
 > **Closes**: the `docs/REGISTERED_DEBT.md` row "Only the retype checks the
@@ -60,9 +60,11 @@ Each fact is stated once, here, and the rows cite it by its letter.
 - **F3. The pins.** `scripts/qemu_exerciser_lib.sh:241-243` pins each carve's
   cell count (the `v0.37.0` counts are §5's baseline column). They cover the object's own cells, its
   entries in the object, index-set and type tables, its index row, and its
-  child record (`:233-236`). **No VSpace-root or child-untyped carve is
-  measured** (`carved_kind`, `rust/sele4n-hal/src/smp_exercisers.rs:7432-7446`,
-  names both, but no scenario carves either).
+  child record (`:233-236`). At `v0.37.0` no VSpace-root or child-untyped
+  carve was measured (`carved_kind`, `rust/sele4n-hal/src/smp_exercisers.rs`,
+  named both, but no scenario carved either). UC1 adds both, a byte pin beside
+  each cell pin, and the derived check that every kind the decode accepts is
+  carved and deleted.
 - **F4. Ranges are owned by address.** A carve through a capability with no
   derivation child starts at 0 (`retypeFreeIndex`, `ScrubAndUntyped.lean:223`).
   That carve is refused while the untyped records a child (`:232-234`). A
@@ -131,24 +133,51 @@ the row does not name stays as it was**. The pins have one site,
 `scripts/qemu_exerciser_lib.sh`'s `carve_cells`, and each row that moves a pin
 rewrites it there.
 
-### UC1 — Measure each carve
+### UC1 — Measure each carve — **LANDED `v0.37.2`**
 
 - **Work.**
   - Make each carve print the bytes of each cell it allocates, by size, next to
-    its cell count. This is a reading only; behaviour does not change.
+    its cell count. This is a reading only; behaviour does not change. *Done:*
+    the heap keeps each core's latest 64 allocation sizes by allocation number
+    (`kernel_allocation_sizes_on`, `rust/sele4n-hal/src/lean_heap.rs`), and
+    every reading line ends `bytes=<n> sizes=<size>x<count>,…`. The gate holds
+    the sizes to the counted cells and the bytes to the sizes, and refuses an
+    unrecorded window.
   - Add the two kinds no scenario carves (F3), `untyped-retype-vspace-root` and
-    `untyped-retype-untyped`, each with its own cell pin.
+    `untyped-retype-untyped`, each with its own cell pin, and the delete of each
+    one's capability (`vspace-root-delete`, `child-untyped-delete`).
   - Add a byte pin beside each cell pin in `carve_cells`.
+  - **The kind coverage is derived.** The gate takes the kinds an untyped
+    retype can name from the retype's own decode (`decodeUntypedRetypeArgs`,
+    run by `scripts/retype_object_kinds.lean`). It holds each kind to a pinned
+    carve scenario and to a pinned delete of that carve's capability: the first
+    delete of the carve's slot before its steady-state carve succeeds again at
+    the same id. A failed or empty derivation fails the gate. Tested by
+    breaking the relation (a dropped delete line, a delete of another slot, a
+    steady carve at another id): each fails.
+  - **Fixed on the way: a VSpace root's final delete read 1810 heap cells.**
+    `retireCarvedObjectImpl` ran the specification's body for a root, whose
+    every field read one shared state. So each table it erased was copied whole,
+    and every shifted entry and index cell was rebuilt. It now erases one table
+    at a time in place and then releases the ASID (`withAsidReleased`). Its ASID
+    round writes over an ASID-round spare, as a page round writes over the page
+    spare (`tlbShootdownBroadcastAsid`, `asidReleaseRoundImpl`, and the
+    `shootdownAsid*Spare` fields seeded at boot). Proofs:
+    `retireCarvedObject_eq_impl`, `tlbShootdownBroadcastAsid_eq`,
+    `asidReleaseRound_eq_impl`. The delete now reads 0.
 - **Cells.** Measures every cell of every carve. Breaks each pin down into four
   groups: object cells, the bookkeeping (the index row, the index set and the
-  type table), the object-table entry, and the child record.
-- **Measures the design's two inferences**, which stay **unmeasured** until this
-  row lands:
-  - that an endpoint's 11 cells are about 2 object cells plus 9 store cells;
-  - that the ghosts of UC2 remove 5 cells from every carve.
+  type table), the object-table entry, and the child record (§5).
+- **Measured the design's two inferences.** Both hold:
+  - an endpoint's 11 cells are 2 object cells plus 9 store cells;
+  - the ghosts of UC2 remove 5 cells (120 bytes) from every carve.
 - **Acceptance.**
   - The 8 existing pins are unchanged.
-  - The two new kinds read their new pins.
+  - The two new kinds read their new pins: VSpace root 14 cells and
+    376 bytes, child untyped 12 cells and 304 bytes.
+  - `vspace-root-delete` and `child-untyped-delete` read 0, at first call and
+    in steady state.
+  - Every kind the decode accepts has a pinned carve and a pinned delete.
   - §5's table is filled in from this reading.
   - Every other reading stays 0.
 
@@ -181,8 +210,8 @@ rewrites it there.
   `objects.size = maxObjects − 1`, which succeeds. The carve after it is refused
   with `objectStoreCapacityExceeded` before any write.
 - **Acceptance.**
-  - Each carve's pin falls by the ghost cells UC1 measured (endpoint 11 → 6 if
-    the inference holds).
+  - Each carve's pin falls by the 5 ghost cells (120 bytes) UC1 measured
+    (endpoint 11 → 6, 368 → 248 bytes).
   - Every other reading stays 0.
 
 ### UC3 — Pre-size the object and ASID tables at boot (D4)
@@ -393,21 +422,34 @@ rewrites it there.
 
 ## 5. The per-kind byte table (filled by UC1)
 
-The cell counts are the pins at `v0.37.0` (F3). Bytes and the breakdown are
-**unmeasured** until UC1.
+Measured at `v0.37.2` on QEMU `virt`, against a fresh archive. Two untraced runs
+agree, and a traced run's counts equal them. Each group is cells / bytes,
+attributed by disassembling the traced image.
 
 | Kind | Cells | Bytes | Object | Ghost tables | Entry | Child record |
 |------|------:|------:|-------:|-------------:|------:|-------------:|
-| endpoint/0 | 11 | — | — | — | — | — |
-| notification/0 | 11 | — | — | — | — | — |
-| reply/0 | 15 | — | — | — | — | — |
-| tcb/0 | 24 | — | — | — | — | — |
-| sched-context/7 | 13 | — | — | — | — | — |
-| cnode/2 | 28 | — | — | — | — | — |
-| frame/0 | 11 | — | — | — | — | — |
-| page-table/0 | 13 | — | — | — | — | — |
-| vspace-root | — | — | — | — | — | — |
-| untyped | — | — | — | — | — | — |
+| endpoint/0 | 11 | 368 | 2 / 144 | 5 / 120 | 2 / 48 | 2 / 56 |
+| notification/0 | 11 | 360 | 2 / 136 | 5 / 120 | 2 / 48 | 2 / 56 |
+| reply/0 | 15 | 376 | 6 / 152 | 5 / 120 | 2 / 48 | 2 / 56 |
+| tcb/0 | 24 | 2160 | 15 / 1936 | 5 / 120 | 2 / 48 | 2 / 56 |
+| sched-context/7 | 13 | 560 | 4 / 336 | 5 / 120 | 2 / 48 | 2 / 56 |
+| cnode/2 | 28 | 1248 | 19 / 1024 | 5 / 120 | 2 / 48 | 2 / 56 |
+| frame/0 | 11 | 272 | 2 / 48 | 5 / 120 | 2 / 48 | 2 / 56 |
+| page-table/0 | 13 | 352 | 4 / 128 | 5 / 120 | 2 / 48 | 2 / 56 |
+| vspace-root/0 | 14 | 376 | 3 / 104 | 5 / 120 | 2 / 48 + 2 / 48 ASID entry | 2 / 56 |
+| untyped/12 | 12 | 304 | 3 / 80 | 5 / 120 | 2 / 48 | 2 / 56 |
+
+- **Ghost tables** (UC2): the index row's cons cell (24 B), and a `some` cell
+  (16 B) and an `RHEntry` (32 B) in each of the index-set and type tables
+  (`withObjectIndexed`, `withObjectIndexSet`, `withObjectType`).
+- **Entry**: the object table's `some` cell and `RHEntry` (`withObjectInserted`).
+  A VSpace root also has an entry of the same shape in the ASID table
+  (`withAsidRegistered`).
+- **Child record**: a 24 B cell and a 32 B cell built in the untyped's update
+  (`storeUntypedWith`).
+- **Object**: the kernel-object cell (16 B) and what the kind is built of. A
+  VSpace root's empty mapping table costs no cell at its carve: it is a shared
+  constant (F5; UC8 decides where its first cells go).
 
 ## 6. The seL4 behaviours this follows
 
