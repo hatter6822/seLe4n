@@ -878,12 +878,12 @@ theorem unknownSyscallEntryState_preserves_blockedNotResident (lctx : LabelingCo
     · unfold unknownSyscallEntryStep
       rw [dif_pos h]
       split
-      · exact faultEntryDeliver_stepCovers lctx _ _ ectx w _ hInvS
+      · exact faultEntryDeliver_stepCovers lctx _ _ (unknownSyscallContext ectx) w _ hInvS
       · exact stepCovers_refl _ _
     · unfold unknownSyscallEntryStep
       rw [dif_pos h]
       split
-      · exact (faultEntryDeliver_readyKeptStage lctx _ _ ectx w _ ES.endpointHeads
+      · exact (faultEntryDeliver_readyKeptStage lctx _ _ (unknownSyscallContext ectx) w _ ES.endpointHeads
             fun _ h => (ES.dequeued.runnable h).activeAt).mono
           fun t ht => by rwa [saveCapturedSyscallFrameAt_scheduler] at ht
       · exact .refl _

@@ -6363,15 +6363,20 @@ struct FaultRestart {
 /// The restart of fault kind `kind`: a VM or capability fault resumes its own
 /// context whatever the reply says; an unknown syscall takes the reply's first
 /// word as `x0`; a user exception takes it as its PC.  The PC a restart keeps
-/// is the fault IP the model recorded: a capability fault's is the `SVC`
-/// itself, one instruction before the `ELR_EL1` its trap saved, so the reply
-/// re-issues the syscall (`svcFaultIP`, seL4's retry of `handleInvocation`);
-/// an unknown syscall's is that `ELR_EL1`, the instruction after the `SVC`
-/// (`unknownSyscallEntryStep`), so an emulating reply continues past it.
+/// is the fault IP the model recorded, seL4's `FaultIP`: a VM fault's is the
+/// faulting instruction (the abort's `ELR_EL1`), and a fault an `SVC` raised
+/// (the capability fault and the unknown syscall) records the `SVC` itself,
+/// one instruction before the `ELR_EL1` its trap saved (`svcFaultIP`, as seL4's
+/// `lel_syscall` stores `ELR - 4`).  A reply that leaves the PC alone
+/// therefore re-issues the syscall; these replies carry no PC word.
 #[cfg(feature = "hw_target")]
 const fn fault_restart(kind: usize) -> FaultRestart {
     let trip = fault_trip(kind, "");
-    let restart_pc = if kind == 2 { trip.elr - 4 } else { trip.elr };
+    let restart_pc = if kind == 2 || kind == 3 {
+        trip.elr - 4
+    } else {
+        trip.elr
+    };
     match kind {
         3 => FaultRestart {
             pc: restart_pc,

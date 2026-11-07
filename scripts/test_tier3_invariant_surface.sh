@@ -5269,6 +5269,12 @@ run_check "INVARIANT" rg -n -U '^    if captured\.is_none\(\) \{\n        crate:
 run_check "INVARIANT" rg -n '^          \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^          let st := Architecture\.saveCapturedTrapFrame st0 c \(some frame\)\n          let pending0 := reschedulePendingSnapshot st\n          let mid := faultEntryStepState lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^          let st := Architecture\.saveCapturedSyscallFrame st0 c \(some frame\)\n          let pending0 := reschedulePendingSnapshot st\n          let mid := unknownSyscallEntryStepState lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
+# An unknown syscall's restart PC is the SVC itself, seL4's FaultIP (lel_syscall
+# stores ELR - 4 for every SVC): the specification delivers through the
+# rewound context and the compiled step hands the delivery the rewound word.
+run_check "INVARIANT" rg -n '^def unknownSyscallContext \(ectx : ExceptionContext\) : ExceptionContext :=$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U 'faultEntryDeliverState lctx st \(\.unknownSyscall \(w\.gprAt 7\)\) \(unknownSyscallContext ectx\) w$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U 'faultEntryDeliverWords lctx st 3 false w\.x7 0 \.invalidCapability\n        \(Platform\.FFI\.svcFaultIP ectx\.elr\) ectx\.spsr w ' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^        let mid := \(\(rescheduleBracket coreId\)\.run \(Architecture\.saveCapturedTrapFrame st c frame\)\)\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 # v0.36.40: a trap on a core another core vacated (a remote suspend cleared the
 # slot while its thread still ran here) dispatches a successor rather than

@@ -81,6 +81,21 @@ or abandoned.  The receive leg runs unchanged.
   ten are in the pinned scenario set under the zero rule.  The fault reply's
   leg on the donated and unheld shapes (`storeFaultReplyLeg`) is registered
   with the reply-stack write census by its chain theorem.
+- **An unknown syscall restarts at its `SVC`, as in seL4.**  The model
+  recorded the instruction after the `SVC` (its `ELR_EL1`) as an unknown
+  syscall's restart PC, so a reply with no PC word continued past the call.
+  seL4's `lel_syscall` stores `ELR - 4` as `FaultIP` for every `SVC`, and a
+  restarted thread resumes at `getRestartPC`.  `unknownSyscallEntryStep` now
+  delivers through `unknownSyscallContext` (the `Platform.FFI.svcFaultIP` rule
+  the capability fault uses), and the compiled step hands the delivery the same
+  word.  Every proof over the step is restated over the rewound context.  A reply
+  that keeps the PC re-issues the syscall, and an emulating handler advances
+  MR8.  `FaultHandlingSuite` §6f checks that MR8 and the recorded fault IP are
+  the `SVC`, that a payload-free reply restarts there, and that an MR8-advancing
+  reply continues after it.  The exerciser's `unknown-syscall-*` restart checks
+  expect the `SVC`.  VM faults and user exceptions already record the faulting
+  instruction, as seL4 does.  No fixture changes: the 4-core fault trace prints
+  no restart PC.
 - **Tests.**  `tests/FaultHandlingSuite.lean` §7g delivers a fault, has the
   handler answer with `ReplyRecv` through the compiled syscall entry, and
   checks that the fault record is cleared, the restart applied and the

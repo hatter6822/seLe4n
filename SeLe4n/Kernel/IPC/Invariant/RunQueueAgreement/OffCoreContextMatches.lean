@@ -961,9 +961,9 @@ theorem unknownSyscallEntryStep_offCoreFrames (lctx : LabelingContext) (S : Syst
   unfold unknownSyscallEntryStep
   rw [dif_pos hlt]
   split
-  · exact ⟨faultEntryDeliver_stepCovers lctx S _ ectx w _ E.objInv,
-      faultEntryDeliver_currentSavedRegsKeptOffCore lctx S _ ectx w _ E hRT hBNR hN,
-      faultEntryDeliver_preserves_objects_invExt lctx S _ ectx w _ E.objInv⟩
+  · exact ⟨faultEntryDeliver_stepCovers lctx S _ (unknownSyscallContext ectx) w _ E.objInv,
+      faultEntryDeliver_currentSavedRegsKeptOffCore lctx S _ (unknownSyscallContext ectx) w _ E hRT hBNR hN,
+      faultEntryDeliver_preserves_objects_invExt lctx S _ (unknownSyscallContext ectx) w _ E.objInv⟩
   · exact ⟨stepCovers_refl _ S, currentSavedRegsKeptOffCore_refl _ S, E.objInv⟩
 
 /-- WS-ZA ZA6.28: **the unknown-syscall entry keeps every other core's bank

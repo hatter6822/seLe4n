@@ -1136,8 +1136,14 @@ private def runUnknownSyscallChecks : IO Unit := do
           assertBool "the message is thirteen words" (km.registers.size == 13)
           assertBool "MR0-MR7 are the trap frame's argument window"
             ((List.range 8).all (fun i => wordAt km.registers i == trapWindow.gprAt i))
-          assertBool "MR8 is the restart PC — the instruction after the SVC"
-            (wordAt km.registers 8 == svcCtx.elr)
+          -- seL4's `FaultIP` for every `SVC` is the `SVC` itself (`lel_syscall`
+          -- stores `ELR - 4`), so a restart with no words re-issues the call
+          -- and an emulating handler advances the PC in MR8.
+          assertBool "MR8 is the restart PC — the SVC itself, one instruction before ELR"
+            (wordAt km.registers 8 == svcCtx.elr - 4 &&
+              wordAt km.registers 8 == SeLe4n.Platform.FFI.svcFaultIP svcCtx.elr)
+          assertBool "the recorded fault IP is the SVC, not the instruction after it"
+            (pf.context.faultIP == svcCtx.elr - 4)
           assertBool "MR9 is SP_EL0 and MR10 is the link register, from the trap frame"
             (wordAt km.registers 9 == trapWindow.sp && wordAt km.registers 10 == trapWindow.lr)
           assertBool "MR12 is the syscall number" (wordAt km.registers 12 == 0x18)
@@ -1158,15 +1164,33 @@ private def runUnknownSyscallChecks : IO Unit := do
         (sgis == [(c1, SgiKind.reschedule)])
       assertBool "the thread that issued the unknown syscall is not dispatchable on core 0"
         (!dispatchableOn stU faulter c0)
-      -- A payload-free reply — "emulated, continue" — resumes after the SVC.
+      -- A payload-free reply keeps seL4's `FaultIP`, the SVC itself, so the
+      -- thread re-issues the syscall (seL4: `activateThread` resumes a
+      -- `Restart` thread at `getRestartPC`).
       match faultReplyOnCore handler faulter resumeInfo #[] c1 stU with
       | (stR, .ok (outcome, _)) =>
-          assertBool "an emulating handler's payload-free reply continues after the SVC"
-            (outcome.restartPC? == some svcCtx.elr && savedPcOf stR faulter == some svcCtx.elr.toNat)
+          assertBool "a payload-free reply restarts the thread at the SVC, re-issuing it"
+            (outcome.restartPC? == some (svcCtx.elr - 4) &&
+              savedPcOf stR faulter == some (svcCtx.elr - 4).toNat)
           assertBool "…with the argument window the thread had at the trap"
             ((List.range 8).all (fun i =>
               (stR.getTcb? faulter).map (·.registerContext.gpr ⟨i⟩ |>.val) ==
                 some (trapWindow.gprAt i).toNat))
+      | (_, .error e) =>
+          assertBool s!"the payload-free reply must succeed (got {repr e})" false
+      -- An emulating handler advances the PC itself: MR8 is the instruction
+      -- after the SVC, and the thread continues there.
+      let emulateRegs : Array SeLe4n.RegValue :=
+        (Array.range 11).map (fun i =>
+          if i == 8 then SeLe4n.RegValue.ofNat svcCtx.elr.toNat
+          else if i == 9 then SeLe4n.RegValue.ofNat trapWindow.sp.toNat
+          else if i == 10 then SeLe4n.RegValue.ofNat trapWindow.lr.toNat
+          else SeLe4n.RegValue.ofNat (trapWindow.gprAt i).toNat)
+      match faultReplyOnCore handler faulter { length := 11, extraCaps := 0, label := 0 }
+          emulateRegs c1 stU with
+      | (stR, .ok (outcome, _)) =>
+          assertBool "an emulating reply that advances MR8 continues after the SVC"
+            (outcome.restartPC? == some svcCtx.elr && savedPcOf stR faulter == some svcCtx.elr.toNat)
       | (_, .error e) =>
           assertBool s!"the emulating reply must succeed (got {repr e})" false
       -- An SVC issued at EL1 is a kernel bug, not a user fault.

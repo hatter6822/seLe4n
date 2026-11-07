@@ -351,7 +351,7 @@ theorem unknownSyscallEntryState_preserves_yieldLinkedNotResident (lctx : Labeli
     unfold unknownSyscallEntryStep
     rw [dif_pos h]
     split
-    · exact (faultEntryDeliver_stepCovers lctx _ _ ectx w _ hSv.1).currentKept
+    · exact (faultEntryDeliver_stepCovers lctx _ _ (unknownSyscallContext ectx) w _ hSv.1).currentKept
     · exact currentKeptOffCore_refl _ _
   · intro hc
     unfold unknownSyscallEntryStep

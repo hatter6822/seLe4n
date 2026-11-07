@@ -381,7 +381,7 @@ theorem unknownSyscallEntryState_preserves_residentsHaveTcbs (lctx : LabelingCon
     unfold unknownSyscallEntryStep
     rw [dif_pos h]
     split
-    · exact faultEntryDeliver_stepCovers lctx _ _ ectx w _ hInvS
+    · exact faultEntryDeliver_stepCovers lctx _ _ (unknownSyscallContext ectx) w _ hInvS
     · exact stepCovers_refl _ _
   · intro hc
     unfold unknownSyscallEntryStep

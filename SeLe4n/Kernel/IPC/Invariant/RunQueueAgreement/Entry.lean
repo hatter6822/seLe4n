@@ -675,7 +675,7 @@ theorem unknownSyscallEntryStep_runQueueEntryStage (lctx : LabelingContext) (st 
   unfold unknownSyscallEntryStep
   split
   · split
-    · exact faultEntryDeliver_runQueueEntryStage lctx st _ ectx w _ E
+    · exact faultEntryDeliver_runQueueEntryStage lctx st _ (unknownSyscallContext ectx) w _ E
     · exact (RunQueueStage.refl _).entry
   · exact (RunQueueStage.refl _).entry
 
