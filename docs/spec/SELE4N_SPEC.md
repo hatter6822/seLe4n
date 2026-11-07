@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.206` (`lakefile.toml`) |
+| **Package version** | `0.37.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 590,152 across 559 Lean files |
 | **Test LoC** | 88,903 across 70 Lean test suites |
@@ -10354,8 +10354,12 @@ with `teardownWellFormed`, `faultRecordParked` and the physical-address width
 bound), which the started boot establishes
 (`bootFromPlatformCheckedStartedFor_kernelRecordsSound`) and every committing
 entry keeps (`RecordsStage`; `KernelRecords/Entry.lean` and
-`syscallDispatchEntryState_recordsStage`), from `ipcReachable` and the caller's
-readiness at the dispatch state.
+`syscallDispatchEntryState_recordsStage` in `KernelRecords/SyscallEntry.lean`,
+each entry closed on the records as `*_preserves_kernelRecordsSound`), from
+`ipcReachable` and the caller's readiness at the dispatch state.  The
+dispatcher's traversal covers every arm: the reply-receive keeps the records
+over the in-place fault answer and the ordinary reply alike
+(`RecordsStage.replyRecvTransferOnCore`).
 
 **Operations**:
 - `computeMaxWaiterPriority`: maximum effective priority among direct waiters
