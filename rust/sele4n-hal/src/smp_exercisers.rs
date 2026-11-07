@@ -2290,6 +2290,12 @@ const FINALISED_CHILD_IDS: [u64; 3] = [24, 25, 26];
 /// and retired by its only capability's delete.
 #[cfg(feature = "hw_target")]
 const THREAD_CHILD_IDS: [u64; 6] = [27, 28, 29, 30, 31, 32];
+/// The ids a VSpace root and a child untyped are carved at, each retired by
+/// its only capability's delete before the untyped's reset.
+#[cfg(feature = "hw_target")]
+const VSPACE_ROOT_CHILD_ID: u64 = 38;
+#[cfg(feature = "hw_target")]
+const UNTYPED_CHILD_ID: u64 = 39;
 /// `KernelObjectType` tags of a thread and a scheduling context, the context's
 /// size bits (7: the least the carve takes) in the tag word's upper bits.
 #[cfg(feature = "hw_target")]
@@ -2312,6 +2318,13 @@ const CNODE_TYPE: u64 = 3 + (2 << 8);
 const FRAME_TYPE: u64 = 8;
 #[cfg(feature = "hw_target")]
 const PAGE_TABLE_TYPE: u64 = 9;
+/// `KernelObjectType` tags of a VSpace root (one page, size bits 0) and a
+/// child untyped, its size bits (12, one page: `minUntypedSizeBits`) in the
+/// tag word's upper bits.
+#[cfg(feature = "hw_target")]
+const VSPACE_ROOT_TYPE: u64 = 4;
+#[cfg(feature = "hw_target")]
+const UNTYPED_TYPE: u64 = 5 + (12 << 8);
 /// The root task's ASID and the user address the frame is mapped at: the
 /// first page of the user window (`VAddr.userWindowBase`, 2^39), whose walk
 /// the three page tables complete.
@@ -4401,6 +4414,39 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
+        // WS-UC UC1: the two kinds no other scenario carves, each carved and
+        // its only capability deleted, which retires it: a VSpace root (one
+        // page, its top-level table, under the least free ASID) and a child
+        // untyped of one page (seL4's `Untyped_Retype` to an untyped).
+        invocation(
+            "untyped-retype-vspace-root",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                VSPACE_ROOT_TYPE,
+                VSPACE_ROOT_CHILD_ID,
+                CNODE_CAP,
+                FRAME_SLOT,
+            ],
+        ),
+        invocation(
+            "vspace-root-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-untyped",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [UNTYPED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "child-untyped-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
         invocation("untyped-reset", UNTYPED_RESET, UNTYPED_CAP, [0; 4]),
     ],
 ];
@@ -5384,22 +5430,48 @@ fn window_ticks_since(start: u64) -> u64 {
     WINDOW_TICKS[1].load(Ordering::Relaxed).wrapping_sub(start)
 }
 
-/// The reading of one measured entry, and the ticks of its window (from
-/// `start`, [`window_start`]) on a line of its own (`entry-ticks`, which the
-/// host-side gate does not read).
+/// The bytes of a reading's allocations, by size, as its line prints them:
+/// `bytes=<total> sizes=<size>x<count>,…` ascending, `sizes=none` for an
+/// empty window, and `unrecorded` for both when the heap's size record no
+/// longer holds the whole window ([`crate::lean_heap::RECORDED_ALLOCATIONS`]),
+/// which the host-side gate refuses.
 #[cfg(feature = "hw_target")]
-fn print_reading(
-    name: &str,
-    core: impl core::fmt::Display,
-    which: &str,
-    before: u64,
-    after: u64,
-    start: u64,
-) {
+struct ReadingBytes(Option<crate::lean_heap::AllocationSizes>);
+
+#[cfg(feature = "hw_target")]
+impl core::fmt::Display for ReadingBytes {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let Some(window) = &self.0 else {
+            return f.write_str("bytes=unrecorded sizes=unrecorded");
+        };
+        write!(f, "bytes={} sizes=", window.bytes())?;
+        let (groups, n) = window.by_size();
+        if n == 0 {
+            return f.write_str("none");
+        }
+        for (i, (size, count)) in groups[..n].iter().enumerate() {
+            let sep = if i == 0 { "" } else { "," };
+            write!(f, "{sep}{size}x{count}")?;
+        }
+        Ok(())
+    }
+}
+
+/// The reading of one measured entry — its cells, and their bytes by size
+/// beside the count (WS-UC UC1) — and the ticks of
+/// its window (from `start`, [`window_start`]) on a line of its own
+/// (`entry-ticks`, which the host-side gate does not read).
+#[cfg(feature = "hw_target")]
+fn print_reading(name: &str, core: usize, which: &str, before: u64, after: u64, start: u64) {
     let ticks = window_ticks_since(start);
+    let bytes = ReadingBytes(
+        crate::lean_heap::kernel_allocation_sizes_on(core, before, after)
+            .ok()
+            .flatten(),
+    );
     crate::kprintln!(
         "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
-         delta={}",
+         delta={} {bytes}",
         after - before
     );
     crate::kprintln!(
@@ -6145,7 +6217,7 @@ fn heap_allocations_kernel_entry(entry: &KernelEntry, which: &str) -> Option<boo
         );
         return Some(false);
     }
-    print_reading(name, core, which, before, after, window_start());
+    print_reading(name, core as usize, which, before, after, window_start());
     Some(true)
 }
 
@@ -6480,7 +6552,7 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
         );
         return Some(false);
     }
-    print_reading(name, core, which, before, after, window_start());
+    print_reading(name, core as usize, which, before, after, window_start());
     Some(true)
 }
 

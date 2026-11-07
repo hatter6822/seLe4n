@@ -225,22 +225,32 @@ for driver in drivers:
         # happened once, after the round trip returned a frame or blocked as it
         # should, is a delta, and is zero, except a retype's: a retype that
         # succeeded names the object it carved (`carved <kind>/<size bits>`),
-        # and its reading must be exactly that object's own cells.
-        readings = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+)") if m.group(1) != "secondary-entry"]
+        # and its reading must be exactly that object's own cells.  Each
+        # reading also prints the bytes of the cells it counted, by size
+        # (WS-UC UC1): the sizes must account for exactly the counted cells
+        # and the bytes for exactly the sizes, and the bytes are pinned beside
+        # the cells.
+        readings = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+) bytes=(\d+|unrecorded) sizes=(none|unrecorded|\d+x\d+(?:,\d+x\d+)*)$") if m.group(1) != "secondary-entry"]
+        unparsed = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=.*$") if m.group(1) != "secondary-entry" and not re.fullmatch(r".*: before=\d+ after=\d+ delta=\d+ bytes=(\d+|unrecorded) sizes=(none|unrecorded|\d+x\d+(?:,\d+x\d+)*)", m.group(0))]
+        for m in unparsed:
+            failures.append(f"heap-allocations-per-syscall: a reading whose bytes could not be read: {m.group(0)!r}")
         returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|entered, a thread restored)$")
         carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+)$")
         names = [m.group(1) for m in readings]
-        # The cells of the object a carve makes, by kind and size bits: the
-        # object's record and the cells it is built of, its entries in the
-        # object store (the object, index-set and type tables and the index
-        # row), and its child record in the untyped.  Nothing else a retype
-        # does may allocate: not its decode, not its carve request, not the
-        # capability it writes.  Pinned here: a kind whose object changes
-        # shape changes its count, and a kind the exerciser carves that has no
-        # count fails.
+        # The cells of the object a carve makes, by kind and size bits, and
+        # their bytes: the object's record and the cells it is built of, its
+        # entries in the object store (the object, index-set and type tables
+        # and the index row), and its child record in the untyped.  Nothing
+        # else a retype does may allocate: not its decode, not its carve
+        # request, not the capability it writes.  Pinned here, cells then
+        # bytes: a kind whose object changes shape changes its pins, and a
+        # kind the exerciser carves that has no pin fails.  The breakdown of
+        # each pin is the table in docs/planning/UNTYPED_BACKED_CELLS_PLAN.md.
         carve_cells = {
-            "endpoint/0": 11, "notification/0": 11, "reply/0": 15, "tcb/0": 24,
-            "sched-context/7": 13, "cnode/2": 28, "frame/0": 11, "page-table/0": 13,
+            "endpoint/0": (11, 0), "notification/0": (11, 0), "reply/0": (15, 0),
+            "tcb/0": (24, 0), "sched-context/7": (13, 0), "cnode/2": (28, 0),
+            "frame/0": (11, 0), "page-table/0": (13, 0), "vspace-root/0": (0, 0),
+            "untyped/12": (0, 0),
         }
         # The scenario set is pinned: a round trip renamed or dropped from
         # the exerciser (smp_exercisers.rs) must change this set too, so the
@@ -259,6 +269,7 @@ for driver in drivers:
             "bind-carved-sched-context", "bind-carved-tcb", "bound-notification-delete",
             "bound-sched-context-delete", "bound-tcb-delete", "busy-endpoint-delete",
             "busy-notification-delete", "busy-reply-cap-delete", "busy-reply-delete", "call",
+            "child-untyped-delete",
             "call-to-carved-reply", "call-to-reply-receiver", "cap-fault-delivered",
             "cap-fault-delivered-to-reply", "cap-fault-plain-reply",
             "cap-fault-reply", "cap-fault-resume", "cap-fault-suspends", "chain-bind-partner",
@@ -392,7 +403,8 @@ for driver in drivers:
             "untyped-retype-stack-server", "untyped-retype-stack-server-reply",
             "untyped-retype-stack-top", "untyped-retype-stack-top-reply",
             "untyped-retype-stashed-reply", "untyped-retype-tcb", "untyped-retype-third-reply",
-            "untyped-retype-third-tcb", "untyped-retype-waited-reply",
+            "untyped-retype-third-tcb", "untyped-retype-untyped",
+            "untyped-retype-vspace-root", "untyped-retype-waited-reply",
             "upper-notification-delete", "user-exception-delivered",
             "user-exception-delivered-to-reply", "user-exception-plain-reply", "user-exception-reply",
             "user-exception-resume", "user-exception-suspends", "vm-fault-data-delivered",
@@ -403,7 +415,7 @@ for driver in drivers:
             "vm-fault-instruction-resume", "vm-fault-instruction-suspends", "vm-fault-queued",
             "vspace-map", "vspace-map-again", "vspace-map-copy", "vspace-map-moved",
             "vspace-unify-instruction", "vspace-unmap", "vspace-unmap-first",
-            "vspace-unmap-moved", "wait-blocks", "wait-on-carved", "wait-pending",
+            "vspace-root-delete", "vspace-unmap-moved", "wait-blocks", "wait-on-carved", "wait-pending",
             "waited-partner-calls", "waited-reply-cap-mint", "waited-root-waits",
             "waited-server-delete", "waited-server-receives", "waited-server-resumes-partner",
             "waited-server-waits", "waited-server-wakes-root", "waited-wake-server", "yield",
@@ -428,16 +440,30 @@ for driver in drivers:
             if key not in trips:
                 failures.append(f"heap-allocations-per-syscall: {key[0]}: a carve named with no returned round trip")
         for m in readings:
-            before, after, delta = (int(g) for g in m.groups()[2:])
+            before, after, delta = (int(g) for g in m.groups()[2:5])
             kind = carved.get((m.group(1), m.group(2) is not None))
             if kind is not None and kind not in carve_cells:
                 failures.append(f"heap-allocations-per-syscall: {m.group(1)} carved {kind}, whose cells the gate does not know: {m.group(0)!r}")
                 continue
-            pin = carve_cells[kind] if kind is not None else 0
+            pin, byte_pin = carve_cells[kind] if kind is not None else (0, 0)
             if after < before or delta != after - before:
                 failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
+                continue
+            if m.group(6) == "unrecorded" or m.group(7) == "unrecorded":
+                failures.append(f"heap-allocations-per-syscall: the heap no longer recorded the reading's sizes: {m.group(0)!r}")
+                continue
+            groups = [] if m.group(7) == "none" else [tuple(int(x) for x in g.split("x")) for g in m.group(7).split(",")]
+            sizes = [size for size, _ in groups]
+            if sizes != sorted(set(sizes)) or any(count == 0 for _, count in groups):
+                failures.append(f"heap-allocations-per-syscall: the sizes are not ascending distinct groups: {m.group(0)!r}")
+            elif sum(count for _, count in groups) != delta:
+                failures.append(f"heap-allocations-per-syscall: the sizes account for {sum(count for _, count in groups)} cells, the reading counted {delta}: {m.group(0)!r}")
+            elif sum(size * count for size, count in groups) != int(m.group(6)):
+                failures.append(f"heap-allocations-per-syscall: the bytes are not the sizes' total: {m.group(0)!r}")
             elif delta != pin and kind is not None:
                 failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {delta}, the object's own cells are {pin}: {m.group(0)!r}")
+            elif int(m.group(6)) != byte_pin and kind is not None:
+                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {m.group(6)} bytes, the object's own cells' bytes are {byte_pin}: {m.group(0)!r}")
             elif delta != pin:
                 failures.append(f"heap-allocations-per-syscall: a kernel entry read {delta}, not 0: {m.group(0)!r}")
         # WS-ZA ZA6.1: each core's first entry, its bring-up reschedule, read
