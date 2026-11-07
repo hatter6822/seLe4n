@@ -37,6 +37,33 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId
   LockKey)
 
+-- ============================================================================
+-- The answer to the replied-to caller (`replyRecvAnswerCaller`): its frames
+-- ============================================================================
+
+/-- Answering the caller preserves object-store integrity, on both answers. -/
+theorem replyRecvAnswerCaller_preserves_objects_invExt
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState)
+    (prevCaller : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    (replyRecvAnswerCaller answer st prevCaller).objects.invExt := by
+  cases answer with
+  | none => exact stageDeliveredMessage_preserves_objects_invExt _ _ _ hObjInv
+  | some outcome =>
+    cases outcome with
+    | restart frame => exact applyFaultRestart_preserves_objects_invExt _ _ _ hObjInv
+    | abandon => exact faultAbandonOnCore_preserves_objects_invExt _ _ _ hObjInv
+
+/-- Answering the caller writes no replenish queue: the staging and a restart write
+registers, an abandon deschedules. -/
+theorem replyRecvAnswerCaller_replenishQueueOnCore
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState)
+    (prevCaller : SeLe4n.ThreadId) (c : Concurrency.CoreId) :
+    (replyRecvAnswerCaller answer st prevCaller).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  cases answer with
+  | none => rw [replyRecvAnswerCaller_none, Architecture.stageDeliveredMessage_scheduler_eq]
+  | some outcome => exact faultReplyApplyOnCore_replenishQueueOnCore st prevCaller outcome c
+
 /-- The step is the identity when the holder *is* the receiver: the receive leg's
 new donation goes to `tid`, so a holder that is the receiver regains a
 reservation immediately and must stay runnable. -/
@@ -898,7 +925,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_contains_prevCaller_runQueue_write
       ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
           receiverCspaceRoot receiverSlotBase executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
-  unfold endpointReplyRecvWriteSet
+  unfold endpointReplyRecvWriteSet endpointReplyRecvAnsweringWriteSet
   exact List.mem_cons_self ..
 
 /-- **WS-RR RR8.12 Cut C2**: every core the receive leg writes — resolved at the
@@ -917,7 +944,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_receiveLeg
             receiverCspaceRoot receiverSlotBase executingCore st := by
   intro c hc
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
-  unfold endpointReplyRecvWriteSet
+  unfold endpointReplyRecvWriteSet endpointReplyRecvAnsweringWriteSet
   simp only [hReply, hPop, List.mem_cons, List.mem_append]
   exact Or.inr (Or.inl hc)
 
@@ -1285,6 +1312,7 @@ would donate.  A cut that makes that arm donate widens the segment
 the intended coupling: the footprint and the transition move together or not at
 all. -/
 theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
+    {answer : Option Architecture.FaultReplyOutcome}
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId)
@@ -1301,8 +1329,8 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
     (hPost : replyRecvPostReceiveDonation receiver ((recordedReplyServer? st prevCaller).getD receiver)
         nextThread executingCore
         none st2 = .ok ((), st3))
-    (hBody : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg receiverCspaceRoot
-        receiverSlotBase executingCore st = .ok (summary', stOut))
+    (hBody : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
+        receiverCspaceRoot receiverSlotBase executingCore st = .ok (summary', stOut))
     (c : Concurrency.CoreId) :
     stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   -- the pop hands nothing back, so it commits nothing
@@ -1331,11 +1359,11 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
   have hR3 : st3.scheduler.replenishQueueOnCore c = st2.scheduler.replenishQueueOnCore c :=
     replyRecvPostReceiveDonation_replenishQueueOnCore_of_none _ _ _ _ st2 st3 () hInv2 hPost c
   -- the body's post-state is the stagers over the hand-off over `st3`
-  unfold endpointReplyRecvOnCore at hBody
+  unfold endpointReplyRecvAnsweringOnCore at hBody
   simp only [hReply, hPop, hRecv, hPost] at hBody
   have hOut := (Prod.mk.inj (Except.ok.inj hBody)).2
   rw [← hOut, Architecture.stageWokenSendCompletion_scheduler_eq,
-    Architecture.stageDeliveredMessage_scheduler_eq]
+    replyRecvAnswerCaller_replenishQueueOnCore]
   rcases applyReceiveLegPipHandoff_cases st3 receiver nextThread
       ((recordedReplyServer? st prevCaller).getD receiver) executingCore with hH | hH
   · rw [hH, hR3, hR2, hR1]
@@ -1359,6 +1387,7 @@ composition `replyRecvHandoffReplenishCores_eq_of_legs` already names rather tha
 second reading of the arm.  The tail (the priority hand-off and the two stagers)
 writes run queues and register contexts and no replenish queue at all. -/
 theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
+    {answer : Option Architecture.FaultReplyOutcome}
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId)
@@ -1366,10 +1395,10 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
     (hObjInv : st.objects.invExt)
     (hne : c ∉ replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg
       receiverCspaceRoot receiverSlotBase executingCore st)
-    (hBody : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg receiverCspaceRoot
-        receiverSlotBase executingCore st = .ok (summary', stOut)) :
+    (hBody : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
+        receiverCspaceRoot receiverSlotBase executingCore st = .ok (summary', stOut)) :
     stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold endpointReplyRecvOnCore at hBody
+  unfold endpointReplyRecvAnsweringOnCore at hBody
   cases hReply : endpointReplyOnCore receiver prevCaller msg executingCore st with
   | mk st1 res1 =>
     rw [hReply] at hBody
@@ -1445,7 +1474,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
                   returned? st2 st3 u hInv2 hPost
               have hOut := (Prod.mk.inj (Except.ok.inj hBody)).2
               rw [← hOut, Architecture.stageWokenSendCompletion_scheduler_eq,
-                Architecture.stageDeliveredMessage_scheduler_eq]
+                replyRecvAnswerCaller_replenishQueueOnCore]
               rcases applyReceiveLegPipHandoff_cases st3 receiver nextThread
                   ((recordedReplyServer? st prevCaller).getD receiver) executingCore with hH | hH
               · rw [hH, hR3, hR2, hR1p, hR1]
@@ -1615,17 +1644,19 @@ theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne (endpointId : SeLe
 
 /-- **Audit IPC-2**: the live ReplyRecv preserves object-store integrity — each
 of its five steps and both return-frame stagers do. -/
-theorem endpointReplyRecvOnCore_preserves_objects_invExt (endpointId : SeLe4n.ObjId)
+theorem endpointReplyRecvOnCore_preserves_objects_invExt
+    {answer : Option Architecture.FaultReplyOutcome}
+    (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : Concurrency.CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
         receiverCspaceRoot receiverSlotBase executingCore st = .ok (summary, st')) :
     st'.objects.invExt := by
   have hInv1 := endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg
     executingCore st hObjInv
-  unfold endpointReplyRecvOnCore at hStep
+  unfold endpointReplyRecvAnsweringOnCore at hStep
   simp only [] at hStep
   cases hRep : endpointReplyOnCore receiver prevCaller msg executingCore st with
   | mk st1 res =>
@@ -1667,7 +1698,7 @@ theorem endpointReplyRecvOnCore_preserves_objects_invExt (endpointId : SeLe4n.Ob
                 ((recordedReplyServer? st prevCaller).getD receiver) nextThread executingCore
                 returnedSc? st2 st3 u2 hInv2 hDon
               exact stageWokenSendCompletion_objects_invExt _ _
-                (stageDeliveredMessage_preserves_objects_invExt _ _ _
+                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _
                   (applyReceiveLegPipHandoff_preserves_objects_invExt _ _ _ _ _ hInv3))
 
 open SeLe4n.Kernel.Concurrency in

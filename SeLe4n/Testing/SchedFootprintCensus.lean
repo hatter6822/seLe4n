@@ -114,7 +114,14 @@ def resolverExemptions : List (Name × String) :=
        its home core, a write the dispatch never performs, so a resolver naming this \
        footprint would be short by that member.  \
        `schedLockSet_replyTransferOnCore_covers_dispatch_of_no_fault` and `_of_fault` \
-       are the relation between the two") ]
+       are the relation between the two")
+  , (``SeLe4n.Kernel.schedLockSet_endpointReplyRecvOnCore,
+      "the COMPOSITE's footprint at an unfaulted caller.  `.replyRecv`'s live arm is \
+       `replyRecvTransferOnCore`, which answers a faulted caller with the fault reply's \
+       restart or abandon (seL4's `doReplyTransfer` fault branch), so the resolver names \
+       `schedLockSet_replyRecvTransferOnCore`, the composite's write set at that answer.  \
+       `schedLockSet_replyRecvTransferOnCore_of_no_fault` is the relation off the fault \
+       branch, where the two are equal, and the coverage lemmas are stated at this one") ]
 
 /-- Is this a scheduler-domain footprint declaration — a body-bearing constant
 named `schedLockSet_…` whose type ends in `List (LockKey × AccessMode)`?

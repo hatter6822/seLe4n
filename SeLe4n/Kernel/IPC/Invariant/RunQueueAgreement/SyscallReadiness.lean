@@ -39,196 +39,6 @@ theorem of_eq {st st' : SystemState} (h : st' = st) : readyKeptStage S st st' :=
 
 end readyKeptStage
 
-/-- **The block of core `c`'s current thread `t`** blocks `t` alone: the stages
-around its IPC-state store keep every thread's readiness, and so does the
-deschedule closing the window. -/
-theorem blockThenDeschedule_readyKeptStage {st st1 st2 st3 : SystemState} {t : SeLe4n.ThreadId}
-    {s : ThreadIpcState} {m : Option IpcMessage} {c : CoreId}
-    (pre : SystemState.RunQueueStage st st1) (hS : storeTcbIpcStateAndMessage st1 t s m = .ok st2)
-    (post : SystemState.RunQueueStage st2 st3) (hC1 : st1.scheduler.currentOnCore c = some t)
-    (hC3 : st3.scheduler.currentOnCore c = some t) (hNI : isIdleThreadId t = false) :
-    readyKeptStage (· = t) st (removeRunnableOnCore st3 t c) :=
-  (readyKeptStage.of_stage pre).trans pre.1
-    ((storeTcbIpcStateAndMessage_readyKeptStage hS).trans
-      (storeTcbIpcStateAndMessage_runQueueBlockStage hS hC1 hNI).1
-      ((readyKeptStage.of_stage post).trans post.1
-        (.of_dispatch (SystemState.RunQueueDispatchStage.descheduleCurrent st3 c t hC3))))
-
-theorem blockThenDescheduleRecord_readyKeptStage {st st1 st2 st3 : SystemState}
-    {t : SeLe4n.ThreadId} {s : ThreadIpcState} {m : Option IpcMessage} {c : CoreId}
-    (pre : SystemState.RunQueueStage st st1) (hS : storeTcbIpcStateAndMessage st1 t s m = .ok st2)
-    (post : SystemState.RunQueueStage st2 st3) (hC1 : st1.scheduler.currentOnCore c = some t)
-    (hC3 : st3.scheduler.currentOnCore c = some t) (hNI : isIdleThreadId t = false)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    readyKeptStage (· = t) st (recordSendCap (removeRunnableOnCore st3 t c) t badge grant) :=
-  (blockThenDeschedule_readyKeptStage pre hS post hC1 hC3 hNI).trans
-    (pre.blockThenDeschedule hS post hC1 hC3 hNI).1
-    (.of_stage (recordSendCap_runQueueStage _ t badge grant))
-
-/-! ### Send and receive -/
-
-theorem endpointSendDualOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId)
-    (st : SystemState) (hHeads : endpointHeadsWakeable st)
-    (hCur : st.scheduler.currentOnCore c = some sender) (hNI : isIdleThreadId sender = false) :
-    readyKeptStage (· = sender) st (endpointSendDualOnCore endpointId sender payload c st).1 := by
-  unfold endpointSendDualOnCore
-  split
-  · split
-    · split
-      · exact .refl _
-      · split
-        · exact .refl _
-        · rename_i receiver _ st1 hPop
-          split
-          · exact .refl _
-          · rename_i st2 hS2
-            exact .of_stage (((endpointQueuePopHead_runQueueStage hPop).trans
-              (storeTcbReceiveComplete_runQueueStage hS2)).then_wake c
-              ((hHeads.popped hPop).of_scheduler_eq
-                (storeTcbReceiveComplete_scheduler_eq _ _ _ _ hS2))
-              (hHeads.popped_blocked hPop))
-    · split
-      · exact .refl _
-      · rename_i st1 hE
-        split
-        · exact .refl _
-        · rename_i st2 hS2
-          have hC1 := currentOnCore_of_scheduler_eq
-            (endpointQueueEnqueue_scheduler_eq _ _ _ _ _ hE) hCur
-          exact blockThenDescheduleRecord_readyKeptStage (endpointQueueEnqueue_runQueueStage hE)
-            hS2 (SystemState.RunQueueStage.refl _) hC1
-            (currentOnCore_of_scheduler_eq
-              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1) hNI _ _
-  · split <;> exact .refl _
-
-theorem endpointSendDualWithCapsOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
-    (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some sender)
-    (hNI : isIdleThreadId sender = false) :
-    readyKeptStage (· = sender) st
-      (endpointSendDualWithCapsOnCore endpointId sender payload base c st).1 := by
-  have s0 := (endpointSendDualOnCore_runQueueEntryStage endpointId sender payload c st hHeads
-    hCur hNI).1
-  have r0 := endpointSendDualOnCore_readyKeptStage endpointId sender payload c st hHeads hCur hNI
-  unfold endpointSendDualWithCapsOnCore
-  generalize endpointSendDualOnCore endpointId sender payload c st = r at s0 r0 ⊢
-  obtain ⟨st1, r⟩ := r
-  cases r with
-  | error e => exact r0
-  | ok sgi =>
-    dsimp only
-    repeat' split
-    all_goals first
-      | exact r0
-      | (rename_i hU; exact r0.trans s0 (.of_stage (receiveTransferCaps_runQueueStage hU)))
-
-theorem endpointReceiveDualOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (c : CoreId)
-    (st : SystemState) (hHeads : endpointHeadsWakeable st)
-    (hCur : st.scheduler.currentOnCore c = some receiver)
-    (hNI : isIdleThreadId receiver = false) (hAct : st.activeAt receiver) :
-    readyKeptStage (· = receiver) st
-      (endpointReceiveDualOnCore endpointId receiver replyId c st).1 := by
-  unfold endpointReceiveDualOnCore
-  split
-  · split
-    · split
-      · exact .refl _
-      · rename_i sender senderTcb st1 hPop
-        dsimp only
-        split
-        · rename_i hCall
-          have hB : senderTcb.ipcState ≠ .ready := by rw [hCall]; exact fun h => by cases h
-          simp only [↓reduceIte]
-          split
-          · exact .refl _
-          · rename_i st2 hS2
-            split
-            · exact .refl _
-            · split
-              · exact .refl _
-              · rename_i st3 hL
-                split
-                · rename_i st4 hS4
-                  exact .of_stage ((endpointQueuePopHead_then_blockedStore_runQueueStage hPop hS2
-                    hB).trans ((linkCallerReply_runQueueStage hL).trans
-                      ((storeTcbIpcStateAndMessage_runQueueStage hS4 rfl).trans
-                        (SystemState.linkReplyWaiter_runQueueStage _ _ _))))
-                · exact .refl _
-        · simp only [Bool.false_eq_true, ↓reduceIte]
-          split
-          · exact .refl _
-          · rename_i st2 hS2
-            split
-            · rename_i st4 hS4
-              exact .of_stage ((((endpointQueuePopHead_runQueueStage hPop).trans
-                (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)).then_wake c
-                ((hHeads.popped hPop).of_scheduler_eq
-                  (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2))
-                (hHeads.popped_blocked hPop)).trans
-                (storeTcbIpcStateAndMessage_runQueueStage hS4 rfl))
-            · exact .refl _
-    · split
-      · exact .refl _
-      · rename_i stC hC
-        split
-        · exact .refl _
-        · rename_i st1 hE
-          split
-          · exact .refl _
-          · rename_i st2 hS2
-            have pre := (cleanupPreReceiveDonationMigrated_runQueueStage hAct hC).trans
-              (endpointQueueEnqueue_runQueueStage hE)
-            have hC1 : st1.scheduler.currentOnCore c = some receiver :=
-              currentOnCore_of_scheduler_eq (endpointQueueEnqueue_scheduler_eq _ _ _ _ _ hE)
-                ((cleanupPreReceiveDonationMigrated_currentOnCore _ _ _ hC c).trans hCur)
-            have hC2 : st2.scheduler.currentOnCore c = some receiver :=
-              currentOnCore_of_scheduler_eq
-                (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1
-            split
-            · exact blockThenDeschedule_readyKeptStage pre hS2 (SystemState.RunQueueStage.refl _)
-                hC1 hC2 hNI
-            · rename_i rTcb hT
-              split
-              · split
-                · exact .refl _
-                · rename_i st3 hS3
-                  exact blockThenDeschedule_readyKeptStage pre hS2
-                    (SystemState.RunQueueStage.of_invExt fun hI =>
-                      (recordReplyStasher_runQueueStage _ _ _).trans
-                      (storeObject_tcbOver_runQueueStage (old := rTcb)
-                        (by rw [SystemState.recordReplyStasher_getTcb? _ _ _ hI]; exact hT) hS3
-                        (fun _ => rfl))) hC1
-                    (currentOnCore_of_scheduler_eq ((storeObject_scheduler_eq _ _ _ _ hS3).trans
-                      (SystemState.recordReplyStasher_scheduler _ _ _)) hC2) hNI
-              · exact .refl _
-  · split <;> exact .refl _
-
-theorem endpointReceiveDualWithCapsOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId)
-    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
-    (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some receiver)
-    (hNI : isIdleThreadId receiver = false) (hAct : st.activeAt receiver) :
-    readyKeptStage (· = receiver) st
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId root base c st).1 := by
-  have s0 := (endpointReceiveDualOnCore_runQueueEntryStage endpointId receiver replyId c st
-    hHeads hCur hNI hAct).1
-  have r0 := endpointReceiveDualOnCore_readyKeptStage endpointId receiver replyId c st
-    hHeads hCur hNI hAct
-  unfold endpointReceiveDualWithCapsOnCore
-  generalize endpointReceiveDualOnCore endpointId receiver replyId c st = r at s0 r0 ⊢
-  obtain ⟨st1, r⟩ := r
-  cases r with
-  | error e => exact r0
-  | ok res =>
-    dsimp only
-    repeat' split
-    all_goals first
-      | exact r0
-      | (rename_i hU; exact r0.trans s0 (.of_stage (receiveTransferCaps_runQueueStage hU)))
-
 /-! ### Writes to one thread -/
 
 /-- **A TCB store at a thread's own key keeps every other thread's readiness.** -/
@@ -329,6 +139,33 @@ theorem faultReplyApplyOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop} (st 
   · unfold faultAbandonOnCore faultAbandonCore
     exact removeRunnableThenWrite_readyKeptStage _ _ _ _ fun _ h => h
 
+/-- The reply leg's answer to its caller links the run queues for any start:
+the ordinary staging and the restart are stages, the abandon a deschedule then
+an off-queue write. -/
+theorem replyRecvAnswerCaller_runQueueLinkStage (answer : Option Architecture.FaultReplyOutcome)
+    (st : SystemState) (prevCaller : SeLe4n.ThreadId) :
+    SystemState.RunQueueLinkStage st (replyRecvAnswerCaller answer st prevCaller) := by
+  cases answer with
+  | none => exact (stageDeliveredMessage_runQueueStage _ _ _).1
+  | some o =>
+    show SystemState.RunQueueLinkStage st (faultReplyApplyOnCore st prevCaller o)
+    unfold faultReplyApplyOnCore
+    split
+    · exact (SystemState.RunQueueStage.updateTcb
+        (f := fun tcb => ((tcb.withRestartFrame _).setPendingFault none)) _ _ (fun _ _ => rfl)).1
+    · unfold faultAbandonOnCore faultAbandonCore
+      exact (SystemState.RunQueueStage.runDescheduleOnCore _ _ _).1.trans
+        (SystemState.RunQueueLinkStage.updateTcb _ _ (fun _ _ => rfl))
+
+/-- The reply leg's answer blocks no thread. -/
+theorem replyRecvAnswerCaller_readyKeptStage {S : SeLe4n.ThreadId → Prop}
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState)
+    (prevCaller : SeLe4n.ThreadId) :
+    readyKeptStage S st (replyRecvAnswerCaller answer st prevCaller) := by
+  cases answer with
+  | none => exact .of_stage (stageDeliveredMessage_runQueueStage _ _ _)
+  | some o => exact faultReplyApplyOnCore_readyKeptStage st prevCaller o
+
 theorem faultReplyOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
@@ -367,14 +204,16 @@ theorem replyTransferOnCoreChecked_readyKeptStage {S : SeLe4n.ThreadId → Prop}
 
 /-- `ReplyRecv` blocks only its caller: the reply and the donation pop are
 stages, and the receive half blocks the caller. -/
-theorem endpointReplyRecvOnCore_readyKeptStage {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.FaultReplyOutcome}
+    {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
     {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : CoreId}
     {st st' : SystemState} {s : CapTransferSummary}
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (h : endpointReplyRecvOnCore epId tid rid prevCaller msg root base c st = .ok (s, st')) :
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg root base c st =
+      .ok (s, st')) :
     readyKeptStage (· = tid) st st' := by
   have hE := endpointReplyOnCore_runQueueStage tid prevCaller msg c st
     (blockedCurrentNowhere_of_currentDequeuedUnique hD)
@@ -386,7 +225,7 @@ theorem endpointReplyRecvOnCore_readyKeptStage {epId : SeLe4n.ObjId} {tid : SeLe
   have hQ1 : ∀ sgi?, (endpointReplyOnCore tid prevCaller msg c st).2 = .ok sgi? →
       queueHeadBlockedConsistent (endpointReplyOnCore tid prevCaller msg c st).1 := fun _ hOk =>
     endpointReplyOnCore_preserves_queueHeadBlockedConsistent tid prevCaller msg c st hInv hQ hOk
-  unfold endpointReplyRecvOnCore at h
+  unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
   generalize endpointReplyOnCore tid prevCaller msg c st = p at hE h hC1 hInv1 hEB hCB hQ1
   obtain ⟨st1, r⟩ := p
@@ -427,11 +266,13 @@ theorem endpointReplyRecvOnCore_readyKeptStage {epId : SeLe4n.ObjId} {tid : SeLe
   have hAll := A.entry.trans hR
   obtain ⟨hI2, hR2⟩ := hAll.1.links hInv hRf
   have hD2 := hAll.2 hInv hRf hR2 hD
-  exact (readyKeptStage.of_stage A).trans A.1 (rR.trans hR.1 (.of_stage
-    ((((replyRecvPostReceiveDonation_runQueueStage hI2 hR2 (hD2.coherent nt) hPost).trans
-    (applyReceiveLegPipHandoff_runQueueStage _ _ _ _ _)).trans
-    (stageDeliveredMessage_runQueueStage _ _ _)).trans
-    (stageWokenSendCompletion_runQueueStage _ _))))
+  have hPH := (replyRecvPostReceiveDonation_runQueueStage hI2 hR2 (hD2.coherent nt) hPost).trans
+    (applyReceiveLegPipHandoff_runQueueStage st3 tid nt
+      ((recordedReplyServer? st prevCaller).getD tid) c)
+  exact (readyKeptStage.of_stage A).trans A.1 (rR.trans hR.1 ((readyKeptStage.of_stage hPH).trans
+    hPH.1 ((replyRecvAnswerCaller_readyKeptStage answer _ prevCaller).trans
+      (replyRecvAnswerCaller_runQueueLinkStage answer _ prevCaller)
+      (.of_stage (stageWokenSendCompletion_runQueueStage _ _)))))
 
 /-! ### The scheduling arms -/
 

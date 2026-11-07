@@ -60,6 +60,41 @@ at a join of them. -/
       (Nat.le_trans (Nat.min_le_right _ _) (Nat.min_le_right _ _))))
   else 0
 
+/-- Word `j` of the layout's message registers, `0` past them: the word
+`regMessageRegs` holds there, read straight from the register file.  Out of
+line, as `regMessageWord`. -/
+@[noinline] def regLayoutWord (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (j : Nat) : UInt64 :=
+  if h : j < layout.msgRegs.size then regWord rf (layout.msgRegs[j]'h) else 0
+
+/-- Within the body, its word is the layout's. -/
+theorem regMessageWord_eq_regLayoutWord (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len j : Nat) (h : j < regMessageLength layout len) :
+    regMessageWord layout rf len j = regLayoutWord layout rf j := by
+  have hj : j < layout.msgRegs.size := by unfold regMessageLength at h; omega
+  unfold regMessageWord regLayoutWord
+  rw [dif_pos h, dif_pos hj]
+
+/-- The layout's message registers, read, hold its words. -/
+theorem regMessageRegs_word (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (j : Nat) :
+    ((((regMessageRegs layout rf)[j]?).map SeLe4n.RegValue.val).getD 0).toUInt64 =
+      regLayoutWord layout rf j := by
+  unfold regLayoutWord
+  split
+  · next h =>
+    have hs : j < (regMessageRegs layout rf).size := by
+      simp only [regMessageRegs, Array.size_map]; exact h
+    rw [Array.getElem?_eq_getElem hs]
+    simp only [regMessageRegs, Array.getElem_map, Option.map_some, Option.getD_some,
+      SeLe4n.readReg, SeLe4n.RegisterFile.gpr, regWord]
+    split <;> simp
+  · next h =>
+    have hs : (regMessageRegs layout rf).size ≤ j := by
+      simp only [regMessageRegs, Array.size_map]; omega
+    rw [Array.getElem?_eq_none hs]
+    rfl
+
 theorem regMessageBody_size (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (len : Nat) : (regMessageBody layout rf len).size = regMessageLength layout len := by
   simp only [regMessageBody, regMessageRegs, regMessageLength,

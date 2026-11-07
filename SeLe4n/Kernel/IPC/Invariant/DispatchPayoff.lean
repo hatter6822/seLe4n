@@ -105,6 +105,33 @@ private theorem ipcInvariantFull_of_exceptDonationOwner_of_no_edge
 -- §3  `endpointReplyRecvOnCore` — the `.replyRecv` three-stage composite
 -- ============================================================================
 
+/-- The message `.replyRecv`'s reply leg delivers on the arm's decode: the
+payload (MR1.., under the reply capability's badge) to an unfaulted caller, and
+nothing to a faulted one, whose answer is the fault reply's restart or abandon
+(`replyRecvTransferOnCore`). -/
+def replyRecvArmLegMessage (decoded : SyscallDecodeResult) (st : SystemState)
+    (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge) : IpcMessage :=
+  let msg : IpcMessage :=
+    { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
+        (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
+      badge := replyBadge }
+  replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller decoded.msgInfo.label msg) msg
+
+/-- The reply leg's answer to its caller keeps the IPC bundle: the ordinary
+staging, or the fault reply's restart or abandon. -/
+theorem replyRecvAnswerCaller_preserves_ipcInvariantFull
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState)
+    (prevCaller : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (replyRecvAnswerCaller answer st prevCaller) := by
+  cases answer with
+  | none => exact stageDeliveredMessage_preserves_ipcInvariantFull _ prevCaller 0 hObjInv hInv
+  | some o =>
+    show ipcInvariantFull (faultReplyApplyOnCore st prevCaller o)
+    unfold faultReplyApplyOnCore
+    split
+    · exact applyFaultRestart_preserves_ipcInvariantFull _ _ _ hObjInv hInv
+    · exact faultAbandonOnCore_preserves_ipcInvariantFull _ _ _ hObjInv hInv
+
 /-- **`.replyRecv`'s composite bundle**: reply leg (relaxed at the woken
 caller, upgraded by the no-donation-edge confinement), donation pop, receive leg,
 post-receive donation, and both return-frame stagers.
@@ -123,7 +150,7 @@ pre-state-computable expression and the pack stays flat.  The pop's own two
 obligation (`hStackValid1`) is stated at the reply leg's state, which is where
 it runs. -/
 theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
-    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    {answer : Option Architecture.FaultReplyOutcome} (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (ec : CoreId) (st stOut : SystemState) (summary : CapTransferSummary)
@@ -190,10 +217,10 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
             (endpointReplyOnCore tid prevCaller msg ec st).1)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
-    (hStep : endpointReplyRecvOnCore epId tid rid prevCaller msg receiverCspaceRoot
-      receiverSlotBase ec st = .ok (summary, stOut)) :
+    (hStep : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
+      receiverCspaceRoot receiverSlotBase ec st = .ok (summary, stOut)) :
     ipcInvariantFull stOut ∧ stOut.objects.invExt := by
-  unfold endpointReplyRecvOnCore at hStep
+  unfold endpointReplyRecvAnsweringOnCore at hStep
   dsimp only [] at hStep
   have hExc1 := endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner tid
     prevCaller msg ec st hReach.ipcInvariantFull hReach.objects_invExt
@@ -282,10 +309,10 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
                         have hInv3P := applyReceiveLegPipHandoff_preserves_ipcInvariantFull st3
                           tid nextThread ((recordedReplyServer? st prevCaller).getD tid) ec
                           hObjInv3 hInv3
-                        have hInvD := stageDeliveredMessage_preserves_ipcInvariantFull _
-                          prevCaller 0 hObjInv3P hInv3P
-                        have hObjInvD := stageDeliveredMessage_objects_invExt _
-                          prevCaller 0 hObjInv3P
+                        have hInvD := replyRecvAnswerCaller_preserves_ipcInvariantFull answer _
+                          prevCaller hObjInv3P hInv3P
+                        have hObjInvD := replyRecvAnswerCaller_preserves_objects_invExt answer _
+                          prevCaller hObjInv3P
                         rw [← hOut]
                         exact ⟨stageWokenSendCompletion_preserves_ipcInvariantFull _ _
                             hObjInvD hInvD,
@@ -401,9 +428,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge) →
     (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
       ((endpointReplyOnCore tid prevCaller
-          { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-              1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-            badge := replyBadge }
+          (replyRecvArmLegMessage decoded st prevCaller replyBadge)
           executingCore st).1).objects[s.toObjId]?
         = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 prevCaller) ∧
@@ -414,29 +439,21 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- binding half is named, because the thread the pop unbinds is read off
     -- `SchedContext.boundThread` rather than supplied.
     replyFrameHeadHolderDonation (endpointReplyOnCore tid prevCaller
-        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          badge := replyBadge }
+        (replyRecvArmLegMessage decoded st prevCaller replyBadge)
         executingCore st).1 rid prevCaller ∧
     (∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid prevCaller
-        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          badge := replyBadge }
+        (replyRecvArmLegMessage decoded st prevCaller replyBadge)
         executingCore st).1 scId serverTid originalOwner) ∧
     -- **`v0.35.157`**: the origin redirect's coherence obligation, as in
     -- `replyStage`, at the state the pop between the legs runs on.
     redirectedOriginFrameCoherent (endpointReplyOnCore tid prevCaller
-        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          badge := replyBadge }
+        (replyRecvArmLegMessage decoded st prevCaller replyBadge)
         executingCore st).1 rid prevCaller ∧
     -- **WS-ZA ZA6.34**: the binding half of the unheld pop's coherence, as in
     -- `replyStage`; the loan half is the no-edge conjunct above.
     unheldReplyHeadBoundByNone (endpointReplyOnCore tid prevCaller
-        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          badge := replyBadge }
+        (replyRecvArmLegMessage decoded st prevCaller replyBadge)
         executingCore st).1 rid ∧
     -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops whatever
     -- donation the receiver abandoned; the pop resolves its new owner off that
@@ -444,29 +461,21 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- pop** committed (WS-RM).
     cleanupDonationStackValid (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
-        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          badge := replyBadge }
+        (replyRecvArmLegMessage decoded st prevCaller replyBadge)
         executingCore st).1) tid ∧
     (∃ tcb : TCB,
       (replyRecvPostPopState rid prevCaller
         (endpointReplyOnCore tid prevCaller
-          { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-              1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-            badge := replyBadge }
+          (replyRecvArmLegMessage decoded st prevCaller replyBadge)
           executingCore st).1).getTcb? tid = some tcb ∧
       tcb.ipcState = .ready) ∧
     allTimeoutBudgetsNone (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
-        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          badge := replyBadge }
+        (replyRecvArmLegMessage decoded st prevCaller replyBadge)
         executingCore st).1) ∧
     replyIdEstablishFresh (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
-        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          badge := replyBadge }
+        (replyRecvArmLegMessage decoded st prevCaller replyBadge)
         executingCore st).1) rid ∧
     (∀ (nextThread : SeLe4n.ThreadId) (summary2 : CapTransferSummary)
         (sgi2 : Option (CoreId × Concurrency.SgiKind)) (st2 : SystemState),
@@ -474,9 +483,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           decoded.capRecvSlot executingCore
           (replyRecvPostPopState rid prevCaller
             (endpointReplyOnCore tid prevCaller
-              { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-                  1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-                badge := replyBadge }
+              (replyRecvArmLegMessage decoded st prevCaller replyBadge)
               executingCore st).1)
         = (st2, .ok (nextThread, summary2, sgi2)) →
       st2.objects.invExt ∧
@@ -486,9 +493,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           nextThread executingCore
           (replyRecvPoppedDonation rid prevCaller
             (endpointReplyOnCore tid prevCaller
-              { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
-                  1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-                badge := replyBadge }
+              (replyRecvArmLegMessage decoded st prevCaller replyBadge)
               executingCore st).1)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
@@ -1003,7 +1008,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               obtain ⟨hNoEdge1, hHolderDon1, hStackValid1, hOriginCoh1, hUnheldB1,
                   hCleanupStack1, hReady1, hBudgets1, hRidFresh1, hRetStage⟩ :=
                 hPack.replyRecvStage rid prevCaller replyBadge epId hSy hTgt hRR
-              cases hBody : endpointReplyRecvOnCore epId tid rid prevCaller
+              cases hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
                   { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size, badge := replyBadge }
                   gate.cspaceRoot decoded.capRecvSlot executingCore st with
               | error e => simp only [hBody] at hStep; cases hStep
@@ -1016,7 +1021,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                     executingCore st stB summary
                     hPack.reachable hNoEdge1 hHolderDon1 hStackValid1
                     hOriginCoh1 hUnheldB1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1 hRetStage
-                    hBody
+                    (by unfold replyRecvTransferOnCore at hBody; exact hBody)
                   rw [← hStep]
                   exact stageDeliveredMessage_preserves_ipcInvariantFull stB tid _
                     hObjInvB hInvB

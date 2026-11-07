@@ -275,6 +275,18 @@ def faultEntryStep (lctx : LabelingContext) (st : SystemState)
     -- other per-core entry's bound check.
     ([], st)
 
+/-- The exception context an unknown syscall is delivered with: the trap's,
+its `ELR_EL1` replaced by the `SVC`'s own address (`Platform.FFI.svcFaultIP`),
+so the fault's restart PC is seL4's `FaultIP`. -/
+def unknownSyscallContext (ectx : ExceptionContext) : ExceptionContext :=
+  { ectx with elr := Platform.FFI.svcFaultIP ectx.elr }
+
+theorem unknownSyscallContext_elr (ectx : ExceptionContext) :
+    (unknownSyscallContext ectx).elr = Platform.FFI.svcFaultIP ectx.elr := rfl
+
+theorem unknownSyscallContext_spsr (ectx : ExceptionContext) :
+    (unknownSyscallContext ectx).spsr = ectx.spsr := rfl
+
 /-- Review round (PR #887): **the unknown-syscall step.**  The syscall
 prefilter (`dispatch_svc`) rejects a syscall number outside `SyscallId`
 *before* the Lean dispatcher sees it; seL4 raises `seL4_Fault_UnknownSyscall`
@@ -283,16 +295,23 @@ producer.  This is the producer: the fault is `unknownSyscall n` with `n` the
 syscall-number register (`x7`, `arm64DefaultLayout.syscallNumReg`) as the trap
 frame carries it, and the delivery is the shared body — the handler receives
 the thirteen-word message (`x0`-`x7`, the restart PC, `SP`, `LR`, `SPSR`, the
-number) and its reply either emulates the call and continues the thread after
-the `SVC` (the ELR of an `SVC` already addresses the next instruction) or
-abandons it.  The same EL0 gate applies: an `SVC` issued at EL1 is a kernel
-bug, not a user fault. -/
+number) and its reply either restarts the thread or abandons it.
+
+**The restart PC is the `SVC` itself** (`unknownSyscallContext`, the
+`Platform.FFI.svcFaultIP` rule the capability fault uses), not the `ELR_EL1`
+the trap saved, which already addresses the next instruction.  This is seL4's
+`FaultIP`: its `lel_syscall` entry stores `ELR - 4` for every `SVC`, and a
+restarted thread resumes at `getRestartPC` (`activateThread`'s `Restart`
+case).  A reply with no words re-issues the syscall, and a handler that
+emulates the call advances the PC itself, in the restart-PC word.  The same
+EL0 gate applies: an `SVC` issued at EL1 is a kernel bug, not a user fault. -/
 def unknownSyscallEntryStep (lctx : LabelingContext) (st : SystemState)
     (ectx : ExceptionContext) (w : FaultRegisterWindow) (coreId : UInt64) :
     List (CoreId × SgiKind) × SystemState :=
   if h : coreId.toNat < numCores then
     if ectx.takenFromEl0 then
-      faultEntryDeliver lctx st (.unknownSyscall (w.gprAt 7)) ectx w ⟨coreId.toNat, h⟩
+      faultEntryDeliver lctx st (.unknownSyscall (w.gprAt 7)) (unknownSyscallContext ectx) w
+        ⟨coreId.toNat, h⟩
     else ([], st)
   else ([], st)
 
@@ -363,7 +382,8 @@ def unknownSyscallEntryStepState (lctx : LabelingContext) (st : SystemState)
     (ectx : ExceptionContext) (w : FaultRegisterWindow) (coreId : UInt64) : SystemState :=
   if h : coreId.toNat < numCores then
     if ectx.takenFromEl0 then
-      faultEntryDeliverState lctx st (.unknownSyscall (w.gprAt 7)) ectx w ⟨coreId.toNat, h⟩
+      faultEntryDeliverState lctx st (.unknownSyscall (w.gprAt 7)) (unknownSyscallContext ectx) w
+        ⟨coreId.toNat, h⟩
     else st
   else st
 
@@ -444,8 +464,8 @@ window's `x7`). -/
     (ectx : ExceptionContext) (w : FaultRegisterWindow) (coreId : UInt64) : SystemState :=
   if h : coreId.toNat < numCores then
     if ectx.takenFromEl0 then
-      faultEntryDeliverWords lctx st 3 false w.x7 0 .invalidCapability ectx.elr ectx.spsr w
-        ⟨coreId.toNat, h⟩
+      faultEntryDeliverWords lctx st 3 false w.x7 0 .invalidCapability
+        (Platform.FFI.svcFaultIP ectx.elr) ectx.spsr w ⟨coreId.toNat, h⟩
     else st
   else st
 
@@ -455,7 +475,8 @@ window's `x7`). -/
   unfold unknownSyscallEntryStepState unknownSyscallEntryStepStateImpl
   split
   · split
-    · exact (faultEntryDeliverWords_eq lctx st (.unknownSyscall (w.gprAt 7)) ectx w _).symm
+    · exact (faultEntryDeliverWords_eq lctx st (.unknownSyscall (w.gprAt 7))
+        (unknownSyscallContext ectx) w _).symm
     · rfl
   · rfl
 
@@ -1063,7 +1084,7 @@ theorem unknownSyscallEntryStep_not_dispatchable (lctx : LabelingContext)
       ⟨coreId.toNat, h⟩ := by
   unfold unknownSyscallEntryStep
   rw [dif_pos h, if_pos hEl0]
-  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur hNI hInv hR hAct hHeads
+  exact faultEntryDeliver_not_dispatchable lctx st _ _ w _ tid hCur hNI hInv hR hAct hHeads
 
 /-- PR #887 review round 3: **the syscall seam's capability fault carries the
 same guarantee.**  `deliverSyscallCapFault` is the abort entry's delivery at

@@ -1343,7 +1343,8 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
 /// published in-flight frame, read once, and runs the same flow-checked
 /// delivery as `deliver_fault`: the
 /// thread blocks on its handler's endpoint awaiting a reply (a handler that
-/// emulates the call replies and the thread continues after the `SVC`), or —
+/// emulates the call replies with the restart PC advanced past the `SVC`,
+/// whose own address is the fault's restart PC, seL4's `FaultIP`), or —
 /// with no usable handler — is suspended fail-closed.  Same lock, same
 /// readiness gate, same restored-frame return and same fallback halt as
 /// `deliver_fault`, for the same reasons.

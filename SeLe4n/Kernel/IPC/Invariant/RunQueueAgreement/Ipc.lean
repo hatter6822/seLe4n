@@ -2,7 +2,7 @@
 Copyright (c) 2026 seLe4n contributors. All rights reserved.
 Released under GPL-3.0-or-later license as described in the file LICENSE.
 -/
-import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Capability
+import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Readiness
 
 /-!
 # Notification, reply and reply-receive keep the run-queue link agreement
@@ -678,18 +678,46 @@ theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.Threa
           st s _ _ _ hInv n hS t.toObjId tcb' hT
         exact ⟨tcb, h0, hS'⟩) hT
 
+/-- The reply leg's answer to its caller: the ordinary message staging, or the
+fault reply's decoded outcome on a caller the reply left ready (`hRdy`). -/
+theorem replyRecvAnswerCaller_runQueueEntryStage (answer : Option Architecture.FaultReplyOutcome)
+    (st : SystemState) (prevCaller : SeLe4n.ThreadId) (hRdy : st.readyOrAbsent prevCaller)
+    (hNI : isIdleThreadId prevCaller = false) :
+    SystemState.RunQueueEntryStage st (replyRecvAnswerCaller answer st prevCaller) := by
+  cases answer with
+  | none => exact (stageDeliveredMessage_runQueueStage _ _ _).entry
+  | some o => exact faultReplyApplyOnCore_runQueueEntryStage st prevCaller o hRdy hNI
+
 /-- `ReplyRecv`: the reply, the donation pop, then a receive on the same core by
 the same current thread.  The reply and the pop keep every endpoint head
-wakeable and the caller current, so the receive half is a kernel entry. -/
-theorem endpointReplyRecvOnCore_runQueueEntryStage {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+wakeable and the caller current, so the receive half is a kernel entry.  The
+caller the reply woke is ready and is not the replier, so the receive keeps it
+ready and the fault answer's abandon may deschedule it. -/
+theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture.FaultReplyOutcome}
+    {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
     {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : Concurrency.CoreId}
     {st st' : SystemState} {s : CapTransferSummary}
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (h : endpointReplyRecvOnCore epId tid rid prevCaller msg root base c st = .ok (s, st')) :
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg root base c st =
+      .ok (s, st')) :
     SystemState.RunQueueEntryStage st st' := by
+  have hPrev : ∀ sgi?, (endpointReplyOnCore tid prevCaller msg c st).2 = .ok sgi? →
+      (endpointReplyOnCore tid prevCaller msg c st).1.readyOrAbsent prevCaller ∧
+      prevCaller ≠ tid ∧ isIdleThreadId prevCaller = false := by
+    intro sgi hOk
+    obtain ⟨-, tcb', ep, ex, -, hL, hS, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
+    have hT := getTcb?_of_lookupTcb _ _ _ hL
+    refine ⟨fun x hx => endpointReplyOnCore_ok_target_ready _ _ _ _ _ hInv hOk hx, ?_,
+      notIdle_of_blocked hD hT (by rw [hS]; exact fun h => by cases h)⟩
+    rintro rfl
+    obtain ⟨tcb, hT0, hRun, -⟩ := hD.runnable hCur
+    rw [hT] at hT0
+    cases hT0
+    rw [hS] at hRun
+    cases hRun
   have hE := endpointReplyOnCore_runQueueStage tid prevCaller msg c st
     (blockedCurrentNowhere_of_currentDequeuedUnique hD)
   have hC1 : (endpointReplyOnCore tid prevCaller msg c st).1.scheduler.currentOnCore c = some tid :=
@@ -700,15 +728,16 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {epId : SeLe4n.ObjId} {tid : 
   have hQ1 : ∀ sgi?, (endpointReplyOnCore tid prevCaller msg c st).2 = .ok sgi? →
       queueHeadBlockedConsistent (endpointReplyOnCore tid prevCaller msg c st).1 := fun _ hOk =>
     endpointReplyOnCore_preserves_queueHeadBlockedConsistent tid prevCaller msg c st hInv hQ hOk
-  unfold endpointReplyRecvOnCore at h
+  unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
-  generalize endpointReplyOnCore tid prevCaller msg c st = p at hE h hC1 hInv1 hEB hCB hQ1
+  generalize endpointReplyOnCore tid prevCaller msg c st = p at hE h hC1 hInv1 hEB hCB hQ1 hPrev
   obtain ⟨st1, r⟩ := p
-  dsimp only at hE hC1 hInv1 hEB hCB hQ1
+  dsimp only at hE hC1 hInv1 hEB hCB hQ1 hPrev
   cases r with
   | error => cases h
   | ok sgi =>
   dsimp only at h
+  obtain ⟨hRdy1, hNe, hNIp⟩ := hPrev _ rfl
   have hH1 := (endpointHeadsWakeable_of hD hQ).of_frame hEB hCB (hQ1 _ rfl)
   split at h
   · cases h
@@ -720,12 +749,15 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {epId : SeLe4n.ObjId} {tid : 
   have hAp : st1p.activeAt tid :=
     let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
     activeKeptStage.of_stage (replyRecvPopDonation_runQueueStage hPop) hI1 hR1 tid hA1
+  have hHp := hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
+      (hQ1 _ rfl))
   have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) root base c
-    st1p (hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
-      (hQ1 _ rfl))) ((hPC c).trans hC1) hNI hAp
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) root base c st1p = q at hR h
+    st1p hHp ((hPC c).trans hC1) hNI hAp
+  have hRK := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) root base c
+    st1p hHp ((hPC c).trans hC1) hNI hAp
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) root base c st1p = q at hR hRK h
   obtain ⟨st2, r2⟩ := q
-  dsimp only at hR
+  dsimp only at hR hRK
   rcases r2 with _ | ⟨nt, sm, _⟩ <;> dsimp only at h
   · cases h
   split at h
@@ -737,10 +769,18 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {epId : SeLe4n.ObjId} {tid : 
   have hAll := (hE.trans (replyRecvPopDonation_runQueueStage hPop)).entry.trans hR
   obtain ⟨hI2, hR2⟩ := hAll.1.links hInv hRf
   have hD2 := hAll.2 hInv hRf hR2 hD
-  exact hAll.trans
-    (((((replyRecvPostReceiveDonation_runQueueStage hI2 hR2 (hD2.coherent nt) hPost).trans
-    (applyReceiveLegPipHandoff_runQueueStage _ _ _ _ _)).trans
-    (stageDeliveredMessage_runQueueStage _ _ _)).trans
-    (stageWokenSendCompletion_runQueueStage _ _)).entry)
+  have hPH := (replyRecvPostReceiveDonation_runQueueStage hI2 hR2 (hD2.coherent nt) hPost).trans
+    (applyReceiveLegPipHandoff_runQueueStage st3 tid nt
+      ((recordedReplyServer? st prevCaller).getD tid) c)
+  -- The woken caller stays ready: the pop and the post-receive stages are
+  -- monotone, and the receive blocks only the replier.
+  obtain ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+  have hPopS := replyRecvPopDonation_runQueueStage hPop
+  obtain ⟨hIp, hRp⟩ := hPopS.1.links hI1 hR1
+  have hRdyX := (hPH.2.2 hI2 hR2).readyOrAbsent
+    (hRK hIp hRp prevCaller hNe ((hPopS.2.2 hI1 hR1).readyOrAbsent hRdy1))
+  exact hAll.trans ((hPH.entry.trans
+    (replyRecvAnswerCaller_runQueueEntryStage answer _ prevCaller hRdyX hNIp)).trans
+    (stageWokenSendCompletion_runQueueStage _ _).entry)
 
 end SeLe4n.Kernel

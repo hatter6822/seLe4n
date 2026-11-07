@@ -792,6 +792,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- (`storeFaultReplyRendezvous_eq`, `rfl`).
   , (`SeLe4n.Kernel.storeFaultReplyRendezvous,
       .mirrors `SeLe4n.Kernel.storeReplyLeg)
+    -- The fault reply's leg on the donated and unheld shapes: the reply leg
+    -- at the empty message (`storeFaultReplyLeg_eq`, `rfl`).
+  , (`SeLe4n.Kernel.storeFaultReplyLeg,
+      .states [`SeLe4n.Kernel.storeFaultReplyLeg_preserves_donationChainWellFormed])
     -- ---------------------------------------------------------------------
     -- The frozen execution surface.
     --

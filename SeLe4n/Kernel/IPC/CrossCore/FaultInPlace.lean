@@ -1025,50 +1025,146 @@ theorem storeFaultReplyRendezvous_eq (st : SystemState) (c server : SeLe4n.Threa
     storeFaultReplyRendezvous st c server rid =
       storeReplyRendezvous st c server rid IpcMessage.empty := rfl
 
-/-- **The fault reply's restart, in place** (`faultReplyTransferChecked_inPlace`):
-the reply's writes with no message (`storeFaultReplyRendezvous`), the server's
-priority walk, then the answered thread's
-restart frame, its saved context's words, written over its registers and its
-fault cleared (`applyFaultRestart`).  The frame's words are handed in from the
-thread's fault words, so neither the fault nor its context is decoded. -/
-@[noinline] def performFaultReplyRestart (st : SystemState) (c server : SeLe4n.ThreadId)
-    (rid : SeLe4n.ReplyId) (core : CoreId) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) :
-    SystemState :=
-  applyFaultRestart (PriorityInheritance.propagatePipChainCrossCore
-      (storeFaultReplyRendezvous st c server rid) server core).1 c
-    { pc := ip, sp := sp, lr := lr, x0 := x0, x1 := x1, x2 := x2, x3 := x3,
-      x4 := x4, x5 := x5, x6 := x6, x7 := x7 }
+/-- Reply word `i` of a fault reply, or the faulted thread's own `fallback` past
+the `n` words the reply supplied (`replyWordOr`): word `i + off` of the layout's
+message registers (`off` is `1` on a reply-receive, whose MR0 names the reply
+capability).  Out of line, so it returns a bare machine word and a restart frame
+built from such words is built after every branch. -/
+@[noinline] def faultReplyWord (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (n off i : Nat) (fallback : UInt64) : UInt64 :=
+  if i < n then Architecture.regLayoutWord layout rf (i + off) else fallback
+
+/-- **The fault answer, in place** — the one both the `.reply` arm and the
+`.replyRecv` arm apply to a faulted caller once their legs have run on `X`:
+`faultReplyApplyOnCore` of `decodeFaultReply`
+(`faultReplyApplyOnCore_decode_eq_performFaultAnswer`), read from words alone.
+The fault's kind and saved context are the caller's fault words (`kind`, `ip`
+… `x7`), read off the pre-state by the arm; the reply is its `label` and the
+first `n` words of the layout's message registers from `off` on, read from the
+register file.  A VM or capability fault restarts from its saved context; an
+unknown syscall or user exception abandons on a nonzero label and otherwise
+restarts with the reply's words over the context's (`faultReplyWord`).  No
+fault record, message, outcome or frame record is built. -/
+@[noinline] def performFaultAnswer (X : SystemState) (c : SeLe4n.ThreadId) (kind label : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (n off : Nat) : SystemState :=
+  if kind == 1 || kind == 2 then
+    applyFaultRestart X c
+      { pc := ip, sp := sp, lr := lr, x0 := x0, x1 := x1, x2 := x2, x3 := x3,
+        x4 := x4, x5 := x5, x6 := x6, x7 := x7 }
+  else if label != 0 then faultAbandonOnCore X c (faultAbandonCore X c)
+  else if kind == 3 then
+    applyFaultRestart X c
+      { pc := faultReplyWord layout rf n off 8 ip, sp := faultReplyWord layout rf n off 9 sp,
+        lr := faultReplyWord layout rf n off 10 lr,
+        x0 := faultReplyWord layout rf n off 0 x0, x1 := faultReplyWord layout rf n off 1 x1,
+        x2 := faultReplyWord layout rf n off 2 x2, x3 := faultReplyWord layout rf n off 3 x3,
+        x4 := faultReplyWord layout rf n off 4 x4, x5 := faultReplyWord layout rf n off 5 x5,
+        x6 := faultReplyWord layout rf n off 6 x6, x7 := faultReplyWord layout rf n off 7 x7 }
+  else
+    applyFaultRestart X c
+      { pc := faultReplyWord layout rf n off 0 ip, sp := faultReplyWord layout rf n off 1 sp,
+        lr := lr, x0 := x0, x1 := x1, x2 := x2, x3 := x3,
+        x4 := x4, x5 := x5, x6 := x6, x7 := x7 }
+
+/-- **The fault answer read from words is the decoded one**: for a caller `ct`
+carrying fault `tf`, and a reply whose first `n` supplied words are the layout's
+from `off` on, applying the decoded outcome is `performFaultAnswer` of the
+caller's fault words, the reply's label and those words. -/
+theorem faultReplyApplyOnCore_decode_eq_performFaultAnswer (X : SystemState)
+    (c : SeLe4n.ThreadId) (ct : TCB) (tf : ThreadFault) (hPF : ct.pendingFault = some tf)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (n off : Nat)
+    (hn : min mi.length regs.size = n)
+    (hw : ∀ i, i < n → wordAt regs i = Architecture.regLayoutWord layout rf (i + off)) :
+    faultReplyApplyOnCore X c (decodeFaultReply tf.fault tf.context mi regs) =
+      performFaultAnswer X c ct.faultKind mi.label ct.faultIp ct.faultSp ct.faultLr
+        ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6
+        ct.faultX7 layout rf n off := by
+  have hR : ∀ i fb, replyWordOr mi regs i fb = faultReplyWord layout rf n off i fb := by
+    intro i fb
+    unfold replyWordOr faultReplyWord
+    rw [hn]
+    split
+    · next h => rw [hw i h]
+    · rfl
+  obtain ⟨f, ctx⟩ := tf
+  have hC : ctx = ct.faultWords.context := ThreadFaultWords.decode_context hPF
+  subst hC
+  simp only [TCB.pendingFault, ThreadFaultWords.decode, ThreadFaultWords.fault?] at hPF
+  unfold performFaultAnswer
+  rcases hk : ct.faultKind with _ | _ | _ | _ | k
+  · simp only [TCB.faultWords, hk] at hPF; cases hPF
+  · simp only [TCB.faultWords, hk] at hPF
+    cases hPF
+    rfl
+  · simp only [TCB.faultWords, hk] at hPF
+    cases hPF
+    rfl
+  · simp only [TCB.faultWords, hk] at hPF
+    cases hPF
+    by_cases hl : mi.label = 0
+    · simp only [decodeFaultReply, hl, ne_eq, not_true_eq_false, ↓reduceIte, hR,
+        faultReplyApplyOnCore, faultRestartFrameOfContext, ThreadFaultWords.context,
+        FaultContext.gprAt]
+      rfl
+    · simp only [decodeFaultReply, hl, ne_eq, not_false_eq_true, ↓reduceIte,
+        faultReplyApplyOnCore]
+      simp [hl]
+  · simp only [TCB.faultWords, hk] at hPF
+    cases hPF
+    by_cases hl : mi.label = 0
+    · simp only [decodeFaultReply, hl, ne_eq, not_true_eq_false, ↓reduceIte, hR,
+        faultReplyApplyOnCore, faultRestartFrameOfContext, ThreadFaultWords.context,
+        FaultContext.gprAt]
+      simp
+    · simp only [decodeFaultReply, hl, ne_eq, not_false_eq_true, ↓reduceIte,
+        faultReplyApplyOnCore]
+      simp [hl]
+
+/-- A reply's words are the layout's message registers: word `i` of
+`regMessageRegs` is the layout's word `i`. -/
+theorem wordAt_regMessageRegs (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (i : Nat) : wordAt (Architecture.regMessageRegs layout rf) i =
+      Architecture.regLayoutWord layout rf i := by
+  rw [← Architecture.regMessageRegs_word]
+  unfold wordAt wordOf
+  cases (Architecture.regMessageRegs layout rf)[i]? <;> rfl
+
+/-- **The `.reply` arm's fault answer, in place**: the reply's writes with no
+message (`storeFaultReplyRendezvous`), the server's priority walk, then the
+fault answer (`performFaultAnswer`) from the reply's own registers. -/
+@[noinline] def performFaultReplyAnswer (st : SystemState) (c server : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (core : CoreId) (kind label : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (n : Nat) : SystemState :=
+  performFaultAnswer (PriorityInheritance.propagatePipChainCrossCore
+      (storeFaultReplyRendezvous st c server rid) server core).1 c kind label
+    ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf n 0
 
 /-- **The fault reply, in place**: a reply to a thread blocked on it carrying a
-VM or capability fault, every write in its slot (`replyWakesInPlace`), is
-seL4's `handleFaultReply` for those two faults, the restart at the faulting
-instruction with the saved registers whatever the reply says: the
-specification's fault branch (`faultReplyOnCore`) commits
-`performFaultReplyRestart`'s state. -/
+fault, every write in its slot (`replyWakesInPlace`), is seL4's
+`handleFaultReply`: the specification's fault branch (`faultReplyOnCore`)
+commits `performFaultReplyAnswer`'s state, the reply's words read from the
+layout's message registers. -/
 theorem faultReplyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (replier c server : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
-    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (core : CoreId)
+    (mi : MessageInfo) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (msg : IpcMessage) (core : CoreId)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep (some server))
     (hRO : ct.replyObject = some rid)
     (hSRes : server.isReserved = false)
     (hG : replyWakesInPlace st c ct rid = true)
-    (hK : (ct.faultKind == 1 || ct.faultKind == 2) = true) :
-    replyTransferOnCoreChecked ctx replier c mi regs msg core st =
-      .ok ((), performFaultReplyRestart st c server rid core ct.faultIp ct.faultSp ct.faultLr
-        ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6
-        ct.faultX7) := by
+    (hF : ct.faultWords.isFault = true) :
+    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg core
+        st =
+      .ok ((), performFaultReplyAnswer st c server rid core ct.faultKind mi.label ct.faultIp
+        ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
+        ct.faultX6 ct.faultX7 layout rf (min mi.length layout.msgRegs.size)) := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
-  obtain ⟨f, hPF, hDec⟩ : ∃ f, ct.pendingFault =
-      some { fault := f, context := ct.faultWords.context } ∧
-      decodeFaultReply f ct.faultWords.context mi regs =
-        .restart (faultRestartFrameOfContext ct.faultWords.context) := by
-    simp only [Bool.or_eq_true, beq_iff_eq] at hK
-    rcases hK with hK | hK
-    · exact ⟨.vmFault ct.faultWord0 ct.faultWord1 ct.faultFlag, by simp only [TCB.pendingFault,
-        ThreadFaultWords.decode, ThreadFaultWords.fault?, TCB.faultWords, hK], rfl⟩
-    · exact ⟨.capFault ct.faultWord0 ct.faultFlag ct.faultLookup, by simp only [TCB.pendingFault,
-        ThreadFaultWords.decode, ThreadFaultWords.fault?, TCB.faultWords, hK], rfl⟩
+  obtain ⟨tf, hPF⟩ : ∃ tf, ct.pendingFault = some tf :=
+    Option.isSome_iff_exists.mp (by rw [TCB.pendingFault_isSome]; exact hF)
   have hHas : threadHasPendingFault st c = true := by
     simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_some]
   obtain ⟨sgi, hD⟩ := replyDispatch_inPlace st replier c server ct ep rid IpcMessage.empty core
@@ -1078,7 +1174,12 @@ theorem faultReplyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemSt
   simp only [↓reduceIte]
   unfold faultReplyOnCore
   rw [hTc]
-  simp only [hPF, hD, hDec]
+  simp only [hPF, hD]
+  unfold performFaultReplyAnswer
+  rw [faultReplyApplyOnCore_decode_eq_performFaultAnswer _ c ct tf hPF mi _ layout rf
+    (min mi.length layout.msgRegs.size) 0
+    (by simp only [Architecture.regMessageRegs, Array.size_map])
+    (fun i _ => wordAt_regMessageRegs layout rf i)]
   rfl
 
 end SeLe4n.Kernel
