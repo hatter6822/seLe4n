@@ -1160,6 +1160,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointReplyChecked
   , `SeLe4n.Kernel.endpointReplyRecv
   , `SeLe4n.Kernel.endpointReplyRecvChecked
+  -- The `.replyRecv` composite at an unfaulted caller: the arm runs
+  -- `replyRecvTransferOnCore`, the composite at the answer the caller's fault
+  -- record selects, and is this on every unfaulted caller
+  -- (`replyRecvTransferOnCore_of_no_fault`); the composite's theorems name it.
+  , `SeLe4n.Kernel.endpointReplyRecvOnCore
   , `SeLe4n.Kernel.endpointReplyWithDonation
   , `SeLe4n.Kernel.endpointSendDual
   , `SeLe4n.Kernel.endpointSendDualChecked

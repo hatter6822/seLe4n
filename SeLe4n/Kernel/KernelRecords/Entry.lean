@@ -317,7 +317,7 @@ theorem RecordsStage.unknownSyscallEntryStep (lctx : LabelingContext) (st : Syst
   unfold _root_.SeLe4n.Kernel.unknownSyscallEntryStep
   split
   · split
-    · exact faultEntryDeliver lctx st _ ectx w _ hQ hCR
+    · exact faultEntryDeliver lctx st _ (unknownSyscallContext ectx) w _ hQ hCR
     · exact refl _
   · exact refl _
 

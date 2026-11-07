@@ -816,6 +816,21 @@ theorem endpointReceiveDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.O
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
 
+/-- Answering the `.replyRecv` caller writes no core outside
+`replyRecvAnswerCores`: the staging writes registers only, and a fault answer is
+`faultReplyApplyOnCore`, confined to `faultReplyApplyCores`. -/
+theorem replyRecvAnswerCaller_confinedToCores (answer : Option Architecture.FaultReplyOutcome)
+    (st : SystemState) (prevCaller : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (replyRecvAnswerCaller answer st prevCaller)
+      (replyRecvAnswerCores answer st prevCaller) := by
+  cases answer with
+  | none =>
+    exact observableSlotsConfinedToCores_of_framed_suffix
+      (Architecture.stageDeliveredMessage_scheduler_eq _ _ _)
+      (Architecture.stageDeliveredMessage_machine_eq _ _ _)
+      (observableSlotsConfinedToCores_refl st _)
+  | some outcome => exact faultReplyApplyOnCore_confinedToCores st prevCaller outcome
+
 /-- SM8.B.2 (**the live `.replyRecv` bound**): `endpointReplyRecvOnCore` — the function
 `API.dispatchWithCap`'s `.replyRecv` arm routes through — writes no core outside
 `endpointReplyRecvWriteSet`.
@@ -825,21 +840,22 @@ donation, at the states they really run at. The receive leg's
 `objects.invExt` premise is discharged from the reply leg's own preservation
 theorem rather than assumed, exactly as in §4a. -/
 theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
+    {answer : Option Architecture.FaultReplyOutcome}
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg receiverCspaceRoot
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg receiverCspaceRoot
         receiverSlotBase executingCore st
       = .ok (summary, st')) :
     observableSlotsConfinedToCores st st'
-      (endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
-        receiverSlotBase executingCore st) := by
+      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg
+        receiverCspaceRoot receiverSlotBase executingCore st) := by
   have hReply := endpointReplyOnCore_confinedToCores receiver prevCaller msg executingCore st
     hObjInv
   have hInv1 : (endpointReplyOnCore receiver prevCaller msg executingCore st).1.objects.invExt :=
     endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg executingCore st hObjInv
-  unfold endpointReplyRecvOnCore endpointReplyRecvWriteSet at *
+  unfold endpointReplyRecvAnsweringOnCore endpointReplyRecvAnsweringWriteSet at *
   simp only [] at hStep
   cases hRep : endpointReplyOnCore receiver prevCaller msg executingCore st with
   | mk st1 res =>
@@ -899,15 +915,19 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                   (replyRecvPostReceiveDonationWriteSet receiver
                     ((recordedReplyServer? st prevCaller).getD receiver) nextThread
                     executingCore returnedSc? st2 ++
-                    receiveLegPipHandoffWriteSet st3 receiver nextThread
-                      ((recordedReplyServer? st prevCaller).getD receiver) executingCore) := by
+                    (receiveLegPipHandoffWriteSet st3 receiver nextThread
+                      ((recordedReplyServer? st prevCaller).getD receiver) executingCore ++
+                    replyRecvAnswerCores answer
+                      (applyReceiveLegPipHandoff st3 receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) executingCore)
+                      prevCaller)) := by
                 rw [← hStep.2]
                 exact observableSlotsConfinedToCores_of_framed_suffix
-                  (by rw [Architecture.stageWokenSendCompletion_scheduler_eq,
-                          Architecture.stageDeliveredMessage_scheduler_eq])
-                  (by rw [Architecture.stageWokenSendCompletion_machine_eq,
-                          Architecture.stageDeliveredMessage_machine_eq])
-                  (observableSlotsConfinedToCores_trans hConf hPip)
+                  (Architecture.stageWokenSendCompletion_scheduler_eq _ _)
+                  (Architecture.stageWokenSendCompletion_machine_eq _ _)
+                  (observableSlotsConfinedToCores_trans hConf
+                    (observableSlotsConfinedToCores_trans hPip
+                      (replyRecvAnswerCaller_confinedToCores answer _ prevCaller)))
               exact observableSlotsConfinedToCores_trans hReply
                 (observableSlotsConfinedToCores_trans
                   (by simpa using observableSlotsConfinedToCores_trans hPopConf hRecv) hStaged)

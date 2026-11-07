@@ -517,7 +517,7 @@ theorem unknownSyscallEntryStep_mappingStage (lctx : LabelingContext) (st : Syst
   unfold unknownSyscallEntryStep
   split
   · split
-    · exact faultEntryDeliver_mappingStage lctx st _ ectx w _
+    · exact faultEntryDeliver_mappingStage lctx st _ (unknownSyscallContext ectx) w _
     · exact MappingStage.refl _
   · exact MappingStage.refl _
 

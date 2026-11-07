@@ -311,7 +311,7 @@ def abiEntryGate (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : Sy
 TCB it returns is the one the state holds at the caller.
 
 Needed by the scheduler domain, which reads a receiver's `cspaceRoot` off the
-state rather than off the gate: `schedLockSet_endpointReplyRecvOnCore` takes the
+state rather than off the gate: `schedLockSet_replyRecvTransferOnCore` takes the
 root the capability installation walks, the live `.replyRecv` arm hands it
 `gate.cspaceRoot`, and `declaredSchedulerLockSetForAbiEntry` resolves it through
 `st.getTcb? ops.caller`.  This is what makes those one lookup rather than two
@@ -484,7 +484,8 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       -- **Cut C4b**: `.replyRecv` carries the reply *payload* — MR1.. , the
       -- leading control register stripped exactly as the live arm strips it —
       -- badged with the REPLY cap's badge rather than the endpoint receive
-      -- cap's, and the receiver's slot base.
+      -- cap's, the `MessageInfo` whose label a faulted caller's answer decodes,
+      -- and the receiver's slot base.
       | .replyRecv, .object epId =>
           match resolveReplyRecvReply gate decoded s with
           | .error _ => none
@@ -495,6 +496,7 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                      message := some
                        { registers := full.extract 1 full.size,
                          badge := replyBadge },
+                     replyMessageInfo := some decoded.msgInfo,
                      receiverSlotBase := some decoded.capRecvSlot }
       -- **Cut C4b**: the eight arms the OBJECT domain declares nothing for and
       -- the scheduler domain does.  Each names its target the way its own live

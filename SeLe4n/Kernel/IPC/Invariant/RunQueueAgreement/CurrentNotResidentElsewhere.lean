@@ -421,7 +421,7 @@ theorem unknownSyscallEntryState_preserves_currentNotResidentElsewhere (lctx : L
     unfold unknownSyscallEntryStep
     rw [dif_pos h]
     split
-    · exact faultEntryDeliver_stepCovers lctx _ _ ectx w _ hSv.1
+    · exact faultEntryDeliver_stepCovers lctx _ _ (unknownSyscallContext ectx) w _ hSv.1
     · exact stepCovers_refl _ _
   · intro hc
     unfold unknownSyscallEntryStep

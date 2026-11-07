@@ -194,10 +194,11 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
           (replyAnsweredCaller? st rid).bind fun prevCaller =>
             (st.getTcb? ops.caller).bind fun receiver =>
               ops.message.bind fun msg =>
-                ops.receiverSlotBase.bind fun slotBase =>
-                  LockSet.ofList?
-                    (schedLockSet_endpointReplyRecvOnCore epId ops.caller rid prevCaller msg
-                      receiver.cspaceRoot slotBase executingCore st)
+                ops.replyMessageInfo.bind fun mi =>
+                  ops.receiverSlotBase.bind fun slotBase =>
+                    LockSet.ofList?
+                      (schedLockSet_replyRecvTransferOnCore epId ops.caller rid prevCaller
+                        mi.label msg receiver.cspaceRoot slotBase executingCore st)
   -- **WS-ZA ZA5.4 part 23**: a delete that destroys the last capability to an
   -- endpoint or a notification wakes its cancelled waiters on their own cores,
   -- one that destroys the last capability to a thread or a scheduling context
@@ -458,14 +459,16 @@ theorem schedLockSetForSyscall_reply_isSome_iff
             schedFootprintOfCores_keys_nodup]
 
 /-- `.replyRecv` needs both targets, the answered caller, the caller's own TCB
-(its CSpace root is what the capability transfer writes through), the message
-and the receiver's slot base. -/
+(its CSpace root is what the capability transfer writes through), the message,
+the `MessageInfo` whose label a faulted caller's answer decodes, and the
+receiver's slot base. -/
 theorem schedLockSetForSyscall_replyRecv_isSome_iff
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .replyRecv ops executingCore st).isSome
       ↔ ops.targetObject.isSome ∧
         (∃ rid, ops.targetReply = some rid ∧ (replyAnsweredCaller? st rid).isSome) ∧
-        (st.getTcb? ops.caller).isSome ∧ ops.message.isSome ∧ ops.receiverSlotBase.isSome := by
+        (st.getTcb? ops.caller).isSome ∧ ops.message.isSome ∧ ops.replyMessageInfo.isSome ∧
+          ops.receiverSlotBase.isSome := by
   unfold schedLockSetForSyscall
   cases ops.targetObject with
   | none => simp
@@ -475,8 +478,8 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
       | some rid =>
           cases hA : replyAnsweredCaller? st rid <;>
             cases st.getTcb? ops.caller <;> cases ops.message <;>
-              cases ops.receiverSlotBase <;>
-                simp [hA, LockSet.ofList?, schedLockSet_endpointReplyRecvOnCore,
+              cases ops.replyMessageInfo <;> cases ops.receiverSlotBase <;>
+                simp [hA, LockSet.ofList?, schedLockSet_replyRecvTransferOnCore,
                   schedFootprintOfCores_keys_nodup]
 
 /-- **WS-LS LS2.3**: every scheduler footprint names the object-store table
@@ -509,7 +512,7 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
       schedLockSet_notificationSignalBoundOnCore, schedLockSet_notificationWaitOnCore,
       schedLockSet_endpointSendOnCore, schedLockSet_endpointReceiveOnCore,
       schedLockSet_endpointCallOnCore, schedLockSet_replyTransferOnCore,
-      schedLockSet_endpointReplyRecvOnCore, schedLockSet_yieldOnCore]
+      schedLockSet_replyRecvTransferOnCore, schedLockSet_yieldOnCore]
     exact schedFootprintOfCores_contains_objStore_write _ _
 
 -- ============================================================================

@@ -508,12 +508,12 @@ theorem unknownSyscallEntryState_preserves_contextMatchesCurrentOnCore (lctx : L
   · unfold unknownSyscallEntryStep
     rw [dif_pos hlt]
     split
-    · exact faultEntryDeliver_preserves_objects_invExt lctx S _ ectx w _ hSv
+    · exact faultEntryDeliver_preserves_objects_invExt lctx S _ (unknownSyscallContext ectx) w _ hSv
     · exact hSv
   · unfold unknownSyscallEntryStep
     rw [dif_pos hlt]
     split
-    · exact faultEntryDeliver_preserves_contextMatchesCurrentOnCore lctx S _ ectx w _ hSv hSc
+    · exact faultEntryDeliver_preserves_contextMatchesCurrentOnCore lctx S _ (unknownSyscallContext ectx) w _ hSv hSc
     · exact hSc
 
 end SeLe4n.Kernel

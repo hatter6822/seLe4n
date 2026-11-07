@@ -264,6 +264,10 @@ private def weak : SeLe4n.ThreadId := ⟨1124⟩
 **grant-reply** (no full grant) — the idiomatic seL4 fault-handler shape. -/
 private def grantReplyFaulter : SeLe4n.ThreadId := ⟨1125⟩
 private def replyH : SeLe4n.ReplyId := ⟨1131⟩
+/-- A second server's endpoint and reply object: the server a restarted faulter
+calls next (`orphan`, running on core 2). -/
+private def epServer : SeLe4n.ObjId := ⟨1111⟩
+private def replyS : SeLe4n.ReplyId := ⟨1132⟩
 
 /-- Slot 0 of the root CNode: the fault-handler capability, carrying send
 (`.write`) and grant — one satisfying shape of `faultHandlerCapAuthorized`. -/
@@ -314,6 +318,8 @@ private def stFault : SystemState :=
       |>.withObject grantReplyFaulter.toObjId
           (.tcb (mkTcb 1125 30 none (some grantReplyCPtr)))
       |>.withObject replyH.toObjId (.reply { replyId := replyH })
+      |>.withObject epServer (.endpoint {})
+      |>.withObject replyS.toObjId (.reply { replyId := replyS })
       |>.build)
   enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore base
     c0 [(faulter, ⟨40⟩), (grantReplyFaulter, ⟨30⟩)]) c1 [(handler, ⟨50⟩)])
@@ -1130,8 +1136,14 @@ private def runUnknownSyscallChecks : IO Unit := do
           assertBool "the message is thirteen words" (km.registers.size == 13)
           assertBool "MR0-MR7 are the trap frame's argument window"
             ((List.range 8).all (fun i => wordAt km.registers i == trapWindow.gprAt i))
-          assertBool "MR8 is the restart PC — the instruction after the SVC"
-            (wordAt km.registers 8 == svcCtx.elr)
+          -- seL4's `FaultIP` for every `SVC` is the `SVC` itself (`lel_syscall`
+          -- stores `ELR - 4`), so a restart with no words re-issues the call
+          -- and an emulating handler advances the PC in MR8.
+          assertBool "MR8 is the restart PC — the SVC itself, one instruction before ELR"
+            (wordAt km.registers 8 == svcCtx.elr - 4 &&
+              wordAt km.registers 8 == SeLe4n.Platform.FFI.svcFaultIP svcCtx.elr)
+          assertBool "the recorded fault IP is the SVC, not the instruction after it"
+            (pf.context.faultIP == svcCtx.elr - 4)
           assertBool "MR9 is SP_EL0 and MR10 is the link register, from the trap frame"
             (wordAt km.registers 9 == trapWindow.sp && wordAt km.registers 10 == trapWindow.lr)
           assertBool "MR12 is the syscall number" (wordAt km.registers 12 == 0x18)
@@ -1152,15 +1164,33 @@ private def runUnknownSyscallChecks : IO Unit := do
         (sgis == [(c1, SgiKind.reschedule)])
       assertBool "the thread that issued the unknown syscall is not dispatchable on core 0"
         (!dispatchableOn stU faulter c0)
-      -- A payload-free reply — "emulated, continue" — resumes after the SVC.
+      -- A payload-free reply keeps seL4's `FaultIP`, the SVC itself, so the
+      -- thread re-issues the syscall (seL4: `activateThread` resumes a
+      -- `Restart` thread at `getRestartPC`).
       match faultReplyOnCore handler faulter resumeInfo #[] c1 stU with
       | (stR, .ok (outcome, _)) =>
-          assertBool "an emulating handler's payload-free reply continues after the SVC"
-            (outcome.restartPC? == some svcCtx.elr && savedPcOf stR faulter == some svcCtx.elr.toNat)
+          assertBool "a payload-free reply restarts the thread at the SVC, re-issuing it"
+            (outcome.restartPC? == some (svcCtx.elr - 4) &&
+              savedPcOf stR faulter == some (svcCtx.elr - 4).toNat)
           assertBool "…with the argument window the thread had at the trap"
             ((List.range 8).all (fun i =>
               (stR.getTcb? faulter).map (·.registerContext.gpr ⟨i⟩ |>.val) ==
                 some (trapWindow.gprAt i).toNat))
+      | (_, .error e) =>
+          assertBool s!"the payload-free reply must succeed (got {repr e})" false
+      -- An emulating handler advances the PC itself: MR8 is the instruction
+      -- after the SVC, and the thread continues there.
+      let emulateRegs : Array SeLe4n.RegValue :=
+        (Array.range 11).map (fun i =>
+          if i == 8 then SeLe4n.RegValue.ofNat svcCtx.elr.toNat
+          else if i == 9 then SeLe4n.RegValue.ofNat trapWindow.sp.toNat
+          else if i == 10 then SeLe4n.RegValue.ofNat trapWindow.lr.toNat
+          else SeLe4n.RegValue.ofNat (trapWindow.gprAt i).toNat)
+      match faultReplyOnCore handler faulter { length := 11, extraCaps := 0, label := 0 }
+          emulateRegs c1 stU with
+      | (stR, .ok (outcome, _)) =>
+          assertBool "an emulating reply that advances MR8 continues after the SVC"
+            (outcome.restartPC? == some svcCtx.elr && savedPcOf stR faulter == some svcCtx.elr.toNat)
       | (_, .error e) =>
           assertBool s!"the emulating reply must succeed (got {repr e})" false
       -- An SVC issued at EL1 is a kernel bug, not a user fault.
@@ -1649,6 +1679,125 @@ private def runReplySeamChecks : IO Unit := do
              | (_, .error e) => .error e))
   | (_, .error e) =>
       assertBool s!"handler recv failed ({repr e})" false
+
+-- ============================================================================
+-- §7g  A ReplyRecv answer to a faulted caller is the fault reply
+-- ============================================================================
+
+/-- Slot 3 of the root CNode (empty in `stFault`) holding the reply capability
+the handler's receive linked to the faulted caller, the one a `ReplyRecv` names
+in MR0. -/
+private def replyCapCPtr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 3
+
+private def withHandlerReplyCap (st : SystemState) : SystemState :=
+  match st.objects[cnRoot]? with
+  | some (.cnode cn) =>
+      { st with objects := st.objects.insert cnRoot (.cnode (cn.insert (SeLe4n.Slot.ofNat 3) replyCapH)) }
+  | _ => st
+
+/-- A labeling the checked entry accepts (the all-`publicLabel` default is
+refused as insecure) and under which every flow here is admitted. -/
+private def entryLabeling : LabelingContext :=
+  SeLe4n.Kernel.uniformFixtureLabelingContext
+    SecurityLabel.kernelTrusted SecurityLabel.publicLabel (by decide)
+
+/-- The handler's `ReplyRecv` on core 1 through the compiled syscall entry: the
+endpoint capability in `x0`, a one-word `MessageInfo` carrying the handler's
+label in `x1`, and the reply capability's CPtr as MR0 in `x2`.  The reply
+payload (MR1..) is empty, so the answer is the label alone. -/
+private def handlerReplyRecvOnCore1 (label : Nat) (st : SystemState) :
+    Except KernelError (SyscallOutcome × SystemState) :=
+  SeLe4n.Testing.dispatchFromAbi entryLabeling c1 SyscallId.replyRecv.toNat.toUInt32
+    handlerCPtr.toNat.toUInt64
+    (MessageInfo.encode { length := 1, extraCaps := 0, label := label }).toUInt64
+    replyCapCPtr.toNat.toUInt64 0 0 0 0 0 0 0 0 (withHandlerReplyCap st)
+
+/-- The second server's ordinary `.reply`: one payload word, label 0.  Read as a
+fault reply this would be a vmFault resume, which restarts at the fault's PC. -/
+private def serverReplyDecoded : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 1, extraCaps := 0, label := 0 },
+    syscallId := .reply, msgRegs := #[SeLe4n.RegValue.ofNat 0x77] }
+
+private def serverReplyGate : SyscallGate :=
+  { callerId := orphan, cspaceRoot := cnRoot, capAddr := SeLe4n.CPtr.ofNat 0,
+    capDepth := 2, requiredRight := .write }
+
+private def serverReplyCap : Capability :=
+  { target := .replyCap replyS, rights := AccessRightSet.ofList [.read, .write] }
+
+/-- Fault delivery is a Call, so the faulted thread is the recorded caller of
+the handler's reply object, and a handler loop answers it with `ReplyRecv`.
+That answer is the fault reply `.reply` gives (seL4's `doReplyTransfer` fault
+branch): the fault record is retired and the restart applied (or the thread
+abandoned).  Before the fix the reply leg woke the faulter `.ready` with its
+fault record still set, so the next ordinary reply to it — from any server it
+later called — was read as a fault reply and could set its PC. -/
+private def runReplyRecvFaultAnswerChecks : IO Unit := do
+  IO.println "--- §7g a ReplyRecv answer to a faulted caller is the fault reply ---"
+  match queuedDeliveryE with
+  | .error e => assertBool s!"queued pipeline: {e}" false
+  | .ok q =>
+    assertBool "pre: the handler's reply object names the faulter, which carries its fault"
+      ((q.afterRecv.getReply? replyH).bind (·.caller) == some faulter &&
+        threadHasPendingFault q.afterRecv faulter)
+    match handlerReplyRecvOnCore1 0 q.afterRecv with
+    | .error e => assertBool s!"the handler's ReplyRecv must succeed (got {repr e})" false
+    | .ok (out, stRR) =>
+      assertBool "the ReplyRecv's receive leg blocks the handler on its endpoint"
+        (out == .blocks && ipcStateOf stRR handler == some (.blockedOnReceive epHandler))
+      assertBool "the ReplyRecv answer retires the faulter's fault record"
+        (pendingFaultOf stRR faulter == none && !threadHasPendingFault stRR faulter)
+      assertBool "the ReplyRecv answer restarts the faulter at the faulting instruction"
+        (savedPcOf stRR faulter == some dataAbortCtx.elr.toNat)
+      assertBool "the restarted faulter is ready and dispatchable on its core"
+        (ipcStateOf stRR faulter == some .ready && dispatchableOn stRR faulter c0)
+      assertBool "one answer: the faulter's registers are those the .reply answer installs"
+        ((stRR.getTcb? faulter).map (·.registerContext) ==
+          (q.afterReply.getTcb? faulter).map (·.registerContext))
+      -- The restarted faulter runs on: core 0 dispatches it, its PC moves past
+      -- the fault, and it Calls a second server, which answers with an
+      -- ordinary `.reply`.
+      match handleRescheduleSgiOnCore stRR c0 with
+      | .error e => assertBool s!"core 0 dispatches the restarted faulter (got {repr e})" false
+      | .ok stD =>
+        assertBool "core 0 runs the restarted faulter" (stD.scheduler.currentOnCore c0 == some faulter)
+        let stRun := stD.updateTcb faulter fun t =>
+          { t with registerContext := { t.registerContext with pc := 0x5_0000, x1 := 0 } }
+        match endpointReceiveDualOnCore epServer orphan (some replyS) c2 stRun with
+        | (_, .error e) => assertBool s!"the second server's receive must succeed (got {repr e})" false
+        | (stS, .ok _) =>
+          match endpointCallCrossCoreDispatch epServer faulter (.frame none false)
+              (SeLe4n.Slot.ofNat 0) c0 stS with
+          | (_, .error e) => assertBool s!"the faulter's Call must succeed (got {repr e})" false
+          | (stC, .ok _) =>
+            assertBool "the second server's reply object names the faulter"
+              ((stC.getReply? replyS).bind (·.caller) == some faulter)
+            assertBool "…and the faulter carries no fault into the Call"
+              (!threadHasPendingFault stC faulter)
+            match dispatchWithCap serverReplyDecoded orphan c2 serverReplyGate serverReplyCap stC with
+            | .error e => assertBool s!"the second server's reply must succeed (got {repr e})" false
+            | .ok (_, stA) =>
+              assertBool "the second server's reply is an ordinary reply: the faulter's PC is its own"
+                (savedPcOf stA faulter == some 0x5_0000)
+              assertBool "…not the stale fault's restart PC"
+                (savedPcOf stA faulter != some dataAbortCtx.elr.toNat)
+              assertBool "…and it delivers the server's message"
+                ((deliveredMessageOf stA faulter).map (·.registers) ==
+                  some #[SeLe4n.RegValue.ofNat 0x77])
+  -- A nonzero label abandons an unknown-syscall fault, through ReplyRecv as
+  -- through `.reply` (a VM fault restarts whatever the label, as in seL4).
+  match handlerRecvOnCore1 stRunning with
+  | (_, .error e) => assertBool s!"handler recv failed ({repr e})" false
+  | (afterRecv, .ok _) =>
+    let fctx := faultContextOfThread afterRecv faulter 0x4_0000 0x3C0
+    let (afterFault, _) := faultDeliverOnCore afterRecv faulter (.unknownSyscall 0x2A) fctx c0
+    match handleRescheduleSgiOnCore afterFault c1 >>= handlerReplyRecvOnCore1 1 with
+    | .error e => assertBool s!"the abandoning ReplyRecv must succeed (got {repr e})" false
+    | .ok (_, stAb) =>
+      assertBool "a nonzero-label ReplyRecv abandons the faulter: inactive, on no core"
+        (threadStateOf stAb faulter == some .Inactive && !dispatchableOn stAb faulter c0)
+      assertBool "…with its fault record retired"
+        (pendingFaultOf stAb faulter == none)
 
 -- ============================================================================
 -- §7f  A faulted thread's reservation travels to its handler and back
@@ -2298,6 +2447,7 @@ def runFaultHandlingChecks : IO Unit := do
   runAbandonPlacementChecks
   runCancelledFaultChecks
   runReplySeamChecks
+  runReplyRecvFaultAnswerChecks
   runFaultDonationChecks
   runProgressChecks
   runTraceFixtureCheck

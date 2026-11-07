@@ -704,7 +704,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
             simp only at hStep
             refine footprintCoversWrites_trans S ?_ (footprintCoversWrites_of_scheduler_eq S hTable
               (Architecture.stageDeliveredMessage_scheduler_eq _ _ _))
-            exact schedLockSet_endpointReplyRecvOnCore_coversWrites epId tid rid prev _
+            exact schedLockSet_replyRecvTransferOnCore_coversWrites epId tid rid prev _ _
               tcb.cspaceRoot decoded.capRecvSlot e st st₁ summary S hObjInv hSched hStep
           · exact absurd hDisp (by simp)
         · exact absurd hDisp (by simp)

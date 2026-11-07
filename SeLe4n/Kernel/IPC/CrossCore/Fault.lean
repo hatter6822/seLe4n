@@ -705,20 +705,15 @@ message for the woken caller (WS-RA RA.B.5b), while a fault reply installs a
 **restart frame** (or abandons the thread) and has no delivered message to
 stage.  Both branches fail closed with the post-state discarded.
 
-## What this seam does not yet cover
+## `.replyRecv` gives the same answer
 
-`.replyRecv` — the *idiomatic* server loop, and the one a real fault handler
-would use — does **not** route through here.  `endpointReplyRecvOnCore` composes
-`endpointReplyOnCore` with a receive leg and a donation return in one
-transition, so the fault branch cannot simply be substituted for its reply
-leg: a fault reply restarts or abandons the answered thread instead of
-delivering to it, which changes what the receive leg and the donation return
-are handed.  Until that lands, a handler must answer a fault with `.reply`
-and take its next request with a separate `.receive`; a `.replyRecv` answer
-reaches the ordinary path and wakes the faulted thread `.ready` at the
-instruction that faulted.  Registered as debt in `docs/REGISTERED_DEBT.md`
-(WS-RR), closure target RR7 — stated here rather than left for a reader to
-infer from the absence of a call. -/
+`.replyRecv` — the idiomatic server loop, and the one a real fault handler
+uses — answers a faulted caller through the same decode and outcome: its arm's
+transition `replyRecvTransferOnCore` (`IPC/CrossCore/EndpointReplyRecv.lean`)
+reads the caller's fault record off the pre-state, runs the reply leg with the
+empty message this branch delivers, and ends with `faultReplyApplyOnCore` in
+place of the delivered-message staging, the receive leg and the donation return
+running between unchanged. -/
 def replyTransferOnCore (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (executingCore : CoreId)
     (st : SystemState) : Except KernelError (Unit × SystemState) :=

@@ -1,3 +1,112 @@
+## v0.36.206 — A ReplyRecv answer to a faulted caller is the fault reply
+
+Fault delivery is a Call, so a faulted thread is the recorded caller of its
+handler's Reply.  When the handler answered with `ReplyRecv`, the reply leg
+woke the thread `.ready` with its fault record still set and no restart
+applied.  The next ordinary `.reply` it received, from any server it later
+called, was then routed to `faultReplyOnCore`, so that server could set the
+thread's PC.  `ReplyRecv`'s reply leg now answers a faulted caller exactly as
+`.reply` does: the handler's label and payload are decoded with
+`decodeFaultReply`, the fault record is cleared, and the thread is restarted
+or abandoned.  The receive leg runs unchanged.
+
+- **One composite over every answer.**  `endpointReplyRecvAnsweringOnCore`
+  takes the answer (`Option FaultReplyOutcome`) and ends with
+  `replyRecvAnswerCaller`: the delivered-message staging on `none`,
+  `faultReplyApplyOnCore` on a decoded outcome.  `endpointReplyRecvOnCore`
+  is it at `none`.  The arm's transition `replyRecvTransferOnCore` reads
+  the caller's fault record off the pre-state
+  (`replyRecvCallerFaultAnswer?`) and gives the reply leg the empty message
+  the fault branch delivers (`replyRecvLegMessage`).  On an unfaulted
+  caller it is the old composite (`replyRecvTransferOnCore_of_no_fault`).
+- **Both dispatch tables and the compiled arm.**  `API.dispatchWithCap` and
+  `dispatchWithCapChecked` call `replyRecvTransferOnCore` with the
+  `MessageInfo` label.  In `RefusalCarryingReplyRecv.lean`,
+  `endpointReplyRecvCheckedArmGeneralR` and `replyRecvRendezvousR` call it
+  too.  `replyRecvResolvedR` sends a faulted caller to it before the in-place
+  fast paths (a read, before any write).  The fast/spec equalities are
+  restated over the new transition.
+- **Theorems generalised to every answer.**  The run-queue entry stage
+  (the woken caller is ready and is not the replier, so the abandon may
+  deschedule it), readiness, saved-register, object-invariant, IPC bundle,
+  reply-waiter, slot-confinement, mapping-stage, step-cover, replenish-queue
+  and cross-core non-interference theorems.  New:
+  `replyRecvAnswerCaller_*` per property,
+  `faultReplyApplyOnCore_stepCovers` and `faultReplyApplyOnCore_mappingStage`
+  (now shared with `faultReplyOnCore`'s proofs),
+  `schedLockSet_replyRecvTransferOnCore_coversWrites`,
+  `replyRecvTransferOnCore_crossCoreNonInterference` and
+  `schedLockSet_replyRecvTransferOnCore_of_no_fault`.  The readiness frame
+  (`readyKeptStage` and its send and receive lemmas) moves to
+  `RunQueueAgreement/Readiness.lean` so the entry-stage proof can use it.
+- **Footprint.**  The `.replyRecv` scheduler footprint is
+  `schedLockSet_replyRecvTransferOnCore`, whose write set appends the
+  abandon's core.  `abiEntryLockOperands` now carries the `MessageInfo` for
+  `.replyRecv`.  `schedLockSet_endpointReplyRecvOnCore` is registered in the
+  scheduler-footprint census as the unfaulted specialisation.
+- **The fault answer, in place, shared by both arms.**  The specification
+  path a faulted caller took builds the reply's message, its register array,
+  the decoded fault record and the outcome, so the fault handler's
+  `ReplyRecv` read 92 cells.  `performFaultAnswer` (`IPC/CrossCore/FaultInPlace.lean`)
+  is the answer from words: the caller's fault kind and saved context read off
+  its TCB on the pre-state, the reply's label and its words read from the
+  register file (`faultReplyWord`, `Architecture.regLayoutWord`), restart or
+  abandon applied in place, no fault record, message, outcome or frame built
+  (`faultReplyApplyOnCore_decode_eq_performFaultAnswer`).  The `.reply` arm
+  applies it on every fault kind (`performFaultReplyAnswer`; it restarted only
+  VM and capability faults in place before), on a donated reply
+  (`performFaultReplyDonatedAnswer`) and on a caller recording no server
+  (`performFaultReplyUnheldAnswer`).  The `.replyRecv` arm applies it after
+  its in-place legs on the blocking, donated and unheld shapes
+  (`performReplyRecvFaultAnswer`, `performReplyRecvDonatedFaultAnswer`,
+  `performReplyRecvUnheldFaultAnswer`; `replyRecvFaultArmR`).  Each is proven
+  equal to the specification's transition
+  (`faultReplyTransferChecked_inPlace`, `faultReplyTransferChecked_donated_inPlace`,
+  `faultReplyTransferChecked_unheld_inPlace`,
+  `replyRecvTransferOnCore_fault_blocks_inPlace`,
+  `replyRecvTransferOnCore_fault_donated_inPlace`,
+  `replyRecvTransferOnCore_fault_unheld_inPlace`, `replyRecvFaultArmR_eq`),
+  over the three in-place reply-receive theorems generalised to every answer
+  (`replyRecvAnsweringOnCore_blocks_inPlace`, `_donated_inPlace`,
+  `_unheld_inPlace`).
+- **Measured.**  The exerciser's five fault-handler `ReplyRecv` scenarios
+  (`*-reply`) read 0 at the first call and at steady state, and each now
+  checks the restart the answer applied: the PC, `x0` and `x1` the faulted
+  thread resumes with (the reply's word as an unknown syscall's `x0` and a user
+  exception's PC; a capability fault resumes at the `SVC`, which it re-issues,
+  and an unknown syscall at the instruction after it, the fault IP each
+  records).  Ten new scenarios, `*-delivered-to-reply` and `*-plain-reply` for
+  each of the five kinds, deliver the fault and answer it with `Reply`, then
+  check the same restart when the handler waits again.  Each reads 0, and all
+  ten are in the pinned scenario set under the zero rule.  The fault reply's
+  leg on the donated and unheld shapes (`storeFaultReplyLeg`) is registered
+  with the reply-stack write census by its chain theorem.
+- **An unknown syscall restarts at its `SVC`, as in seL4.**  The model
+  recorded the instruction after the `SVC` (its `ELR_EL1`) as an unknown
+  syscall's restart PC, so a reply with no PC word continued past the call.
+  seL4's `lel_syscall` stores `ELR - 4` as `FaultIP` for every `SVC`, and a
+  restarted thread resumes at `getRestartPC`.  `unknownSyscallEntryStep` now
+  delivers through `unknownSyscallContext` (the `Platform.FFI.svcFaultIP` rule
+  the capability fault uses), and the compiled step hands the delivery the same
+  word.  Every proof over the step is restated over the rewound context.  A reply
+  that keeps the PC re-issues the syscall, and an emulating handler advances
+  MR8.  `FaultHandlingSuite` §6f checks that MR8 and the recorded fault IP are
+  the `SVC`, that a payload-free reply restarts there, and that an MR8-advancing
+  reply continues after it.  The exerciser's `unknown-syscall-*` restart checks
+  expect the `SVC`.  VM faults and user exceptions already record the faulting
+  instruction, as seL4 does.  No fixture changes: the 4-core fault trace prints
+  no restart PC.
+- **Tests.**  `tests/FaultHandlingSuite.lean` §7g delivers a fault, has the
+  handler answer with `ReplyRecv` through the compiled syscall entry, and
+  checks that the fault record is cleared, the restart applied and the
+  registers equal those `.reply` installs.  The restarted thread then Calls a
+  second server, whose ordinary `.reply` leaves its PC alone and delivers the
+  message.  A nonzero label abandons it.  With the fault answer disabled, the
+  section fails.
+- **Docs.**  The debt row is closed in `docs/REGISTERED_DEBT.md`, and
+  `replyTransferOnCore`'s docstring no longer describes the gap.
+  `docs/spec/SELE4N_SPEC.md` describes the reply leg's answer.
+
 ## v0.36.205 — WS-ZA ZA6.36: the other plans re-read against the tree WS-ZA leaves
 
 Every plan under `docs/planning/` except the zero-allocation plan and its

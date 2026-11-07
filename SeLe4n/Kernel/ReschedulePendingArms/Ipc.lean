@@ -1173,6 +1173,28 @@ theorem endpointReplyCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : Lab
   · exact endpointReplyCrossCoreDispatch_stepCovers e hInv
   · exact ⟨stepCovers_refl e st, hInv⟩
 
+/-- The fault reply's decoded outcome covers: the restart frame, or the
+abandon's deschedule and off-queue write. -/
+theorem faultReplyApplyOnCore_stepCovers (e : CoreId) (st : SystemState)
+    (faulted : SeLe4n.ThreadId) (outcome : Architecture.FaultReplyOutcome)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (faultReplyApplyOnCore st faulted outcome) ∧
+    (faultReplyApplyOnCore st faulted outcome).objects.invExt := by
+  unfold faultReplyApplyOnCore
+  split
+  · unfold applyFaultRestart
+    refine ⟨?_, SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
+    exact capabilityKeyFrame.stepCovers (updateTcb_keyFrame st faulted (fun _ => rfl) hInv)
+      (by rw [SystemState.updateTcb_machine])
+  · unfold faultAbandonOnCore
+    refine ⟨stepCovers_trans
+      (removeRunnableOnCore_stepCovers e st faulted (faultAbandonCore st faulted)) ?_,
+      SystemState.updateTcb_preserves_objects_invExt _ _ _
+        (removeRunnableOnCore_objects_invExt _ _ _ hInv)⟩
+    exact capabilityKeyFrame.stepCovers (updateTcb_keyFrame _ faulted (fun _ => rfl)
+      (removeRunnableOnCore_objects_invExt _ _ _ hInv))
+      (by rw [SystemState.updateTcb_machine])
+
 /-- The fault reply covers: the reply chain, then the restart frame or the
 abandon's deschedule. -/
 theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.ThreadId}
@@ -1196,20 +1218,8 @@ theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.Threa
   | error _ => exact ⟨stepCovers_refl e st, hInv⟩
   | ok sgi =>
     dsimp only
-    unfold faultReplyApplyOnCore
-    split
-    · unfold applyFaultRestart
-      refine ⟨stepCovers_trans hR ?_, SystemState.updateTcb_preserves_objects_invExt _ _ _ hRInv⟩
-      exact capabilityKeyFrame.stepCovers (updateTcb_keyFrame st1 faulted (fun _ => rfl) hRInv)
-        (by rw [SystemState.updateTcb_machine])
-    · unfold faultAbandonOnCore
-      refine ⟨stepCovers_trans (stepCovers_trans hR
-        (removeRunnableOnCore_stepCovers e st1 faulted (faultAbandonCore st1 faulted))) ?_,
-        SystemState.updateTcb_preserves_objects_invExt _ _ _
-          (removeRunnableOnCore_objects_invExt _ _ _ hRInv)⟩
-      exact capabilityKeyFrame.stepCovers (updateTcb_keyFrame _ faulted (fun _ => rfl)
-        (removeRunnableOnCore_objects_invExt _ _ _ hRInv))
-        (by rw [SystemState.updateTcb_machine])
+    exact (faultReplyApplyOnCore_stepCovers e st1 faulted _ hRInv).imp_left
+      (stepCovers_trans hR)
 
 /-- The checked reply transfer covers on its `.ok`. -/
 theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -1655,15 +1665,16 @@ theorem applyReceiveLegPipHandoff_stepCovers (e : CoreId) (st : SystemState)
 /-- The per-core reply-and-receive covers on its `.ok`: the reply leg, the
 donation pop, the receive leg, the post-receive donation, the chain walk and the
 staging. -/
-theorem endpointReplyRecvOnCore_stepCovers (e : CoreId) {epId : SeLe4n.ObjId}
+theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
+    {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
     {msg : IpcMessage} {receiverCspaceRoot : SeLe4n.ObjId} {receiverSlotBase : SeLe4n.Slot}
     {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt)
-    (h : endpointReplyRecvOnCore epId tid rid prevCaller msg receiverCspaceRoot receiverSlotBase
-      executingCore st = .ok (summary, st')) :
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg receiverCspaceRoot
+      receiverSlotBase executingCore st = .ok (summary, st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold endpointReplyRecvOnCore at h
+  unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
   obtain ⟨hR, hRInv⟩ := endpointReplyOnCore_stepCovers e (replier := tid) (target := prevCaller)
     (msg := msg) (executingCore := executingCore) hInv
@@ -1699,11 +1710,17 @@ theorem endpointReplyRecvOnCore_stepCovers (e : CoreId) {epId : SeLe4n.ObjId}
   obtain ⟨hD, hDInv⟩ := replyRecvPostReceiveDonation_stepCovers e hVInv hPost
   obtain ⟨hW, hWInv⟩ := applyReceiveLegPipHandoff_stepCovers e st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) executingCore hDInv
-  have hS1 := stageDeliveredMessage_keyFrame _ prevCaller 0 hWInv
+  obtain ⟨hS1, hS1Inv⟩ : stepCovers e _ (replyRecvAnswerCaller answer _ prevCaller) ∧
+      (replyRecvAnswerCaller answer _ prevCaller).objects.invExt := by
+    cases answer with
+    | none =>
+      have hK := stageDeliveredMessage_keyFrame _ prevCaller 0 hWInv
+      exact ⟨hK.stepCovers, hK.2.2⟩
+    | some o => exact faultReplyApplyOnCore_stepCovers e _ prevCaller o hWInv
   have hS2 := stageWokenSendCompletion_keyFrame _ ((st1p.getEndpoint? epId).bind (·.sendQ.head))
-    hS1.2.2
+    hS1Inv
   exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans (stepCovers_trans
-    (stepCovers_trans (stepCovers_trans hR hP) hV) hD) hW) hS1.stepCovers) hS2.stepCovers,
+    (stepCovers_trans (stepCovers_trans hR hP) hV) hD) hW) hS1) hS2.stepCovers,
     hS2.2.2⟩
 
 end SeLe4n.Kernel

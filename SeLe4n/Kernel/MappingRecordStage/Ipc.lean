@@ -430,6 +430,20 @@ theorem endpointReplyCrossCoreDispatchChecked_mappingStage {ctx : LabelingContex
   · exact endpointReplyCrossCoreDispatch_mappingStage
   · exact MappingStage.refl _
 
+/-- The fault reply's decoded outcome is a kind-preserving TCB write: the
+restart frame, or the abandon's deschedule and `.Inactive` mark. -/
+theorem faultReplyApplyOnCore_mappingStage (st : SystemState) (faulted : SeLe4n.ThreadId)
+    (outcome : Architecture.FaultReplyOutcome) :
+    MappingStage st (faultReplyApplyOnCore st faulted outcome) := by
+  unfold faultReplyApplyOnCore
+  split
+  · exact MappingStage.of_kindPreservingWrite
+      (fun h => by unfold applyFaultRestart; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ h)
+      (fun h => applyFaultRestart_kindPreservingWrite _ _ _ h)
+  · exact MappingStage.of_kindPreservingWrite
+      (fun h => faultAbandonOnCore_preserves_objects_invExt _ _ _ h)
+      (fun h => faultAbandonOnCore_kindPreservingWrite _ _ _ h)
+
 theorem faultReplyOnCore_mappingStage {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {executingCore : CoreId} {st : SystemState} :
     MappingStage st (faultReplyOnCore replier faulted mi regs executingCore st).1 := by
@@ -449,14 +463,7 @@ theorem faultReplyOnCore_mappingStage {replier faulted : SeLe4n.ThreadId} {mi : 
   | error _ => exact MappingStage.refl _
   | ok sgi =>
     dsimp only
-    unfold faultReplyApplyOnCore
-    split
-    · exact hR.trans (MappingStage.of_kindPreservingWrite
-        (fun h => by unfold applyFaultRestart; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ h)
-        (fun h => applyFaultRestart_kindPreservingWrite _ _ _ h))
-    · exact hR.trans (MappingStage.of_kindPreservingWrite
-        (fun h => faultAbandonOnCore_preserves_objects_invExt _ _ _ h)
-        (fun h => faultAbandonOnCore_kindPreservingWrite _ _ _ h))
+    exact hR.trans (faultReplyApplyOnCore_mappingStage _ _ _)
 
 theorem replyTransferOnCoreChecked_mappingStage {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
@@ -642,13 +649,23 @@ theorem applyReceiveLegPipHandoff_mappingStage (st : SystemState)
   · exact propagatePipChainCrossCore_mappingStage
   · exact MappingStage.refl _
 
-theorem endpointReplyRecvOnCore_mappingStage {epId : SeLe4n.ObjId}
+/-- The reply leg's answer to its caller: the ordinary staging, or the fault
+reply's decoded outcome. -/
+theorem replyRecvAnswerCaller_mappingStage (answer : Option Architecture.FaultReplyOutcome)
+    (st : SystemState) (prevCaller : SeLe4n.ThreadId) :
+    MappingStage st (replyRecvAnswerCaller answer st prevCaller) := by
+  cases answer with
+  | none => exact stageDeliveredMessage_mappingStage _ _ _
+  | some o => exact faultReplyApplyOnCore_mappingStage _ _ o
+
+theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.FaultReplyOutcome}
+    {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
     {msg : IpcMessage} {receiverCspaceRoot : SeLe4n.ObjId} {receiverSlotBase : SeLe4n.Slot}
     {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
-    (h : endpointReplyRecvOnCore epId tid rid prevCaller msg receiverCspaceRoot receiverSlotBase
-      executingCore st = .ok (summary, st')) : MappingStage st st' := by
-  unfold endpointReplyRecvOnCore at h
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg receiverCspaceRoot
+      receiverSlotBase executingCore st = .ok (summary, st')) : MappingStage st st' := by
+  unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
   have hR := endpointReplyOnCore_mappingStage (replier := tid) (target := prevCaller)
     (msg := msg) (executingCore := executingCore) (st := st)
@@ -683,6 +700,7 @@ theorem endpointReplyRecvOnCore_mappingStage {epId : SeLe4n.ObjId}
   cases h
   exact (((((hR.trans hP).trans hV).trans (replyRecvPostReceiveDonation_mappingStage hPost)).trans
     (applyReceiveLegPipHandoff_mappingStage _ _ _ _ _)).trans
-    (stageDeliveredMessage_mappingStage _ _ _)).trans (stageWokenSendCompletion_mappingStage _ _)
+    (replyRecvAnswerCaller_mappingStage answer _ prevCaller)).trans
+    (stageWokenSendCompletion_mappingStage _ _)
 
 end SeLe4n.Kernel

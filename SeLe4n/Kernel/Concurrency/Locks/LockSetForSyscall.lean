@@ -172,11 +172,12 @@ structure SyscallLockOperands where
   needs the transition's own arguments.  Every one is optional and defaults to
   absent, so an arm that needs one absent answers `none`. -/
   receiverSlotBase : Option SeLe4n.Slot := none
-  /-- **Cut C4**: the `MessageInfo` a `.reply` carries.  The arm's footprint
-  branches on whether the answered caller has a pending fault, and on that
-  branch `decodeFaultReply` reads this and the registers below to tell a
-  *restart* from an *abandon* — which is the one core the dispatch-level
-  footprint never names (`v0.35.163`). -/
+  /-- **Cut C4**: the `MessageInfo` a `.reply` or `.replyRecv` carries.  The
+  arm's footprint branches on whether the answered caller has a pending fault,
+  and on that branch `decodeFaultReply` reads this (and, for `.reply`, the
+  registers below; `.replyRecv` decodes its reply payload) to tell a *restart*
+  from an *abandon* — which is the one core the dispatch-level footprint never
+  names (`v0.35.163`). -/
   replyMessageInfo : Option MessageInfo := none
   /-- **Cut C4**: the register payload a `.reply` carries, read by
   `decodeFaultReply` beside `replyMessageInfo`. -/
