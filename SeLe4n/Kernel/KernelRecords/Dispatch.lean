@@ -18,6 +18,7 @@ import SeLe4n.Kernel.KernelRecords.SetSpace
 import SeLe4n.Kernel.KernelRecords.Retype
 import SeLe4n.Kernel.KernelRecords.LifecycleWaiters
 import SeLe4n.Kernel.KernelRecords.IpcStages
+import SeLe4n.Kernel.KernelRecords.IpcReplyRecv
 import SeLe4n.Kernel.KernelRecords.Timer
 
 /-! # The dispatchers keep the records
@@ -29,9 +30,9 @@ the dispatcher is handed, as the mapping traversal reads its own
 (`MappingArmPremises`) and the IPC traversal its reachable bundle: the deletes,
 the thread-space set and the handler bind and clear carry the reply-waiter
 queues by the reachable bundle (`reachableDeleteBundle`), and the resume restores
-a thread the dispatch's own pre-state check finds quiescent in IPC
-(`threadIpcFieldsQuiescent`, the `targetThreadQuiescent` field of the dispatch's
-premises).  The arm runs on the state the dispatcher is handed, since its
+an `.Inactive` thread, which is quiescent in IPC (`threadIpcFieldsQuiescent`, the
+`targetThreadQuiescent` field of the dispatch's premises, stated here of every
+`.Inactive` thread so it is a fact about the state, not about the call).  The arm runs on the state the dispatcher is handed, since its
 lookups and decodes write nothing.
 -/
 
@@ -47,14 +48,45 @@ theorem RecordsStage.of_fst_eq {α : Type} {st st' : SystemState} {p : SystemSta
   subst h; exact s
 
 /-- What the capability arms read off the dispatcher's state beyond the records:
-the reachable bundle the deletes carry, and the resume target's IPC quiescence. -/
-structure RecordsArmPremises (decoded : SyscallDecodeResult) (cap : Capability)
-    (st : SystemState) : Prop where
+the reachable bundle the deletes carry, and every `.Inactive` thread's IPC
+quiescence, which the resume reads of its target. -/
+structure RecordsArmPremises (st : SystemState) : Prop where
   deletes : reachableDeleteBundle st
-  resumeQuiescent : ∀ (objId : SeLe4n.ObjId), decoded.syscallId = .tcbResume →
-    cap.target = .object objId →
-    ∀ vtid, validateThreadIdArg (ThreadId.ofNat objId.toNat) = .ok vtid →
-    threadIpcFieldsQuiescent st vtid.val
+  inactiveQuiescent : ∀ t tcb, st.getTcb? t = some tcb → tcb.threadState = .Inactive →
+    threadIpcFieldsQuiescent st t
+
+/-- The retire before a resume keeps the thread's state. -/
+theorem retirePendingFaultForResume_threadState {st : SystemState} {t : SeLe4n.ThreadId} {y : TCB}
+    (hInv : st.objects.invExt) (hy : (retirePendingFaultForResume st t).getTcb? t = some y) :
+    ∃ x, st.getTcb? t = some x ∧ x.threadState = y.threadState := by
+  cases hT : st.getTcb? t with
+  | none => simp only [retirePendingFaultForResume, hT] at hy; cases hy
+  | some x =>
+    refine ⟨x, rfl, ?_⟩
+    cases hF : x.pendingFault with
+    | none => simp only [retirePendingFaultForResume, hT, hF] at hy; cases hy; rfl
+    | some tf =>
+      simp only [retirePendingFaultForResume, hT, hF] at hy
+      split at hy
+      · rw [discardPendingFault_getTcb?_self st t x hT hInv] at hy; cases hy; rfl
+      · rw [applyFaultRestart_pc st t _ x hT hInv] at hy; cases hy; rfl
+
+/-- A resume that commits found its target `.Inactive`, so quiescent in IPC. -/
+theorem inactiveQuiescent_of_resume {st : SystemState} {vtid : SeLe4n.ValidThreadId} {c : Concurrency.CoreId}
+    {r : SystemState × Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (P : RecordsArmPremises st) (hInv : st.objects.invExt)
+    (h : Lifecycle.Suspend.resumeThreadOnCore (retirePendingFaultForResume st vtid.val) vtid c
+      = .ok r) : threadIpcFieldsQuiescent st vtid.val := by
+  unfold Lifecycle.Suspend.resumeThreadOnCore at h
+  dsimp only at h
+  split at h
+  · rename_i y hy
+    split at h
+    · cases h
+    · rename_i hIn
+      obtain ⟨x, hx, hS⟩ := retirePendingFaultForResume_threadState hInv hy
+      exact P.inactiveQuiescent _ x hx (by rw [hS]; simpa using hIn)
+  · cases h
 
 /-- **The capability-only dispatch keeps the records on every arm**: the deletes,
 the space set and the handler arms from the reachable bundle they read, the
@@ -63,7 +95,7 @@ theorem dispatchCapabilityOnly_recordsStage
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (k : Kernel Unit) (st st' : SystemState)
     (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
-    (P : RecordsArmPremises decoded cap st) (hStep : k st = .ok ((), st')) :
+    (P : RecordsArmPremises st) (hStep : k st = .ok ((), st')) :
     RecordsStage st st' := by
   unfold dispatchCapabilityOnly at hArm
   cases hSy : decoded.syscallId <;> simp only [hSy] at hArm <;> try cases hArm
@@ -358,7 +390,7 @@ theorem dispatchCapabilityOnly_recordsStage
               exact fun h => RecordsStage.resumeThreadOnCore
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _
                   (KernelRecords.objects_invExt h)
-                  (P.resumeQuiescent objId hSy hTgt vtid hVal)).ready hRes
+                  (inactiveQuiescent_of_resume P (KernelRecords.objects_invExt h) hRes)).ready hRes
                 (RecordsStage.retirePendingFaultForResume st vtid.val h)
     all_goals try cases hStep
   case tcbSetPriority =>
@@ -560,14 +592,13 @@ theorem writeReturnFrameToTcb_recordsStage (x : SystemState) (t : SeLe4n.ThreadI
 /-- **Every arm `dispatchWithCapChecked` routes keeps the records**, the
 capability-only arms it delegates, the IPC arms, the audit read and drain and
 the declassification included.  The IPC arms read the reachable state the
-deletes carry and the running thread, `.ready` in IPC.  The ReplyRecv arm is
-the one this theorem does not take: its records step lands with the
-faulted-caller fix that rewrites it (`hReplyRecv`). -/
+deletes carry and the running thread, `.ready` in IPC; the reply-receive
+answers its caller as the caller's fault record selects
+(`RecordsStage.replyRecvTransferOnCore`). -/
 theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
-    (st st' : SystemState) (P : RecordsArmPremises decoded cap st) (hCaller : CallerReady st tid)
-    (hReplyRecv : decoded.syscallId ≠ .replyRecv)
+    (st st' : SystemState) (P : RecordsArmPremises st) (hCaller : CallerReady st tid)
     (h : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
     RecordsStage st st' := by
   unfold dispatchWithCapChecked at h
@@ -581,7 +612,6 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
   dsimp only at h
   cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
-  case none.replyRecv => exact absurd hId hReplyRecv
   case none.auditRead =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -629,6 +659,13 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     repeat' split at h
     all_goals first | (cases h; done) | skip
     exact RecordsStage.replyTransferOnCoreChecked h
+  case none.replyRecv.object epId =>
+    repeat' split at h
+    all_goals first | (cases h; done) | skip
+    rename_i hX
+    cases h
+    exact (RecordsStage.replyRecvTransferOnCore P.deletes.1 hCaller hX).trans
+      (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI)
   case none.cspaceMint.object cnodeId =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -711,8 +748,7 @@ taint words alone. -/
 theorem dispatchSyscallChecked_recordsStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (P : ∀ cap, RecordsArmPremises decoded cap st) (hCaller : CallerReady st tid)
-    (hReplyRecv : decoded.syscallId ≠ .replyRecv)
+    (P : RecordsArmPremises st) (hCaller : CallerReady st tid)
     (h : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     RecordsStage st st' := by
   unfold dispatchSyscallChecked at h
@@ -743,15 +779,15 @@ theorem dispatchSyscallChecked_recordsStage (ctx : LabelingContext)
       have hRz := syscallResolveCap_of_lookup _ st cap s1 hLk
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
-      exact dispatchWithCapChecked_recordsStage ctx decoded tid executingCore _ cap _ stPost (P cap)
-        hCaller hReplyRecv hD
+      exact dispatchWithCapChecked_recordsStage ctx decoded tid executingCore _ cap _ stPost P
+        hCaller hD
   · unfold syscallInvokeResolved at hD
     split at hD
     · cases hD
     · rename_i cap s1 hRz
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
-      exact dispatchWithCapChecked_recordsStage ctx decoded tid executingCore _ cap _ stPost (P cap)
-        hCaller hReplyRecv hD
+      exact dispatchWithCapChecked_recordsStage ctx decoded tid executingCore _ cap _ stPost P
+        hCaller hD
 
 end SeLe4n.Kernel
