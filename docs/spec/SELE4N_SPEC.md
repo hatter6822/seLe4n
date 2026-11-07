@@ -4951,7 +4951,7 @@ TCB, an endpoint) may have no capability left yet still be recorded, and the
 untyped's memory must not be carved again while that object lives (the reset
 refuses while the untyped's child list records an object); kernel kinds are finalised from
 `v0.36.133` on (below), and the restriction is lifted once every kind is
-(`docs/planning/UNTYPED_RESET_PLAN.md` row 26).  The capability bundle is preserved
+(`docs/dev_history/planning/UNTYPED_RESET_PLAN.md` row 26).  The capability bundle is preserved
 (`retireFinalObject_preserves_capabilityInvariantBundle`, through
 `TreeShapeOver.retire`: no slot names the retired object, every other object
 stays, and each untyped's record only shrinks), and so are the IPC, run-queue,
@@ -4984,7 +4984,7 @@ that is not quiescent, or is named outside a slot, still outlives its last
 capability** (an endpoint's service registration excepted since `v0.36.155`:
 the final delete drops it first, `releaseFinalRegistration`), as every kernel object did before `v0.36.133`, and stays recorded
 by its untyped: an endpoint or notification with waiters or a bound thread
-until `v0.36.134` (row 23 of `docs/planning/UNTYPED_RESET_PLAN.md`, below), a TCB or scheduling context
+until `v0.36.134` (row 23 of `docs/dev_history/planning/UNTYPED_RESET_PLAN.md`, below), a TCB or scheduling context
 until row 24, a busy reply or a scheduling context with a reply stack until
 row 25, and a CNode holding capabilities until row 26 (the zombie loop).  The
 service-registry, service-graph and interrupt-handler checks walk their tables
@@ -7433,7 +7433,7 @@ resolves the addresses in the sender's CSpace at the rendezvous and passes the
 resolved array straight to the install (`receiveTransferCaps`, `ipcUnwrapCaps`
 over `Array TransferCap`), so no resolved capability is ever stored in a
 thread.  Every capability that names an object is in a slot, which is what the
-seL4 untyped reset relies on (`docs/planning/UNTYPED_RESET_PLAN.md`).  The reply
+seL4 untyped reset relies on (`docs/dev_history/planning/UNTYPED_RESET_PLAN.md`).  The reply
 paths' extra-capability refusal could never fire on such a message and is gone.
 `ipcMessageTooManyCaps` (28) and `partialResolution` (51) stay as reserved ABI
 codes.
