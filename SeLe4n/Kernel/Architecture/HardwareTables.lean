@@ -99,7 +99,7 @@ built to be encoded (`tableDescriptorValue_eq_word`). -/
 
 /-- The hardware attributes of a thread's page (see the module docstring). -/
 @[inline] def userPageAttributes (perms : PagePermissions) : PageAttributes :=
-  { attrIndex  := if perms.cacheable then ⟨0, by omega⟩ else ⟨1, by omega⟩
+  { attrIndex  := userPageAttrIndex perms.cacheable
     ap         := if perms.write then (if perms.user && perms.read then .rwAll else .rwEL1)
                   else (if perms.user && perms.read then .roAll else .roEL1)
     sh         := .innerShareable

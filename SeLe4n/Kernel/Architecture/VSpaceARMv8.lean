@@ -177,7 +177,7 @@ def fromPagePermissions (perms : PagePermissions) : Option PageAttributes :=
     none
   else
     some
-      { attrIndex  := if perms.cacheable then ⟨0, by omega⟩ else ⟨2, by omega⟩
+      { attrIndex  := userPageAttrIndex perms.cacheable
         ap         := if perms.write then
                         if perms.user then .rwAll else .rwEL1
                       else
@@ -202,6 +202,19 @@ theorem fromPagePermissions_wx_excludes_W_and_X
     intro ⟨hw', hx⟩
     apply hNot
     simp [hw', hx]
+
+/-- **The staged backend's memory type is the live one's**: a page the backend
+encodes carries `userPageAttrIndex`'s MAIR index, the index the live
+descriptor (`userPageAttributes`) carries, so a non-cacheable page is
+Device-nGnRnE in both. -/
+theorem fromPagePermissions_attrIndex
+    (perms : PagePermissions) (hw : PageAttributes)
+    (h : fromPagePermissions perms = some hw) :
+    hw.attrIndex = userPageAttrIndex perms.cacheable := by
+  unfold fromPagePermissions at h
+  split at h
+  · simp at h
+  · cases h; rfl
 
 /-- Ensure a table entry exists at the given level, creating one if needed. -/
 private def ensureTable (mem : Memory) (alloc : BumpAllocator) (tableBase : PAddr)
