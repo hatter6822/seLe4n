@@ -24,7 +24,7 @@ sibling `ScrubAndUntyped` and `RetypeWrappers` modules can reference them.
 The pipeline is an object's destroy step.  The in-place retype that ran it was
 retired at WS-ZA ZA5.4 part 14 (every object is carved from an untyped), so no
 transition runs it now; it is kept for seL4's `finaliseCap` on a kernel
-object's final delete, which reuses it (`docs/planning/UNTYPED_RESET_PLAN.md`,
+object's final delete, which reuses it (WS-ZA ZA5.4
 part 24; `docs/REGISTERED_DEBT.md`).
 -/
 

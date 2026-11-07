@@ -5400,7 +5400,7 @@ step over the pre-state's taint (`dispatchCheckedArmThenTaintFused_eq`). -/
 
 /-- WS-ZA ZA1.1: the compiled `dispatchSyscallChecked`.  It reads what the taint
 step needs of the pre-state before the arm, so the arm owns the state it writes
-(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  WS-ZA ZA5.12: the taint it reads is the
+(WS-ZA D1).  WS-ZA ZA5.12: the taint it reads is the
 words stored at the plan's flow sources, captured before the arm
 (`planSourceWords`), never the reader over the whole store. -/
 def dispatchSyscallCheckedImpl (ctx : LabelingContext)

@@ -50,8 +50,7 @@ Two cases seL4 names are decided by the model:
   when it is read again (seL4's `checkCapAt` asks this, since its `cteDelete`
   may finalise the source's object).
 * **The slot held the last capability to its object.**  seL4's `cteDelete`
-  finalises it, and so does this one (WS-ZA ZA5.4 part 22,
-  `docs/planning/UNTYPED_RESET_PLAN.md` row 22): the object the old capability
+  finalises it, and so does this one (WS-ZA ZA5.4 part 22): the object the old capability
   takes with it and its recorder are read before the delete
   (`slotRetireTarget`, `recorderFor`), and the object is retired
   (`retireFinalObject`) once the slot is set (`threadSlotSet`) — a VSpace

@@ -216,7 +216,7 @@ theorem notificationSignalOnCore_wake_inPlace_eq (notificationId : SeLe4n.ObjId)
 /-- WS-ZA ZA1.1: the compiled `notificationSignalOnCore`.  A signal with no
 waiter stores the badge through the pure store `withObjectStored`, which cannot
 fail, so the pre-state is not held across the write for a refusal that cannot
-happen (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  A signal that wakes the head
+happen (WS-ZA D1).  A signal that wakes the head
 waiter makes its writes in place when they stay in their slots
 (`signalWakesInPlace`, `notificationSignalOnCore_wake_inPlace_eq`); otherwise
 the waiter path is the specification's. -/
