@@ -247,10 +247,10 @@ for driver in drivers:
         # kind the exerciser carves that has no pin fails.  The breakdown of
         # each pin is the table in docs/planning/UNTYPED_BACKED_CELLS_PLAN.md.
         carve_cells = {
-            "endpoint/0": (11, 0), "notification/0": (11, 0), "reply/0": (15, 0),
-            "tcb/0": (24, 0), "sched-context/7": (13, 0), "cnode/2": (28, 0),
-            "frame/0": (11, 0), "page-table/0": (13, 0), "vspace-root/0": (0, 0),
-            "untyped/12": (0, 0),
+            "endpoint/0": (11, 368), "notification/0": (11, 360), "reply/0": (15, 376),
+            "tcb/0": (24, 2160), "sched-context/7": (13, 560), "cnode/2": (28, 1248),
+            "frame/0": (11, 272), "page-table/0": (13, 352), "vspace-root/0": (14, 376),
+            "untyped/12": (12, 304),
         }
         # The scenario set is pinned: a round trip renamed or dropped from
         # the exerciser (smp_exercisers.rs) must change this set too, so the
