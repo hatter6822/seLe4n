@@ -42,6 +42,38 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+/-- Carries one receive-leg precondition `h` across a write `hA` that changes run
+links alone (the reply-waiter unlink `endpointReplyRecv` runs between its reply
+and receive legs): an invariant by its run-link transfer, an endpoint-only fact by
+rewriting each endpoint read, and a thread's `ipcState` read back through `hA`. -/
+local macro "transfer_off_run_links " hA:term:max h:term:max : tactic =>
+  `(tactic| first
+    | exact SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ $h
+    | exact endpointQueueNoDup_of_objectsAgreeOffRunLinks $hA $h
+    | exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks $hA $h
+    | exact queueNextBlockingConsistent_of_objectsAgreeOffRunLinks $hA $h
+    | exact queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks $hA $h
+    | exact queueNextTargetBlocked_of_objectsAgreeOffRunLinks $hA $h
+    | exact endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks $hA $h
+    | exact endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks $hA $h
+    | exact ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks $hA $h
+    | exact ipcStateQueueConsistent_of_objectsAgreeOffRunLinks $hA $h
+    | exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks $hA $h
+    | exact donationBudgetTransfer_of_sameSchedContextBindings
+        (sameSchedContextBindings.of_objectsAgreeOffRunLinks $hA) $h
+    | (intro tcb hT; run_links_back $hA at tcb hT; exact $h tcb hT)
+    | (intro tcb hT
+       have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+       run_links_back $hA at tcb hT'
+       exact $h tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT'))
+    | (intro rid hRid
+       obtain ⟨⟨r, hr, hc⟩, hNo⟩ := $h rid hRid
+       refine ⟨⟨r, (($hA).getReply? rid).trans hr, hc⟩, fun tid tcb hT => ?_⟩
+       have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+       run_links_back $hA at tcb hT'
+       exact hNo tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT'))
+    | simpa only [($hA).get_endpoint_iff] using $h)
+
 
 -- ============================================================================
 -- The receive's stasher record: the per-conjunct frames
@@ -886,6 +918,7 @@ theorem endpointReceiveDual_preserves_endpointQueueNoDup
                   | ok st3 =>
                     simp only [hPend] at hStep
                     obtain ⟨_, rfl⟩ := hStep
+                    refine endpointQueueNoDup_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
                     exact storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup stLinked _ receiver _ _ hNoDupLink hObjInvLink hPend
           · -- Send sub-path: storeTcbIpcStateAndMessage + ensureRunnable + storeTcbPendingMessage
             cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
@@ -1053,7 +1086,7 @@ theorem endpointCall_preserves_endpointQueueNoDup
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
                 have hNoDup5 := linkServerStashedReply_preserves_endpointQueueNoDup st3 st5 caller pair.1 hNoDup3 hObjInv3 hLink
-                exact removeRunnable_preserves_endpointQueueNoDup _ _ hNoDup5
+                exact endpointQueueNoDup_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_endpointQueueNoDup _ _ hNoDup5
       | none =>
         -- Block path: Enqueue + storeTcbIpcStateAndMessage + removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -1117,7 +1150,8 @@ theorem endpointReplyRecv_preserves_endpointQueueNoDup
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
             ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
-          ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+          ∀ stR, endpointReceiveDual endpointId receiver replyId
+              (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) = .ok stR →
             endpointQueueNoDup stR.2 by
         -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
         split at hStep
@@ -1130,7 +1164,8 @@ theorem endpointReplyRecv_preserves_endpointQueueNoDup
             cases hRO : tcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -1142,7 +1177,8 @@ theorem endpointReplyRecv_preserves_endpointQueueNoDup
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -1214,9 +1250,10 @@ theorem endpointReplyRecv_preserves_endpointQueueNoDup
               ((hNT epId' (.endpoint ep')
                 (fun tt => by exact KernelObject.noConfusion)
                 (fun rr => by exact KernelObject.noConfusion)).mp hEp')⟩
+      have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st3 replyTarget expectedReplier
       exact endpointReceiveDual_preserves_endpointQueueNoDup endpointId receiver replyId
-        st3 stR.2 stR.1
-        hNoDup3 hDQSI3 hObjInv3 hFresh3 hTail3
+        (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) stR.2 stR.1
+        (by transfer_off_run_links hA hNoDup3) (by transfer_off_run_links hA hDQSI3) (by transfer_off_run_links hA hObjInv3) (by transfer_off_run_links hA hFresh3) (by transfer_off_run_links hA hTail3)
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 -- ============================================================================
@@ -1441,6 +1478,7 @@ theorem endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent
                   | error e => simp [hPend] at hStep
                   | ok st3 =>
                     simp only [hPend] at hStep; obtain ⟨_, rfl⟩ := hStep
+                    refine ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
                     exact storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent
                       stLinked _ receiver .ready _ hV3JLink hObjInvLink
                       (fun epId h => absurd h (by simp))
@@ -1680,7 +1718,7 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
                 have hV3J5 := linkServerStashedReply_preserves_ipcStateQueueMembershipConsistent st3 st5 caller pair.1 hV3J3 hObjInv3 hLink
-                exact removeRunnable_preserves_ipcStateQueueMembershipConsistent _ caller hV3J5
+                exact ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_ipcStateQueueMembershipConsistent _ caller hV3J5
       | none =>
         -- BLOCK PATH: Enqueue(sendQ) + storeTcbIpcStateAndMessage(.blockedOnCall) + removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -3191,11 +3229,13 @@ theorem endpointReceiveDual_preserves_ipcStateQueueConsistent
                   | error e => simp [hPM] at hStep
                   | ok st3 =>
                     simp only [hPM] at hStep
-                    have hEq : st3 = st' := by
+                    have hEq : st3.linkReplyWaiter sender receiver = st' := by
                       have := Except.ok.inj hStep; exact (Prod.mk.inj this).2
                     subst hEq
-                    exact storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInvLink hPM
-                      hInvLink trivial
+                    exact ipcStateQueueConsistent_of_objectsAgreeOffRunLinks
+                      (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <|
+                      storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInvLink hPM
+                        hInvLink trivial
           · -- Send path: storeTcbIpcStateAndMessage(.ready) → ensureRunnable → storeTcbPendingMessage
             cases hMsg : storeTcbIpcStateAndMessage stPop sender .ready none with
             | error e => simp [hMsg] at hStep
@@ -3527,10 +3567,16 @@ theorem endpointReply_preserves_ipcStateQueueConsistent
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]
+            exact ipcStateQueueConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
           | some rid =>
             simp only [hRO] at hStep
-            exact removeCallerReplyFrame_preserves_ipcStateQueueConsistent _ _ target rid hObjInvMid hMid hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact ipcStateQueueConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+              removeCallerReplyFrame_preserves_ipcStateQueueConsistent _ _ target rid
+                hObjInvMid hMid hRm
       · -- authorized = false → error
         simp at hStep
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ | blockedOnNotification _ =>
@@ -3766,7 +3812,7 @@ theorem endpointCall_preserves_ipcStateQueueConsistent
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
                 have hISQC5 := linkServerStashedReply_preserves_ipcStateQueueConsistent st3 st5 caller receiver hISQC3 hObjInv3 hLink
-                exact removeRunnable_preserves_ipcStateQueueConsistent _ _ hISQC5
+                exact ipcStateQueueConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_ipcStateQueueConsistent _ _ hISQC5
       | none =>
         -- Blocking path: Enqueue → storeTcbIpcStateAndMessage(caller, .blockedOnCall) → removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -3823,13 +3869,14 @@ theorem endpointReplyRecv_preserves_ipcStateQueueConsistent
           | none =>
             simp only [hRO] at hStep
             -- endpointReceiveDual on ensured state
-            generalize hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) = rRecv at hStep
+            generalize hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget replyTarget') = rRecv at hStep
             cases rRecv with
             | error e => simp at hStep
             | ok pair =>
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
-              exact endpointReceiveDual_preserves_ipcStateQueueConsistent _ _ _ _ pair.1 replyId hInvEns hObjInvEns hRecv
+              exact endpointReceiveDual_preserves_ipcStateQueueConsistent _ _ _ _ pair.1 replyId (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hInvEns) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInvEns) hRecv
           | some rid =>
             simp only [hRO] at hStep
             cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
@@ -3839,13 +3886,14 @@ theorem endpointReplyRecv_preserves_ipcStateQueueConsistent
               simp only [hCons] at hStep
               have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
               have hInv3 := removeCallerReplyFrame_preserves_ipcStateQueueConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
-              generalize hRecv : endpointReceiveDual endpointId receiver replyId st3 = rRecv at hStep
+              generalize hRecv : endpointReceiveDual endpointId receiver replyId
+                  (st3.unlinkReplyWaiterOpt replyTarget replyTarget') = rRecv at hStep
               cases rRecv with
               | error e => simp at hStep
               | ok pair =>
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact endpointReceiveDual_preserves_ipcStateQueueConsistent _ _ _ _ pair.1 replyId hInv3 hObjInv3 hRecv
+                exact endpointReceiveDual_preserves_ipcStateQueueConsistent _ _ _ _ pair.1 replyId (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hInv3) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInv3) hRecv
       · simp at hStep -- unauthorized → error
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ | blockedOnNotification _ =>
       simp [hIpcS] at hStep
@@ -5736,6 +5784,7 @@ theorem endpointCall_establishes_blockedOnReplyHasReplyObject
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hP5 : blockedOnReplyHasReplyObject st5 :=
                   linkServerStashedReply_establishes_blockedOnReplyHasReplyObject st4 st5 caller pair.1 hObjInv4 hThirdExc4 hLink
+                refine blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
                 exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller) hP5
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -5821,7 +5870,7 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
                   cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
                   | ok st4 =>
                     exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
-                      storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
+                      blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
                         stLinked st4 receiver .ready _ hObjInvLink hPLink (by simp) hPend
                   | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
@@ -6972,11 +7021,16 @@ theorem endpointReply_preserves_blockedOnReplyHasReplyObject
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]
+            exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
           | some rid =>
             simp only [hRO] at hStep
-            exact removeCallerReplyFrame_preserves_blockedOnReplyHasReplyObject _ _ target rid
-              hObjInvMid hMid hCallerNotBlocked hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+              removeCallerReplyFrame_preserves_blockedOnReplyHasReplyObject _ _ target rid
+                hObjInvMid hMid hCallerNotBlocked hRm
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -7024,14 +7078,15 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasReplyObject
           cases hRO : tcb.replyObject with
           | none =>
             simp only []
-            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable stReplied replyTarget) with
+            cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable stReplied replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
             | error e => simp
             | ok pair =>
               intro hStep
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
               exact endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
-                (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hPE hObjInvE hRecv
+                ((ensureRunnable stReplied replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) pair.2 endpointId receiver pair.1 replyId (blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hPE) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInvE) hRecv
           | some rid =>
             cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
             | error e => simp [hCons]
@@ -7051,14 +7106,15 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasReplyObject
                 removeCallerReplyFrame_preserves_blockedOnReplyHasReplyObject _ _ replyTarget rid
                   hObjInvE hPE hCallerNotBlocked hCons
               have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
-              cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok pair =>
                 intro hStep
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
                 exact endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
-                  st3 pair.2 endpointId receiver pair.1 replyId hP3 hObjInv3 hRecv
+                  (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) pair.2 endpointId receiver pair.1 replyId (blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hP3) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInv3) hRecv
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -8630,8 +8686,9 @@ theorem endpointReceiveDual_sameSchedContextBindings_of_rendezvous
             cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
             | ok st4 =>
               exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
-                hS3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings stLinked st4
-                  receiver .ready _ hObjInvLink hPend)
+                (hS3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings stLinked st4
+                  receiver .ready _ hObjInvLink hPend)).trans
+                  (sameSchedContextBindings.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
             | error _ => simp
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
       simp only [hSenderIpc] at hStep
@@ -8712,7 +8769,8 @@ theorem endpointReceiveDual_kindPreservingWrite_of_rendezvous
             cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
             | ok st4 =>
               exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
-                hS3.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvLink hPend)
+                (hS3.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvLink hPend)).trans
+                  (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).kindPreserving
             | error _ => simp
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
       simp only [hSenderIpc] at hStep
@@ -9083,6 +9141,7 @@ theorem endpointReceiveDual_preserves_donationOwnerValid
                   | ok st4 =>
                     intro h
                     obtain ⟨_, hEq⟩ := Prod.mk.inj (Except.ok.inj h); subst hEq
+                    refine donationOwnerValid_of_frames (sameSchedContextBindings.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) (donationOwnerFrame.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
                     refine donationOwnerValid_of_frames
                       (storeTcbIpcStateAndMessage_sameSchedContextBindings stLinked st4 receiver .ready _ hObjInvLink hPend)
                       (storeTcbIpcStateAndMessage_donationOwnerFrame stLinked st4 receiver .ready _ ?_ hObjInvLink hPend) hD3
@@ -9280,6 +9339,7 @@ theorem endpointReceiveDual_timeoutBudgetFrame
                   | ok st4 =>
                     intro h
                     obtain ⟨_, hEq⟩ := Prod.mk.inj (Except.ok.inj h); subst hEq
+                    refine timeoutBudgetFrame.trans ?_ (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
                     exact hF3.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame stLinked st4 receiver
                       .ready _ hObjInvLink hPend)
                   | error _ => simp
@@ -9456,14 +9516,15 @@ theorem endpointReplyRecv_preserves_donationBudgetTransfer
           cases hRO : tcb.replyObject with
           | none =>
             simp only []
-            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable stReplied replyTarget) with
+            cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable stReplied replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
             | error e => simp
             | ok pair =>
               intro hStep
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
               exact endpointReceiveDual_preserves_donationBudgetTransfer
-                (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hDE hObjInvE hRecv
+                ((ensureRunnable stReplied replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) pair.2 endpointId receiver pair.1 replyId (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hDE) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInvE) hRecv
           | some rid =>
             cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
             | error e => simp [hCons]
@@ -9473,14 +9534,15 @@ theorem endpointReplyRecv_preserves_donationBudgetTransfer
               have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
               have hD3 := donationBudgetTransfer_of_sameSchedContextBindings
                 (removeCallerReplyFrame_sameSchedContextBindings _ _ replyTarget rid hObjInvE hCons) hDE
-              cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok pair =>
                 intro hStep
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
                 exact endpointReceiveDual_preserves_donationBudgetTransfer
-                  st3 pair.2 endpointId receiver pair.1 replyId hD3 hObjInv3 hRecv
+                  (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) pair.2 endpointId receiver pair.1 replyId (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hD3) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInv3) hRecv
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -9675,15 +9737,16 @@ theorem endpointReplyRecv_timeoutBudgetFrame
           cases hRO : tcb.replyObject with
           | none =>
             simp only []
-            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable stReplied replyTarget) with
+            cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable stReplied replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
             | error e => simp
             | ok pair =>
               intro hStep
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
-              exact hF1.trans (endpointReceiveDual_timeoutBudgetFrame
-                (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId
-                hObjInvE hRecv)
+              exact (hF1.trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))).trans (endpointReceiveDual_timeoutBudgetFrame
+                ((ensureRunnable stReplied replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) pair.2 endpointId receiver pair.1 replyId
+                (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInvE) hRecv)
           | some rid =>
             cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
             | error e => simp [hCons]
@@ -9692,15 +9755,16 @@ theorem endpointReplyRecv_timeoutBudgetFrame
               simp only [hCons]
               have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
               have hF13 := hF1.trans (removeCallerReplyFrame_timeoutBudgetFrame _ _ replyTarget rid hObjInvE hCons)
-              cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok pair =>
                 intro hStep
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact hF13.trans (endpointReceiveDual_timeoutBudgetFrame
-                  st3 pair.2 endpointId receiver pair.1 replyId
-                  hObjInv3 hRecv)
+                exact (hF13.trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))).trans (endpointReceiveDual_timeoutBudgetFrame
+                  (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) pair.2 endpointId receiver pair.1 replyId
+                  (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInv3) hRecv)
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -9765,6 +9829,7 @@ theorem endpointCall_sameSchedContextBindings
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hS5 := linkServerStashedReply_sameSchedContextBindings st4 st5 caller pair.1 hObjInv4 hLink
+                refine sameSchedContextBindings.trans ?_ (sameSchedContextBindings.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
                 exact ((((hS1.trans hS2).trans hS3).trans hS4).trans hS5).trans
                   (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller))
       | none =>
@@ -9828,6 +9893,7 @@ theorem endpointCall_kindPreservingWrite
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hS5 := SystemState.linkServerStashedReply_kindPreservingWrite st4 st5 caller pair.1 hObjInv4 hLink
+                refine (show kindPreservingWrite _ _ from ?_).trans (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).kindPreserving
                 exact ((((hS1.trans hS2).trans hS3).trans hS4).trans hS5).trans
                   ((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st5 caller)))
       | none =>
@@ -9919,6 +9985,7 @@ theorem endpointCall_donationOwnerFrame
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hF5 := linkServerStashedReply_donationOwnerFrame st4 st5 caller pair.1 hObjInv4 hLink
+                refine donationOwnerFrame.trans ?_ (donationOwnerFrame.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
                 exact ((((hF1.trans hF2).trans hF3).trans hF4).trans hF5).trans
                   (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller))
       | none =>
@@ -10005,6 +10072,7 @@ theorem endpointCall_timeoutBudgetFrame
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hF5 := linkServerStashedReply_timeoutBudgetFrame st4 st5 caller pair.1 hObjInv4 hLink
+                refine timeoutBudgetFrame.trans ?_ (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
                 exact ((((hF1.trans hF2).trans hF3).trans hF4).trans hF5).trans
                   (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller))
       | none =>
@@ -11078,6 +11146,7 @@ theorem endpointCall_preserves_replyCallerLinkageReciprocal
                 have hRecip5 : replyCallerLinkageReciprocal st5 :=
                   linkServerStashedReply_establishes_replyCallerLinkageReciprocal st4 st5 caller
                     pair.1 hObjInv4 hRecip4 hCallerBlk4 hLink
+                refine replyCallerLinkageReciprocal_of_frame (replyLinkageFrame.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
                 exact replyCallerLinkageReciprocal_of_frame
                   (replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller)) hRecip5
       | none =>
@@ -11229,9 +11298,12 @@ theorem endpointReceiveDual_preserves_replyCallerLinkageReciprocal
                   | ok st4 =>
                     exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
                       replyCallerLinkageReciprocal_of_frame
-                        (storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked stLinked st4
-                          receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hRecvUnlinkedLink hObjInvLink hPend)
-                        hRecipLink
+                        (replyLinkageFrame.of_objectsAgreeOffRunLinks
+                          (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
+                        (replyCallerLinkageReciprocal_of_frame
+                          (storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked stLinked st4
+                            receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hRecvUnlinkedLink hObjInvLink hPend)
+                          hRecipLink)
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
             | blockedOnReply _ _ =>
             simp only [hSenderIpc] at hStep
@@ -11620,10 +11692,13 @@ theorem endpointReply_sameSchedContextBindings
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]; exact hMid.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))
           | some rid =>
             simp only [hRO] at hStep
-            exact hMid.trans (removeCallerReplyFrame_sameSchedContextBindings _ _ target rid hObjInvMid hStep)
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact (hMid.trans (removeCallerReplyFrame_sameSchedContextBindings _ _ target rid
+              hObjInvMid hRm)).trans
+              (sameSchedContextBindings.of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))
       · simp at hStep
 
 
@@ -11666,10 +11741,13 @@ theorem endpointReply_kindPreservingWrite
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]; exact hMid.trans (SystemState.unlinkReplyWaiterOpt_kindPreservingWrite _ _ _)
           | some rid =>
             simp only [hRO] at hStep
-            exact hMid.trans (removeCallerReplyFrame_kindPreservingWrite _ _ target rid hObjInvMid hStep)
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact (hMid.trans (removeCallerReplyFrame_kindPreservingWrite _ _ target rid
+              hObjInvMid hRm)).trans
+              (SystemState.unlinkReplyWaiterOpt_kindPreservingWrite _ _ _)
       · simp at hStep
 
 
@@ -11716,15 +11794,15 @@ theorem endpointReplyRecv_kindPreservingWrite
           | none =>
             simp only []
             cases hRecv : endpointReceiveDual endpointId receiver replyId
-                (ensureRunnable stReplied replyTarget) with
+                ((ensureRunnable stReplied replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
             | error e => simp
             | ok pair =>
               intro hStep
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
-              exact hF1.trans (endpointReceiveDual_kindPreservingWrite
-                (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId
-                hObjInvE hRecv)
+              exact (hF1.trans (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _).kindPreserving).trans (endpointReceiveDual_kindPreservingWrite
+                _ pair.2 endpointId receiver pair.1 replyId
+                (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInvE) hRecv)
           | some rid =>
             cases hCons : removeCallerReplyFrame replyTarget rid
                 (ensureRunnable stReplied replyTarget) with
@@ -11736,14 +11814,15 @@ theorem endpointReplyRecv_kindPreservingWrite
                 rid hObjInvE hCons
               have hF13 := hF1.trans (removeCallerReplyFrame_kindPreservingWrite _ _ replyTarget
                 rid hObjInvE hCons)
-              cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok pair =>
                 intro hStep
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact hF13.trans (endpointReceiveDual_kindPreservingWrite st3 pair.2 endpointId
-                  receiver pair.1 replyId hObjInv3 hRecv)
+                exact (hF13.trans (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _).kindPreserving).trans (endpointReceiveDual_kindPreservingWrite (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) pair.2 endpointId
+                  receiver pair.1 replyId (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInv3) hRecv)
       · simp at hStep
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: a `storeObject` that rewrites a single TCB, keeping its
@@ -11880,11 +11959,13 @@ theorem endpointReply_donationOwnerFrameExcept
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]; exact hMid.trans (donationOwnerFrameExcept.of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))
           | some rid =>
             simp only [hRO] at hStep
-            exact hMid.trans (removeCallerReplyFrame_donationOwnerFrameExcept _ _ target rid
-              target hObjInvMid hStep)
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact (hMid.trans (removeCallerReplyFrame_donationOwnerFrameExcept _ _ target rid
+              target hObjInvMid hRm)).trans
+              (donationOwnerFrameExcept.of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -11944,10 +12025,13 @@ theorem endpointReply_timeoutBudgetFrame
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]; exact hMid.trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))
           | some rid =>
             simp only [hRO] at hStep
-            exact hMid.trans (removeCallerReplyFrame_timeoutBudgetFrame _ _ target rid hObjInvMid hStep)
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact (hMid.trans (removeCallerReplyFrame_timeoutBudgetFrame _ _ target rid
+              hObjInvMid hRm)).trans
+              (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -13554,6 +13638,7 @@ theorem endpointCall_preserves_pendingReceiveReplyWellFormed
                     storeTcbIpcStateAndMessage_preserves_objects_ne (ensureRunnable st2 pair.1) st4 caller _ none r'.toObjId hNe4 hObjInvEns hIpc
                   rw [hStep3]; exact (ensureRunnable_objectsAgreeOffRunLinks _ _).get_reply_iff.mpr (by rw [hStep1]; exact hRobj)
                 -- Apply the `linkServerStashedReply` frame from the post-pop PRR `hP1`.
+                refine pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
                 refine pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
                   (removeRunnable_objectsAgreeOffRunLinks st5 caller) ?_
                 refine linkServerStashedReply_preserves_pendingReceiveReplyWellFormed st4 st5 caller pair.1 hObjInv4 ?_ ?_ ?_ hLink
@@ -14911,7 +14996,7 @@ theorem endpointReceiveDual_preserves_pendingReceiveReplyWellFormed
                     intro h
                     obtain ⟨_, hEq⟩ := Prod.mk.inj (Except.ok.inj h); subst hEq
                     -- receiver-completion frames PRR: receiver not `.blockedOnReceive` at `stLinked`.
-                    refine storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
+                    refine pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
                       stLinked st4 receiver .ready _ hObjInvLink hPLink ?_ hPend
                     intro tcb hTcb ep' hBlk
                     -- back `stLinked` → `st2` (linkCallerReply preserves the receiver's ipcState).
@@ -15561,7 +15646,7 @@ theorem endpointCall_preserves_queueNextBlockingConsistent
                 obtain ⟨_, st5⟩ := pL
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact removeRunnable_preserves_queueNextBlockingConsistent _ _ <|
+                exact queueNextBlockingConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_queueNextBlockingConsistent _ _ <|
                   linkServerStashedReply_preserves_queueNextBlockingConsistent st3 st5 caller pair.1
                     hObjInv3 hQNBC3 hLink
       | none =>
@@ -15668,7 +15753,7 @@ theorem endpointCall_preserves_endpointQueueTailBlockedConsistent
                 obtain ⟨_, st5⟩ := pL
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact removeRunnable_preserves_endpointQueueTailBlockedConsistent _ _ <|
+                exact endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_endpointQueueTailBlockedConsistent _ _ <|
                   linkServerStashedReply_preserves_endpointQueueTailBlockedConsistent st3 st5 caller pair.1
                     hObjInv3 hTail3 hLink
       | none =>
@@ -15888,6 +15973,7 @@ theorem endpointReceiveDual_preserves_queueNextBlockingConsistent
                   | ok st3 =>
                     simp only [hPend] at hStep
                     obtain ⟨_, rfl⟩ := hStep
+                    refine queueNextBlockingConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
                     exact storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent stLinked
                       _ receiver (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hQNBCLink hObjInvLink hPend
           · cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
@@ -16088,6 +16174,7 @@ theorem endpointReceiveDual_preserves_endpointQueueTailBlockedConsistent
                   | ok st3 =>
                     simp only [hPend] at hStep
                     obtain ⟨_, rfl⟩ := hStep
+                    refine endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
                     exact storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent stLinked
                       _ receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hTailLinked hObjInvLink hPend hRecvNotTailLinked
           · cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
@@ -16596,7 +16683,8 @@ theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
             ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
-          ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+          ∀ stR, endpointReceiveDual endpointId receiver replyId
+              (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) = .ok stR →
             queueNextBlockingConsistent stR.2 by
         split at hStep
         · revert hStep
@@ -16608,7 +16696,8 @@ theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
             cases hRO : replyTcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -16620,7 +16709,8 @@ theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -16711,9 +16801,10 @@ theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
                 (fun tt => by exact KernelObject.noConfusion)
                 (fun rr => by exact KernelObject.noConfusion)).mp hEp'')⟩
       -- Delegate to the receive-leg enqueue-establish.
+      have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st3 replyTarget expectedReplier
       exact endpointReceiveDual_preserves_queueNextBlockingConsistent
-        endpointId receiver replyId st3 stR.2 stR.1
-        hQNBC3 hDQSI3 hEQTB3 hObjInv3 hFresh3 hTail3
+        endpointId receiver replyId (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) stR.2 stR.1
+        (by transfer_off_run_links hA hQNBC3) (by transfer_off_run_links hA hDQSI3) (by transfer_off_run_links hA hEQTB3) (by transfer_off_run_links hA hObjInv3) (by transfer_off_run_links hA hFresh3) (by transfer_off_run_links hA hTail3)
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 -- WS-SM SM6.D reply-fold (PR #827 review #3):
@@ -16769,10 +16860,16 @@ theorem endpointReply_preserves_queueNextBlockingConsistent
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]
+            exact queueNextBlockingConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
           | some rid =>
             simp only [hRO] at hStep
-            exact removeCallerReplyFrame_preserves_queueNextBlockingConsistent _ _ target rid hObjInvMid hMid hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact queueNextBlockingConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+              removeCallerReplyFrame_preserves_queueNextBlockingConsistent _ _ target rid
+                hObjInvMid hMid hRm
       · simp at hStep
 
 /-- IPC de-threading D4 Slice 2c: the `storeTcbIpcStateAndMessage` variant of the enqueue+block-store
@@ -16997,10 +17094,16 @@ theorem endpointReply_preserves_queueNextTargetBlocked
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]
+            exact queueNextTargetBlocked_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
           | some rid =>
             simp only [hRO] at hStep
-            exact removeCallerReplyFrame_preserves_queueNextTargetBlocked _ _ target rid hObjInvMid hMid hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact queueNextTargetBlocked_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+              removeCallerReplyFrame_preserves_queueNextTargetBlocked _ _ target rid
+                hObjInvMid hMid hRm
       · simp at hStep
 
 
@@ -17048,10 +17151,16 @@ theorem endpointReply_preserves_endpointQueueLinksOnlyBlocked
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]
+            exact endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
           | some rid =>
             simp only [hRO] at hStep
-            exact removeCallerReplyFrame_preserves_endpointQueueLinksOnlyBlocked _ _ target rid hObjInvMid hMid hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+              removeCallerReplyFrame_preserves_endpointQueueLinksOnlyBlocked _ _ target rid
+                hObjInvMid hMid hRm
       · simp at hStep
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4: `endpointReply` preserves `endpointQueueTailBlockedConsistent` (it touches
@@ -17104,10 +17213,16 @@ theorem endpointReply_preserves_endpointQueueTailBlockedConsistent
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]
+            exact endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
           | some rid =>
             simp only [hRO] at hStep
-            exact removeCallerReplyFrame_preserves_endpointQueueTailBlockedConsistent _ _ target rid hObjInvMid hMid hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+              removeCallerReplyFrame_preserves_endpointQueueTailBlockedConsistent _ _ target rid
+                hObjInvMid hMid hRm
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -18224,6 +18339,7 @@ theorem endpointReceiveDual_preserves_queueHeadBlockedConsistent
                       obtain ⟨tcbSt, hMemSt, hIpcSt⟩ := endpointQueuePopHead_tcb_ipcState_backward
                         endpointId false st pair.2.2 pair.1 receiver tcb2 hObjInv hPop hMemPop
                       rw [← hIpc2, ← hIpcSt]; exact hReceiverReady tcbSt hMemSt
+                    refine queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
                     exact storeTcbIpcStateAndMessage_ready_preserves_queueHeadBlockedConsistent stLinked
                       _ receiver (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hQHBCLink hObjInvLink hReceiverReadyLinked hPend
           · cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
@@ -18441,6 +18557,7 @@ theorem endpointReceiveDual_preserves_queueNextTargetBlocked
                         (∀ ep, recvTcbL.ipcState ≠ .blockedOnCall ep) :=
                       ⟨fun ep => by rw [hRecvReadyL]; simp, fun ep => by rw [hRecvReadyL]; simp,
                        fun ep => by rw [hRecvReadyL]; simp⟩
+                    refine queueNextTargetBlocked_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
                     exact storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
                       stLinked _ receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hQNTBLink hObjInvLink hReadyNotBlocked
                       (queueNextTargetBlocked_no_incoming_of_notQueueBlocked stLinked hQNTBLink receiver
@@ -18687,6 +18804,7 @@ theorem endpointReceiveDual_preserves_endpointQueueLinksOnlyBlocked
                         (∀ ep, recvTcbL.ipcState ≠ .blockedOnCall ep) :=
                       ⟨fun ep => by rw [hRecvReadyL]; simp, fun ep => by rw [hRecvReadyL]; simp,
                        fun ep => by rw [hRecvReadyL]; simp⟩
+                    refine endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
                     exact storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_endpointQueueLinksOnlyBlocked
                       stLinked _ receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hQNTBLink hObjInvLink hReadyNotBlocked
                       (endpointQueueLinksOnlyBlocked_no_incoming_of_notQueueBlocked stLinked hQNTBLink receiver
@@ -19072,7 +19190,8 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
             ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
-          ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+          ∀ stR, endpointReceiveDual endpointId receiver replyId
+              (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) = .ok stR →
             queueHeadBlockedConsistent stR.2 by
         split at hStep
         · revert hStep
@@ -19084,7 +19203,8 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
             cases hRO : replyTcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -19096,7 +19216,8 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -19178,9 +19299,10 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
             removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
           rw [hIS]; exact hReceiverReadyE ty hSt
       -- Delegate to the receive-leg qHBC establisher.
+      have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st3 replyTarget expectedReplier
       exact endpointReceiveDual_preserves_queueHeadBlockedConsistent
-        endpointId receiver replyId st3 stR.2 stR.1
-        hQHBC3 hQNTB3 hDQSI3 hObjInv3 hReceiverReady3 hFresh3
+        endpointId receiver replyId (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) stR.2 stR.1
+        (by transfer_off_run_links hA hQHBC3) (by transfer_off_run_links hA hQNTB3) (by transfer_off_run_links hA hDQSI3) (by transfer_off_run_links hA hObjInv3) (by transfer_off_run_links hA hReceiverReady3) (by transfer_off_run_links hA hFresh3)
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 open SeLe4n.Model.SystemState in
@@ -19231,7 +19353,8 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
             ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
-          ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+          ∀ stR, endpointReceiveDual endpointId receiver replyId
+              (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) = .ok stR →
             queueNextTargetBlocked stR.2 by
         split at hStep
         · revert hStep
@@ -19243,7 +19366,8 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
             cases hRO : replyTcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -19255,7 +19379,8 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -19367,9 +19492,10 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
             removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
           rw [hIS]; exact hReceiverReadyE ty hSt
       -- Delegate to the receive-leg qNTB establisher.
+      have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st3 replyTarget expectedReplier
       exact endpointReceiveDual_preserves_queueNextTargetBlocked
-        endpointId receiver replyId st3 stR.2 stR.1
-        hQNTB3 hDQSI3 hTail3 hObjInv3 hReceiverReady3 hFresh3 hRecvTail3
+        endpointId receiver replyId (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) stR.2 stR.1
+        (by transfer_off_run_links hA hQNTB3) (by transfer_off_run_links hA hDQSI3) (by transfer_off_run_links hA hTail3) (by transfer_off_run_links hA hObjInv3) (by transfer_off_run_links hA hReceiverReady3) (by transfer_off_run_links hA hFresh3) (by transfer_off_run_links hA hRecvTail3)
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 
@@ -19420,7 +19546,8 @@ theorem endpointReplyRecv_preserves_endpointQueueLinksOnlyBlocked
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
             ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
-          ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+          ∀ stR, endpointReceiveDual endpointId receiver replyId
+              (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) = .ok stR →
             endpointQueueLinksOnlyBlocked stR.2 by
         split at hStep
         · revert hStep
@@ -19432,7 +19559,8 @@ theorem endpointReplyRecv_preserves_endpointQueueLinksOnlyBlocked
             cases hRO : replyTcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -19444,7 +19572,8 @@ theorem endpointReplyRecv_preserves_endpointQueueLinksOnlyBlocked
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -19556,9 +19685,10 @@ theorem endpointReplyRecv_preserves_endpointQueueLinksOnlyBlocked
             removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
           rw [hIS]; exact hReceiverReadyE ty hSt
       -- Delegate to the receive-leg qNTB establisher.
+      have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st3 replyTarget expectedReplier
       exact endpointReceiveDual_preserves_endpointQueueLinksOnlyBlocked
-        endpointId receiver replyId st3 stR.2 stR.1
-        hQNTB3 hDQSI3 hTail3 hObjInv3 hReceiverReady3 hFresh3 hRecvTail3
+        endpointId receiver replyId (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) stR.2 stR.1
+        (by transfer_off_run_links hA hQNTB3) (by transfer_off_run_links hA hDQSI3) (by transfer_off_run_links hA hTail3) (by transfer_off_run_links hA hObjInv3) (by transfer_off_run_links hA hReceiverReady3) (by transfer_off_run_links hA hFresh3) (by transfer_off_run_links hA hRecvTail3)
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointCall` **establishes** `queueHeadBlockedConsistent`
@@ -19703,7 +19833,7 @@ theorem endpointCall_preserves_queueHeadBlockedConsistent
                 obtain ⟨_, st5⟩ := pL
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact removeRunnable_preserves_queueHeadBlockedConsistent _ _ <|
+                exact queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_queueHeadBlockedConsistent _ _ <|
                   linkServerStashedReply_preserves_queueHeadBlockedConsistent st3 st5 caller pair.1
                     hObjInv3 hQHBC3 hLink
       | none =>
@@ -19837,7 +19967,7 @@ theorem endpointCall_preserves_queueNextTargetBlocked
                 obtain ⟨_, st5⟩ := pL
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact removeRunnable_preserves_queueNextTargetBlocked _ _ <|
+                exact queueNextTargetBlocked_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_queueNextTargetBlocked _ _ <|
                   linkServerStashedReply_preserves_queueNextTargetBlocked st3 st5 caller pair.1
                     hObjInv3 hQNTB3 hLink
       | none =>
@@ -19969,7 +20099,7 @@ theorem endpointCall_preserves_endpointQueueLinksOnlyBlocked
                 obtain ⟨_, st5⟩ := pL
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact removeRunnable_preserves_endpointQueueLinksOnlyBlocked _ _ <|
+                exact endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_endpointQueueLinksOnlyBlocked _ _ <|
                   linkServerStashedReply_preserves_endpointQueueLinksOnlyBlocked st3 st5 caller pair.1
                     hObjInv3 hQNTB3 hLink
       | none =>
@@ -20659,10 +20789,16 @@ theorem endpointReply_preserves_pendingReceiveReplyWellFormed
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]
+            exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
           | some rid =>
             simp only [hRO] at hStep
-            exact removeCallerReplyFrame_preserves_pendingReceiveReplyWellFormed _ _ target rid hObjInvMid hMid hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+              removeCallerReplyFrame_preserves_pendingReceiveReplyWellFormed _ _ target rid
+                hObjInvMid hMid hRm
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -20869,15 +21005,16 @@ theorem endpointReplyRecv_preserves_pendingReceiveReplyWellFormed
           cases hRO : tcb.replyObject with
           | none =>
             simp only []
-            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable stReplied replyTarget) with
+            cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable stReplied replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
             | error e => simp
             | ok pair =>
               intro hStep
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
               exact endpointReceiveDual_preserves_pendingReceiveReplyWellFormed
-                (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId
-                hObjInvE hPE hReplyIdValidE hReceiverNotRecvE hQHBCE hRecv
+                ((ensureRunnable stReplied replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) pair.2 endpointId receiver pair.1 replyId
+                (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInvE) (pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hPE) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hReplyIdValidE) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hReceiverNotRecvE) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hQHBCE) hRecv
           | some rid =>
             cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
             | error e => simp [hCons]
@@ -20897,15 +21034,16 @@ theorem endpointReplyRecv_preserves_pendingReceiveReplyWellFormed
                 obtain ⟨ty, hSt, hIS, _⟩ :=
                   removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
                 exact hReceiverNotRecvE ty ((getTcb?_eq_some_iff _ receiver ty).mpr hSt) ep (hIS ▸ hBlk)
-              cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok pair =>
                 intro hStep
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
                 exact endpointReceiveDual_preserves_pendingReceiveReplyWellFormed
-                  st3 pair.2 endpointId receiver pair.1 replyId
-                  hObjInv3 hP3 hReplyIdValid3 hReceiverNotRecv3 hQHBC3 hRecv
+                  (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) pair.2 endpointId receiver pair.1 replyId
+                  (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hObjInv3) (pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hP3) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hReplyIdValid3) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hReceiverNotRecv3) (by transfer_off_run_links (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hQHBC3) hRecv
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -20946,7 +21084,8 @@ theorem endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
             ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
-          ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+          ∀ stR, endpointReceiveDual endpointId receiver replyId
+              (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) = .ok stR →
             endpointQueueTailBlockedConsistent stR.2 by
         split at hStep
         · revert hStep
@@ -20958,7 +21097,8 @@ theorem endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent
             cases hRO : replyTcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -20970,7 +21110,8 @@ theorem endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -21039,9 +21180,10 @@ theorem endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent
             fun epId' ep' hEp' => hFreshReceiver' epId' ep' ((hNT epId' (.endpoint ep')
               (fun tt => by exact KernelObject.noConfusion)
               (fun rr => by exact KernelObject.noConfusion)).mp hEp')⟩
+      have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st3 replyTarget expectedReplier
       exact endpointReceiveDual_preserves_endpointQueueTailBlockedConsistent
-        endpointId receiver replyId st3 stR.2 stR.1
-        hEQTB3 hDQSI3 hQHBC3 hObjInv3 hFresh3
+        endpointId receiver replyId (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) stR.2 stR.1
+        (by transfer_off_run_links hA hEQTB3) (by transfer_off_run_links hA hDQSI3) (by transfer_off_run_links hA hQHBC3) (by transfer_off_run_links hA hObjInv3) (by transfer_off_run_links hA hFresh3)
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 open SeLe4n.Model.SystemState in
@@ -21096,10 +21238,16 @@ theorem endpointReply_preserves_queueHeadBlockedConsistent
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]
+            exact queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
           | some rid =>
             simp only [hRO] at hStep
-            exact removeCallerReplyFrame_preserves_queueHeadBlockedConsistent _ _ target rid hObjInvMid hMid hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+              removeCallerReplyFrame_preserves_queueHeadBlockedConsistent _ _ target rid
+                hObjInvMid hMid hRm
       · simp at hStep
 
 /-- V3-J compound: endpointReplyRecv preserves ipcStateQueueMembershipConsistent.
@@ -21145,7 +21293,8 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
             ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
-          ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+          ∀ stR, endpointReceiveDual endpointId receiver replyId
+              (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) = .ok stR →
             ipcStateQueueMembershipConsistent stR.2 by
         -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
         split at hStep
@@ -21158,7 +21307,8 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
             cases hRO : replyTcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -21170,7 +21320,8 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -21270,9 +21421,10 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
                 (fun tt => by exact KernelObject.noConfusion)
                 (fun rr => by exact KernelObject.noConfusion)).mp hEp'')⟩
       -- Delegate to endpointReceiveDual preservation
+      have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st3 replyTarget expectedReplier
       exact endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent
-        endpointId receiver replyId st3 stR.2 stR.1
-        hV3J3 hDQSI3 hQNBC3 hQHBC3 hObjInv3 hFresh3 hTail3
+        endpointId receiver replyId (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) stR.2 stR.1
+        (by transfer_off_run_links hA hV3J3) (by transfer_off_run_links hA hDQSI3) (by transfer_off_run_links hA hQNBC3) (by transfer_off_run_links hA hQHBC3) (by transfer_off_run_links hA hObjInv3) (by transfer_off_run_links hA hFresh3) (by transfer_off_run_links hA hTail3)
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 open SeLe4n.Model.SystemState in
@@ -21580,11 +21732,14 @@ theorem endpointReply_preserves_replyCallerLinkageReciprocal
             apply ensureRunnable_objects_invExt
             exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target .ready
               (some msg) hObjInv hStore
-          exact replyDelivery_preserves_replyCallerLinkageReciprocal st st1
-            (ensureRunnable st1 target) st' target tcb
-            (TCB.setIpcState { tcb with pendingMessage := some msg } .ready)
-            hRecip hTargetObj hMidTarget rfl hMidNe
-            (ensureRunnable_objectsAgreeOffRunLinks st1 target) hObjInvMid hStep
+          obtain ⟨st2, hDel, rfl⟩ := replyDelivery_unlink_ok hStep
+          exact replyCallerLinkageReciprocal_of_frame
+            (replyLinkageFrame.of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _)) <|
+            replyDelivery_preserves_replyCallerLinkageReciprocal st st1
+              (ensureRunnable st1 target) st2 target tcb
+              (TCB.setIpcState { tcb with pendingMessage := some msg } .ready)
+              hRecip hTargetObj hMidTarget rfl hMidNe
+              (ensureRunnable_objectsAgreeOffRunLinks st1 target) hObjInvMid hDel
       · simp_all
 
 open SeLe4n.Model.SystemState in
@@ -21660,12 +21815,13 @@ theorem endpointReplyRecv_eq_reply_then_receive
           | error e => rfl
           | ok st' =>
             simp only []
-            cases (match tcb.replyObject with
-              | some rid => SystemState.consumeCallerReply replyTarget rid
-                  (ensureRunnable st' replyTarget)
-              | none => .ok ((), ensureRunnable st' replyTarget)) with
-            | error e => rfl
-            | ok p => rfl
+            cases tcb.replyObject with
+            | none => rfl
+            | some rid =>
+              simp only []
+              cases removeCallerReplyFrame replyTarget rid (ensureRunnable st' replyTarget) with
+              | error e => rfl
+              | ok p => obtain ⟨⟨⟩, p⟩ := p; rfl
         · rfl
 
 open SeLe4n.Model.SystemState in
@@ -21697,8 +21853,10 @@ theorem endpointReply_preserves_objects_invExt
             apply ensureRunnable_objects_invExt
             exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target .ready
               (some msg) hObjInv hStore
-          exact replyDelivery_preserves_objects_invExt (ensureRunnable st1 target) st' target
-            tcb hObjInvMid hStep
+          obtain ⟨st2, hDel, rfl⟩ := replyDelivery_unlink_ok hStep
+          exact SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ <|
+            replyDelivery_preserves_objects_invExt (ensureRunnable st1 target) st2 target
+              tcb hObjInvMid hDel
       · simp_all
 
 open SeLe4n.Model.SystemState in
@@ -21743,12 +21901,14 @@ theorem endpointReply_ipcState_backward_off_target
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
             rw [← hStep] at hTcbX
-            run_links_back (ensureRunnable_objectsAgreeOffRunLinks st1 target) at tcbX hTcbX
+            run_links_back ((SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _).trans (ensureRunnable_objectsAgreeOffRunLinks st1 target)) at tcbX hTcbX
             exact ⟨tcbX, by rw [← hMidNe x.toObjId hxNe]; exact hTcbX, rfl⟩
           | some rid =>
             simp only [hRO] at hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            run_links_back (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) at tcbX hTcbX
             obtain ⟨ty, hTy, hIS, _⟩ := removeCallerReplyFrame_tcb_forward
-              (ensureRunnable st1 target) st' target rid hObjInvMid hStep x.toObjId tcbX hTcbX
+              (ensureRunnable st1 target) st2 target rid hObjInvMid hRm x.toObjId tcbX hTcbX
             run_links_back (ensureRunnable_objectsAgreeOffRunLinks st1 target) at ty hTy
             exact ⟨ty, by rw [← hMidNe x.toObjId hxNe]; exact hTy, hIS⟩
       · simp_all

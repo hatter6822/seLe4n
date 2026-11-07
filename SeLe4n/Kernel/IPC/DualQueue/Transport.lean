@@ -2562,8 +2562,11 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                           | .error e => .error e
                           | .ok ((), stLinked) =>
                               -- AK1-D: Atomic (ipcState := .ready, pendingMessage := senderMsg).
+                              -- WS-ZA ZA6.37: the caller now waits on the receiver, so it
+                              -- joins the receiver's reply-waiter queue, as the per-core
+                              -- receive links it (`linkReplyWaiter`).
                               match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
-                              | .ok st''' => .ok (sender, st''')
+                              | .ok st''' => .ok (sender, st'''.linkReplyWaiter sender receiver)
                               | .error e => .error e
                 else
                   -- Send path: sender transitions to ready as before
@@ -2712,9 +2715,12 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                         -- the stash, atomically (formerly the separate
                         -- `linkServerFirstCaller` dispatch step).  Fails closed when the
                         -- server provided no reply object.
+                        -- WS-ZA ZA6.37: and joins the receiver's reply-waiter queue,
+                        -- as the per-core call links it (`linkReplyWaiter`).
                         match SystemState.linkServerStashedReply caller receiver st4 with
                         | .error e => .error e
-                        | .ok ((), st5) => .ok ((), removeRunnable st5 caller)
+                        | .ok ((), st5) =>
+                            .ok ((), (removeRunnable st5 caller).linkReplyWaiter caller receiver)
         | none =>
             match endpointQueueEnqueue endpointId false caller st with
             | .error e => .error e
@@ -2784,12 +2790,56 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                     -- reply stack first (`removeCallerReplyFrame`, seL4's
                     -- `reply_remove`) — the same step the cross-core spine runs,
                     -- and the identity wherever the answered frame is a head.
+                    -- WS-ZA ZA6.37: and the answered caller leaves its server's
+                    -- reply-waiter queue, as the per-core reply unlinks it
+                    -- (`unlinkReplyWaiterOpt`).
                     match tcb.replyObject with
                     | some rid =>
-                        removeCallerReplyFrame target rid (ensureRunnable st' target)
-                    | none => .ok ((), ensureRunnable st' target)
+                        match removeCallerReplyFrame target rid (ensureRunnable st' target) with
+                        | .error e => .error e
+                        | .ok ((), st'') => .ok ((), st''.unlinkReplyWaiterOpt target replyTarget)
+                    | none => .ok ((), (ensureRunnable st' target).unlinkReplyWaiterOpt target replyTarget)
               else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
+
+/-- The reply's frame-removal leg followed by the reply-waiter unlink: a
+successful step factors through a successful `removeCallerReplyFrame`. -/
+theorem removeCallerReplyFrame_unlink_ok {target : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    {s? : Option SeLe4n.ThreadId} {st st' : SystemState}
+    (h : (match removeCallerReplyFrame target rid st with
+      | .error e => .error e
+      | .ok ((), st'') => .ok ((), st''.unlinkReplyWaiterOpt target s?)) =
+        (.ok ((), st') : Except KernelError (Unit × SystemState))) :
+    ∃ st'', removeCallerReplyFrame target rid st = .ok ((), st'') ∧
+      st' = st''.unlinkReplyWaiterOpt target s? := by
+  cases hR : removeCallerReplyFrame target rid st with
+  | error e => simp [hR] at h
+  | ok p =>
+    obtain ⟨⟨⟩, st''⟩ := p
+    simp only [hR, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    exact ⟨st'', rfl, h.symm⟩
+
+/-- The reply's delivery leg followed by the reply-waiter unlink: a successful
+step factors through a successful delivery (the frame removal when the caller
+holds a Reply, the identity otherwise). -/
+theorem replyDelivery_unlink_ok {target : SeLe4n.ThreadId} {ro : Option SeLe4n.ReplyId}
+    {s? : Option SeLe4n.ThreadId} {st st' : SystemState}
+    (h : (match ro with
+      | some rid =>
+          match removeCallerReplyFrame target rid st with
+          | .error e => .error e
+          | .ok ((), st'') => .ok ((), st''.unlinkReplyWaiterOpt target s?)
+      | none => .ok ((), st.unlinkReplyWaiterOpt target s?)) =
+        (.ok ((), st') : Except KernelError (Unit × SystemState))) :
+    ∃ st'', (match ro with
+        | some rid => removeCallerReplyFrame target rid st
+        | none => .ok ((), st)) = .ok ((), st'') ∧
+      st' = st''.unlinkReplyWaiterOpt target s? := by
+  cases ro with
+  | none =>
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    exact ⟨st, rfl, h.symm⟩
+  | some rid => exact removeCallerReplyFrame_unlink_ok h
 
 /-- WS-H12a: endpointReplyRecv now uses endpointReceiveDual instead of legacy
 endpointAwaitReceive. After completing the reply, the receiver enters the
@@ -2847,7 +2897,10 @@ def endpointReplyRecv
                         -- WS-H12a: Full dual-queue receive path after reply
                         -- WS-SM SM6.D (#7.1 fold): the receive leg threads the
                         -- server-supplied reply object for the next caller.
-                        match endpointReceiveDual endpointId receiver replyId st3 with
+                        -- WS-ZA ZA6.37: the answered caller leaves its server's
+                        -- reply-waiter queue first, as `endpointReply` unlinks it.
+                        match endpointReceiveDual endpointId receiver replyId
+                            (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                         | .error e => .error e
                         | .ok (_, st4) => .ok ((), st4)
               else .error .replyCapInvalid

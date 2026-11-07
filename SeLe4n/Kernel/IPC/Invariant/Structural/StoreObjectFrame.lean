@@ -483,8 +483,10 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
                   | error e => simp [hMsg] at hStep
                   | ok st3 =>
                     simp only [hMsg] at hStep; rcases hStep with ⟨-, rfl⟩
-                    exact storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                      stLinked _ receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hObjInvLink hMsg hInvLink
+                    exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks
+                      (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <|
+                      storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                        stLinked st3 receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hObjInvLink hMsg hInvLink
           | ready | blockedOnSend _ | blockedOnReceive _
             | blockedOnReply _ _ | blockedOnNotification _ =>
             -- Send path: senderWasCall = false
@@ -650,7 +652,8 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
                 ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
               (epId' = endpointId →
                 ep'.sendQ.tail ≠ some tailTid)) →
-          (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+          (∀ stR, endpointReceiveDual endpointId receiver replyId
+              (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) = .ok stR →
             dualQueueSystemInvariant stR.2) by
         -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
         split at hStep
@@ -695,7 +698,8 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
             cases hRO : tcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -734,7 +738,8 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
                     hTail epId' ep' ((hNT epId' (.endpoint ep')
                       (fun tt => by exact KernelObject.noConfusion)
                       (fun rr => by exact KernelObject.noConfusion)).mp hEp')
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -742,10 +747,14 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
                   exact this st3 hObjInv3 hInv3 hFresh3 hTailFresh3 result hRecv
         · simp_all
       intro st3 hObjInv3 hInv3 hFresh3 hTailFresh3 stR hRecv
+      have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st3 replyTarget expectedReplier
       exact endpointReceiveDual_preserves_dualQueueSystemInvariant _ _ _ _ stR.2 stR.1
-        hObjInv3
+        (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv3)
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
-        hInv3 hFresh3 hTailFresh3
+        (dualQueueSystemInvariant_of_objectsAgreeOffRunLinks hA hInv3)
+        (fun epId ep hEp => hFresh3 epId ep (hA.get_endpoint_iff.mp hEp))
+        (fun ep t hEp hT epId' ep' hEp' =>
+          hTailFresh3 ep t (hA.get_endpoint_iff.mp hEp) hT epId' ep' (hA.get_endpoint_iff.mp hEp'))
 
 /-- WS-H5: endpointCall preserves dualQueueSystemInvariant.
 Requires freshness preconditions for the enqueue path. -/
@@ -819,7 +828,7 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hInvSt5 := linkServerStashedReply_preserves_dualQueueSystemInvariant
                   st3 st5 caller pair.1 hObjInvSt3 hLink hInvSt3
-                exact removeRunnable_preserves_dualQueueSystemInvariant _ _ hInvSt5
+                exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_dualQueueSystemInvariant _ _ hInvSt5
       | none =>
         -- Path B: enqueue caller, store message, block
         simp only [hHead] at hStep
@@ -1807,11 +1816,16 @@ theorem endpointReply_preserves_allPendingMessagesBounded
                 cases hRO : tcb.replyObject with
                 | none =>
                   simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                  rw [← hStep]; exact hMid
+                  rw [← hStep]
+                  exact allPendingMessagesBounded_of_objectsAgreeOffRunLinks
+                    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
                 | some rid =>
                   simp only [hRO] at hStep
-                  exact removeCallerReplyFrame_preserves_allPendingMessagesBounded _ _ target rid
-                    hObjInvMid hMid hStep
+                  obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+                  exact allPendingMessagesBounded_of_objectsAgreeOffRunLinks
+                    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+                    removeCallerReplyFrame_preserves_allPendingMessagesBounded _ _ target rid
+                      hObjInvMid hMid hRm
           · -- authorized = false
             simp_all
 
@@ -1974,11 +1988,16 @@ theorem endpointReply_preserves_badgeWellFormed
               cases hRO : tcb.replyObject with
               | none =>
                 simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                rw [← hStep]; exact hMid
+                rw [← hStep]
+                exact badgeWellFormed_of_objectsAgreeOffRunLinks
+                  (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
               | some rid =>
                 simp only [hRO] at hStep
-                exact removeCallerReplyFrame_preserves_badgeWellFormed _ _ target rid
-                  hObjInvMid hMid hStep
+                obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+                exact badgeWellFormed_of_objectsAgreeOffRunLinks
+                  (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+                  removeCallerReplyFrame_preserves_badgeWellFormed _ _ target rid
+                    hObjInvMid hMid hRm
           · simp at hStep
 
 -- ============================================================================
@@ -2147,11 +2166,16 @@ theorem endpointReply_preserves_notificationWaiterConsistent
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hMid
+            rw [← hStep]
+            exact notificationWaiterConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
           | some rid =>
             simp only [hRO] at hStep
-            exact removeCallerReplyFrame_preserves_notificationWaiterConsistent _ _ target rid
-              hMid hObjInvMid hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact notificationWaiterConsistent_of_objectsAgreeOffRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+              removeCallerReplyFrame_preserves_notificationWaiterConsistent _ _ target rid
+                hMid hObjInvMid hRm
       · simp at hStep
 
 -- ============================================================================
@@ -2356,7 +2380,7 @@ theorem endpointReceiveDual_preserves_pendingMessagesSatisfy
                   | ok st3 =>
                     simp [hPend] at hStep
                     obtain ⟨_, hEq⟩ := hStep; subst hEq
-                    exact storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
+                    exact pendingMessagesSatisfy_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
                       stLinked st3 receiver .ready _ hSenderMsgP hObjInvLink hPend hInvLink
           · -- Send path: storeTcbIpcStateAndMessage(sender, none) + ensureRunnable + storeTcbPendingMessage(receiver, senderMsg)
             cases hStore : storeTcbIpcStateAndMessage stPop sender .ready none with
@@ -2519,7 +2543,7 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
                   | ok st3 =>
                     simp [hPend] at hStep
                     obtain ⟨_, hEq⟩ := hStep; subst hEq
-                    exact storeTcbIpcStateAndMessage_preserves_badgeWellFormed stLinked st3 receiver .ready _ hInvLink hObjInvLink hPend
+                    exact badgeWellFormed_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| storeTcbIpcStateAndMessage_preserves_badgeWellFormed stLinked st3 receiver .ready _ hInvLink hObjInvLink hPend
           · -- Send path
             cases hStore : storeTcbIpcStateAndMessage stPop sender .ready none with
             | error e => simp [hStore] at hStep
@@ -2667,7 +2691,7 @@ theorem endpointCall_preserves_allPendingMessagesBounded
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hInvSt5 := linkServerStashedReply_preserves_allPendingMessagesBounded
                   st4 st5 caller receiver hObjInvSt4 hLink hInvSt4
-                exact removeRunnable_preserves_allPendingMessagesBounded st5 caller hInvSt5
+                exact allPendingMessagesBounded_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_allPendingMessagesBounded st5 caller hInvSt5
       | none =>
         simp only [hHead] at hStep
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -2742,7 +2766,7 @@ theorem endpointCall_preserves_badgeWellFormed
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hInvSt5 := linkServerStashedReply_preserves_badgeWellFormed
                   st4 st5 caller receiver hInvSt4 hObjInvSt4 hLink
-                exact removeRunnable_preserves_badgeWellFormed st5 caller hInvSt5
+                exact badgeWellFormed_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_badgeWellFormed st5 caller hInvSt5
       | none =>
         simp only [hHead] at hStep
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -2803,13 +2827,13 @@ theorem endpointReplyRecv_preserves_allPendingMessagesBounded
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO] at hStep
-            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+            cases hRecv : endpointReceiveDual endpointId receiver replyId ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
             | error e => simp [hRecv] at hStep
             | ok pair =>
               simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact endpointReceiveDual_preserves_allPendingMessagesBounded
-                endpointId receiver pair.1 replyId _ _ hInv2 hObjInv2 hRecv
+                endpointId receiver pair.1 replyId _ _ (allPendingMessagesBounded_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hInv2) (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv2) hRecv
           | some rid =>
             simp only [hRO] at hStep
             cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
@@ -2819,13 +2843,13 @@ theorem endpointReplyRecv_preserves_allPendingMessagesBounded
               simp only [hCons] at hStep
               have hInv3 := removeCallerReplyFrame_preserves_allPendingMessagesBounded _ _ replyTarget rid hObjInv2 hInv2 hCons
               have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInv2 hCons
-              cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp [hRecv] at hStep
               | ok pair =>
                 simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 exact endpointReceiveDual_preserves_allPendingMessagesBounded
-                  endpointId receiver pair.1 replyId _ _ hInv3 hObjInv3 hRecv
+                  endpointId receiver pair.1 replyId _ _ (allPendingMessagesBounded_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hInv3) (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv3) hRecv
       · simp at hStep
 
 /-- U4-K: endpointReplyRecv preserves badgeWellFormed. -/
@@ -2866,13 +2890,13 @@ theorem endpointReplyRecv_preserves_badgeWellFormed
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO] at hStep
-            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+            cases hRecv : endpointReceiveDual endpointId receiver replyId ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
             | error e => simp [hRecv] at hStep
             | ok pair =>
               simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact endpointReceiveDual_preserves_badgeWellFormed
-                endpointId receiver pair.1 replyId _ _ hInv2 hObjInv2 hRecv
+                endpointId receiver pair.1 replyId _ _ (badgeWellFormed_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hInv2) (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv2) hRecv
           | some rid =>
             simp only [hRO] at hStep
             cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
@@ -2882,13 +2906,13 @@ theorem endpointReplyRecv_preserves_badgeWellFormed
               simp only [hCons] at hStep
               have hInv3 := removeCallerReplyFrame_preserves_badgeWellFormed _ _ replyTarget rid hObjInv2 hInv2 hCons
               have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInv2 hCons
-              cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp [hRecv] at hStep
               | ok pair =>
                 simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 exact endpointReceiveDual_preserves_badgeWellFormed
-                  endpointId receiver pair.1 replyId _ _ hInv3 hObjInv3 hRecv
+                  endpointId receiver pair.1 replyId _ _ (badgeWellFormed_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hInv3) (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv3) hRecv
       · simp at hStep
 
 end SeLe4n.Kernel

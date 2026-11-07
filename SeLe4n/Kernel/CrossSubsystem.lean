@@ -1698,6 +1698,15 @@ theorem removeRunnable_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.T
     | rfl
     | exact (hf (by decide)).elim
 
+/-- Joining a server's reply-waiter queue writes TCB link fields alone. -/
+theorem linkReplyWaiter_preservesFieldsOutside (st : SystemState) (w s : SeLe4n.ThreadId) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st (st.linkReplyWaiter w s) := by
+  intro f hf
+  rw [SystemState.linkReplyWaiter_eq_objects]
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
 theorem storeTcbQueueLinks_preservesFieldsOutside
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
@@ -1971,7 +1980,9 @@ theorem endpointReceiveDual_preservesFieldsOutside
                          (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hSender)
                          (preservesFieldsOutside_trans
                            (linkCallerReply_preservesFieldsOutside _ _ _ _ hLink)
-                           (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hRecv)))
+                           (preservesFieldsOutside_trans
+                             (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hRecv)
+                             (linkReplyWaiter_preservesFieldsOutside _ _ _))))
                    · cases hStep)
           | -- send path
             (split at hStep

@@ -18276,6 +18276,20 @@ run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_c
 # WS-ZA ZA4.6: the reply-waiter queues stay consistent across every IPC arm the
 # dispatcher runs, cancellation and timeout; the walk reads the queue.
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+# WS-ZA ZA6.37: the single-core reference IPC forms link and unlink the
+# reply-waiter queue as the per-core arms do.
+run_check "INVARIANT" rg -n -F ".ok (sender, st'''.linkReplyWaiter sender receiver)" SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n -F ".ok ((), (removeRunnable st5 caller).linkReplyWaiter caller receiver)" SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n -F "| .ok ((), st'') => .ok ((), st''.unlinkReplyWaiterOpt target replyTarget)" SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n -F "| none => .ok ((), (ensureRunnable st' target).unlinkReplyWaiterOpt target replyTarget)" SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n -U 'match endpointReceiveDual endpointId receiver replyId\n *\(st3\.unlinkReplyWaiterOpt replyTarget expectedReplier\) with' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_unlink_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem replyDelivery_unlink_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem currentNotEndpointQueueHead_of_objectsAgreeOffRunLinks($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_unlinkReplyWaiterOpt($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem linkReplyWaiter_preservesFieldsOutside($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_projection_of_unlink($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_eq_reply_then_receive($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean

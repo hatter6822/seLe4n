@@ -139,12 +139,14 @@ theorem endpointReplyRecv_preserves_ipcInvariant
             cases hRO : tcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
                 intro ⟨_, hEq⟩; subst hEq
-                exact this _ hInv2 hObjInvEns result hRecv
+                exact this _ (ipcInvariant_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hInv2)
+                  (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInvEns) result hRecv
             | some rid =>
               cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
               | error e => simp [hCons]
@@ -153,12 +155,14 @@ theorem endpointReplyRecv_preserves_ipcInvariant
                 simp only [hCons]
                 have hInv3 := removeCallerReplyFrame_preserves_ipcInvariant _ _ replyTarget rid hObjInvEns hInv2 hCons
                 have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
                   intro ⟨_, hEq⟩; subst hEq
-                  exact this st3 hInv3 hObjInv3 result hRecv
+                  exact this _ (ipcInvariant_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hInv3)
+                    (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv3) result hRecv
         · simp_all
       intro st3 hInv3 hObjInv3 stR hRecv
       exact endpointReceiveDual_preserves_ipcInvariant _ stR.2 endpointId receiver stR.1 replyId hInv3 hObjInv3 (by
@@ -261,12 +265,15 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
             cases hRO : tcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
                 intro ⟨_, hEq⟩; subst hEq
-                exact this _ hInvMid hCNHMid hObjInvEns result hRecv
+                exact this _ (schedulerInvariantBundle_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) hInvMid)
+                  (currentNotEndpointQueueHead_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) hCNHMid)
+                  (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInvEns) result hRecv
             | some rid =>
               cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
               | error e => simp [hCons]
@@ -289,12 +296,15 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
                       (fun tt => by exact KernelObject.noConfusion)
                       (fun rr => by exact KernelObject.noConfusion)).mp hEp)
                 have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
                   intro ⟨_, hEq⟩; subst hEq
-                  exact this st3 hInv3 hCNH3 hObjInv3 result hRecv
+                  exact this _ (schedulerInvariantBundle_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) hInv3)
+                    (currentNotEndpointQueueHead_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) hCNH3)
+                    (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv3) result hRecv
         · simp_all
       intro st3 hInv3 hCNH3 hObjInv3 stR hRecv
       exact endpointReceiveDual_preserves_schedulerInvariantBundle _ stR.2 endpointId receiver stR.1 replyId hInv3 hCNH3 hObjInv3
@@ -411,12 +421,14 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
             cases hRO : tcb.replyObject with
             | none =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
                 intro ⟨_, hEq⟩; subst hEq
-                exact this _ hContractMid hObjInvEns result hRecv
+                exact this _ (ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) hContractMid)
+                  (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInvEns) result hRecv
             | some rid =>
               cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
               | error e => simp [hCons]
@@ -426,12 +438,14 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
                 have hContract3 : ipcSchedulerContractPredicates st3 :=
                   removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates _ _ replyTarget rid hContractMid hObjInvEns hCons
                 have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
                   intro ⟨_, hEq⟩; subst hEq
-                  exact this st3 hContract3 hObjInv3 result hRecv
+                  exact this _ (ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) hContract3)
+                    (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv3) result hRecv
         · simp_all
       intro st3 hContract3 hObjInv3 stR hRecv
       exact endpointReceiveDual_preserves_ipcSchedulerContractPredicates _ stR.2 endpointId receiver stR.1 replyId hContract3 hObjInv3 (by
@@ -486,10 +500,13 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
             cases hRO : tcb.replyObject with
             | none =>
               simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-              rw [← hStep]; exact hMid
+              rw [← hStep]
+              exact ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates _ _ target rid hMid hObjInvMid hStep
+              obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+              exact ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) <|
+                removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates _ _ target rid hMid hObjInvMid hRm
         · -- authorized = false
           simp_all
       -- Shared proof body
@@ -612,7 +629,7 @@ theorem endpointCall_preserves_objects_invExt
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hObjInv5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 hObjInvIpc hLink
-                exact removeRunnable_objects_invExt _ _ (by assumption)
+                exact SystemState.linkReplyWaiter_objects_invExt _ _ _ (removeRunnable_objects_invExt _ _ hObjInv5)
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep

@@ -132,6 +132,15 @@ theorem removeCallerReplyFrame_preserves_capabilityInvariantBundle
     (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv)
     (cutReplyFrameOutOrSelf_kindPreservingWrite st rid hObjInv)
 
+/-- The reply-waiter unlink rewrites TCB run-link fields only: no CNode, no CDT
+edge, no object kind changes, so the capability bundle carries across. -/
+theorem capabilityInvariantBundle_unlinkReplyWaiterOpt {st : SystemState}
+    (w : SeLe4n.ThreadId) (s? : Option SeLe4n.ThreadId) (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (st.unlinkReplyWaiterOpt w s?) :=
+  capabilityInvariantBundle_of_kindPreserving h (SystemState.unlinkReplyWaiterOpt_cdt _ _ _)
+    (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ h.2.2.2.2.1)
+    (SystemState.unlinkReplyWaiterOpt_kindPreservingWrite _ _ _)
+
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
 Reply stores a TCB with message (not a CNode), so CSpace invariants are preserved.
 Updated for WS-H1 reply-target scoping (replier parameter + replyTarget validation).
@@ -175,11 +184,12 @@ theorem endpointReply_preserves_capabilityInvariantBundle
                   cases hRO : tcb.replyObject with
                   | none =>
                     simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                    rw [← hStep]; exact hMid
+                    rw [← hStep]; exact capabilityInvariantBundle_unlinkReplyWaiterOpt _ _ hMid
                   | some rid =>
                     simp only [hRO] at hStep
-                    exact removeCallerReplyFrame_preserves_capabilityInvariantBundle
-                      _ _ target rid hMid hStep
+                    obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+                    exact capabilityInvariantBundle_unlinkReplyWaiterOpt _ _ <|
+                      removeCallerReplyFrame_preserves_capabilityInvariantBundle _ _ target rid hMid hRm
             · -- authorized = false
               simp_all
           -- Dispatch to extracted lemma
