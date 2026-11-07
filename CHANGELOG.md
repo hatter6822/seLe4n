@@ -1,3 +1,33 @@
+## v0.37.1 — WS-UC: the plan for untyped-backed object cells
+
+Registers WS-UC, a documentation PR plus one docstring fix.  A carved
+object's cells will move from the kernel's Lean heap into its untyped's
+memory, so a carve costs its region's bytes, as seL4's `Untyped_Retype`
+does, and the heap capacity check retires.
+
+- **The plan** (`docs/planning/UNTYPED_BACKED_CELLS_PLAN.md`): rows UC1–UC10
+  in execution order.  The rows: measure, ghost the bookkeeping tables,
+  pre-size the tables, own cells only, the inert region allocator, honest
+  sizes, carve into the range, page kinds, retire the heap check, lifetime
+  evidence.  Each row's acceptance is an exerciser reading.  Decisions
+  D1–D6 take their recommended defaults; the owner card stays open.
+- **Re-read against the tree.**  The planning read corrected the design
+  check in six places.  No VSpace-root or child-untyped carve is measured,
+  so UC1 adds both.  The compiled insert already places a supplied entry
+  cell (`RHTable.insertCell`).  The displacement rebuild is in
+  `insertCellLoop`, not the model's `insertLoop`.  The ZA6.31 C scanner is
+  not in the tree, so UC4 commits one.  `kernelHeapArenaBytes` joins UC9's
+  retirement set.  `freeze` lives in `FrozenState.lean`.
+- **Re-homed**: the heap-capacity row of `docs/REGISTERED_DEBT.md` table C
+  to WS-UC.  UC9 closes it whole (D6).
+- **Registered**: the staged ARMv8 backend's second encoding of
+  "non-cacheable".  It uses MAIR index 2; the live path uses index 1.  No
+  live path disagrees: the backend is outside both shipped archives, and the
+  HAL refuses any user descriptor with an index other than 0 or 1.
+- **Fixed**: `SystemState.objectIndex`'s docstring said the index is never
+  pruned, but the retire prunes it.  The docstring now says what the code
+  does.
+
 ## v0.37.0 — WS-ZA ZA6.37: the workstream closes; every committing entry keeps the kernel records
 
 WS-ZA closes.  The closing PR bumps the minor version (maintainer's

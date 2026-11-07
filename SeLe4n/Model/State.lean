@@ -1284,28 +1284,22 @@ structure SystemState where
       by `ObjId` with O(1) lookup, so insertion order does not affect
       semantics. No order-dependent iteration patterns exist. -/
   objects : RHTable SeLe4n.ObjId KernelObject
-  /-- L-05/WS-E6: Monotonic append-only index of all object IDs that have been
-      stored. This list is intentionally never pruned — `storeObject` prepends
-      new IDs and never removes old ones.
+  /-- L-05/WS-E6: Index of the object IDs in the store. `storeObject` prepends
+      a new ID and never removes one (`storeObject_objectIndex_monotone`), and
+      the retire of an object removes its ID with its object-table entry
+      (`eraseRetiredObject`, `retireCarvedObject`), so every ID it holds names a
+      stored object (`objectIndexLive`).
 
-      **Design rationale:** Monotonic append-only semantics ensure that any
-      membership witness (`id ∈ st.objectIndex`) remains valid across all future
-      states. This simplifies invariant proofs: once an ID appears in the index,
-      it persists, so cross-transition carryover is trivially established. The
-      tradeoff is that the index may contain IDs for objects that have since been
-      overwritten or logically deleted; consumers must check `st.objects[id]?`
-      for `some _` to confirm the object still exists.
+      **Design rationale:** A membership witness (`id ∈ st.objectIndex`) carries
+      across every store, so cross-transition carryover over a store is
+      immediate; across a retire it holds for every ID but the retired one.
+      Consumers still read `st.objects[id]?` for the object itself.
 
-      **Migration path:** If bounded-memory semantics or garbage collection are
-      added in a future workstream, `objectIndex` can be replaced by a data
-      structure supporting removal while preserving the monotonicity invariant
-      for the live-object subset.
-
-      **S4-A: Growth analysis.** For a typical RPi5 workload with `maxObjects =
-      65536`, the objectIndex list consumes at most `65536 × sizeof(ObjId)` bytes.
-      At 8 bytes per ObjId (Nat on 64-bit), this is 512 KB — well within the
-      RPi5's 8 GB RAM budget. The advisory predicate `objectIndexBounded` below
-      documents the expected bound. -/
+      **S4-A: Growth analysis.** The capacity check (`objectStoreCapacityExceeded`)
+      reads this list's length, so it holds at most `maxObjects` IDs, one list
+      cell each (`objectIndexBounded`). WS-UC
+      (`docs/planning/UNTYPED_BACKED_CELLS_PLAN.md`) makes this index an erased
+      ghost proven to agree with `objects`. -/
   objectIndex : List SeLe4n.ObjId
   /-- WS-G2/F-P10: Shadow hash set for O(1) objectIndex membership checks.
       Maintained in parallel with `objectIndex` — `storeObject` inserts into

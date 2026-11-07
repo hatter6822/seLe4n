@@ -1,0 +1,447 @@
+# WS-UC — Untyped-backed object cells
+
+> **Workstream**: WS-UC (a carved object's cells in its untyped's memory).
+> **Status**: **PLANNED** — registered at `v0.37.1`; no row started.
+> **Baseline**: the tree at `v0.37.0` (WS-ZA closed, ZA6.37). Every
+> `file:line` below was re-read against it.
+> **Closes**: the `docs/REGISTERED_DEBT.md` row "Only the retype checks the
+> kernel heap's capacity…", re-homed here at `v0.37.0` and closed by UC9.
+> **Rows**: UC1–UC10, numbered in the order they are implemented. Each row
+> consumes only lower-numbered rows, and a row that changes a transition
+> carries the proofs that cover it. No two rows run in parallel.
+> **Decisions**: D1–D6 (§3) — **default taken; owner card open** on each.
+
+## 1. The problem
+
+A carve today puts every cell it builds in the kernel's Lean heap, one
+64 MiB arena behind one leaf lock (`rust/sele4n-hal/src/lean_heap.rs:931-1013`).
+The arena halts when it is full (`heap_halt`, `:1183`). So the retype checks
+the heap's free bytes before it writes anything (`CarveRequest.heapAdmitted`,
+`SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean:1314`), measured
+against stated per-kind constants (`:1255-1306`). Those constants are not
+derived from the compiled layouts, and the check is not seL4's.
+
+seL4 charges a retype to the untyped it carves from. `decodeUntypedInvocation`
+(`src/object/untyped.c`) aligns the free index to the object size and answers
+`seL4_NotEnoughMemory` when `(untypedFreeBytes >> objectSize) < nodeWindow`.
+The kernel object then lives in that memory. This workstream does the same: a
+carved object's cells live in its untyped's region, a carve costs its region's
+bytes by construction, and the heap check retires.
+
+**What stays a Rust fact.** No Lean theorem can say where a cell lives. The
+model keeps proving the carve's result. Containment (the cells are in the
+range, and none outlives it) is enforced by the region allocator's live counts,
+read wherever bytes are handed out again. UC7 records this limit in
+`docs/CLAIM_EVIDENCE_INDEX.md`.
+
+## 2. Facts the rows rest on
+
+Each fact is stated once, here, and the rows cite it by its letter.
+
+- **F1. The carve is pure and runs in one step.** It runs inside
+  `modifyGetKernelState` (`SeLe4n/Kernel/SyscallDispatchEntry.lean:861-869`),
+  after the entry reads the heap's free bytes (`:852`). So no `IO` bracket can
+  name the untyped to the allocator. A context word around the whole step
+  would also route table, resize and index cells into the region. The carve
+  therefore runs its builder through a pure extern that sets **this core's**
+  allocation context only around the object's own construction. It is
+  per-core because a secondary core's bring-up probe allocates outside the
+  entry lock (`lean_heap.rs:70-79`).
+- **F2. What a carve builds.** `untypedRetypeObject` (`ScrubAndUntyped.lean:1359`)
+  does three things. It builds the object (`CarveRequest.objectImpl`,
+  `:1130-1143`), where the kinds built from constants pass through
+  `KernelObject.unshareFresh` (`SeLe4n/Model/Object/Unshare.lean:254`). It
+  stores the object one table at a time (`storeFresh`,
+  `SeLe4n/Model/State.lean:2500-2507`). And it records the child in the untyped
+  (`UntypedObject.allocate`, `SeLe4n/Model/Object/Types.lean:4210`). The
+  compiled object-table insert already places a supplied entry cell
+  (`RHTable.insertCell` and `insertAbsentCell`,
+  `SeLe4n/Kernel/RobinHood/Core.lean:805,1006`).
+- **F3. The pins.** `scripts/qemu_exerciser_lib.sh:241-243` pins each carve's
+  cell count (the `v0.37.0` counts are §5's baseline column). They cover the object's own cells, its
+  entries in the object, index-set and type tables, its index row, and its
+  child record (`:233-236`). **No VSpace-root or child-untyped carve is
+  measured** (`carved_kind`, `rust/sele4n-hal/src/smp_exercisers.rs:7432-7446`,
+  names both, but no scenario carves either).
+- **F4. Ranges are owned by address.** A carve through a capability with no
+  derivation child starts at 0 (`retypeFreeIndex`, `ScrubAndUntyped.lean:223`).
+  That carve is refused while the untyped records a child (`:232-234`). A
+  retired child untyped's records are spliced up to its recorder
+  (`retireUnrecord`, `SeLe4n/Kernel/Capability/FinalRetire.lean:752`). So an
+  ancestor's reset is refused while any descendant lives. These rules hold beside the sole-carver
+  and non-overlap invariants (`SeLe4n/Kernel/Lifecycle/Invariant.lean:113-130`).
+- **F5. How a cell can outlive its range.** None of these ways is an
+  allocation, so the zero-allocation gate cannot see them:
+  - *Reuse.* Lean's reset/reuse puts a constructor into a dead cell of the same
+    size. `objIdListDrop`
+    (`SeLe4n/Kernel/Lifecycle/Operations/CarvedObjectErase.lean:84-86`)
+    re-conses the kept index cells.
+  - *Sharing.* `CapTarget.copyOver` returns `src` itself for a `.cnodeSlot`
+    target or a destination that is not one-field (`Types.lean:1396-1406`). A
+    carved CNode slot's kept record holds the boot reply object's shared target
+    (the move-slot CNode carve, WS-ZA ZA5.4 part 26).
+  - *Relocation.* The compiled insert's displacement arm builds
+    `some { e with dist := e.dist + 1 }` (`insertCellLoop`, `Core.lean:741-761`),
+    and a resize rebuilds every entry.
+  - *Snapshot.* `freeze` shares object cells through `objects.toList`
+    (`SeLe4n/Model/FrozenState.lean:672`), and no live entry runs it.
+- **F6. User pages are zeroed at their carve.** The carve zeroes a frame
+  (`PhysicalWrite.zeroPage` → `apply_physical_write`,
+  `rust/sele4n-hal/src/user_translation.rs:349-365`). A RAM frame maps only as
+  Normal write-back (`frameMappingAdmissible`, `SeLe4n/Kernel/API.lean:2694-2699`).
+  A device untyped backs no kernel kind (`ScrubAndUntyped.lean:320`).
+
+## 3. Owner decisions
+
+Each decision below is **default taken; owner card open**. A different answer
+on the card changes only the rows that cite that decision.
+
+- **D1. Where the records of page kinds live.** The record cells of a frame,
+  page table, VSpace root and child untyped cannot live in their own range,
+  because that range is user memory, a walked table or future carves. *Default:*
+  a **metadata page per untyped**. It is carved from the untyped's free index on
+  the first page-kind carve that needs it, and it is modelled in Lean, so
+  `canAllocate` charges it. Device untypeds have no RAM to hold one, so their
+  frame records come from a **fixed boot pool**, with a Lean-visible count.
+- **D2. A reset or a zero over live cells.** *Default:* the rows make this
+  **unreachable by construction**: own cells only (UC4), no table structure in
+  a window (UC2, UC3), and only the object's own construction inside the
+  context (UC7). The allocator **halts only as a backstop**. Two things support
+  this: the generated-C scan (UC4) and the lifetime evidence (UC10). No
+  Lean-visible quiescence word is added.
+- **D3.** Retire `objectIndex`, `objectIndexSet` and `lifecycle.objectTypes` to
+  erased ghosts (UC2). *Default:* accept the proof cost.
+- **D4.** *Default:* accept the boot cost and keep `maxObjects` at 65536
+  (`State.lean:2352`). The object table and the ASID table are pre-sized at
+  boot (UC3), and the allocator keeps a per-page byte (UC5).
+- **D5.** *Default:* object sizes are ABI-visible and larger than seL4's.
+  `objectTypeAllocSize` (`ScrubAndUntyped.lean:42-54`) is the **one owning
+  definition**. `rust/sele4n-abi` and the spec take the sizes from it (UC6).
+- **D6.** *Default:* close the heap-capacity row whole, on the exerciser
+  reading (UC9). That includes its second half, "every other heap growth"
+  (a mapping's table entry, a derivation record), which stays a gate reading
+  and not a theorem.
+
+## 4. Rows
+
+Each row lists every cell it decides and where that cell goes, and it names the
+boundary cell of each rule it adds. Acceptance is stated as exerciser readings
+(`heap-allocations-per-syscall`). Unless a row says otherwise, **every reading
+the row does not name stays as it was**. The pins have one site,
+`scripts/qemu_exerciser_lib.sh`'s `carve_cells`, and each row that moves a pin
+rewrites it there.
+
+### UC1 — Measure each carve
+
+- **Work.**
+  - Make each carve print the bytes of each cell it allocates, by size, next to
+    its cell count. This is a reading only; behaviour does not change.
+  - Add the two kinds no scenario carves (F3), `untyped-retype-vspace-root` and
+    `untyped-retype-untyped`, each with its own cell pin.
+  - Add a byte pin beside each cell pin in `carve_cells`.
+- **Cells.** Measures every cell of every carve. Breaks each pin down into four
+  groups: object cells, the bookkeeping (the index row, the index set and the
+  type table), the object-table entry, and the child record.
+- **Measures the design's two inferences**, which stay **unmeasured** until this
+  row lands:
+  - that an endpoint's 11 cells are about 2 object cells plus 9 store cells;
+  - that the ghosts of UC2 remove 5 cells from every carve.
+- **Acceptance.**
+  - The 8 existing pins are unchanged.
+  - The two new kinds read their new pins.
+  - §5's table is filled in from this reading.
+  - Every other reading stays 0.
+
+### UC2 — The bookkeeping tables become ghosts (D3)
+
+- **Work.**
+  - Retype `objectIndex`, `objectIndexSet` and `lifecycle.objectTypes` as
+    `SeLe4n.Erased` (`SeLe4n/Model/Erased.lean`), as WS-ZA did for the run
+    queue's abstract queue.
+  - Prove that each one agrees with `objects` on every reachable state. This
+    is the largest proof cost in the workstream.
+- **The set of compiled reads to re-point is derived, not listed.** It is
+  exactly what the compiler refuses once the fields are erased, because
+  `Erased.out` is `noncomputable`. Examples at `v0.37.0`:
+  - the capacity check `objectIndex.length ≥ maxObjects`
+    (`ScrubAndUntyped.lean:296-297`), which becomes `objects.size`;
+  - the PIP-chain fuel `objectIndex.length` (e.g.
+    `SeLe4n/Kernel/IPC/Operations/Donation.lean:1322`);
+  - the `filterMap` walks (e.g. `SeLe4n/Kernel/SchedContext/Operations.lean:418`);
+  - `storeIsFresh` (`State.lean:2469`) and the type reads (`:2464`).
+- **Each re-pointed walk proves its result does not depend on order.** The
+  object table's iteration order follows its slot layout (`State.lean:1270-1284`).
+- **Cells.**
+  - The index cons cell, and the `some` and `RHEntry` cells of the index-set and
+    type tables, are no longer built: carves, retires and `objIdListDrop`'s
+    re-cons stop making them.
+  - `storeFresh` (`State.lean:2500-2507`) keeps the object table and the ASID
+    table only.
+- **Boundary.** The capacity check's boundary cell is the carve at
+  `objects.size = maxObjects − 1`, which succeeds. The carve after it is refused
+  with `objectStoreCapacityExceeded` before any write.
+- **Acceptance.**
+  - Each carve's pin falls by the ghost cells UC1 measured (endpoint 11 → 6 if
+    the inference holds).
+  - Every other reading stays 0.
+
+### UC3 — Pre-size the object and ASID tables at boot (D4)
+
+- **Work.**
+  - Boot builds `objects` and `asidTable` at capacity 2^17. That holds
+    `maxObjects` objects and `maxAsidValue` ASIDs
+    (`SeLe4n/Kernel/Architecture/AsidManager.lean:75`, 65536) below the 75%
+    resize load (`RHTable.insert`, `Core.lean:999-1002`).
+  - Theorem: on a state whose `objects.size < maxObjects`, `insert` equals
+    `insertNoResize`, and likewise for the ASID table. So a live insert never
+    resizes.
+- **Cells.** The tables' slot arrays and their resizes are heap cells built at
+  boot only, never inside a carve.
+- **Boundary.** The insert at size 65535 into capacity 131072 does not resize
+  (4·65535 < 3·131072). UC2's capacity check refuses the next carve.
+- **Acceptance.**
+  - Each kind's first-call reading equals its steady-state reading.
+  - The pins are unchanged.
+  - Every other reading stays 0.
+
+### UC4 — A carve owns its cells, and no pass moves them
+
+- **Work.**
+  - `CapTarget.copyOver` builds its own cell in its last two arms, the
+    `.cnodeSlot` arm and the destination that is not one-field (F5). Proof:
+    `copyOver_eq` still holds.
+  - The boot reply's shared target gets its own cell.
+  - The compiled insert's displacement arm and `bumpDist` move the displaced
+    cell; they do not rebuild it (F5, `insertCellLoop`). Proof:
+    `insertCellLoop_eq` still holds.
+  - A committed Tier 1 scanner over the generated C of the store, Robin Hood,
+    retire and capability-copy code. It flags any reset/reuse that puts a value
+    built for one key or object into a cell taken from another. The ZA6.31
+    scanner is not in the tree; it lives only in that audit's evidence. This
+    row commits one, and tests it by breaking the relation (CLAUDE.md).
+- **Cells.** Every target cell, spare record and entry cell a carve builds is
+  that carve's own, and no later operation moves it into another object.
+- **Boundary.** The arm that changes is the non-one-field destination over a
+  `.cnodeSlot` source. A one-field destination already owns its cell.
+- **Acceptance.**
+  - The cnode/2 pin, and any other pin that held a shared cell, rises by the
+    cells UC1 attributed to sharing.
+  - A new reading: carve a CNode, copy a capability out of it, then delete and
+    revoke it. The cells it frees equal its pin.
+  - The scanner reports 0 hits on the tree.
+  - Every other reading stays 0.
+
+### UC5 — The region allocator, inert (Rust)
+
+- **Work** (`rust/sele4n-hal`):
+  - a per-core allocation context;
+  - a range header inside each range: the range's size, an atomic live count,
+    a bump cursor and a cell-start bitmap;
+  - a per-page log2-size byte, allocated at boot, that maps an address to its
+    range;
+  - free, size and usable-size classified by address on both the small path
+    and the big path (`lean_heap.rs:1190-1218`, `lean_runtime/mod.rs:340-352`,
+    `lean_runtime/mem.rs:40-48`). The header has no spare bits
+    (`m_cs_sz = 0`), so this is the only record of a region cell's size;
+  - **the backstop of D2**: initialising a range header, or zeroing a page
+    (`apply_physical_write`), over bytes whose range has a live count above 0
+    halts.
+- A free decrements its range's live count without taking the heap lock, and
+  it never reuses the bytes. They return at the reset, as seL4's
+  `resetUntypedCap` returns them.
+- **Cells.** None yet: nothing sets the context.
+- **Boundary.**
+  - A live count of 1 at a zero halts; a live count of 0 zeroes.
+  - A bump that would reach the range's end halts. UC6's sizes make this
+    unreachable.
+- **Acceptance.**
+  - Host tests cover each boundary, including a planted leaked cell.
+  - `test_rust.sh` and `test_aarch64_cross_build.sh` pass.
+  - Every QEMU reading is unchanged.
+
+### UC6 — Honest sizes, owned once (D5)
+
+- **Work.**
+  - Set `objectTypeAllocSize`, `CarveRequest.sizeW`
+    (`SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean:429-435`) and
+    `cnodeSlotBits` to each kind's footprint plus UC5's range header. The
+    footprint is the byte pin after UC4. Sizes are rounded up to a power of
+    two, so `alignedCarveIndex` and the alignment lemmas keep their form, and
+    the CNode's size still scales with its radix.
+  - Re-run the proofs.
+  - `rust/sele4n-abi` (`CNODE_SLOT_BITS`, `MIN_SCHED_CONTEXT_SIZE_BITS` and a new
+    per-kind size table, `src/args/lifecycle.rs`) is checked against the Lean
+    definition by a boundary probe that runs the compiled Lean
+    (`SeLe4nBoundaryProbes`). It is not a second hand-written list.
+  - The spec cites the definition.
+  - The exerciser checks a relation: each carve's measured bytes are at most
+    the size the carve was charged.
+- **The check is seL4's.** `canAllocate` (`Types.lean:4202-4203`) against the
+  free index is `decodeUntypedInvocation`'s `seL4_NotEnoughMemory` check. With
+  honest sizes it is the bound.
+- **Cells.** None move.
+- **Boundary.** An untyped whose free bytes past the aligned index equal the
+  size succeeds. One alignment unit fewer is refused with
+  `untypedRegionExhausted`. This is a new negative case in
+  `tests/NegativeStateSuite.lean`.
+- **Acceptance.**
+  - The pins are unchanged.
+  - The new negative case refuses.
+  - Every other reading stays 0.
+
+### UC7 — Carve the object kinds into their range
+
+- **Work.**
+  - An `@[extern "sele4n_build_carved_object", never_extract] def` takes the
+    range (`ut.regionBase + carveIndex`, the size) and the carve's scalars,
+    not a built object (F1). Its Lean body is the model's `req.object …`, so no
+    proof changes.
+  - The Rust side sets this core's context, calls an `@[export]`ed builder
+    (today's `objectImpl` / `unshareImpl`), and clears the context.
+  - The same window builds the object-table entry cell, which is placed by
+    `RHTable.insertCell` (F2), and the child record (the cons cell and its
+    `UntypedChild`). The child record's lifetime is the object's: the retire
+    removes it, and it is spliced only up (F4), into a range that still
+    contains it.
+  - Record in `docs/CLAIM_EVIDENCE_INDEX.md` that containment is a Rust fact
+    (§1).
+- **Kinds.** TCB, endpoint, notification, CNode, reply and scheduling context.
+- **Cells.** Every cell of these carves lives in the carve's range, including a
+  TCB's space-slot spares and a CNode's slot records. The object-table slot
+  array stays on the heap (UC3).
+- **Boundary.** The first cell is the range header's successor. The last cell
+  ends at or before the range's end, and UC6's size makes that so.
+- **Acceptance.**
+  - **Every carve of these kinds reads 0 from the kernel heap.**
+  - The new `region-cells` reading equals each kind's pin.
+  - Every other reading stays 0.
+
+### UC8 — Page kinds and device untypeds (D1)
+
+- **Work.** The records of a frame, page table, VSpace root and child untyped
+  are built in their untyped's metadata page, and so are their entry cells,
+  their child records and a root's ASID-table entry. The metadata page is
+  carved from the untyped's free index, and the Lean model holds its slot
+  count. A device untyped's frame records come from the boot pool.
+- **Cells.** A root's empty mapping table, as measured by UC1, goes in the
+  metadata page. A mapping's later growth is the D6 half.
+- **Boundary.**
+  - The carve that fills the metadata page's last slot succeeds. The next one
+    carves a new metadata page, or, with no room for one, is refused with
+    `untypedRegionExhausted`.
+  - The boot pool's last record succeeds. The next one is refused with
+    `untypedRegionExhausted`.
+  - Like seL4's frames, a metadata page returns only at the reset.
+- **Acceptance.**
+  - Frame, page-table, VSpace-root and child-untyped carves, from both RAM and
+    device untypeds, read 0 from the kernel heap.
+  - Their region readings equal their pins.
+  - Every other reading stays 0.
+
+### UC9 — Retire the heap capacity (D6)
+
+- **Work.** Delete the heap check, its theorems and its readings in one cut.
+  The set is **derived**: every declaration whose code view names
+  `heapAdmitted`, `heapBytes` or `kernelHeapFreeBytes`, plus every by-name
+  consumer (Tier 1 censuses, Tier 3 anchors, the exerciser's expected set).
+  At `v0.37.0` that set reaches:
+  - `retypeHeapReserveBytes` … `CarveRequest.heapAdmitted` and the guard
+    (`ScrubAndUntyped.lean:1255-1315,1362`);
+  - the `heapAdmittedW*` family and the `_heapRefused` theorems
+    (`RetypePerform.lean:145-243,481-493,541-642`);
+  - `SeLe4n/Kernel/RefusalCarryingInvocation.lean:947,1571-1580`;
+  - `MachineState.kernelHeapFreeBytes` and `kernelHeapArenaBytes`
+    (`SeLe4n/Machine.lean:906,1082`), and `withKernelHeapFreeBytes`
+    (`SeLe4n/Kernel/Architecture/IpcBufferRead.lean:531-533`);
+  - the entry's read and its body marker
+    (`SyscallDispatchEntry.lean:852,940,952`);
+  - `ffiKernelHeapFreeBytes` (`SeLe4n/Platform/FFI.lean:3657`) and
+    `ffi_kernel_heap_free_bytes` (`rust/sele4n-hal/src/ffi.rs:1927`);
+  - the ceiling hook (`lean_heap.rs:1138-1171`) and `heap_refused_retype`
+    (`smp_exercisers.rs:5766`);
+  - `tests/NegativeStateSuite.lean:2219-2272`;
+  - the Tier 3 anchors (`scripts/test_tier3_invariant_surface.sh:3913-3924`
+    and their neighbours).
+- `heapAdmitted` is **retired, not replaced**: UC6's `canAllocate` is the bound.
+- **Cells.** None.
+- **Boundary.** Replace the `untyped-retype-heap-refused` scenario with an
+  `untyped-retype-region-exhausted` scenario at UC6's boundary.
+- **Acceptance.**
+  - Every pin holds.
+  - The new scenario refuses.
+  - Every other reading stays 0.
+  - The heap-capacity row closes whole (D6).
+
+### UC10 — Lifetime evidence per kind (D2)
+
+- **Work.** One QEMU scenario per kind:
+  1. Carve.
+  2. Delete and revoke. Every cell is freed, and the range's live count
+     reads 0.
+  3. Reset the untyped.
+  4. Carve a frame over the same bytes. The zero passes.
+- Add a leaked-cell hook (an exerciser-only build) that keeps one cell alive
+  past its delete.
+- **Cells.** None.
+- **Boundary.** With the hook, the leaked cell's range reads live count 1, and
+  the zero halts (UC5's backstop).
+- **Acceptance.**
+  - Each kind reads live count 0 after its delete, and its reset and zero
+    pass.
+  - The hook run halts at the zero with the range named.
+  - Every other reading stays 0.
+
+## 5. The per-kind byte table (filled by UC1)
+
+The cell counts are the pins at `v0.37.0` (F3). Bytes and the breakdown are
+**unmeasured** until UC1.
+
+| Kind | Cells | Bytes | Object | Ghost tables | Entry | Child record |
+|------|------:|------:|-------:|-------------:|------:|-------------:|
+| endpoint/0 | 11 | — | — | — | — | — |
+| notification/0 | 11 | — | — | — | — | — |
+| reply/0 | 15 | — | — | — | — | — |
+| tcb/0 | 24 | — | — | — | — | — |
+| sched-context/7 | 13 | — | — | — | — | — |
+| cnode/2 | 28 | — | — | — | — | — |
+| frame/0 | 11 | — | — | — | — | — |
+| page-table/0 | 13 | — | — | — | — | — |
+| vspace-root | — | — | — | — | — | — |
+| untyped | — | — | — | — | — | — |
+
+## 6. The seL4 behaviours this follows
+
+| Behaviour | seL4 | Rows |
+|-----------|------|------|
+| The retype's size check | `decodeUntypedInvocation` (`src/object/untyped.c`): it aligns the free index to the object size, then answers `seL4_NotEnoughMemory` when `(untypedFreeBytes >> objectSize) < nodeWindow` | UC6, UC9 |
+| The reset | `resetUntypedCap` (`src/object/untyped.c`): when `ensureNoChildren` succeeds, it clears the region and sets the free index to 0. Bytes freed earlier return only here | F4, UC5, UC8, UC10 |
+| No user mapping covers untyped memory that holds objects | The retype carves only the free region (l4v's `pspace_no_overlap` and `valid_untyped`), and a non-device frame is cleared when it is retyped (`clearMemory`). So no frame capability names bytes that hold a live object | F6, UC5 (zero-page guard), UC10 |
+
+## 7. Asides recorded at planning
+
+- **The stale "never pruned" docstring.** It was fixed in this plan's own PR
+  (`v0.37.1`). `SystemState.objectIndex`'s docstring (`State.lean:1287`) said
+  the index is never pruned. The retire does prune it
+  (`CarvedObjectErase.lean:60`; `eraseRetiredObject`, `FinalRetire.lean:698-701`).
+  The docstring now says what the code does.
+- **The two MAIR encodings of "non-cacheable" disagree on no live path.**
+  - `fromPagePermissions` (`SeLe4n/Kernel/Architecture/VSpaceARMv8.lean:180`)
+    uses AttrIndx 2, which is Normal non-cacheable in `MAIR_VALUE`
+    (`rust/sele4n-hal/src/mmu.rs:93-97`).
+  - `userPageAttributes`
+    (`SeLe4n/Kernel/Architecture/HardwareTables.lean:101-102`) uses AttrIndx 1,
+    which is Device-nGnRnE.
+  - `VSpaceARMv8` is outside the import closure of both shipped archives,
+    `SeLe4n` and `SeLe4nQemuVirtExerciser`. Only `Platform/Staged.lean` and
+    `tests/WxDefenseSuite.lean` import it ("integrated into no execution
+    path", spec §8.15.1 item 4). Its descriptors go only to its own model's
+    `pageTableMemory` (`VSpaceARMv8.lean:245-256`).
+  - Every user page descriptor the kernel writes is `userPageDescriptorValue`'s,
+    and Rust re-checks each one (`page_descriptor_admissible`,
+    `rust/sele4n-hal/src/user_translation.rs:195-215`). That check admits
+    AttrIndx 0 (RAM) and 1 (the device window) and refuses every other index.
+    Its host test refuses index 2 (`:883`).
+  - The kernel's own map uses indices 0 and 1 only.
+  - So the second encoding is latent, and it fails closed. It is registered in
+    `docs/REGISTERED_DEBT.md` table C, for the promotion of the staged backend
+    to reconcile.

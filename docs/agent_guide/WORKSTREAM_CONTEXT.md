@@ -109,6 +109,18 @@ syscall-level resolver alone; a new
 declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
 same cut, or the seam theorem does not elaborate).
 
+### WS-UC Untyped-backed object cells — PLANNED (registered v0.37.1; no row started)
+
+A carved object's cells move from the kernel's Lean heap into its untyped's
+memory, so a carve costs its region's bytes, as seL4's `Untyped_Retype` does,
+and the heap capacity check (`CarveRequest.heapAdmitted`) retires. Rows UC1–UC10
+and decisions D1–D6 (each default taken; the owner card is open) are in
+[`UNTYPED_BACKED_CELLS_PLAN.md`](../planning/UNTYPED_BACKED_CELLS_PLAN.md). It
+owns the heap-capacity row of `docs/REGISTERED_DEBT.md` table C, which UC9
+closes. **Standing constraint for new code:** a carve's object, entry and child
+record must stay buildable from the carve's scalars in one window (plan §2, F1),
+and nothing may share a carved cell into another object (F5).
+
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
 A `SchedContext` will be able to contain other scheduling contexts: a *server*
