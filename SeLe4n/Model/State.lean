@@ -2306,7 +2306,7 @@ refusal from the state it started with must keep that state alive across the
 computation, and every table the computation writes is then shared and copied
 whole.  A computation proven equal to `RefusalCarrying.ofKernel k` refuses in
 exactly the state it was handed, so its caller can read that state off the
-refusal instead of keeping its own (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1). -/
+refusal instead of keeping its own (WS-ZA D1). -/
 abbrev RefusalCarrying (α : Type) :=
   SystemState → Except (KernelError × SystemState) (α × SystemState)
 

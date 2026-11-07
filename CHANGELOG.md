@@ -1,3 +1,63 @@
+## v0.37.0 — WS-ZA ZA6.37: the workstream closes; every committing entry keeps the kernel records
+
+WS-ZA closes.  The closing PR bumps the minor version (maintainer's
+decision).  The reading it records: every kernel entry and every syscall
+reads 0 heap allocations on QEMU `virt` at first call and in steady state,
+except a retype's carve, which reads exactly its object's cells (the gate
+ZA6.35 made standing).  Before archiving the plan, every open WS-ZA row of
+`docs/REGISTERED_DEBT.md` was closed in code or re-homed.
+
+- **The kernel records** (`SeLe4n/Kernel/KernelRecords/`).
+  `SystemState.kernelRecordsSound` is the teardown's well-formedness, the
+  reply-waiter queues (`replyWaitersConsistent`), the fault record
+  (`faultRecordParked`) and the machine's physical-address width bound.  The
+  started boot establishes it (`bootFromPlatformCheckedStartedFor_kernelRecordsSound`)
+  and every committing entry keeps it (`RecordsStage`): the timer, reschedule,
+  FP, interrupt, fault, unknown-syscall and syscall entries, through one
+  traversal of every dispatcher arm (`dispatchSyscallChecked_recordsStage`).
+  The reply-receive arm keeps it over both answers, the in-place fault
+  answer and the ordinary reply (`RecordsStage.replyRecvTransferOnCore`), so
+  the traversal takes no exclusion.  An IPC or delete arm takes
+  `ipcReachable` (or `reachableDeleteBundle`) and the caller's readiness at
+  its dispatch state; the resume reads that every `.Inactive` thread is
+  quiescent (`RecordsArmPremises.inactiveQuiescent`), a state fact rather
+  than a per-call premise.  The syscall entry's chain
+  (`syscallDispatchEntryState_recordsStage`) carries the premises across the
+  argument spill and delivers a capability fault through the stage the fault
+  entries share (`RecordsStage.faultDeliverAfterSpill`), and each committing
+  entry is closed on the records as `*_preserves_kernelRecordsSound`.  Closes the
+  `replyWaitersConsistent`, fault-record and teardown-premise rows;
+  `MappingArmPremises.of_proofLayerInvariantBundle` is retired for
+  `of_kernelRecordsSound`.
+- **The boot refuses a configured fault record** (`bootSafeTcbCheck`), so
+  the started boot's threads carry none.
+- **The reference interrupt and exception dispatch run the live handlers** on
+  the executing core (`timerTickOnCore`, `handleInterruptOnCore`); the
+  single-core reference tick's `…With` parameter is deleted.
+- **`RunQueue.wellFormed` is deleted** with its conjunct of
+  `schedulerInvariant_perCore` and every `hwf` hypothesis.
+- **The revocation loop's dead per-child admission check is retired**.
+- **The final delete's core set is read off the slot it empties**
+  (`cspaceDeleteSlotFinalisingCores`): empty for a non-final capability or the
+  last one to a frame, page table, VSpace root or untyped; every core, with
+  its reason, otherwise.  The `.cspaceDelete` lock set reads the slot operand.
+- **The frozen surface keeps a release queue** (`FrozenOps/ReleaseQueue.lean`);
+  the frozen configure and budget tick place contexts on it, and FO-052
+  compares the states whole.
+- **The single-core reference IPC operations link and unlink reply waiters**
+  (`endpointCall`, the receive of a call, `endpointReply`, `endpointReplyRecv`),
+  each proof carried across the link by the run-link transfers.  The frozen
+  half stays open with the frozen execute phase.
+- **Re-homed**: the heap-capacity row to the untyped-backed object cells work.
+- **Gates**: the export-commit census's fuel bounds the closure, not its
+  edges; the CBS suite reads the delete's slot-dependent footprint; the
+  routing gate seeds the yield dispatcher.
+- **Docs**: `ZERO_ALLOCATION_SYSCALL_PLAN.md` and `UNTYPED_RESET_PLAN.md`
+  archived under `docs/dev_history/planning/`; the WS-ZA section of
+  `WORKSTREAM_CONTEXT.md` moved to the closed-workstream file, its standing
+  rule kept live; source cites the plans by ID (`WS-ZA D1`,
+  `WS-ZA ZA5.4 part N`).
+
 ## v0.36.206 — A ReplyRecv answer to a faulted caller is the fault reply
 
 Fault delivery is a Call, so a faulted thread is the recorded caller of its

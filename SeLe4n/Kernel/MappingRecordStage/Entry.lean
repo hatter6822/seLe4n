@@ -418,19 +418,19 @@ theorem syscallDispatchEntryState_mappingStage (ctx : LabelingContext) (e : Core
     (MappingStage.of_objects_eq (Architecture.IpcBufferRead.syncUserWords_objects _ _ _))
 
 /-- **The syscall entry keeps every live mapping recorded**, from the kernel's
-invariant bundle and the ASID table's table invariant on the state it starts
-from (`MappingArmPremises.of_proofLayerInvariantBundle`). -/
+invariant bundle and the records every kernel entry carries on the state it
+starts from (`MappingArmPremises.of_kernelRecordsSound`). -/
 theorem syscallDispatchEntryState_preserves_liveMappingsRecorded (ctx : LabelingContext)
     (e : CoreId) (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) (hB : Architecture.proofLayerInvariantBundle st)
-    (hA : st.asidTable.invExtK) :
+    (hR : st.kernelRecordsSound) :
     (Architecture.IpcBufferRead.clearUserWords
       (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).liveMappingsRecorded :=
   (syscallDispatchEntryState_mappingStage ctx e trapped frame bytes n st
-    (MappingArmPremises.of_proofLayerInvariantBundle hB hA)).preserves
+    (MappingArmPremises.of_kernelRecordsSound hB hR)).preserves
     (objects_invExt_of_capabilityInvariantBundle _ hB.2.1)
     hB.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 

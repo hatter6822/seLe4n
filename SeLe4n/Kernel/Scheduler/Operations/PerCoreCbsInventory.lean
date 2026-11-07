@@ -277,10 +277,6 @@ def perCoreCbsTheorems : List PerCoreCbsTheorem :=
       schedContextMigration_consistent_of_bindingConsistent .consistency,
     pccbst! "setThreadCpuAffinity_machine: the affinity write leaves the machine state untouched"
       setThreadCpuAffinity_machine .consistency,
-    pccbst! "migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed: the run-queue migration preserves run-queue well-formedness on every core"
-      migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed .consistency,
-    pccbst! "setThreadCpuAffinityWithMigration_preserves_runQueueOnCoreWellFormed: the composite preserves run-queue well-formedness (SM5.H.4)"
-      setThreadCpuAffinityWithMigration_preserves_runQueueOnCoreWellFormed .consistency,
     pccbst! "setThreadCpuAffinityWithMigration_preserves_replenishQueueValid_smp: A5 — the composite preserves replenish-queue validity on every core"
       setThreadCpuAffinityWithMigration_preserves_replenishQueueValid_smp .consistency,
     pccbst! "setThreadCpuAffinityWithMigration_preserves_replenishmentPipelineOrder_smp: A5 — the composite preserves pipeline order on every core"
@@ -377,11 +373,11 @@ def perCoreCbsTheorems : List PerCoreCbsTheorem :=
     pccbst! "setThreadCpuAffinityWithMigration_sgi_happensBefore: the composite's emitted SGI targets the new home, is a .reschedule, and the state write happens-before the new home observes it"
       setThreadCpuAffinityWithMigration_sgi_happensBefore .memoryModel]
 
-/-- WS-SM SM5.H: the inventory has 116 substantive entries (audit-pass-2: +8 for
+/-- WS-SM SM5.H: the inventory has 114 substantive entries (audit-pass-2: +8 for
 the SM5.H.4 D15 composite + the §18 SGI characterisation + the tightened C10 HB).
 A regression that adds a new SM5.H theorem without registering it fails this count
 witness at the Tier-3 surface check. -/
-theorem perCoreCbsTheorems_count : perCoreCbsTheorems.length = 116 := by decide
+theorem perCoreCbsTheorems_count : perCoreCbsTheorems.length = 114 := by decide
 
 /-- WS-SM SM5.H: 6 entries in the `predicate` category. -/
 theorem perCoreCbsTheorems_predicate_count :
@@ -403,9 +399,9 @@ theorem perCoreCbsTheorems_migration_count :
 theorem perCoreCbsTheorems_affinityWrite_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 4 := by decide
 
-/-- WS-SM SM5.H: 22 entries in the `consistency` category. -/
+/-- WS-SM SM5.H: 20 entries in the `consistency` category. -/
 theorem perCoreCbsTheorems_consistency_count :
-    (perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 22 := by decide
+    (perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 20 := by decide
 
 /-- WS-SM SM5.H: 6 entries in the `budget` category. -/
 theorem perCoreCbsTheorems_budget_count :

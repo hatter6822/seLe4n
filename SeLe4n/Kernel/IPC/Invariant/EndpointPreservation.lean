@@ -188,10 +188,16 @@ theorem endpointReply_preserves_schedulerInvariantBundle
                 cases hRO : tcb.replyObject with
                 | none =>
                   simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                  rw [← hStep]; exact hMid
+                  rw [← hStep]
+                  exact schedulerInvariantBundle_of_objectsAgreeOffRunLinks
+                    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) hMid
                 | some rid =>
                   simp only [hRO] at hStep
-                  exact removeCallerReplyFrame_preserves_schedulerInvariantBundle _ _ target rid hMid hObjInvMid hStep
+                  obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+                  exact schedulerInvariantBundle_of_objectsAgreeOffRunLinks
+                    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) <|
+                    removeCallerReplyFrame_preserves_schedulerInvariantBundle _ _ target rid
+                      hMid hObjInvMid hRm
           · -- authorized = false
             simp_all
 
@@ -242,10 +248,16 @@ theorem endpointReply_preserves_ipcInvariant
                 cases hRO : tcb.replyObject with
                 | none =>
                   simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                  rw [← hStep]; exact hMid
+                  rw [← hStep]
+                  exact ipcInvariant_of_objectsAgreeOffRunLinks
+                    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
                 | some rid =>
                   simp only [hRO] at hStep
-                  exact removeCallerReplyFrame_preserves_ipcInvariant _ _ target rid hObjInvMid hMid hStep
+                  obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+                  exact ipcInvariant_of_objectsAgreeOffRunLinks
+                    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+                    removeCallerReplyFrame_preserves_ipcInvariant _ _ target rid
+                      hObjInvMid hMid hRm
           · -- authorized = false
             simp_all
 
@@ -918,7 +930,9 @@ theorem endpointReceiveDual_preserves_ipcInvariant
                   -- AK1-D: atomic (.ready, senderMsg) receiver update
                   cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
                   | ok st4 =>
-                    exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸ storeTcbIpcStateAndMessage_preserves_ipcInvariant _ _ receiver _ _ hInvLink hObjInvLink hPend
+                    exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
+                      ipcInvariant_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)
+                        (storeTcbIpcStateAndMessage_preserves_ipcInvariant _ _ receiver _ _ hInvLink hObjInvLink hPend)
                   | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             -- senderWasCall = false, send path
@@ -1336,6 +1350,8 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                   cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
                   | ok st4 =>
                     intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
+                    apply schedulerInvariantBundle_of_objectsAgreeOffRunLinks
+                      (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) (SystemState.linkReplyWaiter_scheduler _ _ _)
                     have hSchedPend := storeTcbIpcStateAndMessage_scheduler_eq _ _ receiver _ _ hPend
                     refine ⟨?_, ?_, ?_⟩
                     · rw [queueCurrentConsistent]; rw [queueCurrentConsistent] at hQCC; rwa [hSchedPend, hSchedLink]
@@ -1739,8 +1755,10 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                     cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
                     | ok st4 =>
                       intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                      exact storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates
-                        _ _ receiver _ hObjInvLink hPend hContractLink
+                      exact ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks
+                        (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) (SystemState.linkReplyWaiter_scheduler _ _ _) <|
+                        storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates
+                          _ _ receiver _ hObjInvLink hPend hContractLink
                     | error _ => simp
             | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
               -- senderWasCall = false, send path
@@ -2165,7 +2183,8 @@ theorem endpointReceiveDual_preserves_objects_invExt
                   | ok st4 =>
                     intro h
                     have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                    exact storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked _ receiver _ _ hObjInvLink hPend
+                    exact SystemState.linkReplyWaiter_objects_invExt _ _ _ <|
+                      storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked _ receiver _ _ hObjInvLink hPend
                   | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             simp only [hSenderIpc] at hStep

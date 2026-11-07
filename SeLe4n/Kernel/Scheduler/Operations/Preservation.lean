@@ -122,143 +122,12 @@ private theorem schedule_preserves_queueCurrentConsistent
                   | untyped ut => simp [hChoose, hObj] at hStep
                   | schedContext _ | reply _ | frame _ | pageTable _ => simp [hChoose, hObj] at hStep
 
-/-- S3-G/U-M09: `schedule` preserves `RunQueue.wellFormed`.
-    Uses `remove_preserves_wellFormed` for the dequeue path. -/
-theorem schedule_preserves_runQueueWellFormed
-    (st st' : SystemState)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
-    (hStep : schedule st = .ok ((), st')) :
-    RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold schedule SystemState.getTcb? at hStep
-  cases hChoose : chooseThread st with
-  | error e => simp [hChoose] at hStep
-  | ok pick =>
-      cases pick with
-      | mk next stChoose =>
-          have hChooseState : stChoose = st :=
-            chooseThread_preserves_state st stChoose next hChoose
-          have hwfChoose : RunQueue.wellFormed (stChoose.scheduler.runQueueOnCore bootCoreId) := by
-            rw [hChooseState]; exact hwf
-          cases next with
-          | none =>
-              simp only [hChoose] at hStep
-              -- saveOutgoingContext doesn't change runQueue
-              have hSaveRQ : ((saveOutgoingContext stChoose).scheduler.runQueueOnCore bootCoreId) = (stChoose.scheduler.runQueueOnCore bootCoreId) := by
-                simp only [saveOutgoingContext]
-                split
-                · rfl
-                · rw [SystemState.updateTcb_scheduler]
-              unfold setCurrentThread at hStep
-              simp at hStep; subst hStep
-              exact hSaveRQ ▸ hwfChoose
-          | some tid =>
-              cases hObj : stChoose.objects[tid.toObjId]? with
-              | none => simp [hChoose, hObj] at hStep
-              | some obj =>
-                  cases obj with
-                  | tcb tcb =>
-                      by_cases hSchedOk : tid ∈ (stChoose.scheduler.runQueueOnCore bootCoreId) ∧ tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)
-                      · simp only [hChoose, hObj, hSchedOk] at hStep
-                        have : (st'.scheduler.runQueueOnCore bootCoreId) = (stChoose.scheduler.runQueueOnCore bootCoreId).remove tid := by
-                          simp [setCurrentThread] at hStep; cases hStep; simp
-                        rw [this]
-                        exact RunQueue.remove_preserves_wellFormed _ hwfChoose _
-                      · have hSchedOk' : ¬((stChoose.scheduler.runQueueOnCore bootCoreId).contains tid = true ∧ tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)) := by
-                          simpa [RunQueue.mem_iff_contains] using hSchedOk
-                        simp [hChoose, hObj, hSchedOk'] at hStep
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-                      simp [hChoose, hObj] at hStep
-
 /-- WS-H12b: `schedule` preserves `schedulerWellFormed`. -/
 theorem schedule_preserves_wellFormed
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     schedulerWellFormed st'.scheduler := by
   exact schedule_preserves_queueCurrentConsistent st st' hStep
-
-/-- audit-pass-9 (PR #801, reviewer comment 2): `handleYield` preserves
-`RunQueue.wellFormed` at bootCoreId.  Composition: pre-state rq wellFormed →
-insert preserves → rotateToBack preserves → schedule preserves.  Only the
-tcb-case succeeds with `.ok`; the others either error or are unreachable. -/
-theorem handleYield_preserves_runQueueWellFormed
-    (st st' : SystemState)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
-    (hStep : handleYield st = .ok ((), st')) :
-    RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold handleYield SystemState.getTcb? at hStep
-  cases hCur : st.scheduler.currentOnCore bootCoreId with
-  | none => simp [hCur] at hStep
-  | some tid =>
-    simp only [hCur] at hStep
-    cases hObj : st.objects[tid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        simp only [hObj] at hStep
-        -- handleYield's tcb arm reduces to `schedule stMid` where
-        -- stMid.scheduler.runQueueOnCore bootCoreId = (insert tid prio).rotateToBack tid.
-        -- The composition: insert + rotateToBack + schedule each preserve wellFormed.
-        have hwfMid : RunQueue.wellFormed
-            (((st.scheduler.runQueueOnCore bootCoreId).insert tid
-                  (tcb.boostedPriority)).rotateToBack tid) :=
-          RunQueue.rotateToBack_preserves_wellFormed _
-            (RunQueue.insert_preserves_wellFormed _ hwf _ _) _
-        apply schedule_preserves_runQueueWellFormed _ st' ?_ hStep
-        show RunQueue.wellFormed
-          ((st.scheduler.setRunQueueOnCore bootCoreId _).runQueueOnCore bootCoreId)
-        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact hwfMid
-      | endpoint _ | notification _ | cnode _
-      | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-        simp [hObj] at hStep
-
-/-- audit-pass-9 (PR #801, reviewer comment 2): `timerTick` preserves
-`RunQueue.wellFormed` at bootCoreId.  Three paths:
-  * none-current → only timer ticks, no rq change.
-  * tcb time-slice not expired → tcb timeSlice decrement only, no rq change.
-  * tcb time-slice expired → re-enqueue via insert + schedule. -/
-theorem timerTick_preserves_runQueueWellFormed
-    (st st' : SystemState)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
-    (hStep : timerTick st = .ok ((), st')) :
-    RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold timerTick at hStep
-  cases hCur : st.scheduler.currentOnCore bootCoreId with
-  | none =>
-    simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
-    obtain ⟨_, rfl⟩ := hStep
-    -- Just timer tick, no rq change
-    exact hwf
-  | some tid =>
-    simp only [hCur] at hStep
-    cases hObj : st.getTcb? tid with
-    | none =>
-      rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
-      simp at hStep
-    | some tcb =>
-        rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
-        dsimp only [SystemState.rewriteObject] at hStep
-        split at hStep
-        · -- Time-slice expired: insert + schedule
-          have hwfIns : RunQueue.wellFormed
-              ((st.scheduler.runQueueOnCore bootCoreId).insert tid
-                (tcb.boostedPriority)) :=
-            RunQueue.insert_preserves_wellFormed _ hwf _ _
-          apply schedule_preserves_runQueueWellFormed _ st' ?_ hStep
-          show RunQueue.wellFormed
-            ((st.scheduler.setRunQueueOnCore bootCoreId _).runQueueOnCore bootCoreId)
-          rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact hwfIns
-        · -- Time-slice not expired: tcb decrement only, no rq change
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨_, rfl⟩ := hStep
-          exact hwf
-
--- audit-pass-9: `scheduleDomain_preserves_runQueueWellFormed` is defined
--- later in this file (after `switchDomain_preserves_runQueueWellFormed`)
--- because it composes the two; see definition near
--- `scheduleDomain_preserves_schedulerInvariantBundleFull`.
 
 private theorem chooseThread_preserves_queueCurrentConsistent
     (st st' : SystemState)
@@ -2368,7 +2237,6 @@ private theorem chooseBestInBucket_edf_bridge
     (st : SystemState)
     (tid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
     (tcbSel : TCB)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hpm : schedulerPriorityMatch st)
     (hDomEq : tcbSel.domain = (st.scheduler.activeDomainOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
@@ -2516,7 +2384,6 @@ WS-H12b: The dequeue step means the post-state's runnable list excludes
 the dispatched thread. The EDF bridge is updated accordingly. -/
 private theorem schedule_preserves_edfCurrentHasEarliestDeadline
     (st st' : SystemState)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hpm : schedulerPriorityMatch st)
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
@@ -2552,7 +2419,7 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
             subst hSet
             -- edfCurrentHasEarliestDeadline unfolds to check current/runnable/objects
             have hBridge := chooseBestInBucket_edf_bridge st tid resPrio resDl tcbSel
-              hwf hpm hSchedOk.2 hAllTcb hCIB hObj
+              hpm hSchedOk.2 hAllTcb hCIB hObj
             simp only [edfCurrentHasEarliestDeadline, SchedulerState.setCurrentOnCore_currentOnCore_self]
             -- Get the saved TCB and its field preservation
             have ⟨tcbSel', hTcbSel', hDomSel, hPriSel, hDlSel, _, hPipSel, hBindSel⟩ :=
@@ -2633,7 +2500,6 @@ candidate from scratch. The EDF property is re-established by the
 `schedule` call. -/
 private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
     (st st' : SystemState)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hpm : schedulerPriorityMatch st)
     (hQCC : queueCurrentConsistent st.scheduler)
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
@@ -2659,8 +2525,6 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
           have := hQCC; simp [queueCurrentConsistent, hCur] at this
           intro h; exact this ((RunQueue.mem_toList_iff_mem (st.scheduler.runQueueOnCore bootCoreId) curTid).2 h)
         -- Break the proof into steps to avoid timeout
-        have hwf' : RunQueue.wellFormed (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid) :=
-          RunQueue.rotateToBack_preserves_wellFormed _ (RunQueue.insert_preserves_wellFormed (st.scheduler.runQueueOnCore bootCoreId) hwf curTid (tcb.boostedPriority)) curTid
         have hpm' : schedulerPriorityMatch
             { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid) } := by
           intro t hMem
@@ -2696,10 +2560,7 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
           | inl hOld => exact hAllTcb t (by simp [SchedulerState.runnable]; exact (RunQueue.mem_toList_iff_mem _ t).mpr hOld)
           | inr hEq => subst hEq; exact ⟨tcb, hObj⟩
         let st_mid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid) }
-        have hwfMid : RunQueue.wellFormed (st_mid.scheduler.runQueueOnCore bootCoreId) := by
-          show RunQueue.wellFormed ((st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid)).runQueueOnCore bootCoreId)
-          rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]; exact hwf'
-        exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hwfMid hpm' hAllTcb' (show st_mid.objects.invExt from hObjInv) hStep
+        exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hpm' hAllTcb' (show st_mid.objects.invExt from hObjInv) hStep
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
 
 -- W2-H (L-3): 800K heartbeats — timerTick composes domain time decrement +
@@ -2716,7 +2577,6 @@ set_option maxHeartbeats 800000 in
   `schedule` call re-establishes EDF from scratch. -/
 private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
     (st st' : SystemState)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hpm : schedulerPriorityMatch st)
     (hQCC : queueCurrentConsistent st.scheduler)
     (hEdf : edfCurrentHasEarliestDeadline st)
@@ -2749,8 +2609,6 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
             have := hQCC; simp [queueCurrentConsistent, hCur] at this
             intro h; exact this ((RunQueue.mem_toList_iff_mem (st.scheduler.runQueueOnCore bootCoreId) curTid).2 h)
           -- Break proof into steps to avoid timeout
-          have hwf' : RunQueue.wellFormed ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)) :=
-            RunQueue.insert_preserves_wellFormed (st.scheduler.runQueueOnCore bootCoreId) hwf curTid (curTcb.boostedPriority)
           have hContainsFalse : (st.scheduler.runQueueOnCore bootCoreId).contains curTid = false := by
             cases h : (st.scheduler.runQueueOnCore bootCoreId).contains curTid
             · rfl
@@ -2813,10 +2671,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
               objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice })
               machine := tick st.machine
               scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)) }
-          have hwfMid : RunQueue.wellFormed (st_mid.scheduler.runQueueOnCore bootCoreId) := by
-            show RunQueue.wellFormed ((st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority))).runQueueOnCore bootCoreId)
-            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]; exact hwf'
-          exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hwfMid hpm' hAllTcb' hObjInv' hStep
+          exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hpm' hAllTcb' hObjInv' hStep
         · -- Time-slice not expired: only timeSlice changes
           rw [if_neg hExpire] at hStep
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
@@ -3291,7 +3146,6 @@ private theorem timerTick_preserves_schedulerPriorityMatch
 theorem schedule_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -3302,7 +3156,7 @@ theorem schedule_preserves_schedulerInvariantBundleFull
   exact ⟨schedule_preserves_schedulerInvariantBundle st st' hBase hObjInv hStep,
          schedule_preserves_timeSlicePositive st st' hTS hObjInv hStep,
          schedule_preserves_currentTimeSlicePositive st st' hTS hObjInv hStep,
-         schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hObjInv hStep,
+         schedule_preserves_edfCurrentHasEarliestDeadline st st' hpm hAllTcb hObjInv hStep,
          schedule_preserves_contextMatchesCurrent st st' hObjInv hStep,
          schedule_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
          schedule_preserves_schedulerPriorityMatch st st' hpm hAllTcb hObjInv hStep,
@@ -3314,7 +3168,6 @@ theorem schedule_preserves_schedulerInvariantBundleFull
 theorem handleYield_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -3325,7 +3178,7 @@ theorem handleYield_preserves_schedulerInvariantBundleFull
   exact ⟨handleYield_preserves_schedulerInvariantBundle st st' hBase hObjInv hStep,
          handleYield_preserves_timeSlicePositive st st' hTS hCurTS hObjInv hStep,
          handleYield_preserves_currentTimeSlicePositive st st' hTS hCurTS hObjInv hStep,
-         handleYield_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hAllTcb hObjInv hStep,
+         handleYield_preserves_edfCurrentHasEarliestDeadline st st' hpm hBase.1 hAllTcb hObjInv hStep,
          handleYield_preserves_contextMatchesCurrent st st' hObjInv hStep,
          handleYield_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
          handleYield_preserves_schedulerPriorityMatch st st' hpm hBase.1 hAllTcb hObjInv hStep,
@@ -3338,7 +3191,6 @@ theorem handleYield_preserves_schedulerInvariantBundleFull
 theorem timerTick_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -3350,7 +3202,7 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
   exact ⟨timerTick_preserves_schedulerInvariantBundle st st' ⟨hBase.1, hBase.2.1, hBase.2.2⟩ hObjInv hStep,
          timerTick_preserves_timeSlicePositive st st' hTS hObjInv hConfigTS hStep,
          timerTick_preserves_currentTimeSlicePositive st st' hTS hCurTS hObjInv hConfigTS hStep,
-         timerTick_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hEDF hAllTcb hObjInv hStep,
+         timerTick_preserves_edfCurrentHasEarliestDeadline st st' hpm hBase.1 hEDF hAllTcb hObjInv hStep,
          timerTick_preserves_contextMatchesCurrent st st' hCtx hObjInv hStep,
          timerTick_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
          timerTick_preserves_schedulerPriorityMatch st st' hpm hBase.1 hAllTcb hObjInv hStep,
@@ -3360,73 +3212,6 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
 -- ============================================================================
 -- S3-E: scheduleDomain full bundle preservation
 -- ============================================================================
-
-/-- S3-E: Helper — `switchDomain` preserves `RunQueue.wellFormed`.
-    In the expire path, the current thread (if any) is re-enqueued via `insert`,
-    which preserves well-formedness. In all other paths the runQueue is unchanged.
-    audit-pass-9 (PR #801, reviewer comment 2): de-privated to be consumed
-    by the SM4.C audit-pass-9 per-op preservation chain. -/
-theorem switchDomain_preserves_runQueueWellFormed
-    (st st' : SystemState)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
-    (hStep : switchDomain st = .ok ((), st')) :
-    RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold switchDomain SystemState.getTcb? at hStep
-  cases hSched : st.scheduler.domainSchedule with
-  | nil => simp [hSched] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hwf
-  | cons entry rest =>
-    simp only [hSched] at hStep
-    split at hStep
-    · -- AK2-I: `.error` fallback; contradiction discharged during split.
-      simp at hStep
-    · rename_i hGet
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      obtain ⟨_, rfl⟩ := hStep
-      simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
-        SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
-        SchedulerState.setActiveDomainOnCore_runQueueOnCore,
-        SchedulerState.setCurrentOnCore_runQueueOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      cases hCur : (st.scheduler.currentOnCore bootCoreId) with
-      | none => exact hwf
-      | some tid =>
-        simp only []
-        cases hObj : st.objects[tid.toObjId]? with
-        | none => exact hwf
-        | some obj =>
-          cases obj with
-          | tcb tcb => exact RunQueue.insert_preserves_wellFormed _ hwf _ _
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-            exact hwf
-
-/-- audit-pass-9 (PR #801, reviewer comment 2): `scheduleDomain` preserves
-`RunQueue.wellFormed` at bootCoreId.  Two paths (split on `domainTimeRemainingOnCore ≤ 1`):
-  * Expire (THEN branch): switchDomain + schedule.  Both preserve via existing theorems.
-  * Non-expire (ELSE branch): domainTimeRemainingOnCore decrement only, no rq change. -/
-theorem scheduleDomain_preserves_runQueueWellFormed
-    (st st' : SystemState)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
-    (hStep : scheduleDomain st = .ok ((), st')) :
-    RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold scheduleDomain at hStep
-  split at hStep
-  · -- Expire path: switchDomain + schedule
-    cases hSw : switchDomain st with
-    | error e => simp [hSw] at hStep
-    | ok pickSw =>
-      cases pickSw with
-      | mk _ stSw =>
-        simp only [hSw] at hStep
-        have hSwWf : RunQueue.wellFormed (stSw.scheduler.runQueueOnCore bootCoreId) :=
-          switchDomain_preserves_runQueueWellFormed st stSw hwf hSw
-        exact schedule_preserves_runQueueWellFormed stSw st' hSwWf hStep
-  · -- Non-expire path: domain time decrement, no rq change
-    simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-    obtain ⟨_, rfl⟩ := hStep
-    show RunQueue.wellFormed
-      ((st.scheduler.setDomainTimeRemainingOnCore bootCoreId _).runQueueOnCore bootCoreId)
-    rw [SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore]
-    exact hwf
 
 /-- S3-E/U-M08/V5-H/X2-A: `scheduleDomain` preserves `schedulerInvariantBundleFull`.
 
@@ -3439,7 +3224,6 @@ theorem scheduleDomain_preserves_runQueueWellFormed
 theorem scheduleDomain_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
@@ -3458,15 +3242,12 @@ theorem scheduleDomain_preserves_schedulerInvariantBundleFull
             -- switchDomain preserves objects.invExt
             have hSwObjInv : stSw.objects.invExt :=
               switchDomain_preserves_objects_invExt st stSw hObjInv (by simp [hSw])
-            -- switchDomain preserves RunQueue.wellFormed
-            have hSwWf : RunQueue.wellFormed (stSw.scheduler.runQueueOnCore bootCoreId) :=
-              switchDomain_preserves_runQueueWellFormed st stSw hwf (by simp [hSw])
             -- Extract runnableThreadsAreTCBs from the full bundle
             have hSwAllTcb : ∀ t, t ∈ stSw.scheduler.runnable →
                 ∃ tcb, stSw.objects[t.toObjId]? = some (.tcb tcb) :=
               hSwInv.2.2.2.2.2.1
             exact schedule_preserves_schedulerInvariantBundleFull stSw st'
-              hSwInv hSwWf hSwAllTcb hSwObjInv hSched
+              hSwInv hSwAllTcb hSwObjInv hSched
   · -- Non-expire: domainTimeRemaining decremented by 1
     simp [hExpire] at hStep
     cases hStep

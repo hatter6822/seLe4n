@@ -195,7 +195,6 @@ example (config : SeLe4n.Platform.Boot.PlatformConfig) (ist : SeLe4n.Model.Inter
 #check @scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore
 #check @scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore
 #check @scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore
-#check @scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed
 #check @scheduleOrIdleOnCore_preserves_objects_invExt
 #check @scheduleDomainOnCore_runs_idle
 
@@ -493,8 +492,8 @@ private def runLockSetChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.8 SM5.E theorem inventory ---"
-  assertBool "inventory has 59 entries"
-    (decide (perCoreIdleTheorems.length = 59))
+  assertBool "inventory has 58 entries"
+    (decide (perCoreIdleTheorems.length = 58))
   assertBool "field category has 6 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .field)).length = 6))
   assertBool "store category has 12 entries"
@@ -507,8 +506,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .noStall)).length = 6))
   assertBool "locality category has 6 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 6))
-  assertBool "dispatch category has 19 entries"
-    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 19))
+  assertBool "dispatch category has 18 entries"
+    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 18))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreIdleTheorems.map (·.identifier)).Nodup)
 
@@ -807,6 +806,14 @@ private def runBootValidationParityChecks : IO Unit := do
      SeLe4n.Platform.Boot.bootSafeObjectCheck
        (.tcb { tcbWithTid ⟨9⟩ with queuePPrevCode := 1 }) == false &&
      SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb (tcbWithTid ⟨9⟩)) == true)
+  -- WS-ZA ZA6.37: a configured fault record would reach a running thread
+  -- (`startInitialThreadOnCore` makes the thread ready), so the boot refuses it
+  -- and the started boot satisfies `faultRecordParked`.
+  let faulted : TCB := { tcbWithTid ⟨9⟩ with faultKind := 1 }
+  assertBool "control: the fixture carries a fault record"
+    (faulted.pendingFault.isSome)
+  assertBool "NEGATIVE: a boot TCB carrying a fault record fails the boot-safety check"
+    (SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb faulted) == false)
   -- WS-ZA ZA4.5: run-queue membership lives in the TCB, so a boot TCB naming a
   -- core claims a queue place the queue never gave it.
   assertBool "NEGATIVE: a boot TCB on a run queue fails the boot-safety check"

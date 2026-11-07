@@ -732,35 +732,55 @@ theorem schedLockSet_yieldOnCore_coversWrites (executingCore : CoreId)
 -- §12  The finalising delete and the revocation
 -- ============================================================================
 
-/-- **The finalising delete's footprint covers its writes**: it names every
-core's run queue and every core's replenish queue — the wake of a cancelled
-waiter enqueues on the waiter's core, and the reservation unbind of a finalised
-thread or scheduling context purges the reservation's replenish entry on its
-core, and which cores those are the state decides. -/
+/-- **A capability destroy's footprint over every core covers any write**: it
+names every core's run queue and every core's replenish queue — the wake of a
+cancelled waiter enqueues on the waiter's core, and the reservation unbind of a
+finalised thread or scheduling context purges the reservation's replenish entry
+on its core, and which cores those are the state decides. -/
 theorem schedLockSet_capabilityDestroyOnCore_coversWrites (st st' : SystemState)
-    (S : LockSet) (hS : LockSet.ofList? schedLockSet_capabilityDestroyOnCore = some S) :
+    (S : LockSet)
+    (hS : LockSet.ofList? (schedLockSet_capabilityDestroyOnCore Concurrency.allCores) = some S) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_cores S Concurrency.allCores Concurrency.allCores st st'
     (LockSet.ofList?_pairs hS)
     (fun d hd => absurd (Concurrency.mem_allCores d) hd)
     (fun d hd => absurd (Concurrency.mem_allCores d) hd)
 
-/-- **The zombie delete's footprint covers its writes**: each of its steps is a
-finalising delete or a finalisation, and the footprint names every
-scheduler-domain lock. -/
-theorem schedLockSet_cspaceDeleteSlotZombie_coversWrites (ec : CoreId) (addr : CSpaceAddr)
-    (st st' : SystemState) (S : LockSet)
-    (hS : LockSet.ofList? schedLockSet_capabilityDestroyOnCore = some S)
-    (_h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+/-- **A capability destroy's footprint over any cores covers a step that writes no
+scheduler state.** -/
+theorem schedLockSet_capabilityDestroyOnCore_coversWrites_of_scheduler_eq
+    (cores : List CoreId) (st st' : SystemState) (S : LockSet)
+    (hS : LockSet.ofList? (schedLockSet_capabilityDestroyOnCore cores) = some S)
+    (hEq : st'.scheduler = st.scheduler) :
     footprintCoversWrites S st st' :=
-  schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hS
+  footprintCoversWrites_of_cores S cores cores st st' (LockSet.ofList?_pairs hS)
+    (fun _ _ => by rw [hEq]; exact ⟨rfl, rfl, rfl⟩) (fun _ _ => by rw [hEq])
+
+/-- **WS-ZA ZA6.37: the zombie delete's footprint covers its writes**, over the
+cores it reads off the slot it empties (`cspaceDeleteSlotFinalisingCores`): none
+when the slot's capability is not the last to an object whose destroy writes a
+core — the zombie delete is then the one finalising delete, which writes no
+scheduler state (`cspaceDeleteSlotFinalising_framed_of_cores_nil`) — and every
+core otherwise. -/
+theorem schedLockSet_cspaceDeleteSlotZombie_coversWrites (ec : CoreId) (addr : CSpaceAddr)
+    (st st' : SystemState) (S : LockSet) (hInv : st.objects.invExt)
+    (hS : LockSet.ofList?
+      (schedLockSet_capabilityDestroyOnCore (cspaceDeleteSlotFinalisingCores st addr)) = some S)
+    (h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+    footprintCoversWrites S st st' := by
+  rcases cspaceDeleteSlotFinalisingCores_cases st addr with hC | hC
+  · rw [cspaceDeleteSlotZombie_of_class_zero (zombieSlotClass_eq_zero_of_cores_nil hC)] at h
+    exact schedLockSet_capabilityDestroyOnCore_coversWrites_of_scheduler_eq _ st st' S hS
+      (cspaceDeleteSlotFinalising_framed_of_cores_nil ec addr st st' hInv h hC).1
+  · rw [hC] at hS
+    exact schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hS
 
 /-- **The space change's footprint covers its writes**: through the zombie
 delete its steps are finalising deletes, finalisations and the slot copies, and
 the footprint names every scheduler-domain lock. -/
 theorem schedLockSet_copyThreadSpacesZombie_coversWrites (ec : CoreId)
     (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (st st' : SystemState) (S : LockSet)
-    (hS : LockSet.ofList? schedLockSet_capabilityDestroyOnCore = some S)
+    (hS : LockSet.ofList? (schedLockSet_capabilityDestroyOnCore Concurrency.allCores) = some S)
     (_h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
     footprintCoversWrites S st st' :=
   schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hS
@@ -769,7 +789,7 @@ theorem schedLockSet_copyThreadSpacesZombie_coversWrites (ec : CoreId)
 finalising delete, and the footprint names every scheduler-domain lock. -/
 theorem schedLockSet_cspaceRevokeCdtFinalising_coversWrites (ec : CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (S : LockSet)
-    (hS : LockSet.ofList? schedLockSet_capabilityDestroyOnCore = some S)
+    (hS : LockSet.ofList? (schedLockSet_capabilityDestroyOnCore Concurrency.allCores) = some S)
     (_h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
     footprintCoversWrites S st st' :=
   schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hS

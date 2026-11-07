@@ -132,9 +132,7 @@ open SeLe4n.Testing
 
 -- SM5.H.4 (§6c/§11) the full-thread-migration run-queue move + scheduler preservation:
 #check @migrateRunQueueOnAffinityChange
-#check @migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
 #check @migrateSchedContextReplenishment_runQueueOnCore
-#check @setThreadCpuAffinityWithMigration_preserves_runQueueOnCoreWellFormed
 #check @migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
 
 -- SM5.H.4 (§9) object-store invariant preservation:
@@ -291,12 +289,6 @@ example (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option Core
     ∀ c, perCoreCbsInvariant st'.1 c :=
   setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp st targetTid affinity
     executingCore tcb scId sc st' hTcb hInv hBind hSc hBound hBindCons hCbs hStep
-
--- SM5.H.4 (§11): the run-queue migration preserves run-queue well-formedness on every core.
-example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
-    (h : runQueueOnCoreWellFormed st.scheduler c') :
-    runQueueOnCoreWellFormed (migrateRunQueueOnAffinityChange st tid fromCore toCore).scheduler c' :=
-  migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed st tid fromCore toCore c' h
 
 -- SM5.H.4 (§16 D15): the run-queue migration preserves SM4.C run-queue↔budget consistency.
 example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
@@ -737,8 +729,8 @@ private def runLiveTickScenarios : IO Unit := do
 /-- §3.8: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.7 SM5.H inventory partition counts ---"
-  assertBool "inventory has 116 entries"
-    (decide (perCoreCbsTheorems.length = 116))
+  assertBool "inventory has 114 entries"
+    (decide (perCoreCbsTheorems.length = 114))
   assertBool "predicate category has 6 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .predicate)).length = 6))
   assertBool "replenish category has 14 entries"
@@ -749,8 +741,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 25))
   assertBool "affinityWrite category has 4 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 4))
-  assertBool "consistency category has 22 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 22))
+  assertBool "consistency category has 20 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 20))
   assertBool "budget category has 6 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .budget)).length = 6))
   assertBool "lockSet category has 20 entries"
@@ -1344,15 +1336,24 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
       .notificationSignal, .notificationWait,
       .send, .receive, .call, .reply, .replyRecv].filter
         (fun sid => declaredSchedFootprintSyscall sid)).length = 15))
-  -- (vi) WS-ZA ZA5.4 part 23: the finalising delete and the revocation declare
-  -- whatever the operands — every core's run queue, since a destroyed
-  -- endpoint's or notification's cancelled waiters wake on their own cores.
-  -- Part 26: and the space change, whose old CSpace root may be deleted by the
-  -- zombie loop.
-  assertBool "the capability destroys and the space change declare unconditionally"
-    ([SyscallId.cspaceDelete, .cspaceRevoke, .tcbSetSpace].all fun sid =>
+  -- (vi) WS-ZA ZA5.4 part 23: the revocation declares whatever the operands —
+  -- every core's run queue, since a destroyed endpoint's or notification's
+  -- cancelled waiters wake on their own cores.  Part 26: and the space change,
+  -- whose old CSpace root may be deleted by the zombie loop.
+  assertBool "the revocation and the space change declare unconditionally"
+    ([SyscallId.cspaceRevoke, .tcbSetSpace].all fun sid =>
       declaredSchedFootprintSyscall sid &&
         (schedLockSetForSyscall sid { caller := tid0 } bootCoreId st).isSome)
+  -- (vii) WS-ZA ZA6.37: the delete reads its cores off the slot it empties, so
+  -- it declares exactly when the CNode and the slot are supplied.
+  assertBool "the delete declares exactly when its CNode and slot are supplied"
+    (declaredSchedFootprintSyscall .cspaceDelete &&
+      (schedLockSetForSyscall .cspaceDelete { caller := tid0 } bootCoreId st).isNone &&
+      (schedLockSetForSyscall .cspaceDelete
+        { caller := tid0, targetObject := some scId0.toObjId } bootCoreId st).isNone &&
+      (schedLockSetForSyscall .cspaceDelete
+        { caller := tid0, targetObject := some scId0.toObjId,
+          targetSlot := some (SeLe4n.Slot.ofNat 0) } bootCoreId st).isSome)
 
 /-- WS-ZA ZA6.4: **the no-stranded-refill check bites**.  The check reads the
 links: a bound context with its head used up must be on a core's chain at its

@@ -777,11 +777,16 @@ theorem endpointReply_preserves_ipcStateQueueMembershipConsistent
             cases hRO : tcb.replyObject with
             | none =>
               simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-              rw [← hStep]; exact hMid
+              rw [← hStep]
+              exact ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks
+                (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact removeCallerReplyFrame_preserves_ipcStateQueueMembershipConsistent _ _ target rid
-                hObjInvMid hMid hStep
+              obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+              exact ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks
+                (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+                removeCallerReplyFrame_preserves_ipcStateQueueMembershipConsistent _ _ target rid
+                  hObjInvMid hMid hRm
         · simp at hStep
       | _ => simp [hIpc] at hStep
 

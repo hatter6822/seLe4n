@@ -1095,6 +1095,7 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
                         hStore) ?_
                     refine observableSlotsConfinedToCore_trans
                       (linkCallerReply_confinedToCore st2 pairL.2 sender rid bootCoreId hLink) ?_
+                    refine observableSlotsConfinedToCore_trans ?_ (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (SystemState.linkReplyWaiter_scheduler _ _ _) (SystemState.linkReplyWaiter_machine _ _ _))
                     exact storeTcbIpcStateAndMessage_confinedToCore pairL.2 st3 receiver _ _
                       bootCoreId hStore2
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
@@ -1219,6 +1220,7 @@ theorem endpointCall_confinedToBootCore (st st' : SystemState)
                 refine observableSlotsConfinedToCore_trans
                   (linkServerStashedReply_confinedToCore st4 st5 caller receiver bootCoreId
                     hLink) ?_
+                refine observableSlotsConfinedToCore_trans ?_ (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (SystemState.linkReplyWaiter_scheduler _ _ _) (SystemState.linkReplyWaiter_machine _ _ _))
                 exact removeRunnable_confinedToBootCore st5 caller
       | none =>
         simp only [hHead] at hStep
@@ -1263,13 +1265,16 @@ theorem endpointReply_confinedToBootCore (st st' : SystemState)
             .ready (some msg) bootCoreId hStore
           split at hStep
           · next rid _ =>
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            refine observableSlotsConfinedToCore_trans ?_ (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) (SystemState.unlinkReplyWaiterOpt_machine _ _ _))
             refine observableSlotsConfinedToCore_trans hStoreC ?_
             refine observableSlotsConfinedToCore_trans
               (ensureRunnable_confinedToBootCore st1 target) ?_
-            exact removeCallerReplyFrame_confinedToCore _ st' target rid bootCoreId hStep
+            exact removeCallerReplyFrame_confinedToCore _ st2 target rid bootCoreId hRm
           · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep
             subst hEq
+            refine observableSlotsConfinedToCore_trans ?_ (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _) (SystemState.unlinkReplyWaiterOpt_machine _ _ _))
             exact observableSlotsConfinedToCore_trans hStoreC
               (ensureRunnable_confinedToBootCore st1 target)
       · simp at hStep
@@ -1316,8 +1321,11 @@ theorem endpointReplyRecv_confinedToBootCore (st st' : SystemState)
               refine observableSlotsConfinedToCore_trans hStoreC ?_
               refine observableSlotsConfinedToCore_trans hRunC ?_
               refine observableSlotsConfinedToCore_trans hConsumeC ?_
-              exact endpointReceiveDual_confinedToBootCore st3 _ endpointId receiver _ replyId
-                hRecv
+              exact observableSlotsConfinedToCore_trans
+                (observableSlotsConfinedToCore_of_scheduler_machine_eq _
+                  (SystemState.unlinkReplyWaiterOpt_scheduler _ _ _)
+                  (SystemState.unlinkReplyWaiterOpt_machine _ _ _))
+                (endpointReceiveDual_confinedToBootCore _ _ endpointId receiver _ replyId hRecv)
       · simp at hStep
     · simp at hStep
 

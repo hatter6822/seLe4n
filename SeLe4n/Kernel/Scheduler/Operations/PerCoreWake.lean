@@ -265,20 +265,6 @@ theorem determineTargetCore_admits_thread (st : SystemState) (tid : SeLe4n.Threa
 -- §3  SM5.C.1 — `enqueueRunnableOnCore` (preservation, membership, frame)
 -- ============================================================================
 
-/-- WS-SM SM5.C.1 (preservation): `enqueueRunnableOnCore` preserves core `c`'s
-run-queue well-formedness — the only run-queue mutation is the re-enqueue
-(`insert`), which preserves `RunQueue.wellFormed`; the non-TCB branch leaves the
-run queue unchanged. -/
-theorem enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (c : CoreId) (tid : SeLe4n.ThreadId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
-    ((enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c).wellFormed := by
-  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h]
-  · exact hwf
-  · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-    exact RunQueue.insert_preserves_wellFormed _ hwf _ _
-
 /-- WS-SM SM5.C.1 (membership): the woken thread is a member of core `c`'s run
 queue immediately after `enqueueRunnableOnCore` (when it resolves to a TCB).
 The substantive "the wake genuinely enqueues" content. -/
@@ -605,17 +591,6 @@ theorem wakeThread_objectsAgreeOffRunLinks_of_ready
   rw [wakeThread_state_eq_enqueue]
   exact enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready st (determineTargetCore st tid) tid
     tcb hTcb hReady hInv
-
-/-- WS-SM SM5.C.2 (preservation): a wake preserves the target core's run-queue
-well-formedness. -/
-theorem wakeThread_preserves_target_runQueue_wellFormed (st : SystemState)
-    (tid : SeLe4n.ThreadId) (executingCore : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore (determineTargetCore st tid)).wellFormed) :
-    ((wakeThread st tid executingCore).1.scheduler.runQueueOnCore
-      (determineTargetCore st tid)).wellFormed := by
-  rw [wakeThread_state_eq_enqueue]
-  exact enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed st
-    (determineTargetCore st tid) tid hwf
 
 /-- WS-SM SM5.C.2 (cross-core independence frame): a wake leaves every core
 *other than the target* untouched — both its run queue and its current thread.
@@ -1006,29 +981,6 @@ theorem handleRescheduleSgiOnCore_getTcb?_ne_current (st : SystemState) (c : Cor
           exact preemptCurrentOnCore_getTcb?_ne_current st c _ tid hInv hNe
         · rw [Except.ok.injEq] at h; subst h; rfl
     · rw [Except.ok.injEq] at h; subst h; rfl
-
-/-- WS-SM SM5.C.5 (preservation): the SGI handler preserves core `c`'s run-queue
-well-formedness. -/
-theorem handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (c : CoreId) (st' : SystemState)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (h : handleRescheduleSgiOnCore st c = .ok st') :
-    (st'.scheduler.runQueueOnCore c).wellFormed := by
-  unfold handleRescheduleSgiOnCore at h
-  split at h
-  · exact absurd h (by simp)
-  · split at h
-    · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed st c _ hwf
-    · rw [Except.ok.injEq] at h; subst h; exact hwf
-  · split at h
-    · split at h
-      · rename_i sSw hSw
-        rw [Except.ok.injEq] at h; subst h
-        exact switchToThreadOnCore_preserves_runQueueOnCore_wellFormed st c _ sSw hwf hSw
-      · split at h
-        · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed st c _ hwf
-        · rw [Except.ok.injEq] at h; subst h; exact hwf
-    · rw [Except.ok.injEq] at h; subst h; exact hwf
 
 /-- WS-SM SM5.C.5 (cross-core independence): the SGI handler on core `c` leaves
 every other core's `current` and `runQueue` slots untouched — the idle and

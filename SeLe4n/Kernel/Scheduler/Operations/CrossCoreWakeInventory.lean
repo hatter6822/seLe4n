@@ -155,8 +155,6 @@ def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
       enqueueRunnableOnCore_preserves_woken_thread_fields .enqueue,
     ccwt! "enqueueRunnableOnCore_preserves_objects_invExt: preserves object-store invariant"
       enqueueRunnableOnCore_preserves_objects_invExt .enqueue,
-    ccwt! "enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed: preserves run-queue well-formedness"
-      enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed .enqueue,
     ccwt! "enqueueRunnableOnCore_mem_runQueueOnCore: the woken thread is enqueued"
       enqueueRunnableOnCore_mem_runQueueOnCore .enqueue,
     ccwt! "enqueueRunnableOnCore_makes_ready: the woken thread becomes ipcState=.ready"
@@ -192,8 +190,6 @@ def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
       wakeThread_target_admits_thread .wake,
     ccwt! "wakeThread_preserves_objects_invExt: the wake preserves the object-store invariant"
       wakeThread_preserves_objects_invExt .wake,
-    ccwt! "wakeThread_preserves_target_runQueue_wellFormed: preserves the target run-queue well-formedness"
-      wakeThread_preserves_target_runQueue_wellFormed .wake,
     ccwt! "wakeThread_independent_of_other_core: cross-core independence frame"
       wakeThread_independent_of_other_core .wake,
     ccwt! "SchedStep: a single per-core scheduler step (enqueue, switch or pending-flag clear)"
@@ -221,8 +217,6 @@ def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
       handleRescheduleSgiOnCore_switches_current .handler,
     ccwt! "handleRescheduleSgiOnCore_preserves_objects_invExt: handler preserves object-store invariant"
       handleRescheduleSgiOnCore_preserves_objects_invExt .handler,
-    ccwt! "handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed: handler preserves run-queue wf"
-      handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed .handler,
     ccwt! "handleRescheduleSgiOnCore_independent_of_other_core: handler cross-core independence"
       handleRescheduleSgiOnCore_independent_of_other_core .handler,
     ccwt! "handleRescheduleSgiOnCore_keeps_current_when_outranked: a lower-priority candidate does not preempt the running thread (Codex-P1)"
@@ -290,10 +284,10 @@ def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
     ccwt! "Concurrency.wakeOrderingTrace_wellFormed: the wake's ordering trace is well-formed"
       SeLe4n.Kernel.Concurrency.wakeOrderingTrace_wellFormed .latencyAffinityEmit]
 
-/-- WS-SM SM5.C: the inventory has 81 substantive entries.  A regression that
+/-- WS-SM SM5.C: the inventory has 80 substantive entries.  A regression that
 adds a new SM5.C theorem without registering it fails this count witness at the
 Tier-3 surface check. -/
-theorem crossCoreWakeTheorems_count : crossCoreWakeTheorems.length = 83 := by decide
+theorem crossCoreWakeTheorems_count : crossCoreWakeTheorems.length = 80 := by decide
 
 /-- WS-SM SM5.C: 9 entries in the `lockSet` category (SM5.C.3). -/
 theorem crossCoreWakeTheorems_lockSet_count :
@@ -303,17 +297,17 @@ theorem crossCoreWakeTheorems_lockSet_count :
 theorem crossCoreWakeTheorems_target_count :
     (crossCoreWakeTheorems.filter (fun t => t.category == .target)).length = 6 := by decide
 
-/-- WS-SM SM5.C: 12 entries in the `enqueue` category (SM5.C.1). -/
+/-- WS-SM SM5.C: 11 entries in the `enqueue` category (SM5.C.1). -/
 theorem crossCoreWakeTheorems_enqueue_count :
-    (crossCoreWakeTheorems.filter (fun t => t.category == .enqueue)).length = 12 := by decide
+    (crossCoreWakeTheorems.filter (fun t => t.category == .enqueue)).length = 11 := by decide
 
-/-- WS-SM SM5.C: 18 entries in the `wake` category (SM5.C.2 / C.4 / C.10 / C.6). -/
+/-- WS-SM SM5.C: 17 entries in the `wake` category (SM5.C.2 / C.4 / C.10 / C.6). -/
 theorem crossCoreWakeTheorems_wake_count :
-    (crossCoreWakeTheorems.filter (fun t => t.category == .wake)).length = 18 := by decide
+    (crossCoreWakeTheorems.filter (fun t => t.category == .wake)).length = 17 := by decide
 
-/-- WS-SM SM5.C: 8 entries in the `handler` category (SM5.C.5). -/
+/-- WS-SM SM5.C: 7 entries in the `handler` category (SM5.C.5). -/
 theorem crossCoreWakeTheorems_handler_count :
-    (crossCoreWakeTheorems.filter (fun t => t.category == .handler)).length = 8 := by decide
+    (crossCoreWakeTheorems.filter (fun t => t.category == .handler)).length = 7 := by decide
 
 /-- WS-SM SM5.C: 13 entries in the `preservation` category (§10 audit-pass-1). -/
 theorem crossCoreWakeTheorems_preservation_count :

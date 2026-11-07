@@ -236,8 +236,6 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
       scheduleOrIdleOnCore_establishes_currentThreadValidOnCore .dispatch,
     pcit! "scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore: dispatcher establishes dequeue-on-dispatch"
       scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore .dispatch,
-    pcit! "scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed: dispatcher preserves run-queue well-formedness"
-      scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed .dispatch,
     pcit! "scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore: dispatcher establishes current-in-domain (parity)"
       scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore .dispatch,
     pcit! "scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore: dispatcher preserves runnable-are-TCBs (parity)"
@@ -249,10 +247,10 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
     pcit! "scheduleDomainOnCore_runs_idle: the folded idle dispatch is reachable on the live per-core domain-tick path (review #4 closure)"
       scheduleDomainOnCore_runs_idle .dispatch]
 
-/-- WS-SM SM5.E: the inventory has 59 substantive entries.  A regression that
+/-- WS-SM SM5.E: the inventory has 58 substantive entries.  A regression that
 adds a new SM5.E theorem without registering it fails this count witness at the
 Tier-3 surface check. -/
-theorem perCoreIdleTheorems_count : perCoreIdleTheorems.length = 59 := by decide
+theorem perCoreIdleTheorems_count : perCoreIdleTheorems.length = 58 := by decide
 
 /-- WS-SM SM5.E: 6 entries in the `field` category (SM5.E.1 / .2 / .5). -/
 theorem perCoreIdleTheorems_field_count :
@@ -278,10 +276,10 @@ theorem perCoreIdleTheorems_noStall_count :
 theorem perCoreIdleTheorems_locality_count :
     (perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 6 := by decide
 
-/-- WS-SM SM5.E: 19 entries in the `dispatch` category (SM5.I dispatcher seed;
+/-- WS-SM SM5.E: 18 entries in the `dispatch` category (SM5.I dispatcher seed;
 post-fold `idleFallbackOnCore` + live-wiring `scheduleDomainOnCore_runs_idle`). -/
 theorem perCoreIdleTheorems_dispatch_count :
-    (perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 19 := by decide
+    (perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 18 := by decide
 
 /-- WS-SM SM5.E: per-category counts sum to the total. -/
 theorem perCoreIdleTheorems_partition_sum :

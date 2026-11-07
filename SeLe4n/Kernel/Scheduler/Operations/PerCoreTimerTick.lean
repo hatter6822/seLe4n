@@ -561,29 +561,6 @@ theorem refillSchedContext_preserves_objects_invExt (st : SystemState)
   unfold refillSchedContext
   exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
 
-/-- WS-SM SM5.D.4 (preservation helper, general core form): `enqueueRunnableOnCore`
-preserves run-queue well-formedness on **every** core `c'` — on the enqueued core
-`c` via `RunQueue.insert`, on a sibling core via the run-queue frame
-(`_runQueueOnCore_ne`). -/
-theorem enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed_anyCore (st : SystemState)
-    (c c' : CoreId) (tid : SeLe4n.ThreadId)
-    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c').wellFormed := by
-  by_cases h : c = c'
-  · subst h; exact enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed st c tid hwf
-  · rw [enqueueRunnableOnCore_runQueueOnCore_ne st c c' tid h]; exact hwf
-
-/-- WS-SM SM5.D.4 (preservation helper): `wakeThread` preserves run-queue
-well-formedness on **every** core `c'` (the wake's state effect is an
-`enqueueRunnableOnCore` to the target core). -/
-theorem wakeThread_preserves_runQueueOnCore_wellFormed_anyCore (st : SystemState)
-    (tid : SeLe4n.ThreadId) (executingCore c' : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((wakeThread st tid executingCore).1.scheduler.runQueueOnCore c').wellFormed := by
-  rw [wakeThread_state_eq_enqueue]
-  exact enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed_anyCore st
-    (determineTargetCore st tid) c' tid hwf
-
 /-- WS-SM SM5.D.4: `refillSchedContext` writes only the object store, leaving the
 scheduler unchanged. -/
 @[simp] theorem refillSchedContext_scheduler_eq (st : SystemState)
@@ -615,27 +592,6 @@ theorem processOneReplenishmentOnCore_preserves_objects_invExt (st : SystemState
     · exact wakeThread_preserves_objects_invExt _ _ execCore hRef
   · exact hRef
 
-/-- WS-SM SM5.D.4 (preservation): `processOneReplenishmentOnCore` preserves
-run-queue well-formedness on **every** core `c'` (refill never touches a run
-queue; the wake preserves every core's run-queue well-formedness; the mark
-writes a flag). -/
-theorem processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat)
-    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((processOneReplenishmentOnCore st execCore scId now).scheduler.runQueueOnCore c').wellFormed := by
-  have hRefRq : (refillSchedContext st scId now).scheduler.runQueueOnCore c'
-      = st.scheduler.runQueueOnCore c' := by
-    unfold refillSchedContext; rw [SystemState.updateSchedContext_scheduler]
-  have hRef : ((refillSchedContext st scId now).scheduler.runQueueOnCore c').wellFormed := by
-    rw [hRefRq]; exact hwf
-  rw [processOneReplenishmentOnCore, markRefillKeyChange_runQueueOnCore]
-  simp only [refillWakeOnCore]
-  split
-  · split
-    · exact hRef
-    · exact wakeThread_preserves_runQueueOnCore_wellFormed_anyCore _ _ execCore c' hRef
-  · exact hRef
-
 /-- WS-SM SM5.D.4 (preservation): `processReplenishmentsDueOnCore` preserves the
 object-store invariant — each refill does, and each re-placement does. -/
 theorem processReplenishmentsDueOnCore_preserves_objects_invExt (st : SystemState)
@@ -644,18 +600,6 @@ theorem processReplenishmentsDueOnCore_preserves_objects_invExt (st : SystemStat
   processReplenishmentsDueOnCore_induction (fun s => s.objects.invExt) st c now
     (fun s scId h => processOneReplenishmentOnCore_preserves_objects_invExt s c scId now h)
     (fun s scId h => SystemState.releasePlace_objects_invExt s c scId h) hInv
-
-/-- WS-SM SM5.D.4 (preservation): `processReplenishmentsDueOnCore` preserves
-run-queue well-formedness on **every** core `c'`. -/
-theorem processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (c c' : CoreId) (now : Nat)
-    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((processReplenishmentsDueOnCore st c now).scheduler.runQueueOnCore c').wellFormed :=
-  processReplenishmentsDueOnCore_induction (fun s => (s.scheduler.runQueueOnCore c').wellFormed)
-    st c now
-    (fun s scId h => processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed s c c' scId
-      now h)
-    (fun s scId h => by simpa only [SystemState.releasePlace_runQueueOnCore] using h) hwf
 
 /-- WS-SM SM5.D.4: a replenishment that transitions no thread to runnable is the
 refill alone — it wakes nobody and raises no reschedule flag. -/
@@ -1028,17 +972,6 @@ theorem idleFallbackOnCore_establishes_currentThreadInActiveDomainOnCore (st : S
       simp only [h', TCB.proj_eq_of_withoutRunLinks_eq TCB.domain hE]; simpa using hd.1
   · unfold currentThreadInActiveDomainOnCore
     simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
-
-/-- WS-SM SM5.E: the idle fallback preserves run-queue well-formedness — the idle
-arm only `remove`s the idle thread; the `none` arm leaves the run queue. -/
-theorem idleFallbackOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
-    ((idleFallbackOnCore st c).scheduler.runQueueOnCore c).wellFormed := by
-  unfold idleFallbackOnCore
-  split
-  · rw [dispatchIdleOnCore_runQueueOnCore]
-    exact RunQueue.remove_preserves_wellFormed _ hwf _
-  · simpa [SchedulerState.setCurrentOnCore_runQueueOnCore] using hwf
 
 /-- WS-SM SM5.I (the register-bank payoff, idle case): dispatching idle
 **establishes** `contextMatchesCurrentOnCore` — core `c`'s bank holds the (just
@@ -1605,17 +1538,6 @@ theorem decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore
     decrementDomainTimeOnCore_objects_eq] at h ⊢
   exact h
 
-/-- WS-SM SM5.D.6 (preservation, B2): the per-core domain decrement preserves
-per-core run-queue well-formedness. -/
-theorem decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
-    (st : SystemState) (c c' : CoreId) (h : runQueueOnCoreWellFormed st.scheduler c') :
-    runQueueOnCoreWellFormed (decrementDomainTimeOnCore st c).scheduler c' := by
-  unfold runQueueOnCoreWellFormed at h ⊢
-  simp only [decrementDomainTimeOnCore_runQueueOnCore] at h ⊢
-  exact h
-
--- ── §7b  `saveOutgoingContextOnCore` frame lemmas ──
-
 /-- WS-SM SM5.D.5 (frame): the per-core register-context save touches only the
 object store; the scheduler is unchanged. -/
 theorem saveOutgoingContextOnCore_scheduler_eq (st : SystemState) (c : CoreId) :
@@ -1814,38 +1736,6 @@ theorem scheduleEffectiveOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
   obtain ⟨t, ht⟩ := saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv h
   obtain ⟨t', ht', _⟩ := hA.getTcb?_some ht
   exact ⟨t', ht'⟩
-
-/-- WS-SM SM5.D.5 (preservation, B2): `scheduleEffectiveOnCore` preserves per-core
-run-queue well-formedness — the dispatch case dequeues (`remove`) the selected
-thread (`remove_preserves_wellFormed`); the idle case leaves the run queue. -/
-theorem scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState)
-    (c : CoreId) (st' : SystemState) (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (hStep : scheduleEffectiveOnCore st c = .ok st') :
-    (st'.scheduler.runQueueOnCore c).wellFormed := by
-  unfold scheduleEffectiveOnCore at hStep
-  cases hCh : chooseThreadEffectiveOnCore st c with
-  | error e => rw [hCh] at hStep; simp at hStep
-  | ok res =>
-    rw [hCh] at hStep
-    cases res with
-    | none =>
-      simp only [Except.ok.injEq] at hStep; subst hStep
-      apply idleFallbackOnCore_preserves_runQueueOnCoreWellFormed
-      rw [saveOutgoingContextOnCore_scheduler_eq]; exact hwf
-    | some tid =>
-      cases hTcb : st.getTcb? tid with
-      | none => simp [hTcb] at hStep
-      | some tcb =>
-        simp only [hTcb] at hStep
-        split at hStep
-        · simp only [Except.ok.injEq] at hStep; subst hStep
-          simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
-            SchedulerState.setCurrentOnCore_runQueueOnCore,
-            restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          rw [saveOutgoingContextOnCore_scheduler_eq]
-          exact RunQueue.remove_preserves_wellFormed _ hwf tid
-        · simp at hStep
 
 /-- WS-SM SM5.D.5 (invariant established): after a successful per-core reschedule,
 core `c` satisfies `currentThreadValidOnCore` — the dispatched thread resolves to a
@@ -2204,19 +2094,6 @@ theorem timerTickOnCore_preserves_currentThreadValidOnCore (st : SystemState) (c
       exact timerTickBudgetOnCore_notPreempted_getTcb?_tid _ c tid tcb st3 hPrepInv hTcb hB
     exact hR _ (timerTickBudgetOnCore_preserves_objects_invExt _ c _ _ _ _ hPrepInv hB) hV3
 
-/-- WS-SM SM5.D.2 (B2 helper): the prepared state preserves per-core run-queue
-well-formedness — the SM5.D.4 replenishment preserves it (wakes `insert`); the tick
-does no in-tick domain step (audit-pass-2). -/
-theorem timerTickOnCorePrepared_runQueueOnCore_wellFormed (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
-    ((timerTickOnCorePrepared st c).scheduler.runQueueOnCore c).wellFormed := by
-  simp only [timerTickOnCorePrepared]
-  apply processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
-  simpa only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hwf
-
--- ── §6c  Prepared-phase (cross-core replenishment-wake) discharge of the
---          per-core invariant conjuncts [SM5.I] — `queueCurrentConsistent` ──
-
 /-- A thread not running on **any** core is not the current thread of any
 particular core (the elementwise reading of `runningOnSomeCore = false`). -/
 theorem runningOnSomeCore_eq_false_currentOnCore_ne {st : SystemState}
@@ -2325,58 +2202,6 @@ theorem timerTickOnCorePrepared_preserves_runQueueUnique (st : SystemState) (c :
   simp only [timerTickOnCorePrepared]
   apply processReplenishmentsDueOnCore_preserves_runQueueUnique
   simpa only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hnd
-
-/-- WS-SM SM5.D.5 (B2 discharge, clean path): a *not-preempted* budget tick
-preserves per-core run-queue well-formedness — its scheduler is unchanged
-(`timerTickBudgetOnCore_notPreempted_scheduler_eq`).  The preempting outcomes,
-the exhausted branch's timeout wakes among them, are covered by
-`timerTickBudgetOnCore_preserves_runQueueSafetyOnCore` (`PerCoreInvariantSuite`). -/
-theorem timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed
-    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    {hW : st.getTcb? tid = some tcb}
-    (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', false)) :
-    (st'.scheduler.runQueueOnCore c).wellFormed := by
-  rw [timerTickBudgetOnCore_notPreempted_scheduler_eq st c tid tcb st' hStep]; exact hwf
-
-/-- WS-SM SM5.D.5/.6 (B2 preservation): the per-core timer tick preserves per-core
-run-queue well-formedness, given that the budget tick preserves it
-(`hBudgetRqWf`).  The idle and unresolved paths are the local decision on the
-prepared state (well-formed via `timerTickOnCorePrepared_runQueueOnCore_wellFormed`);
-the not-preempted path is the local decision on the budget result; the preempted
-path dequeues-on-dispatch via
-`scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed`.  `hBudgetRqWf` is
-discharged over every budget outcome by
-`timerTickBudgetOnCore_preserves_runQueueSafetyOnCore`. -/
-theorem timerTickOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (hBudgetRqWf : ∀ tid tcb st3 b,
-       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
-       (st3.scheduler.runQueueOnCore c).wellFormed) :
-    ((timerTickOnCore st c).scheduler.runQueueOnCore c).wellFormed := by
-  have hPrep := timerTickOnCorePrepared_runQueueOnCore_wellFormed st c hwf
-  have hR : ∀ s, (s.scheduler.runQueueOnCore c).wellFormed →
-      ((rescheduleIfPendingOnCore s c).scheduler.runQueueOnCore c).wellFormed := fun s hs =>
-    rescheduleIfPendingOnCore_of (P := fun s => (s.scheduler.runQueueOnCore c).wellFormed) s c hs
-      (handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed s c _ hs
-        (handleRescheduleSgiOnCore_eq_state s c))
-  rcases timerTickOnCore_cases st c with ⟨_, h⟩ | ⟨_, _, _, h⟩ | ⟨tid, tcb, hTcb, st3, hCur, hB, h⟩ |
-      ⟨tid, tcb, hTcb, st3, hCur, hB, h⟩ <;> rw [h]
-  · exact hR _ hPrep
-  · exact hR _ hPrep
-  · exact scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed st3 c _
-      (hBudgetRqWf tid tcb st3 true hCur hTcb hB) (scheduleEffectiveOnCore_eq_state st3 c)
-  · exact hR _ (hBudgetRqWf tid tcb st3 false hCur hTcb hB)
-
--- ── §7f  runnableThreadsAreTCBs per-core preservation [SM5.I] ──
---
---   The `runnableThreadsAreTCBsOnCore` conjunct.  `scheduleEffectiveOnCore`
---   already preserves it; the missing piece is the not-preempted budget tick,
---   which changes only the object store (the running thread's time-slice, or the
---   bound SchedContext's budget).  A getTcb?-forward frame shows every pre-state
---   TCB stays resolvable across that object write.
 
 /-- A not-preempted budget tick keeps every pre-state TCB resolvable: its only
 object write is the running thread's time-slice (a TCB→TCB update) or the bound
@@ -2660,9 +2485,8 @@ theorem timerTickOnCore_preserves_contextMatchesCurrentOnCore (st : SystemState)
 -- ── §7e  Nodup (runQueueUnique) per-core preservation [SM5.I] ──
 --
 --   The `runQueueUniqueOnCore` (run-queue `toList.Nodup`) conjunct of the SM5.I
---   register-bank+Nodup invariant.  Mirrors the `runQueueOnCoreWellFormed` chain
---   above one-for-one (`RunQueue.remove`/`insert` preserve `toList.Nodup` exactly
---   as they preserve `wellFormed`).  Parameterized by `hPrepNd` (the prepared
+--   register-bank+Nodup invariant (`RunQueue.remove`/`insert` preserve
+--   `toList.Nodup`).  Parameterized by `hPrepNd` (the prepared
 --   state's Nodup) like the `queueCurrentConsistent` preservation, since the
 --   prepared-phase (cross-core replenishment-wake) Nodup discharger is the SM5
 --   cross-core follow-on.

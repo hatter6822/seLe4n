@@ -1276,11 +1276,15 @@ theorem endpointReply_preserves_dualQueueSystemInvariant
               cases hRO : tcb.replyObject with
               | none =>
                 simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                rw [← hStep]; exact hInvER
+                rw [← hStep]
+                exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _)
+                  hInvER
               | some rid =>
                 simp only [hRO] at hStep
-                exact removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ target rid
-                  hObjInvMid hInvER hStep
+                obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+                exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+                  removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ target rid
+                    hObjInvMid hInvER hRm
           · simp at hStep
 
 -- ---- WS-H5: storeTcbQueueLinks helper lemmas for queue invariant proofs ----

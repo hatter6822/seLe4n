@@ -386,14 +386,65 @@ theorem observableSlotsConfinedToCores_allCores (st st' : SystemState) :
    fun c hc => absurd (Concurrency.mem_allCores c) hc,
    fun c hc => absurd (Concurrency.mem_allCores c) hc⟩
 
-/-- WS-ZA ZA5.4 part 23: **the cores a finalising delete of slot `addr` may
-write.**  None when the delete destroys no final capability
-(`slotRetireTarget` is `0`), since the delete, the page teardown and the retire
-write no scheduler and no machine state; every core otherwise, since the
-finalisation of the object the final capability names (`finaliseFinalObject`)
-wakes each waiter it cancels on that waiter's own core. -/
-def cspaceDeleteSlotFinalisingCores (st : SystemState) (addr : CSpaceAddr) : List CoreId :=
-  if slotRetireTarget st addr.cnode addr.slot = 0 then [] else Concurrency.allCores
+/-- The slot's delete keeps every object's kind: it rewrites one slot holder in
+place, then the derivation links. -/
+theorem cspaceDeleteSlot_getObjectType? {addr : CSpaceAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : cspaceDeleteSlot addr st = .ok ((), st'))
+    (oid : SeLe4n.ObjId) : st'.getObjectType? oid = st.getObjectType? oid := by
+  obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st _ h
+  obtain ⟨o, hO, -, hS⟩ := cspaceDeleteSlotCore_ok hC
+  have hInvC := storeObject_preserves_objects_invExt st stC addr.cnode _ hInv hS
+  have hTC : stC.getObjectType? oid = st.getObjectType? oid := by
+    unfold SystemState.getObjectType?
+    by_cases hk : oid = addr.cnode
+    · rw [hk, storeObject_objects_eq st stC addr.cnode _ hInv hS, hO]
+      cases o <;> rfl
+    · rw [storeObject_objects_ne st stC addr.cnode oid _ hk hInv hS]
+  rw [← hTC]
+  unfold SystemState.getObjectType?
+  rcases (spliceDeletedCdtNode_reach stC addr).agree hInvC oid with
+    e | ⟨_, _, ha, hb, -⟩ | ⟨_, _, ha, hb, -⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+  · rw [ha, hb]; rfl
+
+/-- A write of VSpace roots alone keeps every object's kind. -/
+theorem vspaceRootOnlyWrite.getObjectType? {st st' : SystemState}
+    (h : vspaceRootOnlyWrite st st') (oid : SeLe4n.ObjId) :
+    st'.getObjectType? oid = st.getObjectType? oid := by
+  unfold SystemState.getObjectType?
+  rcases h oid with e | ⟨⟨_, ha⟩, ⟨_, hb⟩⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+
+/-- **The retire of a final capability's object whose destroy writes no core
+writes no scheduler and no machine state**: the registration release and the
+finalisation are nothing for it, and the retire keeps both. -/
+theorem retireFinalisedObject_framed_of_quiet (ec : CoreId) (target recorder : Nat)
+    (st : SystemState) (hIrq : retireTargetsIrqNode target = false)
+    (hK : finalObjectWritesCores (st.getObjectType? (SeLe4n.ObjId.ofNat (target - 1))) = false) :
+    SchedulerMachineFramed st (retireFinalisedObject ec target recorder st) := by
+  have hRel : releaseFinalRegistration target st = st := by
+    unfold releaseFinalRegistration
+    split
+    · rfl
+    · unfold SystemState.getObjectType? at hK
+      unfold SystemState.getObject?
+      split
+      · next ep hEp => rw [hEp] at hK; cases hK
+      · rfl
+  have hFin : finaliseFinalObject target st = st := by
+    unfold finaliseFinalObject
+    by_cases h0 : target = 0
+    · simp [h0]
+    · simp only [h0, if_false]
+      cases hT : st.getObjectType? (SeLe4n.ObjId.ofNat (target - 1)) with
+      | none => simp
+      | some k => rw [hT] at hK; cases k <;> simp_all [finalObjectWritesCores]
+  unfold retireFinalisedObject
+  rw [if_neg (by simp [hIrq]), hRel, hFin]
+  obtain ⟨-, hs, hm⟩ := retireFinalObject_fields ec target recorder st
+  exact ⟨hs, hm⟩
 
 /-- A finalising delete that destroys no final capability writes no scheduler
 and no machine state. -/
@@ -408,36 +459,60 @@ theorem cspaceDeleteSlotFinalising_framed
   rw [h0, retireFinalisedObject_zero]
   exact ⟨hs2.trans hs1, hm2.trans hm1⟩
 
+/-- **A finalising delete whose core set is empty writes no scheduler and no
+machine state**: it destroys no final capability, or one naming an object whose
+destroy writes no core, whose kind the delete and the teardown keep. -/
+theorem cspaceDeleteSlotFinalising_framed_of_cores_nil
+    (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hStep : cspaceDeleteSlotFinalising executingCore addr st = .ok ((), st'))
+    (hNil : cspaceDeleteSlotFinalisingCores st addr = []) :
+    SchedulerMachineFramed st st' := by
+  by_cases h0 : slotRetireTarget st addr.cnode addr.slot = 0
+  · exact cspaceDeleteSlotFinalising_framed executingCore addr st st' hStep h0
+  have hQ := cspaceDeleteSlotFinalisingCores_quiet h0 hNil
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok executingCore addr st st' hStep
+  obtain ⟨hs1, hm1⟩ := cspaceDeleteSlot_scheduler_machine addr st st1 hD
+  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore _ _ st1 st2 hF
+  have hInv1 := cspaceDeleteSlot_preserves_objects_invExt st st1 addr hInv hD
+  obtain ⟨-, hW2, -⟩ := finaliseDestroyedCapabilities_ok_frame executingCore _ _ st1 st2 hInv1 hF
+  have hK : finalObjectWritesCores (st2.getObjectType?
+      (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1))) = false := by
+    rw [hW2.getObjectType?, cspaceDeleteSlot_getObjectType? hInv hD]; exact hQ.2
+  obtain ⟨hs3, hm3⟩ := retireFinalisedObject_framed_of_quiet executingCore _
+    (slotRetireRecorder st addr.cnode addr.slot) st2 hQ.1 hK
+  exact ⟨hs3.trans (hs2.trans hs1), hm3.trans (hm2.trans hm1)⟩
+
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23: **the live `.cspaceDelete` arm
 writes only the cores `cspaceDeleteSlotFinalisingCores` names.**  The delete
 writes a CNode and the CDT; the teardown that removes the destroyed frame
 capability's mapping is the `.vspaceUnmap` arm's own transition, whose rounds the
-executing core only initiates; the finalisation of a final capability's
-endpoint or notification wakes the waiters it cancels. -/
+executing core only initiates; the finalisation of a final capability's object
+writes a core only for the kinds `finalObjectWritesCores` names. -/
 theorem cspaceDeleteSlotFinalising_confinedToCores
     (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotFinalising executingCore addr st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (cspaceDeleteSlotFinalisingCores st addr) := by
-  unfold cspaceDeleteSlotFinalisingCores
-  split
+  rcases cspaceDeleteSlotFinalisingCores_cases st addr with hC | hC <;> rw [hC]
   · exact observableSlotsConfinedToCores_nil_of_framed
-      (cspaceDeleteSlotFinalising_framed executingCore addr st st' hStep ‹_›)
+      (cspaceDeleteSlotFinalising_framed_of_cores_nil executingCore addr st st' hInv hStep hC)
   · exact observableSlotsConfinedToCores_allCores st st'
 
 /-- WS-ZA ZA5.4 part 26: **the live `.cspaceDelete` arm, the zombie delete,
 writes only the cores `cspaceDeleteSlotFinalisingCores` names**: when its slot
-retires nothing it is the one finalising delete
-(`cspaceDeleteSlotZombie_of_target_zero`); otherwise every core is named. -/
+retires nothing, or an object holding no capability (`zombieSlotClass` is `0`),
+it is the one finalising delete (`cspaceDeleteSlotZombie_of_class_zero`); a CNode
+or a thread names every core. -/
 theorem cspaceDeleteSlotZombie_confinedToCores
     (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotZombie executingCore addr st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (cspaceDeleteSlotFinalisingCores st addr) := by
-  by_cases h0 : slotRetireTarget st addr.cnode addr.slot = 0
-  · rw [cspaceDeleteSlotZombie_of_target_zero h0] at hStep
-    exact cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hStep
-  · unfold cspaceDeleteSlotFinalisingCores
-    rw [if_neg h0]
-    exact observableSlotsConfinedToCores_allCores st st'
+  rcases cspaceDeleteSlotFinalisingCores_cases st addr with hC | hC
+  · rw [cspaceDeleteSlotZombie_of_class_zero (zombieSlotClass_eq_zero_of_cores_nil hC)] at hStep
+    exact cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hInv hStep
+  · rw [hC]; exact observableSlotsConfinedToCores_allCores st st'
 
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23: **the live `.cspaceRevoke`
 arm.**  Each delete of the revocation may destroy a final capability, whose

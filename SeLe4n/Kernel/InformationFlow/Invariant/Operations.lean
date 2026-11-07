@@ -1998,7 +1998,8 @@ theorem endpointReceiveDual_preserves_projection
                   | ok st3 =>
                     simp only [hPend] at hStep
                     have hStEq := (Prod.mk.inj (Except.ok.inj hStep)).2; subst hStEq
-                    rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer stLinked st3
+                    rw [linkReplyWaiter_preserves_projection,
+                        storeTcbIpcStateAndMessage_preserves_projection ctx observer stLinked st3
                         receiver .ready _ hReceiverObjHigh hObjInvLink hPend,
                         hProjLink, hProjIpc, hProjPop]
           · -- Send path: sender → ready, ensureRunnable, then deliver message to receiver
@@ -2143,6 +2144,54 @@ theorem endpointReceiveDual_preserves_projection
                       recordReplyStasher_preserves_projection ctx observer st2 _ receiver hC2 hObjInv2,
                       hProjTail]
 
+/-- The receive leg of `endpointReplyRecv` runs from the state after the answered
+caller's reply-waiter unlink.  The unlink writes TCB run links alone, so every
+receive-leg precondition read off the pre-unlink state carries across, and the
+unlink itself is projection-invisible. -/
+theorem endpointReceiveDual_preserves_projection_of_unlink
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (st st' : SystemState) (senderId w : SeLe4n.ThreadId) (s? : Option SeLe4n.ThreadId)
+    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (hReceiverHigh : threadObservable ctx observer receiver = false)
+    (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
+    (hCoherent : ∀ tid : SeLe4n.ThreadId,
+        threadObservable ctx observer tid = false →
+        objectObservable ctx observer tid.toObjId = false)
+    (hSendQueueHeadHigh : ∀ ep sender, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.sendQ.head = some sender → threadObservable ctx observer sender = false)
+    (hSendQueueNextHigh : ∀ ep sender senderTcb nextTid,
+        st.objects[endpointId]? = some (.endpoint ep) →
+        ep.sendQ.head = some sender →
+        st.objects[sender.toObjId]? = some (.tcb senderTcb) →
+        senderTcb.queueNext = some nextTid →
+        objectObservable ctx observer nextTid.toObjId = false)
+    (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
+        st.objectIndexSet.contains oid = true)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hStep : endpointReceiveDual endpointId receiver replyId (st.unlinkReplyWaiterOpt w s?) =
+      .ok (senderId, st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  have hA := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st w s?
+  have hIdx : (st.unlinkReplyWaiterOpt w s?).objectIndexSet = st.objectIndexSet := by
+    rw [SystemState.unlinkReplyWaiterOpt_eq_objects]
+  rw [← unlinkReplyWaiterOpt_preserves_projection ctx observer st w s?]
+  refine endpointReceiveDual_preserves_projection ctx observer endpointId receiver replyId
+    _ st' senderId hEndpointHigh hReceiverHigh hReceiverObjHigh hCoherent
+    (fun ep sender hEp hHead => hSendQueueHeadHigh ep sender (hA.get_endpoint_iff.mp hEp) hHead)
+    (fun ep sender senderTcb nextTid hEp hHead hTcb hNext => ?_)
+    (fun ep tailTid hEp hTail => hRecvQueueTailHigh ep tailTid (hA.get_endpoint_iff.mp hEp) hTail)
+    (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv)
+    (fun oid hNe => by
+      rw [hIdx]; exact hIdxComplete oid (fun h => hNe (hA.get_none_iff.mpr h)))
+    (by rw [hIdx]; exact hObjSetInv) hStep
+  run_links_back hA at senderTcb hTcb
+  exact hSendQueueNextHigh ep sender senderTcb nextTid (hA.get_endpoint_iff.mp hEp) hHead hTcb hNext
+
 /-- WS-H9: endpointReply at non-observable target preserves projection.
 
 PR #827 #3 fold: the delivered reply consumes the answered caller↔Reply link
@@ -2188,9 +2237,11 @@ theorem endpointReply_preserves_projection
           cases hRO : tcb.replyObject with
           | none =>
             simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            rw [← hStep]; exact hProjMid
+            rw [← hStep, unlinkReplyWaiterOpt_preserves_projection]; exact hProjMid
           | some rid =>
             simp only [hRO] at hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            rw [unlinkReplyWaiterOpt_preserves_projection]
             have hObjInvMid : (ensureRunnable stMid target).objects.invExt := by
               apply ensureRunnable_objects_invExt
               exact storeTcbIpcStateAndMessage_preserves_objects_invExt st stMid target _ _
@@ -2206,8 +2257,8 @@ theorem endpointReply_preserves_projection
                 (storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt st stMid target _ _
                   hObjSetInv hStore)
             rw [removeCallerReplyFrame_preserves_projection ctx observer
-                  (ensureRunnable stMid target) st' target rid hTargetObjHigh hIdxMid
-                  hObjInvMid hObjSetInvMid hStep,
+                  (ensureRunnable stMid target) st2 target rid hTargetObjHigh hIdxMid
+                  hObjInvMid hObjSetInvMid hRm,
                 hProjMid]
       · -- authorized = false
         simp at hStep
@@ -2355,7 +2406,8 @@ theorem endpointCall_preserves_projection
                 obtain ⟨_, hStEq⟩ := hStep; subst hStEq
                 have hProjLink := linkServerStashedReply_preserves_projection ctx observer
                     st3 st5 caller receiver hCallerObjHigh hRecvObjHigh hIdxSt3 hObjInvSt3 hLink
-                rw [removeRunnable_preserves_projection ctx observer st5 caller hCallerHigh,
+                rw [linkReplyWaiter_preserves_projection,
+                    removeRunnable_preserves_projection ctx observer st5 caller hCallerHigh,
                     hProjLink, hProjIpc, hProjEns, hProjTcb, hProjPop]
       | none =>
         -- Path 2: No receiver — Enqueue caller + storeTcbIpcStateAndMessage + removeRunnable
@@ -2597,14 +2649,15 @@ theorem endpointReplyRecv_preserves_projection
           | none =>
             simp only [hRO] at hStep
             cases hRecv : endpointReceiveDual endpointId replierReceiver replyId
-                (ensureRunnable stReply replyTarget) with
+                ((ensureRunnable stReply replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
             | error e => simp [hRecv] at hStep
             | ok pair =>
               obtain ⟨senderId, stFinal⟩ := pair
               simp only [hRecv, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
               rw [← hStep,
-                  endpointReceiveDual_preserves_projection ctx observer endpointId replierReceiver
-                    replyId (ensureRunnable stReply replyTarget) stFinal senderId hEndpointHigh
+                  endpointReceiveDual_preserves_projection_of_unlink ctx observer endpointId
+                    replierReceiver replyId (ensureRunnable stReply replyTarget) stFinal senderId
+                    replyTarget expectedReplier hEndpointHigh
                     hReceiverHigh hReceiverObjHigh hCoherent hSQHH_mid hSQNH_mid hRQTH_mid
                     hObjInvEns hIdxMid hObjSetInvMid hRecv,
                   hProjEns, hProjReply]
@@ -2658,14 +2711,16 @@ theorem endpointReplyRecv_preserves_projection
                 ep'.receiveQ.tail = some tailTid →
                 objectObservable ctx observer tailTid.toObjId = false :=
               fun ep' tailTid hEp' hTail => hRQTH_mid ep' tailTid (hEpBack3 ep' hEp') hTail
-            cases hRecv : endpointReceiveDual endpointId replierReceiver replyId st3 with
+            cases hRecv : endpointReceiveDual endpointId replierReceiver replyId
+                (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
             | error e => simp [hRecv] at hStep
             | ok pair =>
               obtain ⟨senderId, stFinal⟩ := pair
               simp only [hRecv, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
               rw [← hStep,
-                  endpointReceiveDual_preserves_projection ctx observer endpointId replierReceiver
-                    replyId st3 stFinal senderId hEndpointHigh hReceiverHigh hReceiverObjHigh
+                  endpointReceiveDual_preserves_projection_of_unlink ctx observer endpointId
+                    replierReceiver replyId st3 stFinal senderId replyTarget expectedReplier
+                    hEndpointHigh hReceiverHigh hReceiverObjHigh
                     hCoherent hSQHH_3 hSQNH_3 hRQTH_3 hObjInv3 hIdx3 hObjSet3 hRecv,
                   hProjCons, hProjEns, hProjReply]
       · -- authorized = false

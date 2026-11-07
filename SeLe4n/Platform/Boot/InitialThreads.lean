@@ -373,7 +373,8 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrev he).trans t10,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext he).trans t11, r1, r2, r3, r4,
         bootSpaceSlotCapsSafe_of_cells_eq (TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceCells he)
-          t15.2.1, (TCB.proj_eq_of_withoutRunLinks_eq TCB.yieldToCode he).trans t15.2.2⟩
+          t15.2.1, (TCB.proj_eq_of_withoutRunLinks_eq TCB.yieldToCode he).trans t15.2.2.1,
+          (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingFault he).trans t15.2.2.2⟩
   · show bootQuiescentFields (startInitialThreadOnCore ist.state tid)
     rw [hFrame]; exact hFields
   · show Architecture.asidTableConsistent (startInitialThreadOnCore ist.state tid)
@@ -634,6 +635,18 @@ theorem bootFromPlatformCheckedStartedFor_yieldLinkedNotResident
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
     ist.state.yieldLinkedNotResident :=
   yieldLinkedNotResident_of_bootLinkedShape ist
+    (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h)
+
+/-- WS-ZA ZA6.37: **the state the started boot installs satisfies
+`faultRecordParked`**: no thread it holds carries a fault record (the boot refuses
+a configured one, `bootSafeTcbCheck`), so the first entry starts from a state the
+invariant holds of. -/
+theorem bootFromPlatformCheckedStartedFor_faultRecordParked
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
+    ist.state.faultRecordParked :=
+  faultRecordParked_of_bootLinkedShape ist
     (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h)
 
 /-- WS-ZA ZA5.4 part 36: **the state the started boot installs satisfies the

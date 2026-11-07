@@ -76,7 +76,6 @@ open SeLe4n.Testing
 #check @processReplenishmentsDueOnCore_flags_wake_target
 #check @processOneReplenishmentOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_objects_invExt
-#check @processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
 #check @processReplenishmentsDueOnCore_machine_eq
 
 -- SM5.D.5 budget tick (+ IPC-timeout objects preservation chain).
@@ -154,22 +153,17 @@ open SeLe4n.Testing
 #check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
 #check @decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore
 #check @decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore
-#check @decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
 #check @saveOutgoingContextOnCore_scheduler_eq
 #check @saveOutgoingContextOnCore_getTcb?_isSome
 #check @scheduleEffectiveOnCore_objectsAgreeOffRunLinks
 #check @scheduleEffectiveOnCore_getTcb?_isSome
-#check @scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed
 #check @scheduleEffectiveOnCore_establishes_currentThreadValidOnCore
 #check @scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore
 #check @scheduleEffectiveOnCore_runQueue_toList_subset
 #check @scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore
 #check @timerTickBudgetOnCore_notPreempted_scheduler_eq
 #check @timerTickBudgetOnCore_notPreempted_getTcb?_tid
-#check @timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed
 #check @timerTickOnCore_preserves_currentThreadValidOnCore
-#check @timerTickOnCorePrepared_runQueueOnCore_wellFormed
-#check @timerTickOnCore_preserves_runQueueOnCoreWellFormed
 #check @timerTickOnCore_preserves_queueCurrentConsistentOnCore
 
 -- ============================================================================
@@ -245,19 +239,6 @@ example (st : SystemState) (c : CoreId) (hInv : st.objects.invExt)
     (hPrep : currentThreadValidOnCore (timerTickOnCorePrepared st c) c) :
     currentThreadValidOnCore (timerTickOnCore st c) c :=
   timerTickOnCore_preserves_currentThreadValidOnCore st c hInv hPrep
-
-/-- SM5.D.5/.6 (B2): the per-core tick preserves per-core run-queue well-formedness,
-given the budget-tick discharge `hBudgetRqWf` (discharged for every arm by
-`timerTickBudgetOnCore_preserves_runQueueSafetyOnCore`). -/
-example (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (hBudgetRqWf : ∀ tid tcb st3 b,
-       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
-       (st3.scheduler.runQueueOnCore c).wellFormed) :
-    ((timerTickOnCore st c).scheduler.runQueueOnCore c).wellFormed :=
-  timerTickOnCore_preserves_runQueueOnCoreWellFormed st c hwf hBudgetRqWf
 
 /-- SM5.D.6: a successful per-core domain switch (non-empty schedule) clears the
 current thread on core `c`. -/

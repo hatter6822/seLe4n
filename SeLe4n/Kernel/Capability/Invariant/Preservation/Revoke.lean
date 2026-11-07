@@ -857,9 +857,7 @@ theorem zombieDeleteAt_revokeProgress (ec : Concurrency.CoreId) {src : SlotRef}
 
 /-- **On a state the bundle holds in, the loop empties the source of children**
 when its fuel exceeds the tree's edges.  The source's first-child link is the
-head of its children (`cdtLinksAgree`); a child is in the tree, so its CNode is
-a slot of a live object (`cdtCompleteness`) and its delete is admitted, never
-the loop's stop; each child's zombie delete keeps the bundle and either takes an
+head of its children (`cdtLinksAgree`); each child's zombie delete keeps the bundle and either takes an
 edge out of the tree or leaves the source named by no edge, and so childless for
 good (`zombieDeleteAt_revokeProgress`), so the fuel never runs out first. -/
 theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
@@ -880,19 +878,6 @@ theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n
     · next h0 =>
       simp only [decodeLink, h0, if_false] at hHead
       have hMem := List.mem_of_mem_head? hHead.symm
-      have hMent : st.cdt.mentions ⟨SeLe4n.ObjId.ofNat (st.slotLinkNodeWord cnode slot .firstChild - 1),
-          SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)⟩ := by
-        unfold CapDerivationTree.childrenOf at hMem
-        obtain ⟨e, he, hc⟩ := List.mem_map.1 hMem
-        exact .inl ⟨e, (List.mem_filter.1 he).1, .inr hc⟩
-      obtain ⟨o, hO, hL⟩ := hInv.2.1 _ hMent
-      have hAdm : cspaceDeleteFinalisingAdmitted
-          ⟨SeLe4n.ObjId.ofNat (st.slotLinkNodeWord cnode slot .firstChild - 1),
-            SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)⟩ st = true := by
-        unfold cspaceDeleteFinalisingAdmitted SystemState.getObject?
-        rw [hO]
-        exact KernelObject.hasSlot_holdsSlots (KernelObject.hasSlot_of_slotCap hL)
-      rw [if_pos hAdm]
       obtain ⟨hInv2, hProg⟩ := zombieDeleteAt_revokeProgress ec hInv hMem
       rcases hProg with hLt | hAv
       · exact revokeFirstChildLoop_childless ec cnode slot n _ hInv2 (by omega)

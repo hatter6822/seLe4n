@@ -1619,10 +1619,12 @@ theorem cspaceDeleteSlotZombie_of_admitted {ec : Concurrency.CoreId} {addr : CSp
     cspaceDeleteSlotZombie ec addr st = .ok ((), zombieDeleteAt ec addr.cnode addr.slot st) := by
   unfold cspaceDeleteSlotZombie; rw [if_pos h]
 
-/-- **A zombie delete whose slot retires nothing is the finalising delete**: the
-loop's passes stop at once, and the slot's own delete is all that runs. -/
-theorem cspaceDeleteSlotZombie_of_target_zero {ec : Concurrency.CoreId} {addr : CSpaceAddr}
-    {st : SystemState} (h0 : slotRetireTarget st addr.cnode addr.slot = 0) :
+/-- **A zombie delete whose slot names no object left holding a capability is the
+finalising delete** (`zombieSlotClass` is `0`: the slot retires nothing, or the
+object it retires holds no capability to empty): the loop's passes stop at once,
+and the slot's own delete is all that runs. -/
+theorem cspaceDeleteSlotZombie_of_class_zero {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st : SystemState} (h0 : zombieSlotClass st addr.cnode addr.slot addr.cnode addr.slot = 0) :
     cspaceDeleteSlotZombie ec addr st = cspaceDeleteSlotFinalising ec addr st := by
   unfold cspaceDeleteSlotZombie
   split
@@ -1633,12 +1635,90 @@ theorem cspaceDeleteSlotZombie_of_target_zero {ec : Concurrency.CoreId} {addr : 
     · have hP : zombiePasses ec addr.cnode addr.slot (zombieFuel st) st = st := by
         show zombiePasses ec addr.cnode addr.slot (st.objects.size + 1) st = st
         unfold zombiePasses
-        have : zombieSlotClass st addr.cnode addr.slot addr.cnode addr.slot = 0 := by
-          unfold zombieSlotClass; simp only [h0, if_true]
-        simp only [this, if_true]
+        simp only [h0, if_true]
       rw [hP]
       unfold zombieDeleteSlot
       rw [if_pos hA, cspaceDeleteSlotFinalising_of_slotHolder hA]
+  · rfl
+
+/-- **The kinds whose final capability's destroy may write a core**: an
+endpoint's or a notification's finalisation cancels its waiters and wakes each on
+its own core; a thread's suspends it, and a scheduling context's and a reply's
+unbind a reservation or suspend a caller, each on the core the state names; and
+a CNode's or a thread's last capability is deleted by the zombie loop, which
+deletes every capability the object holds, each a finalising delete of its own.
+Every other kind's finalisation is nothing (`finaliseFinalObject`), and its
+retire writes no scheduler and no machine state (`retireFinalObject_fields`). -/
+def finalObjectWritesCores : Option KernelObjectType → Bool
+  | some .endpoint | some .notification | some .tcb | some .schedContext
+  | some .reply | some .cnode => true
+  | _ => false
+
+/-- WS-ZA ZA5.4 part 23, WS-ZA ZA6.37: **the cores a finalising delete of slot
+`addr` may write**, read off the state before the delete.  None when the delete
+destroys no final capability (`slotRetireTarget` is `0`), or when the final
+capability names an object whose destroy writes no core (`finalObjectWritesCores`:
+a frame, a page table, a VSpace root, an untyped): the delete, the page teardown
+and the retire write no scheduler and no machine state.  Every core when it names
+an interrupt line's node, whose retire masks the line at the interrupt controller
+every core shares, or an object whose destroy wakes, suspends or unbinds threads
+or runs the zombie loop: the cores those threads are homed on are read by the
+walk as it runs (`docs/REGISTERED_DEBT.md`, "The final delete's and the
+revocation's core sets are every core"). -/
+def cspaceDeleteSlotFinalisingCores (st : SystemState) (addr : CSpaceAddr) :
+    List Concurrency.CoreId :=
+  let target := slotRetireTarget st addr.cnode addr.slot
+  if target = 0 then []
+  else if retireTargetsIrqNode target ||
+      finalObjectWritesCores (st.getObjectType? (SeLe4n.ObjId.ofNat (target - 1)))
+    then Concurrency.allCores
+  else []
+
+/-- The core set is none or every core. -/
+theorem cspaceDeleteSlotFinalisingCores_cases (st : SystemState) (addr : CSpaceAddr) :
+    cspaceDeleteSlotFinalisingCores st addr = [] ∨
+      cspaceDeleteSlotFinalisingCores st addr = Concurrency.allCores := by
+  unfold cspaceDeleteSlotFinalisingCores
+  dsimp only
+  split
+  · exact .inl rfl
+  · split
+    · exact .inr rfl
+    · exact .inl rfl
+
+/-- An empty core set for a slot retiring an object: the object is no interrupt
+line's node, and of a kind whose destroy writes no core. -/
+theorem cspaceDeleteSlotFinalisingCores_quiet {st : SystemState} {addr : CSpaceAddr}
+    (h0 : slotRetireTarget st addr.cnode addr.slot ≠ 0)
+    (hNil : cspaceDeleteSlotFinalisingCores st addr = []) :
+    retireTargetsIrqNode (slotRetireTarget st addr.cnode addr.slot) = false ∧
+      finalObjectWritesCores (st.getObjectType?
+        (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1))) = false := by
+  unfold cspaceDeleteSlotFinalisingCores at hNil
+  dsimp only at hNil
+  rw [if_neg h0] at hNil
+  split at hNil
+  · exact absurd hNil fun h => by
+      have hm := Concurrency.mem_allCores Concurrency.bootCoreId; rw [h] at hm; cases hm
+  · next hQ => simpa [Bool.or_eq_true, not_or] using hQ
+
+/-- A slot whose core set is empty names no object left holding a capability:
+it retires nothing, or an object of a kind holding none (a CNode and a thread
+are `finalObjectWritesCores` kinds). -/
+theorem zombieSlotClass_eq_zero_of_cores_nil {st : SystemState} {addr : CSpaceAddr}
+    (hNil : cspaceDeleteSlotFinalisingCores st addr = []) :
+    zombieSlotClass st addr.cnode addr.slot addr.cnode addr.slot = 0 := by
+  unfold zombieSlotClass
+  by_cases h0 : slotRetireTarget st addr.cnode addr.slot = 0
+  · simp only [h0, if_true]
+  have hQ := (cspaceDeleteSlotFinalisingCores_quiet h0 hNil).2
+  simp only [h0, if_false]
+  unfold SystemState.getObjectType? at hQ
+  unfold SystemState.getObject?
+  split
+  · next o hO =>
+    rw [hO] at hQ
+    cases o <;> first | rfl | (simp [finalObjectWritesCores, KernelObject.objectType] at hQ)
   · rfl
 
 /-- **A space change whose old CSpace root names an object holding capabilities**
@@ -1740,14 +1820,13 @@ theorem copyThreadSpacesZombie_closed {ec : Concurrency.CoreId} {st st' : System
 until the source has none.  Each delete splices its slot out of the tree, so
 the deleted child's children become the source's, and the loop reaches every
 descendant without building a list of them; `fuel` bounds it by the tree's
-edges, one of which each splice removes.  Each delete is admitted when its
-CNode exists (`cspaceDeleteFinalisingAdmitted`) and is then the zombie delete
+edges, one of which each splice removes.  Each delete is the zombie delete
 (`zombieDeleteAt`, seL4's `cteDelete`), which empties a child's CNode or
-thread before the child itself goes, and always empties the child's slot.  A
-child outside every CNode ends the loop,
-which on a state the capability invariants hold in never happens: there the
-loop ends with the source childless (`cspaceRevokeCdtFinalising_ok_childless`).
-Retiring the stop is a `docs/REGISTERED_DEBT.md` table C row (ZA5.4). -/
+thread before the child itself goes, and always empties the child's slot.  As
+seL4's `cteRevoke`, the loop checks nothing per child: on a state the
+capability invariants hold in every child's CNode is live (`cdtCompleteness`),
+and the loop ends with the source childless
+(`cspaceRevokeCdtFinalising_ok_childless`). -/
 def revokeFirstChildLoop (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
     (slot : SeLe4n.Slot) : Nat → SystemState → SystemState
   | 0, st => st
@@ -1757,9 +1836,7 @@ def revokeFirstChildLoop (executingCore : Concurrency.CoreId) (cnode : SeLe4n.Ob
     else
       let cc := SeLe4n.ObjId.ofNat (fc - 1)
       let cs := SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)
-      if cspaceDeleteFinalisingAdmitted { cnode := cc, slot := cs } st then
-        revokeFirstChildLoop executingCore cnode slot n (zombieDeleteAt executingCore cc cs st)
-      else st
+      revokeFirstChildLoop executingCore cnode slot n (zombieDeleteAt executingCore cc cs st)
 
 /-- **The loop is a run of finalising deletes.** -/
 theorem revokeFirstChildLoop_chain (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
@@ -1772,10 +1849,8 @@ theorem revokeFirstChildLoop_chain (ec : Concurrency.CoreId) (cnode : SeLe4n.Obj
     dsimp only
     split
     · exact .refl st
-    · split
-      · exact (zombieDeleteAt_run ec _ _ _).choose_spec.2.chain.trans
-          (revokeFirstChildLoop_chain ec cnode slot n _)
-      · exact .refl st
+    · exact (zombieDeleteAt_run ec _ _ _).choose_spec.2.chain.trans
+        (revokeFirstChildLoop_chain ec cnode slot n _)
 
 /-- WS-ZA ZA5.3 part 8: **`.cspaceRevoke`'s check**, read before any write: the
 source slot holds a capability. -/

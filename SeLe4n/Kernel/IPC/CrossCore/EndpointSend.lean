@@ -278,7 +278,7 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
 /-- WS-ZA ZA4.7: the compiled `endpointSendDualOnCore`.  A rendezvous whose
 writes stay in their slots (`sendWakesInPlace`) makes them in place
 (`storeSendRendezvous`, `sendRendezvous_inPlace_eq`) and holds no pre-state
-for a refusal that cannot happen (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1);
+for a refusal that cannot happen (WS-ZA D1);
 otherwise the specification's body. -/
 def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload) (executingCore : CoreId) (st : SystemState) :

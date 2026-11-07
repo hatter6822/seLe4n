@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.FrozenOps.Core
+import SeLe4n.Kernel.FrozenOps.ReleaseQueue
 import SeLe4n.Kernel.SchedContext.Budget
 import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.Architecture.PageTableInstall
@@ -1531,8 +1532,16 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
           | .schedContext sc' => if sc'.scId.toObjId == scId then acc else sc' :: acc
           | _ => acc
         if SeLe4n.Kernel.admissionCheck allScs updated then
-          match frozenWithObjectStored st scId (.schedContext updated) with
-          | .ok st' =>
+          -- WS-ZA ZA6.37: the live configure's release-queue writes, mirrored:
+          -- the context off the queue its own link names
+          -- (`frozenPurgeReplenishment`, the live `purgeReplenishment`) before
+          -- the record is stored, and a bound context placed on its thread's
+          -- home core's queue by its refills (`frozenReleasePlace`, the live
+          -- `releasePlace`) before the propagation reads the stored state.
+          let scIdTyped : SeLe4n.SchedContextId := ⟨scId.toNat⟩
+          match frozenWithObjectStored (frozenPurgeReplenishment st scIdTyped) scId
+              (.schedContext updated) with
+          | .ok stStored =>
             -- The propagation half: the live `schedContextConfigureBoundPropagate`
             -- reads the *stored* state, so this does too.  Each parameter is
             -- written only when it moved, as the live halves are -- and since
@@ -1546,8 +1555,9 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
             -- as the live `configureResumeBound` runs over the propagation's
             -- state whenever the bound thread exists.
             match sc.boundThread with
-            | none => .ok ((), st')
+            | none => .ok ((), stStored)
             | some boundTid =>
+              let st' := frozenReleasePlace stStored (frozenDetermineTargetCore st boundTid) scIdTyped
               match frozenLookupTcb st' boundTid with
               | none => .ok ((), st')
               | some boundTcb =>
@@ -1801,9 +1811,14 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
               | .ok stored =>
                 let st' := { stored with machine := tick st.machine }
                 if wasPreempted == true then
-                  -- Budget exhausted: clear current to force rescheduling
-                  .ok ((), { st' with scheduler :=
-                    { st'.scheduler with current := none } })
+                  -- Budget exhausted: the context waits on the release queue
+                  -- for its first pending refill (WS-ZA ZA6.37: the live
+                  -- `replenishOnCore`, `releasePlace` on the core the tick runs
+                  -- on, which on this single-core surface is the boot core),
+                  -- and current is cleared to force rescheduling.
+                  let stPlaced := frozenReleasePlace st' bootCoreId scId
+                  .ok ((), { stPlaced with scheduler :=
+                    { stPlaced.scheduler with current := none } })
                 else
                   .ok ((), st')
               | .error e => .error e

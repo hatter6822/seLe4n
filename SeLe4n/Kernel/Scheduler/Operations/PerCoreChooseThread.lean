@@ -54,8 +54,7 @@ loop.
   a well-formed state, returns `none` only when no in-domain runnable thread
   exists, and returns `some` whenever one is present (the foundation SM5.E
   discharges with the per-core idle thread).
-* **SM5.A.6** `chooseThreadOnCore_some_mem_runQueueOnCore` (+ the literal
-  `chooseThreadOnCore_preserves_wellFormed` anchor) — selection soundness.
+* **SM5.A.6** `chooseThreadOnCore_some_mem_runQueueOnCore` — selection soundness.
 * **SM5.A.7** decidability witnesses for the selection result.
 * **Budget-aware companion (§6)** — the CBS-budget-aware `chooseThreadEffectiveOnCore`
   (its production def + legacy migration live in `Selection.lean`): per-core
@@ -732,34 +731,6 @@ theorem chooseThreadOnCore_some_mem_runQueueOnCore
   obtain ⟨p, d, hbucket⟩ := chooseThreadOnCore_eq_some_imp_bucket_some st c tid h
   exact chooseBestInBucket_result_mem st.objects.get? (st.scheduler.runQueueOnCore c)
     (st.scheduler.activeDomainOnCore c) tid p d hbucket
-
-/-- WS-SM SM5.A.6 (preservation form): the `Kernel`-monad `chooseThread` is
-a pure read, so it preserves every core's run-queue well-formedness.  This
-is the literal "`chooseThread` preserves `wellFormed`" statement; it follows
-trivially from `chooseThread_preserves_state` (the selection threads the
-state unchanged). -/
-theorem chooseThread_preserves_runQueueOnCore_wellFormed
-    (st st' : SystemState) (next : Option SeLe4n.ThreadId) (c : CoreId)
-    (hStep : chooseThread st = .ok (next, st'))
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
-    (st'.scheduler.runQueueOnCore c).wellFormed := by
-  rw [chooseThread_preserves_state st st' next hStep]; exact hwf
-
-/-- WS-SM SM5.A.6 (the plan's literal `chooseThreadOnCore_preserves_wellFormed`
-name): `chooseThreadOnCore` is a pure read, so it leaves core `c`'s run queue
-— and hence its well-formedness — unchanged (there is no post-state to
-"preserve").  The *substantive* "respects well-formedness" content is the
-membership result `chooseThreadOnCore_some_mem_runQueueOnCore`; this theorem
-is the plan-named anchor, bundling the (trivial) preservation of the
-well-formed run queue with the (substantive) membership of the chosen
-thread. -/
-theorem chooseThreadOnCore_preserves_wellFormed
-    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (h : chooseThreadOnCore st c = .ok (some tid)) :
-    (st.scheduler.runQueueOnCore c).wellFormed ∧
-      tid ∈ (st.scheduler.runQueueOnCore c).toList :=
-  ⟨hwf, chooseThreadOnCore_some_mem_runQueueOnCore st c tid h⟩
 
 -- ============================================================================
 -- §3b  SM5.A.3 — Selection optimality (plan §3.1.1, Theorem 3.1.1)

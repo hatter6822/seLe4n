@@ -464,7 +464,7 @@ The prior bifurcation was inconsistent for any SC-bound thread with
 `sc.priority ≠ tcb.priority` (impossible to jointly satisfy) and for any
 PIP-boosted bound thread (`effectiveParamsMatchRunQueue` ignored PIP boost).
 
-Together with `RunQueue.wellFormed`, this enables the bucket-first scheduling
+Together with the run queue's layout (`RunQueue.mem_atPriority`), this enables the bucket-first scheduling
 proof: if a thread has the same effective priority as the selected candidate,
 it must reside in the same priority bucket. -/
 def schedulerPriorityMatch (st : SystemState) : Prop :=

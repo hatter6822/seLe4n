@@ -294,29 +294,12 @@ def dispatchSynchronousException (ectx : ExceptionContext) (st : SystemState)
               let delivered := Kernel.faultDeliverOnCore st tid f fctx executingCore
               .ok (delivered.2.sgi, delivered.1)
 
-/-- WS-ZA ZA4.5: `dispatchException` with the IRQ arm's timer handler `tick` as
-a parameter (`interruptDispatchSequenceWith`); the reference model's is the
-single-core `timerTick`. Routing the reference model's timer arm through
-`timerTickOnCore` on the executing core, and dropping the parameter, is a
-registered debt row (`docs/REGISTERED_DEBT.md` §C, "The model's interrupt and
-exception dispatch run the single-core reference tick"). -/
-def dispatchExceptionWith (tick : Kernel Unit) (etype : ExceptionType) (ectx : ExceptionContext)
-    (rawIntId : Nat := 0)
-    (st : SystemState) (executingCore : CoreId := bootCoreId) :
-    Except KernelError (Option (CoreId × SgiKind) × SystemState) :=
-  match etype with
-  | .synchronous => dispatchSynchronousException ectx st executingCore
-  | .irq =>
-      match interruptDispatchSequenceWith tick st rawIntId with
-      | .error e => .error e
-      | .ok ((), st') => .ok (none, st')
-  | .fiq => .error .notSupported
-  | .serror => .error .hardwareFault
-
-/-- AG3-C/AG3-D: Top-level exception dispatch.
+/-- AG3-C/AG3-D: Top-level exception dispatch on the executing core.
     Routes by exception type:
     - Synchronous: Classify and dispatch via `dispatchSynchronousException`
-    - IRQ: Dispatch via `interruptDispatchSequence` (AG3-D)
+    - IRQ: Dispatch via `interruptDispatchSequence` (AG3-D) on the executing
+      core, whose timer arm is the per-core tick and whose device arm is the
+      live interrupt entry's handler (WS-ZA ZA6.37)
     - FIQ: Not supported by seL4
     - SError: Hardware fault
     The `rawIntId` parameter is only used for IRQ exceptions (read from GICC_IAR).
@@ -324,11 +307,18 @@ def dispatchExceptionWith (tick : Kernel Unit) (etype : ExceptionType) (ectx : E
     WS-RR RR4.21: the result carries the synchronous path's optional cross-core
     SGI; the IRQ path surfaces none of its own here (the per-core IRQ handler
     fires its own). -/
-noncomputable def dispatchException (etype : ExceptionType) (ectx : ExceptionContext)
+def dispatchException (etype : ExceptionType) (ectx : ExceptionContext)
     (rawIntId : Nat := 0)
     (st : SystemState) (executingCore : CoreId := bootCoreId) :
     Except KernelError (Option (CoreId × SgiKind) × SystemState) :=
-  dispatchExceptionWith timerTick etype ectx rawIntId st executingCore
+  match etype with
+  | .synchronous => dispatchSynchronousException ectx st executingCore
+  | .irq =>
+      match interruptDispatchSequence st executingCore rawIntId with
+      | .error e => .error e
+      | .ok ((), st') => .ok (none, st')
+  | .fiq => .error .notSupported
+  | .serror => .error .hardwareFault
 
 -- ============================================================================
 -- AG3-C-vi: Preservation theorem
@@ -351,13 +341,13 @@ theorem dispatchException_svc (ectx : ExceptionContext) (n : Nat) (st : SystemSt
       (match syscallEntry arm64DefaultLayout st.machine.registerCount st with
        | .error e => .error e
        | .ok ((), st') => .ok (none, st')) := by
-  simp [dispatchException, dispatchExceptionWith, dispatchSynchronousException, hSvc]
+  simp [dispatchException, dispatchSynchronousException, hSvc]
 
 /-- AG3-D: IRQ dispatch delegates to `interruptDispatchSequence`. -/
 theorem dispatchException_irq (ectx : ExceptionContext) (rawIntId : Nat)
     (st : SystemState) (c : CoreId) :
     dispatchException .irq ectx rawIntId st c =
-      (match interruptDispatchSequence st rawIntId with
+      (match interruptDispatchSequence st c rawIntId with
        | .error e => .error e
        | .ok ((), st') => .ok (none, st')) := rfl
 
@@ -484,7 +474,7 @@ enforced at the hardware level:
 
 ### Atomicity guarantee
 
-The `timerTick` and `handleInterrupt` operations preserve the interrupt-disabled
+The `timerTick`, `timerTickOnCore` and `handleInterrupt` operations preserve the interrupt-disabled
 invariant: if entered with `interruptsEnabled = false`, the state remains
 `interruptsEnabled = false` on exit. This follows from the structure of kernel
 operations, which only modify `objects`, `scheduler`, `interfaceRegistry`, etc. —
@@ -522,12 +512,12 @@ theorem setCurrentThread_preserves_interruptsEnabled
 /-- AG5-G: `interruptDispatchSequence` for spurious interrupts preserves
     interrupt-disabled state (state is unchanged). -/
 theorem interruptDispatchSequence_preserves_interruptsEnabled_spurious
-    (st : SystemState) (rawIntId : Nat)
+    (st : SystemState) (c : CoreId) (rawIntId : Nat)
     (hSpurious : rawIntId ≥ spuriousInterruptThreshold) :
-    ∀ st', interruptDispatchSequence st rawIntId = .ok ((), st') →
+    ∀ st', interruptDispatchSequence st c rawIntId = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
   intro st' hStep
-  rw [interruptDispatchSequence_spurious st rawIntId hSpurious] at hStep
+  rw [interruptDispatchSequence_spurious st c rawIntId hSpurious] at hStep
   simp at hStep; exact hStep.symm ▸ rfl
 
 /-- AG5-G: `chooseThread` preserves `interruptsEnabled`.
@@ -605,17 +595,117 @@ theorem timerTick_preserves_interruptsEnabled (st : SystemState) :
         simp at hStep; rw [← hStep]; exact tick_preserves_interruptsEnabled st.machine
     · simp at hStep
 
-/-- AG5-G: `handleInterrupt` for the timer path preserves `interruptsEnabled`.
-    Proven by reducing to `timerTick` via `handleInterrupt` dispatch and
-    applying `timerTick_preserves_interruptsEnabled`. -/
-theorem handleInterrupt_timer_preserves_interruptsEnabled (st : SystemState) :
-    ∀ st', handleInterrupt st timerInterruptId = .ok ((), st') →
+/-! ### The per-core tick keeps `interruptsEnabled`
+
+WS-ZA ZA6.37: the dispatch's timer arm is the per-core tick, so the timer
+path's preservation is stated over it.  Each stage writes the object store,
+the scheduler and at most the executing core's register bank
+(`MachineState.setRegsOnCore`), never the interrupt flag. -/
+
+theorem restoreIncomingContextOnCore_machine_interruptsEnabled (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContextOnCore st c tid).machine.interruptsEnabled =
+      st.machine.interruptsEnabled := by
+  unfold restoreIncomingContextOnCore; split
+  · exact MachineState.setRegsOnCore_interruptsEnabled _ _ _
+  · rfl
+
+theorem idleFallbackOnCore_machine_interruptsEnabled (st : SystemState) (c : CoreId) :
+    (idleFallbackOnCore st c).machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  unfold idleFallbackOnCore; split
+  · simp [dispatchIdleOnCore, restoreIncomingContextOnCore_machine_interruptsEnabled]
+  · rfl
+
+theorem scheduleEffectiveOnCore_machine_interruptsEnabled (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hStep : scheduleEffectiveOnCore st c = .ok st') :
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
-  intro st' hStep
-  have hReduce : handleInterrupt st timerInterruptId = timerTick st := by
-    unfold handleInterrupt handleInterruptWith; simp [timerInterruptId]
-  rw [hReduce] at hStep
-  exact timerTick_preserves_interruptsEnabled st st' hStep
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      simp [idleFallbackOnCore_machine_interruptsEnabled, saveOutgoingContextOnCore_machine]
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep
+          subst hStep
+          simp [restoreIncomingContextOnCore_machine_interruptsEnabled,
+            saveOutgoingContextOnCore_machine]
+        · simp at hStep
+
+theorem switchToThreadOnCore_machine_interruptsEnabled (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  unfold switchToThreadOnCore at h
+  cases hTcb : st.getTcb? tid with
+  | none => simp [hTcb] at h
+  | some tidTcb =>
+    simp only [hTcb] at h
+    by_cases hAff : affinityAdmitsCore tidTcb c = true
+    · rw [if_pos hAff, Except.ok.injEq] at h
+      subst h
+      unfold restoreIncomingContextOnCoreUnlessCurrent
+      split
+      · simp [SystemState.runRemoveOnCore_machine, preemptCurrentOnCore_machine]
+      · rw [restoreIncomingContextOnCore_machine_interruptsEnabled,
+          SystemState.runRemoveOnCore_machine, preemptCurrentOnCore_machine]
+    · rw [if_neg hAff] at h; simp at h
+
+theorem handleRescheduleSgiOnCore_machine_interruptsEnabled (st : SystemState) (c : CoreId)
+    (st' : SystemState) (h : handleRescheduleSgiOnCore st c = .ok st') :
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h
+      exact congrArg (·.interruptsEnabled) (dropCurrentOnCore_machine st c)
+    · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · split at h
+      · rename_i sSw hSw
+        rw [Except.ok.injEq] at h; subst h
+        exact switchToThreadOnCore_machine_interruptsEnabled st c _ sSw hSw
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h
+          exact congrArg (·.interruptsEnabled) (dropCurrentOnCore_machine st c)
+        · rw [Except.ok.injEq] at h; subst h; rfl
+    · rw [Except.ok.injEq] at h; subst h; rfl
+
+/-- WS-ZA ZA6.37: the per-core tick keeps `interruptsEnabled`. -/
+theorem timerTickOnCore_machine_interruptsEnabled (st : SystemState) (c : CoreId) :
+    (timerTickOnCore st c).machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  refine timerTickOnCore_of
+    (P := fun s => s.machine.interruptsEnabled = st.machine.interruptsEnabled) st c
+    (by show (timerTickOnCorePrepared st c).machine.interruptsEnabled = _
+        rw [timerTickOnCorePrepared_machine_eq]) ?_ ?_ ?_
+  · intro s hs
+    rw [handleRescheduleSgiOnCore_machine_interruptsEnabled s c _
+      (handleRescheduleSgiOnCore_eq_state s c)]
+    exact hs
+  · intro s hs
+    rw [scheduleEffectiveOnCore_machine_interruptsEnabled s c _ (scheduleEffectiveOnCore_eq_state s c)]
+    exact hs
+  · intro tid tcb hTcb st3 b hb
+    rw [timerTickBudgetOnCore_machine _ c _ _ _ _ hb, timerTickOnCorePrepared_machine_eq]
+
+/-- AG5-G: `handleInterrupt` for the timer path preserves `interruptsEnabled`
+    on every core: the timer arm is the per-core tick
+    (`handleInterrupt_timer`), which keeps the flag
+    (`timerTickOnCore_machine_interruptsEnabled`). -/
+theorem handleInterrupt_timer_preserves_interruptsEnabled (st : SystemState) (c : CoreId) :
+    (handleInterrupt st c timerInterruptId).machine.interruptsEnabled =
+      st.machine.interruptsEnabled := by
+  rw [handleInterrupt_timer]
+  exact timerTickOnCore_machine_interruptsEnabled st c
 
 -- ============================================================================
 -- AN6-F (CX-M04): archInvariantBundle interruptsEnabled composition
@@ -654,10 +744,10 @@ structure InterruptsEnabledPreservationBundle (st : SystemState) : Prop where
   setCurrent : ∀ (tid : Option SeLe4n.ThreadId) (st' : SystemState),
     setCurrentThread tid st = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled
-  dispatchSpurious : ∀ (rawIntId : Nat),
+  dispatchSpurious : ∀ (c : CoreId) (rawIntId : Nat),
     rawIntId ≥ spuriousInterruptThreshold →
     ∀ (st' : SystemState),
-    interruptDispatchSequence st rawIntId = .ok ((), st') →
+    interruptDispatchSequence st c rawIntId = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled
   chooseThread' : ∀ (result : Option SeLe4n.ThreadId) (st' : SystemState),
     chooseThread st = .ok (result, st') →
@@ -668,9 +758,9 @@ structure InterruptsEnabledPreservationBundle (st : SystemState) : Prop where
   timerTick' : ∀ (st' : SystemState),
     timerTick st = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled
-  handleInterruptTimer : ∀ (st' : SystemState),
-    handleInterrupt st timerInterruptId = .ok ((), st') →
-    st'.machine.interruptsEnabled = st.machine.interruptsEnabled
+  handleInterruptTimer : ∀ (c : CoreId),
+    (handleInterrupt st c timerInterruptId).machine.interruptsEnabled =
+      st.machine.interruptsEnabled
 
 /-- AN6-F (CX-M04): Composition witness — every `SystemState` inhabits the
 bundle, since each field is a theorem already proven in this file. -/

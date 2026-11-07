@@ -245,8 +245,9 @@ theorem endpointReplyOnCore_post_agrees
           cases hRO : tcb.replyObject with
           | none =>
             right
-            refine ⟨expected, ensureRunnable st' target, ?_,
-              hRel0.trans (unlinkReplyWaiterOpt_offSchedulerAgrees _ target rt)⟩
+            refine ⟨expected, (ensureRunnable st' target).unlinkReplyWaiterOpt target rt, ?_,
+              (unlinkReplyWaiterOpt_offSchedulerAgrees _ target rt).symm.trans
+                (hRel0.trans (unlinkReplyWaiterOpt_offSchedulerAgrees _ target rt))⟩
             unfold endpointReply
             simp only [if_neg hSize, hLk, hIpc,
               if_pos hAuth, hStore, hRO]
@@ -264,14 +265,14 @@ theorem endpointReplyOnCore_post_agrees
                 wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
               obtain ⟨r1, hCons1⟩ :=
                 removeCallerReplyFrame_isOk (ensureRunnable st' target) target rid
-              refine ⟨expected, r1, ?_, ?_⟩
+              refine ⟨expected, r1.unlinkReplyWaiterOpt target rt, ?_, ?_⟩
               · unfold endpointReply
                 simp only [if_neg hSize, hLk, hIpc,
-                  if_pos hAuth, hStore, hRO]
-                exact hCons1
-              · exact (removeCallerReplyFrame_offSchedulerAgrees target rid hRel0
-                  hInvEns hInvWake hCons1 hConsOC).trans
-                  (unlinkReplyWaiterOpt_offSchedulerAgrees _ target rt)
+                  if_pos hAuth, hStore, hRO, hCons1]
+              · exact (unlinkReplyWaiterOpt_offSchedulerAgrees r1 target rt).symm.trans
+                  ((removeCallerReplyFrame_offSchedulerAgrees target rid hRel0
+                    hInvEns hInvWake hCons1 hConsOC).trans
+                    (unlinkReplyWaiterOpt_offSchedulerAgrees _ target rt))
 
 -- ============================================================================
 -- §6  SM6.D: whole-bundle + per-core bundle preservation (cross-core reply)
@@ -453,7 +454,7 @@ theorem endpointReceiveDualOnCore_post_agrees
                 | error e => left; rfl
                 | ok st4 =>
                   right
-                  refine ⟨sender, st4, ?_, linkReplyWaiter_offSchedulerAgrees st4 _ _⟩
+                  refine ⟨sender, st4.linkReplyWaiter sender receiver, ?_, OffSchedulerAgrees.refl _⟩
                   unfold endpointReceiveDual SystemState.getObject?
                   simp only [hEpRaw, hHead, hPop, hSIpc, hStore1, hLink, hStore2, ↓reduceIte]
         | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _

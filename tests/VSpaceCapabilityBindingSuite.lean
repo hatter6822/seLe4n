@@ -2195,7 +2195,7 @@ private def runPassiveRetireChecks : IO Unit := do
   -- A notification bound to a thread is finalised before it is retired: its
   -- last capability's delete unbinds the thread (seL4's
   -- `unbindMaybeNotification`, `finaliseFinalObject`), and the then quiescent
-  -- notification is retired (`docs/planning/UNTYPED_RESET_PLAN.md` row 23).
+  -- notification is retired (WS-ZA ZA5.4 part 23).
   match runAll spaceScenario
       [decodeCarve slotUtRetype notificationTag 960 slotOwnCnRW 12,
        decodeBindNotification slotWorkerTcb 12] with

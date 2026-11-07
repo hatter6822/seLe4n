@@ -891,6 +891,17 @@ platform rather than with the lock.
 > Canonical: [`WORKSTREAM_CONTEXT.md`](../agent_guide/WORKSTREAM_CONTEXT.md) and
 > [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §R5.D.
 
+### The kernel records
+
+Since `v0.37.0` four facts every kernel entry carries travel together as
+`SystemState.kernelRecordsSound` (`SeLe4n/Kernel/KernelRecords/`): the
+teardown's well-formedness, the reply-waiter queues, every fault record parked,
+and the physical-address width bound. The started boot establishes it and every
+committing entry keeps it (`RecordsStage`), the syscall entry through one
+traversal of every dispatcher arm. Canonical:
+[`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) (the reply-waiter queues) and
+[`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md).
+
 ## 4. Per-core (SMP) lifts
 
 Every bundle above has a per-core form that quantifies over `CoreId` and reads

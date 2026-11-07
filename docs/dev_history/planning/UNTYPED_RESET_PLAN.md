@@ -6,6 +6,9 @@ as proven loops.  This plan schedules that change; the ZA5.4 row of
 [`ZERO_ALLOCATION_SYSCALL_PLAN.md`](ZERO_ALLOCATION_SYSCALL_PLAN.md) owns the
 row's status and readings.
 
+**Closed at `v0.37.0`** with WS-ZA (ZA6.37): every row below landed, and what
+the parts left open is a row of `docs/REGISTERED_DEBT.md`.
+
 ## 1. What seL4 does (read from `src/object/untyped.c`, `objecttype.c`, `cnode.c`)
 
 - **The free pointer is in the capability** (`capFreeIndex`).  A retype carves at

@@ -254,10 +254,12 @@ private def routePrims : List String :=
   [@PRIMS@]
 
 /-- The syscall dispatch entry points, used only to disambiguate colliding
-short names.  All three are `private`, so they are found by stem, not by full
-name. -/
+short names.  They are found by stem, not by full name (the first three are
+`private`).  `dispatchYield` is the yield's own dispatcher: a yield invokes no
+capability, so it is dispatched before the capability tier and the other three
+never reach `yieldOnCore`. -/
 private def routeDispatch : List String :=
-  ["dispatchCapabilityOnly", "dispatchWithCap", "dispatchWithCapChecked"]
+  ["dispatchCapabilityOnly", "dispatchWithCap", "dispatchWithCapChecked", "dispatchYield"]
 
 private def routePinned : List String :=
   [@PINNED@]

@@ -116,12 +116,10 @@ open SeLe4n.Kernel.Concurrency
 #check @schedulerInvariant_smp_of_bootCore_and_idle_frame
 
 -- Plan §5.6 missing predicate:
-#check @runQueueOnCoreWellFormed
 
 -- Per-conjunct frame lemmas (§5.5 — fine-grained SM5 reasoning):
 #check @queueCurrentConsistentOnCore_frame
 #check @runQueueUniqueOnCore_frame
-#check @runQueueOnCoreWellFormed_frame
 #check @currentThreadValidOnCore_frame
 #check @currentThreadInActiveDomainOnCore_frame
 #check @timeSlicePositiveOnCore_frame
@@ -217,18 +215,14 @@ example :
 -- §2.3  Bundle bridge: the existing `schedulerInvariantBundleFull` implies the
 --       per-core invariant at the boot core.  (This is the non-orphan
 --       connection — every existing single-core preservation proof yields a
---       per-core preservation at the boot core for free.)  audit-pass-9: the
---       bridge now requires an explicit `hWf` (`RunQueue.wellFormed`) since
---       the per-core aggregate gained the structural wellFormed conjunct.
-example {st : SystemState} (h : schedulerInvariantBundleFull st)
-    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
+--       per-core preservation at the boot core for free.)
+example {st : SystemState} (h : schedulerInvariantBundleFull st) :
     schedulerInvariant_perCore st bootCoreId :=
-  schedulerInvariantBundleFull_to_perCore_bootCore h hWf
+  schedulerInvariantBundleFull_to_perCore_bootCore h
 
-example {st : SystemState} (h : schedulerInvariantBundleExtended st)
-    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
+example {st : SystemState} (h : schedulerInvariantBundleExtended st) :
     schedulerInvariant_perCore st bootCoreId :=
-  schedulerInvariantBundleExtended_to_perCore_bootCore h hWf
+  schedulerInvariantBundleExtended_to_perCore_bootCore h
 
 -- Converse: the per-core slice at the boot core plus the system-wide
 -- `domainScheduleEntriesPositive` rebuilds the full bundle.
@@ -291,12 +285,10 @@ example :
     schedulerInvariant_smp_extended (default : SystemState) :=
   schedulerInvariant_perCore_extended_aggregateForall _
 
--- §2.9  Extended bundle bridges.  audit-pass-9: hWf forwarded for the
---       base aggregate's new wellFormed conjunct.
-example {st : SystemState} (h : schedulerInvariantBundleExtended st)
-    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
+-- §2.9  Extended bundle bridges.
+example {st : SystemState} (h : schedulerInvariantBundleExtended st) :
     schedulerInvariant_perCore_extended st bootCoreId :=
-  schedulerInvariantBundleExtended_to_perCore_extended_bootCore h hWf
+  schedulerInvariantBundleExtended_to_perCore_extended_bootCore h
 
 example {st : SystemState}
     (h : schedulerInvariant_perCore_extended st bootCoreId)
@@ -346,15 +338,13 @@ example : schedulerInvariant_smp_crossSubsystem (default : SystemState) :=
   default_schedulerInvariant_smp_crossSubsystem
 
 -- Bridge from the live CrossSubsystem + Extended bundle to the per-core
--- cross-subsystem invariant at the boot core.  audit-pass-9: hWf forwarded
--- for the base aggregate's new wellFormed conjunct.
+-- cross-subsystem invariant at the boot core.
 example {st : SystemState}
     (hExt : schedulerInvariantBundleExtended st)
     (hCSI : crossSubsystemInvariant st)
-    (hADS : activeDomainOnCore_isInDomainSchedule st bootCoreId)
-    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
+    (hADS : activeDomainOnCore_isInDomainSchedule st bootCoreId) :
     schedulerInvariant_perCore_crossSubsystem st bootCoreId :=
-  crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore hExt hCSI hADS hWf
+  crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore hExt hCSI hADS
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): a silent regression surfaces here.
@@ -596,13 +586,10 @@ private def runCrossSubsystemAggregateChecks : IO Unit := do
       true))
 
 /-- §3.8  Audit-pass-9 content (PR #801 reviewer comments 2 & 3).
-Substantive runtime exercise of the new base aggregate, the new
-wellFormed conjunct, and the bridge/projection family.  Discharged via
-`RunQueue.empty_wellFormed` (extracted as a top-level lemma in
-`Scheduler/RunQueue.lean` per audit-pass-9 follow-up) so the same
-witness is reused everywhere. -/
+Substantive runtime exercise of the base aggregate and the
+bridge/projection family. -/
 private def runAuditPass9Checks : IO Unit := do
-  IO.println "--- §3.8 audit-pass-9: base aggregate + wellFormed conjunct ---"
+  IO.println "--- §3.8 audit-pass-9: base aggregate ---"
   -- Base aggregate on default state, every core.
   assertBool "default_schedulerInvariantBase_perCore applies on every core"
     (allCores.all (fun c =>
@@ -653,29 +640,10 @@ private def runAuditPass9Checks : IO Unit := do
     (have _h := @schedulerInvariantBase_perCore_bootCore_to_bundle; true)
   assertBool "schedulerInvariantBundle_to_perCoreBase_bootCore dispatches"
     (have _h := @schedulerInvariantBundle_to_perCoreBase_bootCore; true)
-  -- New wellFormed conjunct: projection and discharge for default.
-  assertBool "schedulerInvariant_perCore_to_runQueueOnCoreWellFormed projects"
-    (allCores.all (fun c =>
-      have _h : runQueueOnCoreWellFormed (default : SystemState).scheduler c :=
-        schedulerInvariant_perCore_to_runQueueOnCoreWellFormed
-          (default_schedulerInvariant_perCore c)
-      true))
-  -- Substantive: every core's default RunQueue is wellFormed via the
-  -- shared `RunQueue.empty_wellFormed` lemma.  Non-vacuous: this is a
-  -- decidable check on the structural witness, not a `true` constant.
-  assertBool "RunQueue.empty_wellFormed discharges default on every core"
-    (allCores.all (fun c =>
-      have _h : (RunQueue.empty : SeLe4n.Kernel.RunQueue).wellFormed :=
-        RunQueue.empty_wellFormed
-      have _h2 : runQueueOnCoreWellFormed (default : SystemState).scheduler c :=
-        schedulerInvariant_perCore_to_runQueueOnCoreWellFormed
-          (default_schedulerInvariant_perCore c)
-      true))
-  -- _holds_if_idle takes the 4 idle-shape hypotheses (audit-pass-9 added hWf).
-  -- Discharge each from `default_state_perCoreInitialized` then apply the
-  -- theorem at a non-boot core.  Builds the 4 hypotheses by `Eq.mpr`-rewriting
-  -- the default RunQueue to `RunQueue.empty` and then invoking the
-  -- pre-proven `empty_wellFormed` / `toList_empty` witnesses.
+  -- _holds_if_idle takes the 3 idle-shape hypotheses.  Discharge each from
+  -- `default_state_perCoreInitialized` then apply the theorem at a non-boot
+  -- core, rewriting the default RunQueue to `RunQueue.empty` and invoking
+  -- `toList_empty`.
   assertBool "schedulerInvariant_perCore_holds_if_idle applies for non-boot core 1"
     (let c₂ : CoreId := ⟨1, by decide⟩
      let init := default_state_perCoreInitialized c₂
@@ -686,14 +654,12 @@ private def runAuditPass9Checks : IO Unit := do
        hRQEqEmpty ▸ RunQueue.toList_empty
      have hDTR : (default : SystemState).scheduler.domainTimeRemainingOnCore c₂ > 0 :=
        init.2.2.2.2.1 ▸ (by decide : (5 : Nat) > 0)
-     have hWf : ((default : SystemState).scheduler.runQueueOnCore c₂).wellFormed :=
-       hRQEqEmpty ▸ RunQueue.empty_wellFormed
      have _h : schedulerInvariant_perCore (default : SystemState) c₂ :=
-       schedulerInvariant_perCore_holds_if_idle _ c₂ hCurNone hRQE hDTR hWf
+       schedulerInvariant_perCore_holds_if_idle _ c₂ hCurNone hRQE hDTR
      true)
   -- audit-pass-11: the convenience wrapper `_holds_if_idle_default` takes
   -- the stronger structural hypothesis `runQueueOnCore c = RunQueue.empty`
-  -- and derives `toList = []` + `wellFormed` internally.  Exercises the
+  -- and derives `toList = []` internally.  Exercises the
   -- "SM5 has `rq = empty`" common case in one call.
   assertBool "schedulerInvariant_perCore_holds_if_idle_default applies for non-boot core 1"
     (let c₂ : CoreId := ⟨1, by decide⟩

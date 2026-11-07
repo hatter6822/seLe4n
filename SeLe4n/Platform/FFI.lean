@@ -3431,7 +3431,7 @@ theorem syscallDispatchFromAbi_total
 one body.  The entry runs as `syscallEntryCheckedR`, whose refusal carries the
 state it was refused in, so the refusal arms read that state instead of
 keeping `stRegs` alive across the dispatch; a syscall that checks before it
-writes then owns the state it writes (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).
+writes then owns the state it writes (WS-ZA D1).
 Equal to the specification through `syscallDispatchFromAbiWords_eq`. -/
 @[inline] def syscallDispatchFromAbiImpl
     (ctx : LabelingContext)

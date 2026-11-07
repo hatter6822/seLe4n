@@ -412,8 +412,8 @@ AK2-L (S-L13..S-L18) — Scheduler LOW-tier documentation batch.
   `Priority.ofNat?` with clamp to `numPriorities - 1`) is tracked for AK7.
 - S-L18 `runQueueUnique` flat-list only: the predicate asserts `Nodup` on
   the projected flat list; per-bucket uniqueness is implied by
-  `RunQueue.wellFormed` (distinct priority per tid ⇒ a thread appears in
-  exactly one bucket). A dedicated per-bucket lemma is tracked for AK2.5
+  the run queue's layout (`RunQueue.mem_atPriority`: a thread is in the bucket of
+  its one priority). A dedicated per-bucket lemma is tracked for AK2.5
   alongside the fused priority-match predicate (AK2-B).
 -/
 noncomputable def handleYield : Kernel Unit :=
@@ -1705,7 +1705,7 @@ the refilled state — the target core and whether the store holds the thread �
 are read before the wake writes, and the wake is the run-queue placement
 `wakeThread` makes (`enqueueRunnableOnCore` at the target), so no state is read
 after a later one is built from it and no pair is built for the SGI the flags
-now carry (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1, D2). -/
+now carry (WS-ZA D1, D2). -/
 @[inline] def refillWakeOnCoreImpl (st : SystemState) (execCore : CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
   let wasExhausted := match st.getSchedContext? scId with
@@ -1998,7 +1998,7 @@ not held across the rewrite of its slot. -/
 /-- WS-ZA ZA4.3: the compiled `spendBudgetOnCore`.  The SchedContext is written
 in its slot, and the insert priority is read off the state before the refill
 is queued on it, so no state is read after a later one is built from it
-(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  WS-ZA ZA6.3: the writes are one call
+(WS-ZA D1).  WS-ZA ZA6.3: the writes are one call
 (`spendBudgetWrite`) handed the numbers they read off the context, so the
 context the caller looked up is released before its slot is rewritten.
 Proven equal to the specification (`spendBudgetOnCore_eq_impl`). -/

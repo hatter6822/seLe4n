@@ -29,6 +29,7 @@ AK3-L (`eoiPending` audit trail). Exercises:
 
 open SeLe4n.Kernel.Architecture
 open SeLe4n.Testing
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 namespace SeLe4n.Testing.InterruptDispatch
 
@@ -113,7 +114,7 @@ def test_t05b_high_spis_dispatch : IO Unit := do
         |>.withIrqHandler ⟨intid⟩ ntfnId (some (SeLe4n.Badge.ofNatMasked intid))
         |>.withLifecycleObjectType ntfnId .notification
         |>.buildChecked)
-    match bootInterruptDispatchSequence st0 intid with
+    match interruptDispatchSequence st0 bootCoreId intid with
     | .ok ((), st1) =>
       match st1.objects[ntfnId]? with
       | some (.notification ntfn) =>
@@ -123,6 +124,8 @@ def test_t05b_high_spis_dispatch : IO Unit := do
           (ntfn.pendingBadge == some (SeLe4n.Badge.ofNatMasked intid))
         expectCond "interrupt-dispatch" s!"SPI {spi}: EOI drained the audit trail"
           (intid ∉ st1.machine.eoiPending)
+        expectCond "interrupt-dispatch" s!"SPI {spi}: line masked until acknowledged"
+          (st1.machine.irqLineMasked intid)
       | _ => throw <| IO.userError s!"T05b: SPI {spi}: notification missing"
     | .error e => throw <| IO.userError s!"T05b: SPI {spi}: dispatch failed {repr e}"
 
@@ -158,7 +161,7 @@ def test_t08_round_trip_empty : IO Unit := do
     unchanged (no ack entry, no EOI). -/
 def test_t09_dispatch_spurious_no_state_change : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
-  match bootInterruptDispatchSequence st 1023 with
+  match interruptDispatchSequence st bootCoreId 1023 with
   | .ok ((), st') =>
     expectCond "interrupt-dispatch" "spurious: machine.eoiPending unchanged"
       (st'.machine.eoiPending == st.machine.eoiPending)
@@ -169,7 +172,7 @@ def test_t09_dispatch_spurious_no_state_change : IO Unit := do
     unchanged at Lean layer. -/
 def test_t10_dispatch_out_of_range : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
-  match bootInterruptDispatchSequence st 500 with
+  match interruptDispatchSequence st bootCoreId 500 with
   | .ok ((), st') =>
     expectCond "interrupt-dispatch" "outOfRange: machine.eoiPending unchanged"
       (st'.machine.eoiPending == st.machine.eoiPending)
@@ -177,19 +180,19 @@ def test_t10_dispatch_out_of_range : IO Unit := do
     throw <| IO.userError "T10: dispatch of outOfRange returned error"
 
 /-- T11: AN8-C (H-19) — round-trip property: after a successful dispatch
-    of INTID 30 (the timer PPI, which routes to `timerTick`), the INTID
+    of INTID 30 (the timer PPI, which routes to `timerTickOnCore`), the INTID
     is NOT present in `machine.eoiPending` in the final state. This is
     the AK3-L `eoiPendingEmpty` invariant exercised through the AN8-C
     `ack → EOI → handle` path; both pre- and post-AN8-C orderings
     satisfy it (because both emit EOI). The substantive ordering
     distinction is captured by the proof-layer theorem referenced in
     T13; this test additionally verifies the round-trip on the success
-    branch (`timerTick` returns `.ok`). -/
+    branch. -/
 def test_t11_eoi_before_handler : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
-  -- INTID 30 = `timerInterruptId`; `handleInterrupt` routes to
-  -- `timerTick`, which succeeds on default state.
-  match bootInterruptDispatchSequence st 30 with
+  -- INTID 30 = `timerInterruptId`; `handleInterrupt` routes to the
+  -- per-core tick, which is total.
+  match interruptDispatchSequence st bootCoreId 30 with
   | .ok ((), st') =>
     expectCond "interrupt-dispatch" "AN8-C: 30 not in final eoiPending (EOI fired)"
       (30 ∉ st'.machine.eoiPending)
@@ -212,12 +215,10 @@ def test_t12_eoi_filters_only_target_intid : IO Unit := do
   let stSentinel := ackInterruptAudit st0 99
   expectCond "interrupt-dispatch" "T12 precondition: sentinel 99 in eoiPending"
     (99 ∈ stSentinel.machine.eoiPending)
-  -- Dispatch INTID 30. Because no handler is registered, the sequence
-  -- takes the error branch; under AN8-C this returns the post-EOI
-  -- state directly. Under the OLD ordering, EOI would have been
-  -- skipped on the error branch — so this test is a regression guard
+  -- Dispatch INTID 30: the handler runs on the post-EOI state, so the
+  -- target is filtered and the sentinel kept — a regression guard
   -- against any future revert to `ack → handle → EOI`.
-  match bootInterruptDispatchSequence stSentinel 30 with
+  match interruptDispatchSequence stSentinel bootCoreId 30 with
   | .ok ((), st') =>
     expectCond "interrupt-dispatch" "T12: target INTID 30 filtered by EOI"
       (30 ∉ st'.machine.eoiPending)

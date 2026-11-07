@@ -77,7 +77,6 @@ open SeLe4n.Testing
 
 -- SM5.A.6 selection soundness:
 #check @chooseThreadOnCore_some_mem_runQueueOnCore
-#check @chooseThread_preserves_runQueueOnCore_wellFormed
 
 -- SM5.A.7 decidability:
 #check @chooseThreadOnCoreSelects
@@ -85,7 +84,6 @@ open SeLe4n.Testing
 
 -- SM5.A.3 selection optimality (§3.1.1) + the literal preserves-wellFormed anchor:
 #check @chooseThreadOnCore_selects_highest
-#check @chooseThreadOnCore_preserves_wellFormed
 
 -- SM5.A.2 run-queue-lock total order (+ §4.4 level):
 #check @LockKey.le
@@ -139,9 +137,8 @@ example (s : SystemState) (c₁ c₂ : CoreId) (h : c₁ ≠ c₂) (rq : RunQueu
       = chooseThreadOnCore s c₁ :=
   chooseThreadOnCore_perCore_independence s c₁ c₂ h rq
 
--- SM5.A.4: never errors on a well-formed all-TCB run queue.
+-- SM5.A.4: never errors on an all-TCB run queue.
 example (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hr : runnableThreadsAreTCBsOnCore st c) :
     ∃ r, chooseThreadOnCore st c = .ok r :=
   chooseThreadOnCore_ok_of_runnableTCBs st c hr
@@ -155,7 +152,6 @@ example (st : SystemState) (c : CoreId) (h : chooseThreadOnCore st c = .ok none)
 
 -- SM5.A.4: an eligible in-domain thread guarantees a `some` selection.
 example (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hr : runnableThreadsAreTCBsOnCore st c)
     (tid₀ : SeLe4n.ThreadId) (tcb₀ : TCB)
     (hMem : tid₀ ∈ (st.scheduler.runQueueOnCore c).toList)
@@ -166,7 +162,6 @@ example (st : SystemState) (c : CoreId)
 
 -- SM5.A.6: selection soundness — a chosen thread is a run-queue member.
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (h : chooseThreadOnCore st c = .ok (some tid)) :
     tid ∈ (st.scheduler.runQueueOnCore c).toList :=
   chooseThreadOnCore_some_mem_runQueueOnCore st c tid h
@@ -178,7 +173,6 @@ example (st : SystemState) (c : CoreId) (h : schedulerInvariant_perCore st c) :
 
 -- SM5.A.3 (§3.1.1): selection optimality over the maximum-priority bucket.
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (selTcb : TCB)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hr : runnableThreadsAreTCBsOnCore st c)
     (hSel : chooseThreadOnCore st c = .ok (some tid))
     (hSelTcb : st.getTcb? tid = some selTcb) :

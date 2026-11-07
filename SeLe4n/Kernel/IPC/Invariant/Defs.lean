@@ -2097,6 +2097,19 @@ theorem schedulerInvariantBundle_of_objectsAgreeOffRunLinks {st st' : SystemStat
   | none => trivial
   | some x => rw [hC] at h3; exact hA.exists_tcb_iff.mpr h3
 
+/-- The current thread heads no endpoint queue: it reads the scheduler and the
+endpoints, neither of which a run-link write touches. -/
+theorem currentNotEndpointQueueHead_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hS : st'.scheduler = st.scheduler)
+    (h : currentNotEndpointQueueHead st) : currentNotEndpointQueueHead st' := by
+  unfold currentNotEndpointQueueHead at h ⊢
+  rw [hS]
+  cases hC : st.scheduler.currentOnCore bootCoreId with
+  | none => trivial
+  | some x =>
+    rw [hC] at h
+    exact fun oid ep hEp => h oid ep (hA.get_endpoint_iff.mp hEp)
+
 -- ============================================================================
 -- WS-SM SM6.D (#7.1 fold): upstream reply-link / server-first-stash frames.
 --

@@ -193,6 +193,10 @@ structure SyscallLockOperands where
   is invoked through — the core a context whose bound thread is homed elsewhere
   moves to, so its scheduler footprint names it. -/
   controlCore : Option CoreId := none
+  /-- **WS-ZA ZA6.37**: the slot a `.cspaceDelete` empties, in the CNode
+  `targetObject` names — the slot whose capability the delete reads to decide
+  which cores its finalisation may write (`cspaceDeleteSlotFinalisingCores`). -/
+  targetSlot : Option SeLe4n.Slot := none
 
 /-- **WS-RR RR7.10**: the operands of a thread-directed syscall. -/
 def SyscallLockOperands.ofThreadTarget (caller target : ThreadId) :
@@ -1241,10 +1245,11 @@ theorem lockSetForSyscall_ignores_sched_operands (sid : SyscallId)
     (ops : SyscallLockOperands) (st : SystemState)
     (msg : Option IpcMessage) (slotBase : Option SeLe4n.Slot)
     (mi : Option MessageInfo) (regs : Option (Array SeLe4n.RegValue))
-    (aff : Option (Option CoreId)) :
+    (aff : Option (Option CoreId)) (slot : Option SeLe4n.Slot) :
     lockSetForSyscall sid
         { ops with message := msg, receiverSlotBase := slotBase,
-                   replyMessageInfo := mi, replyRegisters := regs, affinity := aff } st
+                   replyMessageInfo := mi, replyRegisters := regs, affinity := aff,
+                   targetSlot := slot } st
       = lockSetForSyscall sid ops st := by
   cases sid <;> rfl
 

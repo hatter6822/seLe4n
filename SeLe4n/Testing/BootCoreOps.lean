@@ -71,19 +71,6 @@ def bootSetMCPriority (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidTh
     (newMCP : SeLe4n.Priority) : Except KernelError SystemState :=
   (setMCPriorityOnCore st vCallerTid vTargetTid newMCP bootCoreId).map (·.1)
 
-/-- `interruptDispatchSequence` with the boot core's live tick. -/
-def bootInterruptDispatchSequence (st : SystemState) (rawIntId : Nat) :
-    Except KernelError (Unit × SystemState) :=
-  interruptDispatchSequenceWith bootTimerTick st rawIntId
-
-/-- `dispatchException` with the boot core's live tick. -/
-def bootDispatchException (etype : ExceptionType) (ectx : ExceptionContext)
-    (rawIntId : Nat := 0) (st : SystemState)
-    (executingCore : SeLe4n.Kernel.Concurrency.CoreId := bootCoreId) :
-    Except KernelError
-      (Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind) × SystemState) :=
-  dispatchExceptionWith bootTimerTick etype ectx rawIntId st executingCore
-
 /-- `withOutgoingContextChecked` in front of the boot core's live schedule. -/
 def bootScheduleChecked : Kernel Unit := withOutgoingContextChecked bootSchedule
 

@@ -35,7 +35,7 @@ case-analysis lemmas) so the mature SM5.D / `timerTickOnCore` proof base is unto
 * **Soundness (thin aliases to the `scheduleEffectiveOnCore_*` establishment
   theorems)** — the result satisfies `currentThreadValidOnCore`,
   `queueCurrentConsistentOnCore`, `currentThreadInActiveDomainOnCore`,
-  `runnableThreadsAreTCBsOnCore`, `runQueueOnCoreWellFormed`, and `objects.invExt`.
+  `runnableThreadsAreTCBsOnCore`, and `objects.invExt`.
 * **Strong no-starvation** — idle is dispatched only when no in-domain
   budget-eligible thread is runnable (never preempts a runnable user thread of any
   priority).
@@ -109,14 +109,6 @@ theorem scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore (st : Syst
     (st'' : SystemState) (hStep : scheduleOrIdleOnCore st c = .ok st'') :
     queueCurrentConsistentOnCore st''.scheduler c :=
   scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore st c st'' hStep
-
-/-- WS-SM SM5.E (soundness): `scheduleOrIdleOnCore` preserves core `c`'s run-queue
-well-formedness — the idle dispatch only `remove`s the idle thread. -/
-theorem scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState) (c : CoreId)
-    (st'' : SystemState) (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (hStep : scheduleOrIdleOnCore st c = .ok st'') :
-    (st''.scheduler.runQueueOnCore c).wellFormed :=
-  scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed st c st'' hwf hStep
 
 /-- WS-SM SM5.E (soundness, parity with `scheduleEffectiveOnCore`): the idle-aware
 dispatcher establishes that core `c`'s current thread is in its active domain — the

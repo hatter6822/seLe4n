@@ -294,6 +294,10 @@ MACHINERY_PINS = {
     # `resident_frame` tactic that discharges a step's resident-thread frame
     # (WS-ZA ZA6.8); none mints a declaration.
     ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 8,
+    # WS-ZA ZA6.37: the `transfer_off_run_links` tactic, which carries one
+    # receive-leg precondition of `endpointReplyRecv` across the reply-waiter
+    # unlink its reply leg ends with; a tactic macro mints no declaration.
+    ("SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean", "macro"): 1,
     # PR #932 review: the `ntfn_links_back` / `ntfn_links_fwd` tactics, which
     # swap a TCB across a notification-link rewrite; neither mints a declaration.
     ("SeLe4n/Kernel/IPC/Operations/Endpoint.lean", "macro_rules"): 2,

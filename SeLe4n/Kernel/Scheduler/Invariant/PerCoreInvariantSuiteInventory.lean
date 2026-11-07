@@ -124,8 +124,6 @@ def perCoreInvariantSuiteTheorems : List PerCoreInvariantSuiteTheorem :=
       schedulerInvariantStructural_perCore_to_currentThreadValid .structural,
     pcist! "schedulerInvariantStructural_perCore_to_runnableThreadsAreTCBs: runnable-are-TCBs projection"
       schedulerInvariantStructural_perCore_to_runnableThreadsAreTCBs .structural,
-    pcist! "schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed: run-queue-wellformed projection"
-      schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed .structural,
     pcist! "schedulerInvariantStructural_perCore_aggregateForall: slices aggregate to the SMP form"
       schedulerInvariantStructural_perCore_aggregateForall .structural,
     pcist! "schedulerInvariantStructural_smp_at: project a single core's structural slice"
@@ -182,8 +180,6 @@ def perCoreInvariantSuiteTheorems : List PerCoreInvariantSuiteTheorem :=
     -- ── SM5.I.1–I.4/I.6/I.9 suite index (.suite) ──
     pcist! "currentOnCore_validThreadIfSome: SM5.I.1 no-dangling-current usable form"
       currentOnCore_validThreadIfSome .suite,
-    pcist! "runQueueOnCore_wellFormed_of_structural: SM5.I.2 run-queue well-formedness projection"
-      runQueueOnCore_wellFormed_of_structural .suite,
     pcist! "schedContextRunQueueConsistent_perCore_of_crossSubsystem: SM5.I.3 SchedContext↔run-queue suite anchor"
       schedContextRunQueueConsistent_perCore_of_crossSubsystem .suite,
     pcist! "priorityInheritance_perCore_iff_blockingAcyclic: SM5.I.4 per-core PIP-acyclicity suite anchor"
@@ -309,20 +305,20 @@ def perCoreInvariantSuiteTheorems : List PerCoreInvariantSuiteTheorem :=
     pcist! "timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed: the FULLY CLOSED per-core capstone (no budget hyps)"
       timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed .budgetClosure]
 
-/-- WS-SM SM5.I: the inventory has 95 entries. -/
-theorem perCoreInvariantSuiteTheorems_count : perCoreInvariantSuiteTheorems.length = 95 := by decide
+/-- WS-SM SM5.I: the inventory has 93 entries. -/
+theorem perCoreInvariantSuiteTheorems_count : perCoreInvariantSuiteTheorems.length = 93 := by decide
 
-/-- WS-SM SM5.I: 14 entries in the `structural` category. -/
+/-- WS-SM SM5.I: 13 entries in the `structural` category. -/
 theorem perCoreInvariantSuiteTheorems_structural_count :
-    (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .structural)).length = 14 := by decide
+    (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .structural)).length = 13 := by decide
 
 /-- WS-SM SM5.I: 18 entries in the `preservation` category (SM5.I.8). -/
 theorem perCoreInvariantSuiteTheorems_preservation_count :
     (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .preservation)).length = 18 := by decide
 
-/-- WS-SM SM5.I: 8 entries in the `suite` category (SM5.I.1–I.4/I.6/I.9). -/
+/-- WS-SM SM5.I: 7 entries in the `suite` category (SM5.I.1–I.4/I.6/I.9). -/
 theorem perCoreInvariantSuiteTheorems_suite_count :
-    (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .suite)).length = 8 := by decide
+    (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .suite)).length = 7 := by decide
 
 /-- WS-SM SM5.I: 39 entries in the `registerBank` category (SM4.B payoff). -/
 theorem perCoreInvariantSuiteTheorems_registerBank_count :

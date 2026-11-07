@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.MappingRecordStage.Basic
 import SeLe4n.Kernel.Capability.Invariant.Preservation.SetSpaceMappingRecords
+import SeLe4n.Kernel.KernelRecords.Frame
 
 /-! # The capability and VSpace arms keep the mappings recorded
 
@@ -74,13 +75,13 @@ theorem updateTcb (P : MappingArmPremises st) (tid : SeLe4n.ThreadId) (f : TCB �
       constructor <;> intro e <;> cases e
   · rw [SystemState.updateTcb_objects_ne _ _ _ _ hk hI]
 
-/-- **The premises from the kernel's invariants**: the capability invariants and
-the VSpace bundle are `proofLayerInvariantBundle` conjuncts, so the one further
-fact the teardown's well-formedness reads is the ASID table's own table
-invariant. -/
-theorem of_proofLayerInvariantBundle (hB : Architecture.proofLayerInvariantBundle st)
-    (hA : st.asidTable.invExtK) : MappingArmPremises st :=
-  ⟨hB.2.1, objects_invExt_of_capabilityInvariantBundle _ hB.2.1, hA, hB.2.2.2.2.2.2.1⟩
+/-- **The premises from the kernel's invariants**: the capability invariants are
+a `proofLayerInvariantBundle` conjunct, and the teardown's well-formedness is the
+first of the records every kernel entry carries (`kernelRecordsSound`, which the
+started boot installs and every entry keeps). -/
+theorem of_kernelRecordsSound (hB : Architecture.proofLayerInvariantBundle st)
+    (hR : st.kernelRecordsSound) : MappingArmPremises st :=
+  ⟨hB.2.1, hR.1⟩
 
 end MappingArmPremises
 

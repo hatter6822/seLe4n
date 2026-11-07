@@ -88,7 +88,8 @@ theorem endpointCall_preserves_ipcInvariant
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hInv5 := linkServerStashedReply_preserves_ipcInvariant st4 st5 caller pair.1 hInv4 hObjInv4 hLink
-                exact fun oid ntfn h => hInv5 oid ntfn ((removeRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
+                exact fun oid ntfn h => hInv5 oid ntfn
+                  (((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).trans (removeRunnable_objectsAgreeOffRunLinks _ _)).get_notification_iff.mp h)
       | none =>
         -- Blocking: Enqueue → storeTcbIpcStateAndMessage → removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -178,8 +179,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
                   (∀ x : SeLe4n.ThreadId, x ≠ caller →
                     st.scheduler.currentOnCore bootCoreId = some x →
                     ∃ tcb, S.objects[x.toObjId]? = some (.tcb tcb)) →
-                  st' = removeRunnable S caller →
-                  schedulerInvariantBundle st' by
+                  schedulerInvariantBundle (removeRunnable S caller) by
                 cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
                 | error e => simp [hLink] at hStep
                 | ok pL =>
@@ -188,11 +188,13 @@ theorem endpointCall_preserves_schedulerInvariantBundle
                   obtain ⟨_, hEq⟩ := hStep
                   have hSchedSt5 : st5.scheduler = st4.scheduler :=
                     linkServerStashedReply_scheduler_eq st4 st5 caller pair.1 hLink
-                  refine hGoal st5 hSchedSt5 (fun x hEq' hCurr => ?_) hEq.symm
+                  subst hEq
+                  apply schedulerInvariantBundle_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) (SystemState.linkReplyWaiter_scheduler _ _ _)
+                  refine hGoal st5 hSchedSt5 (fun x hEq' hCurr => ?_)
                   obtain ⟨tcb4, hTcb4⟩ := hTcbInSt4 x hEq' hCurr
                   exact linkServerStashedReply_tcb_forward st4 st5 caller pair.1 x.toObjId tcb4 hObjInvIpc hLink hTcb4
               -- Discharge the generalised bundle for an arbitrary `S` with `S.scheduler = st4.scheduler`.
-              intro S hSchedS hTcbS hEq; subst hEq
+              intro S hSchedS hTcbS
               refine ⟨?_, ?_, ?_⟩
               · unfold queueCurrentConsistent
                 rw [removeRunnable_scheduler_current, hSchedS, hCurrEq]
@@ -337,6 +339,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                   obtain ⟨_, hEq⟩ := hStep; subst hEq
                   have hSched5 : st5.scheduler = st4.scheduler :=
                     linkServerStashedReply_scheduler_eq st4 st5 caller pair.1 hLink
+                  apply ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) (SystemState.linkReplyWaiter_scheduler _ _ _)
                   refine contracts_of_runnable_eq_ipcState (removeRunnable st4 caller)
                     (removeRunnable st5 caller) ?_ ?_ hContract4
                   · -- the dequeue's queue reads only the scheduler, which the fold keeps.
@@ -582,6 +585,7 @@ theorem endpointCall_blocked_stays_blocked
                 obtain ⟨_, st5⟩ := pL
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
+                rw [SystemState.linkReplyWaiter_scheduler]
                 exact removeRunnable_not_mem_self st5 caller
       | none =>
         simp only [hHead] at hStep

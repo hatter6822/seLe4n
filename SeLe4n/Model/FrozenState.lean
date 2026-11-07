@@ -393,6 +393,15 @@ structure FrozenSchedulerState where
   configDefaultTimeSlice : Nat
   -- AG1-E: CBS replenishment queue (previously omitted)
   replenishQueue      : FrozenReplenishQueue
+  /-- WS-ZA ZA6.37: each core's release-queue head as a context code (`0` for an
+      empty queue), copied from the live scheduler; the queue's links are the
+      contexts' own (`SchedContext.releaseNextCode`, `releaseCoreCode`,
+      `releaseAt`), which the frozen store holds verbatim.  The frozen release
+      edits (`SeLe4n/Kernel/FrozenOps/ReleaseQueue.lean`) write it. -/
+  releaseHeadCode     : Vector Nat numCores := Vector.replicate numCores 0
+  /-- WS-ZA ZA6.37: how many contexts each core's release queue holds: the bound
+      of every walk along its links. -/
+  releaseCount        : Vector Nat numCores := Vector.replicate numCores 0
 
 -- ============================================================================
 -- Q5-B: FrozenSystemState
@@ -607,7 +616,10 @@ def freezeScheduler (st : SystemState) : FrozenSchedulerState :=
     -- WS-ZA ZA6.3: read along the release links; under the agreement, the
     -- abstract queue's entries (`freezeScheduler_replenishQueue_entries`).
     replenishQueue := { entries := st.releaseEntriesOn bootCoreId
-                        size := (st.releaseEntriesOn bootCoreId).length } }
+                        size := (st.releaseEntriesOn bootCoreId).length }
+    -- WS-ZA ZA6.37: every core's release-queue ends, verbatim.
+    releaseHeadCode := sched.releaseHeadCode
+    releaseCount := sched.releaseCount }
 
 /-- Under the link agreement the walk is the abstract queue's list and each
 member's recorded priority is the queue's. -/

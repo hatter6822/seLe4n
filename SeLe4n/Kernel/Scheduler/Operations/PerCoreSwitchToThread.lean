@@ -236,26 +236,6 @@ theorem preemptCurrentOnCore_preserves_objects_invExt (st : SystemState)
           (RHTable_insert_preserves_invExt st.objects _ _ hInv)
       · exact hInv
 
-/-- WS-SM SM5.B.3 (preservation): `preemptCurrentOnCore` preserves core `c`'s
-run-queue well-formedness — the only run-queue mutation is the re-enqueue
-(`insert`), which preserves `RunQueue.wellFormed`; every other branch leaves the
-run queue unchanged. -/
-theorem preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (c : CoreId) (incoming : SeLe4n.ThreadId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
-    ((preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c).wellFormed := by
-  unfold preemptCurrentOnCore
-  split
-  · exact hwf
-  · split
-    · exact hwf
-    · split
-      · rw [SystemState.runEnqueueOnCore_runQueueOnCore_self_eq]
-        split
-        · exact RunQueue.insert_preserves_wellFormed _ hwf _ _
-        · exact hwf
-      · exact hwf
-
 /-- WS-SM SM5.B.3 (defense-in-depth, the SM5.B.4 audit closure): under
 `currentThreadValidOnCore` — core `c`'s current thread resolves to a TCB — the
 "previous current isn't a TCB" fallback of `preemptCurrentOnCore` is
@@ -569,31 +549,6 @@ theorem switchToThreadOnCore_preserves_objects_invExt (st : SystemState)
       simp only [restoreIncomingContextOnCoreUnlessCurrent_objects]
       exact SystemState.runRemoveOnCore_objects_invExt _ _ _
         (preemptCurrentOnCore_preserves_objects_invExt st c tid hInv)
-    · rw [if_neg hAff] at h; simp at h
-
-/-- WS-SM SM5.B (preservation): `switchToThreadOnCore` preserves core `c`'s
-run-queue well-formedness.  The post-state run queue is
-`(preempt-re-enqueue).remove tid` — `insert` and `remove` both preserve
-`RunQueue.wellFormed`, and the restore / set-current steps don't touch the run
-queue. -/
-theorem switchToThreadOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (h : switchToThreadOnCore st c tid = .ok st') :
-    (st'.scheduler.runQueueOnCore c).wellFormed := by
-  unfold switchToThreadOnCore at h
-  cases hTcb : st.getTcb? tid with
-  | none => simp [hTcb] at h
-  | some tidTcb =>
-    simp only [hTcb] at h
-    by_cases hAff : affinityAdmitsCore tidTcb c = true
-    · rw [if_pos hAff, Except.ok.injEq] at h
-      subst h
-      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-        restoreIncomingContextOnCoreUnlessCurrent_scheduler, SystemState.runRemoveOnCore_scheduler,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      exact RunQueue.remove_preserves_wellFormed _
-        (preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed st c tid hwf) tid
     · rw [if_neg hAff] at h; simp at h
 
 /-- WS-SM SM5.B.5 (invariant established): after a successful switch, core `c`

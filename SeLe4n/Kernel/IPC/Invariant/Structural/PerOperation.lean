@@ -2388,8 +2388,10 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
                   cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
                   | ok st3 =>
                     exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
-                      storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-                        stLinked _ receiver .ready _ hObjInvLink hPend hInvLink trivial
+                      blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks
+                        (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)
+                        (storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+                          stLinked st3 receiver .ready _ hObjInvLink hPend hInvLink trivial)
                   | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             simp only [hSenderIpc] at hStep
@@ -2551,7 +2553,7 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hInv5 := linkServerStashedReply_preserves_blockedThreadsPendingMessageConsistent
                   st2 st5 caller pair.1 hObjInv2 hLink hInv2
-                exact removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv5
+                exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv5
       | none =>
         -- Block path: enqueue + storeTcbIpcStateAndMessage(.blockedOnCall) + removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -2624,11 +2626,16 @@ theorem endpointReply_preserves_blockedThreadsPendingMessageConsistent
             cases hRO : tcb.replyObject with
             | none =>
               simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-              rw [← hStep]; exact hMid
+              rw [← hStep]
+              exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks
+                (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ target rid
-                hObjInvMid hMid hStep
+              obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+              exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks
+                (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) <|
+                removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ target rid
+                  hObjInvMid hMid hRm
         · simp_all
       intro st1 hMsg
       exact ensureRunnable_preserves_blockedThreadsPendingMessageConsistent _ _
@@ -2678,7 +2685,8 @@ theorem endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent
         -- that its block clears `pendingMessage`, so this no longer has to
         -- transport a receiver-holds-nothing fact through the reply phase.
         suffices ∀ st3, st3.objects.invExt → blockedThreadsPendingMessageConsistent st3 →
-            (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+            (∀ stR, endpointReceiveDual endpointId receiver replyId
+              (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) = .ok stR →
               blockedThreadsPendingMessageConsistent stR.2) by
           -- WS-ZA ZA6.34: a caller recording no server is answered too (seL4-MCS doReplyTransfer)
           split at hStep
@@ -2699,7 +2707,8 @@ theorem endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent
               cases hRO : tcb.replyObject with
               | none =>
                 simp only []
-                cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+                cases hRecv : endpointReceiveDual endpointId receiver replyId
+                    ((ensureRunnable st1 replyTarget).unlinkReplyWaiterOpt replyTarget expectedReplier) with
                 | error e => simp
                 | ok result =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -2714,7 +2723,8 @@ theorem endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent
                   have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
                   have hInv3 := removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
                   have hFwd := removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvEns hCons
-                  cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                  cases hRecv : endpointReceiveDual endpointId receiver replyId
+                      (st3.unlinkReplyWaiterOpt replyTarget expectedReplier) with
                   | error e => simp
                   | ok result =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -2724,7 +2734,10 @@ theorem endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent
         -- Prove the core invariant preservation
         intro st3 hObjInv3 hInv3 stR hRecv
         exact endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
-          _ stR.2 endpointId receiver stR.1 replyId hObjInv3 hInv3
+          _ stR.2 endpointId receiver stR.1 replyId
+          (SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _ hObjInv3)
+          (blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks
+            (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _) hInv3)
           (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 

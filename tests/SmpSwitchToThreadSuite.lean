@@ -68,7 +68,6 @@ open SeLe4n.Testing
 #check @preemptCurrentOnCore_runQueueOnCore_ne
 #check @preemptCurrentOnCore_runQueueOnCore_self_active
 #check @preemptCurrentOnCore_preserves_objects_invExt
-#check @preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed
 #check @preemptCurrentOnCore_active_under_valid
 
 -- SM5.B.1/.3/.4/.5/.6 switch-semantics theorems:
@@ -81,7 +80,6 @@ open SeLe4n.Testing
 
 -- §3b invariant preservation + object frame (structural foundations for SM5.I.8):
 #check @switchToThreadOnCore_preserves_objects_invExt
-#check @switchToThreadOnCore_preserves_runQueueOnCore_wellFormed
 #check @switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
 #check @switchToThreadOnCore_establishes_currentThreadValidOnCore
 #check @preemptCurrentOnCore_getTcb?_incoming
@@ -164,13 +162,6 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemSta
     (hInv : st.objects.invExt) (h : switchToThreadOnCore st c tid = .ok st') :
     st'.objects.invExt :=
   switchToThreadOnCore_preserves_objects_invExt st c tid st' hInv h
-
-/-- SM5.B (preservation): a successful switch preserves run-queue well-formedness. -/
-example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (h : switchToThreadOnCore st c tid = .ok st') :
-    (st'.scheduler.runQueueOnCore c).wellFormed :=
-  switchToThreadOnCore_preserves_runQueueOnCore_wellFormed st c tid st' hwf h
 
 /-- SM5.B.5 (invariant established): a successful switch establishes
 queue/current consistency on core `c`. -/

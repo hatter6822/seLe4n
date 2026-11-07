@@ -91,17 +91,17 @@
         {
           "name": "crossCoreWakeTheorems",
           "module": "SeLe4n/Kernel/Scheduler/Operations/CrossCoreWakeInventory.lean",
-          "count": 83
+          "count": 80
         },
         {
           "name": "perCoreTimerTheorems",
           "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerInventory.lean",
-          "count": 101
+          "count": 92
         },
         {
           "name": "perCoreIdleTheorems",
           "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreIdleInventory.lean",
-          "count": 59
+          "count": 58
         },
         {
           "name": "perCorePipTheorems",
@@ -116,12 +116,12 @@
         {
           "name": "perCoreCbsTheorems",
           "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreCbsInventory.lean",
-          "count": 116
+          "count": 114
         },
         {
           "name": "perCoreInvariantSuiteTheorems",
           "module": "SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuiteInventory.lean",
-          "count": 95
+          "count": 93
         },
         {
           "name": "perCoreWcrtTheorems",
@@ -129,8 +129,8 @@
           "count": 42
         }
       ],
-      "entryCount": 666,
-      "theoremCount": 596
+      "entryCount": 649,
+      "theoremCount": 579
     },
     {
       "phase": "SM6",
@@ -178,10 +178,10 @@
       "theoremCount": 0
     }
   ],
-  "entryTotal": 969,
-  "theoremTotal": 787,
+  "entryTotal": 952,
+  "theoremTotal": 770,
   "ledgerEntryTotal": 14,
-  "registeredEntryTotal": 983,
+  "registeredEntryTotal": 966,
   "theoremInventoryCount": 12,
   "ledgerInventoryCount": 2
 }

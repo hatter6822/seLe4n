@@ -113,16 +113,11 @@ open SeLe4n.Kernel.Concurrency
 --     operation step).
 -- ============================================================================
 
--- audit-pass-9: the hOtherIdle hypothesis bundles 4 conjuncts (added the
--- 4th `wellFormed` conjunct for the audit-pass-9 aggregate change).
--- switchDomain also gained an explicit `hwf` precondition.
-
 /-- `schedule_preserves_schedulerInvariant_smp` applies. -/
 example
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -130,17 +125,15 @@ example
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' :=
-  schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle
+  schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle
 
 /-- `handleYield_preserves_schedulerInvariant_smp` applies. -/
 example
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -148,10 +141,9 @@ example
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' :=
-  handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle
+  handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle
 
 /-- `timerTick_preserves_schedulerInvariant_smp` applies (extra
 `hConfigTS` hypothesis). -/
@@ -159,7 +151,6 @@ example
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -168,44 +159,37 @@ example
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' :=
-  timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle
+  timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle
 
-/-- `switchDomain_preserves_schedulerInvariant_smp` applies — audit-pass-9
-adds explicit `hwf` (the post-state wellFormed must be discharged via
-`switchDomain_preserves_runQueueWellFormed`). -/
+/-- `switchDomain_preserves_schedulerInvariant_smp` applies. -/
 example
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' :=
-  switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle
+  switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle
 
 /-- `scheduleDomain_preserves_schedulerInvariant_smp` applies. -/
 example
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' :=
-  scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle
+  scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle
 
 /-- `chooseThread_preserves_schedulerInvariantBundle` applies (canonical
 single-core form from `Scheduler/Operations/Preservation.lean`;
@@ -251,7 +235,7 @@ example
 --
 -- The 5 per-op preservation theorems each take hypotheses like
 -- `hPre : schedulerInvariant_smp st`, `hDSE : domainScheduleEntriesPositive st`,
--- `hwf : RunQueue.wellFormed (...)`.  These hypotheses are Prop-valued and
+-- `hObjInv : st.objects.invExt`.  These hypotheses are Prop-valued and
 -- not generally `Decidable` for arbitrary `(st, st')`, but on the default
 -- state they ARE decidable (vacuous via empty objects / current = none /
 -- empty run queue).  This section verifies the decidable foundations:
@@ -286,9 +270,6 @@ private def runPreconditionChecks : IO Unit := do
   -- `hConfigTS` precondition (timerTick only): configDefaultTimeSlice > 0.
   assertBool "default.scheduler.configDefaultTimeSlice = 5 > 0 (hConfigTS)"
     (decide ((default : SystemState).scheduler.configDefaultTimeSlice > 0))
-  -- `hwf` precondition: empty RunQueue is well-formed (vacuous).
-  assertBool "default.scheduler.runQueueOnCore bootCoreId is empty (hwf foundation)"
-    (decide (((default : SystemState).runQueueWalk bootCoreId) = []))
   -- `hAllTcb` precondition: empty runnable ⟹ vacuous TCB resolution.
   assertBool "(default.runQueueWalk bootCoreId) = [] ⟹ hAllTcb vacuous"
     (decide ((default : SystemState).runQueueWalk bootCoreId = []))

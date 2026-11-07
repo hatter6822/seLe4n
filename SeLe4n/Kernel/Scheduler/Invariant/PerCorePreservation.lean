@@ -41,7 +41,7 @@ Each per-op theorem takes:
   2. `hDSE : domainScheduleEntriesPositive st` — the system-wide schedule
      conjunct, needed to reconstitute `schedulerInvariantBundleFull` from
      the per-core slice at `bootCoreId`.
-  3. The operation-specific hypotheses (`hwf`, `hAllTcb`, `hObjInv`, etc.)
+  3. The operation-specific hypotheses (`hAllTcb`, `hObjInv`, etc.)
      taken verbatim from the existing single-core preservation signature.
   4. `hStep : op st = .ok ((), st')` — the operation's step witness.
   5. `hOtherIdle` — a structural framing hypothesis asserting non-boot
@@ -89,19 +89,14 @@ theorem schedule_preserves_schedulerInvariant_smp
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st'))
-    -- audit-pass-9 (PR #801, reviewer comment 2): `hOtherIdle` gains a
-    -- 4th conjunct: every non-boot core's post-state RunQueue is wellFormed.
-    -- Discharged in SM5 from "non-boot core slots = default RunQueue.empty".
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' := by
   apply schedulerInvariant_smp_of_bootCore_preservation _ hOtherIdle
   -- Boot-core preservation: reconstitute the full bundle, apply the
@@ -109,11 +104,8 @@ theorem schedule_preserves_schedulerInvariant_smp
   have hFull : schedulerInvariantBundleFull st :=
     schedulerInvariant_perCore_bootCore_to_bundleFull (hPre bootCoreId) hDSE
   have hFull' : schedulerInvariantBundleFull st' :=
-    schedule_preserves_schedulerInvariantBundleFull st st' hFull hwf hAllTcb hObjInv hStep
-  -- audit-pass-9: also forward post-state RunQueue.wellFormed for the new bridge.
-  have hWf' : RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) :=
-    schedule_preserves_runQueueWellFormed st st' hwf hStep
-  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull' hWf'
+    schedule_preserves_schedulerInvariantBundleFull st st' hFull hAllTcb hObjInv hStep
+  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull'
 
 -- ============================================================================
 -- §2  handleYield
@@ -125,7 +117,6 @@ theorem handleYield_preserves_schedulerInvariant_smp
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -133,17 +124,14 @@ theorem handleYield_preserves_schedulerInvariant_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' := by
   apply schedulerInvariant_smp_of_bootCore_preservation _ hOtherIdle
   have hFull : schedulerInvariantBundleFull st :=
     schedulerInvariant_perCore_bootCore_to_bundleFull (hPre bootCoreId) hDSE
   have hFull' : schedulerInvariantBundleFull st' :=
-    handleYield_preserves_schedulerInvariantBundleFull st st' hFull hwf hAllTcb hObjInv hStep
-  have hWf' : RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) :=
-    handleYield_preserves_runQueueWellFormed st st' hwf hStep
-  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull' hWf'
+    handleYield_preserves_schedulerInvariantBundleFull st st' hFull hAllTcb hObjInv hStep
+  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull'
 
 -- ============================================================================
 -- §3  timerTick
@@ -156,7 +144,6 @@ theorem timerTick_preserves_schedulerInvariant_smp
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -165,50 +152,39 @@ theorem timerTick_preserves_schedulerInvariant_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' := by
   apply schedulerInvariant_smp_of_bootCore_preservation _ hOtherIdle
   have hFull : schedulerInvariantBundleFull st :=
     schedulerInvariant_perCore_bootCore_to_bundleFull (hPre bootCoreId) hDSE
   have hFull' : schedulerInvariantBundleFull st' :=
-    timerTick_preserves_schedulerInvariantBundleFull st st' hFull hwf hAllTcb hObjInv hConfigTS hStep
-  have hWf' : RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) :=
-    timerTick_preserves_runQueueWellFormed st st' hwf hStep
-  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull' hWf'
+    timerTick_preserves_schedulerInvariantBundleFull st st' hFull hAllTcb hObjInv hConfigTS hStep
+  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull'
 
 -- ============================================================================
 -- §4  switchDomain
 -- ============================================================================
 
 /-- WS-SM SM4.C: `switchDomain` preserves the SMP per-core scheduler invariant.
-Lighter preconditions than `schedule` (no run-queue well-formedness or
-TCB-membership hypotheses required by the single-core preservation). -/
+Lighter preconditions than `schedule` (no TCB-membership hypothesis
+required by the single-core preservation). -/
 theorem switchDomain_preserves_schedulerInvariant_smp
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain also takes an explicit hwf (pre-state RunQueue
-    -- wellFormed) because `switchDomain_preserves_runQueueWellFormed` requires
-    -- it.  Discharged in SM5 from the per-core aggregate (the new
-    -- `_to_runQueueOnCoreWellFormed` projection).
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' := by
   apply schedulerInvariant_smp_of_bootCore_preservation _ hOtherIdle
   have hFull : schedulerInvariantBundleFull st :=
     schedulerInvariant_perCore_bootCore_to_bundleFull (hPre bootCoreId) hDSE
   have hFull' : schedulerInvariantBundleFull st' :=
     switchDomain_preserves_schedulerInvariantBundleFull st st' hFull hObjInv hStep
-  have hWf' : RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) :=
-    switchDomain_preserves_runQueueWellFormed st st' hwf hStep
-  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull' hWf'
+  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull'
 
 -- ============================================================================
 -- §5  scheduleDomain
@@ -220,23 +196,19 @@ theorem scheduleDomain_preserves_schedulerInvariant_smp
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     schedulerInvariant_smp st' := by
   apply schedulerInvariant_smp_of_bootCore_preservation _ hOtherIdle
   have hFull : schedulerInvariantBundleFull st :=
     schedulerInvariant_perCore_bootCore_to_bundleFull (hPre bootCoreId) hDSE
   have hFull' : schedulerInvariantBundleFull st' :=
-    scheduleDomain_preserves_schedulerInvariantBundleFull st st' hFull hwf hObjInv hStep
-  have hWf' : RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) :=
-    scheduleDomain_preserves_runQueueWellFormed st st' hwf hStep
-  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull' hWf'
+    scheduleDomain_preserves_schedulerInvariantBundleFull st st' hFull hObjInv hStep
+  exact schedulerInvariantBundleFull_to_perCore_bootCore hFull'
 
 -- ============================================================================
 -- §6  chooseThread (base aggregate + SMP forms)
@@ -326,7 +298,6 @@ theorem chooseThread_preserves_schedulerInvariant_smp
 theorem schedule_preserves_queueCurrentConsistentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -334,16 +305,14 @@ theorem schedule_preserves_queueCurrentConsistentOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, queueCurrentConsistentOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_queueCurrentConsistent
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem schedule_preserves_runQueueUniqueOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -351,16 +320,14 @@ theorem schedule_preserves_runQueueUniqueOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runQueueUniqueOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_runQueueUnique
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem schedule_preserves_currentThreadValidOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -368,16 +335,14 @@ theorem schedule_preserves_currentThreadValidOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentThreadValidOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentThreadValid
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem schedule_preserves_domainTimeRemainingPositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -385,16 +350,14 @@ theorem schedule_preserves_domainTimeRemainingPositiveOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, domainTimeRemainingPositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_domainTimeRemainingPositive
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem schedule_preserves_runnableThreadsAreTCBsOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -402,11 +365,10 @@ theorem schedule_preserves_runnableThreadsAreTCBsOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runnableThreadsAreTCBsOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_runnableThreadsAreTCBs
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 -- ----------------------------------------------------------------------------
 -- §7.2  handleYield  (same hypothesis shape as schedule)
@@ -415,7 +377,6 @@ theorem schedule_preserves_runnableThreadsAreTCBsOnCore_smp
 theorem handleYield_preserves_queueCurrentConsistentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -423,16 +384,14 @@ theorem handleYield_preserves_queueCurrentConsistentOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, queueCurrentConsistentOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_queueCurrentConsistent
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem handleYield_preserves_runQueueUniqueOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -440,16 +399,14 @@ theorem handleYield_preserves_runQueueUniqueOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runQueueUniqueOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_runQueueUnique
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem handleYield_preserves_currentThreadValidOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -457,16 +414,14 @@ theorem handleYield_preserves_currentThreadValidOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentThreadValidOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentThreadValid
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem handleYield_preserves_domainTimeRemainingPositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -474,16 +429,14 @@ theorem handleYield_preserves_domainTimeRemainingPositiveOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, domainTimeRemainingPositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_domainTimeRemainingPositive
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem handleYield_preserves_runnableThreadsAreTCBsOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -491,11 +444,10 @@ theorem handleYield_preserves_runnableThreadsAreTCBsOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runnableThreadsAreTCBsOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_runnableThreadsAreTCBs
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 -- ----------------------------------------------------------------------------
 -- §7.3  timerTick  (extra `hConfigTS`)
@@ -504,7 +456,6 @@ theorem handleYield_preserves_runnableThreadsAreTCBsOnCore_smp
 theorem timerTick_preserves_queueCurrentConsistentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -513,16 +464,14 @@ theorem timerTick_preserves_queueCurrentConsistentOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, queueCurrentConsistentOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_queueCurrentConsistent
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 theorem timerTick_preserves_runQueueUniqueOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -531,16 +480,14 @@ theorem timerTick_preserves_runQueueUniqueOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runQueueUniqueOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_runQueueUnique
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 theorem timerTick_preserves_currentThreadValidOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -549,16 +496,14 @@ theorem timerTick_preserves_currentThreadValidOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentThreadValidOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentThreadValid
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 theorem timerTick_preserves_domainTimeRemainingPositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -567,16 +512,14 @@ theorem timerTick_preserves_domainTimeRemainingPositiveOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, domainTimeRemainingPositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_domainTimeRemainingPositive
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 theorem timerTick_preserves_runnableThreadsAreTCBsOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -585,174 +528,148 @@ theorem timerTick_preserves_runnableThreadsAreTCBsOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runnableThreadsAreTCBsOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_runnableThreadsAreTCBs
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 -- ----------------------------------------------------------------------------
 -- §7.4  switchDomain  (lighter hypothesis shape)
---
--- audit-pass-9: the 5 switchDomain per-conjunct theorems take `hwf` (pre-state
--- RunQueue.wellFormed at bootCoreId) — `switchDomain_preserves_schedulerInvariant_smp`
--- needs it to feed `switchDomain_preserves_runQueueWellFormed` for the
--- post-state.  Single annotation here covers all 5 below.
 -- ----------------------------------------------------------------------------
 
 theorem switchDomain_preserves_queueCurrentConsistentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, queueCurrentConsistentOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_queueCurrentConsistent
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem switchDomain_preserves_runQueueUniqueOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runQueueUniqueOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_runQueueUnique
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem switchDomain_preserves_currentThreadValidOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentThreadValidOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentThreadValid
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem switchDomain_preserves_domainTimeRemainingPositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, domainTimeRemainingPositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_domainTimeRemainingPositive
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem switchDomain_preserves_runnableThreadsAreTCBsOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runnableThreadsAreTCBsOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_runnableThreadsAreTCBs
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 -- ----------------------------------------------------------------------------
--- §7.5  scheduleDomain  (carries hwf)
+-- §7.5  scheduleDomain  (carries)
 -- ----------------------------------------------------------------------------
 
 theorem scheduleDomain_preserves_queueCurrentConsistentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, queueCurrentConsistentOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_queueCurrentConsistent
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem scheduleDomain_preserves_runQueueUniqueOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runQueueUniqueOnCore st'.scheduler c := fun c =>
   schedulerInvariant_perCore_to_runQueueUnique
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem scheduleDomain_preserves_currentThreadValidOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentThreadValidOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentThreadValid
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem scheduleDomain_preserves_domainTimeRemainingPositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, domainTimeRemainingPositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_domainTimeRemainingPositive
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem scheduleDomain_preserves_runnableThreadsAreTCBsOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, runnableThreadsAreTCBsOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_runnableThreadsAreTCBs
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 -- ============================================================================
 -- §8  Per-conjunct per-op preservation — the 5 less-used conjuncts
@@ -774,7 +691,6 @@ theorem scheduleDomain_preserves_runnableThreadsAreTCBsOnCore_smp
 theorem schedule_preserves_timeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -782,16 +698,14 @@ theorem schedule_preserves_timeSlicePositiveOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, timeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_timeSlicePositive
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem schedule_preserves_currentTimeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -799,16 +713,14 @@ theorem schedule_preserves_currentTimeSlicePositiveOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentTimeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentTimeSlicePositive
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem schedule_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -816,16 +728,14 @@ theorem schedule_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, edfCurrentHasEarliestDeadlineOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem schedule_preserves_contextMatchesCurrentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -833,16 +743,14 @@ theorem schedule_preserves_contextMatchesCurrentOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, contextMatchesCurrentOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_contextMatchesCurrent
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem schedule_preserves_schedulerPriorityMatchOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -850,11 +758,10 @@ theorem schedule_preserves_schedulerPriorityMatchOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, schedulerPriorityMatchOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_schedulerPriorityMatch
-    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 -- ----------------------------------------------------------------------------
 -- §8.2  handleYield
@@ -863,7 +770,6 @@ theorem schedule_preserves_schedulerPriorityMatchOnCore_smp
 theorem handleYield_preserves_timeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -871,16 +777,14 @@ theorem handleYield_preserves_timeSlicePositiveOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, timeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_timeSlicePositive
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem handleYield_preserves_currentTimeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -888,16 +792,14 @@ theorem handleYield_preserves_currentTimeSlicePositiveOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentTimeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentTimeSlicePositive
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem handleYield_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -905,16 +807,14 @@ theorem handleYield_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, edfCurrentHasEarliestDeadlineOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem handleYield_preserves_contextMatchesCurrentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -922,16 +822,14 @@ theorem handleYield_preserves_contextMatchesCurrentOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, contextMatchesCurrentOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_contextMatchesCurrent
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 theorem handleYield_preserves_schedulerPriorityMatchOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -939,11 +837,10 @@ theorem handleYield_preserves_schedulerPriorityMatchOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, schedulerPriorityMatchOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_schedulerPriorityMatch
-    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle c)
+    (handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hStep hOtherIdle c)
 
 -- ----------------------------------------------------------------------------
 -- §8.3  timerTick
@@ -952,7 +849,6 @@ theorem handleYield_preserves_schedulerPriorityMatchOnCore_smp
 theorem timerTick_preserves_timeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -961,16 +857,14 @@ theorem timerTick_preserves_timeSlicePositiveOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, timeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_timeSlicePositive
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 theorem timerTick_preserves_currentTimeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -979,16 +873,14 @@ theorem timerTick_preserves_currentTimeSlicePositiveOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentTimeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentTimeSlicePositive
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 theorem timerTick_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -997,16 +889,14 @@ theorem timerTick_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, edfCurrentHasEarliestDeadlineOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 theorem timerTick_preserves_contextMatchesCurrentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -1015,16 +905,14 @@ theorem timerTick_preserves_contextMatchesCurrentOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, contextMatchesCurrentOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_contextMatchesCurrent
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 theorem timerTick_preserves_schedulerPriorityMatchOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
@@ -1033,11 +921,10 @@ theorem timerTick_preserves_schedulerPriorityMatchOnCore_smp
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, schedulerPriorityMatchOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_schedulerPriorityMatch
-    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
+    (timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hAllTcb hObjInv hConfigTS hStep hOtherIdle c)
 
 -- ----------------------------------------------------------------------------
 -- §8.4  switchDomain
@@ -1046,77 +933,67 @@ theorem timerTick_preserves_schedulerPriorityMatchOnCore_smp
 theorem switchDomain_preserves_timeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, timeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_timeSlicePositive
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem switchDomain_preserves_currentTimeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentTimeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentTimeSlicePositive
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem switchDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, edfCurrentHasEarliestDeadlineOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem switchDomain_preserves_contextMatchesCurrentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, contextMatchesCurrentOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_contextMatchesCurrent
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem switchDomain_preserves_schedulerPriorityMatchOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, schedulerPriorityMatchOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_schedulerPriorityMatch
-    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 -- ----------------------------------------------------------------------------
 -- §8.5  scheduleDomain
@@ -1125,76 +1002,66 @@ theorem switchDomain_preserves_schedulerPriorityMatchOnCore_smp
 theorem scheduleDomain_preserves_timeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, timeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_timeSlicePositive
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem scheduleDomain_preserves_currentTimeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, currentTimeSlicePositiveOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_currentTimeSlicePositive
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem scheduleDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, edfCurrentHasEarliestDeadlineOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem scheduleDomain_preserves_contextMatchesCurrentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, contextMatchesCurrentOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_contextMatchesCurrent
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 theorem scheduleDomain_preserves_schedulerPriorityMatchOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : scheduleDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
-      (st'.scheduler.runQueueOnCore c).wellFormed) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
     ∀ c, schedulerPriorityMatchOnCore st' c := fun c =>
   schedulerInvariant_perCore_to_schedulerPriorityMatch
-    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle c)
+    (scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle c)
 
 end SeLe4n.Kernel

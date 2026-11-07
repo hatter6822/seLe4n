@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.FrozenOps.Core
+import SeLe4n.Kernel.FrozenOps.ReleaseQueue
 import SeLe4n.Kernel.FrozenOps.Operations
 import SeLe4n.Kernel.FrozenOps.Commutativity
 import SeLe4n.Kernel.FrozenOps.Invariant

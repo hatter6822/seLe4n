@@ -144,9 +144,13 @@ constants transitively.
 
 Fuel-bounded, and an exhausted walk answers **`true`**: this predicate decides
 "must be classified" and "claims a bracket", and in both the conservative answer
-is the one that makes the census demand more rather than less.  The bound is far
-above the closure of any seam in this tree (measured in the hundreds), so
-exhaustion means the graph changed shape and the census should be looked at. -/
+is the one that makes the census demand more rather than less.  The fuel counts
+the constants the walk *expands* — a project constant seen for the first time —
+not every reference it pops: a reference to a constant already expanded, or to a
+core one, costs nothing, so the bound is on the closure's size rather than on its
+edge count.  The bound is far above the closure of any seam in this tree
+(measured at about nine thousand for the syscall entry), so exhaustion means the
+graph changed shape and the census should be looked at. -/
 partial def reachesAny (env : Environment) (targets : List Name) (n : Name) : Bool :=
   go [n] {} 200000
 where
@@ -156,7 +160,7 @@ where
     | _, [] => false
     | fuel' + 1, c :: rest =>
       if targets.contains c then true
-      else if seen.contains c || !isProjectConstant c then go rest seen fuel'
+      else if seen.contains c || !isProjectConstant c then go rest seen (fuel' + 1)
       else
         let seen := seen.insert c
         match (env.find? c).bind (·.value? (allowOpaque := true)) with
