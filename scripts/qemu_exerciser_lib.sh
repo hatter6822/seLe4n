@@ -98,8 +98,11 @@ exerciser_check() {
     # to a delete of the carved capability.  A derivation that fails, or
     # answers nothing, fails the gate; it is never read as no kinds.
     if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
-        kinds=$(cd "${REPO_ROOT}" && lake env lean --run scripts/retype_object_kinds.lean 2>&1) \
-            || kinds_status=$?
+        ensure_lake_available || kinds_status=$?
+        if [[ "${kinds_status}" -eq 0 ]]; then
+            kinds=$(cd "${REPO_ROOT}" && lake env lean --run scripts/retype_object_kinds.lean 2>&1) \
+                || kinds_status=$?
+        fi
     fi
     verdict=$(RETYPE_OBJECT_KINDS="${kinds}" RETYPE_OBJECT_KINDS_STATUS="${kinds_status}" \
         python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
