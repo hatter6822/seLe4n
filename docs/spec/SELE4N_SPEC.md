@@ -6884,9 +6884,11 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   on, which is the dispatcher's, since its lookups and decodes write nothing;
   the syscall entry reads them off the state it starts from and carries them
   across its register spill, trap-frame save, IPC-buffer words and TLB fill.
-  Both follow from `proofLayerInvariantBundle` and the ASID table's table
-  invariant, so the syscall entry keeps every live mapping recorded from those
-  two (`syscallDispatchEntryState_preserves_liveMappingsRecorded`).
+  Both follow from `proofLayerInvariantBundle` and the kernel records
+  (`SystemState.kernelRecordsSound`, whose first conjunct is the teardown's
+  well-formedness; `MappingArmPremises.of_kernelRecordsSound`), so the syscall
+  entry keeps every live mapping recorded from those two
+  (`syscallDispatchEntryState_preserves_liveMappingsRecorded`).
 - `decodeVSpaceMapArgsChecked` is retired with the physical-address operand
   it bounded; the PA-width bound on the frame's `base` is
   `vspaceMapPageCheckedWithFlushFromState`'s.
@@ -10306,6 +10308,17 @@ a reply-blocked thread's server is a live thread and not itself; and that a
 thread blocked on no server holds no reply-waiter links; it is a conjunct of `ipcReachable`, preserved by every IPC arm the
 dispatcher runs.  A thread that still has reply waiters cannot be destroyed
 (`revocationRequired`), so a TCB retyped at its id inherits no waiter.
+Since `v0.37.0` (WS-ZA ZA6.37) the single-core reference operations link and
+unlink waiters as the per-core ones do (`endpointCall` and the receive of a
+call link the caller, `endpointReply` and `endpointReplyRecv`'s reply leg
+unlink it; the frozen operations do not yet), and the invariant is a conjunct
+of `SystemState.kernelRecordsSound` (`SeLe4n/Kernel/KernelRecords/Frame.lean`,
+with `teardownWellFormed`, `faultRecordParked` and the physical-address width
+bound), which the started boot establishes
+(`bootFromPlatformCheckedStartedFor_kernelRecordsSound`) and every committing
+entry keeps (`RecordsStage`; `KernelRecords/Entry.lean` and
+`syscallDispatchEntryState_recordsStage`), from `ipcReachable` and the caller's
+readiness at the dispatch state.
 
 **Operations**:
 - `computeMaxWaiterPriority`: maximum effective priority among direct waiters
