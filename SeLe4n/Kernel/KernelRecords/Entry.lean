@@ -252,11 +252,14 @@ theorem faultDeliverOnCore_preserves_replyWaitersConsistent_of_ready {st : Syste
       receiveHead_serverFree hQ hE hH⟩)
 
 /-- **The register spill, then the flow-checked delivery, keep the records**, for
-a faulting thread `.ready` in IPC: the spill writes its registers alone. -/
-theorem RecordsStage.faultDeliveredState (lctx : LabelingContext) (st : SystemState) (f : Fault)
-    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
+a faulting thread `.ready` in IPC and any fault context: the spill writes its
+registers alone.  The fault entries and the syscall's capability fault each
+deliver this way. -/
+theorem RecordsStage.faultDeliverAfterSpill (lctx : LabelingContext) (st : SystemState) (f : Fault)
+    (w : FaultRegisterWindow) (fctx : FaultContext) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hQ : queueHeadBlockedConsistent st) (hRd : CallerReady st tid) :
-    RecordsStage st (_root_.SeLe4n.Kernel.faultDeliveredState lctx st f ectx w c tid) := fun hK => by
+    RecordsStage st (faultDeliverOnCoreChecked lctx (writeFaultRegistersToTcb st tid w) tid f
+      fctx c).1 := fun hK => by
   have hI := KernelRecords.objects_invExt hK
   have S1 := RecordsStep.writeFaultRegistersToTcb st tid w hI
   have hQ1 : queueHeadBlockedConsistent (writeFaultRegistersToTcb st tid w) :=
@@ -265,8 +268,6 @@ theorem RecordsStage.faultDeliveredState (lctx : LabelingContext) (st : SystemSt
     hRd.updateTcb hI (fun _ => rfl)
   have hC1 : (writeFaultRegistersToTcb st tid w).replyWaitersConsistent :=
     hK.2.1.of_views (replyViews_updateTcb_eq _ _ hI fun _ => rfl)
-  unfold _root_.SeLe4n.Kernel.faultDeliveredState
-  dsimp only
   refine RecordsStage.of_step (S1.trans (RecordsStep.faultDeliverOnCoreChecked (ctx := lctx)
     (t := tid) (f := f) (c := c) S1.invExt hQ1)) (fun _ => ?_) hK
   have hSus : ∀ tf, (recordPendingFault (faultSuspendOnCore (writeFaultRegistersToTcb st tid w)
@@ -280,6 +281,14 @@ theorem RecordsStage.faultDeliveredState (lctx : LabelingContext) (st : SystemSt
   · split
     · exact faultDeliverOnCore_preserves_replyWaitersConsistent_of_ready S1.invExt hC1 hQ1 hRd1
     · exact hSus _
+
+/-- The fault entries' delivery: the spill, then the delivery with the context
+read off the spilled registers. -/
+theorem RecordsStage.faultDeliveredState (lctx : LabelingContext) (st : SystemState) (f : Fault)
+    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hQ : queueHeadBlockedConsistent st) (hRd : CallerReady st tid) :
+    RecordsStage st (_root_.SeLe4n.Kernel.faultDeliveredState lctx st f ectx w c tid) :=
+  faultDeliverAfterSpill lctx st f w _ c tid hQ hRd
 
 /-- The fault delivery both fault entries share: a vacated core's dispatch, or
 the delivery and the core's own scheduling point. -/

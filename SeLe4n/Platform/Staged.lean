@@ -260,6 +260,7 @@ import SeLe4n.Kernel.KernelRecords.LifecycleWaiters
 import SeLe4n.Kernel.KernelRecords.IpcStages
 import SeLe4n.Kernel.KernelRecords.Dispatch
 import SeLe4n.Kernel.KernelRecords.Entry
+import SeLe4n.Kernel.KernelRecords.SyscallEntry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident

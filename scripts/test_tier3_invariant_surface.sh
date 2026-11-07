@@ -4157,6 +4157,23 @@ run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_recordsStage($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
 run_check "INVARIANT" rg -n '^theorem faultEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
+run_check "INVARIANT" rg -n '^theorem RecordsStage.faultDeliverAfterSpill($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringOnCore($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/IpcReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem RecordsStage.endpointReplyRecvAnsweringOnCore($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/IpcReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem RecordsStage.replyRecvTransferOnCore($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/IpcReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem inactiveQuiescent_of_resume($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem RecordsArmPremises.writeFfiRegistersToTcb($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreStep_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_kernelRecordsSound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
 # WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it made.  The
 # map records it on the capability, and refuses a capability whose mapping is
 # still live; a copy or an IPC transfer carries no record (seL4's `deriveCap`);
