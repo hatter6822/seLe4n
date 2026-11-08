@@ -455,15 +455,16 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
               have hW : overflowWordAt st tid 0 = w0 := by rw [overflowWordAt_eq, hR0]
               have hDisp := dispatchOverflowedCheckedR_eq ctx st tid tcb.registerContext sid capAddr
                 msgInfo executingCore hRt (by omega)
-              rw [hW] at hDisp
+              simp only [hW] at hDisp
               simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hD,
                 Bool.false_eq_true, ↓reduceIte, overflowedDecode_overflowCount, hFill]
               split
               · next hHeld =>
                 rw [← SeLe4n.Kernel.Architecture.ipcBufferFillHeld_one] at hHeld
                 rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_of_held hHeld]
-                exact congrFun hDisp st
-              · rw [congrFun hDisp]
+                exact hDisp st hCur
+              · rw [hDisp _ (by
+                  rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_scheduler]; exact hCur)]
                 simp only [RefusalCarrying.ofKernel]
                 generalize dispatchSyscallChecked _ _ _ _
                   (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) = K

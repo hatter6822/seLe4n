@@ -61,8 +61,6 @@ noncomputable def overflowedOperandR (ctx : LabelingContext) (sid : SyscallId)
   | .schedContextConfigure => dispatchConfigureCheckedR capAddr rf w tid executingCore
   | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr rf w tid executingCore
   | .yield => fun st =>
-    if st.scheduler.currentOnCore executingCore ≠ some tid then .error (.illegalState, st)
-    else
     match yieldOnCoreR st executingCore with
     | .error r => .error r
     | .ok st' => .ok ((), st')
@@ -202,8 +200,6 @@ theorem overflowedArmWith_eq_spec (ctx : LabelingContext) (executingCore : Concu
         (receiveOperandArmThenTaintR ctx tid length (SeLe4n.CPtr.ofWord (readRegWord rf ⟨2⟩))
           executingCore (syscallRequiredRight .receive))
     | .yield => fun st =>
-      if st.scheduler.currentOnCore executingCore ≠ some tid then .error (.illegalState, st)
-      else
       match yieldOnCoreR st executingCore with
       | .error r => .error r
       | .ok st' => .ok ((), st')

@@ -118,8 +118,6 @@ noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : Sysc
   | .schedContextConfigure => dispatchConfigureCheckedR capAddr rf w tid executingCore
   | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr rf w tid executingCore
   | .yield => fun st =>
-    if st.scheduler.currentOnCore executingCore ≠ some tid then .error (.illegalState, st)
-    else
     match yieldOnCoreR st executingCore with
     | .error r => .error r
     | .ok st' => .ok ((), st')
@@ -166,11 +164,21 @@ invocation's fifth argument slot 0's word. -/
 theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (mi : MessageInfo) (executingCore : Concurrency.CoreId)
-    (hRt : routedOverflowed sid = true) (hLen : 4 < mi.length) :
+    (hRt : routedOverflowed sid = true) (hLen : 4 < mi.length) (st : SystemState)
+    (hCur : st.scheduler.currentOnCore executingCore = some tid) :
     dispatchOverflowedCheckedR ctx sid capAddr rf mi.length (overflowWordAt S tid 0) tid
-        executingCore =
+        executingCore st =
       RefusalCarrying.ofKernel
-        (dispatchSyscallChecked ctx (overflowedDecode S tid rf sid capAddr mi) tid executingCore) := by
+        (dispatchSyscallChecked ctx (overflowedDecode S tid rf sid capAddr mi) tid executingCore)
+        st := by
+  by_cases hY : sid = .yield
+  · -- the yield, which reads no word: the entry's caller is current
+    subst hY
+    simp only [dispatchOverflowedCheckedR, routedInvocation, routedAudited, Bool.or_false,
+      Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel, dispatchSyscallChecked,
+      overflowedDecode, hCur, ne_eq, not_true_eq_false, dispatchYield, yieldOnCoreR_eq]
+    cases yieldOnCore st executingCore <;> rfl
+  refine congrFun ?_ st
   obtain ⟨hA4, hA5⟩ := overflowedDecode_agree S tid rf sid capAddr mi hLen
   by_cases hI : routedInvocation sid = true
   · unfold dispatchOverflowedCheckedR
@@ -236,16 +244,7 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     rw [if_neg hI, if_neg hAu]
     exact dispatchServiceRegisterCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
       executingCore rfl hA5
-  · -- the yield, which reads no word
-    unfold dispatchOverflowedCheckedR
-    rw [if_neg hI, if_neg hAu]
-    funext st
-    simp only [RefusalCarrying.ofKernel, dispatchSyscallChecked, overflowedDecode, ne_eq,
-      not_true_eq_false, dispatchYield, yieldOnCoreR_eq, ↓reduceIte]
-    by_cases hC : st.scheduler.currentOnCore executingCore = some tid
-    · simp only [hC, not_true_eq_false, ↓reduceIte]
-      cases yieldOnCore st executingCore <;> rfl
-    · simp only [hC, not_false_eq_true, ↓reduceIte]
+  · exact absurd rfl hY
 
 /-! ## A five-word invocation short of its fifth word -/
 
