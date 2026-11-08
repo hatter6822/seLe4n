@@ -1198,6 +1198,18 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchCallCheckedR
   , `SeLe4n.Kernel.dispatchReplyCheckedR
   , `SeLe4n.Kernel.dispatchReplyRecvCheckedR
+  -- The long call's, reply's and reply-receive's and the capability-carrying
+  -- send's and call's route specifications, which the compiled entry runs as
+  -- the routed arms proven equal to them (`dispatchCallLongCheckedR_eq`,
+  -- `dispatchReplyLongCheckedR_eq`, `dispatchReplyRecvLongCheckedR_eq`,
+  -- `dispatchTransferringCheckedR_eq`, `syscallEntryCheckedK_eq_routed`), and
+  -- the long reply-receive's general arm, the form its checked arm is proven
+  -- equal to (`endpointReplyRecvLongCheckedArmR_eq_general`).
+  , `SeLe4n.Kernel.dispatchCallLongCheckedR
+  , `SeLe4n.Kernel.dispatchReplyLongCheckedR
+  , `SeLe4n.Kernel.dispatchReplyRecvLongCheckedR
+  , `SeLe4n.Kernel.dispatchTransferringCheckedR
+  , `SeLe4n.Kernel.endpointReplyRecvLongGeneralR
   -- The overflowed and short-argument routes' specifications, which the
   -- compiled entry runs as the per-kind arms proven equal to them
   -- (`overflowedRoutedArm_eq`, `overflowedArmWith_eq_spec`,
