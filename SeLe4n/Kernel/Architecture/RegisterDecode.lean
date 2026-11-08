@@ -807,6 +807,15 @@ inductive RegisterRoutedSyscall where
       the first words are the inline message registers and the rest the
       overflow slots of the caller's IPC buffer, as the decode reads them. -/
   | callLong (capAddr : CPtr) (msgInfo : MessageInfo)
+  /-- A reply whose message runs past the layout's message registers: its
+      operand address and its message info; the first words are the inline
+      message registers and the rest the overflow slots of the replier's IPC
+      buffer, as the decode reads them. -/
+  | replyLong (capAddr : CPtr) (msgInfo : MessageInfo)
+  /-- A reply-receive whose reply message runs past the layout's message
+      registers: its operand address and its message info, the words read as
+      `replyLong`'s are. -/
+  | replyRecvLong (capAddr : CPtr) (msgInfo : MessageInfo)
   /-- WS-ZA ZA5.13: a declassification or an audit call (`routedAudited`) with
       no overflow words: the syscall and its operand address; its arguments
       are the layout's message registers. -/
@@ -1060,6 +1069,10 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
     else if (readReg regs layout.syscallNumReg).val = SyscallId.call.toNat ∧
         msgInfo.extraCaps = 0 then
       .callLong capAddr msgInfo
+    else if (readReg regs layout.syscallNumReg).val = SyscallId.reply.toNat then
+      .replyLong capAddr msgInfo
+    else if (readReg regs layout.syscallNumReg).val = SyscallId.replyRecv.toNat then
+      .replyRecvLong capAddr msgInfo
     else
       routedLongTail capAddr msgInfo.length layout.msgRegs.size
         (readReg regs layout.syscallNumReg).val
@@ -1079,17 +1092,15 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
 
 /-- **What the router hands the decode**, for the default layout: the
 registers name a message info the decode reads and a syscall it knows, and
-the call is a send or a call that transfers capabilities, or a reply or a
-reply-receive of more than the inline words.  Every other register file
-is routed to an arm of its own or refused as the decode refuses it, so these
-are the only forms the entry's decoded arm (`.viaDecode`) still serves. -/
+the call is a send or a call that transfers capabilities.  Every other
+register file is routed to an arm of its own or refused as the decode refuses
+it, so these are the only forms the entry's decoded arm (`.viaDecode`) still
+serves. -/
 theorem registerRoutedSyscall_viaDecode (rf : RegisterFile)
     (h : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .viaDecode) :
     ∃ mi sid, decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi ∧
       SyscallId.ofNat? (readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = some sid ∧
-      (((sid = .send ∨ sid = .call) ∧ mi.extraCaps ≠ 0) ∨
-        (SeLe4n.arm64DefaultLayout.msgRegs.size < mi.length ∧
-          (sid = .reply ∨ sid = .replyRecv))) := by
+      (sid = .send ∨ sid = .call) ∧ mi.extraCaps ≠ 0 := by
   unfold registerRoutedSyscall at h
   split at h
   case isFalse hB =>
@@ -1119,6 +1130,6 @@ theorem registerRoutedSyscall_viaDecode (rf : RegisterFile)
       | (cases h; done)
       | (simp_all; done)
       | (by_cases hL : mi.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size
-         · exact .inl (h hL)
-         · exact .inr (by omega))
+         · exact h hL
+         · exact absurd hL (by omega))
 end SeLe4n.Kernel.Architecture.RegisterDecode

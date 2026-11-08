@@ -3247,7 +3247,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         // blocks the caller for the reply, the suspend answering it; then the
         // long call that blocks with no receiver waiting (seL4 leaves its
         // words in its registers and buffer), the receive that copies them
-        // and the reply that answers it.
+        // and the full-length reply that answers it, copying the partner's
+        // overflow words into the caller's buffer in place.
         invocation("tail-call-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         partner_step(
             "tail-call-root-receives",
@@ -3292,8 +3293,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             "tail-call-partner-replies",
             REPLY,
             REPLY_CAP,
-            1,
-            [0x77, 0],
+            TAIL_MESSAGE_LENGTH,
+            [0x77, 0x78],
             false,
         ),
         kernel_step("tail-call-partner-yield", YIELD),

@@ -17,8 +17,8 @@ than the inline words, as its own function, read and filled as the long send's
 (`callLongRoutedArm`).  Its overflow words lie on the
 page of the caller's IPC buffer that holds slot 0 and at most the next
 (`firstPageSlots`): slot 0 and the next page's first slot read (slot 0 again
-when the words fit one page), the call is dispatched as the short call is
-(`callOperandArmThenTaintR`) on the state with this core's TLB holding the
+when the words fit one page), the call is dispatched through the long call's arm
+(`callLongOperandArmThenTaintR`) on the state with this core's TLB holding the
 buffer's translations, a refusal handing back the TLB the entry held.  The
 operand's address and the
 message length cross as words, the state owned, and the result is the state
