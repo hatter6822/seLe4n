@@ -1128,11 +1128,14 @@ instance : ToString VAddr where
 
 end VAddr
 
-/-- D3-C: IPC buffer alignment requirement in bytes.
-    Matches seL4's `seL4_IPCBufferSizeBits = 9` (2^9 = 512 bytes).
-    The IPC buffer must be aligned to this boundary so the kernel can
-    safely read/write message registers without crossing page boundaries. -/
-def ipcBufferAlignment : Nat := 512
+/-- D3-C: IPC buffer alignment requirement in bytes, which is also the
+    buffer's size.  Matches seL4's 64-bit `seL4_IPCBufferSizeBits = 10`
+    (2^10 = 1024 bytes; the 9 is the 32-bit value).  The buffer (116 overflow
+    words, the user-data word and three capability words, 960 bytes) is
+    aligned to its size, which divides the 4 KiB page, so it lies in one frame
+    and the kernel reads and writes its message registers without crossing a
+    page boundary (`IpcBufferValidation.ipcBuffer_within_page`). -/
+def ipcBufferAlignment : Nat := 1024
 
 /-- ARMv8-A 4 KiB translation granule, in bytes — the unit every page mapping
     is expressed in.

@@ -480,14 +480,17 @@ private def sad022_setMCPriority : IO Unit := do
 
 /-- SAD-023: decodeSetIPCBufferArgs — valid (aligned) and invalid (misaligned). -/
 private def sad023_setIPCBuffer : IO Unit := do
-  -- Valid: 512-byte aligned address
-  let stub := mkStub #[⟨512 * 10⟩]
+  -- Valid: 1024-byte aligned address
+  let stub := mkStub #[⟨1024 * 5⟩]
   let result := decodeSetIPCBufferArgs stub
   expect "SAD-023a setIPCBuffer aligned ok" result.isOk
   -- Invalid: misaligned address
-  let stubBad := mkStub #[⟨512 * 10 + 1⟩]
+  let stubBad := mkStub #[⟨1024 * 5 + 1⟩]
   let resultBad := decodeSetIPCBufferArgs stubBad
   expect "SAD-023b setIPCBuffer misaligned err" (!resultBad.isOk)
+  -- Invalid: 512-aligned but not 1024-aligned (could cross a page)
+  let stubHalf := mkStub #[⟨1024 * 5 + 512⟩]
+  expect "SAD-023c setIPCBuffer half-aligned err" (!(decodeSetIPCBufferArgs stubHalf).isOk)
 
 -- Service family ---------------------------------------------------------------
 

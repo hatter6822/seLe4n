@@ -438,15 +438,15 @@ for driver in drivers:
             "bad-message-info", "high-message-info", "invocation-long-message",
             "sched-context-configure-long", "service-register-short", "signal-long-message",
             "wait-long-message", "yield-long-message",
-            # The long forms whose overflow words cross the IPC buffer's page.
-            "crossing-copy-delete", "crossing-frame-copy", "crossing-map-copy",
-            "crossing-partner-ipc-buffer", "crossing-partner-ipc-buffer-back",
-            "crossing-root-ipc-buffer", "crossing-root-ipc-buffer-back",
-            "crossing-send-bind-partner", "crossing-send-configure",
-            "crossing-send-partner-yield", "crossing-send-resume-partner",
-            "crossing-send-root-receives", "crossing-send-suspend", "crossing-send-to-receiver",
-            "crossing-send-unbind", "crossing-unmap-copy", "signal-crossing-page",
-            "wait-crossing-page",
+            # The IPC buffer the validator refuses for crossing its page, and the
+            # full-length forms with the buffer in its frame's last 1024 bytes.
+            "half-aligned-ipc-buffer",
+            "tail-partner-ipc-buffer", "tail-partner-ipc-buffer-back",
+            "tail-root-ipc-buffer", "tail-root-ipc-buffer-back",
+            "tail-send-bind-partner", "tail-send-configure",
+            "tail-send-partner-yield", "tail-send-resume-partner",
+            "tail-send-root-receives", "tail-send-suspend", "tail-send-to-receiver",
+            "tail-send-unbind", "signal-tail-buffer", "wait-tail-buffer",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

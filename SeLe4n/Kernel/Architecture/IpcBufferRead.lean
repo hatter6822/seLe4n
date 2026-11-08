@@ -37,10 +37,13 @@ thread's VSpace and returns the `UInt64` stored at overflow slot `idx`.
 - `tcb.ipcBuffer` is the VAddr of the start of the overflow region.
 - Overflow slot `i` (0-indexed) occupies bytes `[i*8, i*8+8)` from that
   base — i.e., MR[i+4] for the ARM64 4-inline-regs layout.
-- The first 64 overflow slots (= MR 4..67) are always within the same 4 KiB
-  page as the buffer base, regardless of `ipcBufferAlignment` (512 B). Slots
-  64..115 (MR 68..119) may straddle a page boundary; `root.lookup` is called
-  per-slot, so any unmapped page in that range is correctly rejected.
+- A buffer the validator admits is aligned to `ipcBufferAlignment` (1024 B,
+  the buffer's size), so all 116 overflow slots lie on the buffer's page
+  (`maxOverflowSlots_le_firstPageSlots`).  The reads do not assume it:
+  `root.lookup` is called per slot, at the slot's own page, so a buffer
+  address no validator checked (a state built some other way) whose slots
+  straddle a page reads the next page through its own mapping, and an
+  unmapped page in that range is rejected.
 
 **Dependencies:** `Model.State` (TCB + VSpaceRoot) and `Architecture.PageTable`
 (for the little-endian `readUInt64` byte assembly).
@@ -265,6 +268,27 @@ theorem ipcBufferSlotPage_of_lt_firstPageSlots {buf : VAddr} {j : Nat}
   apply congrArg VAddr.ofNat
   unfold firstPageSlots at h
   simp only [SeLe4n.pageBytes] at h ⊢
+  omega
+
+/-- The buffer's words fit the buffer: the overflow slots, the user-data word
+and the three capability words (`rust/sele4n-abi/src/ipc_buffer.rs`'s
+`IpcBuffer`, 120 words) span at most `ipcBufferAlignment` bytes, so the
+validator's physical-end bound covers every word the kernel reads or writes
+there (`IpcBufferValidation.validateIpcBufferAddress`, step 7). -/
+theorem ipcBufferWords_within_buffer :
+    (maxOverflowSlots + 1 + SeLe4n.Model.maxExtraCaps) * 8 ≤ SeLe4n.ipcBufferAlignment := by
+  decide
+
+/-- A buffer aligned to `ipcBufferAlignment`, as the validator admits it, holds
+every overflow slot on slot 0's page: its first page holds all
+`maxOverflowSlots`, so no overflow region of a validated buffer crosses a page
+(`ipcBufferSlotPage_of_lt_firstPageSlots`). -/
+theorem maxOverflowSlots_le_firstPageSlots {buf : VAddr}
+    (h : buf.toNat % SeLe4n.ipcBufferAlignment = 0) :
+    maxOverflowSlots ≤ firstPageSlots buf := by
+  unfold firstPageSlots
+  simp only [maxOverflowSlots, SeLe4n.Model.maxMessageRegisters, SeLe4n.ipcBufferAlignment,
+    SeLe4n.pageBytes] at h ⊢
   omega
 
 /-- …every slot from it to the last overflow slot is on the next… -/

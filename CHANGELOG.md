@@ -1,3 +1,28 @@
+## v0.37.4 — the IPC buffer lies in one frame
+
+The decode-path follow-up's IPC stage.
+
+- **The IPC buffer is aligned to its size, 1024 bytes** (`ipcBufferAlignment`,
+  `rust/sele4n-abi/src/args/tcb.rs`'s `IPC_BUFFER_ALIGNMENT`), as seL4's
+  64-bit `seL4_IPCBufferSizeBits = 10` requires, so a buffer the validator
+  admits lies in one frame (`ipcBuffer_within_page`): its 120 words fit the
+  1024 bytes (`ipcBufferWords_within_buffer`) and every overflow slot resolves
+  through slot 0's page (`maxOverflowSlots_le_firstPageSlots`).  The
+  validator's physical-end bound (`[pa, pa + 1024)`) now covers the whole
+  buffer.  The alignment was 512 bytes, the 32-bit value, which admitted a
+  buffer 512 bytes short of a page's end whose overflow slots from 64 on lay on
+  the next page.  The overflow reads and writes still translate each slot at
+  its own page, so a state built without the validator reads and writes only
+  what its thread maps.
+- **Scenarios**: `half-aligned-ipc-buffer` (a buffer 512 bytes short of the
+  frame's end, refused with `alignmentError`), and the full-length (120-word)
+  `signal-tail-buffer`, `wait-tail-buffer` and long send to a waiting receiver
+  `tail-send-to-receiver` with both buffers in the frame's last 1024 bytes,
+  with their setup and teardown steps.  They replace the page-crossing
+  scenarios, whose buffers the validator now refuses.
+- **Fixture**: the trace's `SetIPCBufferArgs` round trip encodes 1024
+  (`[XVAL-005]`), since 512 is no longer an aligned buffer address.
+
 ## v0.37.3 — the decoded arm's long, short-argument, refused and page-crossing forms routed in place
 
 The heap-allocation audit's decode-path follow-up.  The routed entry's decoded

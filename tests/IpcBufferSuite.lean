@@ -69,11 +69,11 @@ private def ib001_setIPCBufferValidAddress : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 512) with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "ipcBuffer updated to 512" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat 512))
+      expect "ipcBuffer updated to 1024" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat 1024))
     | _ => throw <| IO.userError "TCB not found after update"
   | .error e => throw <| IO.userError s!"setIPCBuffer should succeed, got {repr e}"
 
@@ -120,17 +120,22 @@ private def ib004_unalignedAddress : IO Unit := do
   match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 100) with
   | .ok _ => throw <| IO.userError "unaligned address should fail"
   | .error e => expect "unaligned returns alignmentError" (e == .alignmentError)
+  -- 512-aligned but not 1024-aligned: a buffer there could cross its page,
+  -- which seL4's 64-bit alignment (`seL4_IPCBufferSizeBits = 10`) excludes.
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 0xE00) with
+  | .ok _ => throw <| IO.userError "512-aligned address past a page's last 1024 bytes should fail"
+  | .error e => expect "512-aligned address returns alignmentError" (e == .alignmentError)
 
 /-- IB-005: Unmapped address returns translationFault. -/
 private def ib005_unmappedAddress : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  -- VSpaceRoot with no mapping at address 512
+  -- VSpaceRoot with no mapping at address 1024
   let vsRoot := mkVSpaceRoot []
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 512) with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
   | .ok _ => throw <| IO.userError "unmapped address should fail"
   | .error e => expect "unmapped returns translationFault" (e == .translationFault)
 
@@ -143,7 +148,7 @@ private def ib006_addressBeyondCanonical : IO Unit := do
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
   -- 2^48 is beyond canonical bound (ARM64 48-bit VA space)
-  -- Must also be aligned to 512
+  -- Must also be aligned to 1024
   let beyondCanonical := VAddr.canonicalBound
   match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat beyondCanonical) with
   | .ok _ => throw <| IO.userError "beyond canonical should fail"
@@ -157,7 +162,7 @@ private def ib007_readOnlyPage : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 512) with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
   | .ok _ => throw <| IO.userError "read-only page should fail"
   | .error e => expect "read-only returns translationFault" (e == .translationFault)
 
@@ -168,7 +173,7 @@ private def ib008_missingThread : IO Unit := do
   let st := mkState [
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 512) with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
   | .ok _ => throw <| IO.userError "missing thread should fail"
   | .error e => expect "missing thread returns objectNotFound" (e == .objectNotFound)
 
@@ -180,7 +185,7 @@ private def ib009_invalidVSpaceRoot : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .endpoint {})
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 512) with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
   | .ok _ => throw <| IO.userError "invalid vspace root should fail"
   | .error e => expect "invalid vspace returns invalidArgument" (e == .invalidArgument)
 
@@ -238,11 +243,11 @@ private def ib011_frozenSetIPCBuffer : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)
   ]
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 512) fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
   | .ok ((), fst') =>
     match fst'.objects.get? ⟨1⟩ with
     | some (.tcb tcb) =>
-      expect "frozen ipcBuffer updated" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat 512))
+      expect "frozen ipcBuffer updated" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat 1024))
     | _ => throw <| IO.userError "frozen TCB not found"
   | .error e => throw <| IO.userError s!"frozen setIPCBuffer should succeed, got {repr e}"
 
@@ -266,7 +271,7 @@ private def ib013_frozenReadOnly : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)
   ]
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 512) fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
   | .ok _ => throw <| IO.userError "frozen read-only should fail"
   | .error e => expect "frozen read-only returns translationFault" (e == .translationFault)
 
@@ -278,7 +283,7 @@ private def ib014_frozenUnmapped : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)
   ]
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 512) fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
   | .ok _ => throw <| IO.userError "frozen unmapped should fail"
   | .error e => expect "frozen unmapped returns translationFault" (e == .translationFault)
 
@@ -286,7 +291,7 @@ private def ib014_frozenUnmapped : IO Unit := do
 private def ib015_frozenMissingThread : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨99⟩  -- nonexistent
   let fst := mkFrozenState []
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 512) fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
   | .ok _ => throw <| IO.userError "frozen missing thread should fail"
   | .error e => expect "frozen missing thread returns objectNotFound" (e == .objectNotFound)
 
@@ -298,7 +303,7 @@ private def ib016_frozenNonCanonical : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)
   ]
-  let beyondCanonical := VAddr.canonicalBound  -- 2^48, aligned to 512
+  let beyondCanonical := VAddr.canonicalBound  -- 2^48, aligned to 1024
   match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat beyondCanonical) fst with
   | .ok _ => throw <| IO.userError "frozen non-canonical should fail"
   | .error e => expect "frozen non-canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
@@ -310,7 +315,7 @@ private def ib017_frozenInvalidVSpaceRoot : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .endpoint {})  -- Not a VSpaceRoot
   ]
-  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 512) fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
   | .ok _ => throw <| IO.userError "frozen invalid vspace root should fail"
   | .error e => expect "frozen invalid vspace returns invalidArgument" (e == .invalidArgument)
 

@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.3` (`lakefile.toml`) |
+| **Package version** | `0.37.4` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 600,648 across 593 Lean files |
 | **Test LoC** | 88,884 across 70 Lean test suites |
@@ -4767,24 +4767,32 @@ reading the context's bound thread directly.  The per-context thread index
 The IPC buffer has specific alignment requirements bridging the Lean model to
 ARM64 hardware:
 
-- **Lean model**: IPC buffer alignment is enforced at 512 bytes
-  (`ipcBufferAlignment = 512`, defined in `Prelude.lean` and consumed by
-  `Architecture/IpcBufferValidation.lean`). `setIPCBufferOp` validates the
-  address via a 7-step pipeline including alignment check, page
-  membership, and VSpace lookup.
+- **Lean model**: IPC buffer alignment is enforced at 1024 bytes, the
+  buffer's size (`ipcBufferAlignment = 1024`, defined in `Prelude.lean` and
+  consumed by `Architecture/IpcBufferValidation.lean`), as seL4's 64-bit
+  `seL4_IPCBufferSizeBits = 10` requires.  `setIPCBufferOp` validates the
+  address via a 7-step pipeline: alignment, canonical address, VSpace root,
+  the mapping of the buffer's page, write permission, and the physical end
+  of the whole buffer (`[pa, pa + 1024)`) within the platform's physical
+  address width.
 - **Rust ABI**: The `IpcBuffer` structure (`sele4n-abi/src/ipc_buffer.rs`) is
-  960 bytes, `#[repr(C)]`, with 8-byte natural alignment. The 512-byte model
-  alignment exceeds the ABI's 8-byte requirement.
-- **Hardware justification**: 512-byte alignment provides 8 × 64-byte cache
-  lines on Cortex-A76, ensuring the IPC buffer does not straddle cache line
-  boundaries in a way that would cause false sharing or require additional
-  cache maintenance. This is a **performance optimization**, not an
-  architectural requirement — the hardware would function correctly with
-  any 8-byte aligned buffer.
-- **Page safety**: The `ipcBuffer_within_page` theorem (AE4-J) proves that
-  a 512-byte-aligned IPC buffer of 960 bytes never crosses a 4 KiB page
-  boundary (512 + 960 = 1472 < 4096). This guarantees a single TLB entry
-  covers the entire buffer, avoiding mid-transfer page faults.
+  960 bytes (116 overflow words, the user-data word and three capability
+  words), `#[repr(C)]`, with 8-byte natural alignment.  It fits the
+  1024-byte buffer (`IpcBufferRead.ipcBufferWords_within_buffer`), and
+  `IPC_BUFFER_ALIGNMENT = 1024` refuses an unaligned address before the call.
+- **Page safety**: The `ipcBuffer_within_page` theorem proves that a
+  1024-byte-aligned buffer of 1024 bytes never crosses a 4 KiB page (the last
+  aligned offset is 3072, and 3072 + 1024 = 4096), so the buffer lies in one
+  frame, as seL4 requires.  Every overflow slot of a validated buffer resolves
+  through slot 0's page (`IpcBufferRead.maxOverflowSlots_le_firstPageSlots`).
+  The overflow reads and writes do not assume it: each slot is translated at
+  its own page, checked for write permission when written and for the
+  physical range when performed (`IpcBufferRead.ipcBufferSlotPAddr?`), so a
+  buffer address no validator checked reads and writes only pages its own
+  VSpace maps.  Before `v0.37.4` the alignment was 512 bytes, which admitted a
+  buffer 512 bytes short of a page's end whose slots from 64 on lay on the
+  next page; those slots were translated and checked one by one, so no access
+  escaped the thread's mappings, but the buffer did not lie in one frame.
 
 ### 8.6 Memory Zeroing on Creation (`v0.36.125`)
 Every object is made by the untyped carve (`.untypedRetype`, syscall 36,

@@ -2356,13 +2356,23 @@ const FRAME_VADDR: u64 = 1 << 39;
 /// destroys the copy and so unmaps it.
 #[cfg(feature = "hw_target")]
 const FRAME_COPY_VADDR: u64 = FRAME_VADDR + 0x1000;
-/// An IPC buffer 512 bytes short of the frame's end (`ipcBufferAlignment`),
-/// so its overflow slots from 64 on lie on the next page.
+/// An IPC buffer in the frame's last 1024 bytes (`ipcBufferAlignment`, the
+/// buffer's size): its last overflow slot, 115, is the page's last word but one
+/// that the buffer's words reach, so a full-length message reads and writes the
+/// whole overflow region on the frame.
 #[cfg(feature = "hw_target")]
-const CROSSING_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x200;
-/// A message whose last overflow word, slot 64, is the first on the next page.
+const TAIL_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x400;
+/// An address 512 bytes short of the frame's end: aligned to 512 but not to
+/// 1024, so a buffer there would cross the page.  The validator refuses it.
 #[cfg(feature = "hw_target")]
-const CROSSING_MESSAGE_LENGTH: u64 = 4 + 64 + 1;
+const HALF_ALIGNED_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x200;
+/// A full-length message: four words in registers, 116 in overflow slots.
+#[cfg(feature = "hw_target")]
+const TAIL_MESSAGE_LENGTH: u64 = 120;
+/// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
+/// `AlignmentError`), and the refusal frame's `x1` that carries it.
+#[cfg(feature = "hw_target")]
+const ALIGNMENT_ERROR: u64 = 43;
 /// Read, write, user and cacheable (`PagePermissions.ofNat`).
 #[cfg(feature = "hw_target")]
 const FRAME_PERMS: u64 = 0b11011;
@@ -3185,48 +3195,47 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [0; 4],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
-        // Long forms whose overflow words cross the IPC buffer's page: the
-        // frame's copy mapped at the next page, both threads' buffers set
-        // 512 bytes short of the frame's end, so overflow slots 0 to 63 lie on
-        // the frame and slot 64 on, the message's last, on the next page.  A
-        // signal and a wait of that length (routed as overflowed, each walk
-        // two pages, the wait taking the badge the signal left), and the long
-        // send to a waiting receiver, which reads the sender's
-        // words across both pages and writes the receiver's in place; then
-        // the buffers, the mapping and the copy put back.
+        // An IPC buffer the validator refuses: aligned to 512 but not to the
+        // buffer's 1024-byte size, so it would cross the frame's end (seL4
+        // requires the buffer to lie in one frame).  Then full-length forms
+        // with both threads' buffers in the frame's last 1024 bytes: a signal
+        // and a wait (routed as overflowed, the wait taking the badge the
+        // signal left), and the long send to a waiting receiver, which reads
+        // all 116 of the sender's overflow words and writes the receiver's in
+        // place; then the buffers put back.
+        RoundTrip {
+            returns: Some((
+                (crate::svc_dispatch::ERROR_LABEL_BASE + ALIGNMENT_ERROR) << 9,
+                None,
+            )),
+            ..invocation(
+                "half-aligned-ipc-buffer",
+                TCB_SET_IPC_BUFFER,
+                ROOT_TCB_CAP,
+                [HALF_ALIGNED_IPC_BUFFER, 0, 0, 0],
+            )
+        },
         invocation(
-            "crossing-frame-copy",
-            CSPACE_COPY,
-            CNODE_CAP,
-            [FRAME_SLOT, MOVE_SLOT, 0, 0],
-        ),
-        invocation(
-            "crossing-map-copy",
-            VSPACE_MAP,
-            VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
-        ),
-        invocation(
-            "crossing-root-ipc-buffer",
+            "tail-root-ipc-buffer",
             TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
-            [CROSSING_IPC_BUFFER, 0, 0, 0],
+            [TAIL_IPC_BUFFER, 0, 0, 0],
         ),
         invocation(
-            "crossing-partner-ipc-buffer",
+            "tail-partner-ipc-buffer",
             TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
-            [CROSSING_IPC_BUFFER, 0, 0, 0],
+            [TAIL_IPC_BUFFER, 0, 0, 0],
         ),
         RoundTrip {
-            msg_len: CROSSING_MESSAGE_LENGTH,
-            ..signal("signal-crossing-page", 1)
+            msg_len: TAIL_MESSAGE_LENGTH,
+            ..signal("signal-tail-buffer", 1)
         },
         RoundTrip {
-            name: "wait-crossing-page",
+            name: "wait-tail-buffer",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
-            msg_len: CROSSING_MESSAGE_LENGTH,
+            msg_len: TAIL_MESSAGE_LENGTH,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
@@ -3234,7 +3243,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         },
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
-            "crossing-send-configure",
+            "tail-send-configure",
             [
                 SCHED_CONTEXT_CAP,
                 REFILL_BUDGET,
@@ -3243,19 +3252,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ],
         ),
         invocation(
-            "crossing-send-bind-partner",
+            "tail-send-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
             [PARTNER_TCB_CAP, 0, 0, 0],
         ),
         invocation(
-            "crossing-send-resume-partner",
+            "tail-send-resume-partner",
             TCB_RESUME,
             PARTNER_TCB_CAP,
             [0; 4],
         ),
         partner_step(
-            "crossing-send-root-receives",
+            "tail-send-root-receives",
             RECEIVE,
             ENDPOINT_CAP,
             0,
@@ -3263,50 +3272,33 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             true,
         ),
         partner_step(
-            "crossing-send-to-receiver",
+            "tail-send-to-receiver",
             SEND,
             ENDPOINT_CAP,
-            CROSSING_MESSAGE_LENGTH,
+            TAIL_MESSAGE_LENGTH,
             [0x55, 0x56],
             false,
         ),
-        kernel_step("crossing-send-partner-yield", YIELD),
+        kernel_step("tail-send-partner-yield", YIELD),
+        invocation("tail-send-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         invocation(
-            "crossing-send-suspend",
-            TCB_SUSPEND,
-            PARTNER_TCB_CAP,
-            [0; 4],
-        ),
-        invocation(
-            "crossing-send-unbind",
+            "tail-send-unbind",
             SCHED_CONTEXT_UNBIND,
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         invocation(
-            "crossing-root-ipc-buffer-back",
+            "tail-root-ipc-buffer-back",
             TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
             [FRAME_VADDR, 0, 0, 0],
         ),
         invocation(
-            "crossing-partner-ipc-buffer-back",
+            "tail-partner-ipc-buffer-back",
             TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
             [FRAME_VADDR, 0, 0, 0],
-        ),
-        invocation(
-            "crossing-unmap-copy",
-            VSPACE_UNMAP,
-            VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
-        ),
-        invocation(
-            "crossing-copy-delete",
-            CSPACE_DELETE,
-            CNODE_CAP,
-            [MOVE_SLOT, 0, 0, 0],
         ),
         // The same with the partner holding the image's scheduling context, so its
         // call donates the context to the root task: the suspend's reply arm takes

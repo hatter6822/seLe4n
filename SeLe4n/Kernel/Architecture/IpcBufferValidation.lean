@@ -49,9 +49,10 @@ Seven-step validation pipeline:
 7. Physical address bounds: mapped PA within `2^physicalAddressWidth` (AJ4-C)
 
 AE4-H (U-32/A-IB01): Cross-page boundary safety is guaranteed by the
-alignment check (step 1): since `ipcBufferAlignment = 512` divides the
-ARM64 page size (4096), any 512-byte-aligned buffer of ≤512 bytes fits
-entirely within a single 4KB page. See `ipcBuffer_within_page` below.
+alignment check (step 1): since `ipcBufferAlignment = 1024` divides the
+ARM64 page size (4096), any 1024-byte-aligned buffer of ≤1024 bytes fits
+entirely within a single 4KB page, as seL4 requires the buffer to lie in one
+frame. See `ipcBuffer_within_page` below.
 
 AJ4-C (L-06): Step 7 checks the physical address returned by the VSpace
 lookup against the platform's physical address width from `MachineState`.
@@ -88,7 +89,7 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
           --
           -- AK3-F (A-M02 / MEDIUM): Check the END of the IPC buffer fits
           -- within the platform's physical address range, not just the start.
-          -- An IPC buffer occupies `[pa, pa + ipcBufferAlignment)` (512
+          -- An IPC buffer occupies `[pa, pa + ipcBufferAlignment)` (1024
           -- bytes, by AE4-H / `ipcBuffer_within_page`), `pa` the page's
           -- physical base `paddr` plus the buffer's offset in the page. Without end-PA
           -- validation, a buffer starting at `2^width − 256` would pass the
@@ -285,18 +286,18 @@ theorem validateIpcBufferAddress_implies_mapped_writable
 
 /-- AE4-H (U-32/A-IB01): IPC buffer cross-page safety.
 
-The IPC buffer (512 bytes) never crosses a page boundary when the address
-is aligned to `ipcBufferAlignment` (512 bytes). Since 512 divides the ARM64
-page size (4096 = 512 × 8), any 512-aligned offset within a page leaves at
-least 512 bytes before the next page boundary.
+The IPC buffer (`ipcBufferAlignment`, 1024 bytes) never crosses a page
+boundary when the address is aligned to its size. Since 1024 divides the
+ARM64 page size (4096 = 1024 × 4), any 1024-aligned offset within a page
+leaves at least 1024 bytes before the next page boundary.
 
 This theorem guarantees that a single VSpace page-table lookup at `addr`
-covers the entire IPC buffer region `[addr, addr + 512)`. -/
+covers the entire IPC buffer region `[addr, addr + 1024)`. -/
 theorem ipcBuffer_within_page (addr : VAddr)
     (hAligned : addr.toNat % ipcBufferAlignment = 0) :
     addr.toNat / 4096 = (addr.toNat + ipcBufferAlignment - 1) / 4096 := by
-  -- ipcBufferAlignment = 512. Since 512 | addr, addr % 4096 ∈ {0, 512, ..., 3584}.
-  -- addr + 511 has the same page index because 3584 + 511 = 4095 < 4096.
+  -- ipcBufferAlignment = 1024. Since 1024 | addr, addr % 4096 ∈ {0, 1024, 2048, 3072}.
+  -- addr + 1023 has the same page index because 3072 + 1023 = 4095 < 4096.
   simp only [ipcBufferAlignment] at hAligned ⊢
   omega
 

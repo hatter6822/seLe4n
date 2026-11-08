@@ -101,7 +101,7 @@ inductive KernelError where
   | mmioUnaligned        -- V4-B/M-HW-1: MMIO access at unaligned address (4-byte for 32-bit, 8-byte for 64-bit)
   | invalidSyscallArgument  -- X5-E/M-11: syscall-specific argument decode failure (distinct from generic invalidArgument)
   | ipcTimeout             -- WS-Z Z6: IPC blocked thread timed out due to SchedContext budget expiry
-  | alignmentError         -- D3-B: IPC buffer address not aligned to ipcBufferAlignment (512 bytes)
+  | alignmentError         -- D3-B: IPC buffer address not aligned to ipcBufferAlignment (1024 bytes)
   | vmFault                -- AG3-C: virtual memory fault (data abort or instruction abort)
   | userException          -- AG3-C: unclassified synchronous exception from user mode
   | hardwareFault          -- AG3-C: SError (asynchronous external abort / hardware error)
