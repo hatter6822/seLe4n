@@ -23304,7 +23304,7 @@ run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterfac
 # WS-ZA ZA5.5: the service register is routed on the register file with the
 # configure, one overflow word read from the IPC buffer, and runs checks first.
 run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^      \| some sid => \.overflowOne sid capAddr$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^      if routedOverflowOne sid then \.overflowOne sid capAddr$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingInvocation.lean
