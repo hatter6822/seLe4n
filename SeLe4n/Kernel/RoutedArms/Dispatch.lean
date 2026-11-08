@@ -19,6 +19,7 @@ import SeLe4n.Kernel.RoutedArms.Invocation
 import SeLe4n.Kernel.RoutedArms.OverflowOne
 import SeLe4n.Kernel.RoutedArms.SendLong
 import SeLe4n.Kernel.RoutedArms.Audited
+import SeLe4n.Kernel.RoutedArms.Overflowed
 import SeLe4n.Kernel.RoutedArms.Decoded
 
 /-!
@@ -91,6 +92,10 @@ continuations are compiled once. -/
           (sendLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
       | .audited sid capAddr =>
         finish sid capAddr.word (auditedRoutedArm ctx executingCore tid sid capAddr.word st)
+      | .overflowed sid capAddr msgInfo =>
+        finish sid capAddr.word
+          (overflowedRoutedArm ctx executingCore tid sid capAddr.word msgInfo.length st)
+      | .refused e => finish .yield 0 (entryReportGeneral (.error (e, st)))
       | .viaDecode => finish .yield 0 (decodedRoutedArm ctx executingCore st)
     | some _ => finish .yield 0 (entryReportGeneral (.error (.illegalState, st)))
     | none => finish .yield 0 (entryReportGeneral (.error (.objectNotFound, st)))
@@ -160,6 +165,13 @@ compiled form `syscallEntryCheckedK` runs as. -/
       · simp only [entryReportOutcome_general]
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl
+    | overflowed sid capAddr msgInfo =>
+      simp only [overflowedRoutedArm, hO]
+      split
+      · rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
+        simp only [entryReportOutcome_general, overflowedOperandR_eq]; rfl
+      · simp only [entryReportOutcome_general]
+    | refused e => simp only [entryReportOutcome_general]
     | viaDecode => simp only [decodedRoutedArm, entryReportOutcome_general]
   | _ => simp only [entryReportOutcome_general]
 

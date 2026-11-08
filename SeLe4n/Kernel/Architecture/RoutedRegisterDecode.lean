@@ -391,8 +391,8 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
             Array.size_map, Nat.add_sub_cancel_left, List.range_one, List.mapM_cons,
             List.mapM_nil, bind, Except.bind, pure, Except.pure]
           cases readOverflowWord st tid 0 <;> rfl
-        · cases h
-      · cases h
+        · repeat' (first | (cases h; done) | split at h)
+      · repeat' (first | (cases h; done) | split at h)
   · cases h
 
 /-- What a routed long send pins about the decode: as `.send`, at `capAddr`,
@@ -459,6 +459,95 @@ theorem registerRoutedSyscall_send_length
       cases h
       exact hLen
     · repeat' (first | (cases h; done) | split at h)
+  · cases h
+
+/-- What an overflowed route pins about the decode: the syscall is a signal, a
+wait or a receive (`routedOverflowed`), at `capAddr`, with the routed message
+info, which runs past the layout's message registers to at most
+`maxMessageRegisters` words; the decode merges the overflow words
+(`mergeOverflowWords`) onto the mapped layout registers. -/
+theorem decodeSyscallArgsFromState_of_routedOverflowed
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (sid : SyscallId) (capAddr : CPtr) (msgInfo : MessageInfo)
+    (h : registerRoutedSyscall layout regs regCount = .overflowed sid capAddr msgInfo) :
+    layout.msgRegs.size < msgInfo.length ∧ msgInfo.length ≤ maxMessageRegisters ∧
+    routedOverflowed sid = true ∧
+    decodeSyscallArgsFromState st tid layout regs regCount =
+      mergeOverflowWords st tid
+        { capAddr, msgInfo, syscallId := sid,
+          msgRegs := layout.msgRegs.map (readReg regs),
+          inlineCount := layout.msgRegs.size, overflowCount := 0 } := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · next hB =>
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
+    split at h
+    · repeat' (first | (cases h; done) | split at h)
+    · next hLen =>
+      have hWf : mi.length ≤ maxMessageRegisters := by
+        unfold decodeMsgInfo at hM
+        split at hM
+        · next mi' hD =>
+          cases hM
+          exact (MessageInfo.decode_wellFormed hD).1
+        · cases hM
+      have key : ∀ sid', routedOverflowedSid? (readReg regs layout.syscallNumReg).val = some sid' →
+          RegisterRoutedSyscall.overflowed sid' (CPtr.ofWord (readRegWord regs layout.capPtrReg)) mi =
+            .overflowed sid capAddr msgInfo →
+          layout.msgRegs.size < msgInfo.length ∧ msgInfo.length ≤ maxMessageRegisters ∧
+          routedOverflowed sid = true ∧
+          decodeSyscallArgsFromState st tid layout regs regCount =
+            mergeOverflowWords st tid
+              { capAddr, msgInfo, syscallId := sid,
+                msgRegs := layout.msgRegs.map (readReg regs),
+                inlineCount := layout.msgRegs.size, overflowCount := 0 } := by
+        intro sid' hSid hEq
+        cases hEq
+        obtain ⟨hR, hN⟩ := routedOverflowedSid?_some hSid
+        refine ⟨by omega, hWf, hR, ?_⟩
+        rw [decodeSyscallArgsFromState_eq_impl]
+        unfold decodeSyscallArgsFromStateImpl
+        rw [if_pos hB]
+        have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok sid := by
+          simp only [decodeSyscallId, hN, SyscallId.ofNat_toNat]
+        simp only [hC, hM, hId, hLen, ↓reduceIte]
+      split at h
+      · cases h
+      · split at h
+        · split at h
+          · cases h
+          · split at h
+            · next sid' hSid => exact key sid' hSid h
+            · cases h
+        · split at h
+          · next sid' hSid => exact key sid' hSid h
+          · cases h
+  · cases h
+
+/-- A refused route is the decode's refusal. -/
+theorem decodeSyscallArgsFromState_of_routedRefused
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (e : KernelError)
+    (h : registerRoutedSyscall layout regs regCount = .refused e) :
+    decodeSyscallArgsFromState st tid layout regs regCount = .error e := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · next hB =>
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e' | mi
+    · simp only [hM] at h
+      cases h
+      rw [decodeSyscallArgsFromState_eq_impl]
+      unfold decodeSyscallArgsFromStateImpl
+      rw [if_pos hB]
+      simp only [hC, hM]
+    · simp only [hM] at h
+      repeat' (first | (cases h; done) | split at h)
   · cases h
 
 end SeLe4n.Kernel.Architecture.RegisterDecode

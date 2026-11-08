@@ -2188,6 +2188,21 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
 #[cfg(feature = "hw_target")]
 const LONG_SEND_LENGTH: u64 = 6;
 
+/// `KernelError.invalidMessageInfo`'s discriminant (`sele4n-types`'
+/// `InvalidMessageInfo`), and the refusal frame's `x1` that carries it.
+#[cfg(feature = "hw_target")]
+const INVALID_MESSAGE_INFO: u64 = 32;
+#[cfg(feature = "hw_target")]
+const REFUSED_MESSAGE_INFO: Option<(u64, Option<u64>)> = Some((
+    (crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_MESSAGE_INFO) << 9,
+    None,
+));
+
+/// A message length past the most message registers a message has (120),
+/// which the message-info decode refuses.
+#[cfg(feature = "hw_target")]
+const BAD_MESSAGE_LENGTH: u64 = 127;
+
 /// The Consumed invocation's success word in `x1`: `MessageInfo` length 1,
 /// label 0 (Lean's `consumedInfoWord`).
 #[cfg(feature = "hw_target")]
@@ -2925,6 +2940,58 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         service_register("service-register", ENDPOINT_CAP, SERVICE_INTERFACE),
         invocation("service-query", SERVICE_QUERY, ENDPOINT_CAP, [0; 4]),
         invocation("service-revoke", SERVICE_REVOKE, ENDPOINT_CAP, [0; 4]),
+        // The calls the register file does not route, each decoded by the
+        // specification's decode and dispatch, the root task's IPC buffer
+        // mapped for the words past the fourth: a register one word short,
+        // refused; a configure one word long (the HAL refuses a short one
+        // before the kernel, `SyscallId::min_inline_args`); a signal and a wait one word long, the wait taking
+        // the badge the signal left; an invocation one word long; and a
+        // message-info word whose length no message has, refused.
+        RoundTrip {
+            returns: REFUSED_MESSAGE_INFO,
+            msg_len: 4,
+            ..service_register("service-register-short", ENDPOINT_CAP, SERVICE_INTERFACE)
+        },
+        RoundTrip {
+            msg_len: 6,
+            ..configure(
+                "sched-context-configure-long",
+                [
+                    SCHED_CONTEXT_CAP,
+                    SCHED_CONTEXT_BUDGET,
+                    SCHED_CONTEXT_PERIOD,
+                    PARTNER_PRIORITY,
+                ],
+            )
+        },
+        RoundTrip {
+            msg_len: 5,
+            ..signal("signal-long-message", 1)
+        },
+        RoundTrip {
+            name: "wait-long-message",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            msg_len: 5,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            returns: None,
+        },
+        RoundTrip {
+            msg_len: 5,
+            ..invocation(
+                "invocation-long-message",
+                TCB_SET_MC_PRIORITY,
+                PARTNER_TCB_CAP,
+                [255, 0, 0, 0],
+            )
+        },
+        RoundTrip {
+            returns: REFUSED_MESSAGE_INFO,
+            msg_len: BAD_MESSAGE_LENGTH,
+            ..signal("bad-message-info", 1)
+        },
         invocation(
             "sched-context-bind",
             SCHED_CONTEXT_BIND,
