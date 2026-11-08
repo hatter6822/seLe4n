@@ -13,7 +13,7 @@ import SeLe4n.Kernel.IPC.CrossCore.LongReceiveInPlace
 # A reply of more than four words, written in place
 
 A reply whose message runs past the inline words is decoded as the entry
-decodes it (`longReplyDecode`): the inline words in the replier's saved
+decodes it (`longMessageDecode`): the inline words in the replier's saved
 registers, the rest in its IPC buffer.  When every write of the reply stays in
 its slot (`replyWakesInPlace`), the reply here wakes the caller holding no
 message, runs the server's priority walk, then writes the inline words into
@@ -29,51 +29,60 @@ open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
-/-- The decode a long reply's frame reads to: the inline words and then its
-overflow slots' words, as `sid` (a reply or a reply-receive). -/
-def longReplyDecode (sid : SyscallId) (st : SystemState) (tid : SeLe4n.ThreadId)
+/-- The decode a long message's frame reads to: the inline words and then its
+overflow slots' words, as `sid` (a reply, a reply-receive, or a send or a call
+transferring capabilities). -/
+def longMessageDecode (sid : SyscallId) (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) : SyscallDecodeResult :=
   { capAddr, msgInfo := mi, syscallId := sid,
     msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
       (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
     inlineCount := 4, overflowCount := mi.length - 4 }
 
-@[simp] theorem longReplyDecode_overflowCount (sid : SyscallId) (st : SystemState)
+@[simp] theorem longMessageDecode_overflowCount (sid : SyscallId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr)
-    (mi : MessageInfo) : (longReplyDecode sid st tid rf capAddr mi).overflowCount = mi.length - 4 :=
+    (mi : MessageInfo) : (longMessageDecode sid st tid rf capAddr mi).overflowCount = mi.length - 4 :=
   rfl
 
-/-- What a long reply or reply-receive pins about the decode, either route. -/
+/-- What a long reply, reply-receive or capability-carrying send or call pins
+about the decode, any of the routes. -/
 theorem decodeSyscallArgsFromState_of_routedReplyLongAny (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (sid : SyscallId)
     (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
       (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
-        sid = .replyRecv)) :
+        sid = .replyRecv) ∨
+      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi ∧
+        4 < mi.length)) :
     SeLe4n.arm64DefaultLayout.msgRegs.size < mi.length ∧ mi.length ≤ maxMessageRegisters ∧
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
       mergeOverflowWords st tid
         { capAddr, msgInfo := mi, syscallId := sid,
           msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf),
           inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 0 } := by
-  rcases hR with ⟨hR, rfl⟩ | ⟨hR, rfl⟩
+  rcases hR with ⟨hR, rfl⟩ | ⟨hR, rfl⟩ | ⟨hR, hGt⟩
   · exact decodeSyscallArgsFromState_of_routedReplyLong st tid _ rf 32 capAddr mi hR
   · exact decodeSyscallArgsFromState_of_routedReplyRecvLong st tid _ rf 32 capAddr mi hR
+  · obtain ⟨-, -, hMax, -, hLong⟩ :=
+      decodeSyscallArgsFromState_of_routedTransferring st tid _ rf 32 sid capAddr mi hR
+    exact ⟨hGt, hMax, hLong hGt⟩
 
 /-- **A routed long reply whose overflow slots all read decodes** to the
-inline words and then those slots' words (`longReplyDecode`). -/
+inline words and then those slots' words (`longMessageDecode`). -/
 theorem decodeSyscallArgsFromState_of_routedReplyLong_ok (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (sid : SyscallId)
     (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
       (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
-        sid = .replyRecv))
+        sid = .replyRecv) ∨
+      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi ∧
+        4 < mi.length))
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
-      .ok (longReplyDecode sid st tid rf capAddr mi) := by
+      .ok (longMessageDecode sid st tid rf capAddr mi) := by
   obtain ⟨_, _, hDec⟩ := decodeSyscallArgsFromState_of_routedReplyLongAny st tid rf capAddr mi sid hR
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   have hM := mapM_readOverflowWord st tid (mi.length - 4) 0
@@ -81,7 +90,7 @@ theorem decodeSyscallArgsFromState_of_routedReplyLong_ok (st : SystemState)
   rw [hDec]
   unfold mergeOverflowWords
   simp only [Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
-    bind, Except.bind, pure, Except.pure, longReplyDecode]
+    bind, Except.bind, pure, Except.pure, longMessageDecode]
   rfl
 
 /-- …and one with an overflow slot that does not read is refused as the decode
@@ -92,7 +101,9 @@ theorem decodeSyscallArgsFromState_of_routedReplyLong_error (st : SystemState)
     (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
       (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
-        sid = .replyRecv))
+        sid = .replyRecv) ∨
+      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi ∧
+        4 < mi.length))
     (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
     (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
@@ -108,14 +119,14 @@ theorem decodeSyscallArgsFromState_of_routedReplyLong_error (st : SystemState)
 
 /-- A long reply's message, read as the decode reads it, is its inline words
 and then the words its IPC buffer holds (`longSendMessage`). -/
-theorem longReplyDecode_message (sid : SyscallId) (st : SystemState) (tid : SeLe4n.ThreadId)
+theorem longMessageDecode_message (sid : SyscallId) (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (badge : Option SeLe4n.Badge) (hGt : 4 ≤ mi.length) (hLen : mi.length ≤ maxMessageRegisters) :
-    ({ registers := extractMessageRegisters (longReplyDecode sid st tid rf capAddr mi).msgRegs mi,
+    ({ registers := extractMessageRegisters (longMessageDecode sid st tid rf capAddr mi).msgRegs mi,
        badge := badge } : IpcMessage) =
       longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  simp only [extractMessageRegisters, longSendMessage, longReplyDecode]
+  simp only [extractMessageRegisters, longSendMessage, longMessageDecode]
   congr 1
   apply Array.extract_eq_self_of_le
   simp only [Array.size_append, Architecture.regMessageRegs, Array.size_map, hSz,

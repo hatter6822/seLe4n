@@ -2369,6 +2369,9 @@ const HALF_ALIGNED_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x200;
 /// A full-length message: four words in registers, 116 in overflow slots.
 #[cfg(feature = "hw_target")]
 const TAIL_MESSAGE_LENGTH: u64 = 120;
+/// A message-info word's one extra capability (seL4's `extraCaps`, bits 7..8).
+#[cfg(feature = "hw_target")]
+const ONE_EXTRA_CAP: u64 = 1 << 7;
 /// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
 /// `AlignmentError`), and the refusal frame's `x1` that carries it.
 #[cfg(feature = "hw_target")]
@@ -3372,6 +3375,140 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         ),
         invocation(
             "tail-reply-recv-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A send and a call carrying one capability, each within the inline
+        // words and at full length, that block with no receiver waiting: seL4
+        // looks a message's capabilities up only at the rendezvous, so the
+        // blocked sender holds its request and nothing is transferred.  The
+        // partner then suspends the root task, which cancels its send, and
+        // restarts it before suspending itself.
+        invocation(
+            "caps-send-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-send-blocks",
+            SEND,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 2,
+            [0x5a, 0],
+            true,
+        ),
+        invocation(
+            "caps-send-blocks-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-send-blocks-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-send-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-send-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-long-send-blocks",
+            SEND,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+            [0x5c, 0],
+            true,
+        ),
+        invocation(
+            "caps-long-send-blocks-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-send-blocks-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-send-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-call-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-call-blocks",
+            CALL,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 2,
+            [0x6c, 0],
+            true,
+        ),
+        invocation(
+            "caps-call-blocks-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-call-blocks-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-call-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-call-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-long-call-blocks",
+            CALL,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+            [0x6e, 0],
+            true,
+        ),
+        invocation(
+            "caps-long-call-blocks-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-call-blocks-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-call-blocks-suspend",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],

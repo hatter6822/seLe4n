@@ -1084,7 +1084,7 @@ that answers an unfaulted caller and then blocks writes in place, copying the
 replier's overflow words into the caller's buffer
 (`replyRecvOnCore_blocks_deliveredLong`), as seL4's `doReplyTransfer` does. -/
 @[inline] def endpointReplyRecvLongCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
-    (len extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (len _extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
     match cap.target with
@@ -1119,7 +1119,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
       { length := mi.length, extraCaps := mi.extraCaps, label := mi.label } =
       (longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length none).registers :=
     congrArg IpcMessage.registers
-      (longReplyDecode_message .replyRecv st tid rf capAddr mi none (by omega) hMax)
+      (longMessageDecode_message .replyRecv st tid rf capAddr mi none (by omega) hMax)
   have hM : ∀ badge : Option SeLe4n.Badge,
       ({ registers := (longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length none).registers.extract
           1 (longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length none).registers.size,

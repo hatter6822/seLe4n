@@ -455,6 +455,16 @@ for driver in drivers:
             "tail-send-blocks-suspend", "tail-reply-recv-resume",
             "tail-reply-recv-call", "tail-reply-recv-takes", "tail-reply-recv-blocks",
             "tail-reply-recv-suspend",
+            # Capability-carrying sends and calls that block.
+            "caps-send-blocks-resume", "caps-send-blocks", "caps-send-blocks-suspend-root",
+            "caps-send-blocks-resume-root", "caps-send-blocks-suspend",
+            "caps-long-send-blocks-resume", "caps-long-send-blocks",
+            "caps-long-send-blocks-suspend-root", "caps-long-send-blocks-resume-root",
+            "caps-long-send-blocks-suspend", "caps-call-blocks-resume", "caps-call-blocks",
+            "caps-call-blocks-suspend-root", "caps-call-blocks-resume-root",
+            "caps-call-blocks-suspend", "caps-long-call-blocks-resume",
+            "caps-long-call-blocks", "caps-long-call-blocks-suspend-root",
+            "caps-long-call-blocks-resume-root", "caps-long-call-blocks-suspend",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
