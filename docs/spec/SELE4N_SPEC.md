@@ -6587,16 +6587,25 @@ Every kernel object has a decidable well-formedness predicate:
   `declassifySignalBoundPerform`), its removal guard read off the queue's end
   codes (`dualQueueRemovalEnabledCode`), and a two-hop downgrade writes both
   records over the trail (`declassifySignalHopsRecord`).
-  Since `v0.37.3` a signal, wait, receive, invocation, audited call or
-  five-word call of more than four words, a five-word call short of its fifth
-  word, a refused message-info word and an unnamed syscall number each take a
-  routed arm that refuses in the state it was handed
+  Since `v0.37.3` a signal, wait, receive, yield, invocation, audited call
+  or five-word call of more than four words, a five-word call short of its
+  fifth word, a refused message-info word and an unnamed syscall number each
+  take a routed arm that refuses in the state it was handed
   (`RegisterRoutedSyscall.overflowed`, `.shortArgs`, `.refused`;
   `dispatchOverflowedCheckedR_eq`, `dispatchShortArgsCheckedR_eq`), not the
   decoded arm, whose `RefusalCarrying.ofKernel` keeps the pre-state alive
-  and so copies each table the dispatch writes.  The forms still decoded are
-  registered in `docs/REGISTERED_DEBT.md` (table C, *The decoded arm still
-  keeps the pre-state alive*).
+  and so copies each table the dispatch writes.  A long form's overflow
+  slots lie on slot 0's page and at most the next (`firstPageSlots`); both
+  pages are read and filled in place (`ipcBufferOverflowReadable`,
+  `tlbFillIpcBufferInOnCore_eq`), so no long form takes the decoded arm for
+  its page.  The router and the compiled decode read the message-info
+  register as its word (`decodeMsgInfoWord_readReg`).  The forms the decoded
+  arm still serves are derived from the router
+  (`registerRoutedSyscall_viaDecode`): a send or a call that transfers
+  capabilities, and a call, reply or reply-receive of more than four words.
+  An IPC buffer is found through its page (`validateIpcBufferAddress` looks
+  up `addr.pageBase`), so any 512-byte-aligned buffer in a mapped, writable
+  page is accepted.
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write

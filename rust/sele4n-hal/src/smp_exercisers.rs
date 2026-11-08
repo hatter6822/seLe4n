@@ -3189,8 +3189,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         // frame's copy mapped at the next page, both threads' buffers set
         // 512 bytes short of the frame's end, so overflow slots 0 to 63 lie on
         // the frame and slot 64 on, the message's last, on the next page.  A
-        // signal of that length (routed as overflowed, its walk two pages),
-        // and the long send to a waiting receiver, which reads the sender's
+        // signal and a wait of that length (routed as overflowed, each walk
+        // two pages, the wait taking the badge the signal left), and the long
+        // send to a waiting receiver, which reads the sender's
         // words across both pages and writes the receiver's in place; then
         // the buffers, the mapping and the copy put back.
         invocation(
@@ -3220,6 +3221,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         RoundTrip {
             msg_len: CROSSING_MESSAGE_LENGTH,
             ..signal("signal-crossing-page", 1)
+        },
+        RoundTrip {
+            name: "wait-crossing-page",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            msg_len: CROSSING_MESSAGE_LENGTH,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            returns: None,
         },
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(

@@ -1087,7 +1087,24 @@ mod host_arena {
 /// Runs `f` on the kernel heap with its lock held, taking the heap into service
 /// first if this is the first call.  The lock is released before this returns,
 /// so a caller that must halt on the result does so without holding it.
+///
+/// Interrupts are masked while the lock is held and restored to their prior
+/// state after it is released.  The lock is a ticket lock, not re-entrant: an
+/// IRQ taken on a core that holds it runs a kernel entry whose Lean code
+/// allocates, and that entry would wait for a ticket its own core holds,
+/// forever.  Kernel entries already run masked; the mask here covers the
+/// readers that run outside one (the exercisers' per-core counters).
 fn with_kernel_heap<R>(f: impl FnOnce(&mut Heap<'static>) -> R) -> Result<R, KernelHeapError> {
+    let saved_daif = crate::interrupts::disable_interrupts();
+    let result = with_kernel_heap_masked(f);
+    crate::interrupts::restore_interrupts(saved_daif);
+    result
+}
+
+/// [`with_kernel_heap`]'s body, run with interrupts masked.
+fn with_kernel_heap_masked<R>(
+    f: impl FnOnce(&mut Heap<'static>) -> R,
+) -> Result<R, KernelHeapError> {
     KERNEL_HEAP.lock.with_lock(|| {
         // SAFETY: `KERNEL_HEAP.lock` is held for the whole of this closure, and
         // this closure is the only place `heap` is accessed, so this is the only

@@ -1,4 +1,4 @@
-## v0.37.3 — the decoded arm's long, short-argument and refused forms routed in place
+## v0.37.3 — the decoded arm's long, short-argument, refused and page-crossing forms routed in place
 
 The heap-allocation audit's decode-path follow-up.  The routed entry's decoded
 arm runs the specification's decode and dispatch under
@@ -10,11 +10,38 @@ arms that refuse in the state they were handed.
 - **The overflowed route** (`RegisterRoutedSyscall.overflowed`,
   `SeLe4n/Kernel/RefusalCarryingOverflowed.lean`,
   `SeLe4n/Kernel/RoutedArms/Overflowed.lean`): a signal, wait, receive,
-  invocation, audited call or five-word call of more than four words whose
-  overflow slots lie on the IPC buffer's first page.  It reads slot 0, fills
-  the TLB entry the decode would and dispatches on the inline words and slot 0
+  yield, invocation, audited call or five-word call of more than four words.
+  It reads its overflow slots' pages, fills the TLB entries the decode would
+  and dispatches on the inline words and slot 0
   (`dispatchOverflowedCheckedR_eq`).  The route carries the message length
-  only, so the router builds no message-info cell.
+  only, so the router builds no message-info cell.  The yield runs
+  `yieldOnCoreR` as the short route's does: the entry already holds its
+  caller current.
+- **Overflow slots across a page** (`SeLe4n/Kernel/Architecture/IpcBufferRead.lean`,
+  `IpcBufferTlbFill.lean`): the overflow region, 116 words (928 bytes), lies
+  on slot 0's page and at most the next (`firstPageSlots`).  The long send and
+  the overflowed route read slot 0 and the next page's first slot (slot 0
+  again when there is none, `overflowSecondRead`), which the decode reads
+  exactly when it reads every slot (`ipcBufferOverflowReadable`), and fill
+  both pages' translations read in place (`tlbFillIpcBufferInOnCore`,
+  `ipcBufferFillHeldIn`, equal to the walk's fill and check by
+  `tlbFillIpcBufferInOnCore_eq` and `ipcBufferFillHeldIn_eq`).  No long form
+  takes the decoded arm for its page; `overflowSlotsOnFirstPage` and its
+  first-page lemmas are retired.
+- **The router reads the message info as its word** (`decodeMsgInfoWord`,
+  equal to `decodeMsgInfo` by `decodeMsgInfoWord_readReg`), in the router and
+  the compiled decode alike.
+- **What the decoded arm still serves is derived, not listed**
+  (`registerRoutedSyscall_viaDecode`): with the default layout the router
+  takes the decode only for a send or a call that transfers capabilities, or
+  a call, reply or reply-receive of more than four words.
+- **An IPC buffer inside a page is accepted** (`validateIpcBufferAddress`,
+  `frozenSetIPCBuffer`).  The validator looked the buffer's address up in the
+  page table as a key, and the mappings are keyed by page base, so every
+  buffer not at a page's start was refused with `.translationFault`, against
+  its own 512-byte alignment rule.  It now looks up the buffer's page and
+  bounds the physical end at the page's base plus the buffer's offset.  The
+  IPC buffer and error-matrix suites map their buffers at page bases.
 - **The short-argument route** (`.shortArgs`): a scheduling-context configure
   or service register short of its fifth word is refused once its capability
   is found, as the decode refuses it (`dispatchShortArgsCheckedR_eq`).
@@ -38,10 +65,20 @@ arms that refuse in the state they were handed.
   its total allocated bytes (`kernel_allocation_totals_on`), so a window past
   the 64-entry size record still prints its bytes (`bytes=N sizes=unrecorded`).
   The size record and the other cores' lock fuel are unchanged.
+- **The kernel heap's lock is held with interrupts masked**
+  (`with_kernel_heap`).  The lock is a ticket lock, not re-entrant.  The
+  exercisers read each core's counters outside a kernel entry with ticks
+  unmasked.  A tick taken while that read held the lock ran a timer entry
+  whose allocation waited on its own core's ticket, which wedged core 0 and
+  then the other cores on the entry lock.  Kernel entries already run masked.
 - **New scenarios**, each pinned at 0 at first call and in steady state:
   `service-register-short`, `sched-context-configure-long`,
   `signal-long-message`, `wait-long-message`, `invocation-long-message`,
-  `bad-message-info`.
+  `bad-message-info`, `high-message-info`, `yield-long-message`, and the
+  page-crossing sequence (both threads' buffers 512 bytes short of the
+  frame's end, the frame's copy mapped at the next page):
+  `signal-crossing-page`, `wait-crossing-page` and the long send to a waiting
+  receiver `crossing-send-to-receiver`, with its setup and teardown steps.
 
 ### Security
 
@@ -57,16 +94,29 @@ arms that refuse in the state they were handed.
     of more than four words, or a five-word call short of a word.  No capacity
     check covers the transient, so with the heap filled near its reserve one
     such call halts the system (`heap_halt`): a local denial of service.
-  - *Fix:* the forms above take the routed arms.  The forms still decoded (a
-    long `call`, `reply` or `replyRecv`; a `send` or `call` that transfers
-    capabilities; a long `yield`; a long form whose overflow slots cross the
-    IPC buffer's first page) are a row of `docs/REGISTERED_DEBT.md` table C,
-    and remain exposed until it closes.
+  - *Fix:* the forms above take the routed arms.  The decoded arm now serves
+    the forms `registerRoutedSyscall_viaDecode` names (a send or a call that
+    transfers capabilities; a call, reply or reply-receive of more than four
+    words).
   - *Proofs:* `syscallEntryCheckedK_eq_routed` (`@[csimp]`), with
     `dispatchOverflowedCheckedR_eq`, `overflowedArmWith_eq_spec`,
     `dispatchShortArgsCheckedR_eq` and the routed decode lemmas.  The
     specification is unchanged.
-  - *Evidence:* the six scenarios read 0 at first call and in steady state.
+  - *Evidence:* every scenario above reads 0 at first call and in steady
+    state.
+- **A message-info word of `2^63` or more built a heap number on every
+  call.**  Severity: Low.
+  - *Where:* `registerRoutedSyscallOf` and the compiled decode
+    (`decodeSyscallArgsFromStateImpl`) read the message-info register as a
+    number (`decodeMsgInfo (readReg …)`).
+  - *What it cost:* a word with its top bit set does not fit a scalar, so
+    each read built a heap number before the word was refused.
+  - *How it could be used:* any thread, with any syscall; the cell is freed
+    when the entry ends, so it is a per-call transient, not a leak.
+  - *Fix:* both read the register's word (`decodeMsgInfoWord`).
+  - *Proofs:* `decodeMsgInfoWord_eq`, `decodeMsgInfoWord_readReg`.
+  - *Evidence:* `high-message-info` reads 0 at first call and in steady
+    state.
 
 ## v0.37.2 — WS-UC UC1: each carve measured in cells and bytes; a VSpace root's delete allocates nothing
 

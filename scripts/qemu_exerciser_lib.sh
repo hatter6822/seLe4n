@@ -446,6 +446,7 @@ for driver in drivers:
             "crossing-send-partner-yield", "crossing-send-resume-partner",
             "crossing-send-root-receives", "crossing-send-suspend", "crossing-send-to-receiver",
             "crossing-send-unbind", "crossing-unmap-copy", "signal-crossing-page",
+            "wait-crossing-page",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

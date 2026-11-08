@@ -825,7 +825,7 @@ private def row_translationFault_ipcBuffer_no_write : KernelErrorRejection :=
           cacheable := true }
       let vsRoot : VSpaceRoot :=
         { asid := SeLe4n.ASID.ofNat 1
-          mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16).insert vaddr
+          mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16).insert vaddr.pageBase
                         (SeLe4n.PAddr.ofNat 0x1000, perms) }
       let tcb : TCB := ((mkTcb 800).withVSpaceRoot vsRootId)
       let st : SystemState := { (default : SystemState) with

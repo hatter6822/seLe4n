@@ -64,7 +64,7 @@ private def mkState (objs : List (ObjId × KernelObject))
 /-- IB-001: setIPCBuffer with valid aligned mapped writable address succeeds. -/
 private def ib001_setIPCBufferValidAddress : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 512), ((SeLe4n.PAddr.ofNat 0x1000), writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x1000), writablePerms))]
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
@@ -96,7 +96,7 @@ private def ib002_setIPCBufferZeroAddress : IO Unit := do
 /-- IB-003: setIPCBuffer on running thread succeeds (no suspend required). -/
 private def ib003_setIPCBufferRunningThread : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 1024), ((SeLe4n.PAddr.ofNat 0x3000), writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x3000), writablePerms))]
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1 (state := .Running))),
     (⟨100⟩, .vspaceRoot vsRoot)
@@ -152,7 +152,7 @@ private def ib006_addressBeyondCanonical : IO Unit := do
 /-- IB-007: Read-only page returns translationFault. -/
 private def ib007_readOnlyPage : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 512), ((SeLe4n.PAddr.ofNat 0x5000), readOnlyPerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x5000), readOnlyPerms))]
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
@@ -164,7 +164,7 @@ private def ib007_readOnlyPage : IO Unit := do
 /-- IB-008: Missing thread returns objectNotFound. -/
 private def ib008_missingThread : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨99⟩  -- nonexistent
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 512), ((SeLe4n.PAddr.ofNat 0x6000), writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x6000), writablePerms))]
   let st := mkState [
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
@@ -192,7 +192,7 @@ private def ib009_invalidVSpaceRoot : IO Unit := do
 private def ib010_fieldPreservation : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let origTcb := mkTcb 1 (buf := 0)
-  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 1024), ((SeLe4n.PAddr.ofNat 0x7000), writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x7000), writablePerms))]
   let st := mkState [
     (⟨1⟩, .tcb origTcb),
     (⟨100⟩, .vspaceRoot vsRoot)
@@ -233,7 +233,7 @@ private def mkFrozenVSpaceRoot (mappings : List (VAddr × (PAddr × PagePermissi
 /-- IB-011: Frozen setIPCBuffer with valid address succeeds. -/
 private def ib011_frozenSetIPCBuffer : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat 512), ((SeLe4n.PAddr.ofNat 0x8000), writablePerms))]
+  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0x8000), writablePerms))]
   let fst := mkFrozenState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)
@@ -261,7 +261,7 @@ private def ib012_frozenUnaligned : IO Unit := do
 /-- IB-013: Frozen setIPCBuffer with read-only page fails. -/
 private def ib013_frozenReadOnly : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat 512), ((SeLe4n.PAddr.ofNat 0xA000), readOnlyPerms))]
+  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat 0), ((SeLe4n.PAddr.ofNat 0xA000), readOnlyPerms))]
   let fst := mkFrozenState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)

@@ -1069,4 +1069,48 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
     registerRoutedSyscallOf layout regs
   else .viaDecode
 
+/-- **What the router hands the decode**, for the default layout: the
+registers name a message info the decode reads and a syscall it knows, and
+the call is a send or a call that transfers capabilities, or a call, a reply
+or a reply-receive of more than the inline words.  Every other register file
+is routed to an arm of its own or refused as the decode refuses it, so these
+are the only forms the entry's decoded arm (`.viaDecode`) still serves. -/
+theorem registerRoutedSyscall_viaDecode (rf : RegisterFile)
+    (h : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .viaDecode) :
+    ∃ mi sid, decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi ∧
+      SyscallId.ofNat? (readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = some sid ∧
+      (((sid = .send ∨ sid = .call) ∧ mi.extraCaps ≠ 0) ∨
+        (SeLe4n.arm64DefaultLayout.msgRegs.size < mi.length ∧
+          (sid = .call ∨ sid = .reply ∨ sid = .replyRecv))) := by
+  unfold registerRoutedSyscall at h
+  split at h
+  case isFalse hB =>
+    exact absurd ⟨by decide, by decide, by decide, by simp [SeLe4n.arm64DefaultLayout]⟩ hB
+  unfold registerRoutedSyscallOf at h
+  rw [decodeMsgInfoWord_readReg] at h
+  cases hM : decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) with
+  | error e => simp only [hM] at h; cases h
+  | ok mi =>
+  simp only [hM] at h
+  generalize hN : (readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = n at h
+  cases hS : SyscallId.ofNat? n with
+  | none =>
+    exfalso
+    have hNe : ∀ s : SyscallId, n ≠ s.toNat := by
+      intro s hs; subst hs; rw [SyscallId.ofNat_toNat] at hS; cases hS
+    simp only [hNe, false_and, if_false, routedShortTail, routedLongTail, hS] at h
+    split at h <;> cases h
+  | some sid =>
+  have hn := SyscallId.toNat_ofNat hS
+  subst hn
+  refine ⟨mi, sid, rfl, rfl, ?_⟩
+  cases sid <;> simp only [routedShortTail, routedLongTail, SyscallId.ofNat_toNat] at h <;>
+    simp (config := { decide := true }) at h ⊢ <;>
+    (repeat' split at h) <;>
+    first
+      | (cases h; done)
+      | (simp_all; done)
+      | (by_cases hL : mi.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size
+         · exact .inl (h hL)
+         · exact .inr (by omega))
 end SeLe4n.Kernel.Architecture.RegisterDecode
