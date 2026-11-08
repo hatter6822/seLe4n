@@ -89,6 +89,42 @@ open SeLe4n.Model
   | some mi => .ok mi
   | none    => .error .invalidMessageInfo
 
+/-- `decodeMsgInfo` read off the register's machine word: the fields are word
+    operations, each small enough to be a scalar, so a word `≥ 2^63` builds no
+    heap number (`decodeMsgInfoWord_eq`). -/
+@[inline] def decodeMsgInfoWord (w : UInt64) : Except KernelError MessageInfo :=
+  if (w &&& 0x7F) ≤ 120 && ((w >>> 7) &&& 3) ≤ 3 && (w >>> 9) ≤ 0xFFFFF then
+    .ok { length := (w &&& 0x7F).toNat, extraCaps := ((w >>> 7) &&& 3).toNat,
+          label := (w >>> 9).toNat }
+  else .error .invalidMessageInfo
+
+theorem decodeMsgInfoWord_eq (w : UInt64) :
+    decodeMsgInfoWord w = decodeMsgInfo ⟨w.toNat⟩ := by
+  unfold decodeMsgInfoWord decodeMsgInfo MessageInfo.decode
+  have h1 : (w &&& 0x7F).toNat = w.toNat &&& 0x7F := by simp [UInt64.toNat_and]
+  have h2 : ((w >>> 7) &&& 3).toNat = (w.toNat >>> 7) &&& 0x3 := by
+    simp [UInt64.toNat_and, UInt64.toNat_shiftRight]
+  have h3 : (w >>> 9).toNat = w.toNat >>> 9 := by simp [UInt64.toNat_shiftRight]
+  simp only [UInt64.le_iff_toNat_le, h1, h2, h3]
+  simp only [maxMessageRegisters, Model.maxExtraCaps, MessageInfo.maxLabel]
+  by_cases hc : ((w.toNat &&& 127 ≤ 120 ∧ w.toNat >>> 7 &&& 3 ≤ 3) ∧ w.toNat >>> 9 ≤ 1048575)
+  · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
+    simp [hc]
+  · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
+    simp [hc]
+
+/-- A register's message info, decoded off its word, is its decode. -/
+theorem decodeMsgInfoWord_readReg (rf : RegisterFile) (r : RegName) :
+    decodeMsgInfoWord (readRegWord rf r) = decodeMsgInfo (readReg rf r) := by
+  rw [decodeMsgInfoWord_eq]
+  congr 1
+  cases h : readReg rf r with
+  | mk v =>
+    have := readReg_val_eq_word rf r
+    rw [h] at this
+    simp only at this
+    rw [this]
+
 /-- Decode the syscall number register into a typed syscall identifier.
     Returns `invalidSyscallNumber` if the value is not in the modeled set. -/
 @[inline] def decodeSyscallId (rv : RegValue) : Except KernelError SyscallId :=
@@ -299,7 +335,7 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
   if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
       layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true then
     let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
-    match decodeMsgInfo (readReg regs layout.msgInfoReg) with
+    match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
     | .error e => .error e
     | .ok msgInfo =>
     match decodeSyscallId (readReg regs layout.syscallNumReg) with
@@ -324,7 +360,7 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
   simp only [validateRegBound, h1, h2, h3, h4, ↓reduceIte, and_self, and_true,
     and_false, bind, Except.bind, pure, Except.pure, Bool.false_eq_true] <;>
   try rfl
-  rw [decodeCapPtr_readReg]
+  rw [decodeCapPtr_readReg, decodeMsgInfoWord_readReg]
   rcases decodeMsgInfo (readReg regs layout.msgInfoReg) with e | msgInfo
   · rfl
   rcases decodeSyscallId (readReg regs layout.syscallNumReg) with e | syscallId
@@ -879,11 +915,11 @@ theorem routedAuditedSid?_some {n : Nat} {sid : SyscallId}
 
 /-- The syscalls a message past the layout's registers routes as `overflowed`:
 the signal, the wait and the receive, whose dispatch reads no word past the
-first message register; the invocations and the audited calls, whose arguments
+first message register; the yield, which reads none; the invocations and the audited calls, whose arguments
 are the layout's message registers; and the five-word invocations, whose fifth
 argument is overflow slot 0. -/
 def routedOverflowed : SyscallId → Bool
-  | .notificationSignal | .notificationWait | .receive => true
+  | .notificationSignal | .notificationWait | .receive | .yield => true
   | sid => routedInvocation sid || routedAudited sid || routedOverflowOne sid
 
 /-- The overflowed syscall number `n` names, if any. -/
@@ -985,7 +1021,7 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
 @[inline] def registerRoutedSyscallOf (layout : SyscallRegisterLayout) (regs : RegisterFile) :
     RegisterRoutedSyscall :=
   let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
-  match decodeMsgInfo (readReg regs layout.msgInfoReg) with
+  match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
   | .error e => .refused e
   | .ok msgInfo =>
     if msgInfo.length ≤ layout.msgRegs.size then

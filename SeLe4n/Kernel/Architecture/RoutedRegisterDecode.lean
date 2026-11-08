@@ -48,6 +48,7 @@ private theorem decodeSyscallArgsFromState_of_routed
             inlineCount := layout.msgRegs.size, overflowCount := 0 } := by
   rw [decodeSyscallArgsFromState_eq_impl]
   unfold decodeSyscallArgsFromStateImpl
+  simp only [decodeMsgInfoWord_readReg]
   rw [if_pos hB]
   have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok sid := by
     simp only [decodeSyscallId, hS, SyscallId.ofNat_toNat]
@@ -69,7 +70,7 @@ theorem decodeSyscallArgsFromState_of_routedSignal
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -100,7 +101,7 @@ theorem decodeSyscallArgsFromState_of_routedWait
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -129,7 +130,7 @@ theorem decodeSyscallArgsFromState_of_routedYield
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -162,7 +163,7 @@ theorem decodeSyscallArgsFromState_of_routedSend
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -197,7 +198,7 @@ theorem decodeSyscallArgsFromState_of_routedCall
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -231,7 +232,7 @@ theorem decodeSyscallArgsFromState_of_routedReply
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -264,7 +265,7 @@ theorem decodeSyscallArgsFromState_of_routedReceive
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -302,7 +303,7 @@ theorem decodeSyscallArgsFromState_of_routedReplyRecv
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -335,7 +336,7 @@ theorem decodeSyscallArgsFromState_of_routedInvoke
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -370,7 +371,7 @@ theorem decodeSyscallArgsFromState_of_routedAudited
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -409,7 +410,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -429,6 +430,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
           refine ⟨hR, mi, ?_⟩
           rw [decodeSyscallArgsFromState_eq_impl]
           unfold decodeSyscallArgsFromStateImpl
+          simp only [decodeMsgInfoWord_readReg]
           rw [if_pos hB]
           have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok sid := by
             simp only [decodeSyscallId, hN, SyscallId.ofNat_toNat]
@@ -463,7 +465,7 @@ theorem decodeSyscallArgsFromState_of_routedSendLong
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -485,6 +487,7 @@ theorem decodeSyscallArgsFromState_of_routedSendLong
         refine ⟨by omega, hWf, hS.2, ?_⟩
         rw [decodeSyscallArgsFromState_eq_impl]
         unfold decodeSyscallArgsFromStateImpl
+        simp only [decodeMsgInfoWord_readReg]
         rw [if_pos hB]
         have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok .send := by
           simp only [decodeSyscallId, hS.1, SyscallId.ofNat_toNat]
@@ -502,7 +505,7 @@ theorem registerRoutedSyscall_send_length
   unfold registerRoutedSyscall at h
   split at h
   · unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
@@ -539,7 +542,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -573,6 +576,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
         refine ⟨mi, rfl, rfl, by omega, hWf, hR, ?_⟩
         rw [decodeSyscallArgsFromState_eq_impl]
         unfold decodeSyscallArgsFromStateImpl
+        simp only [decodeMsgInfoWord_readReg]
         rw [if_pos hB]
         have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok sid := by
           simp only [decodeSyscallId, hN, SyscallId.ofNat_toNat]
@@ -606,7 +610,7 @@ theorem decodeSyscallArgsFromState_of_routedShortArgs
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
@@ -636,13 +640,14 @@ theorem decodeSyscallArgsFromState_of_routedRefused
   split at h
   · next hB =>
     unfold registerRoutedSyscallOf at h
-    simp only [routedShortTail_eq, routedLongTail_eq] at h
+    simp only [routedShortTail_eq, routedLongTail_eq, decodeMsgInfoWord_readReg] at h
     have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e' | mi
     · simp only [hM] at h
       cases h
       rw [decodeSyscallArgsFromState_eq_impl]
       unfold decodeSyscallArgsFromStateImpl
+      simp only [decodeMsgInfoWord_readReg]
       rw [if_pos hB]
       simp only [hM]
     · simp only [hM] at h
@@ -658,6 +663,7 @@ theorem decodeSyscallArgsFromState_of_routedRefused
         subst hE
         rw [decodeSyscallArgsFromState_eq_impl]
         unfold decodeSyscallArgsFromStateImpl
+        simp only [decodeMsgInfoWord_readReg]
         rw [if_pos hB]
         simp only [hM, decodeSyscallId, hN]
   · cases h

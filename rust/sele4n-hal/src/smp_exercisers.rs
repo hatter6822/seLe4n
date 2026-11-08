@@ -2203,6 +2203,11 @@ const REFUSED_MESSAGE_INFO: Option<(u64, Option<u64>)> = Some((
 #[cfg(feature = "hw_target")]
 const BAD_MESSAGE_LENGTH: u64 = 127;
 
+/// A one-word message-info word with its top bit set: a label past the largest
+/// a message has, which the decode refuses, in a word no `Nat` scalar holds.
+#[cfg(feature = "hw_target")]
+const HIGH_MESSAGE_INFO: u64 = (1 << 63) | 1;
+
 /// The Consumed invocation's success word in `x1`: `MessageInfo` length 1,
 /// label 0 (Lean's `consumedInfoWord`).
 #[cfg(feature = "hw_target")]
@@ -2940,13 +2945,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         service_register("service-register", ENDPOINT_CAP, SERVICE_INTERFACE),
         invocation("service-query", SERVICE_QUERY, ENDPOINT_CAP, [0; 4]),
         invocation("service-revoke", SERVICE_REVOKE, ENDPOINT_CAP, [0; 4]),
-        // The calls the register file does not route, each decoded by the
-        // specification's decode and dispatch, the root task's IPC buffer
-        // mapped for the words past the fourth: a register one word short,
-        // refused; a configure one word long (the HAL refuses a short one
-        // before the kernel, `SyscallId::min_inline_args`); a signal and a wait one word long, the wait taking
-        // the badge the signal left; an invocation one word long; and a
-        // message-info word whose length no message has, refused.
+        // The long, short-argument and refused forms, each routed past the
+        // named syscalls, the root task's IPC buffer mapped for the words
+        // past the fourth: a register one word short, refused; a configure
+        // one word long (the HAL refuses a short one before the kernel,
+        // `SyscallId::min_inline_args`); a signal and a wait one word long,
+        // the wait taking the badge the signal left; an invocation one word
+        // long; a message-info word whose length no message has, refused;
+        // one whose top bit is set, refused; and a yield one word long.
         RoundTrip {
             returns: REFUSED_MESSAGE_INFO,
             msg_len: 4,
@@ -2991,6 +2997,21 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             returns: REFUSED_MESSAGE_INFO,
             msg_len: BAD_MESSAGE_LENGTH,
             ..signal("bad-message-info", 1)
+        },
+        RoundTrip {
+            returns: REFUSED_MESSAGE_INFO,
+            msg_len: HIGH_MESSAGE_INFO,
+            ..signal("high-message-info", 1)
+        },
+        RoundTrip {
+            name: "yield-long-message",
+            syscall: YIELD,
+            cptr: 0,
+            msg_len: 5,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            returns: None,
         },
         invocation(
             "sched-context-bind",

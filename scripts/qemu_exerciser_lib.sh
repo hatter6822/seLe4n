@@ -433,9 +433,11 @@ for driver in drivers:
             "waited-partner-calls", "waited-reply-cap-mint", "waited-root-waits",
             "waited-server-delete", "waited-server-receives", "waited-server-resumes-partner",
             "waited-server-waits", "waited-server-wakes-root", "waited-wake-server", "yield",
-            # The calls the register file does not route (the decoded arm).
-            "bad-message-info", "invocation-long-message", "sched-context-configure-long",
-            "service-register-short", "signal-long-message", "wait-long-message",
+            # The long, short-argument and refused forms the register file
+            # routes past the named syscalls.
+            "bad-message-info", "high-message-info", "invocation-long-message",
+            "sched-context-configure-long", "service-register-short", "signal-long-message",
+            "wait-long-message", "yield-long-message",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

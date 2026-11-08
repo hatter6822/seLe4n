@@ -98,7 +98,9 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_error (st : SystemState)
 /-- **The overflowed dispatch**: the short route's refusal-carrying dispatch,
 read off the inline words and, for a five-word invocation, the overflow word `w`
 in slot 0.  No other syscall is routed here (`routedOverflowed`).  A
-specification: the compiled entry runs the routed arm (`RoutedArms.Overflowed`). -/
+specification: the compiled entry runs the routed arm (`RoutedArms.Overflowed`).
+A yield reads no operand, and refuses in the state it was handed
+(`yieldOnCoreR`). -/
 noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (len : Nat) (w : UInt64)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
@@ -115,6 +117,12 @@ noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : Sysc
       executingCore
   | .schedContextConfigure => dispatchConfigureCheckedR capAddr rf w tid executingCore
   | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr rf w tid executingCore
+  | .yield => fun st =>
+    if st.scheduler.currentOnCore executingCore ≠ some tid then .error (.illegalState, st)
+    else
+    match yieldOnCoreR st executingCore with
+    | .error r => .error r
+    | .ok st' => .ok ((), st')
   | _ => fun st => .error (.illegalState, st)
 
 /-- The syscalls `routedOverflowed` admits besides the invocations and the
@@ -122,7 +130,7 @@ audited calls. -/
 theorem routedOverflowed_cases {sid : SyscallId} (h : routedOverflowed sid = true)
     (hI : routedInvocation sid = false) (hA : routedAudited sid = false) :
     sid = .notificationSignal ∨ sid = .notificationWait ∨ sid = .receive ∨
-      sid = .schedContextConfigure ∨ sid = .serviceRegister := by
+      sid = .schedContextConfigure ∨ sid = .serviceRegister ∨ sid = .yield := by
   cases sid <;> simp_all [routedOverflowed, routedOverflowOne]
 
 /-- An overflowed decode's words read as the inline words below four, and as
@@ -179,7 +187,7 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     rw [Array.getElem?_append_left (by simp [SeLe4n.arm64DefaultLayout])]
     simp [SeLe4n.arm64DefaultLayout]
   rcases routedOverflowed_cases hRt (Bool.eq_false_iff.mpr hI) (Bool.eq_false_iff.mpr hAu) with
-    rfl | rfl | rfl | rfl | rfl
+    rfl | rfl | rfl | rfl | rfl | rfl
   · -- the signal
     have hS : 0 < (overflowedDecode S tid rf .notificationSignal capAddr mi).msgRegs.size := by
       simp only [overflowedDecode, Architecture.regMessageRegs, Array.size_append, Array.size_map]
@@ -228,6 +236,16 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     rw [if_neg hI, if_neg hAu]
     exact dispatchServiceRegisterCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
       executingCore rfl hA5
+  · -- the yield, which reads no word
+    unfold dispatchOverflowedCheckedR
+    rw [if_neg hI, if_neg hAu]
+    funext st
+    simp only [RefusalCarrying.ofKernel, dispatchSyscallChecked, overflowedDecode, ne_eq,
+      not_true_eq_false, dispatchYield, yieldOnCoreR_eq, ↓reduceIte]
+    by_cases hC : st.scheduler.currentOnCore executingCore = some tid
+    · simp only [hC, not_true_eq_false, ↓reduceIte]
+      cases yieldOnCore st executingCore <;> rfl
+    · simp only [hC, not_false_eq_true, ↓reduceIte]
 
 /-! ## A five-word invocation short of its fifth word -/
 

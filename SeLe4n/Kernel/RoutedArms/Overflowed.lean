@@ -60,6 +60,12 @@ noncomputable def overflowedOperandR (ctx : LabelingContext) (sid : SyscallId)
         executingCore (syscallRequiredRight .receive))
   | .schedContextConfigure => dispatchConfigureCheckedR capAddr rf w tid executingCore
   | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr rf w tid executingCore
+  | .yield => fun st =>
+    if st.scheduler.currentOnCore executingCore ≠ some tid then .error (.illegalState, st)
+    else
+    match yieldOnCoreR st executingCore with
+    | .error r => .error r
+    | .ok st' => .ok ((), st')
   | _ => fun st => .error (.illegalState, st)
 
 theorem overflowedOperandR_eq (ctx : LabelingContext) (sid : SyscallId)
@@ -178,7 +184,7 @@ theorem overflowedArmWith_eq_spec (ctx : LabelingContext) (executingCore : Concu
     | _ => dispatchServiceRegisterCheckedR ctx (SeLe4n.CPtr.ofWord capWord) rf w tid
       executingCore) st
 
-/-- The overflowed arm of a signal, a wait or a receive. -/
+/-- The overflowed arm of a signal, a wait, a receive or a yield. -/
 @[noinline] def overflowedNotificationRoutedArm (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (sid : SyscallId)
     (capWord : UInt64) (length : Nat) (st : SystemState) : SystemState :=
@@ -195,6 +201,12 @@ theorem overflowedArmWith_eq_spec (ctx : LabelingContext) (executingCore : Concu
       dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
         (receiveOperandArmThenTaintR ctx tid length (SeLe4n.CPtr.ofWord (readRegWord rf ⟨2⟩))
           executingCore (syscallRequiredRight .receive))
+    | .yield => fun st =>
+      if st.scheduler.currentOnCore executingCore ≠ some tid then .error (.illegalState, st)
+      else
+      match yieldOnCoreR st executingCore with
+      | .error r => .error r
+      | .ok st' => .ok ((), st')
     | _ => fun st => .error (.illegalState, st)) st
 
 /-- **The overflowed arm**: the arm of the call's kind. -/
