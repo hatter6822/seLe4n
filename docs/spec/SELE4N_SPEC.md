@@ -6607,13 +6607,25 @@ Every kernel object has a decidable well-formedness predicate:
   pages are read and filled in place (`ipcBufferOverflowReadable`,
   `tlbFillIpcBufferInOnCore_eq`), so no long form takes the decoded arm for
   its page.  The router and the compiled decode read the message-info
-  register as its word (`decodeMsgInfoWord_readReg`).  The forms the decoded
-  arm still serves are derived from the router
-  (`registerRoutedSyscall_viaDecode`): a send or a call that transfers
-  capabilities, and a call, reply or reply-receive of more than four words.
+  register as its word (`decodeMsgInfoWord_readReg`).  Since `v0.37.4` a
+  call, reply or reply-receive of more than four words copies its overflow
+  words into the receiver's buffer in place, seL4's `copyMRs`
+  (`RegisterRoutedSyscall.callLong`, `.replyLong`, `.replyRecvLong`;
+  `dispatchCallLongCheckedR_eq`, `dispatchReplyLongCheckedR_eq`,
+  `dispatchReplyRecvLongCheckedR_eq`), a call or a long call that blocks with
+  no receiver waiting writes in place, and a send or a call that transfers
+  capabilities takes its own arm (`RegisterRoutedSyscall.transferring`,
+  `dispatchTransferringCheckedR_eq`).  As in seL4, such a message's
+  capabilities are looked up only at the rendezvous: one that blocks writes in
+  place, and one that meets a receiver takes the specification's transfer
+  (`endpointSendDualWithCapsOnCore`), refusing in the pre-state when the
+  receiver's CSpace root does not resolve, as the specification's checked
+  entry does.  With the default layout the router hands the decoded arm
+  nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
+  whose registers lie out of bounds or which has no message register.
   An IPC buffer is found through its page (`validateIpcBufferAddress` looks
-  up `addr.pageBase`), so any 512-byte-aligned buffer in a mapped, writable
-  page is accepted.
+  up `addr.pageBase`), so any 1024-byte-aligned buffer in a mapped, writable
+  page is accepted, and it lies in that one page.
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write

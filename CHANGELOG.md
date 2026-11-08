@@ -1,4 +1,4 @@
-## v0.37.4 — the IPC buffer lies in one frame
+## v0.37.4 — the IPC buffer lies in one frame; long call, reply and reply-receive and capability-carrying send and call routed in place
 
 The decode-path follow-up's IPC stage.
 
@@ -22,6 +22,73 @@ The decode-path follow-up's IPC stage.
   scenarios, whose buffers the validator now refuses.
 - **Fixture**: the trace's `SetIPCBufferArgs` round trip encodes 1024
   (`[XVAL-005]`), since 512 is no longer an aligned buffer address.
+- **A call of more than four words** (`RegisterRoutedSyscall.callLong`,
+  `dispatchCallLongCheckedR_eq`, `SeLe4n/Kernel/RoutedArms/CallLong.lean`)
+  copies its overflow words from the caller's IPC buffer into a waiting
+  receiver's in place, as seL4's `copyMRs` does, and blocks the caller for the
+  reply; one that finds no receiver blocks in place, its words left in its
+  registers and buffer, and the receive that takes it copies them in place.
+- **A reply of more than four words** (`.replyLong`,
+  `dispatchReplyLongCheckedR_eq`) copies the replier's overflow words into the
+  caller's buffer in place.
+- **A reply-receive of more than four words** (`.replyRecvLong`,
+  `dispatchReplyRecvLongCheckedR_eq`,
+  `SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvInPlace.lean`): its MR0 names the
+  reply capability, so the reply carries the words from slot 1 on; one that
+  answers an unfaulted caller and then blocks with no sender waiting writes in
+  place (`replyRecvOnCore_blocks_deliveredLong`).
+- **A call within the inline words that blocks** with no receiver waiting now
+  writes in place (`endpointCallCheckedArmR`), as the long call's does.
+- **A send or a call that transfers capabilities** takes its own arm
+  (`.transferring`, `dispatchTransferringCheckedR_eq`,
+  `SeLe4n/Kernel/RoutedArms/Transferring.lean`), within the inline words or
+  past them.  As in seL4, the capabilities are looked up only at the
+  rendezvous: one that blocks writes in place, and one that meets a receiver
+  runs the specification's transfer (`endpointSendDualWithCapsOnCore`),
+  refusing in the pre-state when the receiver's CSpace root does not resolve,
+  as the specification's checked entry does.  That transfer still allocates;
+  it is registered in `docs/REGISTERED_DEBT.md` table C.
+- **The decoded arm is unreachable from the ABI** with the default layout
+  (`registerRoutedSyscall_viaDecode`, now `≠ .viaDecode`).  It stays for a
+  layout whose registers lie out of bounds or which has no message register.
+- `longReplyDecode` is renamed `longMessageDecode`: the capability-carrying
+  forms decode through it too.
+- **Scenarios**: the long call to a waiting receiver and blocking
+  (`tail-call-*`), the long send blocking and taken (`tail-send-blocks`,
+  `tail-send-partner-takes`), the long reply-receive answering a long call and
+  blocking (`tail-reply-recv-*`), and capability-carrying sends and calls that
+  block, inline and at full length (`caps-send-blocks`,
+  `caps-long-send-blocks`, `caps-call-blocks`, `caps-long-call-blocks`, each
+  cancelled by suspending the root task), with their setup and teardown steps.
+
+### Security
+
+- **Any thread could still make the decoded arm copy the kernel's tables,
+  with a long call, reply or reply-receive, or a capability-carrying send or
+  call.**  Severity: Medium.
+  - *Where:* `decodedRoutedArm` (`SeLe4n/Kernel/RoutedArms/Decoded.lean`),
+    whose `RefusalCarrying.ofKernel (syscallEntryChecked …)` holds the
+    pre-state for a refusal.  `v0.37.3` registered these forms as not yet
+    fixed.
+  - *What it cost:* a transient proportional to the tables the dispatch
+    wrote, inside the entry lock.
+  - *How it could be used:* any thread with an endpoint capability; with the
+    heap filled near its reserve one such call halts the system
+    (`heap_halt`): a local denial of service.
+  - *Fix:* each form takes a routed arm proven equal to the specification;
+    the router hands the decoded arm nothing (`registerRoutedSyscall_viaDecode`).
+  - *Not yet fixed:* a capability transfer at the rendezvous, and the receive
+    that takes a blocked short call, still run the specification's general
+    path, which allocates (`docs/REGISTERED_DEBT.md` table C).
+  - *Proofs:* `syscallEntryCheckedK_eq_routed` (`@[csimp]`),
+    `dispatchCallLongCheckedR_eq`, `dispatchReplyLongCheckedR_eq`,
+    `dispatchReplyRecvLongCheckedR_eq`, `dispatchTransferringCheckedR_eq`,
+    `registerRoutedSyscall_viaDecode`.  The specification is unchanged.
+  - *Evidence:* the scenarios above read 0 at first call and in steady state.
+- **The IPC buffer's alignment admitted a buffer that crossed its page**
+  (the alignment bullet above).  Severity: Low: a model and documentation gap,
+  not a reachable fault, since each overflow slot is translated at its own
+  page, so a thread reads and writes only what it maps.
 
 ## v0.37.3 — the decoded arm's long, short-argument, refused and page-crossing forms routed in place
 
