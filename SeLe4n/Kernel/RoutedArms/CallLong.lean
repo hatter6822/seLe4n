@@ -47,12 +47,12 @@ translations, a refusal handing back the TLB the entry held.  Its result reporte
             (fun _ => entryReportGeneral (
               if SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid (length - 4) then
                 dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
-                  (callOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
+                  (callLongOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
                     length tid executingCore (syscallRequiredRight .call)) st
               else
                 let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
                 match dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
-                    (callOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
+                    (callLongOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
                       length tid executingCore (syscallRequiredRight .call))
                     (SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore st executingCore tid
                         (length - 4)) with

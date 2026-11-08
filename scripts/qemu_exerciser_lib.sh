@@ -447,9 +447,10 @@ for driver in drivers:
             "tail-send-partner-yield", "tail-send-resume-partner",
             "tail-send-root-receives", "tail-send-suspend", "tail-send-to-receiver",
             "tail-send-unbind", "signal-tail-buffer", "wait-tail-buffer",
-            "tail-call-root-receives", "tail-call-to-receiver", "tail-call-suspend",
-            "tail-call-resume", "tail-call-root-yield", "tail-call-blocks",
-            "tail-call-root-takes",
+            "tail-call-resume", "tail-call-root-receives", "tail-call-to-receiver",
+            "tail-call-suspend", "tail-call-resume-again", "tail-call-blocks",
+            "tail-call-partner-takes", "tail-call-partner-replies", "tail-call-partner-yield",
+            "tail-call-suspend-again",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
