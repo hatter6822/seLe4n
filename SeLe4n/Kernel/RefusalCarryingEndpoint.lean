@@ -16,7 +16,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyUnheldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongSendInPlace
-import SeLe4n.Kernel.IPC.CrossCore.LongCallInPlace
+import SeLe4n.Kernel.IPC.CrossCore.LongReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace
 
 /-!
@@ -66,212 +66,6 @@ theorem routedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
         (sendFrame_of_routed st tid tcb hT capAddr mi hR endpointId badge grant).2,
       fun badge grant _ => (sendFrame_of_routed st tid tcb hT capAddr mi hR tid.toObjId badge
         grant).1⟩
-
-/-- WS-ZA ZA6.35: the decode a long send's frame reads to: the inline words
-and then its overflow slots' words, as `.send`. -/
-def longSendDecode (st : SystemState) (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile)
-    (capAddr : SeLe4n.CPtr) (mi : MessageInfo) : SyscallDecodeResult :=
-  { capAddr, msgInfo := mi, syscallId := .send,
-    msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
-      (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
-    inlineCount := 4, overflowCount := mi.length - 4 }
-
-@[simp] theorem longSendDecode_overflowCount (st : SystemState) (tid : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) :
-    (longSendDecode st tid rf capAddr mi).overflowCount = mi.length - 4 := rfl
-
-/-- WS-ZA ZA6.35: **a routed long send whose overflow slots all read decodes**
-to the inline words and then those slots' words, as `.send`, with no
-capabilities (`longSendDecode`). -/
-theorem decodeSyscallArgsFromState_of_routedSendLong_ok (st : SystemState)
-    (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
-    (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
-      .ok (longSendDecode st tid rf capAddr mi) := by
-  obtain ⟨_, _, _, hDec⟩ :=
-    decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
-  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  have hM := mapM_readOverflowWord st tid (mi.length - 4) 0
-    (fun j _ h2 => hRead j (by omega))
-  rw [hDec]
-  unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
-    bind, Except.bind, pure, Except.pure, longSendDecode]
-  rfl
-
-/-- …and one with an overflow slot that does not read is refused as the decode
-refuses it. -/
-theorem decodeSyscallArgsFromState_of_routedSendLong_error (st : SystemState)
-    (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
-    (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
-    (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
-      .error .invalidMessageInfo := by
-  obtain ⟨hGt, _, _, hDec⟩ :=
-    decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
-  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  rw [hSz] at hGt
-  rw [hDec]
-  unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range',
-    mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
-    bind, Except.bind]
-
-/-- **A frame that routes as a long send**, read for the sender `tid` whose
-saved registers `rf` are and whose overflow slots all read: it asks to
-transfer no capability, and a present sender's message is its inline words
-and then the words its IPC buffer holds (`longSendMessage`). -/
-theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
-    (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
-          longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
-  obtain ⟨hGt, hMax, hX, -⟩ :=
-    decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
-  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  rw [hSz] at hGt
-  have hD := decodeSyscallArgsFromState_of_routedSendLong_ok st tid rf capAddr mi hR hRead
-  cases hT : st.getTcb? tid with
-  | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
-    unfold sendCapRequest
-    split
-    · rfl
-    · rw [hT]
-  | some tcb =>
-    have hRf := hFrame tcb hT
-    subst hRf
-    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
-    · unfold sendCapRequest
-      split
-      · rfl
-      · rw [hT]
-        simp only [sendPayloadCapRequest, senderFrameCapRequest, blockedSenderDecode, hD]
-        have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs
-            (longSendDecode st tid tcb.registerContext capAddr mi)).isEmpty = true := by
-          unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs longSendDecode
-          simp only [hX]
-          rfl
-        simp only [hE, ↓reduceIte]
-        split <;> rfl
-    · simp only [sendPayloadMessage, senderFrameDecode, hT, blockedSenderDecode, hD,
-        senderFrameMessage, extractMessageRegisters, longSendMessage, longSendDecode]
-      congr 1
-      apply Array.extract_eq_self_of_le
-      simp only [Array.size_append, Architecture.regMessageRegs, Array.size_map, hSz,
-        List.size_toArray, overflowRegsFrom_length]
-      omega
-
-/-- The decode a long call's frame reads to: the inline words and
-then its overflow slots' words, as `.call`. -/
-def longCallDecode (st : SystemState) (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile)
-    (capAddr : SeLe4n.CPtr) (mi : MessageInfo) : SyscallDecodeResult :=
-  { capAddr, msgInfo := mi, syscallId := .call,
-    msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
-      (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
-    inlineCount := 4, overflowCount := mi.length - 4 }
-
-@[simp] theorem longCallDecode_overflowCount (st : SystemState) (tid : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) :
-    (longCallDecode st tid rf capAddr mi).overflowCount = mi.length - 4 := rfl
-
-/-- **a routed long call whose overflow slots all read decodes**
-to the inline words and then those slots' words, as `.call`, with no
-capabilities (`longCallDecode`). -/
-theorem decodeSyscallArgsFromState_of_routedCallLong_ok (st : SystemState)
-    (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
-    (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
-      .ok (longCallDecode st tid rf capAddr mi) := by
-  obtain ⟨_, _, _, hDec⟩ :=
-    decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi hR
-  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  have hM := mapM_readOverflowWord st tid (mi.length - 4) 0
-    (fun j _ h2 => hRead j (by omega))
-  rw [hDec]
-  unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
-    bind, Except.bind, pure, Except.pure, longCallDecode]
-  rfl
-
-/-- …and one with an overflow slot that does not read is refused as the decode
-refuses it. -/
-theorem decodeSyscallArgsFromState_of_routedCallLong_error (st : SystemState)
-    (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
-    (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
-    (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
-      .error .invalidMessageInfo := by
-  obtain ⟨hGt, _, _, hDec⟩ :=
-    decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi hR
-  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  rw [hSz] at hGt
-  rw [hDec]
-  unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range',
-    mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
-    bind, Except.bind]
-
-/-- **A frame that routes as a long call**, read for the caller `tid` whose
-saved registers `rf` are and whose overflow slots all read: it asks to
-transfer no capability, and a present sender's message is its inline words
-and then the words its IPC buffer holds (`longSendMessage`). -/
-theorem routedLongCallerFrame (st : SystemState) (tid : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
-    (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
-          longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
-  obtain ⟨hGt, hMax, hX, -⟩ :=
-    decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi hR
-  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  rw [hSz] at hGt
-  have hD := decodeSyscallArgsFromState_of_routedCallLong_ok st tid rf capAddr mi hR hRead
-  cases hT : st.getTcb? tid with
-  | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
-    unfold sendCapRequest
-    split
-    · rfl
-    · rw [hT]
-  | some tcb =>
-    have hRf := hFrame tcb hT
-    subst hRf
-    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
-    · unfold sendCapRequest
-      split
-      · rfl
-      · rw [hT]
-        simp only [sendPayloadCapRequest, senderFrameCapRequest, blockedSenderDecode, hD]
-        have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs
-            (longCallDecode st tid tcb.registerContext capAddr mi)).isEmpty = true := by
-          unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs longCallDecode
-          simp only [hX]
-          rfl
-        simp only [hE, ↓reduceIte]
-        split <;> rfl
-    · simp only [sendPayloadMessage, senderFrameDecode, hT, blockedSenderDecode, hD,
-        senderFrameMessage, extractMessageRegisters, longSendMessage, longCallDecode]
-      congr 1
-      apply Array.extract_eq_self_of_le
-      simp only [Array.size_append, Architecture.regMessageRegs, Array.size_map, hSz,
-        List.size_toArray, overflowRegsFrom_length]
-      omega
 
 /-- The checked send arm (`dispatchWithCapChecked`'s `.send` case) through the
 specification's send, refusing in the state it was handed
@@ -1049,7 +843,14 @@ as seL4's `copyMRs` does; any other call takes the general arm. -/
                         else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                 | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
-            | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+            | none =>
+                if sendBlocksFast st epId tid ep.sendTailCode &&
+                    endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                      (ctx.endpointLabelOf epId) then
+                  .ok ((), recordSendCapWords (removeRunnableOnCore
+                    (storeCallBlock st epId tid ep.sendTailCode) tid executingCore) tid
+                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
     | _ => .error (.invalidCapability, st)
 
@@ -1104,7 +905,33 @@ theorem endpointCallLongCheckedArmR_eq_general (ctx : LabelingContext)
             · rfl
           · rfl
         · rfl
-      · rfl
+      · next hH =>
+        split
+        · next hG =>
+          simp only [Bool.and_eq_true] at hG
+          obtain ⟨hB, hFlow⟩ := hG
+          unfold sendBlocksFast at hB
+          split at hB
+          · next t hT =>
+            simp only [Bool.and_eq_true] at hB
+            obtain ⟨hA, hIP⟩ := hB
+            rw [enqueuesInPlaceCode_eq,
+              show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl] at hIP
+            have hNoRecv : (match st.getEndpoint? epId with
+                | some ep => ep.receiveQ.head | none => none) = none := by
+              rw [hE]; exact hH
+            unfold endpointCallCheckedArmGeneralR
+            simp only [hTgt, hE, Option.bind_some, hH]
+            unfold endpointCallCrossCoreDispatchChecked
+            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ _ hNoRecv,
+              endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ (hReq epId _ _),
+              callBlock_inPlace_eq _ _ _ _ _ ep t
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP,
+              recordSendCapWords_eq]
+            rfl
+          · cases hB
+        · rfl
     · rfl
   · next hTgt =>
     unfold endpointCallCheckedArmGeneralR
@@ -1931,6 +1758,27 @@ other rendezvous goes through the specification
               .ok ((), performReceiveDelivered st epId s sTcb.queueNextCode tid executingCore
                 f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
             else endpointReceiveRendezvousR epId tid replyCode executingCore st
+          | .sendLong _ mi =>
+            if !sTcb.ipcFaultSend && receiveTakesInPlace st epId tid s sTcb &&
+                overflowWordsRead st s sTcb (mi.length - 4) then
+              let rf := sTcb.registerContext
+              .ok ((), performReceiveDeliveredLong st epId s sTcb.queueNextCode tid executingCore
+                mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
+                (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 0)
+                (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 1)
+                (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 2)
+                (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 3))
+            else endpointReceiveRendezvousR epId tid replyCode executingCore st
+          | .callLong _ mi =>
+            match SeLe4n.ReplyId.ofOptCode replyCode with
+            | some rid =>
+              if !sTcb.ipcFaultSend && receiveCallTakesInPlace st epId tid s sTcb rid &&
+                  overflowWordsRead st s sTcb (mi.length - 4) then
+                .ok ((), performReceiveCallDeliveredLong st epId s sTcb.queueNextCode tid rid
+                  executingCore sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
+                  sTcb.ipcBadged)
+              else endpointReceiveRendezvousR epId tid replyCode executingCore st
+            | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
           | _ => endpointReceiveRendezvousR epId tid replyCode executingCore st
         | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
       | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
@@ -1988,6 +1836,52 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
             unfold endpointReceiveRendezvousR
             simp only [hEp, Option.bind_some, hH, h1, h2, CapTransferSummary.installedCount_empty]
             rw [h3]
+          · rfl
+        · next capAddr mi hR =>
+          split
+          · next hG =>
+            simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+            obtain ⟨⟨hF, hG⟩, hOk⟩ := hG
+            have hTs : st.getTcb? s = some sTcb := hT
+            obtain ⟨-, hMax, -, -⟩ :=
+              decodeSyscallArgsFromState_of_routedSendLong st s _ _ 32 capAddr mi hR
+            have hn : mi.length - 4 ≤ Architecture.IpcBufferRead.maxOverflowSlots := by
+              have h116 : Architecture.IpcBufferRead.maxOverflowSlots = 116 := rfl
+              have h120 : maxMessageRegisters = 120 := rfl
+              rw [h116]; rw [h120] at hMax; omega
+            obtain ⟨h1, h2, h3⟩ := receiveTakeLong_delivered st epId ep tid
+              (SeLe4n.ReplyId.ofOptCode replyCode) (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0)
+              executingCore s sTcb capAddr mi ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp)
+              hH ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hR
+              (overflowWordsRead_spec hTs hn hOk) hF
+            unfold endpointReceiveRendezvousR
+            simp only [hEp, Option.bind_some, hH, h1, h2, CapTransferSummary.installedCount_empty]
+            rw [h3]
+          · rfl
+        · next capAddr mi hR =>
+          split
+          · next rid hRid =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+              obtain ⟨⟨hF, hG⟩, hOk⟩ := hG
+              have hTs : st.getTcb? s = some sTcb := hT
+              obtain ⟨-, hMax, -, -⟩ :=
+                decodeSyscallArgsFromState_of_routedCallLong st s _ _ 32 capAddr mi hR
+              have hn : mi.length - 4 ≤ Architecture.IpcBufferRead.maxOverflowSlots := by
+                have h116 : Architecture.IpcBufferRead.maxOverflowSlots = 116 := rfl
+                have h120 : maxMessageRegisters = 120 := rfl
+                rw [h116]; rw [h120] at hMax; omega
+              obtain ⟨h1, h2, h3⟩ := receiveCallLongTake_delivered st epId ep tid rid
+                (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore s sTcb capAddr mi
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hF hR
+                (overflowWordsRead_spec hTs hn hOk)
+              unfold endpointReceiveRendezvousR
+              simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
+                CapTransferSummary.installedCount_empty]
+              rw [h3]
+            · rfl
           · rfl
         all_goals rfl
       · rfl
