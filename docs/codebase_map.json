@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/decode-path-zero",
-      "commit_sha": "1759d9c34175874321a65abe340d78c0803ded4d",
-      "tree_sha": "60b69a023226c54b1bda27e2698c1adff3e1f340",
-      "committed_at_utc": "2026-11-08T18:15:02+00:00"
+      "commit_sha": "546a9653b7f3fa35e75fdfc0c937560f9ee6e963",
+      "tree_sha": "953782d473084821d9ab4958d333a7aada8a72f5",
+      "committed_at_utc": "2026-11-08T20:10:05+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5fb597ae4c2edc0c44e00b737354a932e9e5fd9e8848f02b3e52e4acebf1fe5c"
+    "source_digest": "498c687898aa46734c8e8ab2eb61fb475ede5508b377c4a5f3dc2629c075acbb"
   },
   "summary": {
     "module_count": 663,
-    "declaration_count": 34894
+    "declaration_count": 34910
   },
   "readme_sync": {
     "version": "0.37.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 593,
-    "production_loc": 600346,
+    "production_loc": 600648,
     "test_files": 70,
     "test_loc": 88884,
-    "proved_theorem_lemma_decls": 23092,
+    "proved_theorem_lemma_decls": 23103,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -11829,7 +11829,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.IpcBufferRead",
       "path": "SeLe4n/Kernel/Architecture/IpcBufferRead.lean",
-      "declaration_count": 61,
+      "declaration_count": 70,
       "declarations": [
         {
           "kind": "inductive",
@@ -11993,8 +11993,8 @@
         },
         {
           "kind": "theorem",
-          "name": "ipcBufferReadMr_of_firstPage",
-          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_of_firstPage",
+          "name": "ipcBufferReadMr_of_samePage",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_of_samePage",
           "line": 229,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -12009,10 +12009,129 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "firstPageSlots",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
+          "line": 254,
+          "called": [
+            "SeLe4n.VAddr",
+            "SeLe4n.VAddr.toNat",
+            "SeLe4n.pageBytes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "slotPage_eq_ofNat",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.slotPage_eq_ofNat",
+          "line": 257,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
+            "SeLe4n.VAddr",
+            "SeLe4n.VAddr.ofNat",
+            "SeLe4n.VAddr.toNat",
+            "SeLe4n.pageBytes"
+          ],
+          "private": true
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferSlotPage_of_lt_firstPageSlots",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage_of_lt_firstPageSlots",
+          "line": 262,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.slotPage_eq_ofNat",
+            "SeLe4n.VAddr",
+            "SeLe4n.VAddr.ofNat",
+            "SeLe4n.pageBytes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferSlotPage_of_firstPageSlots_le",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage_of_firstPageSlots_le",
+          "line": 271,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.slotPage_eq_ofNat",
+            "SeLe4n.VAddr",
+            "SeLe4n.VAddr.ofNat",
+            "SeLe4n.pageBytes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferSlotPage_firstPageSlots_ne",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage_firstPageSlots_ne",
+          "line": 282,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.slotPage_eq_ofNat",
+            "SeLe4n.VAddr",
+            "SeLe4n.VAddr.ofNat",
+            "SeLe4n.VAddr.toNat",
+            "SeLe4n.pageBytes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "firstPageSlots_pos",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots_pos",
+          "line": 292,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
+            "SeLe4n.VAddr",
+            "SeLe4n.pageBytes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "overflowSecondRead",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead",
+          "line": 298,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "overflowSecondRead_lt",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead_lt",
+          "line": 301,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferOverflowReadable",
+          "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowReadable",
+          "line": 308,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_of_samePage",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage_of_firstPageSlots_le",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage_of_lt_firstPageSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "ipcBufferReadMr_ok_of_mapped",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_ok_of_mapped",
-          "line": 256,
+          "line": 330,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotAddr",
@@ -12036,7 +12155,7 @@
           "kind": "theorem",
           "name": "ipcBufferReadMr_out_of_range",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_out_of_range",
-          "line": 275,
+          "line": 349,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
@@ -12048,7 +12167,7 @@
           "kind": "theorem",
           "name": "ipcBufferReadMr_ok_bound",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_ok_bound",
-          "line": 285,
+          "line": 359,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
@@ -12060,7 +12179,7 @@
           "kind": "theorem",
           "name": "ipcBufferReadMr_ok_implies_tcb",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_ok_implies_tcb",
-          "line": 296,
+          "line": 370,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Model.SystemState",
@@ -12073,7 +12192,7 @@
           "kind": "theorem",
           "name": "ipcBufferReadMr_reads_only_caller_tcb",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_reads_only_caller_tcb",
-          "line": 316,
+          "line": 390,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
@@ -12091,7 +12210,7 @@
           "kind": "def",
           "name": "ipcBufferSlotPAddr?",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
-          "line": 377,
+          "line": 451,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotAddr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
@@ -12110,7 +12229,7 @@
           "kind": "theorem",
           "name": "ipcBufferReadMr_of_slotPAddr?",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_of_slotPAddr?",
-          "line": 394,
+          "line": 468,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_ok_of_mapped",
@@ -12127,7 +12246,7 @@
           "kind": "theorem",
           "name": "ipcBufferSlotPAddr?_aligned",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?_aligned",
-          "line": 417,
+          "line": 491,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Model.SystemState",
@@ -12140,7 +12259,7 @@
           "kind": "theorem",
           "name": "ipcBufferSlotPAddr?_ram",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?_ram",
-          "line": 436,
+          "line": 510,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.MachineState.addrInRange",
@@ -12153,7 +12272,7 @@
           "kind": "def",
           "name": "overflowStop",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowStop",
-          "line": 458,
+          "line": 532,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
             "SeLe4n.Model.MessageInfo",
@@ -12164,7 +12283,7 @@
           "kind": "def",
           "name": "overflowStopImpl",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowStopImpl",
-          "line": 465,
+          "line": 539,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
             "SeLe4n.Model.MessageInfo.maxLabel",
@@ -12176,7 +12295,7 @@
           "kind": "theorem",
           "name": "overflowStop_eq_impl",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowStop_eq_impl",
-          "line": 472,
+          "line": 546,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowStop",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowStopImpl",
@@ -12190,7 +12309,7 @@
           "kind": "def",
           "name": "callerOverflowAddrs",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.callerOverflowAddrs",
-          "line": 492,
+          "line": 566,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowStop",
@@ -12204,7 +12323,7 @@
           "kind": "def",
           "name": "syncUserWords",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
-          "line": 511,
+          "line": 585,
           "called": [
             "SeLe4n.Model.SystemState"
           ]
@@ -12213,7 +12332,7 @@
           "kind": "def",
           "name": "clearUserWords",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.clearUserWords",
-          "line": 520,
+          "line": 594,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
             "SeLe4n.Model.SystemState"
@@ -12223,7 +12342,7 @@
           "kind": "def",
           "name": "SeLe4n.Model.SystemState.withKernelHeapFreeBytes",
           "full_name": "SeLe4n.Model.SystemState.withKernelHeapFreeBytes",
-          "line": 531,
+          "line": 605,
           "called": [
             "SeLe4n.Model.SystemState"
           ]
@@ -12232,7 +12351,7 @@
           "kind": "theorem",
           "name": "withKernelHeapFreeBytes_kernelHeapFreeBytes",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.withKernelHeapFreeBytes_kernelHeapFreeBytes",
-          "line": 535,
+          "line": 609,
           "called": [
             "SeLe4n.MachineState",
             "SeLe4n.Model.SystemState",
@@ -12243,7 +12362,7 @@
           "kind": "theorem",
           "name": "withKernelHeapFreeBytes_objects",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.withKernelHeapFreeBytes_objects",
-          "line": 538,
+          "line": 612,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.withKernelHeapFreeBytes"
@@ -12253,7 +12372,7 @@
           "kind": "theorem",
           "name": "withKernelHeapFreeBytes_scheduler",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.withKernelHeapFreeBytes_scheduler",
-          "line": 541,
+          "line": 615,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.withKernelHeapFreeBytes"
@@ -12263,7 +12382,7 @@
           "kind": "theorem",
           "name": "withKernelHeapFreeBytes_memory",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.withKernelHeapFreeBytes_memory",
-          "line": 544,
+          "line": 618,
           "called": [
             "SeLe4n.MachineState",
             "SeLe4n.Model.SystemState",
@@ -12274,7 +12393,7 @@
           "kind": "theorem",
           "name": "withKernelHeapFreeBytes_residentCode",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.withKernelHeapFreeBytes_residentCode",
-          "line": 547,
+          "line": 621,
           "called": [
             "SeLe4n.MachineState",
             "SeLe4n.Model.SystemState",
@@ -12285,7 +12404,7 @@
           "kind": "theorem",
           "name": "withKernelHeapFreeBytes_syncUserWords",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.withKernelHeapFreeBytes_syncUserWords",
-          "line": 554,
+          "line": 628,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
             "SeLe4n.Model.SystemState",
@@ -12296,14 +12415,14 @@
           "kind": "theorem",
           "name": "byteArray_eq_empty_of_size",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.byteArray_eq_empty_of_size",
-          "line": 561,
+          "line": 635,
           "called": []
         },
         {
           "kind": "def",
           "name": "syncUserWordsImpl",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWordsImpl",
-          "line": 570,
+          "line": 644,
           "called": [
             "SeLe4n.MachineState",
             "SeLe4n.Model.SystemState"
@@ -12313,7 +12432,7 @@
           "kind": "theorem",
           "name": "syncUserWords_eq_impl",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords_eq_impl",
-          "line": 578,
+          "line": 652,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.byteArray_eq_empty_of_size",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
@@ -12324,7 +12443,7 @@
           "kind": "theorem",
           "name": "syncUserWords_objects",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords_objects",
-          "line": 594,
+          "line": 668,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
             "SeLe4n.Model.SystemState"
@@ -12334,7 +12453,7 @@
           "kind": "theorem",
           "name": "syncUserWords_scheduler",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords_scheduler",
-          "line": 598,
+          "line": 672,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
             "SeLe4n.Model.SystemState"
@@ -12344,7 +12463,7 @@
           "kind": "theorem",
           "name": "syncUserWords_memory",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords_memory",
-          "line": 604,
+          "line": 678,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
             "SeLe4n.MachineState",
@@ -12355,7 +12474,7 @@
           "kind": "theorem",
           "name": "syncUserWords_eq_words",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords_eq_words",
-          "line": 609,
+          "line": 683,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
             "SeLe4n.Model.SystemState"
@@ -12365,7 +12484,7 @@
           "kind": "theorem",
           "name": "syncUserWords_syncUserWords",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords_syncUserWords",
-          "line": 617,
+          "line": 691,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
             "SeLe4n.Model.SystemState"
@@ -12375,7 +12494,7 @@
           "kind": "theorem",
           "name": "ipcBufferReadMr_syncUserWord",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_syncUserWord",
-          "line": 626,
+          "line": 700,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_of_slotPAddr?",
@@ -12399,7 +12518,7 @@
           "kind": "def",
           "name": "encodeWordPairs",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.encodeWordPairs",
-          "line": 645,
+          "line": 719,
           "called": [
             "SeLe4n.PAddr",
             "SeLe4n.PAddr.toNat"
@@ -12409,14 +12528,14 @@
           "kind": "def",
           "name": "wordRunPageBytes",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.wordRunPageBytes",
-          "line": 658,
+          "line": 732,
           "called": []
         },
         {
           "kind": "def",
           "name": "expandRun",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRun",
-          "line": 661,
+          "line": 735,
           "called": [
             "SeLe4n.PAddr",
             "SeLe4n.PAddr.ofNat",
@@ -12427,7 +12546,7 @@
           "kind": "def",
           "name": "expandRuns",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRuns",
-          "line": 665,
+          "line": 739,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRun",
             "SeLe4n.PAddr"
@@ -12437,7 +12556,7 @@
           "kind": "theorem",
           "name": "PAddr.ofNat_toNat",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.PAddr.ofNat_toNat",
-          "line": 667,
+          "line": 741,
           "called": [
             "SeLe4n.PAddr",
             "SeLe4n.PAddr.ofNat",
@@ -12448,7 +12567,7 @@
           "kind": "def",
           "name": "nextResolvedSlot",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.nextResolvedSlot",
-          "line": 672,
+          "line": 746,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Model.SystemState",
@@ -12459,7 +12578,7 @@
           "kind": "def",
           "name": "runExtent",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.runExtent",
-          "line": 682,
+          "line": 756,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.wordRunPageBytes",
@@ -12471,7 +12590,7 @@
           "kind": "def",
           "name": "overflowRunsFrom",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowRunsFrom",
-          "line": 695,
+          "line": 769,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.nextResolvedSlot",
@@ -12486,7 +12605,7 @@
           "kind": "def",
           "name": "overflowRuns",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowRuns",
-          "line": 717,
+          "line": 791,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowRunsFrom",
             "SeLe4n.Model.SystemState",
@@ -12498,7 +12617,7 @@
           "kind": "theorem",
           "name": "nextResolvedSlot_spec",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.nextResolvedSlot_spec",
-          "line": 722,
+          "line": 796,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.nextResolvedSlot",
@@ -12510,7 +12629,7 @@
           "kind": "theorem",
           "name": "nextResolvedSlot_resolves",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.nextResolvedSlot_resolves",
-          "line": 741,
+          "line": 815,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.nextResolvedSlot",
@@ -12522,7 +12641,7 @@
           "kind": "theorem",
           "name": "runExtent_spec",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.runExtent_spec",
-          "line": 755,
+          "line": 829,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.PAddr.ofNat_toNat",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?",
@@ -12537,7 +12656,7 @@
           "kind": "theorem",
           "name": "expandRuns_overflowRunsFrom",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRuns_overflowRunsFrom",
-          "line": 811,
+          "line": 885,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.PAddr.ofNat_toNat",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRun",
@@ -12557,7 +12676,7 @@
           "kind": "theorem",
           "name": "expandRuns_overflowRuns",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRuns_overflowRuns",
-          "line": 854,
+          "line": 928,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRuns",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRuns_overflowRunsFrom",
@@ -12571,7 +12690,7 @@
           "kind": "theorem",
           "name": "overflowRunsFrom_within_page",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowRunsFrom_within_page",
-          "line": 862,
+          "line": 936,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr?_aligned",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.nextResolvedSlot",
@@ -12589,7 +12708,7 @@
           "kind": "theorem",
           "name": "overflowRuns_within_page",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowRuns_within_page",
-          "line": 894,
+          "line": 968,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowRuns",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowRunsFrom_within_page",
@@ -12605,7 +12724,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.IpcBufferTlbFill",
       "path": "SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean",
-      "declaration_count": 43,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "def",
@@ -12713,13 +12832,46 @@
         },
         {
           "kind": "def",
-          "name": "ipcBufferFillHeldOne",
-          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne",
-          "line": 177,
+          "name": "ipcBufferPageHeld",
+          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferPageHeld",
+          "line": 176,
           "called": [
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
+            "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.tlbEntriesHoldWalked",
             "SeLe4n.Kernel.Architecture.tlbOnCore",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getVSpaceRoot?",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferPageHeld_eq",
+          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferPageHeld_eq",
+          "line": 190,
+          "called": [
+            "SeLe4n.ASID",
+            "SeLe4n.Kernel.Architecture.ipcBufferPageHeld",
+            "SeLe4n.Kernel.Architecture.resolveAsidRoot",
+            "SeLe4n.Kernel.Architecture.tlbEntriesHold",
+            "SeLe4n.Kernel.Architecture.tlbEntriesHoldWalked_eq",
+            "SeLe4n.Kernel.Architecture.tlbOnCore",
+            "SeLe4n.Kernel.Architecture.tlbWalkEntry",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getVSpaceRoot?",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcBufferFillHeldOne",
+          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne",
+          "line": 217,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
+            "SeLe4n.Kernel.Architecture.ipcBufferPageHeld",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -12731,16 +12883,56 @@
           "kind": "theorem",
           "name": "ipcBufferFillHeld_one",
           "full_name": "SeLe4n.Kernel.Architecture.ipcBufferFillHeld_one",
-          "line": 197,
+          "line": 225,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
             "SeLe4n.Kernel.Architecture.ipcBufferFillHeld",
             "SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne",
             "SeLe4n.Kernel.Architecture.ipcBufferOverflowPages",
+            "SeLe4n.Kernel.Architecture.ipcBufferPageHeld_eq",
             "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan",
-            "SeLe4n.Kernel.Architecture.resolveAsidRoot",
-            "SeLe4n.Kernel.Architecture.tlbEntriesHoldWalked_eq",
-            "SeLe4n.Kernel.Architecture.tlbWalkEntry",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getVSpaceRoot?",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "eraseDups_replicate_succ",
+          "full_name": "SeLe4n.Kernel.Architecture.eraseDups_replicate_succ",
+          "line": 240,
+          "called": [],
+          "private": true
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferOverflowPages_split",
+          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferOverflowPages_split",
+          "line": 253,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots_pos",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage_firstPageSlots_ne",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage_of_firstPageSlots_le",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage_of_lt_firstPageSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
+            "SeLe4n.Kernel.Architecture.eraseDups_replicate_succ",
+            "SeLe4n.Kernel.Architecture.ipcBufferOverflowPages",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tlbFillIpcBufferInOnCore",
+          "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore",
+          "line": 300,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
+            "SeLe4n.Kernel.Architecture.tlbFillOnCore",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -12750,82 +12942,54 @@
         },
         {
           "kind": "def",
-          "name": "overflowSlotsOnFirstPage",
-          "full_name": "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
-          "line": 229,
+          "name": "ipcBufferFillHeldIn",
+          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn",
+          "line": 316,
           "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.firstPageSlots",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
-            "SeLe4n.VAddr"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "overflowSlotsOnFirstPage_spec",
-          "full_name": "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage_spec",
-          "line": 234,
-          "called": [
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
-            "SeLe4n.VAddr"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "ipcBufferOverflowPages_of_onFirstPage",
-          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferOverflowPages_of_onFirstPage",
-          "line": 245,
-          "called": [
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
-            "SeLe4n.Kernel.Architecture.ipcBufferOverflowPages",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage_spec",
-            "SeLe4n.VAddr"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "ipcBufferWalkPlan_of_onFirstPage",
-          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan_of_onFirstPage",
-          "line": 264,
-          "called": [
-            "SeLe4n.Kernel.Architecture.ipcBufferOverflowPages_of_onFirstPage",
-            "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
+            "SeLe4n.Kernel.Architecture.ipcBufferPageHeld",
+            "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.SystemState.getVSpaceRoot?",
             "SeLe4n.ThreadId"
           ]
         },
         {
           "kind": "theorem",
-          "name": "tlbFillIpcBufferOnCore_of_onFirstPage",
-          "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_of_onFirstPage",
-          "line": 271,
+          "name": "tlbFillIpcBufferInOnCore_eq",
+          "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore_eq",
+          "line": 329,
           "called": [
-            "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan_of_onFirstPage",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
+            "SeLe4n.Kernel.Architecture.ipcBufferOverflowPages_split",
+            "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan",
+            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore",
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.SystemState.getVSpaceRoot?",
             "SeLe4n.ThreadId"
           ]
         },
         {
           "kind": "theorem",
-          "name": "ipcBufferFillHeld_of_onFirstPage",
-          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferFillHeld_of_onFirstPage",
-          "line": 279,
+          "name": "ipcBufferFillHeldIn_eq",
+          "full_name": "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn_eq",
+          "line": 344,
           "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
             "SeLe4n.Kernel.Architecture.ipcBufferFillHeld",
-            "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan_of_onFirstPage",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
+            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn",
+            "SeLe4n.Kernel.Architecture.ipcBufferOverflowPages_split",
+            "SeLe4n.Kernel.Architecture.ipcBufferPageHeld_eq",
+            "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.SystemState.getVSpaceRoot?",
             "SeLe4n.ThreadId"
           ]
         },
@@ -12833,7 +12997,7 @@
           "kind": "theorem",
           "name": "foldl_tlbFillOnCore_of_held",
           "full_name": "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_of_held",
-          "line": 286,
+          "line": 361,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.tlbEntriesHold",
@@ -12852,7 +13016,7 @@
           "kind": "theorem",
           "name": "tlbFillIpcBufferOnCore_of_held",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_of_held",
-          "line": 310,
+          "line": 385,
           "called": [
             "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_of_held",
             "SeLe4n.Kernel.Architecture.ipcBufferFillHeld",
@@ -12867,7 +13031,7 @@
           "kind": "theorem",
           "name": "foldl_tlbFillOnCore_frame",
           "full_name": "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_frame",
-          "line": 326,
+          "line": 401,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.tlbFillOnCore",
@@ -12882,7 +13046,7 @@
           "kind": "theorem",
           "name": "tlbFillIpcBufferOnCore_frame",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_frame",
-          "line": 346,
+          "line": 421,
           "called": [
             "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_frame",
             "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan",
@@ -12896,7 +13060,7 @@
           "kind": "theorem",
           "name": "tlbFillIpcBufferOnCore_scheduler",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_scheduler",
-          "line": 362,
+          "line": 437,
           "called": [
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
             "SeLe4n.Kernel.Architecture.tlbFillOnCore",
@@ -12909,7 +13073,7 @@
           "kind": "theorem",
           "name": "foldl_tlbFillOnCore_tlbOnCore_ne",
           "full_name": "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_tlbOnCore_ne",
-          "line": 380,
+          "line": 455,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.tlbFillOnCore",
@@ -12925,7 +13089,7 @@
           "kind": "theorem",
           "name": "tlbFillIpcBufferOnCore_tlbOnCore_ne",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_tlbOnCore_ne",
-          "line": 396,
+          "line": 471,
           "called": [
             "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_tlbOnCore_ne",
             "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan",
@@ -12940,7 +13104,7 @@
           "kind": "theorem",
           "name": "foldl_tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore",
           "full_name": "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 411,
+          "line": 486,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.tlbFillOnCore",
@@ -12956,7 +13120,7 @@
           "kind": "theorem",
           "name": "tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 429,
+          "line": 504,
           "called": [
             "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore",
             "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan",
@@ -12971,7 +13135,7 @@
           "kind": "theorem",
           "name": "tlbFillOnCore_entries_mono",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillOnCore_entries_mono",
-          "line": 446,
+          "line": 521,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.mem_tlbInsertOnCore_self",
@@ -12989,7 +13153,7 @@
           "kind": "theorem",
           "name": "foldl_tlbFillOnCore_entries_mono",
           "full_name": "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_entries_mono",
-          "line": 455,
+          "line": 530,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.tlbFillOnCore",
@@ -13006,7 +13170,7 @@
           "kind": "theorem",
           "name": "tlbWalkEntry_congr",
           "full_name": "SeLe4n.Kernel.Architecture.tlbWalkEntry_congr",
-          "line": 471,
+          "line": 546,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.resolveAsidRoot",
@@ -13021,7 +13185,7 @@
           "kind": "theorem",
           "name": "foldl_tlbFillOnCore_mem",
           "full_name": "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_mem",
-          "line": 479,
+          "line": 554,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_entries_mono",
@@ -13042,7 +13206,7 @@
           "kind": "theorem",
           "name": "mem_ipcBufferOverflowPages_of_lt",
           "full_name": "SeLe4n.Kernel.Architecture.mem_ipcBufferOverflowPages_of_lt",
-          "line": 504,
+          "line": 579,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
             "SeLe4n.Kernel.Architecture.ipcBufferOverflowPages",
@@ -13054,7 +13218,7 @@
           "kind": "theorem",
           "name": "tlbFillIpcBufferOnCore_caches_read_translation",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_caches_read_translation",
-          "line": 525,
+          "line": 600,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_ok_of_mapped",
@@ -13090,7 +13254,7 @@
           "kind": "theorem",
           "name": "tlbFillOnCore_eq_setPerCoreTlb",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillOnCore_eq_setPerCoreTlb",
-          "line": 575,
+          "line": 650,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.tlbFillOnCore",
@@ -13105,7 +13269,7 @@
           "kind": "theorem",
           "name": "foldl_tlbFillOnCore_eq_setPerCoreTlb",
           "full_name": "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_eq_setPerCoreTlb",
-          "line": 583,
+          "line": 658,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.tlbFillOnCore",
@@ -13120,7 +13284,7 @@
           "kind": "theorem",
           "name": "tlbFillIpcBufferOnCore_eq_setPerCoreTlb",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb",
-          "line": 602,
+          "line": 677,
           "called": [
             "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_eq_setPerCoreTlb",
             "SeLe4n.Kernel.Architecture.ipcBufferWalkPlan",
@@ -13134,7 +13298,7 @@
           "kind": "def",
           "name": "tlbPopToSpareLoop",
           "full_name": "SeLe4n.Kernel.Architecture.tlbPopToSpareLoop",
-          "line": 613,
+          "line": 688,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SystemState",
@@ -13145,7 +13309,7 @@
           "kind": "theorem",
           "name": "tlbPopToSpareLoop_eq",
           "full_name": "SeLe4n.Kernel.Architecture.tlbPopToSpareLoop_eq",
-          "line": 623,
+          "line": 698,
           "called": [
             "SeLe4n.Kernel.Architecture.setTlbOnCore",
             "SeLe4n.Kernel.Architecture.tlbPopToSpareLoop",
@@ -13158,7 +13322,7 @@
           "kind": "def",
           "name": "tlbUndoFillOnCore",
           "full_name": "SeLe4n.Kernel.Architecture.tlbUndoFillOnCore",
-          "line": 645,
+          "line": 720,
           "called": [
             "SeLe4n.Kernel.Architecture.setTlbOnCore",
             "SeLe4n.Kernel.Architecture.tlbOnCore",
@@ -13172,7 +13336,7 @@
           "kind": "theorem",
           "name": "tlbUndoFillOnCore_eq",
           "full_name": "SeLe4n.Kernel.Architecture.tlbUndoFillOnCore_eq",
-          "line": 653,
+          "line": 728,
           "called": [
             "SeLe4n.Kernel.Architecture.setTlbOnCore",
             "SeLe4n.Kernel.Architecture.tlbOnCore",
@@ -13187,7 +13351,7 @@
           "kind": "theorem",
           "name": "tlbFillOnCore_eq_prefix",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillOnCore_eq_prefix",
-          "line": 667,
+          "line": 742,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.setTlbOnCore",
@@ -13206,7 +13370,7 @@
           "kind": "theorem",
           "name": "foldl_tlbFillOnCore_eq_prefix",
           "full_name": "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_eq_prefix",
-          "line": 680,
+          "line": 755,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.setTlbOnCore",
@@ -13225,7 +13389,7 @@
           "kind": "theorem",
           "name": "tlbFillIpcBufferOnCore_eq_prefix",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_prefix",
-          "line": 696,
+          "line": 771,
           "called": [
             "SeLe4n.Kernel.Architecture.foldl_tlbFillOnCore_eq_prefix",
             "SeLe4n.Kernel.Architecture.setTlbOnCore",
@@ -13241,7 +13405,7 @@
           "kind": "theorem",
           "name": "tlbUndoFillOnCore_tlbFillIpcBufferOnCore",
           "full_name": "SeLe4n.Kernel.Architecture.tlbUndoFillOnCore_tlbFillIpcBufferOnCore",
-          "line": 708,
+          "line": 783,
           "called": [
             "SeLe4n.Kernel.Architecture.setTlbOnCore",
             "SeLe4n.Kernel.Architecture.setTlbOnCore_tlbOnCore",
@@ -13260,7 +13424,7 @@
           "kind": "theorem",
           "name": "tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle",
           "full_name": "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle",
-          "line": 740,
+          "line": 815,
           "called": [
             "SeLe4n.Kernel.Architecture.proofLayerInvariantBundle",
             "SeLe4n.Kernel.Architecture.proofLayerInvariantBundle_setPerCoreTlb",
@@ -13293,6 +13457,8 @@
             "SeLe4n.ThreadId",
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.isCanonical",
+            "SeLe4n.VAddr.pageBase",
+            "SeLe4n.VAddr.pageOffset",
             "SeLe4n.ipcBufferAlignment"
           ]
         },
@@ -13300,7 +13466,7 @@
           "kind": "def",
           "name": "setIPCBufferOp",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
-          "line": 120,
+          "line": 125,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress",
             "SeLe4n.Model.KernelError",
@@ -13315,7 +13481,7 @@
           "kind": "def",
           "name": "setIPCBufferOpImpl",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOpImpl",
-          "line": 143,
+          "line": 148,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress",
             "SeLe4n.Model.KernelError",
@@ -13332,7 +13498,7 @@
           "kind": "theorem",
           "name": "setIPCBufferOp_eq_impl",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_eq_impl",
-          "line": 158,
+          "line": 163,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOpImpl",
@@ -13346,7 +13512,7 @@
           "kind": "def",
           "name": "setIPCBufferAdmitted",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferAdmitted",
-          "line": 177,
+          "line": 182,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress",
             "SeLe4n.Model.SystemState",
@@ -13360,7 +13526,7 @@
           "kind": "theorem",
           "name": "setIPCBufferOp_of_admitted",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_of_admitted",
-          "line": 184,
+          "line": 189,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferAdmitted",
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
@@ -13379,7 +13545,7 @@
           "kind": "theorem",
           "name": "validateIpcBufferAddress_implies_aligned",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress_implies_aligned",
-          "line": 206,
+          "line": 211,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress",
             "SeLe4n.Model.SystemState",
@@ -13392,7 +13558,7 @@
           "kind": "theorem",
           "name": "validateIpcBufferAddress_implies_canonical",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress_implies_canonical",
-          "line": 218,
+          "line": 223,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress",
             "SeLe4n.Model.SystemState",
@@ -13405,7 +13571,7 @@
           "kind": "theorem",
           "name": "validateIpcBufferAddress_implies_mapped_writable",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress_implies_mapped_writable",
-          "line": 237,
+          "line": 243,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress",
             "SeLe4n.MachineState",
@@ -13415,6 +13581,8 @@
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.toObjId",
             "SeLe4n.VAddr",
+            "SeLe4n.VAddr.pageBase",
+            "SeLe4n.VAddr.pageOffset",
             "SeLe4n.ipcBufferAlignment"
           ]
         },
@@ -13422,7 +13590,7 @@
           "kind": "theorem",
           "name": "ipcBuffer_within_page",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.ipcBuffer_within_page",
-          "line": 288,
+          "line": 295,
           "called": [
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.toNat",
@@ -13433,7 +13601,7 @@
           "kind": "theorem",
           "name": "setIPCBufferOp_success_shape",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_success_shape",
-          "line": 301,
+          "line": 308,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress",
@@ -13448,7 +13616,7 @@
           "kind": "theorem",
           "name": "setIPCBufferOp_scheduler_eq",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_scheduler_eq",
-          "line": 323,
+          "line": 330,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
             "SeLe4n.Model.SystemState",
@@ -13460,7 +13628,7 @@
           "kind": "theorem",
           "name": "setIPCBufferOp_irqSignalLines_eq",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_irqSignalLines_eq",
-          "line": 335,
+          "line": 342,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
             "SeLe4n.Model.SystemState",
@@ -13473,7 +13641,7 @@
           "kind": "theorem",
           "name": "setIPCBufferOp_machine_eq",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_machine_eq",
-          "line": 347,
+          "line": 354,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
             "SeLe4n.Model.SystemState",
@@ -13486,7 +13654,7 @@
           "kind": "theorem",
           "name": "setIPCBufferOp_asidTable_eq",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_asidTable_eq",
-          "line": 362,
+          "line": 369,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
             "SeLe4n.Model.SystemState",
@@ -13501,7 +13669,7 @@
           "kind": "theorem",
           "name": "setIPCBufferOp_deterministic",
           "full_name": "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp_deterministic",
-          "line": 382,
+          "line": 389,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
             "SeLe4n.Model.SystemState",
@@ -21234,7 +21402,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.RegisterDecode",
       "path": "SeLe4n/Kernel/Architecture/RegisterDecode.lean",
-      "declaration_count": 64,
+      "declaration_count": 68,
       "declarations": [
         {
           "kind": "def",
@@ -21305,9 +21473,49 @@
         },
         {
           "kind": "def",
+          "name": "decodeMsgInfoWord",
+          "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
+          "line": 95,
+          "called": [
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.MessageInfo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeMsgInfoWord_eq",
+          "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_eq",
+          "line": 101,
+          "called": [
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
+            "SeLe4n.Model.MessageInfo.decode",
+            "SeLe4n.Model.MessageInfo.maxLabel",
+            "SeLe4n.Model.maxExtraCaps",
+            "SeLe4n.Model.maxMessageRegisters"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeMsgInfoWord_readReg",
+          "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
+          "line": 117,
+          "called": [
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_eq",
+            "SeLe4n.RegName",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.readReg",
+            "SeLe4n.readRegWord",
+            "SeLe4n.readReg_val_eq_word"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "decodeSyscallId",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId",
-          "line": 94,
+          "line": 130,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SyscallId",
@@ -21319,7 +21527,7 @@
           "kind": "def",
           "name": "validateRegBound",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound",
-          "line": 101,
+          "line": 137,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.RegName"
@@ -21329,7 +21537,7 @@
           "kind": "def",
           "name": "decodeSyscallArgs",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
-          "line": 111,
+          "line": 147,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
@@ -21346,7 +21554,7 @@
           "kind": "def",
           "name": "readOverflowWord",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord",
-          "line": 140,
+          "line": 176,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Model.KernelError",
@@ -21358,7 +21566,7 @@
           "kind": "def",
           "name": "decodeSyscallArgsFromState",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
-          "line": 169,
+          "line": 205,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord",
@@ -21376,7 +21584,7 @@
           "kind": "def",
           "name": "decodeSyscallArgsWith",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsWith",
-          "line": 202,
+          "line": 238,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Model.KernelError",
@@ -21392,7 +21600,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_eq_with",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_eq_with",
-          "line": 225,
+          "line": 261,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsWith",
@@ -21407,7 +21615,7 @@
           "kind": "theorem",
           "name": "listMapM_validateRegBound",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.listMapM_validateRegBound",
-          "line": 233,
+          "line": 269,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound",
             "SeLe4n.Model.KernelError",
@@ -21421,7 +21629,7 @@
           "kind": "theorem",
           "name": "arrayMapM_validateRegBound",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.arrayMapM_validateRegBound",
-          "line": 250,
+          "line": 286,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.listMapM_validateRegBound",
             "SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound",
@@ -21436,7 +21644,7 @@
           "kind": "def",
           "name": "mergeOverflowWords",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.mergeOverflowWords",
-          "line": 264,
+          "line": 300,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord",
             "SeLe4n.Model.KernelError",
@@ -21451,7 +21659,7 @@
           "kind": "theorem",
           "name": "decodeCapPtr_readReg",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
-          "line": 279,
+          "line": 315,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -21471,10 +21679,10 @@
           "kind": "def",
           "name": "decodeSyscallArgsFromStateImpl",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromStateImpl",
-          "line": 295,
+          "line": 331,
           "called": [
             "SeLe4n.CPtr.ofWord",
-            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId",
             "SeLe4n.Kernel.Architecture.RegisterDecode.mergeOverflowWords",
             "SeLe4n.Model.KernelError",
@@ -21492,10 +21700,11 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_eq_impl",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_eq_impl",
-          "line": 315,
+          "line": 351,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.arrayMapM_validateRegBound",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromStateImpl",
@@ -21508,7 +21717,7 @@
           "kind": "theorem",
           "name": "decodeCapPtr_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_roundtrip",
-          "line": 347,
+          "line": 383,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofNat_toNat",
@@ -21524,7 +21733,7 @@
           "kind": "theorem",
           "name": "decodeSyscallId_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId_roundtrip",
-          "line": 354,
+          "line": 390,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId",
             "SeLe4n.Kernel.Architecture.RegisterDecode.encodeSyscallId",
@@ -21536,7 +21745,7 @@
           "kind": "theorem",
           "name": "decodeMsgInfo_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo_roundtrip",
-          "line": 362,
+          "line": 398,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
             "SeLe4n.Kernel.Architecture.RegisterDecode.encodeMsgInfo",
@@ -21551,7 +21760,7 @@
           "kind": "theorem",
           "name": "decode_components_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decode_components_roundtrip",
-          "line": 375,
+          "line": 411,
           "called": [
             "SeLe4n.CPtr.toNat",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr",
@@ -21575,7 +21784,7 @@
           "kind": "theorem",
           "name": "extractMessageRegisters_length",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_length",
-          "line": 394,
+          "line": 430,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Model.MessageInfo",
@@ -21587,7 +21796,7 @@
           "kind": "theorem",
           "name": "extractMessageRegisters_ipc_bounded",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_ipc_bounded",
-          "line": 403,
+          "line": 439,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
@@ -21601,7 +21810,7 @@
           "kind": "theorem",
           "name": "extractMessageRegisters_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_roundtrip",
-          "line": 413,
+          "line": 449,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Model.MessageInfo",
@@ -21613,7 +21822,7 @@
           "kind": "theorem",
           "name": "decodeSyscallId_error_iff",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId_error_iff",
-          "line": 431,
+          "line": 467,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId",
             "SeLe4n.Model.SyscallId.ofNat?",
@@ -21624,7 +21833,7 @@
           "kind": "theorem",
           "name": "decodeMsgInfo_error_iff",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo_error_iff",
-          "line": 440,
+          "line": 476,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
             "SeLe4n.Model.MessageInfo.decode",
@@ -21635,7 +21844,7 @@
           "kind": "theorem",
           "name": "decodeCapPtr_ok_iff",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_ok_iff",
-          "line": 449,
+          "line": 485,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr",
@@ -21647,7 +21856,7 @@
           "kind": "theorem",
           "name": "decodeCapPtr_ok_of_word64",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_ok_of_word64",
-          "line": 457,
+          "line": 493,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr",
@@ -21659,7 +21868,7 @@
           "kind": "theorem",
           "name": "validateRegBound_ok_iff",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound_ok_iff",
-          "line": 462,
+          "line": 498,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound",
             "SeLe4n.RegName"
@@ -21669,7 +21878,7 @@
           "kind": "theorem",
           "name": "validateRegBound_error_iff",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound_error_iff",
-          "line": 470,
+          "line": 506,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound",
             "SeLe4n.RegName"
@@ -21679,7 +21888,7 @@
           "kind": "theorem",
           "name": "list_mapM_except_length",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.list_mapM_except_length",
-          "line": 482,
+          "line": 518,
           "called": [],
           "private": true
         },
@@ -21687,7 +21896,7 @@
           "kind": "theorem",
           "name": "array_mapM_except_size",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.array_mapM_except_size",
-          "line": 507,
+          "line": 543,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.list_mapM_except_length"
           ],
@@ -21697,7 +21906,7 @@
           "kind": "theorem",
           "name": "decodeMsgRegs_length",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgRegs_length",
-          "line": 522,
+          "line": 558,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.array_mapM_except_size",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
@@ -21710,7 +21919,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_base_error_propagates",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_base_error_propagates",
-          "line": 560,
+          "line": 596,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -21725,7 +21934,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_ok_implies_base_ok",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_ok_implies_base_ok",
-          "line": 571,
+          "line": 607,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -21740,7 +21949,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_header_preserved",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_header_preserved",
-          "line": 587,
+          "line": 623,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -21755,7 +21964,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_capAddr_eq",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_capAddr_eq",
-          "line": 608,
+          "line": 644,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -21771,7 +21980,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_msgInfo_eq",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_msgInfo_eq",
-          "line": 619,
+          "line": 655,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -21787,7 +21996,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_syscallId_eq",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_syscallId_eq",
-          "line": 630,
+          "line": 666,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -21803,7 +22012,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_reads_only_caller",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_reads_only_caller",
-          "line": 652,
+          "line": 688,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_reads_only_caller_tcb",
@@ -21822,7 +22031,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_size_invariant",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_size_invariant",
-          "line": 684,
+          "line": 720,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -21839,7 +22048,7 @@
           "kind": "inductive",
           "name": "RegisterRoutedSyscall",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.RegisterRoutedSyscall",
-          "line": 725,
+          "line": 761,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.CPtr",
@@ -21852,7 +22061,7 @@
           "kind": "def",
           "name": "routedInvocation",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocation",
-          "line": 797,
+          "line": 833,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -21861,7 +22070,7 @@
           "kind": "def",
           "name": "routedInvocationSid?",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocationSid?",
-          "line": 809,
+          "line": 845,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocation",
             "SeLe4n.Model.SyscallId",
@@ -21872,7 +22081,7 @@
           "kind": "theorem",
           "name": "routedInvocationSid?_some",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocationSid?_some",
-          "line": 814,
+          "line": 850,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocation",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocationSid?",
@@ -21885,7 +22094,7 @@
           "kind": "def",
           "name": "routedOverflowOne",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOne",
-          "line": 831,
+          "line": 867,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -21894,7 +22103,7 @@
           "kind": "def",
           "name": "routedOverflowOneSid?",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOneSid?",
-          "line": 836,
+          "line": 872,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOne",
             "SeLe4n.Model.SyscallId",
@@ -21905,7 +22114,7 @@
           "kind": "theorem",
           "name": "routedOverflowOneSid?_some",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOneSid?_some",
-          "line": 841,
+          "line": 877,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOne",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOneSid?",
@@ -21918,7 +22127,7 @@
           "kind": "def",
           "name": "routedAudited",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
-          "line": 857,
+          "line": 893,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -21927,7 +22136,7 @@
           "kind": "def",
           "name": "routedAuditedSid?",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedAuditedSid?",
-          "line": 862,
+          "line": 898,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
             "SeLe4n.Model.SyscallId",
@@ -21938,7 +22147,7 @@
           "kind": "theorem",
           "name": "routedAuditedSid?_some",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedAuditedSid?_some",
-          "line": 867,
+          "line": 903,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAuditedSid?",
@@ -21951,7 +22160,7 @@
           "kind": "def",
           "name": "routedOverflowed",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowed",
-          "line": 885,
+          "line": 921,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocation",
@@ -21963,7 +22172,7 @@
           "kind": "def",
           "name": "routedOverflowedSid?",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowedSid?",
-          "line": 890,
+          "line": 926,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowed",
             "SeLe4n.Model.SyscallId",
@@ -21974,7 +22183,7 @@
           "kind": "theorem",
           "name": "routedOverflowedSid?_some",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowedSid?_some",
-          "line": 895,
+          "line": 931,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowedSid?",
@@ -21987,7 +22196,7 @@
           "kind": "def",
           "name": "unroutedSyscall",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.unroutedSyscall",
-          "line": 911,
+          "line": 947,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.RegisterRoutedSyscall",
             "SeLe4n.Model.SyscallId.ofNat?"
@@ -21997,7 +22206,7 @@
           "kind": "theorem",
           "name": "unroutedSyscall_eq",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.unroutedSyscall_eq",
-          "line": 916,
+          "line": 952,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.RegisterRoutedSyscall",
             "SeLe4n.Kernel.Architecture.RegisterDecode.unroutedSyscall",
@@ -22008,7 +22217,7 @@
           "kind": "def",
           "name": "routedShortTail",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedShortTail",
-          "line": 926,
+          "line": 962,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.RegisterRoutedSyscall",
@@ -22022,7 +22231,7 @@
           "kind": "theorem",
           "name": "routedShortTail_eq",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedShortTail_eq",
-          "line": 935,
+          "line": 971,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAuditedSid?",
@@ -22037,7 +22246,7 @@
           "kind": "def",
           "name": "routedLongTail",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedLongTail",
-          "line": 954,
+          "line": 990,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.RegisterRoutedSyscall",
@@ -22050,7 +22259,7 @@
           "kind": "theorem",
           "name": "routedLongTail_eq",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.routedLongTail_eq",
-          "line": 965,
+          "line": 1001,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedLongTail",
@@ -22064,12 +22273,12 @@
           "kind": "def",
           "name": "registerRoutedSyscallOf",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
-          "line": 985,
+          "line": 1021,
           "called": [
             "SeLe4n.Badge.ofWord",
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.RegisterDecode.RegisterRoutedSyscall",
-            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedLongTail",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedShortTail",
             "SeLe4n.Model.SyscallId",
@@ -22083,13 +22292,36 @@
           "kind": "def",
           "name": "registerRoutedSyscall",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
-          "line": 1029,
+          "line": 1065,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.RegisterRoutedSyscall",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
             "SeLe4n.RegName",
             "SeLe4n.RegisterFile",
             "SeLe4n.SyscallRegisterLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerRoutedSyscall_viaDecode",
+          "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_viaDecode",
+          "line": 1078,
+          "called": [
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.routedLongTail",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.routedShortTail",
+            "SeLe4n.Model.SyscallId",
+            "SeLe4n.Model.SyscallId.ofNat?",
+            "SeLe4n.Model.SyscallId.ofNat_toNat",
+            "SeLe4n.Model.SyscallId.toNat",
+            "SeLe4n.Model.SyscallId.toNat_ofNat",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.arm64DefaultLayout",
+            "SeLe4n.readReg"
           ]
         }
       ]
@@ -22457,6 +22689,7 @@
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromStateImpl",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_eq_impl",
@@ -22479,7 +22712,7 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedSignal",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSignal",
-          "line": 58,
+          "line": 59,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.ofNatMasked",
@@ -22487,6 +22720,7 @@
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22505,11 +22739,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedWait",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedWait",
-          "line": 91,
+          "line": 92,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22527,10 +22762,11 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedYield",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedYield",
-          "line": 122,
+          "line": 123,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22548,11 +22784,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedSend",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSend",
-          "line": 151,
+          "line": 152,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22573,11 +22810,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedCall",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedCall",
-          "line": 186,
+          "line": 187,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22598,11 +22836,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedReply",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReply",
-          "line": 221,
+          "line": 222,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22622,12 +22861,13 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedReceive",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReceive",
-          "line": 253,
+          "line": 254,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofWord_toNat",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22647,11 +22887,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedReplyRecv",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReplyRecv",
-          "line": 291,
+          "line": 292,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22672,11 +22913,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedInvoke",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedInvoke",
-          "line": 325,
+          "line": 326,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22697,11 +22939,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedAudited",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedAudited",
-          "line": 360,
+          "line": 361,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22722,11 +22965,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedOverflowOne",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowOne",
-          "line": 396,
+          "line": 397,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromStateImpl",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_eq_impl",
@@ -22753,11 +22997,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedSendLong",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSendLong",
-          "line": 450,
+          "line": 452,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromStateImpl",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_eq_impl",
@@ -22783,10 +23028,11 @@
           "kind": "theorem",
           "name": "registerRoutedSyscall_send_length",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_send_length",
-          "line": 497,
+          "line": 500,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedLongTail_eq",
@@ -22801,13 +23047,14 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedOverflowed",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowed",
-          "line": 524,
+          "line": 527,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.RegisterDecode.RegisterRoutedSyscall",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromStateImpl",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_eq_impl",
@@ -22838,11 +23085,12 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedShortArgs",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedShortArgs",
-          "line": 596,
+          "line": 600,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -22863,10 +23111,11 @@
           "kind": "theorem",
           "name": "decodeSyscallArgsFromState_of_routedRefused",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedRefused",
-          "line": 629,
+          "line": 633,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromStateImpl",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_eq_impl",
@@ -87881,6 +88130,8 @@
             "SeLe4n.ThreadId.toObjId",
             "SeLe4n.VAddr",
             "SeLe4n.VAddr.isCanonical",
+            "SeLe4n.VAddr.pageBase",
+            "SeLe4n.VAddr.pageOffset",
             "SeLe4n.ipcBufferAlignment"
           ]
         },
@@ -87888,7 +88139,7 @@
           "kind": "def",
           "name": "frozenOpCoverage",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
-          "line": 2180,
+          "line": 2181,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -87897,7 +88148,7 @@
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage_count",
-          "line": 2259,
+          "line": 2260,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Model.SyscallId.all"
@@ -87907,7 +88158,7 @@
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage_exhaustive",
-          "line": 2264,
+          "line": 2265,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Model.SyscallId"
@@ -118021,7 +118272,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.LongSendInPlace",
       "path": "SeLe4n/Kernel/IPC/CrossCore/LongSendInPlace.lean",
-      "declaration_count": 43,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "def",
@@ -118669,6 +118920,18 @@
             "SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord",
             "SeLe4n.Kernel.overflowWordAt",
             "SeLe4n.Kernel.overflowWordAt_eq",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mapM_readOverflowWord_error",
+          "full_name": "SeLe4n.Kernel.mapM_readOverflowWord_error",
+          "line": 542,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ThreadId"
           ]
@@ -305887,8 +306150,8 @@
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSendLong",
             "SeLe4n.Kernel.Architecture.RegisterDecode.mergeOverflowWords",
-            "SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.mapM_readOverflowWord_error",
             "SeLe4n.Model.MessageInfo",
             "SeLe4n.Model.SystemState",
             "SeLe4n.RegisterFile",
@@ -307590,9 +307853,11 @@
           "line": 48,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn",
             "SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
+            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore",
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
             "SeLe4n.Kernel.Architecture.tlbOnCore",
             "SeLe4n.Kernel.Architecture.tlbUndoFillOnCore",
@@ -307622,7 +307887,7 @@
           "kind": "theorem",
           "name": "frameOf",
           "full_name": "SeLe4n.Kernel.frameOf",
-          "line": 191,
+          "line": 192,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
@@ -307637,12 +307902,14 @@
           "kind": "theorem",
           "name": "syscallEntryCheckedR_eq",
           "full_name": "SeLe4n.Kernel.syscallEntryCheckedR_eq",
-          "line": 202,
+          "line": 203,
           "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowReadable",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK_eq",
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_of_firstPage",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead_lt",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedAudited",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedCall",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedInvoke",
@@ -307662,12 +307929,13 @@
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.NotificationSignalArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeNotificationSignalArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
+            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn_eq",
             "SeLe4n.Kernel.Architecture.ipcBufferFillHeld_one",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage_spec",
+            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore_eq",
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb",
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_of_held",
-            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_of_onFirstPage",
+            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_scheduler",
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero",
             "SeLe4n.Kernel.Architecture.tlbUndoFillOnCore_tlbFillIpcBufferOnCore",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -307717,7 +307985,7 @@
           "kind": "def",
           "name": "capHeldNone",
           "full_name": "SeLe4n.Kernel.capHeldNone",
-          "line": 509,
+          "line": 527,
           "called": [
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
             "SeLe4n.Model.Capability"
@@ -307727,7 +307995,7 @@
           "kind": "def",
           "name": "slotEmpty",
           "full_name": "SeLe4n.Kernel.slotEmpty",
-          "line": 519,
+          "line": 537,
           "called": [
             "SeLe4n.Model.Capability"
           ]
@@ -307736,7 +308004,7 @@
           "kind": "def",
           "name": "noCapRefusal",
           "full_name": "SeLe4n.Kernel.noCapRefusal",
-          "line": 527,
+          "line": 545,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SystemState"
@@ -307746,7 +308014,7 @@
           "kind": "def",
           "name": "dispatchOperandCheckedK",
           "full_name": "SeLe4n.Kernel.dispatchOperandCheckedK",
-          "line": 544,
+          "line": 562,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -307769,7 +308037,7 @@
           "kind": "theorem",
           "name": "dispatchOperandCheckedK_spec",
           "full_name": "SeLe4n.Kernel.dispatchOperandCheckedK_spec",
-          "line": 574,
+          "line": 592,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -307799,7 +308067,7 @@
           "kind": "theorem",
           "name": "ipcBufferReadMrK_comp",
           "full_name": "SeLe4n.Kernel.ipcBufferReadMrK_comp",
-          "line": 644,
+          "line": 662,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.IpcBufferReadError",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -307813,13 +308081,15 @@
           "kind": "def",
           "name": "syscallEntryCheckedK",
           "full_name": "SeLe4n.Kernel.syscallEntryCheckedK",
-          "line": 667,
+          "line": 685,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn",
             "SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
+            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore",
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
             "SeLe4n.Kernel.Architecture.tlbOnCore",
             "SeLe4n.Kernel.Architecture.tlbUndoFillOnCore",
@@ -307856,7 +308126,7 @@
           "kind": "def",
           "name": "EntryOperandOutcome",
           "full_name": "SeLe4n.Kernel.EntryOperandOutcome",
-          "line": 798,
+          "line": 816,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -307877,7 +308147,7 @@
           "kind": "theorem",
           "name": "entryOperandOutcome_of_dispatch",
           "full_name": "SeLe4n.Kernel.entryOperandOutcome_of_dispatch",
-          "line": 816,
+          "line": 834,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -307906,7 +308176,7 @@
           "kind": "theorem",
           "name": "syscallEntryCheckedK_spec",
           "full_name": "SeLe4n.Kernel.syscallEntryCheckedK_spec",
-          "line": 848,
+          "line": 866,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedAudited",
@@ -309013,8 +309283,8 @@
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowed",
             "SeLe4n.Kernel.Architecture.RegisterDecode.mergeOverflowWords",
-            "SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.mapM_readOverflowWord_error",
             "SeLe4n.Model.MessageInfo",
             "SeLe4n.Model.SyscallId",
             "SeLe4n.Model.SystemState",
@@ -309029,7 +309299,7 @@
           "kind": "def",
           "name": "dispatchOverflowedCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchOverflowedCheckedR",
-          "line": 102,
+          "line": 104,
           "called": [
             "SeLe4n.Badge.ofWord",
             "SeLe4n.CPtr",
@@ -309045,6 +309315,7 @@
             "SeLe4n.Kernel.dispatchServiceRegisterCheckedR",
             "SeLe4n.Kernel.dispatchSignalCheckedR",
             "SeLe4n.Kernel.dispatchWaitCheckedR",
+            "SeLe4n.Kernel.yieldOnCoreR",
             "SeLe4n.Model.RefusalCarrying",
             "SeLe4n.Model.SyscallId",
             "SeLe4n.RegisterFile",
@@ -309056,7 +309327,7 @@
           "kind": "theorem",
           "name": "routedOverflowed_cases",
           "full_name": "SeLe4n.Kernel.routedOverflowed_cases",
-          "line": 122,
+          "line": 128,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocation",
@@ -309069,7 +309340,7 @@
           "kind": "theorem",
           "name": "overflowedDecode_agree",
           "full_name": "SeLe4n.Kernel.overflowedDecode_agree",
-          "line": 130,
+          "line": 136,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegsAgreeBelow",
@@ -309094,7 +309365,7 @@
           "kind": "theorem",
           "name": "dispatchOverflowedCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchOverflowedCheckedR_eq",
-          "line": 158,
+          "line": 164,
           "called": [
             "SeLe4n.Badge.ofWord",
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
@@ -309121,12 +309392,15 @@
             "SeLe4n.Kernel.dispatchSignalCheckedR_eq",
             "SeLe4n.Kernel.dispatchSyscallChecked",
             "SeLe4n.Kernel.dispatchWaitCheckedR_eq",
+            "SeLe4n.Kernel.dispatchYield",
             "SeLe4n.Kernel.overflowWordAt",
             "SeLe4n.Kernel.overflowedDecode",
             "SeLe4n.Kernel.overflowedDecode_agree",
+            "SeLe4n.Kernel.yieldOnCoreR_eq",
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.MessageInfo",
             "SeLe4n.Model.RefusalCarrying.ofKernel",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
             "SeLe4n.Model.SyscallId",
             "SeLe4n.Model.SystemState",
             "SeLe4n.RegisterFile",
@@ -309143,7 +309417,7 @@
           "kind": "def",
           "name": "fiveWordArgsTarget",
           "full_name": "SeLe4n.Kernel.fiveWordArgsTarget",
-          "line": 237,
+          "line": 254,
           "called": [
             "SeLe4n.Model.CapTarget",
             "SeLe4n.Model.SyscallId"
@@ -309153,7 +309427,7 @@
           "kind": "theorem",
           "name": "decodeFiveWordArgs_short",
           "full_name": "SeLe4n.Kernel.decodeFiveWordArgs_short",
-          "line": 245,
+          "line": 262,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked",
@@ -309170,7 +309444,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_eq_shortArgs",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_eq_shortArgs",
-          "line": 260,
+          "line": 277,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOne",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -309194,7 +309468,7 @@
           "kind": "def",
           "name": "shortArgsOperandArmR",
           "full_name": "SeLe4n.Kernel.shortArgsOperandArmR",
-          "line": 279,
+          "line": 296,
           "called": [
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
             "SeLe4n.Kernel.fiveWordArgsTarget",
@@ -309209,7 +309483,7 @@
           "kind": "def",
           "name": "dispatchShortArgsCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchShortArgsCheckedR",
-          "line": 292,
+          "line": 309,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -309224,7 +309498,7 @@
           "kind": "theorem",
           "name": "dispatchShortArgsCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchShortArgsCheckedR_eq",
-          "line": 296,
+          "line": 313,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowOne",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322811,6 +323085,7 @@
             "SeLe4n.Kernel.signalOperandArmThenTaintR",
             "SeLe4n.Kernel.syscallRequiredRight",
             "SeLe4n.Kernel.waitOperandArmThenTaintR",
+            "SeLe4n.Kernel.yieldOnCoreR",
             "SeLe4n.Model.RefusalCarrying",
             "SeLe4n.Model.SyscallId",
             "SeLe4n.RegisterFile",
@@ -322822,7 +323097,7 @@
           "kind": "theorem",
           "name": "overflowedOperandR_eq",
           "full_name": "SeLe4n.Kernel.overflowedOperandR_eq",
-          "line": 65,
+          "line": 69,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322838,61 +323113,55 @@
           "kind": "def",
           "name": "overflowedArmSpec",
           "full_name": "SeLe4n.Kernel.overflowedArmSpec",
-          "line": 84,
+          "line": 88,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK",
-            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
-            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead",
+            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn",
+            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore",
             "SeLe4n.Kernel.Architecture.tlbOnCore",
             "SeLe4n.Kernel.Architecture.tlbUndoFillOnCore",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.entryReportGeneral",
-            "SeLe4n.Kernel.syscallEntryChecked",
             "SeLe4n.Model.RefusalCarrying",
-            "SeLe4n.Model.RefusalCarrying.ofKernel",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
             "SeLe4n.RegisterFile",
             "SeLe4n.ThreadId",
-            "SeLe4n.ThreadId.toObjId",
-            "SeLe4n.arm64DefaultLayout"
+            "SeLe4n.ThreadId.toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "overflowedArmWith",
           "full_name": "SeLe4n.Kernel.overflowedArmWith",
-          "line": 112,
+          "line": 117,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK",
-            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
-            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead",
+            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn",
+            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore",
             "SeLe4n.Kernel.Architecture.tlbOnCore",
             "SeLe4n.Kernel.Architecture.tlbUndoFillOnCore",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.entryReportGeneral",
-            "SeLe4n.Kernel.syscallEntryChecked",
             "SeLe4n.Model.RefusalCarrying",
-            "SeLe4n.Model.RefusalCarrying.ofKernel",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
             "SeLe4n.RegisterFile",
             "SeLe4n.ThreadId",
-            "SeLe4n.ThreadId.toObjId",
-            "SeLe4n.arm64DefaultLayout"
+            "SeLe4n.ThreadId.toObjId"
           ]
         },
         {
           "kind": "theorem",
           "name": "overflowedArmWith_eq_spec",
           "full_name": "SeLe4n.Kernel.overflowedArmWith_eq_spec",
-          "line": 137,
+          "line": 143,
           "called": [
-            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne",
+            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.overflowedArmSpec",
@@ -322907,7 +323176,7 @@
           "kind": "def",
           "name": "overflowedInvocationRoutedArm",
           "full_name": "SeLe4n.Kernel.overflowedInvocationRoutedArm",
-          "line": 155,
+          "line": 161,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322924,7 +323193,7 @@
           "kind": "def",
           "name": "overflowedAuditedRoutedArm",
           "full_name": "SeLe4n.Kernel.overflowedAuditedRoutedArm",
-          "line": 163,
+          "line": 169,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322941,7 +323210,7 @@
           "kind": "def",
           "name": "overflowedFiveWordRoutedArm",
           "full_name": "SeLe4n.Kernel.overflowedFiveWordRoutedArm",
-          "line": 171,
+          "line": 177,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -322958,7 +323227,7 @@
           "kind": "def",
           "name": "overflowedNotificationRoutedArm",
           "full_name": "SeLe4n.Kernel.overflowedNotificationRoutedArm",
-          "line": 182,
+          "line": 188,
           "called": [
             "SeLe4n.Badge.ofWord",
             "SeLe4n.CPtr.ofWord",
@@ -322970,6 +323239,7 @@
             "SeLe4n.Kernel.signalOperandArmThenTaintR",
             "SeLe4n.Kernel.syscallRequiredRight",
             "SeLe4n.Kernel.waitOperandArmThenTaintR",
+            "SeLe4n.Kernel.yieldOnCoreR",
             "SeLe4n.Model.SyscallId",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ThreadId",
@@ -322980,7 +323250,7 @@
           "kind": "def",
           "name": "overflowedRoutedArm",
           "full_name": "SeLe4n.Kernel.overflowedRoutedArm",
-          "line": 201,
+          "line": 211,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedInvocation",
@@ -323000,7 +323270,7 @@
           "kind": "theorem",
           "name": "overflowedRoutedArm_eq",
           "full_name": "SeLe4n.Kernel.overflowedRoutedArm_eq",
-          "line": 213,
+          "line": 223,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.RegisterDecode.routedAudited",
@@ -323024,7 +323294,7 @@
           "kind": "def",
           "name": "shortArgsRoutedArm",
           "full_name": "SeLe4n.Kernel.shortArgsRoutedArm",
-          "line": 252,
+          "line": 262,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323407,9 +323677,9 @@
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK",
-            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne",
-            "SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage",
-            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead",
+            "SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn",
+            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore",
             "SeLe4n.Kernel.Architecture.tlbOnCore",
             "SeLe4n.Kernel.Architecture.tlbUndoFillOnCore",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -323417,9 +323687,7 @@
             "SeLe4n.Kernel.dispatchOperandCheckedR",
             "SeLe4n.Kernel.entryReportGeneral",
             "SeLe4n.Kernel.sendOperandArmThenTaintR",
-            "SeLe4n.Kernel.syscallEntryChecked",
             "SeLe4n.Kernel.syscallRequiredRight",
-            "SeLe4n.Model.RefusalCarrying.ofKernel",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
             "SeLe4n.ThreadId",
@@ -499507,7 +499775,8 @@
             "SeLe4n.ThreadId.ofNat",
             "SeLe4n.ThreadId.toObjId",
             "SeLe4n.VAddr",
-            "SeLe4n.VAddr.ofNat"
+            "SeLe4n.VAddr.ofNat",
+            "SeLe4n.VAddr.pageBase"
           ],
           "private": true
         },
