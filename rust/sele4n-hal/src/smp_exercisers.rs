@@ -3280,6 +3280,46 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             false,
         ),
         kernel_step("tail-send-partner-yield", YIELD),
+        // The long call to a waiting receiver, which copies all 116 of the
+        // caller's overflow words into the receiver's buffer in place and
+        // blocks the caller for the reply, the suspend answering it; then the
+        // long call that blocks with no receiver waiting, and the receive that
+        // takes its words.
+        partner_step(
+            "tail-call-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "tail-call-to-receiver",
+            CALL,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [0x66, 0x67],
+            true,
+        ),
+        invocation("tail-call-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        invocation("tail-call-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        kernel_step("tail-call-root-yield", YIELD),
+        partner_step(
+            "tail-call-blocks",
+            CALL,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [0x68, 0x69],
+            true,
+        ),
+        partner_step(
+            "tail-call-root-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
         invocation("tail-send-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         invocation(
             "tail-send-unbind",
