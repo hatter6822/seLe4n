@@ -605,7 +605,9 @@ passive server, every check of the rendezvous and of the donation passing first
 (`callDonatesInPlace`), writes its donation and the replenishment migration
 between the two home cores in place too (`performCallDonating`,
 `callDispatchChecked_donating_inPlace`; the homes are read here, before the
-first write); any other call takes the general arm. -/
+first write); a call with no receiver waiting whose checks all pass blocks in
+place, its words left in its registers (`callBlock_inPlace_eq`), as the send's
+does; any other call takes the general arm. -/
 @[inline] def endpointCallCheckedArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
@@ -639,7 +641,14 @@ first write); any other call takes the general arm. -/
                         else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                 | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
-            | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+            | none =>
+                if sendBlocksFast st epId tid ep.sendTailCode &&
+                    endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                      (ctx.endpointLabelOf epId) then
+                  .ok ((), recordSendCapWords (removeRunnableOnCore
+                    (storeCallBlock st epId tid ep.sendTailCode) tid executingCore) tid
+                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
     | _ => .error (.invalidCapability, st)
 
@@ -693,7 +702,33 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
               · rfl
           · rfl
         · rfl
-      · rfl
+      · next hH =>
+        split
+        · next hG =>
+          simp only [Bool.and_eq_true] at hG
+          obtain ⟨hB, hFlow⟩ := hG
+          unfold sendBlocksFast at hB
+          split at hB
+          · next t hT =>
+            simp only [Bool.and_eq_true] at hB
+            obtain ⟨hA, hIP⟩ := hB
+            rw [enqueuesInPlaceCode_eq,
+              show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl] at hIP
+            have hNoRecv : (match st.getEndpoint? epId with
+                | some ep => ep.receiveQ.head | none => none) = none := by
+              rw [hE]; exact hH
+            unfold endpointCallCheckedArmGeneralR
+            simp only [hTgt, hE, Option.bind_some, hH]
+            unfold endpointCallCrossCoreDispatchChecked
+            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ _ hNoRecv,
+              endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ (hReq epId _ _),
+              callBlock_inPlace_eq _ _ _ _ _ ep t
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP,
+              recordSendCapWords_eq]
+            rfl
+          · cases hB
+        · rfl
     · rfl
   · next hTgt =>
     unfold endpointCallCheckedArmGeneralR

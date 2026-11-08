@@ -3336,6 +3336,46 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
+        // The long call answered by a full-length reply-receive that then blocks
+        // on the endpoint with no sender waiting, copying the partner's
+        // overflow words, from its slot 1 on, into the caller's buffer in
+        // place (the reply-receive's MR0 names the reply capability).
+        invocation(
+            "tail-reply-recv-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "tail-reply-recv-call",
+            CALL,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [0x6a, 0x6b],
+            true,
+        ),
+        partner_step(
+            "tail-reply-recv-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        partner_step(
+            "tail-reply-recv-blocks",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [REPLY_CAP, 0x7a],
+            true,
+        ),
+        invocation(
+            "tail-reply-recv-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
         configure(
             "tail-send-configure",
             [

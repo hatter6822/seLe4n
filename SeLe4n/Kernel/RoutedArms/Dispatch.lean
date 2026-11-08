@@ -20,6 +20,7 @@ import SeLe4n.Kernel.RoutedArms.OverflowOne
 import SeLe4n.Kernel.RoutedArms.SendLong
 import SeLe4n.Kernel.RoutedArms.CallLong
 import SeLe4n.Kernel.RoutedArms.ReplyLong
+import SeLe4n.Kernel.RoutedArms.ReplyRecvLong
 import SeLe4n.Kernel.RoutedArms.Audited
 import SeLe4n.Kernel.RoutedArms.Overflowed
 import SeLe4n.Kernel.RoutedArms.Decoded
@@ -99,6 +100,10 @@ continuations are compiled once. -/
         finish .reply capAddr.word
           (replyLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length msgInfo.extraCaps
             msgInfo.label st)
+      | .replyRecvLong capAddr msgInfo =>
+        finish .replyRecv capAddr.word
+          (replyRecvLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length
+            msgInfo.extraCaps msgInfo.label st)
       | .audited sid capAddr =>
         finish sid capAddr.word (auditedRoutedArm ctx executingCore tid sid capAddr.word st)
       | .overflowed sid capAddr len =>
@@ -107,7 +112,7 @@ continuations are compiled once. -/
       | .shortArgs sid capAddr =>
         finish sid capAddr.word (shortArgsRoutedArm executingCore tid sid capAddr.word st)
       | .refused e => finish .yield 0 (entryReportGeneral (.error (e, st)))
-      | .viaDecode | .replyRecvLong _ _ => finish .yield 0 (decodedRoutedArm ctx executingCore st)
+      | .viaDecode => finish .yield 0 (decodedRoutedArm ctx executingCore st)
     | some _ => finish .yield 0 (entryReportGeneral (.error (.illegalState, st)))
     | none => finish .yield 0 (entryReportGeneral (.error (.objectNotFound, st)))
 
@@ -180,6 +185,10 @@ compiled form `syscallEntryCheckedK` runs as. -/
       simp only [replyLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
         entryReportOutcome_general]
       rfl
+    | replyRecvLong capAddr msgInfo =>
+      simp only [replyRecvLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_general]
+      rfl
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl
     | overflowed sid capAddr len =>
@@ -190,7 +199,7 @@ compiled form `syscallEntryCheckedK` runs as. -/
     | shortArgs sid capAddr =>
       simp only [shortArgsRoutedArm, entryReportOutcome_operand]; rfl
     | refused e => simp only [entryReportOutcome_general]
-    | viaDecode | replyRecvLong _ _ => simp only [decodedRoutedArm, entryReportOutcome_general]
+    | viaDecode => simp only [decodedRoutedArm, entryReportOutcome_general]
   | _ => simp only [entryReportOutcome_general]
 
 end SeLe4n.Kernel

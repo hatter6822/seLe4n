@@ -452,7 +452,9 @@ for driver in drivers:
             "tail-call-partner-takes", "tail-call-partner-replies", "tail-call-partner-yield",
             "tail-call-suspend-again", "tail-send-blocks-resume", "tail-send-blocks",
             "tail-send-partner-takes", "tail-send-blocks-partner-yield",
-            "tail-send-blocks-suspend",
+            "tail-send-blocks-suspend", "tail-reply-recv-resume",
+            "tail-reply-recv-call", "tail-reply-recv-takes", "tail-reply-recv-blocks",
+            "tail-reply-recv-suspend",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
