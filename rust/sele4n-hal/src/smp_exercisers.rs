@@ -2188,6 +2188,26 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
 #[cfg(feature = "hw_target")]
 const LONG_SEND_LENGTH: u64 = 6;
 
+/// `KernelError.invalidMessageInfo`'s discriminant (`sele4n-types`'
+/// `InvalidMessageInfo`), and the refusal frame's `x1` that carries it.
+#[cfg(feature = "hw_target")]
+const INVALID_MESSAGE_INFO: u64 = 32;
+#[cfg(feature = "hw_target")]
+const REFUSED_MESSAGE_INFO: Option<(u64, Option<u64>)> = Some((
+    (crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_MESSAGE_INFO) << 9,
+    None,
+));
+
+/// A message length past the most message registers a message has (120),
+/// which the message-info decode refuses.
+#[cfg(feature = "hw_target")]
+const BAD_MESSAGE_LENGTH: u64 = 127;
+
+/// A one-word message-info word with its top bit set: a label past the largest
+/// a message has, which the decode refuses, in a word no `Nat` scalar holds.
+#[cfg(feature = "hw_target")]
+const HIGH_MESSAGE_INFO: u64 = (1 << 63) | 1;
+
 /// The Consumed invocation's success word in `x1`: `MessageInfo` length 1,
 /// label 0 (Lean's `consumedInfoWord`).
 #[cfg(feature = "hw_target")]
@@ -2336,6 +2356,13 @@ const FRAME_VADDR: u64 = 1 << 39;
 /// destroys the copy and so unmaps it.
 #[cfg(feature = "hw_target")]
 const FRAME_COPY_VADDR: u64 = FRAME_VADDR + 0x1000;
+/// An IPC buffer 512 bytes short of the frame's end (`ipcBufferAlignment`),
+/// so its overflow slots from 64 on lie on the next page.
+#[cfg(feature = "hw_target")]
+const CROSSING_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x200;
+/// A message whose last overflow word, slot 64, is the first on the next page.
+#[cfg(feature = "hw_target")]
+const CROSSING_MESSAGE_LENGTH: u64 = 4 + 64 + 1;
 /// Read, write, user and cacheable (`PagePermissions.ofNat`).
 #[cfg(feature = "hw_target")]
 const FRAME_PERMS: u64 = 0b11011;
@@ -2925,6 +2952,74 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         service_register("service-register", ENDPOINT_CAP, SERVICE_INTERFACE),
         invocation("service-query", SERVICE_QUERY, ENDPOINT_CAP, [0; 4]),
         invocation("service-revoke", SERVICE_REVOKE, ENDPOINT_CAP, [0; 4]),
+        // The long, short-argument and refused forms, each routed past the
+        // named syscalls, the root task's IPC buffer mapped for the words
+        // past the fourth: a register one word short, refused; a configure
+        // one word long (the HAL refuses a short one before the kernel,
+        // `SyscallId::min_inline_args`); a signal and a wait one word long,
+        // the wait taking the badge the signal left; an invocation one word
+        // long; a message-info word whose length no message has, refused;
+        // one whose top bit is set, refused; and a yield one word long.
+        RoundTrip {
+            returns: REFUSED_MESSAGE_INFO,
+            msg_len: 4,
+            ..service_register("service-register-short", ENDPOINT_CAP, SERVICE_INTERFACE)
+        },
+        RoundTrip {
+            msg_len: 6,
+            ..configure(
+                "sched-context-configure-long",
+                [
+                    SCHED_CONTEXT_CAP,
+                    SCHED_CONTEXT_BUDGET,
+                    SCHED_CONTEXT_PERIOD,
+                    PARTNER_PRIORITY,
+                ],
+            )
+        },
+        RoundTrip {
+            msg_len: 5,
+            ..signal("signal-long-message", 1)
+        },
+        RoundTrip {
+            name: "wait-long-message",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            msg_len: 5,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            returns: None,
+        },
+        RoundTrip {
+            msg_len: 5,
+            ..invocation(
+                "invocation-long-message",
+                TCB_SET_MC_PRIORITY,
+                PARTNER_TCB_CAP,
+                [255, 0, 0, 0],
+            )
+        },
+        RoundTrip {
+            returns: REFUSED_MESSAGE_INFO,
+            msg_len: BAD_MESSAGE_LENGTH,
+            ..signal("bad-message-info", 1)
+        },
+        RoundTrip {
+            returns: REFUSED_MESSAGE_INFO,
+            msg_len: HIGH_MESSAGE_INFO,
+            ..signal("high-message-info", 1)
+        },
+        RoundTrip {
+            name: "yield-long-message",
+            syscall: YIELD,
+            cptr: 0,
+            msg_len: 5,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            returns: None,
+        },
         invocation(
             "sched-context-bind",
             SCHED_CONTEXT_BIND,
@@ -3090,6 +3185,129 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [0; 4],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // Long forms whose overflow words cross the IPC buffer's page: the
+        // frame's copy mapped at the next page, both threads' buffers set
+        // 512 bytes short of the frame's end, so overflow slots 0 to 63 lie on
+        // the frame and slot 64 on, the message's last, on the next page.  A
+        // signal and a wait of that length (routed as overflowed, each walk
+        // two pages, the wait taking the badge the signal left), and the long
+        // send to a waiting receiver, which reads the sender's
+        // words across both pages and writes the receiver's in place; then
+        // the buffers, the mapping and the copy put back.
+        invocation(
+            "crossing-frame-copy",
+            CSPACE_COPY,
+            CNODE_CAP,
+            [FRAME_SLOT, MOVE_SLOT, 0, 0],
+        ),
+        invocation(
+            "crossing-map-copy",
+            VSPACE_MAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+        ),
+        invocation(
+            "crossing-root-ipc-buffer",
+            TCB_SET_IPC_BUFFER,
+            ROOT_TCB_CAP,
+            [CROSSING_IPC_BUFFER, 0, 0, 0],
+        ),
+        invocation(
+            "crossing-partner-ipc-buffer",
+            TCB_SET_IPC_BUFFER,
+            PARTNER_TCB_CAP,
+            [CROSSING_IPC_BUFFER, 0, 0, 0],
+        ),
+        RoundTrip {
+            msg_len: CROSSING_MESSAGE_LENGTH,
+            ..signal("signal-crossing-page", 1)
+        },
+        RoundTrip {
+            name: "wait-crossing-page",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            msg_len: CROSSING_MESSAGE_LENGTH,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            returns: None,
+        },
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "crossing-send-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                REFILL_BUDGET,
+                REFILL_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "crossing-send-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "crossing-send-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "crossing-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "crossing-send-to-receiver",
+            SEND,
+            ENDPOINT_CAP,
+            CROSSING_MESSAGE_LENGTH,
+            [0x55, 0x56],
+            false,
+        ),
+        kernel_step("crossing-send-partner-yield", YIELD),
+        invocation(
+            "crossing-send-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "crossing-send-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        invocation(
+            "crossing-root-ipc-buffer-back",
+            TCB_SET_IPC_BUFFER,
+            ROOT_TCB_CAP,
+            [FRAME_VADDR, 0, 0, 0],
+        ),
+        invocation(
+            "crossing-partner-ipc-buffer-back",
+            TCB_SET_IPC_BUFFER,
+            PARTNER_TCB_CAP,
+            [FRAME_VADDR, 0, 0, 0],
+        ),
+        invocation(
+            "crossing-unmap-copy",
+            VSPACE_UNMAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
+        ),
+        invocation(
+            "crossing-copy-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MOVE_SLOT, 0, 0, 0],
+        ),
         // The same with the partner holding the image's scheduling context, so its
         // call donates the context to the root task: the suspend's reply arm takes
         // the reply off the context's reply stack and leaves the context with the
@@ -5398,14 +5616,44 @@ const ROUND_TRIP_SPSR: u64 = 0;
 /// also samples the virtual count (`CNTVCT_EL0`, behind an `isb` so the read
 /// is not taken early), so the pair of reads around a measured entry also
 /// gives the counter ticks between them ([`window_ticks_since`]).
+///
+/// The same read takes the core's allocated bytes (`allocated_bytes_by_core`),
+/// kept with the count for the last two reads ([`WINDOW_TOTALS`]), so a
+/// reading over a window longer than the heap's size record still prints its
+/// bytes ([`ReadingBytes`]).
 #[cfg(feature = "hw_target")]
 fn own_heap_allocations(core: usize) -> Option<u64> {
-    let count = crate::lean_heap::kernel_allocations_on(core).ok();
+    let totals = crate::lean_heap::kernel_allocation_totals_on(core).ok();
     crate::barriers::isb();
     let now = crate::read_sysreg!("cntvct_el0");
     WINDOW_TICKS[0].store(WINDOW_TICKS[1].load(Ordering::Relaxed), Ordering::Relaxed);
     WINDOW_TICKS[1].store(now, Ordering::Relaxed);
-    count
+    let (count, bytes) = totals.unwrap_or((u64::MAX, 0));
+    for (i, value) in [count, bytes].into_iter().enumerate() {
+        WINDOW_TOTALS[0][i].store(
+            WINDOW_TOTALS[1][i].load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        WINDOW_TOTALS[1][i].store(value, Ordering::Relaxed);
+    }
+    totals.map(|(count, _)| count)
+}
+
+/// The allocation count and allocated bytes at the last two heap-counter
+/// reads, older first; a failed read stores the count `u64::MAX`, which no
+/// reading's count equals.
+#[cfg(feature = "hw_target")]
+static WINDOW_TOTALS: [[AtomicU64; 2]; 2] = [
+    [AtomicU64::new(u64::MAX), AtomicU64::new(0)],
+    [AtomicU64::new(u64::MAX), AtomicU64::new(0)],
+];
+
+/// The bytes allocated between the last two heap-counter reads, when their
+/// counts are `before` and `after`: a reading's window exactly.
+#[cfg(feature = "hw_target")]
+fn window_bytes(before: u64, after: u64) -> Option<u64> {
+    let read = |i: usize, j: usize| WINDOW_TOTALS[i][j].load(Ordering::Relaxed);
+    (read(0, 0) == before && read(1, 0) == after).then(|| read(1, 1).wrapping_sub(read(0, 1)))
 }
 
 /// The virtual count at the last two heap-counter reads, older first.
@@ -5432,17 +5680,22 @@ fn window_ticks_since(start: u64) -> u64 {
 
 /// The bytes of a reading's allocations, by size, as its line prints them:
 /// `bytes=<total> sizes=<size>x<count>,…` ascending, `sizes=none` for an
-/// empty window, and `unrecorded` for both when the heap's size record no
-/// longer holds the whole window ([`crate::lean_heap::RECORDED_ALLOCATIONS`]),
-/// which the host-side gate refuses.
+/// empty window, and `sizes=unrecorded` when the heap's size record no longer
+/// holds the whole window ([`crate::lean_heap::RECORDED_ALLOCATIONS`]), which
+/// the host-side gate refuses.  The bytes of such a window are still printed
+/// when the reading's counts are the last two heap-counter reads, from their
+/// byte totals ([`window_bytes`]); `bytes=unrecorded` otherwise.
 #[cfg(feature = "hw_target")]
-struct ReadingBytes(Option<crate::lean_heap::AllocationSizes>);
+struct ReadingBytes(Option<crate::lean_heap::AllocationSizes>, Option<u64>);
 
 #[cfg(feature = "hw_target")]
 impl core::fmt::Display for ReadingBytes {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let Some(window) = &self.0 else {
-            return f.write_str("bytes=unrecorded sizes=unrecorded");
+            return match self.1 {
+                Some(bytes) => write!(f, "bytes={bytes} sizes=unrecorded"),
+                None => f.write_str("bytes=unrecorded sizes=unrecorded"),
+            };
         };
         write!(f, "bytes={} sizes=", window.bytes())?;
         let (groups, n) = window.by_size();
@@ -5468,6 +5721,7 @@ fn print_reading(name: &str, core: usize, which: &str, before: u64, after: u64, 
         crate::lean_heap::kernel_allocation_sizes_on(core, before, after)
             .ok()
             .flatten(),
+        window_bytes(before, after),
     );
     crate::kprintln!(
         "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \

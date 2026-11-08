@@ -19,6 +19,7 @@ import SeLe4n.Kernel.RoutedArms.Invocation
 import SeLe4n.Kernel.RoutedArms.OverflowOne
 import SeLe4n.Kernel.RoutedArms.SendLong
 import SeLe4n.Kernel.RoutedArms.Audited
+import SeLe4n.Kernel.RoutedArms.Overflowed
 import SeLe4n.Kernel.RoutedArms.Decoded
 
 /-!
@@ -91,6 +92,12 @@ continuations are compiled once. -/
           (sendLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
       | .audited sid capAddr =>
         finish sid capAddr.word (auditedRoutedArm ctx executingCore tid sid capAddr.word st)
+      | .overflowed sid capAddr len =>
+        finish sid capAddr.word
+          (overflowedRoutedArm ctx executingCore tid sid capAddr.word len st)
+      | .shortArgs sid capAddr =>
+        finish sid capAddr.word (shortArgsRoutedArm executingCore tid sid capAddr.word st)
+      | .refused e => finish .yield 0 (entryReportGeneral (.error (e, st)))
       | .viaDecode => finish .yield 0 (decodedRoutedArm ctx executingCore st)
     | some _ => finish .yield 0 (entryReportGeneral (.error (.illegalState, st)))
     | none => finish .yield 0 (entryReportGeneral (.error (.objectNotFound, st)))
@@ -153,13 +160,19 @@ compiled form `syscallEntryCheckedK` runs as. -/
       rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
       simp only [entryReportOutcome_general]; rfl
     | sendLong capAddr msgInfo =>
-      simp only [sendLongRoutedArm, hO]
-      split
-      · rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
-        simp only [entryReportOutcome_general]; rfl
-      · simp only [entryReportOutcome_general]
+      simp only [sendLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_general]
+      rfl
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl
+    | overflowed sid capAddr len =>
+      simp only [overflowedRoutedArm_eq, overflowedArmWith_eq_spec, overflowedArmSpec, hO]
+      simp only [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_general, overflowedOperandR_eq]
+      rfl
+    | shortArgs sid capAddr =>
+      simp only [shortArgsRoutedArm, entryReportOutcome_operand]; rfl
+    | refused e => simp only [entryReportOutcome_general]
     | viaDecode => simp only [decodedRoutedArm, entryReportOutcome_general]
   | _ => simp only [entryReportOutcome_general]
 

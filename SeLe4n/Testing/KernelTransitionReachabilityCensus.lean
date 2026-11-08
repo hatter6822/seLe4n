@@ -1198,11 +1198,13 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchCallCheckedR
   , `SeLe4n.Kernel.dispatchReplyCheckedR
   , `SeLe4n.Kernel.dispatchReplyRecvCheckedR
-  , `SeLe4n.Kernel.dispatchReceiveCheckedR
-  , `SeLe4n.Kernel.dispatchSignalCheckedR
-  , `SeLe4n.Kernel.dispatchWaitCheckedR
-  , `SeLe4n.Kernel.dispatchAuditedCheckedR
-  , `SeLe4n.Kernel.dispatchInvocationCheckedR
+  -- The overflowed and short-argument routes' specifications, which the
+  -- compiled entry runs as the per-kind arms proven equal to them
+  -- (`overflowedRoutedArm_eq`, `overflowedArmWith_eq_spec`,
+  -- `overflowedOperandR_eq`, `shortArgsRoutedArm`).
+  , `SeLe4n.Kernel.overflowedOperandR
+  , `SeLe4n.Kernel.overflowedArmSpec
+  , `SeLe4n.Kernel.dispatchShortArgsCheckedR
   -- WS-ZA ZA6.31: specifications of in-place fault forms the entries run in
   -- their place: the checked delivery's (`faultDeliverCheckedWords_eq`) and a
   -- receive's take of a queued caller (`receiveCallTake_inPlace`,

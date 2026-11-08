@@ -89,6 +89,42 @@ open SeLe4n.Model
   | some mi => .ok mi
   | none    => .error .invalidMessageInfo
 
+/-- `decodeMsgInfo` read off the register's machine word: the fields are word
+    operations, each small enough to be a scalar, so a word `≥ 2^63` builds no
+    heap number (`decodeMsgInfoWord_eq`). -/
+@[inline] def decodeMsgInfoWord (w : UInt64) : Except KernelError MessageInfo :=
+  if (w &&& 0x7F) ≤ 120 && ((w >>> 7) &&& 3) ≤ 3 && (w >>> 9) ≤ 0xFFFFF then
+    .ok { length := (w &&& 0x7F).toNat, extraCaps := ((w >>> 7) &&& 3).toNat,
+          label := (w >>> 9).toNat }
+  else .error .invalidMessageInfo
+
+theorem decodeMsgInfoWord_eq (w : UInt64) :
+    decodeMsgInfoWord w = decodeMsgInfo ⟨w.toNat⟩ := by
+  unfold decodeMsgInfoWord decodeMsgInfo MessageInfo.decode
+  have h1 : (w &&& 0x7F).toNat = w.toNat &&& 0x7F := by simp [UInt64.toNat_and]
+  have h2 : ((w >>> 7) &&& 3).toNat = (w.toNat >>> 7) &&& 0x3 := by
+    simp [UInt64.toNat_and, UInt64.toNat_shiftRight]
+  have h3 : (w >>> 9).toNat = w.toNat >>> 9 := by simp [UInt64.toNat_shiftRight]
+  simp only [UInt64.le_iff_toNat_le, h1, h2, h3]
+  simp only [maxMessageRegisters, Model.maxExtraCaps, MessageInfo.maxLabel]
+  by_cases hc : ((w.toNat &&& 127 ≤ 120 ∧ w.toNat >>> 7 &&& 3 ≤ 3) ∧ w.toNat >>> 9 ≤ 1048575)
+  · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
+    simp [hc]
+  · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
+    simp [hc]
+
+/-- A register's message info, decoded off its word, is its decode. -/
+theorem decodeMsgInfoWord_readReg (rf : RegisterFile) (r : RegName) :
+    decodeMsgInfoWord (readRegWord rf r) = decodeMsgInfo (readReg rf r) := by
+  rw [decodeMsgInfoWord_eq]
+  congr 1
+  cases h : readReg rf r with
+  | mk v =>
+    have := readReg_val_eq_word rf r
+    rw [h] at this
+    simp only at this
+    rw [this]
+
 /-- Decode the syscall number register into a typed syscall identifier.
     Returns `invalidSyscallNumber` if the value is not in the modeled set. -/
 @[inline] def decodeSyscallId (rv : RegValue) : Except KernelError SyscallId :=
@@ -273,22 +309,33 @@ def mergeOverflowWords (st : SystemState) (tid : ThreadId)
            inlineCount   := inlineSize,
            overflowCount := overflowNeeded }
 
+/-- WS-ZA ZA4.8: a register's capability address always decodes, to the
+address its word names — read as the word, an address `≥ 2^63` builds no
+heap number. -/
+theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
+    decodeCapPtr (readReg rf r) = .ok (CPtr.ofWord (readRegWord rf r)) := by
+  have hLt : (readRegWord rf r).toNat < machineWordMax := by
+    unfold machineWordMax machineWordBits
+    exact (readRegWord rf r).toNat_lt
+  unfold decodeCapPtr
+  rw [readReg_val_eq_word, if_pos (by simpa [isWord64Dec] using hLt), CPtr.ofWord_eq_ofNat]
+
 /-- `decodeSyscallArgsFromState`, building nothing a caller does not use.  The
     register bounds are one test rather than a `mapM` pass that copies the
     layout's register array, and the result is inlined, so a caller that reads
     only some fields of the decode (the signal reads the operand, the syscall
     number and the message length) builds neither the record nor the message
-    array (WS-ZA).  Proven equal by `decodeSyscallArgsFromState_eq_impl`. -/
+    array (WS-ZA).  The capability address is read as its register's word
+    (`decodeCapPtr_readReg`), so an address `≥ 2^63` builds no heap number.
+    Proven equal by `decodeSyscallArgsFromState_eq_impl`. -/
 @[inline] def decodeSyscallArgsFromStateImpl
     (st : SystemState) (tid : ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (regCount : Nat := 32) : Except KernelError SyscallDecodeResult :=
   if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
       layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true then
-    match decodeCapPtr (readReg regs layout.capPtrReg) with
-    | .error e => .error e
-    | .ok capAddr =>
-    match decodeMsgInfo (readReg regs layout.msgInfoReg) with
+    let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
+    match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
     | .error e => .error e
     | .ok msgInfo =>
     match decodeSyscallId (readReg regs layout.syscallNumReg) with
@@ -313,8 +360,7 @@ def mergeOverflowWords (st : SystemState) (tid : ThreadId)
   simp only [validateRegBound, h1, h2, h3, h4, ↓reduceIte, and_self, and_true,
     and_false, bind, Except.bind, pure, Except.pure, Bool.false_eq_true] <;>
   try rfl
-  rcases decodeCapPtr (readReg regs layout.capPtrReg) with e | capAddr
-  · rfl
+  rw [decodeCapPtr_readReg, decodeMsgInfoWord_readReg]
   rcases decodeMsgInfo (readReg regs layout.msgInfoReg) with e | msgInfo
   · rfl
   rcases decodeSyscallId (readReg regs layout.syscallNumReg) with e | syscallId
@@ -760,6 +806,21 @@ inductive RegisterRoutedSyscall where
       no overflow words: the syscall and its operand address; its arguments
       are the layout's message registers. -/
   | audited (sid : SyscallId) (capAddr : CPtr)
+  /-- A call whose dispatch reads no word past overflow slot 0
+      (`routedOverflowed`) and whose message runs past the layout's message
+      registers: the syscall, its operand address and its message length.
+      The decode reads its overflow slots, and the dispatch reads only the
+      inline words and, for a five-word invocation, slot 0.  It carries the
+      length alone, a number, so the route builds no message info. -/
+  | overflowed (sid : SyscallId) (capAddr : CPtr) (len : Nat)
+  /-- A five-word invocation (`routedOverflowOne`) whose message fits the
+      layout's message registers: the syscall and its operand address.  Its
+      fifth argument is missing, so the decode of its arguments refuses once
+      the capability is found. -/
+  | shortArgs (sid : SyscallId) (capAddr : CPtr)
+  /-- A message-info word the decode refuses: the decode's refusal, before
+      anything else is read. -/
+  | refused (e : KernelError)
   | viaDecode
 
 /-- WS-ZA ZA5.1: the capability invocations the register file routes as
@@ -852,69 +913,204 @@ theorem routedAuditedSid?_some {n : Nat} {sid : SyscallId}
     · cases h
   · cases h
 
-/-- WS-ZA ZA4.8: a register's capability address always decodes, to the
-address its word names — read as the word, an address `≥ 2^63` builds no
-heap number. -/
-theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
-    decodeCapPtr (readReg rf r) = .ok (CPtr.ofWord (readRegWord rf r)) := by
-  have hLt : (readRegWord rf r).toNat < machineWordMax := by
-    unfold machineWordMax machineWordBits
-    exact (readRegWord rf r).toNat_lt
-  unfold decodeCapPtr
-  rw [readReg_val_eq_word, if_pos (by simpa [isWord64Dec] using hLt), CPtr.ofWord_eq_ofNat]
+/-- The syscalls a message past the layout's registers routes as `overflowed`:
+the signal, the wait and the receive, whose dispatch reads no word past the
+first message register; the yield, which reads none; the invocations and the audited calls, whose arguments
+are the layout's message registers; and the five-word invocations, whose fifth
+argument is overflow slot 0. -/
+def routedOverflowed : SyscallId → Bool
+  | .notificationSignal | .notificationWait | .receive | .yield => true
+  | sid => routedInvocation sid || routedAudited sid || routedOverflowOne sid
+
+/-- The overflowed syscall number `n` names, if any. -/
+@[inline] def routedOverflowedSid? (n : Nat) : Option SyscallId :=
+  match SyscallId.ofNat? n with
+  | some sid => if routedOverflowed sid then some sid else none
+  | none => none
+
+theorem routedOverflowedSid?_some {n : Nat} {sid : SyscallId}
+    (h : routedOverflowedSid? n = some sid) :
+    routedOverflowed sid = true ∧ n = sid.toNat := by
+  unfold routedOverflowedSid? at h
+  split at h
+  · next sid' hOf =>
+    split at h
+    · next hR =>
+      cases h
+      exact ⟨hR, (SyscallId.toNat_ofNat hOf).symm⟩
+    · cases h
+  · cases h
+
+/-- The route of a call no other route names: a syscall number the decode
+refuses is refused as the decode refuses it, before anything else is read; any
+other takes the decode. -/
+@[inline] def unroutedSyscall (n : Nat) : RegisterRoutedSyscall :=
+  match SyscallId.ofNat? n with
+  | some _ => .viaDecode
+  | none => .refused .invalidSyscallNumber
+
+theorem unroutedSyscall_eq {n : Nat} {r : RegisterRoutedSyscall} (h : unroutedSyscall n = r) :
+    r = .viaDecode ∨ (r = .refused .invalidSyscallNumber ∧ SyscallId.ofNat? n = none) := by
+  unfold unroutedSyscall at h
+  split at h
+  · exact .inl h.symm
+  · next hN => exact .inr ⟨h.symm, hN⟩
+
+/-- The short message's route past the named syscalls, read off one decode of
+the syscall number: `registerRoutedSyscallOf`'s tail, equal to reading it once per
+route (`routedShortTail_eq`). -/
+@[inline] def routedShortTail (capAddr : CPtr) (n : Nat) : RegisterRoutedSyscall :=
+  match SyscallId.ofNat? n with
+  | some sid =>
+    if routedInvocation sid then .invoke sid capAddr
+    else if routedAudited sid then .audited sid capAddr
+    else if routedOverflowOne sid then .shortArgs sid capAddr
+    else .viaDecode
+  | none => .refused .invalidSyscallNumber
+
+theorem routedShortTail_eq (capAddr : CPtr) (n : Nat) :
+    routedShortTail capAddr n =
+      match routedInvocationSid? n with
+      | some sid => .invoke sid capAddr
+      | none =>
+        match routedAuditedSid? n with
+        | some sid => .audited sid capAddr
+        | none =>
+          match routedOverflowOneSid? n with
+          | some sid => .shortArgs sid capAddr
+          | none => unroutedSyscall n := by
+  unfold routedShortTail routedInvocationSid? routedAuditedSid? routedOverflowOneSid?
+    unroutedSyscall
+  cases SyscallId.ofNat? n with
+  | none => rfl
+  | some sid => cases sid <;> rfl
+
+/-- The long message's route past the long send, read off one decode of the
+syscall number: `registerRoutedSyscallOf`'s tail (`routedLongTail_eq`). -/
+@[inline] def routedLongTail (capAddr : CPtr) (len size n : Nat) : RegisterRoutedSyscall :=
+  match SyscallId.ofNat? n with
+  | some sid =>
+    if len = size + 1 then
+      if routedOverflowOne sid then .overflowOne sid capAddr
+      else if routedOverflowed sid then .overflowed sid capAddr len
+      else .viaDecode
+    else if routedOverflowed sid then .overflowed sid capAddr len
+    else .viaDecode
+  | none => .refused .invalidSyscallNumber
+
+theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
+    routedLongTail capAddr len size n =
+      if len = size + 1 then
+        match routedOverflowOneSid? n with
+        | some sid => .overflowOne sid capAddr
+        | none =>
+          match routedOverflowedSid? n with
+          | some sid => .overflowed sid capAddr len
+          | none => unroutedSyscall n
+      else
+        match routedOverflowedSid? n with
+        | some sid => .overflowed sid capAddr len
+        | none => unroutedSyscall n := by
+  unfold routedLongTail routedOverflowOneSid? routedOverflowedSid? unroutedSyscall
+  by_cases hL : len = size + 1 <;> simp only [hL, ↓reduceIte] <;>
+  cases SyscallId.ofNat? n <;> try rfl
+  all_goals (rename_i sid; cases sid <;> rfl)
+
+/-- The routed syscall a register file names once its registers are in bounds
+    (`registerRoutedSyscall`). -/
+@[inline] def registerRoutedSyscallOf (layout : SyscallRegisterLayout) (regs : RegisterFile) :
+    RegisterRoutedSyscall :=
+  let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
+  match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
+  | .error e => .refused e
+  | .ok msgInfo =>
+    if msgInfo.length ≤ layout.msgRegs.size then
+      if (readReg regs layout.syscallNumReg).val = SyscallId.notificationSignal.toNat then
+        if h0 : 0 < layout.msgRegs.size then
+          .signal capAddr (Badge.ofWord (readRegWord regs layout.msgRegs[0]))
+        else .viaDecode
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.notificationWait.toNat then
+        .wait capAddr
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.yield.toNat then
+        .yield
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat ∧
+          msgInfo.extraCaps = 0 then
+        .send capAddr msgInfo
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.call.toNat ∧
+          msgInfo.extraCaps = 0 then
+        .call capAddr msgInfo
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.reply.toNat then
+        .reply capAddr msgInfo
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.receive.toNat then
+        if h0 : 0 < layout.msgRegs.size then
+          .receive capAddr msgInfo.length (CPtr.ofWord (readRegWord regs layout.msgRegs[0]))
+        else .receive capAddr msgInfo.length (CPtr.ofWord 0)
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.replyRecv.toNat then
+        .replyRecv capAddr msgInfo
+      else
+        routedShortTail capAddr (readReg regs layout.syscallNumReg).val
+    else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat ∧
+        msgInfo.extraCaps = 0 then
+      .sendLong capAddr msgInfo
+    else
+      routedLongTail capAddr msgInfo.length layout.msgRegs.size
+        (readReg regs layout.syscallNumReg).val
 
 /-- The routed syscall a register file names, read straight from the
     registers: `signal`/`wait` only when the decode succeeds as that syscall
     with no overflow words merged, and carries the same operands
     (`decodeSyscallArgsFromState_of_routedSignal`,
     `decodeSyscallArgsFromState_of_routedWait`).  Inlined and matched at once,
-    it builds nothing. -/
+    it builds nothing.  Its registers out of bounds, it takes the decode. -/
 @[inline] def registerRoutedSyscall (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (regCount : Nat := 32) : RegisterRoutedSyscall :=
   if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
       layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true then
-    let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
-    match decodeMsgInfo (readReg regs layout.msgInfoReg) with
-    | .error _ => .viaDecode
-    | .ok msgInfo =>
-      if msgInfo.length ≤ layout.msgRegs.size then
-        if (readReg regs layout.syscallNumReg).val = SyscallId.notificationSignal.toNat then
-          if h0 : 0 < layout.msgRegs.size then
-            .signal capAddr (Badge.ofWord (readRegWord regs layout.msgRegs[0]))
-          else .viaDecode
-        else if (readReg regs layout.syscallNumReg).val = SyscallId.notificationWait.toNat then
-          .wait capAddr
-        else if (readReg regs layout.syscallNumReg).val = SyscallId.yield.toNat then
-          .yield
-        else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat ∧
-            msgInfo.extraCaps = 0 then
-          .send capAddr msgInfo
-        else if (readReg regs layout.syscallNumReg).val = SyscallId.call.toNat ∧
-            msgInfo.extraCaps = 0 then
-          .call capAddr msgInfo
-        else if (readReg regs layout.syscallNumReg).val = SyscallId.reply.toNat then
-          .reply capAddr msgInfo
-        else if (readReg regs layout.syscallNumReg).val = SyscallId.receive.toNat then
-          if h0 : 0 < layout.msgRegs.size then
-            .receive capAddr msgInfo.length (CPtr.ofWord (readRegWord regs layout.msgRegs[0]))
-          else .receive capAddr msgInfo.length (CPtr.ofWord 0)
-        else if (readReg regs layout.syscallNumReg).val = SyscallId.replyRecv.toNat then
-          .replyRecv capAddr msgInfo
-        else
-          match routedInvocationSid? (readReg regs layout.syscallNumReg).val with
-          | some sid => .invoke sid capAddr
-          | none =>
-            match routedAuditedSid? (readReg regs layout.syscallNumReg).val with
-            | some sid => .audited sid capAddr
-            | none => .viaDecode
-      else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat ∧
-          msgInfo.extraCaps = 0 then
-        .sendLong capAddr msgInfo
-      else if msgInfo.length = layout.msgRegs.size + 1 then
-        match routedOverflowOneSid? (readReg regs layout.syscallNumReg).val with
-        | some sid => .overflowOne sid capAddr
-        | none => .viaDecode
-      else .viaDecode
+    registerRoutedSyscallOf layout regs
   else .viaDecode
 
+/-- **What the router hands the decode**, for the default layout: the
+registers name a message info the decode reads and a syscall it knows, and
+the call is a send or a call that transfers capabilities, or a call, a reply
+or a reply-receive of more than the inline words.  Every other register file
+is routed to an arm of its own or refused as the decode refuses it, so these
+are the only forms the entry's decoded arm (`.viaDecode`) still serves. -/
+theorem registerRoutedSyscall_viaDecode (rf : RegisterFile)
+    (h : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .viaDecode) :
+    ∃ mi sid, decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi ∧
+      SyscallId.ofNat? (readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = some sid ∧
+      (((sid = .send ∨ sid = .call) ∧ mi.extraCaps ≠ 0) ∨
+        (SeLe4n.arm64DefaultLayout.msgRegs.size < mi.length ∧
+          (sid = .call ∨ sid = .reply ∨ sid = .replyRecv))) := by
+  unfold registerRoutedSyscall at h
+  split at h
+  case isFalse hB =>
+    exact absurd ⟨by decide, by decide, by decide, by simp [SeLe4n.arm64DefaultLayout]⟩ hB
+  unfold registerRoutedSyscallOf at h
+  rw [decodeMsgInfoWord_readReg] at h
+  cases hM : decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) with
+  | error e => simp only [hM] at h; cases h
+  | ok mi =>
+  simp only [hM] at h
+  generalize hN : (readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = n at h
+  cases hS : SyscallId.ofNat? n with
+  | none =>
+    exfalso
+    have hNe : ∀ s : SyscallId, n ≠ s.toNat := by
+      intro s hs; subst hs; rw [SyscallId.ofNat_toNat] at hS; cases hS
+    simp only [hNe, false_and, if_false, routedShortTail, routedLongTail, hS] at h
+    split at h <;> cases h
+  | some sid =>
+  have hn := SyscallId.toNat_ofNat hS
+  subst hn
+  refine ⟨mi, sid, rfl, rfl, ?_⟩
+  cases sid <;> simp only [routedShortTail, routedLongTail, SyscallId.ofNat_toNat] at h <;>
+    simp (config := { decide := true }) at h ⊢ <;>
+    (repeat' split at h) <;>
+    first
+      | (cases h; done)
+      | (simp_all; done)
+      | (by_cases hL : mi.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size
+         · exact .inl (h hL)
+         · exact .inr (by omega))
 end SeLe4n.Kernel.Architecture.RegisterDecode

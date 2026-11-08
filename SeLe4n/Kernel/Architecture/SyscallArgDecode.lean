@@ -1972,6 +1972,41 @@ theorem requireMsgReg_map_readReg (layout : SyscallRegisterLayout) (regs : Regis
       Except.map]
   · simp only [Array.size_map, hi, ↓reduceDIte, Except.map]
 
+/-- Two message-register arrays read alike below index `k`: each decoder below
+reads no register at or past its own bound, so a decode whose registers run on
+into overflow words decodes as one holding only the registers below it. -/
+def MsgRegsAgreeBelow (a b : Array RegValue) (k : Nat) : Prop :=
+  ∀ i, i < k → requireMsgReg a i = requireMsgReg b i
+
+theorem MsgRegsAgreeBelow.of_eq {a b : Array RegValue} (h : a = b) (k : Nat) :
+    MsgRegsAgreeBelow a b k := fun _ _ => by rw [h]
+
+/-- An array and the same array with words appended read alike below its size. -/
+theorem MsgRegsAgreeBelow.append (a extra : Array RegValue) :
+    MsgRegsAgreeBelow (a ++ extra) a a.size := by
+  intro i hi
+  unfold requireMsgReg
+  have hi' : i < (a ++ extra).size := by simp only [Array.size_append]; omega
+  simp only [hi, hi', ↓reduceDIte, Array.getElem_append_left hi]
+
+/-- An array and the same array with one word and then more appended read
+alike, below one past its size, as the array with that one word appended. -/
+theorem MsgRegsAgreeBelow.append_cons (a : Array RegValue) (x : RegValue)
+    (rest : List RegValue) :
+    MsgRegsAgreeBelow (a ++ (x :: rest).toArray) (a ++ #[x]) (a.size + 1) := by
+  intro i hi
+  unfold requireMsgReg
+  have h1 : i < (a ++ (x :: rest).toArray).size := by
+    simp only [Array.size_append, List.size_toArray, List.length_cons]; omega
+  have h2 : i < (a ++ #[x]).size := by
+    simp only [Array.size_append, List.size_toArray, List.length_singleton]; omega
+  rw [dif_pos h1, dif_pos h2]
+  by_cases hl : i < a.size
+  · rw [Array.getElem_append_left hl, Array.getElem_append_left hl]
+  · have hi' : i = a.size := by omega
+    subst hi'
+    simp [Array.getElem_append_right]
+
 /-! Each decoder below is its `SyscallDecodeResult` form read from the register
 file: equal to it whenever the decode's message registers are the layout's, read
 from the file (the `_eq_by` theorems).  Capability addresses are built from the
@@ -1992,10 +2027,11 @@ word (`CPtr.ofWord`), every other field from its number, as the decode does. -/
 
 theorem decodeCSpaceMintArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeCSpaceMintArgs decoded = decodeCSpaceMintArgsBy (msgRegOfFile layout regs) := by
   unfold decodeCSpaceMintArgs decodeCSpaceMintArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2010,10 +2046,11 @@ theorem decodeCSpaceMintArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
 
 theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeCSpaceCopyArgs decoded = decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) := by
   unfold decodeCSpaceCopyArgs decodeCSpaceCopyArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2028,10 +2065,11 @@ theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
 
 theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeCSpaceMoveArgs decoded = decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) := by
   unfold decodeCSpaceMoveArgs decodeCSpaceMoveArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2045,10 +2083,11 @@ theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
 
 theorem decodeCSpaceDeleteArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeCSpaceDeleteArgs decoded = decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) := by
   unfold decodeCSpaceDeleteArgs decodeCSpaceDeleteArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2072,10 +2111,11 @@ theorem decodeCSpaceDeleteArgs_eq_by (layout : SyscallRegisterLayout) (regs : Re
 
 theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeUntypedRetypeArgs decoded = decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) := by
   unfold decodeUntypedRetypeArgs decodeUntypedRetypeArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2104,10 +2144,11 @@ theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
 
 theorem decodeVSpaceMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult) (maxASID : Nat)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeVSpaceMapArgs decoded maxASID = decodeVSpaceMapArgsBy (msgRegOfFile layout regs) maxASID := by
   unfold decodeVSpaceMapArgs decodeVSpaceMapArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2129,10 +2170,11 @@ theorem decodeVSpaceMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regis
 
 theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult) (maxASID : Nat)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeVSpaceUnmapArgs decoded maxASID = decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) maxASID := by
   unfold decodeVSpaceUnmapArgs decodeVSpaceUnmapArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2146,10 +2188,11 @@ theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
 
 theorem decodeSchedContextBindArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeSchedContextBindArgs decoded = decodeSchedContextBindArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSchedContextBindArgs decodeSchedContextBindArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2213,12 +2256,14 @@ read as its word (`CPtr.ofWord`), as the bind reads its thread's. -/
 
 theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5) :
     decodeSchedContextConfigureArgsChecked decoded =
       decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) := by
   unfold decodeSchedContextConfigureArgsChecked decodeSchedContextConfigureArgs
     decodeSchedContextConfigureArgsCheckedBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg_push]
   generalize msgRegOfFileThen layout regs w = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
@@ -2247,11 +2292,13 @@ decode's order. -/
 
 theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5) :
     decodeServiceRegisterArgs decoded =
       decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) := by
   unfold decodeServiceRegisterArgs decodeServiceRegisterArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg_push]
   generalize msgRegOfFileThen layout regs w = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
@@ -2264,10 +2311,11 @@ theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
 
 theorem decodeTcbBindNotificationArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeTcbBindNotificationArgs decoded = decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) := by
   unfold decodeTcbBindNotificationArgs decodeTcbBindNotificationArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2283,10 +2331,11 @@ theorem decodeTcbBindNotificationArgs_eq_by (layout : SyscallRegisterLayout) (re
 
 theorem decodeIrqControlGetArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeIrqControlGetArgs decoded = decodeIrqControlGetArgsBy (msgRegOfFile layout regs) := by
   unfold decodeIrqControlGetArgs decodeIrqControlGetArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2300,11 +2349,12 @@ theorem decodeIrqControlGetArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
 
 theorem decodeIrqHandlerSetNotificationArgs_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeIrqHandlerSetNotificationArgs decoded =
       decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs) := by
   unfold decodeIrqHandlerSetNotificationArgs decodeIrqHandlerSetNotificationArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2319,10 +2369,11 @@ theorem decodeIrqHandlerSetNotificationArgs_eq_by (layout : SyscallRegisterLayou
 
 theorem decodeSetPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeSetPriorityArgs decoded = decodeSetPriorityArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetPriorityArgs decodeSetPriorityArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2337,10 +2388,11 @@ theorem decodeSetPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
 
 theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeSetMCPriorityArgs decoded = decodeSetMCPriorityArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetMCPriorityArgs decodeSetMCPriorityArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2356,10 +2408,11 @@ theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
 
 theorem decodeSetIPCBufferArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeSetIPCBufferArgs decoded = decodeSetIPCBufferArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetIPCBufferArgs decodeSetIPCBufferArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2373,10 +2426,11 @@ theorem decodeSetIPCBufferArgs_eq_by (layout : SyscallRegisterLayout) (regs : Re
 
 theorem decodeSetAffinityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeSetAffinityArgs decoded = decodeSetAffinityArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetAffinityArgs decodeSetAffinityArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2390,10 +2444,11 @@ theorem decodeSetAffinityArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
 
 theorem decodeSetFaultHandlerArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeSetFaultHandlerArgs decoded = decodeSetFaultHandlerArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetFaultHandlerArgs decodeSetFaultHandlerArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2408,10 +2463,11 @@ theorem decodeSetFaultHandlerArgs_eq_by (layout : SyscallRegisterLayout) (regs :
 
 theorem decodeSetSpaceArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodeSetSpaceArgs decoded = decodeSetSpaceArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetSpaceArgs decodeSetSpaceArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
@@ -2426,10 +2482,11 @@ theorem decodeSetSpaceArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regist
 
 theorem decodePageTableMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
     decodePageTableMapArgs decoded = decodePageTableMapArgsBy (msgRegOfFile layout regs) := by
   unfold decodePageTableMapArgs decodePageTableMapArgsBy
-  rw [h]
+  unfold MsgRegsAgreeBelow at h
+  simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>

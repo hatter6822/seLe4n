@@ -75,8 +75,12 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
       -- Step 4: VSpace root validity
       match st.getVSpaceRoot? tcb.vspaceRoot with
       | some root =>
-        -- Step 5: Mapping check via VSpaceRoot.lookup
-        match root.lookup addr with
+        -- Step 5: Mapping check via VSpaceRoot.lookup, at the page holding
+        -- the buffer: the mappings are keyed by page base
+        -- (`VAddr.pageBase`), so a 512-aligned buffer inside a page is
+        -- found through its page, as the overflow reads find it
+        -- (`ipcBufferSlotPage`).
+        match root.lookup addr.pageBase with
         | some (paddr, perms) =>
           -- Step 6: Write permission check
           if !perms.write then .error .translationFault
@@ -84,12 +88,13 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
           --
           -- AK3-F (A-M02 / MEDIUM): Check the END of the IPC buffer fits
           -- within the platform's physical address range, not just the start.
-          -- An IPC buffer occupies `[paddr, paddr + ipcBufferAlignment)` (512
-          -- bytes, by AE4-H / `ipcBuffer_within_page`). Without end-PA
+          -- An IPC buffer occupies `[pa, pa + ipcBufferAlignment)` (512
+          -- bytes, by AE4-H / `ipcBuffer_within_page`), `pa` the page's
+          -- physical base `paddr` plus the buffer's offset in the page. Without end-PA
           -- validation, a buffer starting at `2^width − 256` would pass the
           -- start-PA check but extend past the PA window into address
           -- space that's undefined on hardware.
-          else if !(paddr.toNat + ipcBufferAlignment ≤
+          else if !(paddr.toNat + addr.pageOffset + ipcBufferAlignment ≤
                     2^st.machine.physicalAddressWidth) then
             .error .addressOutOfBounds
           else .ok ()
@@ -228,7 +233,8 @@ theorem validateIpcBufferAddress_implies_canonical
 
 /-- D3-G / AK3-F: If validation succeeds, the address is mapped in the
     thread's VSpace with write permission and the ENTIRE IPC buffer
-    (`[paddr, paddr + ipcBufferAlignment)`) fits within the platform's
+    (`[pa, pa + ipcBufferAlignment)`, `pa` the page's `paddr` plus the
+    buffer's offset in it) fits within the platform's
     physical address range.
 
     AK3-F (A-M02 / MEDIUM): Strengthened from `paddr.toNat < 2^width` to
@@ -240,9 +246,10 @@ theorem validateIpcBufferAddress_implies_mapped_writable
     ∃ tcb root paddr perms,
       st.objects[tid.toObjId]? = some (.tcb tcb) ∧
       st.objects[tcb.vspaceRoot]? = some (.vspaceRoot root) ∧
-      root.lookup addr = some (paddr, perms) ∧
+      root.lookup addr.pageBase = some (paddr, perms) ∧
       perms.write = true ∧
-      paddr.toNat + ipcBufferAlignment ≤ 2^st.machine.physicalAddressWidth := by
+      paddr.toNat + addr.pageOffset + ipcBufferAlignment ≤
+        2^st.machine.physicalAddressWidth := by
   unfold validateIpcBufferAddress at hOk
   split at hOk
   · contradiction

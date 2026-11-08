@@ -433,6 +433,20 @@ for driver in drivers:
             "waited-partner-calls", "waited-reply-cap-mint", "waited-root-waits",
             "waited-server-delete", "waited-server-receives", "waited-server-resumes-partner",
             "waited-server-waits", "waited-server-wakes-root", "waited-wake-server", "yield",
+            # The long, short-argument and refused forms the register file
+            # routes past the named syscalls.
+            "bad-message-info", "high-message-info", "invocation-long-message",
+            "sched-context-configure-long", "service-register-short", "signal-long-message",
+            "wait-long-message", "yield-long-message",
+            # The long forms whose overflow words cross the IPC buffer's page.
+            "crossing-copy-delete", "crossing-frame-copy", "crossing-map-copy",
+            "crossing-partner-ipc-buffer", "crossing-partner-ipc-buffer-back",
+            "crossing-root-ipc-buffer", "crossing-root-ipc-buffer-back",
+            "crossing-send-bind-partner", "crossing-send-configure",
+            "crossing-send-partner-yield", "crossing-send-resume-partner",
+            "crossing-send-root-receives", "crossing-send-suspend", "crossing-send-to-receiver",
+            "crossing-send-unbind", "crossing-unmap-copy", "signal-crossing-page",
+            "wait-crossing-page",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
