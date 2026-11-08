@@ -290,6 +290,12 @@ pub struct HeapStats {
     /// one freed before it returned.  One heap serves every core, so a reader
     /// measuring its own code reads its own core's slot.
     pub allocations_by_core: [u64; HEAP_COUNTED_CORES],
+    /// The bytes of those allocations, per allocating core: each one's class
+    /// size, or its run's whole pages, summed — monotone too, so two readings
+    /// give the bytes of every allocation between them, however many there
+    /// were, where the size record holds only the latest
+    /// [`RECORDED_ALLOCATIONS`].
+    pub allocated_bytes_by_core: [u64; HEAP_COUNTED_CORES],
 }
 
 /// The bytes of a window of one core's allocations, in allocation order
@@ -357,6 +363,8 @@ pub struct Heap<'a> {
     partial: [u32; SLOT_COUNT],
     /// `HeapStats::allocations_by_core`.
     allocations_by_core: [u64; HEAP_COUNTED_CORES],
+    /// `HeapStats::allocated_bytes_by_core`.
+    allocated_bytes_by_core: [u64; HEAP_COUNTED_CORES],
     /// Per core, the bytes of its latest [`RECORDED_ALLOCATIONS`]
     /// allocations: allocation `n` (counted from 0) at index
     /// `n % RECORDED_ALLOCATIONS`.
@@ -428,6 +436,7 @@ impl<'a> Heap<'a> {
             free_pages: pages,
             partial: [NO_PAGE; SLOT_COUNT],
             allocations_by_core: [0; HEAP_COUNTED_CORES],
+            allocated_bytes_by_core: [0; HEAP_COUNTED_CORES],
             recent_sizes_by_core: [[0; RECORDED_ALLOCATIONS]; HEAP_COUNTED_CORES],
             allocating_core: 0,
         })
@@ -477,6 +486,7 @@ impl<'a> Heap<'a> {
             pages: self.meta.len(),
             free_pages: self.free_pages,
             allocations_by_core: self.allocations_by_core,
+            allocated_bytes_by_core: self.allocated_bytes_by_core,
         }
     }
 
@@ -506,6 +516,9 @@ impl<'a> Heap<'a> {
             record[(*n % RECORDED_ALLOCATIONS as u64) as usize] =
                 u32::try_from(bytes).unwrap_or(u32::MAX);
             *n = n.wrapping_add(1);
+        }
+        if let Some(total) = self.allocated_bytes_by_core.get_mut(core) {
+            *total = total.wrapping_add(bytes as u64);
         }
     }
 
@@ -1215,6 +1228,29 @@ pub fn kernel_allocations_on(core: usize) -> Result<u64, KernelHeapError> {
     })
 }
 
+/// The kernel heap's allocation count and allocated bytes on `core`
+/// ([`HeapStats::allocations_by_core`], [`HeapStats::allocated_bytes_by_core`]),
+/// read under one lock: two readings give the cells and the bytes of every
+/// allocation between them, a window longer than the size record included.
+/// `(0, 0)` for a core outside [`HEAP_COUNTED_CORES`].
+///
+/// # Errors
+///
+/// `Init` if the arena cannot be taken into service.
+pub fn kernel_allocation_totals_on(core: usize) -> Result<(u64, u64), KernelHeapError> {
+    with_kernel_heap(|heap| {
+        let stats = heap.stats();
+        (
+            stats.allocations_by_core.get(core).copied().unwrap_or(0),
+            stats
+                .allocated_bytes_by_core
+                .get(core)
+                .copied()
+                .unwrap_or(0),
+        )
+    })
+}
+
 /// The bytes of the kernel heap's allocations on `core` numbered `from` to
 /// `to` ([`Heap::allocation_sizes`]): the cells a measured round trip
 /// allocated, read beside its count (`kernel_allocations_on` before and
@@ -1917,9 +1953,15 @@ mod tests {
         assert_eq!(latest.sizes(), &[16; RECORDED_ALLOCATIONS]);
         let (groups, n) = latest.by_size();
         assert_eq!(&groups[..n], &[(16, RECORDED_ALLOCATIONS as u32)]);
+        // The byte totals hold every allocation, the window the record no
+        // longer holds included; a free never decrements them.
+        let bytes = heap.stats().allocated_bytes_by_core;
+        assert_eq!(bytes[0], 40 + 16 * RECORDED_ALLOCATIONS as u64);
+        assert_eq!(bytes[2], 40 + 3 * PAGE_SIZE as u64 + 24);
         for addr in live {
             heap.free_small(addr).unwrap();
         }
+        assert_eq!(heap.stats().allocated_bytes_by_core, bytes);
         ok(&heap);
     }
 

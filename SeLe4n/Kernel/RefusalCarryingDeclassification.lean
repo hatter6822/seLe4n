@@ -68,16 +68,20 @@ theorem dispatchWithCapChecked_eq_auditedArmSpec (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (h : routedAudited decoded.syscallId = true)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs))
+    (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (hRight : gate.requiredRight = syscallRequiredRight decoded.syscallId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       auditedArmSpec ctx decoded.syscallId decoded.capAddr regs tid executingCore cap := by
   rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, capRecvSlot, inlineCount, overflowCount⟩
-  simp only at hRegs h hRight
-  subst hRegs
+  have hR : ∀ i, i < 4 → Architecture.SyscallArgDecode.requireMsgReg msgRegs i =
+      Architecture.SyscallArgDecode.requireMsgReg
+        (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) i := hRegs
+  simp only at h hRight
   unfold auditedArmSpec
   cases sid <;> simp only [routedAudited, Bool.false_eq_true] at h <;>
-    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, auditedGate,
+    simp (disch := decide) only [dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
+      auditedGate, hR,
       hRight, Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
       Architecture.SyscallArgDecode.decodeAuditReadArgs,
       Architecture.SyscallArgDecode.decodeAuditDrainArgs]
@@ -224,7 +228,8 @@ step, on every capability the operand resolves to. -/
 theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .declassify)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs))
+    (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
     (hRoot : st.getObject? tcb.cspaceRoot = some (.cnode rootCn))
@@ -486,7 +491,8 @@ capability that resolves (`auditTaintStep_eq`). -/
 theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs))
+    (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
     RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
@@ -521,7 +527,8 @@ step, on every capability the operand resolves to. -/
 theorem auditDrainOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .auditDrain)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs))
+    (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
     auditDrainOperandArmR ctx regs decoded.capAddr tid executingCore
@@ -1314,7 +1321,8 @@ step, on every capability the operand resolves to. -/
 theorem auditReadOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .auditRead)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs))
+    (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
     auditReadOperandArmR ctx regs decoded.capAddr tid executingCore
@@ -2017,7 +2025,8 @@ taint step, on every capability the operand resolves to. -/
 theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .declassifySignal)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs))
+    (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
     (hRoot : st.getObject? tcb.cspaceRoot = some (.cnode rootCn))
@@ -2193,7 +2202,8 @@ noncomputable def dispatchAuditedCheckedR (ctx : LabelingContext) (sid : Syscall
 theorem dispatchAuditedCheckedR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hRouted : routedAudited decoded.syscallId = true)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) :
+    (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4) :
     dispatchAuditedCheckedR ctx decoded.syscallId decoded.capAddr regs tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hNotYield : decoded.syscallId ≠ .yield := by

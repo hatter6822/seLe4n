@@ -5465,14 +5465,44 @@ const ROUND_TRIP_SPSR: u64 = 0;
 /// also samples the virtual count (`CNTVCT_EL0`, behind an `isb` so the read
 /// is not taken early), so the pair of reads around a measured entry also
 /// gives the counter ticks between them ([`window_ticks_since`]).
+///
+/// The same read takes the core's allocated bytes (`allocated_bytes_by_core`),
+/// kept with the count for the last two reads ([`WINDOW_TOTALS`]), so a
+/// reading over a window longer than the heap's size record still prints its
+/// bytes ([`ReadingBytes`]).
 #[cfg(feature = "hw_target")]
 fn own_heap_allocations(core: usize) -> Option<u64> {
-    let count = crate::lean_heap::kernel_allocations_on(core).ok();
+    let totals = crate::lean_heap::kernel_allocation_totals_on(core).ok();
     crate::barriers::isb();
     let now = crate::read_sysreg!("cntvct_el0");
     WINDOW_TICKS[0].store(WINDOW_TICKS[1].load(Ordering::Relaxed), Ordering::Relaxed);
     WINDOW_TICKS[1].store(now, Ordering::Relaxed);
-    count
+    let (count, bytes) = totals.unwrap_or((u64::MAX, 0));
+    for (i, value) in [count, bytes].into_iter().enumerate() {
+        WINDOW_TOTALS[0][i].store(
+            WINDOW_TOTALS[1][i].load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        WINDOW_TOTALS[1][i].store(value, Ordering::Relaxed);
+    }
+    totals.map(|(count, _)| count)
+}
+
+/// The allocation count and allocated bytes at the last two heap-counter
+/// reads, older first; a failed read stores the count `u64::MAX`, which no
+/// reading's count equals.
+#[cfg(feature = "hw_target")]
+static WINDOW_TOTALS: [[AtomicU64; 2]; 2] = [
+    [AtomicU64::new(u64::MAX), AtomicU64::new(0)],
+    [AtomicU64::new(u64::MAX), AtomicU64::new(0)],
+];
+
+/// The bytes allocated between the last two heap-counter reads, when their
+/// counts are `before` and `after`: a reading's window exactly.
+#[cfg(feature = "hw_target")]
+fn window_bytes(before: u64, after: u64) -> Option<u64> {
+    let read = |i: usize, j: usize| WINDOW_TOTALS[i][j].load(Ordering::Relaxed);
+    (read(0, 0) == before && read(1, 0) == after).then(|| read(1, 1).wrapping_sub(read(0, 1)))
 }
 
 /// The virtual count at the last two heap-counter reads, older first.
@@ -5499,17 +5529,22 @@ fn window_ticks_since(start: u64) -> u64 {
 
 /// The bytes of a reading's allocations, by size, as its line prints them:
 /// `bytes=<total> sizes=<size>x<count>,…` ascending, `sizes=none` for an
-/// empty window, and `unrecorded` for both when the heap's size record no
-/// longer holds the whole window ([`crate::lean_heap::RECORDED_ALLOCATIONS`]),
-/// which the host-side gate refuses.
+/// empty window, and `sizes=unrecorded` when the heap's size record no longer
+/// holds the whole window ([`crate::lean_heap::RECORDED_ALLOCATIONS`]), which
+/// the host-side gate refuses.  The bytes of such a window are still printed
+/// when the reading's counts are the last two heap-counter reads, from their
+/// byte totals ([`window_bytes`]); `bytes=unrecorded` otherwise.
 #[cfg(feature = "hw_target")]
-struct ReadingBytes(Option<crate::lean_heap::AllocationSizes>);
+struct ReadingBytes(Option<crate::lean_heap::AllocationSizes>, Option<u64>);
 
 #[cfg(feature = "hw_target")]
 impl core::fmt::Display for ReadingBytes {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let Some(window) = &self.0 else {
-            return f.write_str("bytes=unrecorded sizes=unrecorded");
+            return match self.1 {
+                Some(bytes) => write!(f, "bytes={bytes} sizes=unrecorded"),
+                None => f.write_str("bytes=unrecorded sizes=unrecorded"),
+            };
         };
         write!(f, "bytes={} sizes=", window.bytes())?;
         let (groups, n) = window.by_size();
@@ -5535,6 +5570,7 @@ fn print_reading(name: &str, core: usize, which: &str, before: u64, after: u64, 
         crate::lean_heap::kernel_allocation_sizes_on(core, before, after)
             .ok()
             .flatten(),
+        window_bytes(before, after),
     );
     crate::kprintln!(
         "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \

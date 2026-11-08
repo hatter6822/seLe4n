@@ -95,6 +95,8 @@ continuations are compiled once. -/
       | .overflowed sid capAddr msgInfo =>
         finish sid capAddr.word
           (overflowedRoutedArm ctx executingCore tid sid capAddr.word msgInfo.length st)
+      | .shortArgs sid capAddr =>
+        finish sid capAddr.word (shortArgsRoutedArm executingCore tid sid capAddr.word st)
       | .refused e => finish .yield 0 (entryReportGeneral (.error (e, st)))
       | .viaDecode => finish .yield 0 (decodedRoutedArm ctx executingCore st)
     | some _ => finish .yield 0 (entryReportGeneral (.error (.illegalState, st)))
@@ -166,11 +168,13 @@ compiled form `syscallEntryCheckedK` runs as. -/
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl
     | overflowed sid capAddr msgInfo =>
-      simp only [overflowedRoutedArm, hO]
+      simp only [overflowedRoutedArm_eq, overflowedArmWith_eq_spec, overflowedArmSpec, hO]
       split
       · rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
         simp only [entryReportOutcome_general, overflowedOperandR_eq]; rfl
       · simp only [entryReportOutcome_general]
+    | shortArgs sid capAddr =>
+      simp only [shortArgsRoutedArm, entryReportOutcome_operand]; rfl
     | refused e => simp only [entryReportOutcome_general]
     | viaDecode => simp only [decodedRoutedArm, entryReportOutcome_general]
   | _ => simp only [entryReportOutcome_general]
