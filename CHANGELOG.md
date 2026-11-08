@@ -1,3 +1,64 @@
+## v0.37.2 — WS-UC UC1: each carve measured in cells and bytes; a VSpace root's delete allocates nothing
+
+UC1 of the untyped-backed cells plan.  Every allocation reading now prints its
+bytes by size beside its cell count, and each carve has a byte pin beside its
+cell pin.  The two kinds no scenario carved, a VSpace root and a child untyped,
+are carved and deleted.  Deleting a VSpace root read 1810 heap cells, and this
+PR fixes it.
+
+- **The reading** (`rust/sele4n-hal/src/lean_heap.rs`): each core keeps the
+  byte sizes of its latest 64 allocations by allocation number
+  (`kernel_allocation_sizes_on`).  A window longer than that reads as
+  unrecorded, never as a partial list.  Every reading line ends
+  `bytes=<n> sizes=<size>x<count>,…`.  The gate holds the sizes to the counted
+  cells and the bytes to the sizes.  Allocator behaviour is unchanged.
+- **The pins** (`carve_cells`, `scripts/qemu_exerciser_lib.sh`, cells / bytes):
+  endpoint 11/368, notification 11/360, reply 15/376, TCB 24/2160,
+  scheduling context 13/560, CNode 28/1248, frame 11/272, page table 13/352,
+  and the new VSpace root 14/376 and child untyped 12/304.  The 8 cell pins
+  that existed are unchanged.
+- **The breakdown** (`docs/planning/UNTYPED_BACKED_CELLS_PLAN.md` §5, attributed
+  from the traced image): every carve has 5 bookkeeping cells (120 bytes: the
+  index row, the index set and the type table), a 2-cell object-table entry
+  (48 bytes) and a 2-cell child record (56 bytes).  A VSpace root adds a 2-cell
+  ASID-table entry.  Both of the design's inferences hold: an endpoint is
+  2 object cells plus 9 store cells, and UC2's ghosts remove 5 cells per carve.
+- **The coverage is derived.**  The gate reads the kinds an untyped retype can
+  name from the retype's own decode (`scripts/retype_object_kinds.lean` runs
+  `decodeUntypedRetypeArgs`).  It holds each kind to a pinned carve and a pinned
+  delete of that carve's capability, related by slot, order and the
+  steady-state carve at the same id.  A failed derivation fails the gate.  The
+  check was tested by breaking the relation three ways.
+- **New scenarios**: `untyped-retype-vspace-root`, `vspace-root-delete`,
+  `untyped-retype-untyped`, `child-untyped-delete`.  Both deletes read 0.
+
+### Security
+
+- **A VSpace root's final delete allocated about 1810 kernel-heap cells.**
+  Severity: Medium-Low.
+  - *Where:* `retireCarvedObjectImpl`
+    (`SeLe4n/Kernel/Lifecycle/Operations/CarvedObjectErase.lean`) sent a root
+    through the specification's body.  Every field of that body read one shared
+    state.
+  - *What it cost:* each table the delete erased was copied whole, and every
+    shifted entry and index cell was rebuilt.  The ASID round (`asidReleaseRound`)
+    built its operand, descriptor and queue cells as well.  The cost grows with
+    the object count, inside the kernel-entry lock.
+  - *How it could be used:* the cells were transient, not leaked.  But no
+    capacity check covers the delete path.  A thread holding an untyped could
+    fill the heap with carves down to the retype's reserve, then delete a root,
+    and the heap would run out (`heap_halt`), halting the system: a local
+    denial of service.
+  - *Fix:* the root is now erased one table at a time in place, and its ASID is
+    then released (`withAsidReleased`).  Its round is written over an ASID-round
+    spare, which the boot seeds (`tlbShootdownBroadcastAsid`,
+    `asidReleaseRoundImpl`, `SystemState.shootdownAsidDescriptorSpare` and
+    `shootdownAsidOpsSpare`).  The drain and the catch-up stash an ASID round's
+    cells there (`asidSpareOr`).
+  - *Proofs:* `retireCarvedObject_eq_impl`, `tlbShootdownBroadcastAsid_eq`,
+    `asidReleaseRound_eq_impl`.  The specification is unchanged.
+  - *Evidence:* `vspace-root-delete` reads 0 at first call and in steady state.
+
 ## v0.37.1 — WS-UC: the plan for untyped-backed object cells
 
 Registers WS-UC, a documentation PR plus two fixes found on the way.  A carved

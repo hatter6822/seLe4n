@@ -102,6 +102,11 @@ pub const MAX_SMALL_OBJECT_SIZE: usize = 4096;
 pub const HEAP_COUNTED_CORES: usize = crate::smp::MAX_SECONDARY_CORES + 1;
 /// The number of small size classes, which is `lean_get_slot_idx`'s range.
 pub const SLOT_COUNT: usize = MAX_SMALL_OBJECT_SIZE / OBJECT_SIZE_DELTA;
+/// The allocations each core's size record holds: its latest this many, by
+/// allocation number ([`Heap::allocation_sizes`]).  Above every reading the
+/// exerciser gates (a carve's cells), so a gated window is always recorded
+/// whole; a longer one reads as unrecorded, never as a partial list.
+pub const RECORDED_ALLOCATIONS: usize = 64;
 /// The largest arena, in pages, the page map can describe: a run's page count
 /// shares its word with two tag bits.
 pub const MAX_PAGES: usize = 1 << 29;
@@ -287,6 +292,49 @@ pub struct HeapStats {
     pub allocations_by_core: [u64; HEAP_COUNTED_CORES],
 }
 
+/// The bytes of a window of one core's allocations, in allocation order
+/// ([`Heap::allocation_sizes`]): what each cell a measured round trip
+/// allocated takes, by size, beside the count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AllocationSizes {
+    sizes: [u32; RECORDED_ALLOCATIONS],
+    len: usize,
+}
+
+impl AllocationSizes {
+    /// Each allocation's bytes, in allocation order.
+    #[must_use]
+    pub fn sizes(&self) -> &[u32] {
+        &self.sizes[..self.len]
+    }
+
+    /// The bytes of every allocation in the window.
+    #[must_use]
+    pub fn bytes(&self) -> u64 {
+        self.sizes().iter().map(|&b| u64::from(b)).sum()
+    }
+
+    /// The window's sizes, ascending, each with how many allocations took it:
+    /// `(size, count)` pairs in the leading `n` entries of the result, `n`
+    /// the second component.
+    #[must_use]
+    pub fn by_size(&self) -> ([(u32, u32); RECORDED_ALLOCATIONS], usize) {
+        let mut sorted = self.sizes;
+        sorted[..self.len].sort_unstable();
+        let mut groups = [(0u32, 0u32); RECORDED_ALLOCATIONS];
+        let mut n = 0;
+        for &size in &sorted[..self.len] {
+            if n > 0 && groups[n - 1].0 == size {
+                groups[n - 1].1 += 1;
+            } else {
+                groups[n] = (size, 1);
+                n += 1;
+            }
+        }
+        (groups, n)
+    }
+}
+
 impl HeapStats {
     /// Successful allocations on every core.
     #[must_use]
@@ -309,6 +357,10 @@ pub struct Heap<'a> {
     partial: [u32; SLOT_COUNT],
     /// `HeapStats::allocations_by_core`.
     allocations_by_core: [u64; HEAP_COUNTED_CORES],
+    /// Per core, the bytes of its latest [`RECORDED_ALLOCATIONS`]
+    /// allocations: allocation `n` (counted from 0) at index
+    /// `n % RECORDED_ALLOCATIONS`.
+    recent_sizes_by_core: [[u32; RECORDED_ALLOCATIONS]; HEAP_COUNTED_CORES],
     /// The core the next allocation is counted to ([`Heap::set_allocating_core`]).
     allocating_core: usize,
 }
@@ -376,6 +428,7 @@ impl<'a> Heap<'a> {
             free_pages: pages,
             partial: [NO_PAGE; SLOT_COUNT],
             allocations_by_core: [0; HEAP_COUNTED_CORES],
+            recent_sizes_by_core: [[0; RECORDED_ALLOCATIONS]; HEAP_COUNTED_CORES],
             allocating_core: 0,
         })
     }
@@ -436,14 +489,49 @@ impl<'a> Heap<'a> {
         self.allocating_core = core;
     }
 
-    /// One successful allocation, counted to the allocating core.  Called at
-    /// exactly one point per allocation: `alloc_small`, and `alloc` only on
-    /// the arm it serves itself (it forwards every small request to
-    /// `alloc_small`, which counts it).
-    fn count_allocation(&mut self) {
-        if let Some(n) = self.allocations_by_core.get_mut(self.allocating_core) {
+    /// One successful allocation of `bytes` (its class size, or its run's
+    /// whole pages), counted to the allocating core and recorded in that
+    /// core's size record.  Called at exactly one point per allocation:
+    /// `alloc_small`, and `alloc` only on the arm it serves itself (it
+    /// forwards every small request to `alloc_small`, which counts it).
+    fn count_allocation(&mut self, bytes: usize) {
+        let core = self.allocating_core;
+        if let (Some(n), Some(record)) = (
+            self.allocations_by_core.get_mut(core),
+            self.recent_sizes_by_core.get_mut(core),
+        ) {
+            // The index is below `RECORDED_ALLOCATIONS`, so the cast is exact;
+            // a size beyond `u32` (a run of 4 GiB or more) is recorded as
+            // `u32::MAX`, which no gated reading equals.
+            record[(*n % RECORDED_ALLOCATIONS as u64) as usize] =
+                u32::try_from(bytes).unwrap_or(u32::MAX);
             *n = n.wrapping_add(1);
         }
+    }
+
+    /// The bytes of `core`'s allocations numbered `from` to `to` (exclusive,
+    /// as [`HeapStats::allocations_by_core`] read before and after the code
+    /// measured), in allocation order.  `None` unless the size record still
+    /// holds every one of them: `from ≤ to ≤` the core's count, and none older
+    /// than its latest [`RECORDED_ALLOCATIONS`].  A core outside
+    /// [`HEAP_COUNTED_CORES`] records nothing, so only its empty window reads.
+    #[must_use]
+    pub fn allocation_sizes(&self, core: usize, from: u64, to: u64) -> Option<AllocationSizes> {
+        let now = self.allocations_by_core.get(core).copied().unwrap_or(0);
+        if from > to || to > now || now - from > RECORDED_ALLOCATIONS as u64 {
+            return None;
+        }
+        let mut sizes = AllocationSizes {
+            sizes: [0; RECORDED_ALLOCATIONS],
+            len: 0,
+        };
+        if let Some(record) = self.recent_sizes_by_core.get(core) {
+            for n in from..to {
+                sizes.sizes[sizes.len] = record[(n % RECORDED_ALLOCATIONS as u64) as usize];
+                sizes.len += 1;
+            }
+        }
+        Some(sizes)
     }
 
     /// The number of live allocations: small objects plus page runs.  A leak
@@ -639,7 +727,7 @@ impl<'a> Heap<'a> {
         if usize::from(entry.live) == slot_capacity(slot) {
             self.list_remove(slot, page);
         }
-        self.count_allocation();
+        self.count_allocation(size);
         Ok(Some(self.page_addr(page) + (w * 64 + bit) * size))
     }
 
@@ -721,7 +809,7 @@ impl<'a> Heap<'a> {
         }
         let pages = size.div_ceil(PAGE_SIZE);
         let first = self.take_pages(pages, PageState::RunHead(pages))?;
-        self.count_allocation();
+        self.count_allocation(pages * PAGE_SIZE);
         Some(self.page_addr(first))
     }
 
@@ -1125,6 +1213,22 @@ pub fn kernel_allocations_on(core: usize) -> Result<u64, KernelHeapError> {
             .copied()
             .unwrap_or(0)
     })
+}
+
+/// The bytes of the kernel heap's allocations on `core` numbered `from` to
+/// `to` ([`Heap::allocation_sizes`]): the cells a measured round trip
+/// allocated, read beside its count (`kernel_allocations_on` before and
+/// after).  `Ok(None)` when the size record no longer holds the whole window.
+///
+/// # Errors
+///
+/// `Init` if the arena cannot be taken into service.
+pub fn kernel_allocation_sizes_on(
+    core: usize,
+    from: u64,
+    to: u64,
+) -> Result<Option<AllocationSizes>, KernelHeapError> {
+    with_kernel_heap(|heap| heap.allocation_sizes(core, from, to))
 }
 
 /// The kernel heap's free bytes: its free pages times [`PAGE_SIZE`].  A small
@@ -1761,6 +1865,62 @@ mod tests {
         let c = heap.alloc_small(8, 0).unwrap().unwrap();
         assert_eq!(heap.stats().allocations(), 3);
         heap.free_small(c).unwrap();
+        assert_eq!(
+            heap.allocation_sizes(HEAP_COUNTED_CORES, 0, 0)
+                .map(|w| w.bytes()),
+            Some(0)
+        );
+        assert_eq!(heap.allocation_sizes(HEAP_COUNTED_CORES, 0, 1), None);
+    }
+
+    #[test]
+    fn each_counted_allocation_records_its_bytes_by_number() {
+        let (mut meta, mut bits) = metadata(16);
+        let mut heap = heap(&mut meta, &mut bits);
+        let a = heap.alloc_small(40, 4).unwrap().unwrap();
+        heap.set_allocating_core(2);
+        let b = heap.alloc(40, 8).unwrap();
+        let run = heap.alloc(3 * PAGE_SIZE, PAGE_SIZE).unwrap();
+        let c = heap.alloc(24, 8).unwrap();
+        // The class size of a small object, the whole pages of a run.
+        assert_eq!(heap.allocation_sizes(0, 0, 1).unwrap().sizes(), &[40]);
+        let window = heap.allocation_sizes(2, 0, 3).unwrap();
+        assert_eq!(window.sizes(), &[40, 3 * PAGE_SIZE as u32, 24]);
+        assert_eq!(window.bytes(), 40 + 3 * PAGE_SIZE as u64 + 24);
+        let (groups, n) = window.by_size();
+        assert_eq!(&groups[..n], &[(24, 1), (40, 1), (3 * PAGE_SIZE as u32, 1)]);
+        assert_eq!(
+            heap.allocation_sizes(2, 1, 2).unwrap().sizes(),
+            &[3 * PAGE_SIZE as u32]
+        );
+        // A refusal records nothing; a free removes nothing.
+        assert_eq!(heap.alloc(8, 3), None);
+        for addr in [b, run, c] {
+            heap.free(addr).unwrap();
+        }
+        assert_eq!(heap.allocation_sizes(2, 0, 3), Some(window));
+        // A window past the count, or reversed, is not a window.
+        assert_eq!(heap.allocation_sizes(2, 0, 4), None);
+        assert_eq!(heap.allocation_sizes(2, 2, 1), None);
+        // The record holds the latest `RECORDED_ALLOCATIONS` allocations, so a
+        // window that starts before them is unrecorded, never partial.
+        heap.set_allocating_core(0);
+        heap.free_small(a).unwrap();
+        let mut live = Vec::new();
+        for _ in 0..RECORDED_ALLOCATIONS {
+            live.push(heap.alloc_small(16, 1).unwrap().unwrap());
+        }
+        let total = 1 + RECORDED_ALLOCATIONS as u64;
+        assert_eq!(heap.allocation_sizes(0, 0, total), None);
+        assert_eq!(heap.allocation_sizes(0, 0, 1), None, "overwritten");
+        let latest = heap.allocation_sizes(0, 1, total).unwrap();
+        assert_eq!(latest.sizes(), &[16; RECORDED_ALLOCATIONS]);
+        let (groups, n) = latest.by_size();
+        assert_eq!(&groups[..n], &[(16, RECORDED_ALLOCATIONS as u32)]);
+        for addr in live {
+            heap.free_small(addr).unwrap();
+        }
+        ok(&heap);
     }
 
     // -- the kernel heap, over the host stand-in for `.lean_heap` ---------------
@@ -1805,6 +1965,13 @@ mod tests {
             "the census sees the frees"
         );
         assert_eq!(kernel_allocations_on(0).unwrap(), counted, "monotone");
+        assert_eq!(
+            kernel_allocation_sizes_on(0, counted - 2, counted)
+                .unwrap()
+                .map(|w| w.bytes()),
+            Some(80),
+            "the two allocations' bytes, by number"
+        );
         assert_eq!(kernel_allocations_on(HEAP_COUNTED_CORES).unwrap(), 0);
         assert_eq!(
             kernel_alloc_small(40, 3),

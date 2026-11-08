@@ -45,6 +45,21 @@ def asidReleaseRound (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     executingCore (Architecture.shootdownTargets executingCore)
     (Architecture.encodeAsidInvalidation a)
 
+/-- WS-UC UC1: **`asidReleaseRound` as it runs** — the round written over the
+ASID-round spare (`Architecture.tlbShootdownBroadcastAsid`), so a VSpace root's
+final delete builds neither the round's operand, its descriptor nor its queue
+cell.  `asidReleaseRound_eq_impl` is the equality. -/
+def asidReleaseRoundImpl (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (a : SeLe4n.ASID) (s : SystemState) : SystemState :=
+  Architecture.tlbShootdownBroadcastAsid
+    { s with tlb := adapterFlushTlbByAsid s.tlb a }
+    executingCore (Architecture.shootdownTargets executingCore) a
+
+@[csimp] theorem asidReleaseRound_eq_impl : @asidReleaseRound = @asidReleaseRoundImpl := by
+  funext executingCore a s
+  unfold asidReleaseRound asidReleaseRoundImpl
+  rw [Architecture.tlbShootdownBroadcastAsid_eq]
+
 -- ----------------------------------------------------------------------------
 -- WS-SM SM7.F.4(b)(iii): what the round writes
 -- ----------------------------------------------------------------------------

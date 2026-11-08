@@ -2015,28 +2015,48 @@ Out of line, so the stash's record write stays unconditional and in place. -/
   | x :: _ => if (opOf x).toOpTag == 1 then Squash.mk xs else old
   | [] => old
 
+/-- WS-UC UC1: `pageSpareOr` for the ASID-round spares: the new list when its
+first entry is an ASID operand (`.aside1`), else the spare it already has. -/
+@[noinline] def asidSpareOr {α : Type} (opOf : α → TlbInvalidation) (old : Squash (List α))
+    (xs : List α) : Squash (List α) :=
+  match xs with
+  | x :: _ => if (opOf x).toOpTag == 2 then Squash.mk xs else old
+  | [] => old
+
 /-- WS-ZA ZA5.4: the drained descriptors kept as the state's descriptor spare,
 so the next page round writes over their cells; only a page round's
-descriptors replace it (`pageSpareOr`).  The state itself
-(`stashShootdownDescriptors_eq`). -/
+descriptors replace it (`pageSpareOr`).  WS-UC UC1: an ASID round's drained
+descriptors are kept likewise as the ASID-round spare (`asidSpareOr`), so the
+next ASID round (a VSpace root's final delete) writes over theirs.  The state
+itself (`stashShootdownDescriptors_eq`). -/
 @[inline] def stashShootdownDescriptors (st : SystemState)
     (ds : List TlbShootdownDescriptor) : SystemState :=
-  { st with shootdownDescriptorSpare := pageSpareOr (·.op) st.shootdownDescriptorSpare ds }
+  { st with
+      shootdownDescriptorSpare := pageSpareOr (·.op) st.shootdownDescriptorSpare ds
+      shootdownAsidDescriptorSpare := asidSpareOr (·.op) st.shootdownAsidDescriptorSpare ds }
 
 theorem stashShootdownDescriptors_eq (st : SystemState) (ds : List TlbShootdownDescriptor) :
-    stashShootdownDescriptors st ds = st :=
-  SystemState.with_shootdownDescriptorSpare st _
+    stashShootdownDescriptors st ds = st := by
+  unfold stashShootdownDescriptors
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  exact ⟨Subsingleton.elim _ _, Subsingleton.elim _ _⟩
 
 /-- WS-ZA ZA5.4: a round's operand list kept as the state's operand spare, so
 the next commit's seam writes its operand into that cell; only a page
 operand's list replaces it (`pageSpareOr`).  The state itself
 (`stashShootdownOps_eq`). -/
 @[inline] def stashShootdownOps (st : SystemState) (ops : List TlbInvalidation) : SystemState :=
-  { st with shootdownOpsSpare := pageSpareOr id st.shootdownOpsSpare ops }
+  { st with
+      shootdownOpsSpare := pageSpareOr id st.shootdownOpsSpare ops
+      shootdownAsidOpsSpare := asidSpareOr id st.shootdownAsidOpsSpare ops }
 
 theorem stashShootdownOps_eq (st : SystemState) (ops : List TlbInvalidation) :
-    stashShootdownOps st ops = st :=
-  SystemState.with_shootdownOpsSpare st _
+    stashShootdownOps st ops = st := by
+  unfold stashShootdownOps
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  exact ⟨Subsingleton.elim _ _, Subsingleton.elim _ _⟩
 
 /-- WS-ZA ZA5.4: a one-descriptor queue for the descriptor spare, built at boot
 so the first page round finds cells to write over.  Its words read the round
@@ -2050,6 +2070,15 @@ cells would never be the round's own. -/
 `seedShootdownDescriptors` is. -/
 @[noinline] def seedShootdownOps (gen : Nat) : List TlbInvalidation :=
   [.vae1 (UInt16.ofNat gen) (UInt64.ofNat gen)]
+
+/-- WS-UC UC1: the ASID-round counterparts of `seedShootdownDescriptors` and
+`seedShootdownOps`, so the first VSpace-root delete after boot finds an ASID
+round's cells to write over. -/
+@[noinline] def seedShootdownAsidDescriptors (gen : Nat) : List TlbShootdownDescriptor :=
+  [{ op := .aside1 (UInt16.ofNat gen), initiator := bootCoreId, generation := gen }]
+
+@[noinline] def seedShootdownAsidOps (gen : Nat) : List TlbInvalidation :=
+  [.aside1 (UInt16.ofNat gen)]
 
 /-- WS-ZA ZA5.4: the shootdown record rebuilt with its own cells: the boot's
 record is the shared initial constant, so the first round's writes would copy
@@ -2073,14 +2102,20 @@ one writes over the cells the round before it retired.  The state itself
 (`withShootdownSparesSeeded_eq`). -/
 def withShootdownSparesSeeded (st : SystemState) : SystemState :=
   let st0 := { st with tlbShootdown := freshShootdownState st.tlbShootdown }
+  let gen := st0.tlbShootdown.roundGeneration
   stashShootdownOps
-    (stashShootdownDescriptors st0 (seedShootdownDescriptors st0.tlbShootdown.roundGeneration))
-    (seedShootdownOps st0.tlbShootdown.roundGeneration)
+    (stashShootdownOps
+      (stashShootdownDescriptors
+        (stashShootdownDescriptors st0 (seedShootdownDescriptors gen))
+        (seedShootdownAsidDescriptors gen))
+      (seedShootdownOps gen))
+    (seedShootdownAsidOps gen)
 
 theorem withShootdownSparesSeeded_eq (st : SystemState) : withShootdownSparesSeeded st = st := by
   unfold withShootdownSparesSeeded
   dsimp only
-  rw [stashShootdownOps_eq, stashShootdownDescriptors_eq, freshShootdownState_eq]
+  rw [stashShootdownOps_eq, stashShootdownOps_eq, stashShootdownDescriptors_eq,
+    stashShootdownDescriptors_eq, freshShootdownState_eq]
 
 /-- WS-ZA ZA5.4: the window per-core handler as it runs — the queue is drained
 once and every field of the state written once, so the shootdown record, the

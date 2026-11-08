@@ -90,9 +90,23 @@ exerciser_boot() {
 # driver the image runs and the summary tally.  Records a failure per finding;
 # returns 1 on any.
 exerciser_check() {
-    local label="$1" verdict
+    local label="$1" verdict kinds="" kinds_status=0
     shift
-    verdict=$(python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
+    # WS-UC UC1: the object kinds an untyped retype can name, derived from the
+    # retype's own decode (`scripts/retype_object_kinds.lean`, run by Lean) and
+    # not listed here: the allocation gate holds each to a carve scenario and
+    # to a delete of the carved capability.  A derivation that fails, or
+    # answers nothing, fails the gate; it is never read as no kinds.
+    if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+        ensure_lake_available || kinds_status=$?
+        if [[ "${kinds_status}" -eq 0 ]]; then
+            kinds=$(cd "${REPO_ROOT}" && lake env lean --run scripts/retype_object_kinds.lean 2>&1) \
+                || kinds_status=$?
+        fi
+    fi
+    verdict=$(RETYPE_OBJECT_KINDS="${kinds}" RETYPE_OBJECT_KINDS_STATUS="${kinds_status}" \
+        python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
+import os
 import re
 import sys
 
@@ -225,22 +239,32 @@ for driver in drivers:
         # happened once, after the round trip returned a frame or blocked as it
         # should, is a delta, and is zero, except a retype's: a retype that
         # succeeded names the object it carved (`carved <kind>/<size bits>`),
-        # and its reading must be exactly that object's own cells.
-        readings = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+)") if m.group(1) != "secondary-entry"]
+        # and its reading must be exactly that object's own cells.  Each
+        # reading also prints the bytes of the cells it counted, by size
+        # (WS-UC UC1): the sizes must account for exactly the counted cells
+        # and the bytes for exactly the sizes, and the bytes are pinned beside
+        # the cells.
+        readings = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+) bytes=(\d+|unrecorded) sizes=(none|unrecorded|\d+x\d+(?:,\d+x\d+)*)$") if m.group(1) != "secondary-entry"]
+        unparsed = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=.*$") if m.group(1) != "secondary-entry" and not re.fullmatch(r".*: before=\d+ after=\d+ delta=\d+ bytes=(\d+|unrecorded) sizes=(none|unrecorded|\d+x\d+(?:,\d+x\d+)*)", m.group(0))]
+        for m in unparsed:
+            failures.append(f"heap-allocations-per-syscall: a reading whose bytes could not be read: {m.group(0)!r}")
         returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|entered, a thread restored)$")
-        carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+)$")
+        carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+) at (\d+) into (0x[0-9a-f]+/\d+)$")
         names = [m.group(1) for m in readings]
-        # The cells of the object a carve makes, by kind and size bits: the
-        # object's record and the cells it is built of, its entries in the
-        # object store (the object, index-set and type tables and the index
-        # row), and its child record in the untyped.  Nothing else a retype
-        # does may allocate: not its decode, not its carve request, not the
-        # capability it writes.  Pinned here: a kind whose object changes
-        # shape changes its count, and a kind the exerciser carves that has no
-        # count fails.
+        # The cells of the object a carve makes, by kind and size bits, and
+        # their bytes: the object's record and the cells it is built of, its
+        # entries in the object store (the object, index-set and type tables
+        # and the index row), and its child record in the untyped.  Nothing
+        # else a retype does may allocate: not its decode, not its carve
+        # request, not the capability it writes.  Pinned here, cells then
+        # bytes: a kind whose object changes shape changes its pins, and a
+        # kind the exerciser carves that has no pin fails.  The breakdown of
+        # each pin is the table in docs/planning/UNTYPED_BACKED_CELLS_PLAN.md.
         carve_cells = {
-            "endpoint/0": 11, "notification/0": 11, "reply/0": 15, "tcb/0": 24,
-            "sched-context/7": 13, "cnode/2": 28, "frame/0": 11, "page-table/0": 13,
+            "endpoint/0": (11, 368), "notification/0": (11, 360), "reply/0": (15, 376),
+            "tcb/0": (24, 2160), "sched-context/7": (13, 560), "cnode/2": (28, 1248),
+            "frame/0": (11, 272), "page-table/0": (13, 352), "vspace-root/0": (14, 376),
+            "untyped/12": (12, 304),
         }
         # The scenario set is pinned: a round trip renamed or dropped from
         # the exerciser (smp_exercisers.rs) must change this set too, so the
@@ -259,6 +283,7 @@ for driver in drivers:
             "bind-carved-sched-context", "bind-carved-tcb", "bound-notification-delete",
             "bound-sched-context-delete", "bound-tcb-delete", "busy-endpoint-delete",
             "busy-notification-delete", "busy-reply-cap-delete", "busy-reply-delete", "call",
+            "child-untyped-delete",
             "call-to-carved-reply", "call-to-reply-receiver", "cap-fault-delivered",
             "cap-fault-delivered-to-reply", "cap-fault-plain-reply",
             "cap-fault-reply", "cap-fault-resume", "cap-fault-suspends", "chain-bind-partner",
@@ -392,7 +417,8 @@ for driver in drivers:
             "untyped-retype-stack-server", "untyped-retype-stack-server-reply",
             "untyped-retype-stack-top", "untyped-retype-stack-top-reply",
             "untyped-retype-stashed-reply", "untyped-retype-tcb", "untyped-retype-third-reply",
-            "untyped-retype-third-tcb", "untyped-retype-waited-reply",
+            "untyped-retype-third-tcb", "untyped-retype-untyped",
+            "untyped-retype-vspace-root", "untyped-retype-waited-reply",
             "upper-notification-delete", "user-exception-delivered",
             "user-exception-delivered-to-reply", "user-exception-plain-reply", "user-exception-reply",
             "user-exception-resume", "user-exception-suspends", "vm-fault-data-delivered",
@@ -403,7 +429,7 @@ for driver in drivers:
             "vm-fault-instruction-resume", "vm-fault-instruction-suspends", "vm-fault-queued",
             "vspace-map", "vspace-map-again", "vspace-map-copy", "vspace-map-moved",
             "vspace-unify-instruction", "vspace-unmap", "vspace-unmap-first",
-            "vspace-unmap-moved", "wait-blocks", "wait-on-carved", "wait-pending",
+            "vspace-root-delete", "vspace-unmap-moved", "wait-blocks", "wait-on-carved", "wait-pending",
             "waited-partner-calls", "waited-reply-cap-mint", "waited-root-waits",
             "waited-server-delete", "waited-server-receives", "waited-server-resumes-partner",
             "waited-server-waits", "waited-server-wakes-root", "waited-wake-server", "yield",
@@ -428,18 +454,92 @@ for driver in drivers:
             if key not in trips:
                 failures.append(f"heap-allocations-per-syscall: {key[0]}: a carve named with no returned round trip")
         for m in readings:
-            before, after, delta = (int(g) for g in m.groups()[2:])
+            before, after, delta = (int(g) for g in m.groups()[2:5])
             kind = carved.get((m.group(1), m.group(2) is not None))
             if kind is not None and kind not in carve_cells:
                 failures.append(f"heap-allocations-per-syscall: {m.group(1)} carved {kind}, whose cells the gate does not know: {m.group(0)!r}")
                 continue
-            pin = carve_cells[kind] if kind is not None else 0
+            pin, byte_pin = carve_cells[kind] if kind is not None else (0, 0)
             if after < before or delta != after - before:
                 failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
+                continue
+            if m.group(6) == "unrecorded" or m.group(7) == "unrecorded":
+                failures.append(f"heap-allocations-per-syscall: the heap no longer recorded the reading's sizes: {m.group(0)!r}")
+                continue
+            groups = [] if m.group(7) == "none" else [tuple(int(x) for x in g.split("x")) for g in m.group(7).split(",")]
+            sizes = [size for size, _ in groups]
+            if sizes != sorted(set(sizes)) or any(count == 0 for _, count in groups):
+                failures.append(f"heap-allocations-per-syscall: the sizes are not ascending distinct groups: {m.group(0)!r}")
+            elif sum(count for _, count in groups) != delta:
+                failures.append(f"heap-allocations-per-syscall: the sizes account for {sum(count for _, count in groups)} cells, the reading counted {delta}: {m.group(0)!r}")
+            elif sum(size * count for size, count in groups) != int(m.group(6)):
+                failures.append(f"heap-allocations-per-syscall: the bytes are not the sizes' total: {m.group(0)!r}")
             elif delta != pin and kind is not None:
                 failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {delta}, the object's own cells are {pin}: {m.group(0)!r}")
+            elif int(m.group(6)) != byte_pin and kind is not None:
+                failures.append(f"heap-allocations-per-syscall: a retype carving {kind} read {m.group(6)} bytes, the object's own cells' bytes are {byte_pin}: {m.group(0)!r}")
             elif delta != pin:
                 failures.append(f"heap-allocations-per-syscall: a kernel entry read {delta}, not 0: {m.group(0)!r}")
+        # WS-UC UC1: every kind the retype's decode accepts has a carve
+        # scenario and a delete of the carved capability, both pinned.  The
+        # kinds come from the decode (`retype_object_kinds.lean`), each
+        # constructor's name in kebab case, as the driver names a carve.  The
+        # relation is read off the log in order: a first-call carve of the kind
+        # names its object id and its capability's slot; the first delete of
+        # that slot after it, with no other carve into the slot between, is
+        # its delete; and the steady-state run of the same carve succeeded at
+        # the same id afterwards, which a store still holding the object would
+        # have refused, so the delete retired it.
+        kinds = []
+        derived = os.environ.get("RETYPE_OBJECT_KINDS", "")
+        if os.environ.get("RETYPE_OBJECT_KINDS_STATUS", "1") != "0":
+            failures.append(f"heap-allocations-per-syscall: the retype's object kinds could not be derived: {derived!r}")
+        else:
+            for line in derived.split("\n"):
+                if not line.strip():
+                    continue
+                m = re.fullmatch(r"(\d+) SeLe4n\.Model\.KernelObjectType\.([a-zA-Z]+)", line.strip())
+                if m is None:
+                    failures.append(f"heap-allocations-per-syscall: an object kind line the gate cannot read: {line!r}")
+                    continue
+                kinds.append(re.sub(r"([A-Z])", lambda c: "-" + c.group(1).lower(), m.group(2)))
+            if not kinds:
+                failures.append("heap-allocations-per-syscall: the retype's decode answered no object kind")
+        carve_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+)/\d+ at (\d+) into (0x[0-9a-f]+/\d+)$")
+        delete_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: deleted (0x[0-9a-f]+/\d+)$")
+        events = []
+        for line in lines:
+            m = carve_re.fullmatch(line)
+            if m:
+                events.append(("carve", m.group(1), m.group(2) is not None, m.group(3), m.group(4), m.group(5)))
+                continue
+            m = delete_re.fullmatch(line)
+            if m:
+                events.append(("delete", m.group(1), m.group(2) is not None, None, None, m.group(3)))
+        for kind in kinds:
+            carved_by = []
+            deleted_by = []
+            for i, (what, name, first, k, oid, slot) in enumerate(events):
+                if what != "carve" or k != kind or not first or name not in expected:
+                    continue
+                steady = next((j for j in range(i + 1, len(events))
+                               if events[j][:3] == ("carve", name, False) and events[j][4] == oid), None)
+                if steady is None:
+                    continue
+                carved_by.append(name)
+                for j in range(i + 1, steady):
+                    e = events[j]
+                    if e[0] == "carve" and e[5] == slot:
+                        break
+                    if e[0] == "delete" and e[5] == slot:
+                        if e[2] and e[1] in expected:
+                            deleted_by.append(e[1])
+                        break
+            if not carved_by:
+                failures.append(f"heap-allocations-per-syscall: the retype can carve {kind}, and no pinned scenario carves it in both runs")
+            elif not deleted_by:
+                failures.append(f"heap-allocations-per-syscall: no pinned scenario deletes a carved {kind}'s capability before its carve runs again")
+
         # WS-ZA ZA6.1: each core's first entry, its bring-up reschedule, read
         # once per core (the boot core's after boot, each secondary's as it
         # comes up), each a delta of zero.

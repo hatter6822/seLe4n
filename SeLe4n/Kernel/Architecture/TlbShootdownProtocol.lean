@@ -1475,6 +1475,91 @@ theorem tlbShootdownBroadcastPage_eq (st : SystemState) (initiator : CoreId)
     simp only [SystemState.mk.injEq, and_true, true_and]
     refine ⟨rfl, Subsingleton.elim _ _⟩
 
+/-- WS-UC UC1: an ASID invalidation's operand written over a spare operand
+`o`, out of line, with its word read back through `o` so the compiler writes
+into `o`'s cell (`pageInvalidationOver`'s counterpart for `.aside1`).  Equal to
+the operand (`asidInvalidationOver_eq`). -/
+@[noinline] def asidInvalidationOver (o : TlbInvalidation) (a : UInt16) : TlbInvalidation :=
+  match o with
+  | .aside1 a0 => .aside1 (if a0 = a then a0 else a)
+  | _ => .aside1 a
+
+theorem asidInvalidationOver_eq (o : TlbInvalidation) (a : UInt16) :
+    asidInvalidationOver o a = .aside1 a := by
+  unfold asidInvalidationOver
+  split
+  · congr 1; split <;> simp_all
+  · rfl
+
+/-- WS-UC UC1: an ASID round's descriptor written over a spare descriptor `d0`
+(`pageDescriptorOver`'s counterpart).  Equal to the descriptor
+(`asidDescriptorOver_eq`). -/
+@[noinline] def asidDescriptorOver (d0 : TlbShootdownDescriptor) (a : UInt16)
+    (initiator : CoreId) (gen : Nat) : TlbShootdownDescriptor :=
+  { op := asidInvalidationOver d0.op a,
+    initiator := if d0.initiator = initiator then d0.initiator else initiator,
+    generation := gen }
+
+theorem asidDescriptorOver_eq (d0 : TlbShootdownDescriptor) (a : UInt16)
+    (initiator : CoreId) (gen : Nat) :
+    asidDescriptorOver d0 a initiator gen =
+      { op := .aside1 a, initiator := initiator, generation := gen } := by
+  unfold asidDescriptorOver
+  rw [asidInvalidationOver_eq]
+  split <;> simp_all
+
+/-- WS-UC UC1: an ASID round's one-element queue written over the ASID-round
+spare queue (`pageRoundQueueOver`'s counterpart).  Equal to the queue
+(`asidRoundQueueOver_eq`). -/
+@[noinline] def asidRoundQueueOver (spare : List TlbShootdownDescriptor) (a : UInt16)
+    (initiator : CoreId) (gen : Nat) : List TlbShootdownDescriptor :=
+  match spare with
+  | d0 :: tl =>
+    asidDescriptorOver d0 a initiator gen :: (match tl with | [] => tl | _ :: _ => [])
+  | [] => [{ op := .aside1 a, initiator := initiator, generation := gen }]
+
+theorem asidRoundQueueOver_eq (spare : List TlbShootdownDescriptor) (a : UInt16)
+    (initiator : CoreId) (gen : Nat) :
+    asidRoundQueueOver spare a initiator gen =
+      [{ op := .aside1 a, initiator := initiator, generation := gen }] := by
+  unfold asidRoundQueueOver
+  split
+  · rename_i tl
+    rw [asidDescriptorOver_eq]
+    cases tl <;> rfl
+  · rfl
+
+/-- WS-UC UC1: **a released ASID's round as it runs** — the state's ASID-round
+descriptor spare is taken out of its field and the round's queue written over
+it (`asidRoundQueueOver`), so a round after a drained one builds neither its
+operand, its descriptor nor its list cell (`tlbShootdownBroadcastPage`'s
+counterpart).  `tlbShootdownBroadcastAsid_eq` is the equality. -/
+@[inline] def tlbShootdownBroadcastAsid (st : SystemState) (initiator : CoreId)
+    (targets : List CoreId) (asid : SeLe4n.ASID) : SystemState :=
+  let sp := st.shootdownAsidDescriptorSpare
+  let st0 := { st with shootdownAsidDescriptorSpare := Squash.mk [] }
+  let a := UInt16.ofNat asid.toNat
+  let gen := st0.tlbShootdown.roundGeneration + 1
+  Quot.lift
+    (fun spare =>
+      let one := asidRoundQueueOver spare a initiator gen
+      { st0 with tlbShootdown := postShootdownRoundQueue st0.tlbShootdown initiator targets one })
+    (fun x y _ => by dsimp only; rw [asidRoundQueueOver_eq, asidRoundQueueOver_eq]) sp
+
+theorem tlbShootdownBroadcastAsid_eq (st : SystemState) (initiator : CoreId)
+    (targets : List CoreId) (asid : SeLe4n.ASID) :
+    tlbShootdownBroadcastAsid st initiator targets asid =
+      tlbShootdownBroadcastCoalescing st initiator targets
+        (encodeAsidInvalidation asid) := by
+  unfold tlbShootdownBroadcastAsid tlbShootdownBroadcastCoalescing
+  rw [postShootdownRoundCoalescing_eq_once]
+  induction st.shootdownAsidDescriptorSpare using Squash.ind with
+  | h l =>
+    simp only [Squash.mk, asidRoundQueueOver_eq]
+    cases st
+    simp only [SystemState.mk.injEq, and_true, true_and]
+    refine ⟨rfl, Subsingleton.elim _ _⟩
+
 /-- **WS-SM SM7.B.9**: whenever the strict broadcast succeeds — always
 from quiescence — the coalescing broadcast commits the same state. -/
 theorem tlbShootdownBroadcastCoalescing_eq_strict {st st' : SystemState}
@@ -2223,6 +2308,11 @@ Equal to the state (`SystemState.with_shootdownOpsSpare`). -/
 @[noinline] def withoutShootdownOpsSpare (st : SystemState) : SystemState :=
   { st with shootdownOpsSpare := Squash.mk [] }
 
+/-- WS-UC UC1: `withoutShootdownOpsSpare` for the ASID-round operand spare.
+Equal to the state (`SystemState.with_shootdownAsidOpsSpare`). -/
+@[noinline] def withoutShootdownAsidOpsSpare (st : SystemState) : SystemState :=
+  { st with shootdownAsidOpsSpare := Squash.mk [] }
+
 /-- WS-ZA ZA5.4: the posted operands as the seam computes them.  When every
 descriptor this commit's window left on a changed core carries the operand of
 the first one — one round, one operand — the deduplicated list is that operand
@@ -2281,12 +2371,14 @@ spares stay exclusive.  Equal to the operand (`invalidationOver_eq`). -/
 @[inline] def invalidationOver (o op : TlbInvalidation) : TlbInvalidation :=
   match op with
   | .vae1 a v => pageInvalidationOver o a v
+  | .aside1 a => asidInvalidationOver o a
   | _ => op
 
 theorem invalidationOver_eq (o op : TlbInvalidation) : invalidationOver o op = op := by
   unfold invalidationOver
   split
   · exact pageInvalidationOver_eq o _ _
+  · exact asidInvalidationOver_eq o _
   · rfl
 
 /-- WS-ZA ZA5.4: the one-operand list written over a spare list cell: the
@@ -2311,9 +2403,10 @@ theorem opsCellOver_eq (spare : List TlbInvalidation) (op : TlbInvalidation) :
 /-- WS-ZA ZA5.4: the posted operands as the seam computes them, with the
 state's operand spare taken out of its field only where the one-operand list is
 built from a page operand, which is then written over the spare's cell
-(`opsCellOver`); a commit that posts nothing, more than one operand, or a
-non-page operand (an ASID round) leaves the spare where it is, so the spare
-keeps the page shape the next unmap writes over.
+(`opsCellOver`); WS-UC UC1: an ASID operand is written over the ASID-round
+spare's cell the same way.  A commit that posts nothing, more than one operand,
+or another operand leaves both spares where they are, so each keeps the shape
+the next round of its kind writes over.
 Equal to the operands and the state itself (`shootdownPostedOpsTaking_eq`). -/
 @[inline] def shootdownPostedOpsTaking (changed : List CoreId) (lo : Nat) (post : SystemState) :
     List TlbInvalidation × SystemState :=
@@ -2329,6 +2422,12 @@ Equal to the operands and the state itself (`shootdownPostedOpsTaking_eq`). -/
         if op.toOpTag == 1 then
           let sp := post.shootdownOpsSpare
           let post0 := withoutShootdownOpsSpare post
+          Quot.lift (fun spare => (opsCellOver spare op, post0))
+            (fun x y _ => by dsimp only; rw [opsCellOver_eq, opsCellOver_eq]) sp
+        else if op.toOpTag == 2 then
+          -- WS-UC UC1: an ASID round's operand over the ASID-round spare.
+          let sp := post.shootdownAsidOpsSpare
+          let post0 := withoutShootdownAsidOpsSpare post
           Quot.lift (fun spare => (opsCellOver spare op, post0))
             (fun x y _ => by dsimp only; rw [opsCellOver_eq, opsCellOver_eq]) sp
         else ([op], post)
@@ -2347,7 +2446,11 @@ theorem shootdownPostedOpsTaking_eq (changed : List CoreId) (lo : Nat) (post : S
         · induction post.shootdownOpsSpare using Squash.ind with
           | h l => simp only [Squash.mk, opsCellOver_eq, withoutShootdownOpsSpare,
               SystemState.with_shootdownOpsSpare]
-        · rfl
+        · split
+          · induction post.shootdownAsidOpsSpare using Squash.ind with
+            | h l => simp only [Squash.mk, opsCellOver_eq, withoutShootdownAsidOpsSpare,
+                SystemState.with_shootdownAsidOpsSpare]
+          · rfl
       · rfl
 
 /-- **WS-SM SM7.B**: the newly-posted invalidation operands of a
