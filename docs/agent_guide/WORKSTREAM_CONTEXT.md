@@ -120,7 +120,7 @@ owns the heap-capacity row of `docs/REGISTERED_DEBT.md` table C, which UC9
 closes. UC1 (`v0.37.2`) measured every carve's cells and bytes (plan §5), added
 the VSpace-root and child-untyped carves and deletes, made the gate derive the
 retype's kinds from its decode, and fixed a VSpace root's final delete, which
-read 1810 heap cells. **Standing constraints for new code:** a carve's object,
+read 1810 heap cells. The audit's decode-path follow-up (`v0.37.3`) routed the long and short-argument forms, refused message info and unnamed numbers out of the decoded arm; the forms still decoded are a row of `docs/REGISTERED_DEBT.md` table C. **Standing constraints for new code:** a syscall form the register file routes takes an arm that refuses in the state it was handed, never `RefusalCarrying.ofKernel` of the specification; a carve's object,
 entry and child record must stay buildable from the carve's scalars in one
 window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned

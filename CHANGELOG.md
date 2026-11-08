@@ -1,3 +1,69 @@
+## v0.37.3 — the decoded arm's long, short-argument and refused forms routed in place
+
+The heap-allocation audit's decode-path follow-up.  The routed entry's decoded
+arm runs the specification's decode and dispatch under
+`RefusalCarrying.ofKernel`, which keeps the pre-state alive for a refusal, so
+each table the dispatch writes is copied.  This PR routes the forms that read
+no overflow word past slot 0, and every form refused before any read, through
+arms that refuse in the state they were handed.
+
+- **The overflowed route** (`RegisterRoutedSyscall.overflowed`,
+  `SeLe4n/Kernel/RefusalCarryingOverflowed.lean`,
+  `SeLe4n/Kernel/RoutedArms/Overflowed.lean`): a signal, wait, receive,
+  invocation, audited call or five-word call of more than four words whose
+  overflow slots lie on the IPC buffer's first page.  It reads slot 0, fills
+  the TLB entry the decode would and dispatches on the inline words and slot 0
+  (`dispatchOverflowedCheckedR_eq`).  The route carries the message length
+  only, so the router builds no message-info cell.
+- **The short-argument route** (`.shortArgs`): a scheduling-context configure
+  or service register short of its fifth word is refused once its capability
+  is found, as the decode refuses it (`dispatchShortArgsCheckedR_eq`).
+- **The refused route** (`.refused`): a message-info word the decode refuses,
+  and a syscall number that names no syscall, refuse before any read
+  (`decodeSyscallArgsFromState_of_routedRefused`).
+- **The capability address is read as its word.**  A refused syscall's
+  cap-fault check (`syscallCapFaultOf`) runs the specification's decode,
+  whose compiled form read the capability address as a number, so an address
+  of `2^63` or more built a heap number on every refusal.  The compiled decode
+  now reads the register's word (`decodeSyscallArgsFromStateImpl`,
+  `decodeCapPtr_readReg`).
+- **The decoders** take `MsgRegsAgreeBelow` (the words agree below the count
+  the decoder reads) in place of equal arrays, so one proof covers the inline
+  words and the merged decode.
+- **The reading** (`rust/sele4n-hal/src/lean_heap.rs`): each core also keeps
+  its total allocated bytes (`kernel_allocation_totals_on`), so a window past
+  the 64-entry size record still prints its bytes (`bytes=N sizes=unrecorded`).
+  The size record and the other cores' lock fuel are unchanged.
+- **New scenarios**, each pinned at 0 at first call and in steady state:
+  `service-register-short`, `sched-context-configure-long`,
+  `signal-long-message`, `wait-long-message`, `invocation-long-message`,
+  `bad-message-info`.
+
+### Security
+
+- **Any thread could make the decoded arm copy the kernel's tables.**
+  Severity: Medium.
+  - *Where:* `decodedRoutedArm` (`SeLe4n/Kernel/RoutedArms/Decoded.lean`) runs
+    `RefusalCarrying.ofKernel (syscallEntryChecked …)`, which holds the
+    pre-state for a refusal.
+  - *What it cost:* every table the dispatch wrote was copied, not updated in
+    place: a transient proportional to the tables, inside the entry lock.  The
+    audit's scenarios read 27 to 85 cells per call on this arm.
+  - *How it could be used:* any thread reaches the arm with a message-info word
+    of more than four words, or a five-word call short of a word.  No capacity
+    check covers the transient, so with the heap filled near its reserve one
+    such call halts the system (`heap_halt`): a local denial of service.
+  - *Fix:* the forms above take the routed arms.  The forms still decoded (a
+    long `call`, `reply` or `replyRecv`; a `send` or `call` that transfers
+    capabilities; a long `yield`; a long form whose overflow slots cross the
+    IPC buffer's first page) are a row of `docs/REGISTERED_DEBT.md` table C,
+    and remain exposed until it closes.
+  - *Proofs:* `syscallEntryCheckedK_eq_routed` (`@[csimp]`), with
+    `dispatchOverflowedCheckedR_eq`, `overflowedArmWith_eq_spec`,
+    `dispatchShortArgsCheckedR_eq` and the routed decode lemmas.  The
+    specification is unchanged.
+  - *Evidence:* the six scenarios read 0 at first call and in steady state.
+
 ## v0.37.2 — WS-UC UC1: each carve measured in cells and bytes; a VSpace root's delete allocates nothing
 
 UC1 of the untyped-backed cells plan.  Every allocation reading now prints its

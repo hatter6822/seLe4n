@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.2` (`lakefile.toml`) |
+| **Package version** | `0.37.3` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 599,213 across 591 Lean files |
 | **Test LoC** | 88,884 across 70 Lean test suites |
@@ -6587,6 +6587,16 @@ Every kernel object has a decidable well-formedness predicate:
   `declassifySignalBoundPerform`), its removal guard read off the queue's end
   codes (`dualQueueRemovalEnabledCode`), and a two-hop downgrade writes both
   records over the trail (`declassifySignalHopsRecord`).
+  Since `v0.37.3` a signal, wait, receive, invocation, audited call or
+  five-word call of more than four words, a five-word call short of its fifth
+  word, a refused message-info word and an unnamed syscall number each take a
+  routed arm that refuses in the state it was handed
+  (`RegisterRoutedSyscall.overflowed`, `.shortArgs`, `.refused`;
+  `dispatchOverflowedCheckedR_eq`, `dispatchShortArgsCheckedR_eq`), not the
+  decoded arm, whose `RefusalCarrying.ofKernel` keeps the pre-state alive
+  and so copies each table the dispatch writes.  The forms still decoded are
+  registered in `docs/REGISTERED_DEBT.md` (table C, *The decoded arm still
+  keeps the pre-state alive*).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write
