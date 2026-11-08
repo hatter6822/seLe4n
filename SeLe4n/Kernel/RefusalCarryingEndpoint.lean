@@ -100,24 +100,24 @@ theorem decodeSyscallArgsFromState_of_routedSendLong_ok (st : SystemState)
     bind, Except.bind, pure, Except.pure, longSendDecode]
   rfl
 
-/-- …and one whose first overflow slot does not read is refused as the decode
+/-- …and one with an overflow slot that does not read is refused as the decode
 refuses it. -/
 theorem decodeSyscallArgsFromState_of_routedSendLong_error (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
-    (e : Architecture.IpcBufferRead.IpcBufferReadError)
-    (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid 0 = .error e) :
+    (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
+    (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
       .error .invalidMessageInfo := by
   obtain ⟨hGt, _, _, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   rw [hSz] at hGt
-  obtain ⟨m, hm⟩ : ∃ m, mi.length - 4 = m + 1 := ⟨mi.length - 5, by omega⟩
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, hm, List.range_eq_range', List.range'_succ, List.mapM_cons,
-    readOverflowWord, h0, bind, Except.bind]
+  simp only [Array.size_map, hSz, List.range_eq_range',
+    mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
+    bind, Except.bind]
 
 /-- **A frame that routes as a long send**, read for the sender `tid` whose
 saved registers `rf` are and whose overflow slots all read: it asks to

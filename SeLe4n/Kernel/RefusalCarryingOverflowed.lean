@@ -73,15 +73,15 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_ok (st : SystemState)
     bind, Except.bind, pure, Except.pure, overflowedDecode]
   rfl
 
-/-- …and one whose first overflow slot does not read is refused as the decode
+/-- …and one with an overflow slot that does not read is refused as the decode
 refuses it. -/
 theorem decodeSyscallArgsFromState_of_routedOverflowed_error (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (mi : MessageInfo)
     (hMI : decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi)
     (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .overflowed sid capAddr mi.length)
-    (e : Architecture.IpcBufferRead.IpcBufferReadError)
-    (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid 0 = .error e) :
+    (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
+    (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
       .error .invalidMessageInfo := by
   obtain ⟨mi', hMI', -, hGt, _, _, hDec⟩ :=
@@ -89,11 +89,11 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_error (st : SystemState)
   obtain rfl : mi = mi' := Except.ok.inj (hMI.symm.trans hMI')
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   rw [hSz] at hGt
-  obtain ⟨m, hm⟩ : ∃ m, mi.length - 4 = m + 1 := ⟨mi.length - 5, by omega⟩
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, hm, List.range_eq_range', List.range'_succ, List.mapM_cons,
-    readOverflowWord, h0, bind, Except.bind]
+  simp only [Array.size_map, hSz, List.range_eq_range',
+    mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
+    bind, Except.bind]
 
 /-- **The overflowed dispatch**: the short route's refusal-carrying dispatch,
 read off the inline words and, for a five-word invocation, the overflow word `w`

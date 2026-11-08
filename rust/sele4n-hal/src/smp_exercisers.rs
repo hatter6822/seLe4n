@@ -2356,6 +2356,13 @@ const FRAME_VADDR: u64 = 1 << 39;
 /// destroys the copy and so unmaps it.
 #[cfg(feature = "hw_target")]
 const FRAME_COPY_VADDR: u64 = FRAME_VADDR + 0x1000;
+/// An IPC buffer 512 bytes short of the frame's end (`ipcBufferAlignment`),
+/// so its overflow slots from 64 on lie on the next page.
+#[cfg(feature = "hw_target")]
+const CROSSING_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x200;
+/// A message whose last overflow word, slot 64, is the first on the next page.
+#[cfg(feature = "hw_target")]
+const CROSSING_MESSAGE_LENGTH: u64 = 4 + 64 + 1;
 /// Read, write, user and cacheable (`PagePermissions.ofNat`).
 #[cfg(feature = "hw_target")]
 const FRAME_PERMS: u64 = 0b11011;
@@ -3178,6 +3185,118 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [0; 4],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // Long forms whose overflow words cross the IPC buffer's page: the
+        // frame's copy mapped at the next page, both threads' buffers set
+        // 512 bytes short of the frame's end, so overflow slots 0 to 63 lie on
+        // the frame and slot 64 on, the message's last, on the next page.  A
+        // signal of that length (routed as overflowed, its walk two pages),
+        // and the long send to a waiting receiver, which reads the sender's
+        // words across both pages and writes the receiver's in place; then
+        // the buffers, the mapping and the copy put back.
+        invocation(
+            "crossing-frame-copy",
+            CSPACE_COPY,
+            CNODE_CAP,
+            [FRAME_SLOT, MOVE_SLOT, 0, 0],
+        ),
+        invocation(
+            "crossing-map-copy",
+            VSPACE_MAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+        ),
+        invocation(
+            "crossing-root-ipc-buffer",
+            TCB_SET_IPC_BUFFER,
+            ROOT_TCB_CAP,
+            [CROSSING_IPC_BUFFER, 0, 0, 0],
+        ),
+        invocation(
+            "crossing-partner-ipc-buffer",
+            TCB_SET_IPC_BUFFER,
+            PARTNER_TCB_CAP,
+            [CROSSING_IPC_BUFFER, 0, 0, 0],
+        ),
+        RoundTrip {
+            msg_len: CROSSING_MESSAGE_LENGTH,
+            ..signal("signal-crossing-page", 1)
+        },
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "crossing-send-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                REFILL_BUDGET,
+                REFILL_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "crossing-send-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "crossing-send-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "crossing-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "crossing-send-to-receiver",
+            SEND,
+            ENDPOINT_CAP,
+            CROSSING_MESSAGE_LENGTH,
+            [0x55, 0x56],
+            false,
+        ),
+        kernel_step("crossing-send-partner-yield", YIELD),
+        invocation(
+            "crossing-send-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "crossing-send-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        invocation(
+            "crossing-root-ipc-buffer-back",
+            TCB_SET_IPC_BUFFER,
+            ROOT_TCB_CAP,
+            [FRAME_VADDR, 0, 0, 0],
+        ),
+        invocation(
+            "crossing-partner-ipc-buffer-back",
+            TCB_SET_IPC_BUFFER,
+            PARTNER_TCB_CAP,
+            [FRAME_VADDR, 0, 0, 0],
+        ),
+        invocation(
+            "crossing-unmap-copy",
+            VSPACE_UNMAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
+        ),
+        invocation(
+            "crossing-copy-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MOVE_SLOT, 0, 0, 0],
+        ),
         // The same with the partner holding the image's scheduling context, so its
         // call donates the context to the root task: the suspend's reply arm takes
         // the reply off the context's reply stack and leaves the context with the

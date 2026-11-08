@@ -438,6 +438,14 @@ for driver in drivers:
             "bad-message-info", "high-message-info", "invocation-long-message",
             "sched-context-configure-long", "service-register-short", "signal-long-message",
             "wait-long-message", "yield-long-message",
+            # The long forms whose overflow words cross the IPC buffer's page.
+            "crossing-copy-delete", "crossing-frame-copy", "crossing-map-copy",
+            "crossing-partner-ipc-buffer", "crossing-partner-ipc-buffer-back",
+            "crossing-root-ipc-buffer", "crossing-root-ipc-buffer-back",
+            "crossing-send-bind-partner", "crossing-send-configure",
+            "crossing-send-partner-yield", "crossing-send-resume-partner",
+            "crossing-send-root-receives", "crossing-send-suspend", "crossing-send-to-receiver",
+            "crossing-send-unbind", "crossing-unmap-copy", "signal-crossing-page",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

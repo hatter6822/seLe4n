@@ -160,19 +160,16 @@ compiled form `syscallEntryCheckedK` runs as. -/
       rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
       simp only [entryReportOutcome_general]; rfl
     | sendLong capAddr msgInfo =>
-      simp only [sendLongRoutedArm, hO]
-      split
-      · rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
-        simp only [entryReportOutcome_general]; rfl
-      · simp only [entryReportOutcome_general]
+      simp only [sendLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_general]
+      rfl
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl
     | overflowed sid capAddr len =>
       simp only [overflowedRoutedArm_eq, overflowedArmWith_eq_spec, overflowedArmSpec, hO]
-      split
-      · rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
-        simp only [entryReportOutcome_general, overflowedOperandR_eq]; rfl
-      · simp only [entryReportOutcome_general]
+      simp only [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_general, overflowedOperandR_eq]
+      rfl
     | shortArgs sid capAddr =>
       simp only [shortArgsRoutedArm, entryReportOutcome_operand]; rfl
     | refused e => simp only [entryReportOutcome_general]

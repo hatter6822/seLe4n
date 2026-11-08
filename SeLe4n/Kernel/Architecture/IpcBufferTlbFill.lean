@@ -170,29 +170,57 @@ writes nothing (`tlbFillIpcBufferOnCore_of_held`). -/
       | none => true
       | some entry => tlbEntriesHold (tlbOnCore st c).entries entry)
 
+/-- Whether core `c` already caches the translation a walk of `page` under
+`asid` resolves, read in place: the walk's `tlbWalkEntry` and
+`resolveAsidRoot`, so the check builds nothing (`ipcBufferPageHeld_eq`). -/
+@[inline] def ipcBufferPageHeld (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (page : VAddr) : Bool :=
+  match st.asidTable[asid]? with
+  | none => true
+  | some oid =>
+    match st.getVSpaceRoot? oid with
+    | none => true
+    | some r =>
+      if r.asid = asid then
+        match r.lookup page with
+        | none => true
+        | some q => tlbEntriesHoldWalked (tlbOnCore st c).entries asid page q.1 q.2
+      else true
+
+theorem ipcBufferPageHeld_eq (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (page : VAddr) :
+    ipcBufferPageHeld st c asid page =
+      match tlbWalkEntry st asid page with
+      | none => true
+      | some entry => tlbEntriesHold (tlbOnCore st c).entries entry := by
+  unfold ipcBufferPageHeld
+  simp only [tlbWalkEntry, resolveAsidRoot]
+  cases st.asidTable[asid]? with
+  | none => rfl
+  | some oid =>
+  dsimp only
+  cases st.getVSpaceRoot? oid with
+  | none => rfl
+  | some r =>
+  dsimp only
+  by_cases hEq : r.asid = asid
+  · simp only [hEq, if_true]
+    cases r.lookup page with
+    | none => rfl
+    | some q => exact tlbEntriesHoldWalked_eq _ _ _ _ _
+  · simp only [hEq, if_false]
+
 /-- WS-ZA ZA5.2: `ipcBufferFillHeld` for the one overflow slot a
 scheduling-context configure reads, as the entry compiles it: the walk's
-`tlbWalkEntry`, `resolveAsidRoot` and page list are read in place, so the
-check builds nothing (`ipcBufferFillHeld_one`). -/
+page held is read in place (`ipcBufferPageHeld`), so the check builds nothing
+(`ipcBufferFillHeld_one`). -/
 @[inline] def ipcBufferFillHeldOne (st : SystemState) (c : CoreId) (tid : ThreadId) : Bool :=
   match st.getTcb? tid with
   | none => true
   | some tcb =>
     match st.getVSpaceRoot? tcb.vspaceRoot with
     | none => true
-    | some root =>
-      let page := ipcBufferSlotPage tcb.ipcBuffer 0
-      match st.asidTable[root.asid]? with
-      | none => true
-      | some oid =>
-        match st.getVSpaceRoot? oid with
-        | none => true
-        | some r =>
-          if r.asid = root.asid then
-            match r.lookup page with
-            | none => true
-            | some q => tlbEntriesHoldWalked (tlbOnCore st c).entries root.asid page q.1 q.2
-          else true
+    | some root => ipcBufferPageHeld st c root.asid (ipcBufferSlotPage tcb.ipcBuffer 0)
 
 theorem ipcBufferFillHeld_one (st : SystemState) (c : CoreId) (tid : ThreadId) :
     ipcBufferFillHeld st c tid 1 = ipcBufferFillHeldOne st c tid := by
@@ -207,81 +235,128 @@ theorem ipcBufferFillHeld_one (st : SystemState) (c : CoreId) (tid : ThreadId) :
   dsimp only
   have hE : ipcBufferOverflowPages tcb.ipcBuffer 1 = [ipcBufferSlotPage tcb.ipcBuffer 0] := by
     simp [ipcBufferOverflowPages, List.eraseDups, List.eraseDupsBy, List.eraseDupsBy.loop]
-  simp only [hE, List.all_cons, List.all_nil, Bool.and_true, tlbWalkEntry, resolveAsidRoot]
-  cases hA : st.asidTable[root.asid]? with
-  | none => rfl
-  | some oid =>
-  dsimp only
-  cases hV : st.getVSpaceRoot? oid with
-  | none => rfl
-  | some r =>
-  dsimp only
-  by_cases hEq : r.asid = root.asid
-  · simp only [hEq, if_true]
-    cases hL : r.lookup (ipcBufferSlotPage tcb.ipcBuffer 0) with
-    | none => rfl
-    | some q => exact (tlbEntriesHoldWalked_eq _ _ _ _ _).symm
-  · simp only [hEq, if_false]
+  simp only [hE, List.all_cons, List.all_nil, Bool.and_true, ipcBufferPageHeld_eq]
 
-/-- Whether overflow slots `i` to `i + n - 1` of the buffer at `buf` lie in the
-page of slot 0.  When slots `0` to `n - 1` do, a walk of them resolves that one
-page (`ipcBufferOverflowPages_of_onFirstPage`), and the check builds nothing. -/
-def overflowSlotsOnFirstPage (buf : VAddr) : Nat → Nat → Bool
-  | _, 0 => true
-  | i, n + 1 => ipcBufferSlotPage buf i == ipcBufferSlotPage buf 0 &&
-      overflowSlotsOnFirstPage buf (i + 1) n
-
-theorem overflowSlotsOnFirstPage_spec (buf : VAddr) :
-    ∀ (n i : Nat), overflowSlotsOnFirstPage buf i n = true →
-      ∀ j, i ≤ j → j < i + n → ipcBufferSlotPage buf j = ipcBufferSlotPage buf 0
-  | 0, _, _, _, h1, h2 => by omega
-  | n + 1, i, h, j, h1, h2 => by
-    simp only [overflowSlotsOnFirstPage, Bool.and_eq_true, beq_iff_eq] at h
-    by_cases hj : j = i
-    · subst hj; exact h.1
-    · exact overflowSlotsOnFirstPage_spec buf n (i + 1) h.2 j (by omega) (by omega)
-
-/-- Slots on slot 0's page walk the pages one slot walks. -/
-theorem ipcBufferOverflowPages_of_onFirstPage {buf : VAddr} {n : Nat} (hn : 0 < n)
-    (h : overflowSlotsOnFirstPage buf 0 n = true) :
-    ipcBufferOverflowPages buf n = ipcBufferOverflowPages buf 1 := by
-  obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
-  have hAll := overflowSlotsOnFirstPage_spec buf (m + 1) 0 h
-  unfold ipcBufferOverflowPages
-  rw [List.range_succ_eq_map, List.map_cons, List.eraseDups_cons]
-  have hF : List.filter (fun b => !b == ipcBufferSlotPage buf 0)
-      (List.map (ipcBufferSlotPage buf) (List.map Nat.succ (List.range m))) = [] := by
+private theorem eraseDups_replicate_succ {α : Type} [BEq α] [LawfulBEq α] (a : α) (m : Nat) :
+    (List.replicate (m + 1) a).eraseDups = [a] := by
+  rw [List.replicate_succ, List.eraseDups_cons]
+  have hF : (List.replicate m a).filter (fun b => !b == a) = [] := by
     rw [List.filter_eq_nil_iff]
     intro x hx
-    simp only [List.map_map, List.mem_map, List.mem_range, Function.comp_apply] at hx
-    obtain ⟨j, hj, rfl⟩ := hx
-    rw [hAll (j + 1) (by omega) (by omega)]
+    rw [List.eq_of_mem_replicate hx]
     simp
   rw [hF]
   simp [List.eraseDups, List.eraseDupsBy, List.eraseDupsBy.loop]
 
-/-- A thread whose overflow slots lie on slot 0's page plans one slot's walk. -/
-theorem ipcBufferWalkPlan_of_onFirstPage {st : SystemState} {tid : ThreadId} {tcb : TCB}
-    {n : Nat} (hT : st.getTcb? tid = some tcb) (hn : 0 < n)
-    (h : overflowSlotsOnFirstPage tcb.ipcBuffer 0 n = true) :
-    ipcBufferWalkPlan st tid n = ipcBufferWalkPlan st tid 1 := by
-  simp only [ipcBufferWalkPlan, hT, ipcBufferOverflowPages_of_onFirstPage hn h]
+/-- The pages a walk of `n` overflow slots resolves: slot 0's and, when the
+slots cross into it, the next (`firstPageSlots`). -/
+theorem ipcBufferOverflowPages_split {buf : VAddr} {n : Nat} (hn0 : 0 < n)
+    (hn : n ≤ maxOverflowSlots) :
+    ipcBufferOverflowPages buf n =
+      if n ≤ firstPageSlots buf then [ipcBufferSlotPage buf 0]
+      else [ipcBufferSlotPage buf 0, ipcBufferSlotPage buf (firstPageSlots buf)] := by
+  obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
+  have hPos := firstPageSlots_pos buf
+  have hNe := ipcBufferSlotPage_firstPageSlots_ne buf
+  unfold ipcBufferOverflowPages
+  rw [List.range_succ_eq_map, List.map_cons, List.eraseDups_cons]
+  generalize hFd : List.filter (fun b => !b == ipcBufferSlotPage buf 0)
+      (List.map (ipcBufferSlotPage buf) (List.map Nat.succ (List.range m))) = F
+  split
+  · next hOne =>
+    have hNil : F = [] := by
+      rw [← hFd, List.filter_eq_nil_iff]
+      intro x hx
+      simp only [List.map_map, List.mem_map, List.mem_range, Function.comp_apply] at hx
+      obtain ⟨j, hj, rfl⟩ := hx
+      rw [ipcBufferSlotPage_of_lt_firstPageSlots (by omega)]
+      simp
+    rw [hNil]
+    simp [List.eraseDups, List.eraseDupsBy, List.eraseDupsBy.loop]
+  · next hTwo =>
+    congr 1
+    have hAll : ∀ b ∈ F, b = ipcBufferSlotPage buf (firstPageSlots buf) := by
+      intro b hb
+      rw [← hFd, List.mem_filter] at hb
+      obtain ⟨hb, hb0⟩ := hb
+      simp only [List.map_map, List.mem_map, List.mem_range, Function.comp_apply] at hb
+      obtain ⟨j, hj, rfl⟩ := hb
+      by_cases hlt : j + 1 < firstPageSlots buf
+      · rw [ipcBufferSlotPage_of_lt_firstPageSlots hlt] at hb0; simp at hb0
+      · exact ipcBufferSlotPage_of_firstPageSlots_le (by omega) (by omega)
+    have hMem : ipcBufferSlotPage buf (firstPageSlots buf) ∈ F := by
+      rw [← hFd, List.mem_filter]
+      refine ⟨?_, by simpa using hNe⟩
+      simp only [List.map_map, List.mem_map, List.mem_range, Function.comp_apply]
+      exact ⟨firstPageSlots buf - 1, by omega, by congr 1; omega⟩
+    have hRep := List.eq_replicate_iff.mpr ⟨rfl, hAll⟩
+    obtain ⟨l, hl⟩ : ∃ l, F.length = l + 1 :=
+      ⟨F.length - 1, by have := List.length_pos_of_mem hMem; omega⟩
+    rw [hRep, hl, eraseDups_replicate_succ]
 
-/-- …so its fill is one slot's fill… -/
-theorem tlbFillIpcBufferOnCore_of_onFirstPage {st : SystemState} {c : CoreId}
-    {tid : ThreadId} {tcb : TCB} {n : Nat} (hT : st.getTcb? tid = some tcb) (hn : 0 < n)
-    (h : overflowSlotsOnFirstPage tcb.ipcBuffer 0 n = true) :
-    tlbFillIpcBufferOnCore st c tid n = tlbFillIpcBufferOnCore st c tid 1 := by
-  unfold tlbFillIpcBufferOnCore
-  rw [ipcBufferWalkPlan_of_onFirstPage hT hn h]
+/-- The fill of a walk of `n` overflow slots, read in place: slot 0's page and,
+when the slots cross into it, the next (`tlbFillIpcBufferInOnCore_eq`), so the
+fill builds no page list. -/
+@[inline] def tlbFillIpcBufferInOnCore (st : SystemState) (c : CoreId) (tid : ThreadId)
+    (n : Nat) : SystemState :=
+  match st.getTcb? tid with
+  | none => st
+  | some tcb =>
+    match st.getVSpaceRoot? tcb.vspaceRoot with
+    | none => st
+    | some root =>
+      let s1 := tlbFillOnCore st c root.asid (ipcBufferSlotPage tcb.ipcBuffer 0)
+      if n ≤ firstPageSlots tcb.ipcBuffer then s1
+      else
+        tlbFillOnCore s1 c root.asid
+          (ipcBufferSlotPage tcb.ipcBuffer (firstPageSlots tcb.ipcBuffer))
 
-/-- …and the check that the fill writes nothing is one slot's check. -/
-theorem ipcBufferFillHeld_of_onFirstPage {st : SystemState} {c : CoreId}
-    {tid : ThreadId} {tcb : TCB} {n : Nat} (hT : st.getTcb? tid = some tcb) (hn : 0 < n)
-    (h : overflowSlotsOnFirstPage tcb.ipcBuffer 0 n = true) :
-    ipcBufferFillHeld st c tid n = ipcBufferFillHeld st c tid 1 := by
-  unfold ipcBufferFillHeld
-  rw [ipcBufferWalkPlan_of_onFirstPage hT hn h]
+/-- Whether core `c` already caches every translation that fill would insert,
+read in place (`ipcBufferFillHeldIn_eq`). -/
+@[inline] def ipcBufferFillHeldIn (st : SystemState) (c : CoreId) (tid : ThreadId)
+    (n : Nat) : Bool :=
+  match st.getTcb? tid with
+  | none => true
+  | some tcb =>
+    match st.getVSpaceRoot? tcb.vspaceRoot with
+    | none => true
+    | some root =>
+      ipcBufferPageHeld st c root.asid (ipcBufferSlotPage tcb.ipcBuffer 0) &&
+        (n ≤ firstPageSlots tcb.ipcBuffer ||
+          ipcBufferPageHeld st c root.asid
+            (ipcBufferSlotPage tcb.ipcBuffer (firstPageSlots tcb.ipcBuffer)))
+
+theorem tlbFillIpcBufferInOnCore_eq (st : SystemState) (c : CoreId) (tid : ThreadId)
+    {n : Nat} (hn0 : 0 < n) (hn : n ≤ maxOverflowSlots) :
+    tlbFillIpcBufferInOnCore st c tid n = tlbFillIpcBufferOnCore st c tid n := by
+  unfold tlbFillIpcBufferInOnCore tlbFillIpcBufferOnCore ipcBufferWalkPlan
+  cases st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+  dsimp only
+  cases st.getVSpaceRoot? tcb.vspaceRoot with
+  | none => rfl
+  | some root =>
+    dsimp only
+    rw [ipcBufferOverflowPages_split hn0 hn]
+    split <;> rfl
+
+theorem ipcBufferFillHeldIn_eq (st : SystemState) (c : CoreId) (tid : ThreadId)
+    {n : Nat} (hn0 : 0 < n) (hn : n ≤ maxOverflowSlots) :
+    ipcBufferFillHeldIn st c tid n = ipcBufferFillHeld st c tid n := by
+  unfold ipcBufferFillHeldIn ipcBufferFillHeld ipcBufferWalkPlan
+  cases st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+  dsimp only
+  cases st.getVSpaceRoot? tcb.vspaceRoot with
+  | none => rfl
+  | some root =>
+    dsimp only
+    rw [ipcBufferOverflowPages_split hn0 hn]
+    split
+    · next h => simp [h, ipcBufferPageHeld_eq]
+    · next h => simp [h, ipcBufferPageHeld_eq]
 
 private theorem foldl_tlbFillOnCore_of_held (c : CoreId) (asid : SeLe4n.ASID)
     (st : SystemState) (pages : List VAddr)

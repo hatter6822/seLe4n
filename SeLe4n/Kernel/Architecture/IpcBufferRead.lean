@@ -224,26 +224,100 @@ theorem ipcBufferReadMrK_eq {α : Type} (st : SystemState) (tid : ThreadId) (idx
         | none => rfl
         | some p => rfl
 
-/-- A slot in the page of slot 0 reads wherever slot 0 reads: the page is
+/-- A slot on the page of slot `i0` reads wherever slot `i0` reads: the page is
 looked up once for both, and only the offset into it differs. -/
-theorem ipcBufferReadMr_of_firstPage {st : SystemState} {tid : ThreadId}
-    {tcb : SeLe4n.Model.TCB} {i : Nat} (hT : st.getTcb? tid = some tcb)
-    (hP : ipcBufferSlotPage tcb.ipcBuffer i = ipcBufferSlotPage tcb.ipcBuffer 0)
-    (hi : i < maxOverflowSlots) (h0 : ∃ w, ipcBufferReadMr st tid 0 = .ok w) :
+theorem ipcBufferReadMr_of_samePage {st : SystemState} {tid : ThreadId}
+    {tcb : SeLe4n.Model.TCB} {i i0 : Nat} (hT : st.getTcb? tid = some tcb)
+    (hP : ipcBufferSlotPage tcb.ipcBuffer i = ipcBufferSlotPage tcb.ipcBuffer i0)
+    (hi : i < maxOverflowSlots) (h0 : ∃ w, ipcBufferReadMr st tid i0 = .ok w) :
     ∃ w, ipcBufferReadMr st tid i = .ok w := by
   obtain ⟨w0, h0⟩ := h0
-  have h0lt : ¬ (0 ≥ maxOverflowSlots) := by decide
   have hilt : ¬ (i ≥ maxOverflowSlots) := by omega
   unfold ipcBufferReadMr at h0 ⊢
+  have h0lt : ¬ (i0 ≥ maxOverflowSlots) := by
+    intro h; simp only [h, ↓reduceIte] at h0; cases h0
   simp only [h0lt, hilt, ↓reduceIte, hT] at h0 ⊢
   cases hR : st.getVSpaceRoot? tcb.vspaceRoot with
   | none => simp only [hR] at h0; cases h0
   | some root =>
     simp only [hR] at h0 ⊢
     rw [hP]
-    cases hL : root.lookup (ipcBufferSlotPage tcb.ipcBuffer 0) with
+    cases hL : root.lookup (ipcBufferSlotPage tcb.ipcBuffer i0) with
     | none => simp only [hL] at h0; cases h0
     | some p => exact ⟨_, rfl⟩
+
+/-- How many overflow slots of the buffer at `buf` lie on the page of slot 0:
+the slots before the first whose eight bytes start on the next page.  The
+overflow region, `maxOverflowSlots` words (928 bytes), is shorter than a page,
+so every slot from this one on lies on the next page
+(`ipcBufferSlotPage_of_firstPageSlots_le`). -/
+@[inline] def firstPageSlots (buf : VAddr) : Nat :=
+  (SeLe4n.pageBytes - buf.toNat % SeLe4n.pageBytes + 7) / 8
+
+private theorem slotPage_eq_ofNat (buf : VAddr) (j : Nat) :
+    ipcBufferSlotPage buf j =
+      VAddr.ofNat ((buf.toNat + j * 8) / SeLe4n.pageBytes * SeLe4n.pageBytes) := rfl
+
+/-- A slot before `firstPageSlots` is on slot 0's page… -/
+theorem ipcBufferSlotPage_of_lt_firstPageSlots {buf : VAddr} {j : Nat}
+    (h : j < firstPageSlots buf) : ipcBufferSlotPage buf j = ipcBufferSlotPage buf 0 := by
+  rw [slotPage_eq_ofNat, slotPage_eq_ofNat]
+  apply congrArg VAddr.ofNat
+  unfold firstPageSlots at h
+  simp only [SeLe4n.pageBytes] at h ⊢
+  omega
+
+/-- …every slot from it to the last overflow slot is on the next… -/
+theorem ipcBufferSlotPage_of_firstPageSlots_le {buf : VAddr} {j : Nat}
+    (h : firstPageSlots buf ≤ j) (hj : j < maxOverflowSlots) :
+    ipcBufferSlotPage buf j = ipcBufferSlotPage buf (firstPageSlots buf) := by
+  have h116 : maxOverflowSlots = 116 := rfl
+  rw [slotPage_eq_ofNat, slotPage_eq_ofNat]
+  apply congrArg VAddr.ofNat
+  unfold firstPageSlots at h ⊢
+  simp only [SeLe4n.pageBytes] at h ⊢
+  omega
+
+/-- …and the two pages differ. -/
+theorem ipcBufferSlotPage_firstPageSlots_ne (buf : VAddr) :
+    ipcBufferSlotPage buf (firstPageSlots buf) ≠ ipcBufferSlotPage buf 0 := by
+  rw [slotPage_eq_ofNat, slotPage_eq_ofNat]
+  intro hEq
+  have h := congrArg VAddr.toNat hEq
+  simp only [VAddr.ofNat, VAddr.toNat] at h
+  unfold firstPageSlots at h
+  simp only [SeLe4n.pageBytes, VAddr.toNat] at h
+  omega
+
+theorem firstPageSlots_pos (buf : VAddr) : 0 < firstPageSlots buf := by
+  unfold firstPageSlots; simp only [SeLe4n.pageBytes]; omega
+
+/-- The overflow slot read after slot 0 to show every overflow slot of `n`
+reads: the first slot of the next page when the slots cross into it, and slot
+0 again when they do not (`ipcBufferOverflowReadable`). -/
+@[inline] def overflowSecondRead (buf : VAddr) (n : Nat) : Nat :=
+  if n ≤ firstPageSlots buf then 0 else firstPageSlots buf
+
+theorem overflowSecondRead_lt {buf : VAddr} {n : Nat} (hn : 0 < n) :
+    overflowSecondRead buf n < n := by
+  unfold overflowSecondRead; split <;> omega
+
+/-- Where slot 0 and `overflowSecondRead` read, every overflow slot of `n`
+reads: the slots span two pages at most, each looked up once for all its
+slots. -/
+theorem ipcBufferOverflowReadable {st : SystemState} {tid : ThreadId} {tcb : SeLe4n.Model.TCB}
+    {n : Nat} (hT : st.getTcb? tid = some tcb) (hn : n ≤ maxOverflowSlots)
+    (h0 : ∃ w, ipcBufferReadMr st tid 0 = .ok w)
+    (h1 : ∃ w, ipcBufferReadMr st tid (overflowSecondRead tcb.ipcBuffer n) = .ok w) :
+    ∀ j, j < n → ∃ w, ipcBufferReadMr st tid j = .ok w := by
+  intro j hj
+  by_cases hk : j < firstPageSlots tcb.ipcBuffer
+  · exact ipcBufferReadMr_of_samePage hT (ipcBufferSlotPage_of_lt_firstPageSlots hk)
+      (by omega) h0
+  · have hNot : ¬ n ≤ firstPageSlots tcb.ipcBuffer := by omega
+    simp only [overflowSecondRead, hNot, ↓reduceIte] at h1
+    exact ipcBufferReadMr_of_samePage hT
+      (ipcBufferSlotPage_of_firstPageSlots_le (by omega) (by omega)) (by omega) h1
 
 /-- **WS-SM SM7.F.5**: the positive characterisation — what a *successful*
     read resolves to.  The failure-mode theorems below say when the read

@@ -536,3 +536,23 @@ theorem mapM_readOverflowWord (S : SystemState) (s : SeLe4n.ThreadId) :
     have hW : overflowWordAt S s i = w := by rw [overflowWordAt_eq, hw]
     simp only [Architecture.RegisterDecode.readOverflowWord, hw, hW]
     rfl
+
+/-- Where a slot from `i` does not read, the decode's reads of them are
+refused, as the decode refuses any overflow slot it cannot read. -/
+theorem mapM_readOverflowWord_error (S : SystemState) (s : SeLe4n.ThreadId) :
+    ∀ (n i : Nat), (∃ j e, i ≤ j ∧ j < i + n ∧
+        Architecture.IpcBufferRead.ipcBufferReadMr S s j = .error e) →
+      (List.range' i n).mapM (Architecture.RegisterDecode.readOverflowWord S s) =
+        .error .invalidMessageInfo
+  | 0, _, ⟨_, _, h1, h2, _⟩ => by omega
+  | n + 1, i, ⟨j, e, h1, h2, hj⟩ => by
+    rw [List.range'_succ, List.mapM_cons]
+    cases hi : Architecture.IpcBufferRead.ipcBufferReadMr S s i with
+    | error e' =>
+      simp only [Architecture.RegisterDecode.readOverflowWord, hi]
+      rfl
+    | ok w =>
+      have hji : j ≠ i := by intro h; subst h; rw [hi] at hj; cases hj
+      have hRest := mapM_readOverflowWord_error S s n (i + 1) ⟨j, e, by omega, by omega, hj⟩
+      simp only [Architecture.RegisterDecode.readOverflowWord, hi, hRest]
+      rfl

@@ -15,11 +15,11 @@ import SeLe4n.Kernel.RoutedArms.Report
 The routed entry's `.overflowed` arm (`syscallEntryCheckedK`): a call whose
 message runs past the inline words and whose dispatch reads no word past
 overflow slot 0 (a signal, a wait, a receive, an invocation, an audited call, a
-configure or a service register), every overflow word of which sits on the page
-of the caller's IPC buffer that holds slot 0, as its own function.  Slot 0 read, the call is dispatched as its short route is, on the
-state with this core's TLB holding the buffer's translation, a refusal handing
-back the TLB the entry held; one whose overflow words cross a page takes the
-specification's decode and dispatch.  The syscall, the operand's address and
+configure, a service register or a yield), as its own function.  Its overflow
+words read as the long send's are (slot 0 and the next page's first slot), the
+call is dispatched as its short route is, on the state with this core's TLB
+holding the buffer's translations, a refusal handing back the TLB the entry
+held.  The syscall, the operand's address and
 the message length cross as words, the state owned, and the result is the state
 with its report pushed (`RoutedArms.Report`).
 
@@ -80,10 +80,10 @@ theorem overflowedOperandR_eq (ctx : LabelingContext) (sid : SyscallId)
 
 /-- The overflowed arm's body as the specification states it
 (`syscallEntryCheckedK`), over the operand dispatch `op` (handed the overflow
-word and the caller's registers): slot 0 read, then `op` on the entry's state
-when this core's TLB already holds the buffer's translation, and otherwise on
-the state with it filled, a refusal handing back the TLB the entry held; a call
-whose overflow words cross a page takes the checked entry.  Its result reported
+word and the caller's registers): slot 0 and the next page's first slot read,
+then `op` on the entry's state when this core's TLB already holds the buffer's
+translations, and otherwise on the state with them filled, a refusal handing
+back the TLB the entry held.  Its result reported
 under the entry's first continuation. -/
 def overflowedArmSpec (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (length : Nat)
@@ -91,22 +91,23 @@ def overflowedArmSpec (ctx : LabelingContext) (executingCore : Concurrency.CoreI
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    if SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage tcb.ipcBuffer 0 (length - 4) then
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
         (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
-        (fun w => entryReportGeneral (
-          if SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid then
-            op w tcb.registerContext st
-          else
-            let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
-            match op w tcb.registerContext
-                (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) with
-            | .error (e, stF) =>
-              .error (e, SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
-            | .ok r => .ok r))
-    else
-      entryReportGeneral (RefusalCarrying.ofKernel
-        (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st)
+        (fun w =>
+          SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
+            (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
+            (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
+            (fun _ => entryReportGeneral (
+              if SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid (length - 4) then
+                op w tcb.registerContext st
+              else
+                let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
+                match op w tcb.registerContext
+                    (SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore st executingCore tid
+                        (length - 4)) with
+                | .error (e, stF) =>
+                  .error (e, SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
+                | .ok r => .ok r)))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 /-- **The overflowed arm's body** as it runs: `overflowedArmSpec` with the
@@ -119,23 +120,24 @@ dispatch once (`overflowedArmWith_eq_spec`). -/
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    if SeLe4n.Kernel.Architecture.overflowSlotsOnFirstPage tcb.ipcBuffer 0 (length - 4) then
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
         (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
         (fun w =>
-          let held := SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid
-          let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
-          let st1 := if held then st
-            else SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1
-          entryReportGeneral (
-            match op w tcb.registerContext st1 with
-            | .error (e, stF) =>
-              .error (e, if held then stF
-                else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
-            | .ok r => .ok r))
-    else
-      entryReportGeneral (RefusalCarrying.ofKernel
-        (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st)
+          SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
+            (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
+            (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
+            (fun _ =>
+              let held := SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid (length - 4)
+              let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
+              let st1 := if held then st
+                else SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore st executingCore tid
+                        (length - 4)
+              entryReportGeneral (
+                match op w tcb.registerContext st1 with
+                | .error (e, stF) =>
+                  .error (e, if held then stF
+                    else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
+                | .ok r => .ok r)))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 theorem overflowedArmWith_eq_spec (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
@@ -145,14 +147,14 @@ theorem overflowedArmWith_eq_spec (ctx : LabelingContext) (executingCore : Concu
       overflowedArmSpec ctx executingCore tid length op st := by
   unfold overflowedArmWith overflowedArmSpec
   split
-  · split
-    · congr 1
-      funext w
-      cases hH : SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid
-      · simp only [Bool.false_eq_true, ↓reduceIte]
-      · simp only [↓reduceIte]
-        rcases op w _ st with ⟨e, stF⟩ | r <;> rfl
-    · rfl
+  · congr 1
+    funext w
+    congr 1
+    funext _
+    cases hH : SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid (length - 4)
+    · simp only [Bool.false_eq_true, ↓reduceIte]
+    · simp only [↓reduceIte]
+      rcases op w _ st with ⟨e, stF⟩ | r <;> rfl
   · rfl
 
 /-- The overflowed arm of an invocation. -/
