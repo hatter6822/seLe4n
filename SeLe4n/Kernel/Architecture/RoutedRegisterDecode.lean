@@ -51,7 +51,9 @@ private theorem decodeSyscallArgsFromState_of_routed
   rw [if_pos hB]
   have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok sid := by
     simp only [decodeSyscallId, hS, SyscallId.ofNat_toNat]
-  simp only [hC, hM, hId, hLen, ↓reduceIte]
+  have hW : CPtr.ofWord (readRegWord regs layout.capPtrReg) = capAddr :=
+    Except.ok.inj ((decodeCapPtr_readReg regs layout.capPtrReg).symm.trans hC)
+  simp only [hW, hM, hId, hLen, ↓reduceIte]
 
 theorem decodeSyscallArgsFromState_of_routedSignal
     (st : SystemState) (tid : ThreadId)
@@ -419,7 +421,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
           rw [if_pos hB]
           have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok sid := by
             simp only [decodeSyscallId, hN, SyscallId.ofNat_toNat]
-          simp only [hC, hM, hId, hLen1, Nat.not_succ_le_self, ↓reduceIte, mergeOverflowWords,
+          simp only [hM, hId, hLen1, Nat.not_succ_le_self, ↓reduceIte, mergeOverflowWords,
             Array.size_map, Nat.add_sub_cancel_left, List.range_one, List.mapM_cons,
             List.mapM_nil, bind, Except.bind, pure, Except.pure]
           cases readOverflowWord st tid 0 <;> rfl
@@ -474,7 +476,7 @@ theorem decodeSyscallArgsFromState_of_routedSendLong
         rw [if_pos hB]
         have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok .send := by
           simp only [decodeSyscallId, hS.1, SyscallId.ofNat_toNat]
-        simp only [hC, hM, hId, hLen, ↓reduceIte]
+        simp only [hM, hId, hLen, ↓reduceIte]
       · repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -560,7 +562,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
         rw [if_pos hB]
         have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok sid := by
           simp only [decodeSyscallId, hN, SyscallId.ofNat_toNat]
-        simp only [hC, hM, hId, hLen, ↓reduceIte]
+        simp only [hM, hId, hLen, ↓reduceIte]
       split at h
       · cases h
       · split at h
@@ -626,7 +628,7 @@ theorem decodeSyscallArgsFromState_of_routedRefused
       rw [decodeSyscallArgsFromState_eq_impl]
       unfold decodeSyscallArgsFromStateImpl
       rw [if_pos hB]
-      simp only [hC, hM]
+      simp only [hM]
     · simp only [hM] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
@@ -641,7 +643,7 @@ theorem decodeSyscallArgsFromState_of_routedRefused
         rw [decodeSyscallArgsFromState_eq_impl]
         unfold decodeSyscallArgsFromStateImpl
         rw [if_pos hB]
-        simp only [hC, hM, decodeSyscallId, hN]
+        simp only [hM, decodeSyscallId, hN]
   · cases h
 
 end SeLe4n.Kernel.Architecture.RegisterDecode

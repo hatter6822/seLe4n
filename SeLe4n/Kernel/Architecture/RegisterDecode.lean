@@ -273,21 +273,32 @@ def mergeOverflowWords (st : SystemState) (tid : ThreadId)
            inlineCount   := inlineSize,
            overflowCount := overflowNeeded }
 
+/-- WS-ZA ZA4.8: a register's capability address always decodes, to the
+address its word names — read as the word, an address `≥ 2^63` builds no
+heap number. -/
+theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
+    decodeCapPtr (readReg rf r) = .ok (CPtr.ofWord (readRegWord rf r)) := by
+  have hLt : (readRegWord rf r).toNat < machineWordMax := by
+    unfold machineWordMax machineWordBits
+    exact (readRegWord rf r).toNat_lt
+  unfold decodeCapPtr
+  rw [readReg_val_eq_word, if_pos (by simpa [isWord64Dec] using hLt), CPtr.ofWord_eq_ofNat]
+
 /-- `decodeSyscallArgsFromState`, building nothing a caller does not use.  The
     register bounds are one test rather than a `mapM` pass that copies the
     layout's register array, and the result is inlined, so a caller that reads
     only some fields of the decode (the signal reads the operand, the syscall
     number and the message length) builds neither the record nor the message
-    array (WS-ZA).  Proven equal by `decodeSyscallArgsFromState_eq_impl`. -/
+    array (WS-ZA).  The capability address is read as its register's word
+    (`decodeCapPtr_readReg`), so an address `≥ 2^63` builds no heap number.
+    Proven equal by `decodeSyscallArgsFromState_eq_impl`. -/
 @[inline] def decodeSyscallArgsFromStateImpl
     (st : SystemState) (tid : ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (regCount : Nat := 32) : Except KernelError SyscallDecodeResult :=
   if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
       layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true then
-    match decodeCapPtr (readReg regs layout.capPtrReg) with
-    | .error e => .error e
-    | .ok capAddr =>
+    let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
     match decodeMsgInfo (readReg regs layout.msgInfoReg) with
     | .error e => .error e
     | .ok msgInfo =>
@@ -313,8 +324,7 @@ def mergeOverflowWords (st : SystemState) (tid : ThreadId)
   simp only [validateRegBound, h1, h2, h3, h4, ↓reduceIte, and_self, and_true,
     and_false, bind, Except.bind, pure, Except.pure, Bool.false_eq_true] <;>
   try rfl
-  rcases decodeCapPtr (readReg regs layout.capPtrReg) with e | capAddr
-  · rfl
+  rw [decodeCapPtr_readReg]
   rcases decodeMsgInfo (readReg regs layout.msgInfoReg) with e | msgInfo
   · rfl
   rcases decodeSyscallId (readReg regs layout.syscallNumReg) with e | syscallId
@@ -909,17 +919,6 @@ theorem unroutedSyscall_eq {n : Nat} {r : RegisterRoutedSyscall} (h : unroutedSy
   split at h
   · exact .inl h.symm
   · next hN => exact .inr ⟨h.symm, hN⟩
-
-/-- WS-ZA ZA4.8: a register's capability address always decodes, to the
-address its word names — read as the word, an address `≥ 2^63` builds no
-heap number. -/
-theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
-    decodeCapPtr (readReg rf r) = .ok (CPtr.ofWord (readRegWord rf r)) := by
-  have hLt : (readRegWord rf r).toNat < machineWordMax := by
-    unfold machineWordMax machineWordBits
-    exact (readRegWord rf r).toNat_lt
-  unfold decodeCapPtr
-  rw [readReg_val_eq_word, if_pos (by simpa [isWord64Dec] using hLt), CPtr.ofWord_eq_ofNat]
 
 /-- The routed syscall a register file names once its registers are in bounds
     (`registerRoutedSyscall`). -/
