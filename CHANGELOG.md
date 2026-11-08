@@ -28,8 +28,8 @@ arms that refuse in the state they were handed.
   now reads the register's word (`decodeSyscallArgsFromStateImpl`,
   `decodeCapPtr_readReg`).
 - **The router decodes the syscall number once per message length**
-  (`registerRoutedSyscallOfImpl`, `@[csimp] registerRoutedSyscallOf_eq_impl`,
-  `routedShortTail_eq`, `routedLongTail_eq`), so the entry that inlines it
+  (`routedShortTail`, `routedLongTail`, equal to the per-route reads by
+  `routedShortTail_eq` and `routedLongTail_eq`), so the entry that inlines it
   stays within its C-function budget.
 - **The decoders** take `MsgRegsAgreeBelow` (the words agree below the count
   the decoder reads) in place of equal arrays, so one proof covers the inline
