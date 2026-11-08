@@ -55,13 +55,15 @@ words and then those slots' words (`overflowedDecode`). -/
 theorem decodeSyscallArgsFromState_of_routedOverflowed_ok (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .overflowed sid capAddr mi)
+    (hMI : decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .overflowed sid capAddr mi.length)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (overflowedDecode st tid rf sid capAddr mi) := by
-  obtain ⟨_, _, _, hDec⟩ :=
-    decodeSyscallArgsFromState_of_routedOverflowed st tid _ rf 32 sid capAddr mi hR
+  obtain ⟨mi', hMI', -, _, _, _, hDec⟩ :=
+    decodeSyscallArgsFromState_of_routedOverflowed st tid _ rf 32 sid capAddr mi.length hR
+  obtain rfl : mi = mi' := Except.ok.inj (hMI.symm.trans hMI')
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   have hM := mapM_readOverflowWord st tid (mi.length - 4) 0
     (fun j _ h2 => hRead j (by omega))
@@ -76,13 +78,15 @@ refuses it. -/
 theorem decodeSyscallArgsFromState_of_routedOverflowed_error (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .overflowed sid capAddr mi)
+    (hMI : decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .overflowed sid capAddr mi.length)
     (e : Architecture.IpcBufferRead.IpcBufferReadError)
     (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid 0 = .error e) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
       .error .invalidMessageInfo := by
-  obtain ⟨hGt, _, _, hDec⟩ :=
-    decodeSyscallArgsFromState_of_routedOverflowed st tid _ rf 32 sid capAddr mi hR
+  obtain ⟨mi', hMI', -, hGt, _, _, hDec⟩ :=
+    decodeSyscallArgsFromState_of_routedOverflowed st tid _ rf 32 sid capAddr mi.length hR
+  obtain rfl : mi = mi' := Except.ok.inj (hMI.symm.trans hMI')
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   rw [hSz] at hGt
   obtain ⟨m, hm⟩ : ∃ m, mi.length - 4 = m + 1 := ⟨mi.length - 5, by omega⟩

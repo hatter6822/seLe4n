@@ -762,10 +762,11 @@ inductive RegisterRoutedSyscall where
   | audited (sid : SyscallId) (capAddr : CPtr)
   /-- A call whose dispatch reads no word past overflow slot 0
       (`routedOverflowed`) and whose message runs past the layout's message
-      registers: the syscall, its operand address and its message info.  The
-      decode reads its overflow slots, and the dispatch reads only the inline
-      words and, for a five-word invocation, slot 0. -/
-  | overflowed (sid : SyscallId) (capAddr : CPtr) (msgInfo : MessageInfo)
+      registers: the syscall, its operand address and its message length.
+      The decode reads its overflow slots, and the dispatch reads only the
+      inline words and, for a five-word invocation, slot 0.  It carries the
+      length alone, a number, so the route builds no message info. -/
+  | overflowed (sid : SyscallId) (capAddr : CPtr) (len : Nat)
   /-- A five-word invocation (`routedOverflowOne`) whose message fits the
       layout's message registers: the syscall and its operand address.  Its
       fifth argument is missing, so the decode of its arguments refuses once
@@ -969,11 +970,11 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
       | some sid => .overflowOne sid capAddr
       | none =>
         match routedOverflowedSid? (readReg regs layout.syscallNumReg).val with
-        | some sid => .overflowed sid capAddr msgInfo
+        | some sid => .overflowed sid capAddr msgInfo.length
         | none => unroutedSyscall (readReg regs layout.syscallNumReg).val
     else
       match routedOverflowedSid? (readReg regs layout.syscallNumReg).val with
-      | some sid => .overflowed sid capAddr msgInfo
+      | some sid => .overflowed sid capAddr msgInfo.length
       | none => unroutedSyscall (readReg regs layout.syscallNumReg).val
 
 /-- The routed syscall a register file names, read straight from the

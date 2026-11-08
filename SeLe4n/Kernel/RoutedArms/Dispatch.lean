@@ -92,9 +92,9 @@ continuations are compiled once. -/
           (sendLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
       | .audited sid capAddr =>
         finish sid capAddr.word (auditedRoutedArm ctx executingCore tid sid capAddr.word st)
-      | .overflowed sid capAddr msgInfo =>
+      | .overflowed sid capAddr len =>
         finish sid capAddr.word
-          (overflowedRoutedArm ctx executingCore tid sid capAddr.word msgInfo.length st)
+          (overflowedRoutedArm ctx executingCore tid sid capAddr.word len st)
       | .shortArgs sid capAddr =>
         finish sid capAddr.word (shortArgsRoutedArm executingCore tid sid capAddr.word st)
       | .refused e => finish .yield 0 (entryReportGeneral (.error (e, st)))
@@ -167,7 +167,7 @@ compiled form `syscallEntryCheckedK` runs as. -/
       · simp only [entryReportOutcome_general]
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl
-    | overflowed sid capAddr msgInfo =>
+    | overflowed sid capAddr len =>
       simp only [overflowedRoutedArm_eq, overflowedArmWith_eq_spec, overflowedArmSpec, hO]
       split
       · rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
