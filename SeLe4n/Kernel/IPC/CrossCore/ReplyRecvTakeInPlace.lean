@@ -432,6 +432,14 @@ theorem replyRecvOnCore_take_transfer (st : SystemState) (epId : SeLe4n.ObjId)
   simp only [hRec, Option.getD_some, hEq, hPop, hXf', hRecv, hEp2, Option.bind_some, hH]
   simp [replyRecvPostReceiveDonation, replyRecvAnswerCaller]
 
+/-- The replier's saved registers, handed over: out of line and returning its
+argument, so a performer passing its `rf` here takes ownership of it from the
+arm (`rf` is the replier's own register file, which the arm projects out of its
+TCB).  The performer releases it once the caller's frame is read from it, so the
+take's write of the replier's own frame finds the register file unshared and
+writes it in place rather than copying it. -/
+@[noinline] def ownedRegisterFile (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile := rf
+
 /-- **The receive leg's take after the reply's transfer, delivered**: the
 sender popped, made ready and woken, the server made ready, its priority walk,
 then the caller's frame with the transfer's report, the sender's completion
@@ -637,7 +645,7 @@ words read from the sender's saved registers before any write. -/
     (core : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (len : Nat) (badge : Option SeLe4n.Badge) (w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
   replyRecvTakeTail 0 (storeReplyRendezvousReady st c tid rid) c tid s epId nextCode core layout
-    rf len badge w0 w1 w2 w3 w4 w5
+    (ownedRegisterFile rf) len badge w0 w1 w2 w3 w4 w5
 
 /-- **The reply-receive meeting a waiting sender, its reply transferring
 nothing, is the specification's**: under the reply's guard, a reply of at most
@@ -747,7 +755,7 @@ the six words of its frame, all read before the reply's writes. -/
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     replyRecvTakeTail (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
       (capStepsApply c.toObjId false rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
-      c tid s epId nextCode core layout rf len badge w0 w1 w2 w3 w4 w5
+      c tid s epId nextCode core layout (ownedRegisterFile rf) len badge w0 w1 w2 w3 w4 w5
 
 /-- **The reply-receive meeting a waiting sender, its reply leg transferring,
 is the specification's**: under the guard of `replyRecvOnCore_take_delivered`
