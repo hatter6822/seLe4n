@@ -2351,6 +2351,15 @@ other rendezvous goes through the specification
                   sTcb.ipcBadged)
               else endpointReceiveRendezvousR epId tid replyCode executingCore st
             | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
+          | .call _ mi =>
+            match SeLe4n.ReplyId.ofOptCode replyCode with
+            | some rid =>
+              if !sTcb.ipcFaultSend && receiveCallTakesInPlace st epId tid s sTcb rid then
+                .ok ((), performReceiveCallDelivered st epId s sTcb.queueNextCode tid rid
+                  executingCore sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
+                  sTcb.ipcBadged)
+              else endpointReceiveRendezvousR epId tid replyCode executingCore st
+            | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
           | _ => endpointReceiveRendezvousR epId tid replyCode executingCore st
         | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
       | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
@@ -2449,6 +2458,23 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hF hR
                 (overflowWordsRead_spec hTs hn hOk)
+              unfold endpointReceiveRendezvousR
+              simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
+                CapTransferSummary.installedCount_empty]
+              rw [h3]
+            · rfl
+          · rfl
+        · next capAddr mi hR =>
+          split
+          · next rid hRid =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+              obtain ⟨hF, hG⟩ := hG
+              obtain ⟨h1, h2, h3⟩ := receiveCallTake_delivered st epId ep tid rid
+                (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore s sTcb capAddr mi
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hF hR
               unfold endpointReceiveRendezvousR
               simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
                 CapTransferSummary.installedCount_empty]

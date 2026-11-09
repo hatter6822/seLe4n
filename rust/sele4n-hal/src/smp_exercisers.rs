@@ -3307,6 +3307,46 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
+        // The short call that blocks with no receiver waiting, and the receive
+        // that takes it, staging the caller's message and reply object in
+        // place beside the long-call take above.
+        invocation(
+            "short-call-take-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "short-call-blocks",
+            CALL,
+            ENDPOINT_CAP,
+            2,
+            [0x71, 0x72],
+            true,
+        ),
+        partner_step(
+            "short-call-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        partner_step(
+            "short-call-partner-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0x73, 0],
+            false,
+        ),
+        kernel_step("short-call-partner-yield", YIELD),
+        invocation(
+            "short-call-take-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
         // The long send that blocks with no receiver waiting, and the receive
         // that takes it, copying the sender's overflow words into its own
         // buffer in place.
