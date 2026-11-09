@@ -4516,7 +4516,7 @@ run_check "INVARIANT" rg -n -U '                  if replyRecvBlocksFast st epId
 run_check "INVARIANT" rg -n -U '                  else if replyRecvDonatedBlocks st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvDonatedCapsDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '                  else if replyRecvUnheldBlocks st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvUnheldCapsDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '      else replyRecvLongCapsR epId tid c rid badge grant rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    if grant && !threadHasPendingFault st c && replyRecvBlocksFast st epId tid c rid then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvBlockCapsDeliveredLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvLongCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvBlockCapsDeliveredLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # ...and a final delete of an orphaned caller's head reply asks the unheld pop's
 # commit test through the in-place gate first, so the admission resolves no
 # outer caller as an `Except` where the gate passes.

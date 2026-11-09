@@ -29,8 +29,9 @@ pre-state and copies every table it writes, and allocated on the kernel heap.
   before the state is handed on.
 - **The arms**: `replyRecvCapsArmR` routes the short reply-receive to the three
   performers (`replyRecvCapsArmR_eq`), and the long arm hands a transferring
-  reply leg to `replyRecvLongCapsR`, out of line so its guard is not hoisted
-  into a closure the inert path builds.  `replyRecvCapsArmR_blocks_inPlace`, `…_donated_inPlace` and
+  reply leg to `replyRecvLongCapsR`, whose guard is one out-of-line call
+  (`replyRecvLongCapsAdmits`) so the test it shares with the inert arm's is
+  not hoisted into a closure the inert path builds.  `replyRecvCapsArmR_blocks_inPlace`, `…_donated_inPlace` and
   `…_unheld_inPlace` state that when the arm's pre-state checks pass it runs
   its performer, so the general path is reached only when a check read before
   any write fails.  The long arm's equation now takes the overflow-read fact

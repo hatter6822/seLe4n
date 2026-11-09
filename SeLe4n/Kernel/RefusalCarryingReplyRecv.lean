@@ -1291,20 +1291,28 @@ message read in the replier's registers and IPC buffer (`longReplyRecvRegs`). -/
         .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
     | .error e => .error (e, st)
 
+/-- Whether the long reply-receive's transferring arm may block in place: the
+grant right, an unfaulted caller and `replyRecvBlocksFast`.  Out of line, so
+the checks are one call. -/
+@[noinline] def replyRecvLongCapsAdmits (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (grant : Bool) : Bool :=
+  grant && !threadHasPendingFault st c && replyRecvBlocksFast st epId tid c rid
+
 /-- The long reply-receive whose reply leg transfers, its caller unfaulted:
 under the grant right, when the reply-receive may block in place
 (`replyRecvBlocksFast`) and the transfer's stores lie in place
 (`replyTransferStoresInPlace`, read on the pre-state), the reply's writes, the
 transfer in place, then the receive's block and the long frame
 (`performReplyRecvBlockCapsDeliveredLong`); the specification's path otherwise.
-Out of line, so its guard is not hoisted beside the inert arm's into a closure
-the inert path builds. -/
-@[noinline] def replyRecvLongCapsR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+Its guard is one out-of-line call (`replyRecvLongCapsAdmits`), so the test it
+shares with the inert arm's is not hoisted into a closure the inert path
+builds. -/
+@[inline] def replyRecvLongCapsR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId) :
     RefusalCarrying Unit :=
   fun st =>
-    if grant && !threadHasPendingFault st c && replyRecvBlocksFast st epId tid c rid then
+    if replyRecvLongCapsAdmits st epId tid c rid grant then
       match st.getTcb? tid with
       | some stcb =>
           match st.getTcb? c with
@@ -1416,7 +1424,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
       | error e => rfl
       | ok r =>
         obtain ⟨rid, c, badge, grant⟩ := r
-        simp only [replyRecvLongResolvedR, replyRecvLongCapsR, hExt, hM]
+        simp only [replyRecvLongResolvedR, replyRecvLongCapsR, replyRecvLongCapsAdmits, hExt, hM]
         split
         · split
           · next hG =>
