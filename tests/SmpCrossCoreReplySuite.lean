@@ -544,7 +544,7 @@ private def runReplyRecvChecks : IO Unit := do
     (decide (replyAnsweredCaller? stReplyRecv replyId709 = some clientLocalTid))
   -- The reply leg of the live replyRecv wakes the recorded caller; the receive
   -- leg then blocks the server on the (empty) endpoint, stashing the same Reply.
-  match endpointReplyRecvOnCore epId serverTid replyId709 clientLocalTid replyMsg bootCoreId stReplyRecv with
+  match endpointReplyRecvOnCore epId serverTid replyId709 clientLocalTid replyMsg false bootCoreId stReplyRecv with
   | .error _ => assertBool "replyRecv succeeds (reply leg + receive leg)" false
   | .ok (summary, st') =>
     -- One Reply object, consumed by the reply leg and re-stashed by the receive

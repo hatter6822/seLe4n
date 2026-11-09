@@ -2022,7 +2022,7 @@ private def sd052_endpointReplyRecvOnCore : IO Unit := do
   let msg : IpcMessage :=
     { registers := #[SeLe4n.RegValue.ofNat 99], badge := Badge.ofNatMasked 0 }
   match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg
-      bootCoreId st with
+      false bootCoreId st with
   | .ok (_, st') =>
       expect "sd052a_prev_caller_replied"
         ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
@@ -2096,7 +2096,7 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
       let msg : IpcMessage :=
         { registers := #[SeLe4n.RegValue.ofNat 99], badge := Badge.ofNatMasked 0 }
       match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg
-          bootCoreId st1 with
+          false bootCoreId st1 with
       | .error _ => failLine "sd052b" "endpointReplyRecvOnCore should succeed"
       | .ok (_, st') =>
           expect "sd052b_prev_caller_replied"
@@ -2160,7 +2160,7 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
     "the frame must head the context the RECORDED server holds, not the delegate"
   -- No queued sender on the endpoint → the delegate blocks on the receive leg.
   match SeLe4n.Kernel.endpointReplyRecvOnCore epId delegate rid clientA msg
-      bootCoreId st0 with
+      false bootCoreId st0 with
   | .error _ => failLine "sd052c" "delegated endpointReplyRecvOnCore should succeed (cap-based authority)"
   | .ok (_, st') =>
       expect "sd052c_prev_caller_replied"

@@ -44,8 +44,8 @@ open SeLe4n.Kernel.Concurrency (bootCoreId
 /-- Answering the caller preserves object-store integrity, on both answers. -/
 theorem replyRecvAnswerCaller_preserves_objects_invExt
     (answer : Option Architecture.FaultReplyOutcome) (st : SystemState)
-    (prevCaller : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
-    (replyRecvAnswerCaller answer st prevCaller).objects.invExt := by
+    (prevCaller : SeLe4n.ThreadId) (capInfo : Nat) (hObjInv : st.objects.invExt) :
+    (replyRecvAnswerCaller answer st prevCaller capInfo).objects.invExt := by
   cases answer with
   | none => exact stageDeliveredMessage_preserves_objects_invExt _ _ _ hObjInv
   | some outcome =>
@@ -57,8 +57,8 @@ theorem replyRecvAnswerCaller_preserves_objects_invExt
 registers, an abandon deschedules. -/
 theorem replyRecvAnswerCaller_replenishQueueOnCore
     (answer : Option Architecture.FaultReplyOutcome) (st : SystemState)
-    (prevCaller : SeLe4n.ThreadId) (c : Concurrency.CoreId) :
-    (replyRecvAnswerCaller answer st prevCaller).scheduler.replenishQueueOnCore c
+    (prevCaller : SeLe4n.ThreadId) (capInfo : Nat) (c : Concurrency.CoreId) :
+    (replyRecvAnswerCaller answer st prevCaller capInfo).scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   cases answer with
   | none => rw [replyRecvAnswerCaller_none, Architecture.stageDeliveredMessage_scheduler_eq]
@@ -718,12 +718,75 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
                 (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ _ _)) hInv1'
             exact h.2 ▸ hInvM
 
-@[simp] theorem replyRecvPostPopState_eq_of_ok (rid : SeLe4n.ReplyId)
+/-- **The reply leg's capability transfer never refuses**: a transfer with
+nothing to move, no receiver or no slot moves nothing, and the transfer loop
+(`ipcUnwrapCapsLoop`) stops rather than fails on a capability it cannot take. -/
+theorem ipcUnwrapCapsLoop_ok (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
+    (rtcb : TCB) :
+    ∀ (fuel idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult)
+      (st : SystemState),
+      ∃ r, ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc fuel st = .ok r
+  | 0, _, _, acc, st => ⟨_, rfl⟩
+  | fuel + 1, idx, slot?, acc, st => by
+    simp only [ipcUnwrapCapsLoop]
+    cases caps[idx]? with
+    | none => exact ⟨_, rfl⟩
+    | some tc =>
+      simp only []
+      split
+      · exact ipcUnwrapCapsLoop_ok caps endpointId rtcb fuel _ _ _ _
+      · cases slot? with
+        | none => exact ⟨_, rfl⟩
+        | some dst =>
+          simp only []
+          cases ipcTransferSingleCap tc.cap tc.srcSlot dst st with
+          | error _ => exact ⟨_, rfl⟩
+          | ok p => exact ipcUnwrapCapsLoop_ok caps endpointId rtcb fuel _ _ _ _
+
+theorem replyRecvReplyTransfer_ok (answer : Option Architecture.FaultReplyOutcome)
+    (pre : SystemState) (replier prevCaller : SeLe4n.ThreadId) (grant : Bool)
+    (st : SystemState) :
+    ∃ r, replyRecvReplyTransfer answer pre replier prevCaller grant st = .ok r := by
+  cases answer with
+  | some _ => exact ⟨_, rfl⟩
+  | none =>
+    simp only [replyRecvReplyTransfer_none, replyTransferCaps, receiveTransferCaps]
+    cases replyCapRequest pre replier grant with
+    | none => exact ⟨_, rfl⟩
+    | some req =>
+      obtain ⟨root, addrs, depth⟩ := req
+      simp only []
+      split
+      · exact ⟨_, rfl⟩
+      · cases receiverCapTarget? pre prevCaller with
+        | none => exact ⟨_, rfl⟩
+        | some t => exact ipcUnwrapCapsLoop_ok _ _ _ _ _ _ _ _
+
+theorem replyRecvReplyTransfer_scheduler_eq {answer : Option Architecture.FaultReplyOutcome}
+    {pre : SystemState} {replier prevCaller : SeLe4n.ThreadId} {grant : Bool}
+    {st st' : SystemState} {summary : CapTransferSummary}
+    (h : replyRecvReplyTransfer answer pre replier prevCaller grant st = .ok (summary, st')) :
+    st'.scheduler = st.scheduler := by
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at h
+  exact receiveTransferCaps_scheduler_eq h
+
+theorem replyRecvReplyTransfer_objects_invExt {answer : Option Architecture.FaultReplyOutcome}
+    {pre : SystemState} {replier prevCaller : SeLe4n.ThreadId} {grant : Bool}
+    {st st' : SystemState} {summary : CapTransferSummary} (hI : st.objects.invExt)
+    (h : replyRecvReplyTransfer answer pre replier prevCaller grant st = .ok (summary, st')) :
+    st'.objects.invExt := by
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at h
+  exact receiveTransferCaps_objects_invExt hI h
+
+@[simp] theorem replyRecvReceiveLegState_eq_of_ok (answer : Option Architecture.FaultReplyOutcome)
+    (pre : SystemState) (replier : SeLe4n.ThreadId) (grant : Bool) (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId)
-    (st1 st1p : SystemState) (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
-    (h : replyRecvPopDonation rid target st1 = .ok (returned?, st1p)) :
-    replyRecvPostPopState rid target st1 = st1p := by
-  unfold replyRecvPostPopState; rw [h]
+    (st1 st1q st1p : SystemState) (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (xs : CapTransferSummary)
+    (h : replyRecvPopDonation rid target st1 = .ok (returned?, st1q))
+    (hX : replyRecvReplyTransfer answer pre replier target grant st1q = .ok (xs, st1p)) :
+    replyRecvReceiveLegState answer pre replier grant rid target st1 = st1p := by
+  unfold replyRecvReceiveLegState; rw [h]; simp only []; rw [hX]
 
 @[simp] theorem replyRecvPoppedDonation_eq_of_ok (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId)
@@ -732,12 +795,13 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
     replyRecvPoppedDonation rid target st1 = returned? := by
   unfold replyRecvPoppedDonation; rw [h]
 
-theorem replyRecvPostPopState_eq_of_error (rid : SeLe4n.ReplyId)
+theorem replyRecvReceiveLegState_eq_of_error (answer : Option Architecture.FaultReplyOutcome)
+    (pre : SystemState) (replier : SeLe4n.ThreadId) (grant : Bool) (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId)
     (st1 : SystemState) (e : KernelError)
     (h : replyRecvPopDonation rid target st1 = .error e) :
-    replyRecvPostPopState rid target st1 = st1 := by
-  unfold replyRecvPostPopState; rw [h]
+    replyRecvReceiveLegState answer pre replier grant rid target st1 = st1 := by
+  unfold replyRecvReceiveLegState; rw [h]
 
 /-- **WS-RM RM5.2**: the post-receive donation step preserves the IPC invariant
 bundle.
@@ -870,15 +934,18 @@ theorem replyRecvPostReceiveReplenishCores_of_call (tid nextThread : SeLe4n.Thre
 /-- The segment once the reply leg and the pop have run: the pop's pair, the
 block-path pair at the pop's post-state, and the post-receive pair under the receive
 leg's own match.  The one unfolding every consumer reads. -/
-theorem replyRecvHandoffReplenishCores_eq_of_pop (endpointId : SeLe4n.ObjId)
+theorem replyRecvHandoffReplenishCores_eq_of_pop (answer : Option Architecture.FaultReplyOutcome)
+    (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    (executingCore : Concurrency.CoreId) (st st1 st1p : SystemState)
+    (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st st1 st1q st1p : SystemState)
     (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
-    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (xs : CapTransferSummary)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
-    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p)) :
-    replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1q))
+    (hX : replyRecvReplyTransfer answer st receiver prevCaller grant st1q = .ok (xs, st1p)) :
+    replyRecvHandoffReplenishCores answer endpointId receiver replyId prevCaller msg grant
+        executingCore st
       = replyDonationReturnReplenishCores st1 replyId prevCaller ++
           (receivePreReturnReplenishCores st1p endpointId receiver ++
             (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
@@ -886,27 +953,31 @@ theorem replyRecvHandoffReplenishCores_eq_of_pop (endpointId : SeLe4n.ObjId)
              | (st2, .ok (nextThread, _, _)) =>
                 replyRecvPostReceiveReplenishCores receiver nextThread returned? st2)) := by
   unfold replyRecvHandoffReplenishCores
-  simp only [hReply, hPop]
+  simp only [hReply, hPop, hX]
   rfl
 
 /-- ...and once the receive leg has run too, the third component is the post-receive
 pair at that leg's post-state. -/
-theorem replyRecvHandoffReplenishCores_eq_of_legs (endpointId : SeLe4n.ObjId)
+theorem replyRecvHandoffReplenishCores_eq_of_legs (answer : Option Architecture.FaultReplyOutcome)
+    (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    (executingCore : Concurrency.CoreId) (st st1 st1p st2 : SystemState)
+    (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st st1 st1q st1p st2 : SystemState)
     (sgi sgi2 : Option (Concurrency.CoreId × Concurrency.SgiKind))
-    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (xs : CapTransferSummary)
     (nextThread : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
-    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1q))
+    (hX : replyRecvReplyTransfer answer st receiver prevCaller grant st1q = .ok (xs, st1p))
     (hRecv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p
       = (st2, .ok (nextThread, summary, sgi2))) :
-    replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st
+    replyRecvHandoffReplenishCores answer endpointId receiver replyId prevCaller msg grant
+        executingCore st
       = replyDonationReturnReplenishCores st1 replyId prevCaller ++
           (receivePreReturnReplenishCores st1p endpointId receiver ++
             replyRecvPostReceiveReplenishCores receiver nextThread returned? st2) := by
-  rw [replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg executingCore st st1 st1p sgi returned? hReply hPop]
+  rw [replyRecvHandoffReplenishCores_eq_of_pop answer endpointId receiver replyId prevCaller msg
+    grant executingCore st st1 st1q st1p sgi returned? xs hReply hPop hX]
   simp only [hRecv]
 
 /-- **WS-RR RR8.12 Cut C2**: the reply leg's wake — the answered caller's home
@@ -914,10 +985,11 @@ core — is a run-queue write member, unconditionally: it is the head of the arm
 own write set. -/
 theorem schedLockSet_endpointReplyRecvOnCore_contains_prevCaller_runQueue_write
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
     (LockKey.runQueue (determineTargetCore st prevCaller), Concurrency.AccessMode.write)
-      ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg executingCore st := by
+      ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant
+          executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointReplyRecvWriteSet endpointReplyRecvAnsweringWriteSet
   exact List.mem_cons_self ..
@@ -926,19 +998,21 @@ theorem schedLockSet_endpointReplyRecvOnCore_contains_prevCaller_runQueue_write
 pop's post-state, the state that leg runs on — is a run-queue write member. -/
 theorem schedLockSet_endpointReplyRecvOnCore_covers_receiveLeg
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId)
-    (st st1 st1p : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
-    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (st st1 st1q st1p : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (xs : CapTransferSummary)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
-    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p)) :
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1q))
+    (hX : replyRecvReplyTransfer none st receiver prevCaller grant st1q = .ok (xs, st1p)) :
     ∀ c ∈ endpointReceiveDualWriteSet st1p endpointId executingCore,
       (LockKey.runQueue c, Concurrency.AccessMode.write)
-        ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg executingCore st := by
+        ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant
+            executingCore st := by
   intro c hc
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointReplyRecvWriteSet endpointReplyRecvAnsweringWriteSet
-  simp only [hReply, hPop, List.mem_cons, List.mem_append]
+  simp only [hReply, hPop, hX, List.mem_cons, List.mem_append]
   exact Or.inr (Or.inl hc)
 
 /-- **WS-RR RR8.12 Cut C2 (coverage, the pop)**: the `.replyRecv` footprint covers the
@@ -951,17 +1025,20 @@ Conditioned on the pop having handed a context back, because that is the only
 shape on which there is a settle to cover. -/
 theorem schedLockSet_endpointReplyRecvOnCore_covers_pop
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId)
-    (st st1 st1p : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (st st1 st1q : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
     (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
-    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (some (scId, holder), st1p)) :
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (some (scId, holder), st1q)) :
     ∀ c ∈ replyDonationReturnReplenishCores st1 replyId prevCaller,
       (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-        ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg executingCore st := by
+        ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant
+            executingCore st := by
   intro c hc
-  have hSeg := replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg executingCore st st1 st1p sgi _ hReply hPop
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok none st receiver prevCaller grant st1q
+  have hSeg := replyRecvHandoffReplenishCores_eq_of_pop none endpointId receiver replyId
+    prevCaller msg grant executingCore st st1 st1q st1p sgi _ xs hReply hPop hX
   refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
   rw [hSeg]
   exact List.mem_append_left _ hc
@@ -976,24 +1053,27 @@ because that is where this arm's leg runs.  Conditioned on the pop's OWN guard a
 on the pop having committed, as its sibling is. -/
 theorem schedLockSet_endpointReplyRecvOnCore_covers_preReturnMigration
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId)
-    (st st1 st1p stClean : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
-    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (st st1 st1q st1p stClean : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (xs : CapTransferSummary)
     (ep : Endpoint) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
-    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1q))
+    (hX : replyRecvReplyTransfer none st receiver prevCaller grant st1q = .ok (xs, st1p))
     (hObjInv : st1p.objects.invExt)
     (hEp : st1p.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
     (hDon : preReceiveDonation? st1p receiver = some (scId, owner))
     (hClean : cleanupPreReceiveDonationChecked st1p receiver = .ok stClean) :
     ∀ p ∈ migrateSchedContextReplenishmentLockSet (determineTargetCore st1p receiver)
              (replenishHomeOfSchedContext stClean scId (determineTargetCore st1p receiver)),
-      p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg executingCore st := by
+      p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant
+            executingCore st := by
   intro p hp
   simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil,
     or_false] at hp
-  have hSeg := replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg executingCore st st1 st1p sgi returned? hReply hPop
+  have hSeg := replyRecvHandoffReplenishCores_eq_of_pop none endpointId receiver replyId
+    prevCaller msg grant executingCore st st1 st1q st1p sgi returned? xs hReply hPop hX
   have hPre := receivePreReturnReplenishCores_eq_migration st1p stClean endpointId receiver scId
     owner hObjInv (receiveRendezvousSender?_of_blocked st1p endpointId ep hEp hHead) hDon hClean
   rcases hp with h | h <;> subst h <;>
@@ -1013,13 +1093,14 @@ those are the only shapes on which there is a migration to cover; a coverage cla
 elsewhere would be covering nothing while reading like coverage. -/
 theorem schedLockSet_endpointReplyRecvOnCore_covers_postReceiveDonation
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId)
-    (st st1 st1p st2 : SystemState) (sgi sgi2 : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (st st1 st1q st1p st2 : SystemState) (sgi sgi2 : Option (Concurrency.CoreId × Concurrency.SgiKind))
     (scId0 scId : SeLe4n.SchedContextId) (holder nextThread : SeLe4n.ThreadId)
-    (summary : CapTransferSummary)
+    (xs summary : CapTransferSummary)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
-    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (some (scId0, holder), st1p))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (some (scId0, holder), st1q))
+    (hX : replyRecvReplyTransfer none st receiver prevCaller grant st1q = .ok (xs, st1p))
     (hRecv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p
       = (st2, .ok (nextThread, summary, sgi2)))
     (hCall : rendezvousDequeuedCall st2 nextThread = true)
@@ -1028,10 +1109,11 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_postReceiveDonation
     ∀ p ∈ applyCallDonationOnCoreLockSet
              (determineTargetCore (replyRecvHolderDeschedule receiver holder st2) nextThread)
              (determineTargetCore (replyRecvHolderDeschedule receiver holder st2) receiver),
-      p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg executingCore st := by
-  have hSeg := replyRecvHandoffReplenishCores_eq_of_legs endpointId receiver replyId prevCaller
-    msg executingCore st st1 st1p st2 sgi sgi2 _ nextThread
-    summary hReply hPop hRecv
+      p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant
+            executingCore st := by
+  have hSeg := replyRecvHandoffReplenishCores_eq_of_legs none endpointId receiver replyId
+    prevCaller msg grant executingCore st st1 st1q st1p st2 sgi sgi2 _ xs nextThread
+    summary hReply hPop hX hRecv
   refine schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun c hc => ?_)
   rw [hSeg, replyRecvPostReceiveReplenishCores_of_call receiver nextThread scId0 holder st2 hCall,
     rendezvousCallDonationReplenishCores_of_donation _ receiver nextThread scId hDon]
@@ -1042,17 +1124,21 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_postReceiveDonation
 and the receive leg's block path returns no loan — the segment is empty, so the
 footprint is the table lock and the run queues alone.  The post-receive half needs
 no hypothesis: with nothing handed back it walks and never donates. -/
-theorem replyRecvHandoffReplenishCores_of_no_donation (endpointId : SeLe4n.ObjId)
+theorem replyRecvHandoffReplenishCores_of_no_donation (answer : Option Architecture.FaultReplyOutcome)
+    (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    (executingCore : Concurrency.CoreId) (st st1 st1p : SystemState)
-    (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st st1 st1q st1p : SystemState)
+    (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)) (xs : CapTransferSummary)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
-    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1q))
+    (hX : replyRecvReplyTransfer answer st receiver prevCaller grant st1q = .ok (xs, st1p))
     (hNoHead : replyFrameHeadContext? st1 replyId = none)
     (hPre : receivePreReturn? st1p endpointId receiver = none) :
-    replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st = [] := by
-  rw [replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg executingCore st st1 st1p sgi none hReply hPop,
+    replyRecvHandoffReplenishCores answer endpointId receiver replyId prevCaller msg grant
+      executingCore st = [] := by
+  rw [replyRecvHandoffReplenishCores_eq_of_pop answer endpointId receiver replyId prevCaller msg
+    grant executingCore st st1 st1q st1p sgi none xs hReply hPop hX,
     replyDonationReturnReplenishCores_of_no_head st1 replyId prevCaller hNoHead,
     receivePreReturnReplenishCores_of_none st1p endpointId
     receiver hPre, List.nil_append, List.nil_append]
@@ -1065,18 +1151,22 @@ sound and not free (SM8.D's CC-5), and
 transition writes none there either. -/
 theorem schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId)
-    (st st1 st1p : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (st st1 st1q st1p : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (xs : CapTransferSummary)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
-    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1q))
+    (hX : replyRecvReplyTransfer none st receiver prevCaller grant st1q = .ok (xs, st1p))
     (hNoHead : replyFrameHeadContext? st1 replyId = none)
     (hPre : receivePreReturn? st1p endpointId receiver = none) (c : Concurrency.CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∉ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg executingCore st := by
+      ∉ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant
+          executingCore st := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
-  rw [replyRecvHandoffReplenishCores_of_no_donation endpointId receiver replyId prevCaller msg executingCore st st1 st1p sgi hReply hPop hNoHead hPre] at this
+  rw [replyRecvHandoffReplenishCores_of_no_donation none endpointId receiver replyId prevCaller
+    msg grant executingCore st st1 st1q st1p sgi xs hReply hPop hX hNoHead hPre] at this
   simp at this
 
 /-- **WS-RR RR8.12 Cut C2 (frame)**: the receive leg writes no replenish queue where
@@ -1295,13 +1385,14 @@ all. -/
 theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
     {answer : Option Architecture.FaultReplyOutcome}
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId)
-    (st st1 st1p st2 st3 stOut : SystemState) (sgi sgi2 : Option (Concurrency.CoreId × Concurrency.SgiKind))
-    (nextThread : SeLe4n.ThreadId) (summary summary' : CapTransferSummary)
+    (st st1 st1q st1p st2 st3 stOut : SystemState) (sgi sgi2 : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (nextThread : SeLe4n.ThreadId) (xs summary summary' : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
-    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1q))
+    (hX : replyRecvReplyTransfer answer st receiver prevCaller grant st1q = .ok (xs, st1p))
     (hNoHead : replyFrameHeadContext? st1 replyId = none)
     (hRecv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p
       = (st2, .ok (nextThread, summary, sgi2)))
@@ -1309,21 +1400,22 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
     (hPost : replyRecvPostReceiveDonation receiver ((recordedReplyServer? st prevCaller).getD receiver)
         nextThread executingCore
         none st2 = .ok ((), st3))
-    (hBody : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg executingCore st = .ok (summary', stOut))
+    (hBody : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg grant executingCore st = .ok (summary', stOut))
     (c : Concurrency.CoreId) :
     stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   -- the pop hands nothing back, so it commits nothing
-  have hPopEq : st1p = st1 :=
-    replyRecvPopDonation_ok_none_eq replyId prevCaller st1 st1p hNoHead hPop
-  rw [hPopEq] at hPop hRecv hPre
+  have hPopEq : st1q = st1 :=
+    replyRecvPopDonation_ok_none_eq replyId prevCaller st1 st1q hNoHead hPop
+  rw [hPopEq] at hPop hX
   -- object-store integrity along the spine, for the two walks' frames
   have hInv1 : st1.objects.invExt := by
     have h := endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg executingCore
       st hObjInv
     rw [hReply] at h; exact h
+  have hInv1p : st1p.objects.invExt := replyRecvReplyTransfer_objects_invExt hInv1 hX
   have hInv2 : st2.objects.invExt := by
     have h := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt endpointId receiver
-      (some replyId) executingCore st1 hInv1
+      (some replyId) executingCore st1p hInv1p
     rw [hRecv] at h; exact h
   have hInv3 : st3.objects.invExt :=
     replyRecvPostReceiveDonation_preserves_objects_invExt_of_none _ _ _ _ st2 st3 () hInv2 hPost
@@ -1333,13 +1425,13 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
     rw [hReply] at h; exact h
   have hR2 : st2.scheduler.replenishQueueOnCore c = st1.scheduler.replenishQueueOnCore c := by
     have h := endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_preReturn endpointId
-      receiver (some replyId) executingCore st1 hPre c
-    rw [hRecv] at h; exact h
+      receiver (some replyId) executingCore st1p hPre c
+    rw [hRecv, replyRecvReplyTransfer_scheduler_eq hX] at h; exact h
   have hR3 : st3.scheduler.replenishQueueOnCore c = st2.scheduler.replenishQueueOnCore c :=
     replyRecvPostReceiveDonation_replenishQueueOnCore_of_none _ _ _ _ st2 st3 () hInv2 hPost c
   -- the body's post-state is the stagers over the hand-off over `st3`
   unfold endpointReplyRecvAnsweringOnCore at hBody
-  simp only [hReply, hPop, hRecv, hPost] at hBody
+  simp only [hReply, hPop, hX, hRecv, hPost] at hBody
   have hOut := (Prod.mk.inj (Except.ok.inj hBody)).2
   rw [← hOut, Architecture.stageWokenSendCompletion_scheduler_eq,
     replyRecvAnswerCaller_replenishQueueOnCore]
@@ -1368,12 +1460,14 @@ writes run queues and register contexts and no replenish queue at all. -/
 theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
     {answer : Option Architecture.FaultReplyOutcome}
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId)
     (st stOut : SystemState) (summary' : CapTransferSummary) (c : Concurrency.CoreId)
     (hObjInv : st.objects.invExt)
-    (hne : c ∉ replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st)
-    (hBody : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg executingCore st = .ok (summary', stOut)) :
+    (hne : c ∉ replyRecvHandoffReplenishCores answer endpointId receiver replyId prevCaller msg
+      grant executingCore st)
+    (hBody : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
+      grant executingCore st = .ok (summary', stOut)) :
     stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold endpointReplyRecvAnsweringOnCore at hBody
   cases hReply : endpointReplyOnCore receiver prevCaller msg executingCore st with
@@ -1394,8 +1488,11 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
       cases hPop : replyRecvPopDonation replyId prevCaller st1 with
       | error e => rw [hPop] at hBody; simp only [] at hBody; cases hBody
       | ok popPair =>
-        obtain ⟨returned?, st1p⟩ := popPair
+        obtain ⟨returned?, st1q⟩ := popPair
         rw [hPop] at hBody
+        simp only [] at hBody
+        obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st receiver prevCaller grant st1q
+        rw [hX] at hBody
         simp only [] at hBody
         cases hRecv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
         | mk st2 res2 =>
@@ -1406,23 +1503,25 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
             obtain ⟨nextThread, summary, sgi2⟩ := triple
             simp only [] at hBody
             -- The segment, decomposed at the two legs the definition reads it through.
-            rw [replyRecvHandoffReplenishCores_eq_of_legs endpointId receiver replyId prevCaller
-              msg executingCore st st1 st1p st2 replySgi sgi2
-              returned? nextThread summary hReply hPop hRecv] at hne
+            rw [replyRecvHandoffReplenishCores_eq_of_legs answer endpointId receiver replyId
+              prevCaller msg grant executingCore st st1 st1q st1p st2 replySgi sgi2
+              returned? xs nextThread summary hReply hPop hX hRecv] at hne
             simp only [List.mem_append, not_or] at hne
             obtain ⟨hnePop, hnePre, hnePost⟩ := hne
-            have hInv1p : st1p.objects.invExt :=
-              replyRecvPopDonation_preserves_objects_invExt replyId prevCaller st1 st1p returned?
+            have hInv1q : st1q.objects.invExt :=
+              replyRecvPopDonation_preserves_objects_invExt replyId prevCaller st1 st1q returned?
                 hInv1 hPop
+            have hInv1p : st1p.objects.invExt := replyRecvReplyTransfer_objects_invExt hInv1q hX
             have hInv2 : st2.objects.invExt := by
               have h := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt endpointId
                 receiver (some replyId) executingCore st1p
                 hInv1p
               rw [hRecv] at h; exact h
             have hR1p : st1p.scheduler.replenishQueueOnCore c
-                = st1.scheduler.replenishQueueOnCore c :=
-              replyRecvPopDonation_replenishQueueOnCore_ne replyId prevCaller st1 st1p returned? c
-                hInv1 hnePop hPop
+                = st1.scheduler.replenishQueueOnCore c := by
+              rw [replyRecvReplyTransfer_scheduler_eq hX]
+              exact replyRecvPopDonation_replenishQueueOnCore_ne replyId prevCaller st1 st1q
+                returned? c hInv1 hnePop hPop
             have hR2 : st2.scheduler.replenishQueueOnCore c
                 = st1p.scheduler.replenishQueueOnCore c :=
               endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne endpointId receiver
@@ -1621,10 +1720,11 @@ theorem endpointReplyRecvOnCore_preserves_objects_invExt
     {answer : Option Architecture.FaultReplyOutcome}
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
+    (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg executingCore st = .ok (summary, st')) :
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
+      grant executingCore st = .ok (summary, st')) :
     st'.objects.invExt := by
   have hInv1 := endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg
     executingCore st hObjInv
@@ -1640,12 +1740,16 @@ theorem endpointReplyRecvOnCore_preserves_objects_invExt
       cases hPop : replyRecvPopDonation replyId prevCaller st1 with
       | error e => rw [hPop] at hStep; exact absurd hStep (by simp)
       | ok popPair =>
-        obtain ⟨returnedSc?, st1p⟩ := popPair
+        obtain ⟨returnedSc?, st1q⟩ := popPair
         rw [hPop] at hStep
         simp only [] at hStep
+        obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st receiver prevCaller grant st1q
+        rw [hX] at hStep
+        simp only [] at hStep
         have hInv1p : st1p.objects.invExt :=
-          replyRecvPopDonation_preserves_objects_invExt replyId prevCaller st1 st1p
-            returnedSc? hInv1 hPop
+          replyRecvReplyTransfer_objects_invExt
+            (replyRecvPopDonation_preserves_objects_invExt replyId prevCaller st1 st1q
+              returnedSc? hInv1 hPop) hX
         have hInv2 := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt endpointId
           receiver (some replyId) executingCore st1p hInv1p
         cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
@@ -1669,7 +1773,7 @@ theorem endpointReplyRecvOnCore_preserves_objects_invExt
                 ((recordedReplyServer? st prevCaller).getD receiver) nextThread executingCore
                 returnedSc? st2 st3 u2 hInv2 hDon
               exact stageWokenSendCompletion_objects_invExt _ _
-                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _
+                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _ _
                   (applyReceiveLegPipHandoff_preserves_objects_invExt _ _ _ _ _ hInv3))
 
 open SeLe4n.Kernel.Concurrency in
@@ -1686,7 +1790,7 @@ no longer touches the kernel state — a strengthening (plan O6);
 `endpointReplyRecvOnCore_preserves_objects_invExt` above stands on its own. -/
 theorem endpointReplyRecvOnCore_observer_atomic
     (endpointId : SeLe4n.ObjId) (receiver prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (replyId : SeLe4n.ReplyId)
+    (grant : Bool) (replyId : SeLe4n.ReplyId)
     (executingCore : Concurrency.CoreId)
     (cnRoot : SeLe4n.ObjId) (newSender? : Option SeLe4n.ThreadId)
     (donatedSc? : Option SeLe4n.SchedContextId) (donatedOwner? : Option SeLe4n.ThreadId)
@@ -1711,7 +1815,8 @@ theorem endpointReplyRecvOnCore_observer_atomic
       preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?
       rwPrev? rwNext? rwHead? senderRoot?
     let action : SystemState → SystemState × Except KernelError CapTransferSummary :=
-      fun s' => match endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg executingCore s' with
+      fun s' => match endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant
+          executingCore s' with
         | .ok (r, s'') => (s'', .ok r)
         | .error e => (s', .error e)
     threadIpcStateObserver observed (withLockSet S executingCore action s).1.kernel

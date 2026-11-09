@@ -21,10 +21,13 @@ unchecked dispatch (audit IPC-2, `v0.36.49`).  It composes, in seL4-MCS's
 
 1. the reply leg, `endpointReplyOnCore`;
 2. the donation pop, `replyRecvPopDonation`;
-3. the capability-installing receive leg, `endpointReceiveDualWithCapsOnCore`,
+3. the reply leg's capability transfer, `replyRecvReplyTransfer` (seL4's
+   `doReplyTransfer` → `doIPCTransfer` with no endpoint, under the reply
+   capability's grant right), into the answered caller's receive slot;
+4. the capability-installing receive leg, `endpointReceiveDualWithCapsOnCore`,
    which re-links the same Reply object to the next caller;
-4. the post-receive donation, `replyRecvPostReceiveDonation`; and
-5. the receive leg's priority hand-off, `applyReceiveLegPipHandoff`, then the
+5. the post-receive donation, `replyRecvPostReceiveDonation`; and
+6. the receive leg's priority hand-off, `applyReceiveLegPipHandoff`, then the
    answer to the replied-to caller and the receive leg's completed-sender stager.
 
 **A faulted caller is answered as `.reply` answers it.**  The reply leg's caller
@@ -294,25 +297,6 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             .ok ((), (PriorityInheritance.propagatePipChainCrossCore
               (descheduleAtPlacement st holder) recordedServer serverCore).1)
 
-/-- **WS-RM RM5.2**: the state `.replyRecv`'s receive leg runs on — the reply
-leg's committed state with the donation pop applied.
-
-A *total* accessor over `replyRecvPopDonation`, so a hypothesis about the receive
-leg's pre-state is a flat pre-state-computable expression rather than a
-quantification nested under the pop's own success.  The refusal arm answers the
-unpopped state, which is sound because the arm has already returned `.error`
-there and the receive leg never runs: a hypothesis stated at that value is an
-obligation with no consumer, never a claim about a state the kernel reaches
-(`replyRecvPostPopState_eq_of_error`).
-
-Derived from the transition rather than restated, so the accessor and the step
-cannot disagree about which state the receive leg sees. -/
-def replyRecvPostPopState (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
-    (st1 : SystemState) : SystemState :=
-  match replyRecvPopDonation rid target st1 with
-  | .error _ => st1
-  | .ok (_, st1p) => st1p
-
 /-- **WS-RM RM5.2**: the donation the pop handed back — the scheduling context
 **and the thread it unbound** — as a total accessor.  `none` on the refusal arm
 for the reason above: the post-receive step never runs there.
@@ -368,21 +352,104 @@ the empty message on a fault answer (a fault reply's payload is registers,
   | some _ => IpcMessage.empty
 
 /-- What the answered caller is left with: its delivered message staged as its
-return frame on an ordinary answer; on a fault answer, `faultReplyApplyOnCore` —
-the restart frame installed or the thread left inactive, the fault record cleared —
-which is what the `.reply` arm's fault branch applies, and stages no message. -/
+return frame on an ordinary answer, reporting `capInfo` (the reply leg's
+capability transfer, `replyRecvReplyTransfer`); on a fault answer,
+`faultReplyApplyOnCore` — the restart frame installed or the thread left
+inactive, the fault record cleared — which is what the `.reply` arm's fault
+branch applies, and stages no message. -/
 @[inline] def replyRecvAnswerCaller (answer : Option Architecture.FaultReplyOutcome)
-    (st : SystemState) (prevCaller : SeLe4n.ThreadId) : SystemState :=
+    (st : SystemState) (prevCaller : SeLe4n.ThreadId) (capInfo : Nat) : SystemState :=
   match answer with
-  | none => Architecture.stageDeliveredMessage st prevCaller 0
+  | none => Architecture.stageDeliveredMessage st prevCaller capInfo
   | some outcome => faultReplyApplyOnCore st prevCaller outcome
+
+/-- **The reply leg's capability transfer** (seL4's `doReplyTransfer` →
+`doIPCTransfer` with no endpoint, gated on the reply capability's grant right):
+on an ordinary answer the replier's extra capabilities go into the answered
+caller's receive slot (`replyTransferCaps`, read off the entry's state `pre`);
+a faulted caller takes none, as seL4's `handleFaultReply` branch transfers no
+capability. -/
+@[inline] def replyRecvReplyTransfer (answer : Option Architecture.FaultReplyOutcome)
+    (pre : SystemState) (replier prevCaller : SeLe4n.ThreadId) (grant : Bool) :
+    Kernel CapTransferSummary :=
+  match answer with
+  | none => replyTransferCaps pre replier prevCaller grant
+  | some _ => fun s => .ok ({ results := #[] }, s)
 
 @[simp] theorem replyRecvLegMessage_none (msg : IpcMessage) :
     replyRecvLegMessage none msg = msg := rfl
 
-@[simp] theorem replyRecvAnswerCaller_none (st : SystemState) (prevCaller : SeLe4n.ThreadId) :
-    replyRecvAnswerCaller none st prevCaller = Architecture.stageDeliveredMessage st prevCaller 0 :=
+@[simp] theorem replyRecvAnswerCaller_none (st : SystemState) (prevCaller : SeLe4n.ThreadId)
+    (capInfo : Nat) :
+    replyRecvAnswerCaller none st prevCaller capInfo =
+      Architecture.stageDeliveredMessage st prevCaller capInfo :=
   rfl
+
+@[simp] theorem replyRecvReplyTransfer_none (pre : SystemState)
+    (replier prevCaller : SeLe4n.ThreadId) (grant : Bool) :
+    replyRecvReplyTransfer none pre replier prevCaller grant =
+      replyTransferCaps pre replier prevCaller grant := rfl
+
+@[simp] theorem replyRecvReplyTransfer_some (o : Architecture.FaultReplyOutcome)
+    (pre : SystemState) (replier prevCaller : SeLe4n.ThreadId) (grant : Bool) (s : SystemState) :
+    replyRecvReplyTransfer (some o) pre replier prevCaller grant s = .ok ({ results := #[] }, s) :=
+  rfl
+
+/-- The reply leg's transfer is `receiveTransferCaps` on both answers (with no
+request on a fault answer), so every frame the receive-side transfer has holds of
+it. -/
+theorem replyRecvReplyTransfer_eq_receiveTransferCaps
+    (answer : Option Architecture.FaultReplyOutcome)
+    (pre : SystemState) (replier prevCaller : SeLe4n.ThreadId) (grant : Bool) :
+    replyRecvReplyTransfer answer pre replier prevCaller grant =
+      receiveTransferCaps (if answer.isSome then none else replyCapRequest pre replier grant)
+        none (receiverCapTarget? pre prevCaller) := by
+  cases answer with
+  | none => rfl
+  | some _ => funext s; rfl
+
+/-- **The reply leg's transfer moves nothing** on a fault answer, and on an
+ordinary one when the reply capability lacks the grant right or the answered
+caller `ct` has no IPC buffer the kernel may write or names no receive slot
+(`replyTransferCaps_of_inert`): every in-place form of the arm is taken only
+there. -/
+theorem replyRecvReplyTransfer_of_inert (answer : Option Architecture.FaultReplyOutcome)
+    (pre : SystemState) (replier prevCaller : SeLe4n.ThreadId) (grant : Bool) (ct : TCB)
+    (hT : pre.getTcb? prevCaller = some ct)
+    (hW : answer = none → (!grant || !receiverHasBuffer pre ct || (receiveSlot? pre ct).isNone) = true)
+    (s : SystemState) :
+    replyRecvReplyTransfer answer pre replier prevCaller grant s = .ok ({ results := #[] }, s) := by
+  cases answer with
+  | none => exact replyTransferCaps_of_inert pre replier prevCaller grant ct hT (hW rfl) s
+  | some _ => rfl
+
+/-- **WS-RM RM5.2**: the state `.replyRecv`'s receive leg runs on — the reply
+leg's committed state `st1` with the donation pop applied and then the reply
+leg's capability transfer (`replyRecvReplyTransfer`, read off the entry's state
+`pre`).
+
+A *total* accessor over the two steps, so a hypothesis about the receive
+leg's pre-state is a flat pre-state-computable expression rather than a
+quantification nested under the steps' own success.  A refusal answers the
+state before the refusing step, which is sound because the arm has already
+returned `.error` there and the receive leg never runs: a hypothesis stated at
+that value is an obligation with no consumer, never a claim about a state the
+kernel reaches (`replyRecvReceiveLegState_eq_of_error`); the transfer itself
+never refuses (`replyRecvReplyTransfer_ok`).
+
+Derived from the transition rather than restated, so the accessor and the steps
+cannot disagree about which state the receive leg sees. -/
+def replyRecvReceiveLegState (answer : Option Architecture.FaultReplyOutcome)
+    (pre : SystemState) (replier : SeLe4n.ThreadId) (grant : Bool)
+    (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (st1 : SystemState) : SystemState :=
+  match replyRecvPopDonation rid target st1 with
+  | .error _ => st1
+  | .ok (_, st1q) =>
+      match replyRecvReplyTransfer answer pre replier target grant st1q with
+      | .error _ => st1q
+      | .ok (_, st1p) => st1p
+
 
 /-- The cores answering the caller may write: none for the staging (a register
 write), and the fault outcome's (`faultReplyApplyCores`: an abandon deschedules
@@ -448,7 +515,7 @@ reply leg the message that answer delivers (`replyRecvLegMessage`); this body ta
 the message as given, so every leg is the same transition on both answers. -/
 def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOutcome)
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId)
     : Kernel CapTransferSummary :=
   fun st =>
@@ -474,7 +541,16 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
         -- caller it answers, so this arm and the `.reply` arm ask one question.
         match replyRecvPopDonation rid prevCaller st1 with
         | .error e => .error e
-        | .ok (returnedSc?, st1p) =>
+        | .ok (returnedSc?, st1q) =>
+        -- The reply leg's capability transfer, seL4's order: `doReplyTransfer`
+        -- runs `reply_remove` (the pop above) and then `doIPCTransfer`, all
+        -- before `receiveIPC`.  It must precede the receive leg, whose unwrap
+        -- writes the replier's `caps_or_badges` words -- the very words that
+        -- name the reply's extra capabilities -- and whose install fills the
+        -- replier's receive slot.
+        match replyRecvReplyTransfer answer st tid prevCaller grant st1q with
+        | .error e => .error e
+        | .ok (replySummary, st1p) =>
         -- WS-RA RA.B.5b: capture the send-queue head the receive leg will
         -- dequeue (from `st1p`, the state that leg runs on) — a *plain* sender
         -- completing there is owed the unit success frame; a `Call` sender
@@ -505,9 +581,8 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
                 -- `.call`'s frame, delivered entirely through this path) and
                 -- the receive leg's completed plain sender (unit frame).  Both
                 -- stagers are guard-inert when their target was not woken.
-                -- Installed count 0 *for `prevCaller`*: a message holds no
-                -- capabilities and the reply path runs no unwrap
-                -- (PR #866 round-2).  The receive
+                -- `prevCaller`'s staged count is the reply leg's transfer
+                -- (`replySummary`, seL4's `doReplyTransfer`); the receive
                 -- leg's own count is the returned `summary`, staged by the arm.
                 -- **WS-OD OD3.14: the receive leg's priority hand-off.**  The
                 -- return donation's walk starts at `recordedServer`, which is the
@@ -525,17 +600,17 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
                           (replyRecvAnswerCaller answer
                             (applyReceiveLegPipHandoff st3 tid nextThread recordedServer
                               executingCore)
-                            prevCaller)
+                            prevCaller replySummary.capInfo)
                           wokenSender?)
 
 /-- The `.replyRecv` composite for a caller carrying **no** fault: the reply leg
 delivers `msg` and its return frame is staged (`endpointReplyRecvAnsweringOnCore`
 at `none`).  Every in-place form of the arm is proven equal to this one. -/
 def endpointReplyRecvOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId)
     : Kernel CapTransferSummary :=
-  endpointReplyRecvAnsweringOnCore none epId tid rid prevCaller msg executingCore
+  endpointReplyRecvAnsweringOnCore none epId tid rid prevCaller msg grant executingCore
 
 /-- **The `.replyRecv` arm's transition**: the composite at the answer the
 replied-to caller's own fault record selects on the pre-state
@@ -555,21 +630,22 @@ reply capability's MR0 stripped); the decode reads `msg.registers` as the reply'
 words, exactly as the `.reply` arm's decode reads its MR0 onward. -/
 def replyRecvTransferOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
-    (executingCore : Concurrency.CoreId) : Kernel CapTransferSummary :=
+    (grant : Bool) (executingCore : Concurrency.CoreId) : Kernel CapTransferSummary :=
   fun st =>
     -- A faulted caller is handed the empty message, as `.reply`'s fault branch
     -- hands it (`faultReplyOnCore`): a fault reply's payload is registers.
     endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
       epId tid rid prevCaller
-      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) executingCore st
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+      executingCore st
 
 /-- On a caller carrying no fault the arm's transition is the ordinary composite. -/
 theorem replyRecvTransferOnCore_of_no_fault (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
-    (c : Concurrency.CoreId) (st : SystemState)
+    (grant : Bool) (c : Concurrency.CoreId) (st : SystemState)
     (h : threadHasPendingFault st prevCaller = false) :
-    replyRecvTransferOnCore epId tid rid prevCaller label msg c st =
-      endpointReplyRecvOnCore epId tid rid prevCaller msg c st := by
+    replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st =
+      endpointReplyRecvOnCore epId tid rid prevCaller msg grant c st := by
   unfold replyRecvTransferOnCore
   rw [replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
   rfl
@@ -665,7 +741,7 @@ makes this step the identity — so no pin taken against the three-leg set moves
 on any state a non-delegated `.replyRecv` reaches. -/
 def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyOutcome)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
   determineTargetCore st prevCaller ::
     (match endpointReplyOnCore receiver prevCaller msg executingCore st with
@@ -679,7 +755,12 @@ def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyO
         -- transition is.
         (match replyRecvPopDonation replyId prevCaller st1 with
          | .error _ => []
-         | .ok (returnedSc?, st1p) =>
+         | .ok (returnedSc?, st1q) =>
+          -- The reply leg's capability transfer writes no core (a CNode and
+          -- the derivation tree), but the receive leg runs on its post-state.
+          match replyRecvReplyTransfer answer st receiver prevCaller grant st1q with
+          | .error _ => []
+          | .ok (_, st1p) =>
             endpointReceiveDualWriteSet st1p endpointId executingCore ++
               (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
                | (_, .error _) => []
@@ -703,18 +784,21 @@ def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyO
 /-- The cores the ordinary `.replyRecv` composite (`endpointReplyRecvOnCore`) may
 write: `endpointReplyRecvAnsweringWriteSet` at `none`. -/
 def endpointReplyRecvWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
-  endpointReplyRecvAnsweringWriteSet none endpointId receiver replyId prevCaller msg executingCore st
+  endpointReplyRecvAnsweringWriteSet none endpointId receiver replyId prevCaller msg grant
+    executingCore st
 
 /-- The cores the `.replyRecv` arm's transition (`replyRecvTransferOnCore`) may
 write: the composite's at the answer the caller's fault record selects. -/
 def replyRecvTransferWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
-    (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
+    (grant : Bool) (executingCore : Concurrency.CoreId) (st : SystemState) :
+    List Concurrency.CoreId :=
   endpointReplyRecvAnsweringWriteSet (replyRecvCallerFaultAnswer? st prevCaller label msg)
     endpointId receiver replyId prevCaller
-    (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) executingCore st
+    (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+    executingCore st
 
 -- ============================================================================
 -- WS-RR RR8.12 Cut C2 (`v0.35.162`): the `.replyRecv` arm's scheduler-domain footprint
@@ -801,15 +885,21 @@ at the state that leg actually runs at, which is the discipline
 
 A failed leg contributes nothing, because the body then commits nothing and there
 is no migration to cover. -/
-def replyRecvHandoffReplenishCores (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+def replyRecvHandoffReplenishCores (answer : Option Architecture.FaultReplyOutcome)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
   match endpointReplyOnCore receiver prevCaller msg executingCore st with
   | (_, .error _) => []
   | (st1, .ok _) =>
       match replyRecvPopDonation replyId prevCaller st1 with
       | .error _ => []
-      | .ok (returnedSc?, st1p) =>
+      | .ok (returnedSc?, st1q) =>
+        -- The reply leg's capability transfer migrates nothing, but the receive
+        -- leg runs on its post-state.
+        match replyRecvReplyTransfer answer st receiver prevCaller grant st1q with
+        | .error _ => []
+        | .ok (_, st1p) =>
           replyDonationReturnReplenishCores st1 replyId prevCaller ++
             (receivePreReturnReplenishCores st1p endpointId receiver ++
               (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
@@ -838,12 +928,13 @@ in both directions on that shape.  The run segment's coverage is
 `endpointReplyRecvOnCore_confinedToCores`, stated at the same list. -/
 def schedLockSet_endpointReplyRecvOnCore (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
+    (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
-    (endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg executingCore st)
-    (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st)
+    (endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg grant executingCore st)
+    (replyRecvHandoffReplenishCores none endpointId receiver replyId prevCaller msg grant
+      executingCore st)
 
 /-- The scheduler-domain footprint of the `.replyRecv` arm's transition
 (`replyRecvTransferOnCore`): the composite's write set and replenish cores at the
@@ -851,23 +942,28 @@ answer the caller's fault record selects and the message the reply leg then
 delivers.  On a caller carrying no fault it is `schedLockSet_endpointReplyRecvOnCore`. -/
 def schedLockSet_replyRecvTransferOnCore (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
-    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg executingCore st)
-    (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller
-      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) executingCore st)
+    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant
+      executingCore st)
+    (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+      endpointId receiver replyId prevCaller
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+      executingCore st)
 
 /-- On a caller carrying no fault the arm's footprint is the composite's:
 nothing is decoded and the reply leg delivers the message as given. -/
 theorem schedLockSet_replyRecvTransferOnCore_of_no_fault (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
     (executingCore : Concurrency.CoreId) (st : SystemState)
     (h : threadHasPendingFault st prevCaller = false) :
-    schedLockSet_replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg executingCore st =
-      schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg executingCore st := by
+    schedLockSet_replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant
+        executingCore st =
+      schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant
+        executingCore st := by
   unfold schedLockSet_replyRecvTransferOnCore replyRecvTransferWriteSet
   rw [replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
   rfl

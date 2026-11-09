@@ -635,8 +635,8 @@ theorem applyReceiveLegPipHandoff_mappingStage (st : SystemState)
 /-- The reply leg's answer to its caller: the ordinary staging, or the fault
 reply's decoded outcome. -/
 theorem replyRecvAnswerCaller_mappingStage (answer : Option Architecture.FaultReplyOutcome)
-    (st : SystemState) (prevCaller : SeLe4n.ThreadId) :
-    MappingStage st (replyRecvAnswerCaller answer st prevCaller) := by
+    (st : SystemState) (prevCaller : SeLe4n.ThreadId) (capInfo : Nat) :
+    MappingStage st (replyRecvAnswerCaller answer st prevCaller capInfo) := by
   cases answer with
   | none => exact stageDeliveredMessage_mappingStage _ _ _
   | some o => exact faultReplyApplyOnCore_mappingStage _ _ o
@@ -644,9 +644,10 @@ theorem replyRecvAnswerCaller_mappingStage (answer : Option Architecture.FaultRe
 theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
-    {msg : IpcMessage}
+    {msg : IpcMessage} {grant : Bool}
     {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg executingCore st = .ok (summary, st')) : MappingStage st st' := by
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st
+      = .ok (summary, st')) : MappingStage st st' := by
   unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
   have hR := endpointReplyOnCore_mappingStage (replier := tid) (target := prevCaller)
@@ -661,8 +662,13 @@ theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.Fault
   dsimp only at h hR
   split at h
   · cases h
-  rename_i ret st1p hPop
+  rename_i ret st1q hPop
   have hP := replyRecvPopDonation_mappingStage hPop
+  split at h
+  · cases h
+  rename_i xs st1p hX
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  have hXs := receiveTransferCaps_mappingStage hX
   have hV := endpointReceiveDualWithCapsOnCore_mappingStage (endpointId := epId)
     (receiver := tid) (replyId := some rid)
     (executingCore := executingCore) (st := st1p)
@@ -679,9 +685,10 @@ theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.Fault
   · cases h
   rename_i st3 hPost
   cases h
-  exact (((((hR.trans hP).trans hV).trans (replyRecvPostReceiveDonation_mappingStage hPost)).trans
+  exact ((((((hR.trans hP).trans hXs).trans hV).trans
+    (replyRecvPostReceiveDonation_mappingStage hPost)).trans
     (applyReceiveLegPipHandoff_mappingStage _ _ _ _ _)).trans
-    (replyRecvAnswerCaller_mappingStage answer _ prevCaller)).trans
+    (replyRecvAnswerCaller_mappingStage answer _ prevCaller _)).trans
     (stageWokenSendCompletion_mappingStage _ _)
 
 end SeLe4n.Kernel

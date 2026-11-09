@@ -1671,15 +1671,15 @@ theorem applyReceiveLegPipHandoff_stepCovers (e : CoreId) (st : SystemState)
   · exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- The per-core reply-and-receive covers on its `.ok`: the reply leg, the
-donation pop, the receive leg, the post-receive donation, the chain walk and the
+donation pop, the reply leg's capability transfer, the receive leg, the post-receive donation, the chain walk and the
 staging. -/
 theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
-    {msg : IpcMessage}
+    {msg : IpcMessage} {grant : Bool}
     {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg executingCore st = .ok (summary, st')) :
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st = .ok (summary, st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
@@ -1695,8 +1695,19 @@ theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
   dsimp only at h hR hRInv
   split at h
   · cases h
-  rename_i ret st1p hPop
-  obtain ⟨hP, hPInv⟩ := replyRecvPopDonation_stepCovers e hRInv hPop
+  rename_i ret st1q hPop
+  obtain ⟨hP0, hP0Inv⟩ := replyRecvPopDonation_stepCovers e hRInv hPop
+  -- The reply leg's capability transfer: a capability-key frame.
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [hX] at h
+  dsimp only at h
+  have hXU := hX
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hXU
+  have hXK := receiveTransferCaps_keyFrame hP0Inv hXU
+  have hP := stepCovers_trans hP0 (hXK.stepCovers (congrArg MachineState.residentCode
+    (receiveTransferCaps_preserves_machine hXU)) (banksKeptOffCore_of_eq
+      (congrArg MachineState.coreRegs (receiveTransferCaps_preserves_machine hXU))))
+  have hPInv : st1p.objects.invExt := hXK.2.2
   obtain ⟨hV, hVInv⟩ := endpointReceiveDualWithCapsOnCore_stepCovers e (endpointId := epId)
     (receiver := tid) (replyId := some rid)
     (executingCore := executingCore) hPInv
@@ -1716,11 +1727,11 @@ theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
   obtain ⟨hD, hDInv⟩ := replyRecvPostReceiveDonation_stepCovers e hVInv hPost
   obtain ⟨hW, hWInv⟩ := applyReceiveLegPipHandoff_stepCovers e st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) executingCore hDInv
-  obtain ⟨hS1, hS1Inv⟩ : stepCovers e _ (replyRecvAnswerCaller answer _ prevCaller) ∧
-      (replyRecvAnswerCaller answer _ prevCaller).objects.invExt := by
+  obtain ⟨hS1, hS1Inv⟩ : stepCovers e _ (replyRecvAnswerCaller answer _ prevCaller _) ∧
+      (replyRecvAnswerCaller answer _ prevCaller _).objects.invExt := by
     cases answer with
     | none =>
-      have hK := stageDeliveredMessage_keyFrame _ prevCaller 0 hWInv
+      have hK := stageDeliveredMessage_keyFrame _ prevCaller xs.capInfo hWInv
       exact ⟨hK.stepCovers, hK.2.2⟩
     | some o => exact faultReplyApplyOnCore_stepCovers e _ prevCaller o hWInv
   have hS2 := stageWokenSendCompletion_keyFrame _ ((st1p.getEndpoint? epId).bind (·.sendQ.head))

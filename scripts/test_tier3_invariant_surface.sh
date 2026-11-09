@@ -4397,8 +4397,8 @@ run_check "INVARIANT" rg -n '^theorem replyTransferChecked_donated_inPlace($|[ (
 run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextInPlace_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
 run_check "INVARIANT" rg -n '^theorem popDonationSettled_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvDonatedInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvDonatedInPlace.lean
-run_check "INVARIANT" rg -n -U '      else replyRecvDonatedArmR epId tid c rid badge layout rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    if replyRecvDonatedAdmits epId tid c rid layout len st then\n      \.ok \(\(\), performReplyRecvDonatedDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '      else replyRecvDonatedArmR epId tid c rid badge grant layout rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvDonatedAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvDonatedDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then\n      \.ok \(\(\), performReplyDonatedDelivered st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Kernel\.returnDonatedSchedContextInPlace,$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem consumed_eq_impl' SeLe4n/Model/Object/Reply.lean
@@ -4420,8 +4420,8 @@ run_check "INVARIANT" rg -n '^theorem returnUnheldSchedContextInPlace_popFrame($
 run_check "INVARIANT" rg -n '^theorem popUnheldSettled_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
-run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvUnheldArmR epId tid c rid badge layout rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    if replyRecvUnheldAdmits epId tid c rid layout len st then\n      \.ok \(\(\), performReplyRecvUnheldDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvUnheldArmR epId tid c rid badge grant layout rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvUnheldAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvUnheldDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # ...and a final delete of an orphaned caller's head reply asks the unheld pop's
 # commit test through the in-place gate first, so the admission resolves no
 # outer caller as an `Except` where the gate passes.
@@ -12847,7 +12847,7 @@ run_check "INVARIANT" rg -n '^def schedLockSet_endpointReplyRecvOnCore \(' SeLe4
 # (`endpointReplyRecvOnCore_confinedToCores` is stated at it), the replenish segment
 # `replyRecvHandoffReplenishCores`.  Mutation: keep `schedFootprintOfCores` and
 # resolve either segment a second way inside the body.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg executingCore st\)\n *\(replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg grant executingCore st\)\n *\(replyRecvHandoffReplenishCores none endpointId receiver replyId prevCaller msg grant\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # The segment mirrors the spine: the pop's pair at the reply leg's post-state
 # (`st1`), the block-path pair at the pop's post-state (`st1p`), the re-donation
 # pair at the receive leg's post-state (`st2`).  Pinned with each state NAMED, so a
@@ -18216,7 +18216,7 @@ run_check "INVARIANT" rg -n '^theorem replyRecvPostReceiveDonation_preserves_ipc
 # The dispatch payoff's receive-leg hypotheses are stated at the POST-POP state.
 # Stating them at the reply leg's own is the pre-WS-RM shape and is a claim about
 # a state the receive leg no longer runs on.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hCleanupStack1 : cleanupDonationStackValid[^\n]*(\n([ \t][^\n]*)?)*replyRecvPostPopState" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hCleanupStack1 : cleanupDonationStackValid[^\n]*(\n([ \t][^\n]*)?)*replyRecvReceiveLegState" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
 
 # (6) `Reply.isFree` is the one spelling of "this Reply may be linked or
 # retyped", and it reads BOTH links -- which is why the pop has to precede the

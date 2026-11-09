@@ -143,8 +143,8 @@ theorem faultReplyApplyOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop} (st 
 the ordinary staging and the restart are stages, the abandon a deschedule then
 an off-queue write. -/
 theorem replyRecvAnswerCaller_runQueueLinkStage (answer : Option Architecture.FaultReplyOutcome)
-    (st : SystemState) (prevCaller : SeLe4n.ThreadId) :
-    SystemState.RunQueueLinkStage st (replyRecvAnswerCaller answer st prevCaller) := by
+    (st : SystemState) (prevCaller : SeLe4n.ThreadId) (capInfo : Nat) :
+    SystemState.RunQueueLinkStage st (replyRecvAnswerCaller answer st prevCaller capInfo) := by
   cases answer with
   | none => exact (stageDeliveredMessage_runQueueStage _ _ _).1
   | some o =>
@@ -160,8 +160,8 @@ theorem replyRecvAnswerCaller_runQueueLinkStage (answer : Option Architecture.Fa
 /-- The reply leg's answer blocks no thread. -/
 theorem replyRecvAnswerCaller_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     (answer : Option Architecture.FaultReplyOutcome) (st : SystemState)
-    (prevCaller : SeLe4n.ThreadId) :
-    readyKeptStage S st (replyRecvAnswerCaller answer st prevCaller) := by
+    (prevCaller : SeLe4n.ThreadId) (capInfo : Nat) :
+    readyKeptStage S st (replyRecvAnswerCaller answer st prevCaller capInfo) := by
   cases answer with
   | none => exact .of_stage (stageDeliveredMessage_runQueueStage _ _ _)
   | some o => exact faultReplyApplyOnCore_readyKeptStage st prevCaller o
@@ -219,17 +219,17 @@ theorem replyTransferOnCoreChecked_readyKeptStage {S : SeLe4n.ThreadId → Prop}
         exact .of_stage ((hE.trans (receiveTransferCaps_runQueueStage hX)).trans
           (stageDeliveredMessage_runQueueStage _ _ _))
 
-/-- `ReplyRecv` blocks only its caller: the reply and the donation pop are
-stages, and the receive half blocks the caller. -/
+/-- `ReplyRecv` blocks only its caller: the reply, the donation pop and the reply
+leg's capability transfer are stages, and the receive half blocks the caller. -/
 theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
-    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
     {c : CoreId}
     {st st' : SystemState} {s : CapTransferSummary}
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg c st =
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st =
       .ok (s, st')) :
     readyKeptStage (· = tid) st st' := by
   have hE := endpointReplyOnCore_runQueueStage tid prevCaller msg c st
@@ -254,8 +254,27 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
   have hH1 := (endpointHeadsWakeable_of hD hQ).of_frame hEB hCB (hQ1 _ rfl)
   split at h
   · cases h
-  rename_i ret st1p hPop
-  obtain ⟨hPE, hPC, hPT⟩ := replyRecvPopDonation_frame hInv1 hPop
+  rename_i ret st1q hPop
+  -- The reply leg's capability transfer, between the pop and the receive leg.
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [hX] at h
+  dsimp only at h
+  have hXU := hX
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hXU
+  have hPopS := (replyRecvPopDonation_runQueueStage hPop).trans (receiveTransferCaps_runQueueStage hXU)
+  obtain ⟨hQE, hQC, hQT⟩ := replyRecvPopDonation_frame hInv1 hPop
+  obtain ⟨hXE, hXC, hXT⟩ := receiveTransferCaps_ipcFrame
+    (replyRecvPopDonation_preserves_objects_invExt _ _ _ _ _ hInv1 hPop) hXU
+  have hPE : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), st1p.objects[oid]? = some (.endpoint ep) →
+      st1.objects[oid]? = some (.endpoint ep) := fun e ep h => hQE e ep (hXE e ep h)
+  have hPC : ∀ c, st1p.scheduler.currentOnCore c = st1.scheduler.currentOnCore c :=
+    fun c => (hXC c).trans (hQC c)
+  have hPT : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB), st1p.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st1.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState :=
+    fun y t h => by
+      obtain ⟨u, hu, hU⟩ := hXT y t h
+      obtain ⟨v, hv, hV⟩ := hQT y u hu
+      exact ⟨v, hv, hV.trans hU⟩
   have hH2 := hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
       (hQ1 _ rfl))
   -- The replier is current, so active; the reply and the pop suspend no thread.
@@ -263,7 +282,7 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
     activeKeptStage.of_stage hE hInv hRf tid (hD.runnable hCur).activeAt
   have hAp : st1p.activeAt tid :=
     let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
-    activeKeptStage.of_stage (replyRecvPopDonation_runQueueStage hPop) hI1 hR1 tid hA1
+    activeKeptStage.of_stage hPopS hI1 hR1 tid hA1
   have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
     st1p hH2 ((hPC c).trans hC1) hNI hAp
   have rR := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) c
@@ -277,7 +296,7 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
   · cases h
   rename_i st3 hPost
   cases h
-  have A := hE.trans (replyRecvPopDonation_runQueueStage hPop)
+  have A := hE.trans hPopS
   -- The post-receive donor is blocked on its reply and every thread stays
   -- coherent, so it is not suspended.
   have hAll := A.entry.trans hR
@@ -287,8 +306,8 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
     (applyReceiveLegPipHandoff_runQueueStage st3 tid nt
       ((recordedReplyServer? st prevCaller).getD tid) c)
   exact (readyKeptStage.of_stage A).trans A.1 (rR.trans hR.1 ((readyKeptStage.of_stage hPH).trans
-    hPH.1 ((replyRecvAnswerCaller_readyKeptStage answer _ prevCaller).trans
-      (replyRecvAnswerCaller_runQueueLinkStage answer _ prevCaller)
+    hPH.1 ((replyRecvAnswerCaller_readyKeptStage answer _ prevCaller _).trans
+      (replyRecvAnswerCaller_runQueueLinkStage answer _ prevCaller _)
       (.of_stage (stageWokenSendCompletion_runQueueStage _ _)))))
 
 /-! ### The scheduling arms -/

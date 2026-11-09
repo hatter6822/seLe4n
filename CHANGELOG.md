@@ -1,3 +1,5 @@
+## v0.37.6 — the reply-receive's reply transfers capabilities; capability transfers that install or unwrap run in place
+
 ## v0.37.5 — capability transfer is seL4's `transferCaps`: one receive slot named by the receiver's IPC buffer, endpoint capabilities unwrapped
 
 The specification's IPC capability transfer is restated as seL4's

@@ -1192,13 +1192,13 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
      | .error _ => false)
   let (summaryA, stA2) ← expectOkSt "chain12d: A — .replyRecv collects the parked request"
     (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg
-      bootCoreId stA1)
+      false bootCoreId stA1)
 
   -- Ordering B: the server calls `.replyRecv` FIRST (its receive leg blocks),
   -- then the request arrives and rendezvouses.
   let (summaryB0, stB1) ← expectOkSt "chain12d: B — .replyRecv blocks on the receive leg"
     (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg
-      bootCoreId stBase)
+      false bootCoreId stBase)
   expect "chain12d: B — a blocked receive leg installs nothing yet"
     (summaryB0.results.isEmpty && !serverSlotFilled stB1)
   let (stB2, sendResB) :=
@@ -1229,7 +1229,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
       (SeLe4n.Testing.withSenderFrame stBase nextSender requestMsg #[SeLe4n.CPtr.ofNat 5])
   let (summaryC, stC2) ← expectOkSt "chain12d: C — .replyRecv collects a non-granting request"
     (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg
-      bootCoreId stC1)
+      false bootCoreId stC1)
   expect "chain12d: NEGATIVE — a non-granting parked request installs nothing"
     (!serverSlotFilled stC2 && summaryC.capInfo == 0)
 

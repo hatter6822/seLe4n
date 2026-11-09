@@ -180,6 +180,11 @@ structure SyscallLockOperands where
   /-- **Cut C4**: the register payload a `.reply` carries, read by
   `decodeFaultReply` beside `replyMessageInfo`. -/
   replyRegisters : Option (Array SeLe4n.RegValue) := none
+  /-- The grant right of the reply capability a `.replyRecv` answers through
+  (seL4's `capReplyCanGrant`), which gates the reply leg's capability transfer;
+  the arm's scheduler footprint replays that transfer, because its receive leg
+  runs on the transfer's post-state. -/
+  replyGrant : Option Bool := none
   /-- **Cut C4**: the core `.tcbSetAffinity` pins its target to, which is itself
   an `Option` — `none` unpins — so this field is doubly optional and the two
   layers mean different things: the outer says whether the caller supplied the
@@ -1232,7 +1237,7 @@ theorem lockSetForSyscall_ofThreadTarget_undeclared
       | simp [lockSetForSyscall, SyscallLockOperands.ofThreadTarget]
 
 /-- **WS-RR RR8.12 Cut C4b**: the object domain ignores the scheduler domain's
-five operands.
+six operands.
 
 `SyscallLockOperands` is ONE record for one syscall's operands, read by
 `lockSetForSyscall` here and by `schedLockSetForSyscall`
@@ -1240,20 +1245,21 @@ five operands.
 one decode for both domains rather than two, and what
 `declaredSchedulerLockSetForAbiEntry_shares_decode` states of the seam.  The cost of
 one record is that a field added for one domain could silently move the other's
-answer; this says it cannot, so `abiEntryLockOperands` supplying the five below
+answer; this says it cannot, so `abiEntryLockOperands` supplying the six below
 left every object-domain footprint exactly where Cut C4 found it.
 
-Stated as a congruence over all five at once, so a sixth field added without
+Stated as a congruence over all six at once (the sixth, `replyGrant`, the
+`.replyRecv` reply capability's grant right), so a seventh field added without
 extending it is a field nothing has checked. -/
 theorem lockSetForSyscall_ignores_sched_operands (sid : SyscallId)
     (ops : SyscallLockOperands) (st : SystemState)
     (msg : Option IpcMessage)
     (mi : Option MessageInfo) (regs : Option (Array SeLe4n.RegValue))
-    (aff : Option (Option CoreId)) (slot : Option SeLe4n.Slot) :
+    (aff : Option (Option CoreId)) (slot : Option SeLe4n.Slot) (grant : Option Bool) :
     lockSetForSyscall sid
         { ops with message := msg,
                    replyMessageInfo := mi, replyRegisters := regs, affinity := aff,
-                   targetSlot := slot } st
+                   targetSlot := slot, replyGrant := grant } st
       = lockSetForSyscall sid ops st := by
   cases sid <;> rfl
 

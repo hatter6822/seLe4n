@@ -4578,19 +4578,19 @@ private def runLiveCrossCoreArmChecks : IO Unit := do
           crossCoreEndpoint c0
      decide ((SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
         replyRecvReplyId replyBlockedCaller replyRecvMsg
-        c0 replyRecvState).take (1 + rs.length)
+        false c0 replyRecvState).take (1 + rs.length)
       = SeLe4n.Kernel.determineTargetCore replyRecvState replyBlockedCaller :: rs))
   assertBool "…and it names two DIFFERENT cores — a real union, not a coincidence"
     (decide ((SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
       replyRecvReplyId replyBlockedCaller replyRecvMsg
-      c0 replyRecvState).take 2 = [c3, c2]))
+      false c0 replyRecvState).take 2 = [c3, c2]))
   -- The load-bearing negative: when the reply leg fails closed the tail is
   -- empty, so the composition is genuinely conditional on the leg's outcome
   -- rather than always appending the receive set.
   assertBool "NEGATIVE: a failed reply leg contributes no receive-leg cores"
     (decide (SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
       replyRecvReplyId crossCoreSender replyRecvMsg
-      c0 blockedSenderState = [c2]))
+      false c0 blockedSenderState = [c2]))
 
 -- §5.3b fixtures — a re-bucketing write, the case `RunQueue.toList` misses.
 

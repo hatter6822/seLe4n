@@ -821,8 +821,8 @@ theorem endpointReceiveDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.O
 `replyRecvAnswerCores`: the staging writes registers only, and a fault answer is
 `faultReplyApplyOnCore`, confined to `faultReplyApplyCores`. -/
 theorem replyRecvAnswerCaller_confinedToCores (answer : Option Architecture.FaultReplyOutcome)
-    (st : SystemState) (prevCaller : SeLe4n.ThreadId) :
-    observableSlotsConfinedToCores st (replyRecvAnswerCaller answer st prevCaller)
+    (st : SystemState) (prevCaller : SeLe4n.ThreadId) (capInfo : Nat) :
+    observableSlotsConfinedToCores st (replyRecvAnswerCaller answer st prevCaller capInfo)
       (replyRecvAnswerCores answer st prevCaller) := by
   cases answer with
   | none =>
@@ -843,13 +843,14 @@ theorem rather than assumed, exactly as in §4a. -/
 theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
     {answer : Option Architecture.FaultReplyOutcome}
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
+    (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg executingCore st
-      = .ok (summary, st')) :
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
+      grant executingCore st = .ok (summary, st')) :
     observableSlotsConfinedToCores st st'
-      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg executingCore st) := by
+      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant
+        executingCore st) := by
   have hReply := endpointReplyOnCore_confinedToCores receiver prevCaller msg executingCore st
     hObjInv
   have hInv1 : (endpointReplyOnCore receiver prevCaller msg executingCore st).1.objects.invExt :=
@@ -867,14 +868,25 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
       cases hPop : replyRecvPopDonation replyId prevCaller st1 with
       | error e => rw [hPop] at hStep; exact absurd hStep (by simp)
       | ok popPair =>
-        obtain ⟨returnedSc?, st1p⟩ := popPair
+        obtain ⟨returnedSc?, st1q⟩ := popPair
         rw [hPop] at hStep
         simp only [] at hStep ⊢
-        have hPopConf := replyRecvPopDonation_confinedToCores
-          replyId prevCaller st1 st1p returnedSc? hPop
+        -- The reply leg's capability transfer, between the pop and the receive
+        -- leg: it writes a CNode and the derivation tree, no core.
+        obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st receiver prevCaller grant st1q
+        rw [hX] at hStep ⊢
+        simp only [] at hStep ⊢
+        have hPopConf : observableSlotsConfinedToCores st1 st1p [] := by
+          have hQ := replyRecvPopDonation_confinedToCores replyId prevCaller st1 st1q returnedSc? hPop
+          rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+          have hXc : observableSlotsConfinedToCores st1q st1p [] :=
+            observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+              (receiveTransferCaps_scheduler_eq hX) (receiveTransferCaps_preserves_machine hX)
+          simpa using observableSlotsConfinedToCores_trans hQ hXc
         have hInv1p : st1p.objects.invExt :=
-          replyRecvPopDonation_preserves_objects_invExt
-            replyId prevCaller st1 st1p returnedSc? hInv1 hPop
+          replyRecvReplyTransfer_objects_invExt
+            (replyRecvPopDonation_preserves_objects_invExt
+              replyId prevCaller st1 st1q returnedSc? hInv1 hPop) hX
         have hRecv := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver
           (some replyId) executingCore st1p hInv1p
         cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
@@ -925,7 +937,7 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                   (Architecture.stageWokenSendCompletion_machine_eq _ _)
                   (observableSlotsConfinedToCores_trans hConf
                     (observableSlotsConfinedToCores_trans hPip
-                      (replyRecvAnswerCaller_confinedToCores answer _ prevCaller)))
+                      (replyRecvAnswerCaller_confinedToCores answer _ prevCaller _)))
               exact observableSlotsConfinedToCores_trans hReply
                 (observableSlotsConfinedToCores_trans
                   (by simpa using observableSlotsConfinedToCores_trans hPopConf hRecv) hStaged)

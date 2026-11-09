@@ -563,8 +563,8 @@ theorem replyRecvPostReceiveDonation_replyViews_eq {t srv nxt : SeLe4n.ThreadId}
 
 /-- Answering the `.replyRecv` caller keeps the reply views, on both answers. -/
 theorem replyRecvAnswerCaller_replyViews_eq (answer : Option Architecture.FaultReplyOutcome)
-    (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    (replyRecvAnswerCaller answer st t).replyViews = st.replyViews := by
+    (st : SystemState) (t : SeLe4n.ThreadId) (capInfo : Nat) (hInv : st.objects.invExt) :
+    (replyRecvAnswerCaller answer st t capInfo).replyViews = st.replyViews := by
   cases answer with
   | none => exact stageDeliveredMessage_replyViews_eq _ _ _ hInv
   | some o => exact faultReplyApplyOnCore_replyViews_eq _ _ _ hInv
@@ -576,21 +576,22 @@ capability unwrap, the post-receive donation, the priority hand-off, the
 return-frame stagers) keeps the views.
 
 The receive leg's two facts are stated at the state it runs on, the reply leg's
-commit with the donation pop applied (`replyRecvPostPopState`), as the arm's
+commit with the donation pop and the reply leg's capability transfer applied
+(`replyRecvReceiveLegState`), as the arm's
 other composite theorems state theirs. -/
 theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
     {answer : Option Architecture.FaultReplyOutcome}
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (ec : CoreId) (st stOut : SystemState) (summary : CapTransferSummary)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
-    (hRecv1 : ReplyViews.serverFree (replyRecvPostPopState rid prevCaller
+    (hRecv1 : ReplyViews.serverFree (replyRecvReceiveLegState answer st tid grant rid prevCaller
       (endpointReplyOnCore tid prevCaller msg ec st).1).replyViews tid)
-    (hHead1 : ∀ ep s, (replyRecvPostPopState rid prevCaller
+    (hHead1 : ∀ ep s, (replyRecvReceiveLegState answer st tid grant rid prevCaller
         (endpointReplyOnCore tid prevCaller msg ec st).1).objects[epId]? = some (.endpoint ep) →
-      ep.sendQ.head = some s → s ≠ tid ∧ ReplyViews.serverFree (replyRecvPostPopState rid
-        prevCaller (endpointReplyOnCore tid prevCaller msg ec st).1).replyViews s)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg ec st
+      ep.sendQ.head = some s → s ≠ tid ∧ ReplyViews.serverFree (replyRecvReceiveLegState answer
+        st tid grant rid prevCaller (endpointReplyOnCore tid prevCaller msg ec st).1).replyViews s)
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st
       = .ok (summary, stOut)) :
     stOut.replyWaitersConsistent := by
   have hB1 := endpointReplyOnCore_preserves_replyWaitersConsistent tid prevCaller msg ec st hInv hC
@@ -606,13 +607,18 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
       dsimp only at h
       split at h
       · cases h
-      · rename_i ret st1p hP
-        have hEq : replyRecvPostPopState rid prevCaller st1 = st1p := by
-          unfold replyRecvPostPopState; rw [hP]
-        rw [hEq] at hRecv1 hHead1
-        have hIp := replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 st1p ret hI1 hP
-        have hBp : st1p.replyWaitersConsistent :=
-          replyWaitersConsistent.of_views (replyRecvPopDonation_replyViews_eq hI1 hP) hB1
+      · rename_i ret st1q hP
+        obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+        rw [hX] at h
+        dsimp only at h
+        rw [replyRecvReceiveLegState_eq_of_ok _ _ _ _ _ _ st1 st1q st1p ret xs hP hX]
+          at hRecv1 hHead1
+        have hIq := replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 st1q ret hI1 hP
+        have hIp := replyRecvReplyTransfer_objects_invExt hIq hX
+        have hBp : st1p.replyWaitersConsistent := by
+          refine replyWaitersConsistent.of_views ?_ hB1
+          rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+          rw [receiveTransferCaps_replyViews_eq hIq hX, replyRecvPopDonation_replyViews_eq hI1 hP]
         have hB2 := endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent epId tid
           (some rid) ec st1p hIp hBp hRecv1 hHead1
         have hI2 := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid
@@ -630,8 +636,8 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
               ((recordedReplyServer? st prevCaller).getD tid) ec hI3
             refine replyWaitersConsistent.of_views ?_ hB2
             rw [stageWokenSendCompletion_replyViews_eq _ _
-                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _ hI4),
-              replyRecvAnswerCaller_replyViews_eq _ _ _ hI4,
+                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _ _ hI4),
+              replyRecvAnswerCaller_replyViews_eq _ _ _ _ hI4,
               applyReceiveLegPipHandoff_replyViews_eq _ _ _ _ _ hI3,
               replyRecvPostReceiveDonation_replyViews_eq hI2 hD]
 
