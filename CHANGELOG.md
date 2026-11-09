@@ -1,3 +1,59 @@
+## v0.37.7 — a short capability transfer that installs or unwraps runs in place
+
+A send or a call of at most four words that meets a waiting receiver, and a
+receive that takes a blocked send or call of at most four words, now run
+their capability transfer in place when it installs a capability into the
+receiver's receive slot or unwraps a capability to the endpoint into its
+badge.  Before, these forms ran the specification's general path under
+`RefusalCarrying.ofKernel`, which holds the pre-state and copies every table
+the transfer writes, so each such syscall allocated on the kernel heap.
+
+- **The in-place forms**: `performSendCapsDelivered`,
+  `performCallCapsDelivered`, `performTakeCapsDelivered` and
+  `performCallTakeCapsDelivered` write the rendezvous, run the transfer in
+  place (`capTransferK`, seL4's `transferCaps`: each of at most three
+  capabilities resolved, then unwrapped with `setExtraBadge` or installed into
+  the one receive slot), then write the receiver's frame with the transfer's
+  report.  Each is proven equal to the specification's path
+  (`sendRendezvousCaps_eq_delivered`, `callRendezvousCaps_eq_delivered`,
+  `receiveTakeCapsTransfer_delivered`, `receiveCallTakeCapsTransfer_delivered`).
+- **The hand-off after the transfer**: a call's donation and priority walk,
+  and a take's donation decision, are read after the transfer, as in the
+  specification.  The transfer writes no thread's binding or IPC state
+  (`KeepsBindings`, `CarriesThreads`, `receiveTransferCaps_keepsBindings`,
+  `receiveTransferCaps_carriesThreads`), so these read what they read before
+  it.
+- **Heap cells found and removed**: the send, call and take arms tested their
+  shared in-place guard in two `if`s, and the compiler hoisted the shared
+  conditions into a heap closure (two cells per capability-carrying send).
+  The guard is now tested once, with the inert test inside it.  The take held
+  the sender's register file across the woken sender's completion, which
+  rewrites that file, so the write copied it (one 288-byte cell per take).
+  The take now reads its message words before it runs.
+- **Exercisers**: the QEMU harness receivers name a receive path in their IPC
+  buffer.  Scenarios for install, unwrap, three capabilities, an occupied
+  receive slot, an invalid receive path and a sender without the grant right
+  (send), install, unwrap and an occupied slot (call), and install and unwrap
+  (take of a send, take of a call) are pinned in the heap gate's scenario set.
+- **Still general**: a capability-carrying message of more than four words
+  meeting a receiver, and a reply or a reply-receive whose transfer installs a
+  capability, still run the specification's path
+  (`docs/REGISTERED_DEBT.md` table C, narrowed).
+
+### Security
+
+- Closes a heap-exhaustion denial of service: any thread holding an endpoint
+  capability with the grant right could make each short capability-carrying
+  send, call or take allocate on the kernel heap in proportion to the object
+  table and the receiver's CNode.  These forms now allocate nothing.  The
+  long and reply forms named above still allocate (table C).
+- Lock footprints were checked for the in-place forms: the transfer's writes
+  outside the declared destination CNode are derivation metadata (the
+  source's link words and an untyped source's free index, seL4's
+  `setUntypedCapAsFull`), which the project places under the derivation
+  tree's lock (`stateLevelLock`), declared for write by every installing
+  transfer and by retype.  No footprint change was needed.
+
 ## v0.37.6 — the reply-receive's reply leg transfers capabilities, as seL4's `doReplyTransfer`
 
 `.replyRecv`'s reply leg now transfers capabilities as `.reply` has since

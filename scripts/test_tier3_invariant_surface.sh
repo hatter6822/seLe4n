@@ -938,9 +938,13 @@ run_check "INVARIANT" rg -n '^theorem replyCapRequest_of_noCapsW($|[ ({:\[\]])' 
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvReplyInertW[^\n]*(\n([ \t][^\n]*)?)*\| some ct => replyTransferInertW st tid ct grant" SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def capUnwrapsAt[^\n]*(\n([ \t][^\n]*)?)*\| \.object id, some ep => id == ep" SeLe4n/Kernel/IPC/Operations/CapTransfer.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def capTransferInert[^\n]*(\n([ \t][^\n]*)?)*capUnwrapsAt cap endpointId" SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSendCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid &&" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointCallCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid &&" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSendCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*if senderTransferInertW st epId rt tid then" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointCallCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*if senderTransferInertW st epId rt tid then" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*receiverTransferInertW st epId tid sTcb then" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSendCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performSendCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointCallCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performCallCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performTakeCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performCallTakeCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" rg -n '^theorem capTransferInert_sendCapRequest_of_W($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransferInPlace.lean
 run_check "INVARIANT" rg -n '^theorem capTransferInert_receiveCapRequest_of_W($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransferInPlace.lean
 # A sender names its extra capabilities in its IPC buffer's caps_or_badges

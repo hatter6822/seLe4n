@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.6` (`lakefile.toml`) |
+| **Package version** | `0.37.7` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 605,879 across 603 Lean files |
 | **Test LoC** | 89,001 across 70 Lean test suites |
@@ -6630,9 +6630,23 @@ Every kernel object has a decidable well-formedness predicate:
   the receive that takes a blocked capability-carrying send of at most four
   words whose transfer transfers nothing writes in place too
   (`receiveTakeCaps_delivered`), as does the receive that takes a blocked short
-  call (`receiveCallTake_delivered`).  The receiver's side is read in the
-  pre-state (`receiverCapTarget?`).  Any other rendezvous transfer takes the
-  specification's (`endpointSendDualWithCapsOnCore`); it allocates
+  call (`receiveCallTake_delivered`).  Since `v0.37.7` a rendezvous of at
+  most four words whose transfer installs into the receive slot or unwraps a
+  capability to the endpoint writes in place too — a send or a call meeting a
+  waiting receiver and the take of a blocked capability-carrying send or call
+  (`performSendCapsDelivered`, `performCallCapsDelivered`,
+  `performTakeCapsDelivered`, `performCallTakeCapsDelivered`): the rendezvous
+  is written, then each of at most three capabilities is resolved, unwrapped
+  or installed in place (`capTransferK`, proven equal to `receiveTransferCaps`
+  by `capTransferK_eq`), then the receiver's frame is written with the
+  transfer's report.  The transfer writes no thread's binding or IPC state
+  (`receiveTransferCaps_keepsBindings`, `receiveTransferCaps_carriesThreads`),
+  so the donation and priority hand-off it precedes read what the
+  specification reads.  The receiver's side is read in the pre-state
+  (`receiverCapTarget?`).  Any other rendezvous transfer (a capability-carrying
+  message of more than four words, or a reply or reply-receive that installs a
+  capability) takes the specification's (`endpointSendDualWithCapsOnCore`); it
+  allocates
   (`docs/REGISTERED_DEBT.md` table C).  With the default layout the router hands the decoded arm
   nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
   whose registers lie out of bounds or which has no message register.
