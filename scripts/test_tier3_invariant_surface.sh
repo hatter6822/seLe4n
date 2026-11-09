@@ -5374,7 +5374,12 @@ run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st exe
 # ZA5.2: into the core's entry-word buffer, run by run as the proven runs are
 # planned, a receive's blocked sender's slots too, and the committed state
 # drops the buffer.
-run_check "INVARIANT" rg -n '^  let wordCount ← captureEntryWords execCore trapped\.syscallId trapped\.x0 msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^  let wordCount ← captureEntryWords execCore trapped\.syscallId trapped\.x0 msgInfo trapped\.x2$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# A reply-receive reads two receive paths: its receive leg's (the caller's own)
+# and its reply leg's (the caller the reply capability in MR0 answers).
+run_check "INVARIANT" rg -n '^@\[inline\] def replyRecvAnsweredCallerCode ' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '      match replyRecvAnsweredCallerCode st tid syscallId replyWord with\n      \| 0 => pure n3\n      \| k \+ 1 =>\n        match st\.getTcb\? ⟨k⟩ with\n        \| some rtcb => captureReceivePath st rtcb n3' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '9j: a granting reply-receive installs its extra cap into the caller.s receive slot' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n -U '^      let post := Architecture\.IpcBufferRead\.clearUserWords r\.2\n      \(\(r\.1, Architecture\.restoreCommitKindOnCore post execCore,$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.ffiCaptureUserWords idx\.toUInt64 pa\.toNat\.toUInt64 len\.toUInt64\n        captureOverflowRuns st tcb stop fuel \(s \+ len\) \(idx \+ len\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^            let n2 ← captureOverflowRuns st stcb sstop sstop 0 n1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
