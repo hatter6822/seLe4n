@@ -759,8 +759,8 @@ theorem sendRendezvous_eq_deliveredLong (st : SystemState) (endpointId : SeLe4n.
       (storeSendRendezvousWith_noResizeDue st endpointId r
         (ThreadId.ofOptCode (ThreadId.optCode next)) receiveReadyTcb hNo)
   unfold performSendDeliveredLong
-  rw [deliverLongSendFrame_eq _ st r sender layout rf len badgeWord badged hNoX
-    (ipcBufferReadsAgree_sendWoken st endpointId r _ core hNo) hSize hLen]
+  rw [deliverLongSendFrame_eq _ st r sender layout rf len badgeWord badged 0 hNoX
+    (ipcBufferReadsAgree_sendWoken st endpointId r _ core hNo).words hSize hLen]
   unfold storeSendRendezvousReady
   rw [SeLe4n.ThreadId.ofOptCode_optCode]
   rw [storeSendRendezvous_eq_with, receiveCompleteTcb_eq_slots, receiveReadyTcb_eq_slots,

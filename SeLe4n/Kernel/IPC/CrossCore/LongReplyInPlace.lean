@@ -189,7 +189,7 @@ words copied from its IPC buffer into the caller's (`deliverLongSendFrame`). -/
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : CoreId) : SystemState :=
   deliverLongSendFrame (PriorityInheritance.propagatePipChainCrossCore
       (storeReplyRendezvousReady st c server rid) server core).1 c
-    SeLe4n.arm64DefaultLayout rf len replier badgeWord badged
+    SeLe4n.arm64DefaultLayout rf len replier badgeWord badged 0
 
 /-- **The reply rendezvous is the delivered one** for a message of more than
 four words, its inline words read in the replier's registers and the rest in
@@ -205,9 +205,9 @@ theorem performReplyRendezvous_eq_deliveredLong (st : SystemState) (c server : S
   have hNoS := storeReplyRendezvousReady_noResizeDue st c server rid hNo
   unfold performReplyRendezvous performReplyDeliveredLong
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS]
-  exact (deliverLongSendFrame_eq _ st c replier SeLe4n.arm64DefaultLayout rf len badgeWord badged
+  exact (deliverLongSendFrame_eq _ st c replier SeLe4n.arm64DefaultLayout rf len badgeWord badged 0
     (propagatePipChainCrossCore_noResizeDue _ server core hNoS)
     ((ipcBufferReadsAgree_propagatePipChainCrossCore _ server core hNoS).trans
-      (ipcBufferReadsAgree_storeReplyRendezvousReady st c server rid hNo)) rfl hLen).symm
+      (ipcBufferReadsAgree_storeReplyRendezvousReady st c server rid hNo)).words rfl hLen).symm
 
 end SeLe4n.Kernel

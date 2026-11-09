@@ -110,22 +110,89 @@ theorem getTcb?_buffer_eq_view (st : SystemState) (t : SeLe4n.ThreadId) :
   | none => rfl
   | some o => cases o <;> rfl
 
-namespace ipcBufferReadsAgree
+/-! ## What a read of a buffer's words reads -/
 
-variable {st st' : SystemState} (h : ipcBufferReadsAgree st' st)
+/-- What a read of a thread's IPC-buffer words reads of an object: a thread's
+VSpace root and buffer address, and a VSpace root itself -- the reads of
+`ipcBufferViewOf` without the CNodes, which a word read does not look up. -/
+@[inline] def ipcWordViewOf : KernelObject → Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot)
+  | .tcb t => some (.inl (t.vspaceRoot, t.ipcBuffer))
+  | .vspaceRoot r => some (.inr r)
+  | _ => none
+
+/-- The word view a buffer view names. -/
+@[inline] def wordViewOfView :
+    ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode) →
+      Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot)
+  | .inl p => some (.inl p)
+  | .inr (.inl r) => some (.inr r)
+  | .inr (.inr _) => none
+
+theorem ipcWordViewOf_eq (o : KernelObject) :
+    ipcWordViewOf o = (ipcBufferViewOf o).bind wordViewOfView := by
+  cases o <;> rfl
+
+/-- **Two states read every IPC buffer's words alike**: at every key the same
+word view (`ipcWordViewOf`), and the same machine.  A capability transfer,
+which writes CNodes, keeps it. -/
+def ipcWordReadsAgree (st' st : SystemState) : Prop :=
+  (∀ x : SeLe4n.ObjId,
+    (st'.objects[x]?).bind ipcWordViewOf = (st.objects[x]?).bind ipcWordViewOf) ∧
+  st'.machine = st.machine
+
+namespace ipcWordReadsAgree
+
+theorem refl (st : SystemState) : ipcWordReadsAgree st st := ⟨fun _ => rfl, rfl⟩
+
+theorem trans {a b c : SystemState} (h₂ : ipcWordReadsAgree c b)
+    (h₁ : ipcWordReadsAgree b a) : ipcWordReadsAgree c a :=
+  ⟨fun x => (h₂.1 x).trans (h₁.1 x), h₂.2.trans h₁.2⟩
+
+theorem symm {a b : SystemState} (h : ipcWordReadsAgree b a) : ipcWordReadsAgree a b :=
+  ⟨fun x => (h.1 x).symm, h.2.symm⟩
+
+end ipcWordReadsAgree
+
+/-- Two states that read every buffer alike read every buffer's words alike. -/
+theorem ipcBufferReadsAgree.words {st st' : SystemState} (h : ipcBufferReadsAgree st' st) :
+    ipcWordReadsAgree st' st := by
+  refine ⟨fun x => ?_, h.2⟩
+  have hx := congrArg (fun v => v.bind wordViewOfView) (h.1 x)
+  simp only [Option.bind_assoc, ← ipcWordViewOf_eq] at hx
+  exact hx
+
+theorem getVSpaceRoot?_eq_wordView (st : SystemState) (id : SeLe4n.ObjId) :
+    st.getVSpaceRoot? id =
+      (match (st.objects[id]?).bind ipcWordViewOf with
+        | some (.inr r) => some r
+        | _ => none) := by
+  unfold SystemState.getVSpaceRoot?
+  cases st.objects[id]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+theorem getTcb?_buffer_eq_wordView (st : SystemState) (t : SeLe4n.ThreadId) :
+    (st.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) =
+      (match (st.objects[t.toObjId]?).bind ipcWordViewOf with
+        | some (.inl p) => some p
+        | _ => none) := by
+  unfold SystemState.getTcb?
+  cases st.objects[t.toObjId]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+namespace ipcWordReadsAgree
+
+variable {st st' : SystemState} (h : ipcWordReadsAgree st' st)
 include h
 
 theorem getVSpaceRoot? (id : SeLe4n.ObjId) : st'.getVSpaceRoot? id = st.getVSpaceRoot? id := by
-  rw [getVSpaceRoot?_eq_view, getVSpaceRoot?_eq_view, h.1]
-
-/-- Every CNode is read alike, so every capability lookup is. -/
-theorem getCNode? (id : SeLe4n.ObjId) : st'.getCNode? id = st.getCNode? id := by
-  rw [getCNode?_eq_view, getCNode?_eq_view, h.1]
+  rw [getVSpaceRoot?_eq_wordView, getVSpaceRoot?_eq_wordView, h.1]
 
 theorem getTcb?_buffer (t : SeLe4n.ThreadId) :
     (st'.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) =
       (st.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) := by
-  rw [getTcb?_buffer_eq_view, getTcb?_buffer_eq_view, h.1]
+  rw [getTcb?_buffer_eq_wordView, getTcb?_buffer_eq_wordView, h.1]
 
 /-- A read of a thread's IPC buffer reads the same word in both states. -/
 theorem ipcBufferReadMr (tid : SeLe4n.ThreadId) (i : Nat) :
@@ -160,6 +227,37 @@ theorem overflowSlotOf (r : SeLe4n.ThreadId) (i : Nat) :
     simp only [Architecture.IpcBufferRead.ipcBufferSlotPAddr?,
       Architecture.IpcBufferRead.ipcBufferWordPAddr?]
     rw [hv, hb, h.getVSpaceRoot?, h.2]
+
+end ipcWordReadsAgree
+
+namespace ipcBufferReadsAgree
+
+variable {st st' : SystemState} (h : ipcBufferReadsAgree st' st)
+include h
+
+theorem getVSpaceRoot? (id : SeLe4n.ObjId) : st'.getVSpaceRoot? id = st.getVSpaceRoot? id := by
+  rw [getVSpaceRoot?_eq_view, getVSpaceRoot?_eq_view, h.1]
+
+/-- Every CNode is read alike, so every capability lookup is. -/
+theorem getCNode? (id : SeLe4n.ObjId) : st'.getCNode? id = st.getCNode? id := by
+  rw [getCNode?_eq_view, getCNode?_eq_view, h.1]
+
+theorem getTcb?_buffer (t : SeLe4n.ThreadId) :
+    (st'.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) =
+      (st.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) := by
+  rw [getTcb?_buffer_eq_view, getTcb?_buffer_eq_view, h.1]
+
+/-- A read of a thread's IPC buffer reads the same word in both states. -/
+theorem ipcBufferReadMr (tid : SeLe4n.ThreadId) (i : Nat) :
+    Architecture.IpcBufferRead.ipcBufferReadMr st' tid i =
+      Architecture.IpcBufferRead.ipcBufferReadMr st tid i :=
+  h.words.ipcBufferReadMr tid i
+
+/-- A slot of a thread's IPC buffer resolves to the same address in both
+states. -/
+theorem overflowSlotOf (r : SeLe4n.ThreadId) (i : Nat) :
+    SeLe4n.Kernel.overflowSlotOf st' r i = SeLe4n.Kernel.overflowSlotOf st r i :=
+  h.words.overflowSlotOf r i
 
 end ipcBufferReadsAgree
 
@@ -311,10 +409,15 @@ theorem overflowWordAt_eq (S : SystemState) (s : SeLe4n.ThreadId) (i : Nat) :
   rw [Architecture.IpcBufferRead.ipcBufferReadMrK_eq]
   rfl
 
-theorem ipcBufferReadsAgree.overflowWordAt {S S' : SystemState} (h : ipcBufferReadsAgree S' S)
+theorem ipcWordReadsAgree.overflowWordAt {S S' : SystemState} (h : ipcWordReadsAgree S' S)
     (s : SeLe4n.ThreadId) (i : Nat) :
     SeLe4n.Kernel.overflowWordAt S' s i = SeLe4n.Kernel.overflowWordAt S s i := by
   rw [overflowWordAt_eq, overflowWordAt_eq, h.ipcBufferReadMr]
+
+theorem ipcBufferReadsAgree.overflowWordAt {S S' : SystemState} (h : ipcBufferReadsAgree S' S)
+    (s : SeLe4n.ThreadId) (i : Nat) :
+    SeLe4n.Kernel.overflowWordAt S' s i = SeLe4n.Kernel.overflowWordAt S s i :=
+  h.words.overflowWordAt s i
 
 /-- The registers `n` overflow slots of thread `s`'s buffer hold, from slot `i`. -/
 def overflowRegsFrom (S : SystemState) (s : SeLe4n.ThreadId) : Nat → Nat → List SeLe4n.RegValue
@@ -326,12 +429,17 @@ theorem overflowRegsFrom_length (S : SystemState) (s : SeLe4n.ThreadId) :
   | _, 0 => rfl
   | i, n + 1 => by simp only [overflowRegsFrom, List.length_cons, overflowRegsFrom_length S s (i + 1) n]
 
-theorem ipcBufferReadsAgree.overflowRegsFrom {S S' : SystemState} (h : ipcBufferReadsAgree S' S)
+theorem ipcWordReadsAgree.overflowRegsFrom {S S' : SystemState} (h : ipcWordReadsAgree S' S)
     (s : SeLe4n.ThreadId) : ∀ (i n : Nat),
       SeLe4n.Kernel.overflowRegsFrom S' s i n = SeLe4n.Kernel.overflowRegsFrom S s i n
   | _, 0 => rfl
   | i, n + 1 => by
     simp only [SeLe4n.Kernel.overflowRegsFrom, h.overflowWordAt, h.overflowRegsFrom s (i + 1) n]
+
+theorem ipcBufferReadsAgree.overflowRegsFrom {S S' : SystemState} (h : ipcBufferReadsAgree S' S)
+    (s : SeLe4n.ThreadId) (i n : Nat) :
+    SeLe4n.Kernel.overflowRegsFrom S' s i n = SeLe4n.Kernel.overflowRegsFrom S s i n :=
+  h.words.overflowRegsFrom s i n
 
 /-- **The sender's overflow words, copied into the receiver's buffer in
 place**: word `i` of thread `s`'s buffer recorded as a user-word store at
@@ -349,7 +457,7 @@ def overflowCopyStore (S : SystemState) (r s : SeLe4n.ThreadId) : Nat → Nat �
 theorem overflowCopyStore_eq (r s : SeLe4n.ThreadId) (X : SystemState) (t : TCB) (Y : SystemState) :
     ∀ (n i : Nat) (S : SystemState),
       (∀ j, overflowSlotOf S r j = Architecture.IpcBufferRead.ipcBufferSlotPAddr? X t j true) →
-      ipcBufferReadsAgree S Y →
+      ipcWordReadsAgree S Y →
       overflowCopyStore S r s i n =
         Architecture.recordPhysicalWrites S
           (Architecture.overflowDeliveryWrites X t (overflowRegsFrom Y s i n) i)
@@ -365,7 +473,7 @@ theorem overflowCopyStore_eq (r s : SeLe4n.ThreadId) (X : SystemState) (t : TCB)
         simp only [Nat.toUInt64_eq, UInt64.ofNat_toNat]
       rw [hReg, hA.overflowWordAt]
       have hA' := (ipcBufferReadsAgree_recordPhysicalWrite S
-        (.storeUserWord pa (overflowWordAt Y s i))).trans hA
+        (.storeUserWord pa (overflowWordAt Y s i))).words.trans hA
       exact overflowCopyStore_eq r s X t Y n (i + 1) _
         (fun j => by rw [(ipcBufferReadsAgree_recordPhysicalWrite S _).overflowSlotOf, hS j]) hA'
     · next hPa => rw [hPa]; exact (Architecture.recordPhysicalWrites_nil S).symm
@@ -382,12 +490,13 @@ layout's message registers of `rf` and the rest the overflow slots of thread
     badge := badge }
 
 /-- The message-info word a long send's delivered frame carries, `k` overflow
-words having arrived.  Out of line, as `regMessageInfoWord`. -/
-@[noinline] def longMessageInfoWord (len k : Nat) : UInt64 :=
+words having arrived and `capInfo` the capability transfer's report
+(`returnMessageInfo`).  Out of line, as `regMessageInfoWord`. -/
+@[noinline] def longMessageInfoWord (len k capInfo : Nat) : UInt64 :=
   (({ length := min (min len (4 + k)) maxMessageRegisters
-      extraCaps := 0 % 4
+      extraCaps := capInfo % 4
       label := min 0 (Architecture.errorLabelBase - 1)
-      capsUnwrapped := 0 / 4 % 8 } : MessageInfo).encode).toUInt64
+      capsUnwrapped := capInfo / 4 % 8 } : MessageInfo).encode).toUInt64
 
 /-- The long message held where the woken receiver is, unexpectedly, not ready.
 Out of line, so the message is built only on that path. -/
@@ -398,20 +507,22 @@ Out of line, so the message is built only on that path. -/
 
 /-- **A long send's delivery to a woken receiver, in place**: the frame
 written into the receiver's saved registers, its length counting the overflow
-words the receiver's buffer takes (`overflowSlotsFrom`), then those words
+words the receiver's buffer takes (`overflowSlotsFrom`) and its message info
+carrying the capability transfer's report `capInfo`, then those words
 copied from the sender's buffer (`overflowCopyStore`).  A receiver that is,
 unexpectedly, not ready holds the message (`holdLongSendMessage`).  Each step
 reads what it needs before it writes (`deliverLongSendFrame_eq`). -/
 @[inline] def deliverLongSendFrame (X : SystemState) (r : SeLe4n.ThreadId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (s : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool) : SystemState :=
+    (s : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool) (capInfo : Nat) :
+    SystemState :=
   match X.getTcb? r with
   | some t =>
     if t.ipcState = .ready then
       let k := overflowSlotsFrom X r 0 (len - 4)
       overflowCopyStore
         (X.mapTcbInPlace r (withFrameWords (Architecture.badgeWordIf badgeWord badged)
-          (longMessageInfoWord len k) (Architecture.regMessageWord layout rf len 0)
+          (longMessageInfoWord len k capInfo) (Architecture.regMessageWord layout rf len 0)
           (Architecture.regMessageWord layout rf len 1) (Architecture.regMessageWord layout rf len 2)
           (Architecture.regMessageWord layout rf len 3)))
         r s 0 (len - 4)
@@ -451,24 +562,24 @@ theorem longSendMessage_word (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4
   rw [hA]
 
 theorem longSendFrame_eq (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
-    (S : SystemState) (s : SeLe4n.ThreadId) (len k : Nat) (badgeWord : SeLe4n.Badge)
+    (S : SystemState) (s : SeLe4n.ThreadId) (len k capInfo : Nat) (badgeWord : SeLe4n.Badge)
     (badged : Bool) (hSize : layout.msgRegs.size = 4) (hLen : 4 ≤ len) :
-    withFrameWords (Architecture.badgeWordIf badgeWord badged) (longMessageInfoWord len k)
+    withFrameWords (Architecture.badgeWordIf badgeWord badged) (longMessageInfoWord len k capInfo)
         (Architecture.regMessageWord layout rf len 0) (Architecture.regMessageWord layout rf len 1)
         (Architecture.regMessageWord layout rf len 2) (Architecture.regMessageWord layout rf len 3) =
       withFrameWords
         (Architecture.returnFrameOfMessage
-          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) 0 k).x0
+          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) capInfo k).x0
         (Architecture.returnFrameOfMessage
-          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) 0 k).x1
+          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) capInfo k).x1
         (Architecture.returnFrameOfMessage
-          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) 0 k).x2
+          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) capInfo k).x2
         (Architecture.returnFrameOfMessage
-          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) 0 k).x3
+          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) capInfo k).x3
         (Architecture.returnFrameOfMessage
-          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) 0 k).x4
+          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) capInfo k).x4
         (Architecture.returnFrameOfMessage
-          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) 0 k).x5 := by
+          (longSendMessage layout rf S s len (SeLe4n.Badge.opt badgeWord badged)) capInfo k).x5 := by
   have hB : Architecture.badgeWordIf badgeWord badged =
       ((SeLe4n.Badge.opt badgeWord badged).map SeLe4n.Badge.word).getD 0 := by
     rw [← Architecture.badgeWordOrZero_opt]; rfl
@@ -487,12 +598,12 @@ its overflow words read in a state `Y` that reads every buffer as the
 delivery's own does. -/
 theorem deliverLongSendFrame_eq (X Y : SystemState) (r s : SeLe4n.ThreadId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (hNoX : X.objects.noResizeDue)
-    (hA : ipcBufferReadsAgree X Y) (hSize : layout.msgRegs.size = 4) (hLen : 4 ≤ len) :
-    deliverLongSendFrame X r layout rf len s badgeWord badged =
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (capInfo : Nat) (hNoX : X.objects.noResizeDue)
+    (hA : ipcWordReadsAgree X Y) (hSize : layout.msgRegs.size = 4) (hLen : 4 ≤ len) :
+    deliverLongSendFrame X r layout rf len s badgeWord badged capInfo =
       Architecture.stageDeliveredMessage (X.mapTcbInPlace r (holdMessage
-        (longSendMessage layout rf Y s len (SeLe4n.Badge.opt badgeWord badged)))) r 0 := by
-  rw [stageDeliveredMessage_holdMessage_overflow _ r _ _ hNoX
+        (longSendMessage layout rf Y s len (SeLe4n.Badge.opt badgeWord badged)))) r capInfo := by
+  rw [stageDeliveredMessage_holdMessage_overflow _ r _ _ capInfo hNoX
     (longSendMessage_tail layout rf Y s len _ hSize)]
   unfold deliverLongSendFrame
   cases hT : X.getTcb? r with
@@ -509,14 +620,14 @@ theorem deliverLongSendFrame_eq (X Y : SystemState) (r s : SeLe4n.ThreadId)
         simp only [overflowSlotOf, SystemState.getTcb?_mapTcbInPlace, hT, Option.map_some]
         exact ipcBufferSlotPAddr?_mapTcbInPlace X r _ t _ j true rfl rfl
       have hAg : ∀ (a b c d e g : UInt64),
-          ipcBufferReadsAgree (X.mapTcbInPlace r (withFrameWords a b c d e g)) Y :=
+          ipcWordReadsAgree (X.mapTcbInPlace r (withFrameWords a b c d e g)) Y :=
         fun a b c d e g =>
           (ipcBufferReadsAgree_mapTcbInPlace X r (withFrameWords a b c d e g)
-            (fun _ => ⟨rfl, rfl⟩)).trans hA
+            (fun _ => ⟨rfl, rfl⟩)).words.trans hA
       have hC := overflowSlotsFrom_eq X r X t hX (overflowRegsFrom Y s 0 (len - 4)) 0
       rw [overflowRegsFrom_length] at hC
       rw [overflowCopyStore_eq r s X t Y _ 0 _ (hS _ _ _ _ _ _) (hAg _ _ _ _ _ _), hC,
-        longSendFrame_eq layout rf Y s len _ badgeWord badged hSize hLen]
+        longSendFrame_eq layout rf Y s len _ capInfo badgeWord badged hSize hLen]
     · unfold holdLongSendMessage longSendMessage
       rw [hA.overflowRegsFrom]
 
@@ -531,7 +642,7 @@ unexpectedly, not ready. -/
     (s : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId) : SystemState :=
   deliverLongSendFrame (wakeThread (storeSendRendezvousReady st endpointId r nextCode) r core).1 r
-    layout rf len s badgeWord badged
+    layout rf len s badgeWord badged 0
 
 /-! ## The sender's overflow words, as the decode reads them -/
 
