@@ -834,6 +834,45 @@ theorem lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt
     exact lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt pre replier
       cnodeRootObjId target endpointObjId (by rw [h]; rfl)
 
+/-- **The reply-receive footprint declares the CNode its receive leg installs
+into, read after the reply leg's capability transfer.**  The receive leg runs on
+the transfer's post-state and reads its receive slot there (seL4's
+`getReceiveSlots`, called from `receiveIPC` after `doReplyTransfer`).  Whatever
+the answer and the reply capability's grant right, a receive slot read after the
+transfer is the pre-state's (`receiveInstallCNode?`: no grant, a fault answer,
+or a reply asking for nothing) or the one an installing transfer leaves
+(`receiveInstallCNodeAfterReply?`), and the footprint declares both.  The second
+is the answer when the answered caller and the replier share a CSpace and the
+reply installs a CNode capability into the slot the replier's receive path
+crosses, which the pre-state resolution cannot see. -/
+theorem lockSet_endpointReplyRecvOnCore_covers_receiveLegSlot
+    (answer : Option Architecture.FaultReplyOutcome) (st s : SystemState)
+    (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) (grant : Bool)
+    (summary : CapTransferSummary) (dst : CSpaceAddr)
+    (hStep : replyRecvReplyTransfer answer st replier target grant st = .ok (summary, s))
+    (hCaps : receiveInstallsCaps st endpointObjId = true)
+    (hSlot : receiverCapSlot? s replier = some dst) :
+    (Concurrency.cnodeLock dst.cnode, Concurrency.AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+          endpointObjId).pairs := by
+  have hCases : receiverCapSlot? s replier = receiverCapSlot? st replier ∨
+      receiverCapSlot? s replier
+        = receiverCapSlot? (replyTransferInstalledState st replier target) replier := by
+    cases answer with
+    | none =>
+      exact replyTransferCaps_receiverCapSlot_cases st s replier target replier grant summary
+        hStep
+    | some o =>
+      rw [replyRecvReplyTransfer_some] at hStep
+      cases hStep
+      exact .inl rfl
+  rcases hCases with h | h
+  · exact lockSet_endpointReplyRecvOnCore_covers_receiveSlot st replier cnodeRootObjId target
+      endpointObjId dst hCaps (h ▸ hSlot)
+  · exact lockSet_endpointReplyRecvOnCore_covers_receiveSlotAfterReply st replier
+      cnodeRootObjId target endpointObjId dst hCaps (h ▸ hSlot)
+
 @[simp] theorem replyRecvReceiveLegState_eq_of_ok (answer : Option Architecture.FaultReplyOutcome)
     (pre : SystemState) (replier : SeLe4n.ThreadId) (grant : Bool) (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId)

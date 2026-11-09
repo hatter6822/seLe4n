@@ -2156,7 +2156,7 @@ code may assume:
   a budget admits at the declared ceiling, with
   `WCRT_lockSet_le_budget_of_admissible` the payoff and
   `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  At
-  HEAD, the declared lock-set ceiling is **31**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5580 µs**.
+  HEAD, the declared lock-set ceiling is **32**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5760 µs**.
   Those three figures are **derived** from the constants and the formula in
   `LockSet.lean`, `Types.lean` and `PerCoreWcrt.lean`; no gate checks prose copies
   of them, so quote the theorem (`admissibleCriticalSection_rpi5Tick`) rather than

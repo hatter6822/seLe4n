@@ -75,7 +75,7 @@ honest statement is the budget condition solved for the measurable factor:
 `admissibleCriticalSection` gives the largest per-lock cost a budget admits
 (`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **10 µs**
 (`admissibleCriticalSection_rpi5Tick`).  The 60 µs the master plan §7.2 assumed
-does **not** fit — `31 · 3 · 60 = 5580 µs`
+does **not** fit — `32 · 3 · 60 = 5760 µs`
 (`rpi5Tick_refuses_sixty_micro_sections`), nor did it at any previous ceiling —
 and the boundary at that cost is a footprint of five locks
 (`rpi5Tick_sixty_micro_section_footprint_boundary`), which is what the plan's
@@ -328,7 +328,9 @@ The `v0.37.6` reply-receive reply transfer raised it 29 → 30, for the CNode th
 reply leg's capability transfer installs into, the answered caller's receive
 slot's: `1000 / (30 · 3)` still floors to 11.  The same release raised it
 30 → 31, for the CDT lock that install takes (`replyInstallCdtLock?`), and that
-one does not absorb: `1000 / (31 · 3)` floors to 10.
+one does not absorb: `1000 / (31 · 3)` floors to 10.  It then raised it 31 → 32,
+for the receive leg's install CNode as resolved after the reply leg's transfer
+(`receiveInstallCNodeAfterReply?`): `1000 / (32 · 3)` still floors to 10.
 
 How much of the ceiling no reachable state takes up is stated where the
 footprint is, not here: `lockSet_endpointReplyRecvOnCore_size_le_onEveryState` and
@@ -341,9 +343,9 @@ theorem admissibleCriticalSection_rpi5Tick :
     admissibleCriticalSection rpi5TickBudgetMicros = 10 := by decide
 
 /-- WS-RR RR7.31: **and the plan's own assumption fails it.**  A 60 µs per-lock
-section gives `31 · 3 · 60 = 5580 µs`, which is outside the 1 ms tick — so the
+section gives `32 · 3 · 60 = 5760 µs`, which is outside the 1 ms tick — so the
 §7.2 conclusion "comfortably fits within the 1-ms timer tick budget" is false at
-`maxLockSetSize = 31`.  Stated as a negative so the arithmetic is pinned in the
+`maxLockSetSize = 32`.  Stated as a negative so the arithmetic is pinned in the
 direction that matters: a future cut that raises `maxLockSetSize` again, or that
 grounds `tCs` at 60 µs, has to confront this theorem rather than a paragraph.
 WS-OD OD3.5 is the first cut to have done so.

@@ -269,18 +269,50 @@ theorem receiveSlotAbsentW_eq (st : SystemState) (tcb : TCB) :
     cases receiverBufferWord? st tcb Architecture.IpcBufferRead.ipcBufferReceiveDepthWord <;>
     first | rfl | exact receivePathAbsentW_eq _ _ _ _ _
 
-/-- **A reply transfers no capability, decided in place**: the reply
-capability lacks the grant right, or the caller `ct` has no IPC buffer the
-kernel may write, or its buffer names no receive slot.  A reply is sent on no
-endpoint, so nothing unwraps, and the decision is the specification's
-(`replyTransferInert_of_W`, then `replyTransferCaps_of_inert`). -/
-@[inline] def replyTransferInertW (st : SystemState) (ct : TCB) (grant : Bool) : Bool :=
-  !grant || !receiverHasBuffer st ct || receiveSlotAbsentW st ct
+/-- **The replier's frame names no extra capability, decided in place**
+(`frameNamesNoExtraCapsW` on its saved message-info word); a replier with no
+TCB asks for nothing. -/
+@[inline] def replyFrameNamesNoCapsW (st : SystemState) (replier : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? replier with
+  | some t => frameNamesNoExtraCapsW t
+  | none => true
 
-theorem replyTransferInert_of_W {st : SystemState} {ct : TCB} {grant : Bool}
-    (h : replyTransferInertW st ct grant = true) :
-    (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true := by
-  rwa [replyTransferInertW, receiveSlotAbsentW_eq] at h
+/-- And then the reply asks to transfer none, whatever the grant right. -/
+theorem replyCapRequest_of_noCapsW {st : SystemState} {replier : SeLe4n.ThreadId}
+    (grant : Bool) (h : replyFrameNamesNoCapsW st replier = true) :
+    replyCapRequest st replier grant = none := by
+  unfold replyFrameNamesNoCapsW at h
+  unfold replyCapRequest
+  cases hT : st.getTcb? replier with
+  | none => rfl
+  | some t =>
+    rw [hT] at h
+    exact senderFrameCapRequest_of_noExtraCaps grant h
+
+/-- **A reply transfers no capability, decided in place**: the reply
+capability lacks the grant right, or the replier's frame names no extra
+capability (its message-info word's count is zero, `replyFrameNamesNoCapsW`),
+or the caller `ct` has no IPC buffer the kernel may write, or its buffer names
+no receive slot.  A reply is sent on no endpoint, so nothing unwraps, and the
+decision is the specification's (`replyTransferInert_of_W`, then
+`replyTransferCaps_of_inert`).  The count is tested before the receive path,
+so an ordinary word-only reply never walks the caller's CSpace. -/
+@[inline] def replyTransferInertW (st : SystemState) (replier : SeLe4n.ThreadId) (ct : TCB)
+    (grant : Bool) : Bool :=
+  !grant || replyFrameNamesNoCapsW st replier || !receiverHasBuffer st ct ||
+    receiveSlotAbsentW st ct
+
+theorem replyTransferInert_of_W {st : SystemState} {replier : SeLe4n.ThreadId} {ct : TCB}
+    {grant : Bool} (h : replyTransferInertW st replier ct grant = true) :
+    replyTransferInert st replier ct grant = true := by
+  unfold replyTransferInertW at h
+  unfold replyTransferInert
+  rw [← receiveSlotAbsentW_eq]
+  cases hN : replyFrameNamesNoCapsW st replier
+  · rw [hN] at h
+    revert h
+    cases grant <;> cases receiverHasBuffer st ct <;> cases receiveSlotAbsentW st ct <;> simp
+  · rw [replyCapRequest_of_noCapsW grant hN]; simp
 
 /-- The capability an address names does not unwrap at `endpointId` (or the
 address names none), decided in place (`extraCapStaysW_eq`). -/

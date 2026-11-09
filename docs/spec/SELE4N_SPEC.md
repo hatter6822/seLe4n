@@ -4169,7 +4169,7 @@ alongside the latent inventory (closing SMP-H3).
    them with no consumer (§8.12.12), so a sharper reachable bound cannot
    be rebuilt on either.
 
-   **At HEAD, the declared lock-set ceiling is **31**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5580 µs**.**
+   **At HEAD, the declared lock-set ceiling is **32**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5760 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
    `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
    formula.  No gate checks prose copies of them, so a raise updates
@@ -7556,7 +7556,10 @@ The caller's receive slot CNode is declared for write in the reply's lock set
 (`replyInstallCNode?`), and so is the CDT the install adds its edge to
 (`stateLevelLock`, `replyInstallCdtLock?`); a transfer that changes the CDT is
 proven to run under it (`lockSet_endpointReplyOnCore_covers_replyTransferCdt`).  The reply's in-place arms are taken only when the
-transfer moves nothing (`replyTransferInertW`); otherwise the specification
+transfer moves nothing (`replyTransferInertW`): no grant right, a replier
+whose saved message info names no extra capability, or a caller with no IPC
+buffer or no receive slot, so an ordinary word-only reply stays in place
+whatever receive path its caller configured; otherwise the specification
 runs.
 
 A reply-receive's reply leg runs the same transfer (since `v0.37.6`), as seL4's
@@ -7569,12 +7572,22 @@ caller takes none.  The receive leg then runs on the transfer's post-state
 replays the arm replays the transfer.  The reply-receive's lock set declares the
 answered caller's receive slot CNode for write beside the receive leg's
 (`lockSet_endpointReplyRecvOnCore_covers_replyInstall`), and the CDT lock that
-install takes (`lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt`),
-which take `maxLockSetSize` to 31; the entry reads both receive paths from RAM
+install takes (`lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt`).
+The receive leg reads its receive slot on the reply leg's post-state, as seL4's
+`receiveIPC` calls `getReceiveSlots` after `doReplyTransfer`, so a reply that
+installs a CNode capability into a slot the replier's receive path crosses (the
+two threads sharing a CSpace) changes the CNode that path reaches; the lock set
+declares the slot's CNode as resolved before and after an installing transfer
+(`receiveInstallCNode?`, `receiveInstallCNodeAfterReply?`), and a slot read after
+the transfer, on either answer and either grant right, is proven declared
+(`lockSet_endpointReplyRecvOnCore_covers_receiveLegSlot`).  These take
+`maxLockSetSize` to 32; the entry reads both receive paths from RAM
 (`replyRecvAnsweredCallerCode`), and the HAL's per-core entry-word buffer holds
 both.  The four in-place reply-receive arms are taken only when the reply leg's
-transfer moves nothing (`replyRecvReplyInertW`, `replyRecvReplyTransfer_of_inert`);
-otherwise the specification runs.
+transfer moves nothing (`replyRecvReplyInertW`, `replyRecvReplyTransfer_of_inert`):
+no grant right, a replier whose saved message info names no extra capability
+(`replyFrameNamesNoCapsW`, decided on the word), or a caller with no IPC buffer
+or no receive slot; otherwise the specification runs.
 
 **No message holds a capability** (`v0.36.121`, WS-ZA ZA5.4 part 11).  An
 `IpcMessage` is registers and a badge: it has no capability field and no grant

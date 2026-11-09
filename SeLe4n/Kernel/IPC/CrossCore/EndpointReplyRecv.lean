@@ -416,7 +416,7 @@ there. -/
 theorem replyRecvReplyTransfer_of_inert (answer : Option Architecture.FaultReplyOutcome)
     (pre : SystemState) (replier prevCaller : SeLe4n.ThreadId) (grant : Bool) (ct : TCB)
     (hT : pre.getTcb? prevCaller = some ct)
-    (hW : answer = none → (!grant || !receiverHasBuffer pre ct || (receiveSlot? pre ct).isNone) = true)
+    (hW : answer = none → replyTransferInert pre replier ct grant = true)
     (s : SystemState) :
     replyRecvReplyTransfer answer pre replier prevCaller grant s = .ok ({ results := #[] }, s) := by
   cases answer with

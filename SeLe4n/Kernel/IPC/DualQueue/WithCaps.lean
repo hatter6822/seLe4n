@@ -117,15 +117,33 @@ def replyTransferCaps (pre : SystemState) (replier caller : SeLe4n.ThreadId) (gr
     Kernel CapTransferSummary :=
   receiveTransferCaps (replyCapRequest pre replier grant) none (receiverCapTarget? pre caller)
 
-/-- **A reply transfers nothing** when the reply capability lacks the grant
-right, the caller has no IPC buffer the kernel may write, or its buffer names
-no receive slot: with no endpoint nothing unwraps, so the loop stops at the
-first capability (`ipcUnwrapCapsLoop`) and the report is zero. -/
+/-- **The shapes of a reply that transfers no capability**: the reply
+capability lacks the grant right, the replier's frame asks to transfer none
+(`replyCapRequest` is `none`: it names no extra capability, or its addresses do
+not read), the answered caller `ct` has no IPC buffer the kernel may write, or
+its buffer names no receive slot. -/
+@[inline] def replyTransferInert (pre : SystemState) (replier : SeLe4n.ThreadId) (ct : TCB)
+    (grant : Bool) : Bool :=
+  !grant || (replyCapRequest pre replier grant).isNone || !receiverHasBuffer pre ct ||
+    (receiveSlot? pre ct).isNone
+
+/-- **A reply transfers nothing** in every shape `replyTransferInert` names:
+with no request there is nothing to resolve, and otherwise, with no endpoint,
+nothing unwraps, so the loop stops at the first capability
+(`ipcUnwrapCapsLoop`) and the report is zero. -/
 theorem replyTransferCaps_of_inert (pre : SystemState) (replier caller : SeLe4n.ThreadId)
     (grant : Bool) (ct : TCB) (hT : pre.getTcb? caller = some ct)
-    (hW : (!grant || !receiverHasBuffer pre ct || (receiveSlot? pre ct).isNone) = true)
+    (hI : replyTransferInert pre replier ct grant = true)
     (st : SystemState) :
     replyTransferCaps pre replier caller grant st = .ok ({ results := #[] }, st) := by
+  cases hR : replyCapRequest pre replier grant with
+  | none => unfold replyTransferCaps receiveTransferCaps; rw [hR]
+  | some _ =>
+  have hW : (!grant || !receiverHasBuffer pre ct || (receiveSlot? pre ct).isNone) = true := by
+    unfold replyTransferInert at hI
+    rw [hR] at hI
+    simpa only [Option.isNone_some, Bool.or_false] using hI
+  clear hR
   unfold replyTransferCaps receiveTransferCaps
   cases grant
   · have : replyCapRequest pre replier false = none := by

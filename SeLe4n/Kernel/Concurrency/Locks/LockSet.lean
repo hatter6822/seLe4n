@@ -942,10 +942,10 @@ first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrow
 per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
 25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen, 15 µs at twenty-one and
 twenty-two, 14 µs at twenty-three, 13 µs at twenty-four, 12 µs at
-twenty-seven, 11 µs at twenty-eight, twenty-nine and thirty, and 10 µs at thirty-one (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
+twenty-seven, 11 µs at twenty-eight, twenty-nine and thirty, and 10 µs at thirty-one and thirty-two (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **31**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5580 µs**.
+At the value above, the declared lock-set ceiling is **32**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5760 µs**.
 The figure is *derived* from this constant and must be
 read off that theorem rather than from this paragraph: at twenty-two the tick
 admits `22 · 3 · 15 = 990 µs ≤ 1000`, and quoting a superseded per-lock cost
@@ -1129,7 +1129,19 @@ footprints declare `stateLevelLock` for write whenever the transfer can install
 (`replyInstallCdtLock?`).  Counted as a member of its own, the widest
 `.replyRecv` footprint grows by one more; the admissible section is
 `1000 / (31 · 3)`, which floors to 10 µs, and the uniform 60 µs envelope moves
-5400 → 5580 µs. -/
-def maxLockSetSize : Nat := 31
+5400 → 5580 µs.
+
+**And the receive slot read after the reply transfer takes it to thirty-two**
+(`v0.37.6`): `.replyRecv`'s receive leg runs on the reply leg's post-state and
+reads its receive slot there (seL4's `getReceiveSlots`, called by `receiveIPC`
+after `doReplyTransfer`), so a reply that installs a CNode capability into a
+slot the replier's receive path crosses makes the path reach a CNode the
+pre-state resolution never names.  The footprint declares the slot's CNode as
+resolved after an installing transfer (`receiveInstallCNodeAfterReply?`) beside
+the pre-state resolution, which stands for a transfer that installs nothing.
+The widest `.replyRecv` footprint grows by one; the admissible section is
+`1000 / (32 · 3)`, which still floors to 10 µs, and the uniform 60 µs envelope
+moves 5580 → 5760 µs. -/
+def maxLockSetSize : Nat := 32
 
 end SeLe4n.Kernel.Concurrency
