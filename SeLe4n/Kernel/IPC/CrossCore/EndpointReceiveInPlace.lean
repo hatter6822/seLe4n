@@ -226,6 +226,52 @@ theorem stageWokenSendCompletion_msg (Y : SystemState) (r s : SeLe4n.ThreadId)
       exact updateTcb_msg _ _ _ _ _ _ _ hNo (fun h => absurd h hNe)
     · rfl
 
+/-- **The taken sender was no caller**: under `receiveTakesInPlace` the
+dequeued sender is made ready, so the rendezvous hands off no donation. -/
+theorem receiveTake_dequeuedNoCall (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (core : CoreId) (s : SeLe4n.ThreadId)
+    (sTcb : TCB) (msg : IpcMessage)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveTakesInPlace st endpointId receiver s sTcb = true) :
+    let P := storePopHead st endpointId false s sTcb.queueNext
+    let W := wakeThread (P.updateTcb s receiverReady) s core
+    rendezvousDequeuedCall (W.1.updateTcb receiver (callReceiverTcb msg)) s = false := by
+  intro P W
+  have hG' := hG
+  simp only [receiveTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at hG'
+  obtain ⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, hRS⟩, hRN⟩, hLR⟩, hFR⟩, hRT⟩, _⟩ := hG'
+  have hSG' := hSG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
+  obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, hFH⟩, _⟩ := hSG'
+  have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
+  obtain ⟨_, hFr⟩ := popHead_inPlace st endpointId false ep s sTcb hE
+    (by simp only [Bool.false_eq_true, ↓reduceIte]; exact hH) hT hSG
+  have hFH1 := (hFr.keepsFinds s.toObjId).trans hFH
+  have hNoP : P.objects.noResizeDue := storePopHead_noResizeDue _ _ _ _ _ hNo
+  have hT2s : (P.updateTcb s receiverReady).getTcb? s = some (receiverReady (tcbOffQueue sTcb)) :=
+    updateTcb_getTcb?_self_of_findsInPlace receiverReady hFr.head_tcb hFH1
+  have hA3 := enqueueRunnableOnCore_agree_of_findsInPlace (P.updateTcb s receiverReady)
+    (determineTargetCore (P.updateTcb s receiverReady) s) s _ hT2s rfl
+    (by rw [updateTcb_findsInPlace _ hFr.head_tcb hFH1]; exact hFH1)
+  have hNo2 : (P.updateTcb s receiverReady).objects.noResizeDue := updateTcb_noResizeDue _ _ _ hNoP
+  have hNoW : W.1.objects.noResizeDue := wakeThread_noResizeDue _ _ _ hNo2
+  have hL : lookupTcb (W.1.updateTcb receiver (callReceiverTcb msg)) s = lookupTcb W.1 s := by
+    unfold lookupTcb
+    split
+    · rfl
+    · rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoW, SystemState.getTcb?_mapTcbInPlace,
+        if_neg hRS]
+  have h1 : rendezvousDequeuedCall (W.1.updateTcb receiver (callReceiverTcb msg)) s =
+      rendezvousDequeuedCall W.1 s := by
+    unfold rendezvousDequeuedCall; rw [hL]
+  rw [h1, show W.1 = enqueueRunnableOnCore (P.updateTcb s receiverReady)
+    (determineTargetCore (P.updateTcb s receiverReady) s) s from rfl,
+    rendezvousDequeuedCall_of_objectsAgreeOffRunLinks hA3 s]
+  unfold rendezvousDequeuedCall
+  simp only [lookupTcb, hSRes, Bool.false_eq_true, ↓reduceIte, hT2s, receiverReady,
+    TCB.ipcState_setIpcState]
+
 /-- **The receive's take, delivered**: the sender popped, made ready and woken
 with its completion frame, the receiver made ready, and the six words of the
 delivered frame -- read from the sender's saved registers before any write --
