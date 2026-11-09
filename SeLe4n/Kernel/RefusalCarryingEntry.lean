@@ -747,7 +747,7 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
                   msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext),
                   inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 0 }
                 sid tid executingCore st rfl hSC tcb.registerContext capAddr msgInfo
-                (frameOf hObj) hTrRegs]
+                (frameOf hObj) hTrRegs (fun h => absurd hShort (by omega))]
             simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs,
               hShortDec (by rw [hSz]; exact hShort), Bool.false_eq_true, ↓reduceIte,
               SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
@@ -802,10 +802,13 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
                   exact dispatchTransferringCheckedR_eq ctx
                     (longMessageDecode sid st tid tcb.registerContext capAddr msgInfo)
                     sid tid executingCore st rfl hSC tcb.registerContext capAddr msgInfo
-                    (frameOf hObj) hTrRegs
+                    (frameOf hObj) hTrRegs (fun _ => hRead)
                 · obtain ⟨tl, hTl⟩ :=
                     SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb
                       st executingCore tid (msgInfo.length - 4)
+                  have hAg : ipcBufferReadsAgree (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st
+                      executingCore tid (msgInfo.length - 4)) st := by
+                    rw [hTl]; exact .of_eq rfl rfl
                   have hFrameF : ∀ t, (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st
                       executingCore tid (msgInfo.length - 4)).getTcb? tid = some t →
                       t.registerContext = tcb.registerContext := by
@@ -816,6 +819,7 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
                     (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
                       (msgInfo.length - 4)) rfl hSC tcb.registerContext capAddr msgInfo
                     hFrameF hTrRegs
+                    (fun _ j hj => by rw [hAg.ipcBufferReadMr]; exact hRead j hj)
                   have hC : (longMessageDecode sid st tid tcb.registerContext capAddr msgInfo).capAddr =
                       capAddr := rfl
                   rw [hC] at hDisp

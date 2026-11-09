@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsDelivered
+import SeLe4n.Kernel.IPC.CrossCore.LongReceiveInPlace
 
 /-!
 # A capability-carrying message of more than four words, delivered in place
@@ -410,5 +411,84 @@ theorem callRendezvousCaps_eq_deliveredLong (st : SystemState) (endpointId : SeL
     (propagatePipChainCrossCore_noResizeDue _ _ _ hNo1)
     ((ipcBufferReadsAgree_propagatePipChainCrossCore Y1 r core hNo1).words.trans hAY1)
     hSize hLen).symm
+
+/-! ## The take of a blocked long sender -/
+
+/-- **What a thread blocked by a long capability-carrying send or call holds**:
+a frame that routes as a transfer of more than four words, its overflow slots
+all reading, asks for the capabilities its frame names under its grant right,
+and its message is its inline words and then the words its IPC buffer holds,
+under the badge its capability carried (`longSendMessage`). -/
+theorem blockedSender_of_routedLongTransferring (st : SystemState) (s : SeLe4n.ThreadId)
+    (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+      .transferring sid capAddr mi)
+    (hGt : 4 < mi.length)
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st s j = .ok w)
+    (hF : sTcb.ipcFaultSend = false) :
+    blockedSenderCapRequest st s sTcb =
+        frameCapRequestOf st sTcb
+          (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0) ∧
+      blockedSenderMessage st s sTcb =
+        longSendMessage SeLe4n.arm64DefaultLayout sTcb.registerContext st s mi.length
+          sTcb.ipcBadgeView := by
+  obtain ⟨-, -, hMax, -, -⟩ :=
+    decodeSyscallArgsFromState_of_routedTransferring st s _ _ 32 sid capAddr mi hR
+  refine ⟨?_, ?_⟩
+  · unfold blockedSenderCapRequest
+    simp only [hF, Bool.false_eq_true, ↓reduceIte]
+    exact senderFrameCapRequest_routedLong st s sTcb _ capAddr mi sid _ rfl hR hGt hRead
+  · unfold blockedSenderMessage blockedSenderMessageOf
+    rw [blockedSenderDecode_routedLong st s sTcb _ capAddr mi sid rfl hR hGt hRead]
+    simp only [hF, Bool.false_eq_true, ↓reduceIte, senderFrameMessage]
+    exact longMessageDecode_message sid st s _ capAddr mi _ (by omega) hMax
+
+/-- **A long take's last writes, with the transfer's report**: the woken
+sender's completion frame on the state the transfer left, then the receiver's
+frame carrying the report and the overflow words copied from the sender's
+buffer.  The four inline words enter as words, read from the sender's
+registers before the take: the completion rewrites those registers. -/
+@[noinline] def finishTakeCapsLong (capInfo : Nat) (Y : SystemState) (s receiver : SeLe4n.ThreadId)
+    (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) (w0 w1 w2 w3 : UInt64) :
+    SystemState :=
+  deliverLongSendFrameWords (Architecture.stageWokenSendCompletion Y (some s)) receiver len s
+    badgeWord badged capInfo w0 w1 w2 w3
+
+/-- **The take of a blocked long send that transfers capabilities,
+delivered**: the sender popped, made ready and woken, the receiver made ready,
+the transfer in place, the sender's completion frame, then the receiver's
+frame with the transfer's report and the overflow words.  The sender and the
+receiver enter as the words the transfer reads of them (`capTransferK`), read
+before the take. -/
+@[noinline] def performTakeCapsDeliveredLong (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId) (core : Concurrency.CoreId)
+    (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) (w0 w1 w2 w3 : UInt64)
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+  let X := (wakeThread ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
+    s receiverReady) s core).1.updateTcb receiver receiverReady
+  capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    finishTakeCapsLong (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+      s receiver len badgeWord badged w0 w1 w2 w3
+
+/-- **The take of a blocked long call that transfers capabilities,
+delivered**: the caller popped and blocked on the reply, the reply object
+linked, the receiver made ready, the transfer in place, the receiver's
+priority walk, then the receiver's frame with the transfer's report and the
+overflow words, its inline words read from the caller's saved registers `rf`,
+which the take leaves unwritten (the caller stays blocked). -/
+@[noinline] def performCallTakeCapsDeliveredLong (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (core : Concurrency.CoreId) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+  let X := storeReceiveCallReady st endpointId s nextCode receiver rid
+  capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    finishCallCapsLong (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+      receiver core layout rf len s badgeWord badged
 
 end SeLe4n.Kernel
