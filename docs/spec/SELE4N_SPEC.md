@@ -6681,10 +6681,27 @@ Every kernel object has a decidable well-formedness predicate:
   them when its pre-state checks pass (`replyRecvCapsArmR_blocks_inPlace`,
   `replyRecvCapsArmR_donated_inPlace`, `replyRecvCapsArmR_unheld_inPlace`),
   so its general path is reached only when a check read before any write
-  fails.  The reply-receive whose receive leg meets a waiting sender, the
-  long reply-receive on a donated or unheld reply object and the long reply
-  or reply-receive answering a faulted caller still take the general path,
-  which allocates (`docs/REGISTERED_DEBT.md` table C).  Every in-place arm's
+  fails.  A reply-receive whose receive leg meets a waiting sender takes it
+  in place after the reply leg (and its transfer, when it installs): the
+  sender's message words are kept across the reply's writes
+  (`SenderWordsKept`), the take's guard is carried across them and the
+  transfer (`storeReplyRendezvous_takeGuard`, `takeGuard_of_transferFrame`),
+  and the composite is proven the specification's
+  (`replyRecvOnCore_take_delivered`, `replyRecvOnCore_take_capsDelivered`,
+  routed by `replyRecvTakeArmR`).  The take writes the server's own frame out
+  of line after its legs (`writeTakerFrame`), once the arm has released the
+  server's register file, which it reads the reply from.  The long
+  reply-receive on a donated reply object or to a caller recording no server
+  writes in place too, inert and installing
+  (`replyRecvOnCore_donated_deliveredLong`,
+  `replyRecvOnCore_unheld_deliveredLong` and their installing forms;
+  `LongReplyRecvPopInPlace.lean`).  A long reply or reply-receive answering a
+  faulted caller answers it in place on each shape the short answer does, as
+  seL4's `handleFaultReply` does, its restart words past the fourth read from
+  the replier's IPC buffer (`performFaultAnswerLong`, `faultReplyWordLong`;
+  `faultReplyTransferChecked_inPlaceLong` and its donated and unheld forms,
+  `replyRecvTransferOnCore_fault_blocks_inPlaceLong` and its donated and
+  unheld forms; `LongFaultAnswerInPlace.lean`).  Every in-place arm's
   store guard (`storeLeavesIndexAndTypes`) also fails while the object-index
   set or the type table sits at its resize load, once per doubling; WS-UC
   UC2 retires both tables (the heap-capacity row of table C).  With the default layout the router hands the decoded arm
@@ -7658,8 +7675,9 @@ arms (`replyRecvCapsArmR`, and the long arm's blocking branch), which run the
 transfer in place between the reply's writes and the receive leg, each proven
 equal to the specification (`replyRecvOnCore_blocks_capsDelivered`,
 `replyRecvOnCore_donated_capsDelivered`, `replyRecvOnCore_unheld_capsDelivered`,
-`replyRecvOnCore_blocks_capsDeliveredLong`); any other reply-receive runs the
-specification, which allocates (`docs/REGISTERED_DEBT.md` table C).
+`replyRecvOnCore_blocks_capsDeliveredLong`, and the take's and the long donated
+and unheld forms); a reply-receive whose pre-state checks fail runs the
+specification.
 
 **No message holds a capability** (`v0.36.121`, WS-ZA ZA5.4 part 11).  An
 `IpcMessage` is registers and a badge: it has no capability field and no grant

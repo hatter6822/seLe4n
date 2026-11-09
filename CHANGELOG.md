@@ -41,20 +41,58 @@ pre-state and copies every table it writes, and allocated on the kernel heap.
   and `unheld-reply-recv-installs-cap`, each followed by a signal through the
   installed copy, a wait and a delete, are pinned at 0 heap cells on the first
   call and at steady state.
-- **Debt**: the table C row is rewritten to name exactly what still runs
-  the general path, each measured by a new pinned scenario: the reply-receive
-  whose receive leg meets a waiting sender (`queued-sender-reply-recv`, 135
-  cells), the long donated and unheld reply-receives, and the long reply and
-  reply-receive answering a faulted caller.
+- **The reply-receive meeting a waiting sender**: a reply-receive whose
+  receive leg finds a sender queued on the endpoint now takes it in place,
+  inert or installing (`replyRecvTakeArmR`, `performReplyRecvTakeDelivered`,
+  `performReplyRecvTakeCapsDelivered`), proven equal to the specification
+  (`replyRecvOnCore_take_delivered`, `replyRecvOnCore_take_capsDelivered`,
+  `replyRecvTakeArmR_eq`).  Before, it ran the general path and allocated 135
+  heap cells per call (172 when its reply leg installed).  Measuring the first
+  in-place cut found one more copy: the arm kept its projection of the
+  replier's register file alive across the call, so writing the replier's
+  frame copied the 288-byte register file.  The legs now run out of line
+  (`performReplyRecvTakeLegs`, `performReplyRecvTakeCapsLegs`) and the frame is
+  written after they return (`writeTakerFrame`), once the arm has released it.
+- **Long donated and unheld reply-receives**: the reply-receive of more than
+  four words on a donated reply object or answering a caller recording no
+  server runs in place, inert or installing
+  (`replyRecvOnCore_donated_deliveredLong`, `replyRecvOnCore_unheld_deliveredLong`,
+  `replyRecvOnCore_donated_capsDeliveredLong`,
+  `replyRecvOnCore_unheld_capsDeliveredLong`, `replyRecvLongPopR_eq`).
+- **Long fault answers**: a reply or reply-receive of more than four words
+  answering a faulted caller reads the words past four from the replier's IPC
+  buffer, as seL4's `copyMRsFaultReply` does, and runs in place in each shape
+  (`LongFaultAnswerInPlace.lean`: `faultReplyTransferChecked_inPlaceLong` and
+  its donated and unheld forms, `replyRecvTransferOnCore_fault_blocks_inPlaceLong`
+  and its donated and unheld forms; `replyRecvLongFaultArmR_eq` and the long
+  reply arm's `endpointReplyLongCheckedArmR_eq_general`).
+- **Exercisers**: `queued-sender-reply-recv`,
+  `queued-sender-caps-reply-recv-installs-cap`, `chain-server-long-reply-recv`
+  and its `-installs-cap`, `unheld-long-reply-recv` and its `-installs-cap`,
+  `cap-fault-long-reply` and `cap-fault-long-reply-recv` are pinned at 0 heap
+  cells on the first call and at steady state.
+- **Debt**: every reply and reply-receive shape now runs in place, so the
+  table C row is removed.  The growable tables' resize threshold, at which
+  every in-place arm's store guard sends one syscall to the general path, is
+  recorded on the WS-UC heap-capacity row; UC2 retires both tables.
 
 ### Security
 
-No vulnerability was found.  The in-place arms are proven equal to the
-specification, so the grant check (the reply capability's grant right,
-seL4-MCS's `capReplyCanGrant`), the receive-slot lookup and the transfer's
-refusals are the specification's.  A server loop that hands capabilities back
-through `seL4_ReplyRecv` no longer allocates on the kernel heap at each call,
-so that path no longer depends on heap capacity at the moment a client calls.
+A reply-receive whose receive leg met a queued client allocated 135 heap cells
+on every call (172 when its reply leg installed a capability), so any client
+able to queue a send on a server's endpoint could make each of the server's
+`seL4_ReplyRecv` calls allocate, and a sustained stream of such calls could
+exhaust the kernel heap (Medium: denial of service, reachable by an
+unprivileged client; at `replyRecvRendezvousR`,
+`SeLe4n/Kernel/RefusalCarryingReplyRecv.lean`).  The in-place take arm fixes
+it, and `queued-sender-reply-recv` and
+`queued-sender-caps-reply-recv-installs-cap` pin it at 0.  The in-place arms
+are proven equal to the specification, so the grant check (the reply
+capability's grant right, seL4-MCS's `capReplyCanGrant`), the receive-slot
+lookup and the transfer's refusals are the specification's.  A server loop
+that hands capabilities back through `seL4_ReplyRecv` no longer allocates on
+the kernel heap at each call, so that path no longer depends on heap capacity
+at the moment a client calls.
 
 ## v0.37.8 — a long capability transfer, and an installing reply on a donated or unheld reply object, run in place
 
