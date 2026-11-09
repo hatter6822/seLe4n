@@ -2232,8 +2232,9 @@ const REFUSED_MESSAGE_INFO: Option<(u64, Option<u64>)> = Some((
 #[cfg(feature = "hw_target")]
 const BAD_MESSAGE_LENGTH: u64 = 127;
 
-/// A one-word message-info word with its top bit set: a label past the largest
-/// a message has, which the decode refuses, in a word no `Nat` scalar holds.
+/// A one-word message-info word with its top bit set, in a word no `Nat`
+/// scalar holds: its label is bits 12-63 (seL4's `seL4_MessageInfo`), so the
+/// top bit is a label bit and the decode takes it, as seL4's does.
 #[cfg(feature = "hw_target")]
 const HIGH_MESSAGE_INFO: u64 = (1 << 63) | 1;
 
@@ -3060,7 +3061,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         },
         RoundTrip {
             caps_or_badges: None,
-            returns: REFUSED_MESSAGE_INFO,
             msg_len: HIGH_MESSAGE_INFO,
             ..signal("high-message-info", 1)
         },
