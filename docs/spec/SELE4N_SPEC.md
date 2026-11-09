@@ -6643,9 +6643,17 @@ Every kernel object has a decidable well-formedness predicate:
   (`receiveTransferCaps_keepsBindings`, `receiveTransferCaps_carriesThreads`),
   so the donation and priority hand-off it precedes read what the
   specification reads.  The receiver's side is read in the pre-state
-  (`receiverCapTarget?`).  Any other rendezvous transfer (a capability-carrying
-  message of more than four words, or a reply or reply-receive that installs a
-  capability) takes the specification's (`endpointSendDualWithCapsOnCore`); it
+  (`receiverCapTarget?`).  A granting reply of at most four words to an
+  unfaulted caller that the reply wakes in place installs in place too
+  (`performReplyCapsDelivered`, `replyTransferChecked_caps_inPlace`): the
+  caller is woken and the server's priority chain walked, then the same loop
+  runs on no endpoint, so nothing unwraps (`capTransferK_eq_at`), from the
+  replier's request read off its own saved frame
+  (`replyCapRequest_of_routedReply`).  Any other transfer (a capability-carrying
+  message of more than four words, a reply that installs and is longer than
+  four words or answers a caller on a donated reply object or one recording no
+  server, or a reply-receive that installs a capability) takes the
+  specification's (`endpointSendDualWithCapsOnCore`, `replyTransferCaps`); it
   allocates
   (`docs/REGISTERED_DEBT.md` table C).  With the default layout the router hands the decoded arm
   nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
