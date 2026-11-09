@@ -799,6 +799,41 @@ theorem replyRecvReplyTransfer_writes_destination
     cases hStep
     exact .of_eq rfl
 
+/-- **The reply leg's transfer leaves the state as it found it when the
+footprint names no install** (`replyInstallCNode?` is `none`), on either
+answer. -/
+theorem replyRecvReplyTransfer_of_noInstall
+    (answer : Option Architecture.FaultReplyOutcome) (pre st : SystemState)
+    (replier target : SeLe4n.ThreadId) (grant : Bool)
+    (h : replyInstallCNode? pre replier target = none) :
+    replyRecvReplyTransfer answer pre replier target grant st
+      = .ok ({ results := #[] }, st) := by
+  cases answer with
+  | none => exact replyTransferCaps_of_noInstall pre st replier target grant h
+  | some o => rfl
+
+/-- **The reply-receive footprint covers its reply leg's CDT write**: a reply
+transfer that changes the CDT runs under a footprint that declares
+`stateLevelLock` for write (`replyInstallCdtLock?`). -/
+theorem lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt
+    (answer : Option Architecture.FaultReplyOutcome) (pre st st' : SystemState)
+    (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) (grant : Bool)
+    (summary : CapTransferSummary)
+    (hStep : replyRecvReplyTransfer answer pre replier target grant st = .ok (summary, st'))
+    (hCdt : st'.cdt ≠ st.cdt) :
+    (Concurrency.stateLevelLock, Concurrency.AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore pre replier cnodeRootObjId target
+          endpointObjId).pairs := by
+  cases h : replyInstallCNode? pre replier target with
+  | none =>
+    rw [replyRecvReplyTransfer_of_noInstall answer pre st replier target grant h] at hStep
+    cases hStep
+    exact absurd rfl hCdt
+  | some r =>
+    exact lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt pre replier
+      cnodeRootObjId target endpointObjId (by rw [h]; rfl)
+
 @[simp] theorem replyRecvReceiveLegState_eq_of_ok (answer : Option Architecture.FaultReplyOutcome)
     (pre : SystemState) (replier : SeLe4n.ThreadId) (grant : Bool) (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId)

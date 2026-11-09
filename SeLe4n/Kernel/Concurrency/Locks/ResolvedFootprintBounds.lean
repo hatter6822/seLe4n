@@ -95,7 +95,7 @@ theorem lockSet_endpointReplyOnCore_size_le (st : SystemState)
     (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).size
       ≤ maxLockSetSize := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_endpointReply_extendOpt_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointReply_extendOpt_extendOpt_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- The `replyRecv` resolved footprint — the widest IPC footprint the kernel
 declares.  **Twenty-one** members over all argument values on the widest path: a
@@ -108,11 +108,12 @@ the **invoking** receiver's own pre-receive return touches.
 Twenty-one is what the *definition* can produce; no reachable state carries the
 last five and the re-donation members at once, which
 `lockSet_endpointReplyRecvOnCore_size_le_sharp` states.  (The ceiling has since
-grown to `maxLockSetSize`'s thirty; its docstring carries the history.)  The
+grown to `maxLockSetSize`'s thirty-one; its docstring carries the history.)  The
 parametric reply-receive footprint sits two below the ceiling
-(`lockSet_replyRecv_size_add_two_le`), and the two CNodes the resolved one adds --
-the receive slot the receive leg installs into and the answered caller's receive
-slot the reply leg's capability transfer installs into -- take it to the ceiling. -/
+(`lockSet_replyRecv_size_add_three_le`), and the three members the resolved one
+adds -- the receive slot the receive leg installs into, the answered caller's
+receive slot the reply leg's capability transfer installs into, and the CDT lock
+that install takes -- take it to the ceiling. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
@@ -121,7 +122,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
   unfold lockSet_endpointReplyRecvOnCore
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   refine Nat.le_trans (Nat.succ_le_succ (lockSetExtendOpt_size_le _ _)) ?_
-  exact lockSet_replyRecv_size_add_two_le ..
+  refine Nat.le_trans (Nat.succ_le_succ (Nat.succ_le_succ (lockSetExtendOpt_size_le _ _))) ?_
+  exact lockSet_replyRecv_size_add_three_le ..
 
 /-- WS-OD OD1.5: `none` extends nothing. -/
 private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
@@ -206,13 +208,17 @@ and the blocking branch's does not; twenty-two still bounds both.
 
 **`v0.37.6`**: the reply leg's capability transfer installs into the answered
 caller's receive slot (`replyInstallCNode?`), live on every branch, so this
-figure moves by one, to twenty-four. -/
+figure moves by one, to twenty-four; and that install's CDT lock
+(`replyInstallCdtLock?`), counted as a member of its own although
+`insertOrMerge` collapses it wherever the receive leg already declares
+`stateLevelLock`, moves it to twenty-five. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 24 := by
+      ≤ 25 := by
   unfold lockSet_endpointReplyRecvOnCore
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   -- **WS-HP HP10.6**: split on the pop's trigger first, so the origin member and
@@ -315,13 +321,16 @@ pair where one does (`lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_fra
 
 **`v0.37.6`**: the CNode the reply leg's capability transfer installs into
 (`replyInstallCNode?`) is live on every branch and excluded by nothing, so this
-figure moves by one, to twenty-three. -/
+figure moves by one, to twenty-three; and that install's CDT lock
+(`replyInstallCdtLock?`), counted as a member of its own, moves it to
+twenty-four. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 23 := by
+      ≤ 24 := by
   unfold lockSet_endpointReplyRecvOnCore
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   cases hHead : answeredFrameHeadContextId? st target with

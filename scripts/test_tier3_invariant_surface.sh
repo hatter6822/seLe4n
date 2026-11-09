@@ -892,7 +892,7 @@ run_check "INVARIANT" rg -n '^theorem replyRecvReplyTransfer_writes_destination(
 # ceiling, which is what leaves room for the receive slot's CNode the resolved
 # footprints add (`lockSet_endpoint{Receive,ReplyRecv}OnCore_size_le`).
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReceive_size_lt[^\n]*(\n([ \t][^\n]*)?)*< maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_add_two_le[^\n]*(\n([ \t][^\n]*)?)*\.size \+ 2\n *≤ maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_add_three_le[^\n]*(\n([ \t][^\n]*)?)*\.size \+ 3\n *≤ maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
 # A short capability-carrying rendezvous whose transfer transfers nothing is
 # written in place: the transfer is the identity on any state reading every
 # CNode alike, and each arm decides it with the in-place decision the
@@ -906,6 +906,17 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyTransferCaps[^\n]*(\n([ \t][
 run_check "INVARIANT" rg -n '^theorem replyTransferCaps_of_inert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyTransferOnCore [^\n]*(\n([ \t][^\n]*)?)*replyTransferCaps st replier callerTid grant" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*replyInstallCNode\? st replier target" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# The reply transfer's install adds a CDT edge, so both reply footprints declare
+# the CDT's lock whenever the transfer can install, and a transfer that changes
+# the CDT is proven to run under it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyInstallCdtLock\?[^\n]*(\n([ \t][^\n]*)?)*\(replyInstallCNode\? st replier target\)\.map \(fun _ => \(stateLevelLock, AccessMode\.write\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*\(replyInstallCdtLock\? st replier target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(replyInstallCdtLock\? st replier target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem replyTransferCaps_of_noInstall($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_replyTransferCdt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_reply_covers_replyInstallCdt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_replyInstallCdt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*replyTransferInertW st ct \(cap\.rights\.mem \.grant\)" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def capUnwrapsAt[^\n]*(\n([ \t][^\n]*)?)*\| \.object id, some ep => id == ep" SeLe4n/Kernel/IPC/Operations/CapTransfer.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def capTransferInert[^\n]*(\n([ \t][^\n]*)?)*capUnwrapsAt cap endpointId" SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean'
@@ -931,7 +942,7 @@ run_check "INVARIANT" rg -n '^theorem errorLabelWord_eq_encode($|[ ({:\[\]])' Se
 run_negative_check "INVARIANT" rg -n '^def receiveWindowClosed' SeLe4n/
 # The ceiling and the figures derived from it move together -- the point of
 # stating them as theorems rather than paragraphs.
-run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 30' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 31' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 11" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # NEGATIVE: the superseded figure must not come back.  Mutating by deleting the
 # theorem would be caught by the positive; this keeps it at the old number.
@@ -2228,7 +2239,7 @@ run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(donation, no caps\) size 
 # OD3.5: the ceiling, and the figure derived from it.  `maxLockSetSize` is the
 # WCRT headline's first factor, so a cut that widens a footprint pays here —
 # visibly, as a theorem rather than a paragraph.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 30$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 31$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 # WS-RM (`v0.35.6`) NEGATIVE: the superseded ceiling must not come back.  The
 # positive above would be satisfied by a *deleted* constant only if the whole
 # definition went, which the build catches; this keeps it at the old value, which
@@ -2240,7 +2251,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 
 # WS-ZA ZA4.7: and the ceiling this cut supersedes.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 27$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 28$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 11 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+# The reply install's CDT lock: and the ceiling it supersedes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 30$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 10 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 
 # The projection result got STRONGER: every field the return writes is stripped,

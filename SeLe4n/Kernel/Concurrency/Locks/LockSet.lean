@@ -942,10 +942,10 @@ first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrow
 per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
 25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen, 15 µs at twenty-one and
 twenty-two, 14 µs at twenty-three, 13 µs at twenty-four, 12 µs at
-twenty-seven and 11 µs at twenty-eight, twenty-nine and thirty (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
+twenty-seven, 11 µs at twenty-eight, twenty-nine and thirty, and 10 µs at thirty-one (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **30**, the RPi5 tick admits **11 µs** per lock, and the uniform 60 µs envelope is **5400 µs**.
+At the value above, the declared lock-set ceiling is **31**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5580 µs**.
 The figure is *derived* from this constant and must be
 read off that theorem rather than from this paragraph: at twenty-two the tick
 admits `22 · 3 · 15 = 990 µs ≤ 1000`, and quoting a superseded per-lock cost
@@ -1120,7 +1120,16 @@ capabilities into the answered caller's receive slot, so the reply-receive
 footprint declares that slot's CNode as the `.reply` footprint does
 (`replyInstallCNode?`).  The widest `.replyRecv` footprint grows by one; the
 admissible section is `1000 / (30 · 3) = 11` µs, and the uniform 60 µs envelope
-moves 5220 → 5400 µs. -/
-def maxLockSetSize : Nat := 30
+moves 5220 → 5400 µs.
+
+**And the CDT lock that install takes takes it to thirty-one** (`v0.37.6`): the
+install is `ipcTransferSingleCap`, which adds an `.ipcTransfer` edge to the CDT,
+whose maps no per-object lock covers, so the `.reply` and `.replyRecv`
+footprints declare `stateLevelLock` for write whenever the transfer can install
+(`replyInstallCdtLock?`).  Counted as a member of its own, the widest
+`.replyRecv` footprint grows by one more; the admissible section is
+`1000 / (31 · 3)`, which floors to 10 µs, and the uniform 60 µs envelope moves
+5400 → 5580 µs. -/
+def maxLockSetSize : Nat := 31
 
 end SeLe4n.Kernel.Concurrency

@@ -28,13 +28,32 @@ reporting none.
   the CNode the transfer installs into (`replyInstallCNode?`, the member `.reply`
   declares; `lockSet_endpointReplyRecvOnCore_covers_replyInstall`,
   `lockSetForSyscall_replyRecv_covers_replyInstall`), and the transfer writes no
-  other CNode (`replyRecvReplyTransfer_writes_destination`).  The parametric
-  bound is restated two below the ceiling (`lockSet_replyRecv_size_add_two_le`,
-  was `_size_lt`) and the widest resolved reply-receive reaches it:
-  **`maxLockSetSize` is 30** (was 29).  The resolved bounds move by one
-  (`lockSet_endpointReplyRecvOnCore_size_le_onEveryState` 24,
-  `…_size_le_sharp` 23).  The admissible RPi5 per-lock section stays 11 µs; the
-  uniform 60 µs envelope moves 5220 → 5400 µs.
+  other CNode (`replyRecvReplyTransfer_writes_destination`).
+- **And the CDT lock the install takes, on `.reply` too**: the install adds an
+  `.ipcTransfer` edge to the CDT, whose maps no per-object lock covers, and
+  neither reply footprint declared `stateLevelLock` for it unless a donation or
+  a receive-leg install happened to.  Both now declare it for write whenever
+  the transfer can install (`replyInstallCdtLock?`;
+  `lockSet_endpointReplyOnCore_covers_replyInstallCdt`,
+  `lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt`,
+  `lockSetForSyscall_reply_covers_replyInstallCdt`,
+  `lockSetForSyscall_replyRecv_covers_replyInstallCdt`), and a transfer that
+  changes the CDT is proven to run under it
+  (`lockSet_endpointReplyOnCore_covers_replyTransferCdt`,
+  `lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt`, from
+  `replyTransferCaps_of_noInstall`: a reply whose footprint names no install
+  leaves the state unchanged).
+- **The ceiling**: the parametric reply-receive bound is restated three below
+  the ceiling (`lockSet_replyRecv_size_add_three_le`, was `_size_lt`) and
+  **`maxLockSetSize` is 31** (was 29), counting the reply install's CNode and
+  its CDT lock as members of their own.  The CDT lock merges into the receive
+  leg's `stateLevelLock` wherever that is declared, so the widest footprint a
+  test builds stays at thirty.  The resolved bounds move by two
+  (`lockSet_endpointReplyRecvOnCore_size_le_onEveryState` 25,
+  `…_size_le_sharp` 24), and the `.reply` bound is restated over both
+  extensions (`lockSet_endpointReply_extendOpt_extendOpt_size_le`).  The
+  admissible RPi5 per-lock section moves 11 → 10 µs; the uniform 60 µs
+  envelope moves 5220 → 5580 µs.
 - **In place only when nothing moves**: the four in-place `.replyRecv` arms
   (blocks, donated, unheld, long) are taken only when the reply leg's transfer
   moves nothing — no grant, no IPC buffer, or no receive slot
@@ -50,7 +69,7 @@ reporting none.
   lock-set, deadlock-freedom and WCRT suites pin the new ceiling.
 - **Docs**: the "at HEAD" ceiling figures in the specification, GitBook chapter
   12 and `WORKSTREAM_CONTEXT.md` had been left at 24 / 13 µs / 4320 µs since
-  WS-HP HP10.6; they now read 30 / 11 µs / 5400 µs.
+  WS-HP HP10.6; they now read 31 / 10 µs / 5580 µs.
 
 ## v0.37.5 — capability transfer is seL4's `transferCaps`: one receive slot named by the receiver's IPC buffer, endpoint capabilities unwrapped
 

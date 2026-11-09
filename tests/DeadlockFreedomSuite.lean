@@ -255,7 +255,7 @@ example : ¬ mutualBlocked execNoDeadlock c0 c1 := by decide
 -- See `maxLockSetSize`'s docstring
 -- for why the answer was a wider ceiling rather than a narrower declaration,
 -- each time.
-example : maxLockSetSize = 30 := by decide
+example : maxLockSetSize = 31 := by decide
 -- WS-RM (`v0.35.6`): the **negative** — the previous value is refused, so a
 -- revert of the constant fails this suite rather than passing it silently.
 example : ¬ (maxLockSetSize = 23) := by decide
@@ -446,7 +446,7 @@ private def runWaitGraphChecks : IO Unit := do
 
 private def runBoundedWaitChecks : IO Unit := do
   IO.println "--- §5 SM3.D.6 — bounded wait ---"
-  assertBool "maxLockSetSize = 30" (decide (maxLockSetSize = 30))
+  assertBool "maxLockSetSize = 31" (decide (maxLockSetSize = 31))
   -- WS-RM (`v0.35.6`) / WS-HP HP3.1 / WS-HP HP10.6: and the previous value is
   -- refused, so a revert of the constant fails this suite rather than passing.
   assertBool "maxLockSetSize ≠ 23" (decide (¬ (maxLockSetSize = 23)))
@@ -535,20 +535,24 @@ private def runSizeBoundChecks : IO Unit := do
       (some (SeLe4n.ObjId.ofNat 27))
   assertBool "lockSet_replyRecv (all options) size ≤ maxLockSetSize"
     (decide (replySet.size ≤ maxLockSetSize))
-  -- One below the ceiling: the resolved reply-receive footprint adds the
-  -- receive slot's CNode, which takes it to the bound exactly.
-  -- Two below the ceiling: the resolved reply-receive footprint adds the
-  -- receive slot's CNode and the answered caller's receive slot's CNode (the
-  -- reply leg's capability transfer), which take it to the bound exactly.
-  assertBool "lockSet_replyRecv (all options) size = maxLockSetSize - 2 (two below the bound)"
-    (decide (replySet.size + 2 = maxLockSetSize))
-  assertBool "…and with the receive slot's CNode it is maxLockSetSize - 1"
+  -- Three below the ceiling: the resolved reply-receive footprint adds the
+  -- receive slot's CNode, the answered caller's receive slot's CNode (the
+  -- reply leg's capability transfer) and that install's CDT lock, which the
+  -- ceiling counts as a member of its own.
+  assertBool "lockSet_replyRecv (all options) size = maxLockSetSize - 3 (three below the bound)"
+    (decide (replySet.size + 3 = maxLockSetSize))
+  assertBool "…and with the receive slot's CNode it is maxLockSetSize - 2"
     (decide ((lockSetExtendOpt replySet
-      (some (cnodeLock (SeLe4n.ObjId.ofNat 28), AccessMode.write))).size + 1 = maxLockSetSize))
-  assertBool "…and with the reply install's CNode too it is maxLockSetSize (the bound, exactly)"
+      (some (cnodeLock (SeLe4n.ObjId.ofNat 28), AccessMode.write))).size + 2 = maxLockSetSize))
+  assertBool "…and with the reply install's CNode too it is maxLockSetSize - 1"
     (decide ((lockSetExtendOpt (lockSetExtendOpt replySet
       (some (cnodeLock (SeLe4n.ObjId.ofNat 28), AccessMode.write)))
-      (some (cnodeLock (SeLe4n.ObjId.ofNat 29), AccessMode.write))).size = maxLockSetSize))
+      (some (cnodeLock (SeLe4n.ObjId.ofNat 29), AccessMode.write))).size + 1 = maxLockSetSize))
+  assertBool "…and with the reply install's CDT lock it is within the bound"
+    (decide ((lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt replySet
+      (some (cnodeLock (SeLe4n.ObjId.ofNat 28), AccessMode.write)))
+      (some (cnodeLock (SeLe4n.ObjId.ofNat 29), AccessMode.write)))
+      (some (stateLevelLock, AccessMode.write))).size ≤ maxLockSetSize))
   -- **WS-OD OD3.7 (the sharp bound): how much of the ceiling is slack.**  The
   -- twenty-one is the union over ALL argument values; no reachable state supplies
   -- them all distinctly, because the returned donation's owner IS the answered
