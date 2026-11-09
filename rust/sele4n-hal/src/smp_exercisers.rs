@@ -4972,7 +4972,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         // installs the capability in the empty slot the partner's buffer names
         // (`performReplyDonatedCapsDelivered`).  A signal through the copy
         // shows it is there, the wait takes its badge, and the copy is
-        // deleted; the partner is suspended and the context unbound.
+        // deleted; the partner restarts the root task and suspends itself,
+        // and the root task unbinds the context.
         configure(
             "donated-reply-caps-configure",
             [
@@ -5047,6 +5048,21 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             CSPACE_DELETE,
             CNODE_CAP,
             [EMPTY_SLOT, 0, 0, 0],
+        ),
+        // The reply handed the context back and took the root task off its
+        // core, so the partner, running on the context, restarts it before
+        // suspending itself: the root task runs the teardown.
+        invocation(
+            "donated-reply-caps-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "donated-reply-caps-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
         ),
         invocation(
             "donated-reply-caps-suspend",
