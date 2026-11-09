@@ -943,7 +943,7 @@ run_negative_check "INVARIANT" rg -n '^def receiveWindowClosed' SeLe4n/
 # The ceiling and the figures derived from it move together -- the point of
 # stating them as theorems rather than paragraphs.
 run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 31' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 11" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 10" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # NEGATIVE: the superseded figure must not come back.  Mutating by deleting the
 # theorem would be caught by the positive; this keeps it at the old number.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 20" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
@@ -952,6 +952,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSec
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 14" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # WS-ZA ZA4.7: and the figure this cut supersedes.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 12" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+# The reply install's CDT lock: and the figure it supersedes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 11" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # WS-OD OD3.11: `.send` and `.call` declare the one TCB their queue *structure*
 # change writes.  A rendezvous pops the receive queue, relinking the popped
 # receiver's successor into the head; a block enqueues on the send queue,
@@ -10715,7 +10717,7 @@ run_check "INVARIANT" rg -n 'a caps-installing .\.receive. declares the state-le
 # WS-OD OD3.7: the label names the CONSTANT, not the numeral it holds -- this
 # anchor pinned `= 11` and went stale the moment the ceiling moved, which is the
 # same defect the `_size_le_maxLockSetSize` negative below refuses in Lean.
-run_check "INVARIANT" rg -n 'with the reply install.s CNode too it is maxLockSetSize \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'with the reply install.s CDT lock it is within the bound' tests/DeadlockFreedomSuite.lean
 # WS-RR RR7.12: the declared footprint is ACQUIRED at the live syscall seam.
 # Before this row exactly one live export bracketed (the raw cross-core
 # suspend seam, retired at WS-ZA ZA6.10), so "per-object reader-writer fine locks"
