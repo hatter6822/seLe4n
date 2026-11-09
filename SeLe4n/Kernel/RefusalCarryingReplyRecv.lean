@@ -1291,16 +1291,43 @@ message read in the replier's registers and IPC buffer (`longReplyRecvRegs`). -/
         .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
     | .error e => .error (e, st)
 
+/-- The long reply-receive whose reply leg transfers, its caller unfaulted:
+under the grant right, when the reply-receive may block in place
+(`replyRecvBlocksFast`) and the transfer's stores lie in place
+(`replyTransferStoresInPlace`, read on the pre-state), the reply's writes, the
+transfer in place, then the receive's block and the long frame
+(`performReplyRecvBlockCapsDeliveredLong`); the specification's path otherwise.
+Out of line, so its guard is not hoisted beside the inert arm's into a closure
+the inert path builds. -/
+@[noinline] def replyRecvLongCapsR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
+    (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId) :
+    RefusalCarrying Unit :=
+  fun st =>
+    if grant && !threadHasPendingFault st c && replyRecvBlocksFast st epId tid c rid then
+      match st.getTcb? tid with
+      | some stcb =>
+          match st.getTcb? c with
+          | some ct =>
+              if replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer
+                  stcb.cspaceRoot (routedExtraCaps rf) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot then
+                .ok ((), performReplyRecvBlockCapsDeliveredLong st c tid rid epId
+                  (receiveQueueTailCode st epId) rf len badge executingCore stcb.vspaceRoot
+                  stcb.ipcBuffer stcb.cspaceRoot (routedExtraCaps rf) ct.vspaceRoot ct.ipcBuffer
+                  ct.cspaceRoot)
+              else replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
+          | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
+      | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
+    else replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
+
 /-- The checked long reply-receive once its reply capability resolved to reply
 object `rid`, answering caller `c`: the reply leg's flow gate, then, for a
 caller carrying no fault when the reply-receive may block in place
 (`replyRecvBlocksFast`) and its reply leg transfers no capability
 (`replyRecvReplyInertW`), the in-place delivery
-(`performReplyRecvBlockDeliveredLong`); when it transfers, under the grant right
-and with the transfer's stores in place (`replyTransferStoresInPlace`), the
-reply's writes, the transfer in place, then the receive's block and the long
-frame (`performReplyRecvBlockCapsDeliveredLong`); the specification's path
-otherwise. -/
+(`performReplyRecvBlockDeliveredLong`); otherwise the transferring arm
+(`replyRecvLongCapsR`), which runs the transfer in place or the
+specification's path. -/
 @[inline] def replyRecvLongResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId) :
@@ -1311,21 +1338,7 @@ otherwise. -/
           replyRecvReplyInertW st tid c grant then
         .ok ((), performReplyRecvBlockDeliveredLong st c tid rid epId (receiveQueueTailCode st epId)
           rf len badge executingCore)
-      else if grant && !threadHasPendingFault st c && replyRecvBlocksFast st epId tid c rid then
-        match st.getTcb? tid with
-        | some stcb =>
-            match st.getTcb? c with
-            | some ct =>
-                if replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer
-                    stcb.cspaceRoot (routedExtraCaps rf) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot then
-                  .ok ((), performReplyRecvBlockCapsDeliveredLong st c tid rid epId
-                    (receiveQueueTailCode st epId) rf len badge executingCore stcb.vspaceRoot
-                    stcb.ipcBuffer stcb.cspaceRoot (routedExtraCaps rf) ct.vspaceRoot ct.ipcBuffer
-                    ct.cspaceRoot)
-                else replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
-            | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
-        | none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
-      else replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
+      else replyRecvLongCapsR epId tid c rid badge grant rf len label executingCore st
     else .error (.replyCapInvalid, st)
 
 /-- The long reply-receive's general arm, its words read where it runs. -/
@@ -1403,7 +1416,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
       | error e => rfl
       | ok r =>
         obtain ⟨rid, c, badge, grant⟩ := r
-        simp only [replyRecvLongResolvedR, hExt, hM]
+        simp only [replyRecvLongResolvedR, replyRecvLongCapsR, hExt, hM]
         split
         · split
           · next hG =>
