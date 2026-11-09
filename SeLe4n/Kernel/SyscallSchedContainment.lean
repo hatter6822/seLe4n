@@ -318,22 +318,22 @@ What the abandon's core costs is measured rather than assumed: it is
 anyway, because one tightened to that coincidence would become false the moment
 either side moved. -/
 theorem schedLockSet_replyTransferOnCore_coversWrites (replier callerTid : SeLe4n.ThreadId)
-    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState) (S : LockSet)
     (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_replyTransferOnCore replier callerTid mi regs
       msg executingCore st) = some S)
-    (hStep : replyTransferOnCore replier callerTid mi regs msg executingCore st
+    (hStep : replyTransferOnCore replier callerTid mi regs msg grant executingCore st
       = .ok ((), st')) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_confined S
     (replyTransferWriteSet replier callerTid mi regs msg executingCore st)
     (replyTransferReplenishCores replier callerTid msg executingCore st) st st'
     (LockSet.ofList?_pairs hS)
-    (replyTransferOnCore_confinedToCores replier callerTid mi regs msg executingCore st st'
+    (replyTransferOnCore_confinedToCores replier callerTid mi regs msg grant executingCore st st'
       hObjInv hStep)
     (fun d hd => replyTransferOnCore_replenishQueueOnCore_ne replier callerTid mi regs msg
-      executingCore st st' d hObjInv hd hStep)
+      grant executingCore st st' d hObjInv hd hStep)
 
 /-- **WS-RR RR8.12 Cut C6e**: `.replyRecv`'s footprint covers its writes.
 

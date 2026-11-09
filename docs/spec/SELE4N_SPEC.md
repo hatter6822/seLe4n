@@ -7546,6 +7546,17 @@ reports `extraCaps` (the count processed) and `capsUnwrapped`
 the receive-path words and each sender's `caps_or_badges` words from RAM
 (`captureReceivePath`, `captureSenderCapAddrs`).
 
+A reply transfers capabilities as seL4's `doReplyTransfer` does
+(`replyTransferCaps`): to an unfaulted caller, the replier's extra
+capabilities go through the same transfer with no endpoint, so none unwraps,
+and only when the reply capability carries the grant right (otherwise the
+replier names none).  They go into the caller's receive slot, and the caller's
+staged message info reports the count.  A faulted caller takes no transfer.
+The caller's receive slot CNode is declared for write in the reply's lock set
+(`replyInstallCNode?`).  The reply's in-place arms are taken only when the
+transfer moves nothing (`replyTransferInertW`); otherwise the specification
+runs.
+
 **No message holds a capability** (`v0.36.121`, WS-ZA ZA5.4 part 11).  An
 `IpcMessage` is registers and a badge: it has no capability field and no grant
 bit.  A blocked sender keeps its capability addresses and grant right in its

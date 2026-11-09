@@ -258,14 +258,16 @@ the endpoint and reply caps the blocked orderings need, and the 9h
 transfer pair: the no-grant endpoint cap + the payload cap).  Slot 0 is
 deliberately free — the receiver's receive path names it
 (`capsSendScenario`), so the granted transfer installs there. -/
-private def sharedCn : SeLe4n.Model.CNode :=
+private def sharedCnOf (replyCap : Capability) : SeLe4n.Model.CNode :=
   (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
        (SeLe4n.Slot.ofNat epCapPtr, epCap),
-       (SeLe4n.Slot.ofNat replyCapPtr, replyCapability),
+       (SeLe4n.Slot.ofNat replyCapPtr, replyCap),
        (SeLe4n.Slot.ofNat selfTcbCapPtr, selfTcbCap),
        (SeLe4n.Slot.ofNat epCapNoGrantPtr, epCapNoGrant),
        (SeLe4n.Slot.ofNat payloadCapPtr, payloadCapability)]))
+
+private def sharedCn : SeLe4n.Model.CNode := sharedCnOf replyCapability
 
 /-- Two threads on two cores: `callerTid` current on the boot core (the
 thread that blocks), `peerTid` current on core 1 (the thread whose
@@ -299,10 +301,10 @@ completed `.call` rendezvous) linked to the reply object `peerTid` holds
 the capability for — the state from which `.reply` / `.replyRecv` deliver
 `.call`'s `.message` frame (§3.5: a call never returns at its own
 boundary). -/
-private def replyPendingState : SystemState :=
+private def replyPendingStateOf (cn : SeLe4n.Model.CNode) : SystemState :=
   let base := BootstrapBuilder.empty
     |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
-    |>.withObject callerCn (.cnode sharedCn)
+    |>.withObject callerCn (.cnode cn)
     |>.withObject ntfnId (.notification
         { state := .idle, 
           hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })
@@ -323,6 +325,13 @@ private def replyPendingState : SystemState :=
         { replyId := replyRid, callerCode := SeLe4n.ThreadId.optCode (some callerTid) })
     |>.build
   { base with scheduler := base.scheduler.setCurrentOnCore core1 (some peerTid) }
+
+private def replyPendingState : SystemState := replyPendingStateOf sharedCn
+
+/-- The reply capability without the grant right: seL4's `doReplyTransfer`
+transfers no capability through it. -/
+private def replyCapabilityNoGrant : Capability :=
+  { replyCapability with rights := AccessRightSet.ofList [.read, .write] }
 
 /-- The `dispatchFromAbi` driver generalised to an executing core and the
 full inline register window — the RA.B.5b scenarios interleave syscalls
@@ -522,6 +531,24 @@ private def replyDeliveryScenario :
     | some tcb => tcb.ipcState == .ready
     | none => false
   pure (ready, stagedFrame st1 callerTid)
+
+/-- 9i: a reply transfers capabilities as seL4's `doReplyTransfer`.  The peer
+replies `[21, 22]` with ONE extra capability (`payloadCapPtr`, named in its IPC
+buffer's `caps_or_badges[0]`) through the reply cap in `cn`; the caller's
+buffer names slot 0 of its CNode as its receive slot when `withSlot`.  Returns
+(the caller's staged frame, receive slot 0 occupied?). -/
+private def replyCapsScenario (cn : SeLe4n.Model.CNode) (withSlot : Bool) :
+    Except KernelError (Kernel.Architecture.SyscallReturnFrame × Bool) := do
+  let st0 := replyPendingStateOf cn
+  let st0 := if withSlot then SeLe4n.Testing.withReceiveSlot st0 callerTid ⟨0x7701⟩ 0 else st0
+  let st0 := SeLe4n.Testing.withSenderCapAddrs st0 peerTid #[SeLe4n.CPtr.ofNat payloadCapPtr]
+  let msgInfoRaw : UInt64 := (2 + (1 <<< 7) : Nat).toUInt64
+  let (_, st1) ← dispatchFromAbiOn core1
+    SyscallId.reply.toNat msgInfoRaw replyCapPtr.toUInt64 21 22 0 st0
+  let slot0Occupied := match st1.objects[callerCn]? with
+    | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
+    | _ => false
+  pure (stagedFrame st1 callerTid, slot0Occupied)
 
 /-- 9e: `.replyRecv` — the compound arm's reply leg stages the previous
 caller's frame through `endpointReplyRecvOnCore`'s own composition (a distinct call
@@ -936,6 +963,27 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         (frame.x1 == (1 + (1 <<< 7) : Nat).toUInt64)
       assertBool "9h positive control: the transferred cap landed in receive slot 0"
         slot0
+  -- 9i — a reply transfers capabilities (seL4's `doReplyTransfer`, gated on
+  -- the reply capability's grant right, into the caller's receive slot)
+  match replyCapsScenario sharedCn true with
+  | .error e => assertBool s!"9i dispatches (got .error {reprStr e})" false
+  | .ok (frame, slot0) => do
+      assertBool "9i: a granting reply installs its extra cap into the caller's receive slot"
+        slot0
+      assertBool "9i: the caller's staged x1 reports it (length 2, extraCaps 1)"
+        (frame.x1 == (2 + (1 <<< 7) : Nat).toUInt64)
+      assertBool "9i: the reply's words still deliver (x2 = 21, x3 = 22)"
+        (frame.x2 == 21 && frame.x3 == 22)
+  match replyCapsScenario (sharedCnOf replyCapabilityNoGrant) true with
+  | .error e => assertBool s!"9i no-grant dispatches (got .error {reprStr e})" false
+  | .ok (frame, slot0) => do
+      assertBool "9i control: a reply cap without grant transfers nothing" (!slot0)
+      assertBool "9i control: ...and the staged x1 reports no extra cap" (frame.x1 == 2)
+  match replyCapsScenario sharedCn false with
+  | .error e => assertBool s!"9i no-slot dispatches (got .error {reprStr e})" false
+  | .ok (frame, slot0) => do
+      assertBool "9i control: a caller whose buffer names no receive slot takes nothing" (!slot0)
+      assertBool "9i control: ...and the staged x1 reports no extra cap" (frame.x1 == 2)
 
 -- ============================================================================
 -- §10  WS-SM SM9.A.10 — the audit reads return their computed word, end to end

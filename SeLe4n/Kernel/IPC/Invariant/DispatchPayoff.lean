@@ -543,6 +543,23 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       unheldReplyHeadBoundByNone (endpointReplyOnCore tid callerTid IpcMessage.empty
           executingCore st).1 hid)
 
+/-- **A capability transfer preserves the IPC invariant bundle**: the
+resolution writes nothing, and the transfer of what it resolved is
+`ipcUnwrapCaps_preserves_ipcInvariantFull`, the resolved capabilities' badges
+being valid because the badges at rest are. -/
+theorem receiveTransferCaps_preserves_ipcInvariantFull
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
+    {summary : CapTransferSummary} (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨stR, caps, hO, -, hCaps, hOr⟩ := receiveTransferCaps_frame h
+  have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_eq hO hInv
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
+  · exact hR
+  · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ _ _ _ stR _ _ hR (hO ▸ hObjInv)
+      (fun i c hc b hb => hCaps hInv.badgeWellFormed.2 i c hc b hb) hU
+
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall `dispatchWithCap`
 routes preserves `ipcInvariantFull`.  The capability-only tier delegates to
 RR3.23's payoff; the IPC arms compose the per-transition bundles with the
@@ -782,7 +799,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   -- instead of threading a post-state hypothesis.
                   by_cases hF : threadHasPendingFault st callerTid = true
                   · rw [replyTransferOnCore_of_fault tid callerTid decoded.msgInfo
-                      decoded.msgRegs _ _ st hF] at hStep
+                      decoded.msgRegs _ _ _ st hF] at hStep
                     obtain ⟨hFDon, hFHolderDon, hFStack, hFOrigin, hFUnheld⟩ :=
                       hPack.replyFaultStage rid reply callerTid hSy hTgt hR hCaller hF
                     have hFaultInv := faultReplyOnCore_preserves_ipcInvariantFull tid
@@ -806,7 +823,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                     -- On an unfaulted caller the seam is the pre-RR4 body verbatim,
                     -- so the rest of this branch is unchanged.
                     rw [replyTransferOnCore_of_no_fault tid callerTid decoded.msgInfo
-                      decoded.msgRegs _ _ st hF] at hStep
+                      decoded.msgRegs _ _ _ st hF] at hStep
                     have hReplyInv := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
                       tid callerTid
                       { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, badge := cap.badge }
@@ -821,12 +838,22 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                         cases res1 with
                         | error e => simp only [] at hStep; cases hStep
                         | ok u1 =>
-                            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                            simp only [] at hStep
                             have hObjInv1 : st1.objects.invExt :=
                               hReplyInvExt st1 _ hReply
-                            rw [← hStep]
-                            exact stageDeliveredMessage_preserves_ipcInvariantFull st1
-                              callerTid 0 hObjInv1 hReplyInv
+                            cases hX : replyTransferCaps st tid callerTid
+                                (cap.rights.mem .grant) st1 with
+                            | error e => rw [hX] at hStep; cases hStep
+                            | ok p =>
+                              obtain ⟨summary, stX⟩ := p
+                              rw [hX] at hStep
+                              simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                              rw [← hStep]
+                              exact stageDeliveredMessage_preserves_ipcInvariantFull stX
+                                callerTid summary.capInfo
+                                (receiveTransferCaps_objects_invExt hObjInv1 hX)
+                                (receiveTransferCaps_preserves_ipcInvariantFull hReplyInv
+                                  hObjInv1 hX)
         all_goals try cases hStep
       case cspaceMint =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1221,7 +1248,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     -- WS-RR RR4.14: the reply seam collapses checked → unchecked
                     -- on *both* branches under the arm's own flow guard.
                     rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid
-                          callerTid decoded.msgInfo decoded.msgRegs _
+                          callerTid decoded.msgInfo decoded.msgRegs _ _
                           executingCore st hFlow] at hStep
                     have hU : dispatchWithCap decoded tid executingCore gate cap st
                         = .ok ((), st') := by

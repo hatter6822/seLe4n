@@ -395,7 +395,7 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
   · split <;> exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- Installing transferred capabilities writes CNodes and the CDT only. -/
-theorem ipcUnwrapCaps_keyFrame {caps : Array TransferCap} {endpointId : SeLe4n.ObjId}
+theorem ipcUnwrapCaps_keyFrame {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
     {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState}
     {summary : CapTransferSummary} (hInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -410,7 +410,7 @@ theorem ipcUnwrapCaps_keyFrame {caps : Array TransferCap} {endpointId : SeLe4n.O
 /-- WS-ZA ZA4.7: the rendezvous capability lookup mints CDT nodes in the sender's
 CSpace and installs into the receive slot's CNode: no key input. -/
 theorem receiveTransferCaps_keyFrame
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
     {summary : CapTransferSummary} (hInv : st.objects.invExt)
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
@@ -1222,9 +1222,9 @@ theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.Threa
 /-- The checked reply transfer covers on its `.ok`. -/
 theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
-    {msg : IpcMessage} {executingCore : CoreId} {st st' : SystemState}
+    {msg : IpcMessage} {grant : Bool} {executingCore : CoreId} {st st' : SystemState}
     (hInv : st.objects.invExt)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg executingCore st
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant executingCore st
       = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold replyTransferOnCoreChecked at h
@@ -1246,9 +1246,19 @@ theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContex
     | error _ => intro h; cases h
     | ok _ =>
       intro h hR hRInv
-      cases h
-      have hS := stageDeliveredMessage_keyFrame s callerTid 0 hRInv
-      exact ⟨stepCovers_trans hR hS.stepCovers, hS.2.2⟩
+      simp only [] at h
+      cases hU : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hU] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hU] at h
+        cases h
+        have hF := receiveTransferCaps_keyFrame hRInv hU
+        have hX := stepCovers_trans hR (hF.stepCovers (congrArg MachineState.residentCode
+          (receiveTransferCaps_preserves_machine hU)) (banksKeptOffCore_of_eq
+            (congrArg MachineState.coreRegs (receiveTransferCaps_preserves_machine hU))))
+        have hS := stageDeliveredMessage_keyFrame sX callerTid summary.capInfo hF.2.2
+        exact ⟨stepCovers_trans hX hS.stepCovers, hS.2.2⟩
 
 /-! ### Notifications -/
 

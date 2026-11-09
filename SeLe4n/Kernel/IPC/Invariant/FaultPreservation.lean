@@ -582,6 +582,41 @@ theorem faultReplyOnCore_preserves_donationChainWellFormed
             (faultReplyApplyOnCore_donationChainFrame stR faulted
               (decodeFaultReply tf.fault tf.context mi regs) hRepObj) hRepChain
 
+/-- **A capability transfer keeps every donation-chain link**: it writes the
+receive slot's CNode, derivation metadata and TCB queue links only
+(`receiveTransferCaps_object_cases`), none of which is a Reply or a
+SchedContext. -/
+theorem receiveTransferCaps_donationChainFrame
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState}
+    {summary : CapTransferSummary} (hObjInv : st.objects.invExt)
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
+    donationChainFrame st st'' := by
+  have key : ∀ oid : SeLe4n.ObjId, st''.objects[oid]? = st.objects[oid]? ∨
+      (∃ cn cn' : CNode, st.objects[oid]? = some (KernelObject.cnode cn) ∧
+        st''.objects[oid]? = some (KernelObject.cnode cn')) ∨
+      (∃ t t' : TCB, st.objects[oid]? = some (KernelObject.tcb t) ∧ st''.objects[oid]? = some (KernelObject.tcb t')) := by
+    intro oid
+    rcases receiveTransferCaps_object_cases oid hObjInv h with hA | ⟨_, -, -, ⟨cn, hcn⟩, cn', hcn'⟩
+    · rcases hA with hE | ⟨cn, cn', h1, h2, -⟩ | ⟨t, t', h1, h2, -⟩
+      · exact .inl hE
+      · exact .inr (.inl ⟨cn, cn', h1, h2⟩)
+      · exact .inr (.inr ⟨t, t', h1, h2⟩)
+    · exact .inr (.inl ⟨cn, cn', hcn, hcn'⟩)
+  refine ⟨fun oid => ?_, fun oid => ?_, fun oid r' hR hC => ?_⟩
+  · rcases key oid with hE | ⟨_, _, h1, h2⟩ | ⟨_, _, h1, h2⟩
+    · rw [hE]
+    · rw [h1, h2]; rfl
+    · rw [h1, h2]; rfl
+  · rcases key oid with hE | ⟨_, _, h1, h2⟩ | ⟨_, _, h1, h2⟩
+    · rw [hE]
+    · rw [h1, h2]; rfl
+    · rw [h1, h2]; rfl
+  · rcases key oid with hE | ⟨_, _, _, h2⟩ | ⟨_, _, _, h2⟩
+    · exact ⟨r', hE ▸ hR, hC⟩
+    · rw [h2] at hR; cases hR
+    · rw [h2] at hR; cases hR
+
 /-- **WS-RM RM5.2**: and so does the reply *transfer* — seL4's
 `doReplyTransfer`, whose two branches are the two theorems above.
 
@@ -590,10 +625,10 @@ No hypothesis beyond the chain: both branches answer the caller through the
 (WS-ZA ZA6.34). -/
 theorem replyTransferOnCore_preserves_donationChainWellFormed
     (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
-    (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (c : CoreId)
+    (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool) (c : CoreId)
     (st st' : SystemState) (u : Unit)
     (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hStep : replyTransferOnCore replier callerTid mi regs msg c st = .ok (u, st')) :
+    (hStep : replyTransferOnCore replier callerTid mi regs msg grant c st = .ok (u, st')) :
     donationChainWellFormed st' := by
   unfold replyTransferOnCore at hStep
   by_cases hF : threadHasPendingFault st callerTid
@@ -619,9 +654,18 @@ theorem replyTransferOnCore_preserves_donationChainWellFormed
     cases resR with
     | error e => simp only [] at hStep; cases hStep
     | ok _ =>
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        refine hStep.2 ▸ donationChainWellFormed_of_frame ?_ hChainR
-        exact stageDeliveredMessage_donationChainFrame stR callerTid 0 hObjR
+        simp only [] at hStep
+        cases hX : replyTransferCaps st replier callerTid grant stR with
+        | error e => rw [hX] at hStep; cases hStep
+        | ok p =>
+          obtain ⟨summary, stX⟩ := p
+          rw [hX] at hStep
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          have hObjX := receiveTransferCaps_objects_invExt hObjR hX
+          refine hStep.2 ▸ donationChainWellFormed_of_frame ?_
+            (donationChainWellFormed_of_frame (receiveTransferCaps_donationChainFrame hObjR hX)
+              hChainR)
+          exact stageDeliveredMessage_donationChainFrame stX callerTid summary.capInfo hObjX
 
 
 end SeLe4n.Kernel

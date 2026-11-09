@@ -664,10 +664,10 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       simp only [Option.bind_some] at hSched
       split at hDisp
       · rename_i hFlow
-        rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid callerTid _ _ _ e st
+        rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid callerTid _ _ _ _ e st
           hFlow] at hDisp
         exact schedLockSet_replyTransferOnCore_coversWrites tid callerTid decoded.msgInfo
-          decoded.msgRegs _ e st st' S hObjInv hSched hDisp
+          decoded.msgRegs _ _ e st st' S hObjInv hSched hDisp
       · exact absurd hDisp (by simp)
   -- ---- `.replyRecv` -------------------------------------------------------
   case replyRecv =>

@@ -1537,7 +1537,7 @@ both directions (`ipcUnwrapCaps_getTcb?_eq`), so the `getTcb?` projection is
 fixed off the threads' slot links -- a strictly stronger fact than the affinity
 this needs, which is why no per-field argument appears here. -/
 theorem ipcUnwrapCaps_determineTargetCore_eq (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -1862,7 +1862,7 @@ and the CDT, and no SchedContext: the receive slot's CNode is a CNode before and
 after, and every other key keeps its object, a CNode's or a thread's derivation
 links aside (`ipcUnwrapCaps_object_cases`). -/
 theorem ipcUnwrapCaps_getSchedContext?_eq (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -2671,7 +2671,7 @@ the receive's or the send's) resolves the sender's capabilities -- writing CDT n
 with one `ipcUnwrapCaps`; so it frames everything the unwrap frames. -/
 
 section receiveTransferCapsFrames
-variable {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+variable {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
   {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState} {summary : CapTransferSummary}
 
 theorem receiveTransferCaps_scheduler_eq

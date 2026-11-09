@@ -303,7 +303,7 @@ and an install keeps it (`ipcTransferSingleCap_preserves_capabilityInvariantBund
 threading `hCapBacked` (reply-cap backing) and the sources' occupancy
 (`hNames`) through the loop (`ipcUnwrapCaps_rel`). -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (st st' : SystemState) (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr) (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),

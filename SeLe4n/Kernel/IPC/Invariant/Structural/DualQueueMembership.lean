@@ -7123,7 +7123,7 @@ third clause. It never creates a TCB — it writes only the receive slot's CNode
 — so every `.tcb` in the post-state maps back to the same `.tcb` in the pre-state
 (`ipcUnwrapCaps_tcb_backward`); the clause then transports unchanged. -/
 theorem ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
@@ -8512,7 +8512,7 @@ theorem consumeCallerReply_sameSchedContextBindings
 every TCB slot byte-identical (`ipcUnwrapCaps_tcb_backward` pulls each post-state TCB back to
 the *same* pre-state TCB). -/
 theorem ipcUnwrapCaps_sameSchedContextBindings
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
@@ -8526,7 +8526,7 @@ open SeLe4n.Model.SystemState in
 /-- `ipcUnwrapCaps` keeps every slot's notification-binding codes: it writes the
 receive slot's CNode only, and a thread's derivation links at most. -/
 theorem ipcUnwrapCaps_sameNotificationBindings
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
@@ -8555,7 +8555,7 @@ open SeLe4n.Model.SystemState in
 /-- D5: `ipcUnwrapCaps` frames `timeoutBudgetFrame` — it writes only CNode caps at the receive slot's CNode,
 so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_timeoutBudgetFrame
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
@@ -8569,7 +8569,7 @@ open SeLe4n.Model.SystemState in
 at the receive slot's CNode, so every SchedContext object (`ipcUnwrapCaps_preserves_schedContext_objects`)
 and every TCB object (`ipcUnwrapCaps_preserves_tcb_objects`) survives byte-identical. -/
 theorem ipcUnwrapCaps_donationOwnerFrame
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
@@ -12019,7 +12019,7 @@ The cap transfer writes only a CNode at the receive slot's CNode; every TCB (hen
 `pendingMessage`) is byte-identical, so a post-state bounded message pulls back to
 the same pre-state TCB via `ipcUnwrapCaps_tcb_backward`. -/
 theorem ipcUnwrapCaps_preserves_allPendingMessagesBounded
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : allPendingMessagesBounded st)
@@ -12037,7 +12037,7 @@ no-self-loop clause (pull each post-state TCB back via `ipcUnwrapCaps_tcb_backwa
 and the head-disjointness clause (the endpoint is unchanged via
 `ipcUnwrapCaps_endpoint_backward`) carry from the pre-state. -/
 theorem ipcUnwrapCaps_preserves_endpointQueueNoDup
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
@@ -12060,7 +12060,7 @@ witnessing endpoint and any predecessor TCB push forward unchanged
 (`ipcUnwrapCaps_preserves_ep_objects` / `_preserves_tcb_objects`), since the cap
 transfer touches only a CNode at the receive slot's CNode. -/
 theorem ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : ipcStateQueueMembershipConsistent st)
@@ -15115,7 +15115,7 @@ object and never any TCB's `pendingReceiveReply`. So C1 (stash ⇒ `.blockedOnRe
 preservation `ipcUnwrapCaps_tcb_backward`, and C1's reply-present half forward through
 `ipcUnwrapCaps_preserves_reply_objects`. -/
 theorem ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : pendingReceiveReplyWellFormed st)
@@ -16234,7 +16234,7 @@ open SeLe4n.Model.SystemState in
 equals its pre-state (the cap-transfer touches only a CNode), so `ipcState` and
 `queueNext` are unchanged (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_queueNextBlockingConsistent
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st)
@@ -16251,7 +16251,7 @@ open SeLe4n.Model.SystemState in
 writes only a CNode at the receive slot's CNode, so every TCB's `ipcState` **and** `queueNext` are unchanged —
 `ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_queueNextTargetBlocked
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
@@ -16269,7 +16269,7 @@ open SeLe4n.Model.SystemState in
 writes only a CNode at the receive slot's CNode, so every TCB's `ipcState` **and** `queueNext` are unchanged —
 `ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_endpointQueueLinksOnlyBlocked
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueLinksOnlyBlocked st)
@@ -16285,7 +16285,7 @@ open SeLe4n.Model.SystemState in
 cap transfer writes only a CNode at the receive slot's CNode, so every endpoint and every TCB `ipcState` is
 unchanged — `ipcUnwrapCaps_{endpoint,tcb}_backward`). -/
 theorem ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueTailBlockedConsistent st)
@@ -16304,7 +16304,7 @@ open SeLe4n.Model.SystemState in
 writes only a CNode at the receive slot's CNode, so every endpoint and every TCB `ipcState` is unchanged —
 head dual of `ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent`). -/
 theorem ipcUnwrapCaps_preserves_queueHeadBlockedConsistent
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : queueHeadBlockedConsistent st)

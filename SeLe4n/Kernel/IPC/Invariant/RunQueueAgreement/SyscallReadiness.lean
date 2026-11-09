@@ -187,20 +187,37 @@ theorem faultReplyOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
 
 theorem replyTransferOnCoreChecked_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     {ctx : LabelingContext} {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
-    {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {c : CoreId}
+    {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : CoreId}
     {st st' : SystemState} (hD : st.currentDequeuedUnique)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg c st = .ok ((), st')) :
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
     readyKeptStage S st st' := by
-  have hF := faultReplyOnCore_readyKeptStage (S := S) replier callerTid mi regs c st hD
-  have hE := endpointReplyCrossCoreDispatchChecked_runQueueStage ctx replier callerTid msg c st
-    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
   unfold replyTransferOnCoreChecked at h
-  repeat' (first | split at h | dsimp only at h)
-  all_goals first
-    | (cases h; done)
-    | (rename_i hR; cases h; rw [hR] at hF; exact hF)
-    | (rename_i hR; cases h; rw [hR] at hE
-       exact .of_stage (hE.trans (stageDeliveredMessage_runQueueStage _ _ _)))
+  split at h
+  · have hF := faultReplyOnCore_readyKeptStage (S := S) replier callerTid mi regs c st hD
+    revert h hF
+    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro h _; cases h
+    | ok _ => intro h hF; cases h; exact hF
+  · have hE := endpointReplyCrossCoreDispatchChecked_runQueueStage ctx replier callerTid msg c st
+      (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+    revert h hE
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro h _; cases h
+    | ok _ =>
+      intro h hE
+      simp only [] at h
+      cases hX : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hX] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hX] at h
+        cases h
+        exact .of_stage ((hE.trans (receiveTransferCaps_runQueueStage hX)).trans
+          (stageDeliveredMessage_runQueueStage _ _ _))
 
 /-- `ReplyRecv` blocks only its caller: the reply and the donation pop are
 stages, and the receive half blocks the caller. -/

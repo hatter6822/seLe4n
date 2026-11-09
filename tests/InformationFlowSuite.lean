@@ -1561,7 +1561,7 @@ def runInformationFlowChecks : IO Unit := do
     expect "the sender's capability address resolves" (resolved.size = 1)
     let rtcb : TCB :=
       { tid := ⟨3541⟩, priority := ⟨1⟩, domain := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
-    let result := SeLe4n.Kernel.ipcUnwrapCaps resolved ⟨3542⟩ rtcb
+    let result := SeLe4n.Kernel.ipcUnwrapCaps resolved (some ⟨3542⟩) rtcb
       (some { cnode := nonCNodeRoot, slot := SeLe4n.Slot.ofNat 0 }) st
     expect "ipcUnwrapCaps into a non-CNode receive slot stops without a fault"
       (match result with

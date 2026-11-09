@@ -1127,6 +1127,21 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
   -- neighbours.  `3 + 12 = 15`.
   exact Nat.le_trans (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) (by size_bound)
 
+/-- And with one member more -- the CNode the reply's capability transfer
+installs into, which the state-resolved reply footprint adds
+(`lockSet_endpointReplyOnCore`).  `15 + 1 = 16`. -/
+theorem lockSet_endpointReply_extendOpt_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : Option SchedContextId) (e : Option ThreadId) (f : Option ReplyId)
+    (g : Option ReplyId) (h : Option ThreadId) (i : Option ReplyId) (j : Option ReplyId)
+    (k : Option ReplyId) (l : Option ThreadId) (m n : Option ThreadId)
+    (o : Option (LockKey × AccessMode)) :
+    (lockSetExtendOpt (lockSet_endpointReply a b c d e f g h i j k l m n) o).size
+      ≤ maxLockSetSize := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  unfold lockSet_endpointReply maxLockSetSize
+  exact Nat.le_trans (Nat.add_le_add_right (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) 1)
+    (by size_bound)
+
 -- WS-RR RR7.11: and over the state-level member the capability install needs.
 -- Five optionals over a four-member base is `4 + 5 = 9`, which is
 -- `maxLockSetSize` exactly — this is the footprint that constant is measured

@@ -868,7 +868,8 @@ theorem lockSetForSyscall_reply_eq
   simp only [lockSetForSyscall, hTcb, hRid, Option.bind_some, hAns, Option.map_some]
 
 /-- **WS-RR RR7.11**: `.reply` declares the answered caller's TCB (woken out of
-`blockedOnReply`) and the Reply object the delivery consumes. -/
+`blockedOnReply`) and the Reply object the delivery consumes, and the CNode the
+reply's capability transfer installs into (`replyInstallCNode?`). -/
 theorem lockSetForSyscall_reply_covers_writes
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
     (rid : ReplyId) (answered : ThreadId) (S : LockSet)
@@ -878,13 +879,17 @@ theorem lockSetForSyscall_reply_covers_writes
     (hDecl : lockSetForSyscall .reply ops st = some S) :
     (tcbLock answered, AccessMode.write) ∈ S.pairs ∧
     (∀ linked, (st.getTcb? answered).bind (·.replyObject) = some linked →
-      (replyLock linked, AccessMode.write) ∈ S.pairs) := by
+      (replyLock linked, AccessMode.write) ∈ S.pairs) ∧
+    (∀ r, replyInstallCNode? st ops.caller answered = some r →
+      (cnodeLock r, AccessMode.write) ∈ S.pairs) := by
   rw [lockSetForSyscall_reply_eq ops st caller rid answered hTcb hRid hAns] at hDecl
   cases hDecl
-  refine ⟨lockSet_endpointReply_target_tcb_write_mem .., ?_⟩
+  refine ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReply_target_tcb_write_mem ..), ?_,
+    fun r hR => lockSet_endpointReplyOnCore_covers_replyInstall st ops.caller caller.cspaceRoot
+      answered r hR⟩
   intro linked hLinked
   simp only [lockSet_endpointReplyOnCore, hLinked]
-  exact lockSet_endpointReply_reply_write_mem ..
+  exact mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReply_reply_write_mem ..)
 
 /-- **WS-RR RR7.11**: at resolved operands, `.replyRecv` declares the fused
 footprint.

@@ -54,7 +54,7 @@ theorem ipcTransferSingleCap_mappingStage {cap : Capability} {srcNode : SlotRef}
     (cdtAddChild_preserves_liveMappingsRecorded hI2
       (cspaceInsertSlot_preserves_liveMappingsRecorded hInv hIns hL))
 
-theorem ipcUnwrapCaps_mappingStage {caps : Array TransferCap} {endpointId : SeLe4n.ObjId}
+theorem ipcUnwrapCaps_mappingStage {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
     {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState}
     {summary : CapTransferSummary}
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -65,7 +65,7 @@ theorem ipcUnwrapCaps_mappingStage {caps : Array TransferCap} {endpointId : SeLe
     (fun _ _ _ _ _ _ hT => ipcTransferSingleCap_mappingStage hT) h
 
 theorem receiveTransferCaps_mappingStage
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
     {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
@@ -443,8 +443,8 @@ theorem faultReplyOnCore_mappingStage {replier faulted : SeLe4n.ThreadId} {mi : 
 
 theorem replyTransferOnCoreChecked_mappingStage {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
-    {msg : IpcMessage} {executingCore : CoreId} {st st' : SystemState}
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg executingCore st
+    {msg : IpcMessage} {grant : Bool} {executingCore : CoreId} {st st' : SystemState}
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant executingCore st
       = .ok ((), st')) :
     MappingStage st st' := by
   unfold replyTransferOnCoreChecked at h
@@ -467,8 +467,15 @@ theorem replyTransferOnCoreChecked_mappingStage {ctx : LabelingContext}
     | error _ => intro h; cases h
     | ok _ =>
       intro h hR
-      cases h
-      exact hR.trans (stageDeliveredMessage_mappingStage s callerTid 0)
+      simp only [] at h
+      cases hX : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hX] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hX] at h
+        cases h
+        exact (hR.trans (receiveTransferCaps_mappingStage hX)).trans
+          (stageDeliveredMessage_mappingStage sX callerTid summary.capInfo)
 
 /-! ### Notifications -/
 

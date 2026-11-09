@@ -1152,14 +1152,14 @@ layout's message registers. -/
 theorem faultReplyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (replier c server : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
     (mi : MessageInfo) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
-    (msg : IpcMessage) (core : CoreId)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep (some server))
     (hRO : ct.replyObject = some rid)
     (hSRes : server.isReserved = false)
     (hG : replyWakesInPlace st c ct rid = true)
     (hF : ct.faultWords.isFault = true) :
-    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg core
+    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
         st =
       .ok ((), performFaultReplyAnswer st c server rid core ct.faultKind mi.label ct.faultIp
         ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5

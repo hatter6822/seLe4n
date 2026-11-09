@@ -632,10 +632,12 @@ words the step never uses.  A code, so the entry builds no `Option`. -/
 
 /-- **The thread whose receive path a capability transfer reads** (seL4's
 `getReceiveSlots` on the receiver's IPC buffer), as a code (`tid + 1`, 0 for
-none): the caller itself on a receive or a reply-receive, and on a send or a
-call the head of the receive queue of the endpoint the invoked capability names
-(resolved as `rendezvousSenderCode` resolves it).  A thread the step then takes
-no capability for only has three words read that the step never uses. -/
+none): the caller itself on a receive or a reply-receive, on a send or a call
+the head of the receive queue of the endpoint the invoked capability names
+(resolved as `rendezvousSenderCode` resolves it), and on a reply the caller the
+invoked reply capability answers (`replyAnsweredCaller?`, the receiver of
+seL4's `doReplyTransfer` capability transfer).  A thread the step then takes no
+capability for only has three words read that the step never uses. -/
 @[inline] def transferReceiverCode (st : SystemState) (tid : SeLe4n.ThreadId)
     (syscallId : UInt32) (capWord : UInt64) : Nat :=
   if syscallId.toNat = SyscallId.receive.toNat ∨ syscallId.toNat = SyscallId.replyRecv.toNat then
@@ -657,6 +659,25 @@ no capability for only has three words read that the step never uses. -/
                   match ep.receiveQ.head with
                   | some r => r.toNat + 1
                   | none => 0
+                | none => 0
+              | _ => 0
+            | none => 0)
+      | none => 0
+    | none => 0
+  else if syscallId.toNat = SyscallId.reply.toNat then
+    match st.getTcb? tid with
+    | some tcb =>
+      match st.getCNode? tcb.cspaceRoot with
+      | some rootCn =>
+        resolveCapAddressKUnrolled tcb.cspaceRoot (SeLe4n.CPtr.ofWord capWord) rootCn.depth st
+          (fun _ => 0)
+          (fun cnode slot =>
+            match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+            | some cap =>
+              match cap.target with
+              | .replyCap rid =>
+                match replyAnsweredCaller? st rid with
+                | some c => c.toNat + 1
                 | none => 0
               | _ => 0
             | none => 0)

@@ -102,7 +102,7 @@ theorem recordUnwrappedBadge (st : SystemState) (tcb : TCB) (i : Nat) (b : SeLe4
   · exact ⟨fun _ => rfl, rfl, hInv, rfl⟩
   · exact refl hInv
 
-theorem ipcUnwrapCaps {caps : Array TransferCap} {endpointId : SeLe4n.ObjId} {rtcb : TCB}
+theorem ipcUnwrapCaps {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId} {rtcb : TCB}
     {slot? : Option CSpaceAddr} {st st' : SystemState}
     {summary : CapTransferSummary} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.ipcUnwrapCaps caps endpointId rtcb slot? st
@@ -113,7 +113,7 @@ theorem ipcUnwrapCaps {caps : Array TransferCap} {endpointId : SeLe4n.ObjId} {rt
     (fun _ _ _ _ _ _ hT hA => ipcTransferSingleCap hA hT) h hInv
 
 theorem receiveTransferCaps {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)}
-    {endpointId : SeLe4n.ObjId} {target? : Option (TCB × Option CSpaceAddr)}
+    {endpointId : Option SeLe4n.ObjId} {target? : Option (TCB × Option CSpaceAddr)}
     {st st' : SystemState} {summary : CapTransferSummary} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
     RecordsFrame st st' := by

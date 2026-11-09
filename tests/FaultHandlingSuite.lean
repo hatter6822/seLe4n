@@ -1671,7 +1671,7 @@ private def runReplySeamChecks : IO Unit := do
         (!threadHasPendingFault afterFault handler)
       assertBool "control: on such a thread the seam answers exactly as the pre-RR4 reply did"
         (errorOf (replyTransferOnCore handler handler restartInfo restartRegs
-            IpcMessage.empty c1 afterFault) ==
+            IpcMessage.empty true c1 afterFault) ==
           errorOf
             (match endpointReplyCrossCoreDispatch handler handler IpcMessage.empty c1
                 afterFault with

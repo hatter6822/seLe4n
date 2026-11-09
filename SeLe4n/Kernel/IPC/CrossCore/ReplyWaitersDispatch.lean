@@ -155,7 +155,7 @@ theorem faultAbandonOnCore_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId
   rw [h, removeRunnableOnCore_replyViews_eq]
 
 /-- The capability unwrap writes CNodes alone. -/
-theorem ipcUnwrapCaps_replyViews_eq (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+theorem ipcUnwrapCaps_replyViews_eq (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr) {st st' : SystemState} {sum : CapTransferSummary}
     (hInv : st.objects.invExt) (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (sum, st')) :
     st'.replyViews = st.replyViews :=
@@ -172,7 +172,7 @@ theorem ipcUnwrapCaps_replyViews_eq (caps : Array TransferCap) (endpointId : SeL
 /-- The rendezvous capability lookup reads the sender's CSpace and writes the
 receiver's CNodes alone. -/
 theorem receiveTransferCaps_replyViews_eq
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {sum : CapTransferSummary}
     (hInv : st.objects.invExt) (h : receiveTransferCaps req endpointId target? st = .ok (sum, st')) :
     st'.replyViews = st.replyViews := by

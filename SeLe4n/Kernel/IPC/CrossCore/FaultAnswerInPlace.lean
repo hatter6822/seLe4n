@@ -437,14 +437,14 @@ state. -/
 theorem faultReplyTransferChecked_donated_inPlace (ctx : LabelingContext) (st : SystemState)
     (replier c server : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
     (mi : MessageInfo) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
-    (msg : IpcMessage) (core : CoreId)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep (some server))
     (hRO : ct.replyObject = some rid)
     (hSRes : server.isReserved = false)
     (hG : replyPopsInPlace st c ct.scBindingScCode server rid = true)
     (hF : ct.faultWords.isFault = true) :
-    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg core
+    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
         st =
       .ok ((), performFaultReplyDonatedAnswer st c server rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) core ct.faultKind mi.label ct.faultIp ct.faultSp ct.faultLr
@@ -507,13 +507,13 @@ server recorded commits `performFaultReplyUnheldAnswer`'s state. -/
 theorem faultReplyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : SystemState)
     (replier c : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
     (mi : MessageInfo) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
-    (msg : IpcMessage) (core : CoreId)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep none)
     (hRO : ct.replyObject = some rid)
     (hG : replyUnheldPopsInPlace st c rid = true)
     (hF : ct.faultWords.isFault = true) :
-    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg core
+    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
         st =
       .ok ((), performFaultReplyUnheldAnswer st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) ct.faultKind mi.label ct.faultIp ct.faultSp ct.faultLr

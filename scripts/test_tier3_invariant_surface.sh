@@ -891,6 +891,16 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_lt[^\n
 # CNode alike, and each arm decides it with the in-place decision the
 # specification's is proven equal to.
 run_check "INVARIANT" rg -n '^theorem receiveTransferCaps_of_inert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean
+# A reply transfers the replier's extra capabilities to the caller as seL4's
+# doReplyTransfer does: on no endpoint, so nothing unwraps, and only under the
+# reply capability's grant right.  Its install CNode is in the reply's lock set,
+# and an arm whose reply transfer moves nothing is written in place.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyTransferCaps[^\n]*(\n([ \t][^\n]*)?)*receiveTransferCaps \(replyCapRequest pre replier grant\) none" SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean'
+run_check "INVARIANT" rg -n '^theorem replyTransferCaps_of_inert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyTransferOnCore [^\n]*(\n([ \t][^\n]*)?)*replyTransferCaps st replier callerTid grant" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*replyInstallCNode\? st replier target" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*replyTransferInertW st ct \(cap\.rights\.mem \.grant\)" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def capUnwrapsAt[^\n]*(\n([ \t][^\n]*)?)*\| \.object id, some ep => id == ep" SeLe4n/Kernel/IPC/Operations/CapTransfer.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def capTransferInert[^\n]*(\n([ \t][^\n]*)?)*capUnwrapsAt cap endpointId" SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSendCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid &&" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointCallCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid &&" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'

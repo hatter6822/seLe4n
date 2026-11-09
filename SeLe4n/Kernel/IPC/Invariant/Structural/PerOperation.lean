@@ -190,7 +190,7 @@ cap carries a valid badge: an install writes one of them (each transferred cap
 feeds the single-cap frame), and an unwrapped badge goes to the receiver's
 buffer, not to any slot. -/
 theorem ipcUnwrapCaps_preserves_badgeWellFormed
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
@@ -220,7 +220,7 @@ theorem ipcUnwrapCaps_preserves_badgeWellFormed
 ipcUnwrapCaps only modifies CNode objects and CDT — endpoint objects, TCB objects
 (queue links), and scheduler state are all preserved. -/
 theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : dualQueueSystemInvariant st)
@@ -319,7 +319,7 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
 links, so every post-state TCB is its pre-state self off them
 (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
@@ -337,7 +337,7 @@ theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
 pre-state self, a pre-state Reply survives forward, and a post-state Reply was
 one before (`ipcUnwrapCaps_reply_backward`). -/
 theorem ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)

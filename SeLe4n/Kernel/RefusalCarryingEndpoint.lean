@@ -1334,7 +1334,7 @@ def endpointReplyCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInfo)
             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) then
               match replyTransferOnCoreChecked ctx tid callerTid mi regs
                   { registers := extractMessageRegisters regs mi,
-                    badge := cap.badge } executingCore st with
+                    badge := cap.badge } (cap.rights.mem .grant) executingCore st with
               | .ok ((), st') => .ok ((), st')
               | .error e => .error (e, st)
             else .error (.replyCapInvalid, st)
@@ -1359,7 +1359,8 @@ theorem endpointReplyCheckedArmGeneralR_eq (ctx : LabelingContext)
       split
       · rcases replyTransferOnCoreChecked ctx tid callerTid decoded.msgInfo decoded.msgRegs
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            badge := cap.badge } executingCore st with _ | ⟨⟨⟩, st'⟩ <;> rfl
+            badge := cap.badge } (cap.rights.mem .grant) executingCore st with
+          _ | ⟨⟨⟩, st'⟩ <;> rfl
       · rfl
   | _ => rfl
 
@@ -1485,8 +1486,11 @@ faulted caller under the same checks answers its fault in place
 (`performFaultReplyAnswer`, `faultReplyTransferChecked_inPlace`), as one on a
 donated reply or to a caller recording no server does
 (`endpointReplyDonatedFaultArmR`, `endpointReplyUnheldFaultArmR`), the answer the
-`.replyRecv` arm shares (`performFaultAnswer`); any other reply takes the
-general arm. -/
+`.replyRecv` arm shares (`performFaultAnswer`).  An unfaulted caller is
+answered in place only when the reply transfers no capability
+(`replyTransferInertW`: the reply capability lacks the grant right, or the
+caller has no IPC buffer or names no receive slot); any other reply takes the
+general arm, which runs seL4's `doReplyTransfer` capability transfer. -/
 @[inline] def endpointReplyCheckedArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId)
@@ -1509,8 +1513,11 @@ general arm. -/
                                 securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
                                 !server.isReserved && replyWakesInPlace st c ct rid then
                               if !ct.faultWords.isFault then
-                                .ok ((), replyRendezvousDelivered st c server rid
-                                  layout rf len cap.badgeWord cap.badged executingCore)
+                                if replyTransferInertW st ct (cap.rights.mem .grant) then
+                                  .ok ((), replyRendezvousDelivered st c server rid
+                                    layout rf len cap.badgeWord cap.badged executingCore)
+                                else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps
+                                  label tid executingCore cap st
                               else
                                 .ok ((), performFaultReplyAnswer st c server rid executingCore
                                   ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0
@@ -1521,9 +1528,12 @@ general arm. -/
                                 executingCore cap c server rid ct.scBindingScCode ct.faultKind
                                 ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
                                 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 st
-                            else endpointReplyDonatedArmR ctx layout rf len extraCaps label tid
+                            else if replyTransferInertW st ct (cap.rights.mem .grant) then
+                              endpointReplyDonatedArmR ctx layout rf len extraCaps label tid
                                 executingCore cap c server rid ct.scBindingScCode
                                 ct.faultWords.isFault st
+                            else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
+                              tid executingCore cap st
                         | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                             tid executingCore cap st
                     | .blockedOnReply _ none =>
@@ -1534,8 +1544,11 @@ general arm. -/
                                 executingCore cap c rid ct.faultKind ct.faultIp ct.faultSp
                                 ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4
                                 ct.faultX5 ct.faultX6 ct.faultX7 st
-                            else endpointReplyUnheldArmR ctx layout rf len extraCaps label tid
-                              executingCore cap c rid ct.faultWords.isFault st
+                            else if replyTransferInertW st ct (cap.rights.mem .grant) then
+                              endpointReplyUnheldArmR ctx layout rf len extraCaps label tid
+                                executingCore cap c rid ct.faultWords.isFault st
+                            else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
+                              tid executingCore cap st
                         | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                             tid executingCore cap st
                     | _ =>
@@ -1584,17 +1597,22 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                 split
                 · next hNoF =>
                   simp only [Bool.not_eq_true'] at hNoF
-                  rw [replyRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ hW]
-                  rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid
-                    { length := len, extraCaps := extraCaps, label := label }
-                    (Architecture.regMessageRegs layout rf) _ executingCore
-                    (by rw [← Architecture.regMessageBody_size layout rf len] at hSz; exact hSz)
-                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hNoF hFlow]
-                  rfl
+                  split
+                  · next hI =>
+                    rw [replyRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ hW]
+                    rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid
+                      { length := len, extraCaps := extraCaps, label := label }
+                      (Architecture.regMessageRegs layout rf) _ _ executingCore
+                      (by rw [← Architecture.regMessageBody_size layout rf len] at hSz; exact hSz)
+                      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hNoF
+                      (replyTransferInert_of_W hI) hFlow]
+                    rfl
+                  · simp only [endpointReplyCheckedArmRegsR, endpointReplyCheckedArmGeneralR, hTgt,
+                      hAns, hFlow, ↓reduceIte]
                 · next hF =>
                   simp only [Bool.not_eq_true', Bool.not_eq_false] at hF
                   rw [faultReplyTransferChecked_inPlace ctx st tid c server ct ep rid
-                    { length := len, extraCaps := extraCaps, label := label } layout rf _
+                    { length := len, extraCaps := extraCaps, label := label } layout rf _ _
                     executingCore ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes
                     hW hF]
               · split
@@ -1609,10 +1627,14 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                       rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
                     simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
                     rw [faultReplyTransferChecked_donated_inPlace ctx st tid c server ct ep rid
-                      { length := len, extraCaps := extraCaps, label := label } layout rf _
+                      { length := len, extraCaps := extraCaps, label := label } layout rf _ _
                       executingCore ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes
                       hP hF]
                   · rfl
+                split
+                rotate_left
+                · rfl
+                rename_i hI
                 unfold endpointReplyDonatedArmR
                 split
                 · next hG =>
@@ -1627,8 +1649,9 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                     (Architecture.regMessageRegs layout rf) layout rf len cap.badgeWord cap.badged
                     executingCore
                     { registers := extractMessageRegisters (Architecture.regMessageRegs layout rf) { length := len, extraCaps := extraCaps, label := label }, badge := cap.badge }
-                    rfl (by simp only [maxMessageRegisters]; omega) hSz4
-                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hP hNoF hFlow]
+                    _ rfl (by simp only [maxMessageRegisters]; omega) hSz4
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hP hNoF
+                    (replyTransferInert_of_W hI) hFlow]
                 · rfl
             · rfl
           · next ep hIpc =>
@@ -1646,9 +1669,13 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                     rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
                   simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
                   rw [faultReplyTransferChecked_unheld_inPlace ctx st tid c ct ep rid
-                    { length := len, extraCaps := extraCaps, label := label } layout rf _
+                    { length := len, extraCaps := extraCaps, label := label } layout rf _ _
                     executingCore ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hF]
                 · rfl
+              split
+              rotate_left
+              · rfl
+              rename_i hI
               unfold endpointReplyUnheldArmR
               split
               · next hG =>
@@ -1663,8 +1690,9 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                   (Architecture.regMessageRegs layout rf) layout rf len cap.badgeWord cap.badged
                   executingCore
                   { registers := extractMessageRegisters (Architecture.regMessageRegs layout rf) { length := len, extraCaps := extraCaps, label := label }, badge := cap.badge }
-                  rfl (by simp only [maxMessageRegisters]; omega) hSz4
-                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hNoF hFlow]
+                  _ rfl (by simp only [maxMessageRegisters]; omega) hSz4
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hNoF
+                  (replyTransferInert_of_W hI) hFlow]
               · rfl
             · rfl
           · rfl
@@ -2228,7 +2256,8 @@ unfaulted caller blocked on it whose checks all pass before any write
 priority walk, then writes the inline words into the caller's saved registers
 and copies the rest from the replier's IPC buffer into the caller's, word by
 word (`performReplyDeliveredLong`, `performReplyRendezvous_eq_deliveredLong`),
-as seL4's `doReplyTransfer` does; any other reply takes the general arm. -/
+as seL4's `doReplyTransfer` does, when the reply transfers no capability
+(`replyTransferInertW`); any other reply takes the general arm. -/
 @[inline] def endpointReplyLongCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
     (len extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) : RefusalCarrying Unit :=
@@ -2247,7 +2276,8 @@ as seL4's `doReplyTransfer` does; any other reply takes the general arm. -/
                         | some rid =>
                             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
                                 !server.isReserved && !ct.faultWords.isFault &&
-                                replyWakesInPlace st c ct rid then
+                                replyWakesInPlace st c ct rid &&
+                                replyTransferInertW st ct (cap.rights.mem .grant) then
                               .ok ((), performReplyDeliveredLong st c server rid rf len tid
                                 cap.badgeWord cap.badged executingCore)
                             else endpointReplyLongGeneralR ctx rf len extraCaps label tid
@@ -2290,16 +2320,17 @@ theorem endpointReplyLongCheckedArmR_eq_general (ctx : LabelingContext)
               split
               · next hG =>
                 simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
-                obtain ⟨⟨⟨hFlow, hSRes⟩, hNoF⟩, hW⟩ := hG
+                obtain ⟨⟨⟨⟨hFlow, hSRes⟩, hNoF⟩, hW⟩, hI⟩ := hG
                 have hAns : replyAnsweredCaller? st rid0 = some c := by
                   rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
                 simp only [endpointReplyLongGeneralR, endpointReplyCheckedArmGeneralR, hTgt, hAns,
                   hFlow, ↓reduceIte]
                 rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid
                   { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
-                  (longReplyRegs st tid rf mi.length) _ executingCore
+                  (longReplyRegs st tid rf mi.length) _ _ executingCore
                   (by simp only [extractMessageRegisters, Array.size_extract]; omega)
-                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hNoF hFlow]
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hNoF
+                  (replyTransferInert_of_W hI) hFlow]
                 have hMsg := longMessageDecode_message .reply st tid rf capAddr mi cap.badge
                   (by omega) hMax
                 simp only [longMessageDecode] at hMsg

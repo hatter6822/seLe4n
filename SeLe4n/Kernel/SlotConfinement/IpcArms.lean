@@ -40,7 +40,7 @@ open SeLe4n.Kernel.PriorityInheritance
 receiver's CNode and the CDT, never a run queue and never a register bank, so it
 contributes nothing to the cross-core `.call`'s write set. -/
 theorem ipcUnwrapCaps_confinedToCores (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st
              = .ok (summary, st')) :
@@ -481,14 +481,14 @@ the transition cannot disagree about which caller is faulted; the unfaulted arm
 composes the dispatch with the delivered-message staging, which writes a
 register *context* and no per-core slot. -/
 theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId)
-    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : replyTransferOnCore replier callerTid mi regs msg executingCore st
+    (hStep : replyTransferOnCore replier callerTid mi regs msg grant executingCore st
       = .ok ((), st')) :
     observableSlotsConfinedToCores st st'
       (replyTransferWriteSet replier callerTid mi regs msg executingCore st) := by
   by_cases hF : threadHasPendingFault st callerTid = true
-  · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg executingCore st hF]
+  · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg grant executingCore st hF]
       at hStep
     rw [replyTransferWriteSet_of_fault replier callerTid mi regs msg executingCore st hF]
     have hFR := faultReplyOnCore_confinedToCores replier callerTid mi regs executingCore st
@@ -505,7 +505,7 @@ theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId
         exact hFR
   · have hNF : threadHasPendingFault st callerTid = false := by
       simpa using hF
-    rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg executingCore st hNF]
+    rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg grant executingCore st hNF]
       at hStep
     rw [replyTransferWriteSet_of_no_fault replier callerTid mi regs msg executingCore st hNF]
     have hDispatch := endpointReplyCrossCoreDispatch_confinedToCores replier callerTid msg
@@ -517,14 +517,25 @@ theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId
       | error e => simp only [] at hStep; exact absurd hStep (by simp)
       | ok sgi? =>
         simp only [] at hStep
-        have hEq : Architecture.stageDeliveredMessage stDisp callerTid 0 = st' :=
-          congrArg Prod.snd (Except.ok.inj hStep)
-        subst hEq
-        exact observableSlotsConfinedToCores_mono (fun _ hm => by simpa using hm)
-          (observableSlotsConfinedToCores_trans hDispatch
+        cases hU : replyTransferCaps st replier callerTid grant stDisp with
+        | error e => rw [hU] at hStep; exact absurd hStep (by simp)
+        | ok p =>
+          obtain ⟨summary, stX⟩ := p
+          rw [hU] at hStep
+          have hEq : Architecture.stageDeliveredMessage stX callerTid summary.capInfo = st' :=
+            congrArg Prod.snd (Except.ok.inj hStep)
+          subst hEq
+          have hX := observableSlotsConfinedToCores_trans hDispatch
             (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-              (Architecture.stageDeliveredMessage_scheduler_eq stDisp callerTid 0)
-              (Architecture.stageDeliveredMessage_machine_eq stDisp callerTid 0)))
+              (receiveTransferCaps_scheduler_eq hU) (receiveTransferCaps_preserves_machine hU))
+          have hX' := observableSlotsConfinedToCores_mono
+            (cs' := endpointReplyDispatchWriteSet replier callerTid msg executingCore st)
+            (fun _ hm => by simpa using hm) hX
+          exact observableSlotsConfinedToCores_mono (fun _ hm => by simpa using hm)
+            (observableSlotsConfinedToCores_trans hX'
+              (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                (Architecture.stageDeliveredMessage_scheduler_eq stX callerTid _)
+                (Architecture.stageDeliveredMessage_machine_eq stX callerTid _)))
 
 -- ============================================================================
 -- §5d The live `.replyRecv` arm itself

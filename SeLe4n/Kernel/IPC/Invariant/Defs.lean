@@ -1104,7 +1104,7 @@ resolved, one `ipcUnwrapCaps` of the resolved capabilities, whose badges are
 valid whenever the pre-state's are.  Every WithCaps receive preservation proof
 goes through this one shape. -/
 theorem receiveTransferCaps_frame
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState}
     {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
@@ -1137,7 +1137,7 @@ theorem receiveTransferCaps_frame
 
 /-- WS-ZA ZA4.7: the rendezvous capability transfer writes no machine state. -/
 theorem receiveTransferCaps_preserves_machine
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState}
     {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :

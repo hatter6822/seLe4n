@@ -95,7 +95,7 @@ theorem lockSet_endpointReplyOnCore_size_le (st : SystemState)
     (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).size
       ≤ maxLockSetSize := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_endpointReply_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointReply_extendOpt_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- The `replyRecv` resolved footprint — the widest IPC footprint the kernel
 declares.  **Twenty-one** members over all argument values on the widest path: a

@@ -869,7 +869,7 @@ so the obligation also covers the CDT nodes that resolution mints).
 The residue — a usable bundle lemma for a grant-bearing transfer — is registered
 debt. -/
 def receiveTransferCapsPreservesCapabilityBundle
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)) (endpointId : SeLe4n.ObjId) : Prop :=
+    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)) (endpointId : Option SeLe4n.ObjId) : Prop :=
   ∀ (target? : Option (TCB × Option CSpaceAddr)) (stI stJ : SystemState)
     (summary : CapTransferSummary),
     capabilityInvariantBundle stI →
@@ -880,7 +880,7 @@ def receiveTransferCapsPreservesCapabilityBundle
 to transfer nothing (no grant right, no extra-cap addresses, or a fault) — the
 transfer is then the identity.  The inhabitation witness: a hypothesis nothing
 exhibits is indistinguishable from one that cannot hold. -/
-theorem receiveTransferCapsPreservesCapabilityBundle_of_none (endpointId : SeLe4n.ObjId) :
+theorem receiveTransferCapsPreservesCapabilityBundle_of_none (endpointId : Option SeLe4n.ObjId) :
     receiveTransferCapsPreservesCapabilityBundle none endpointId := by
   intro _ stI stJ summary hInv hStep
   simp only [receiveTransferCaps, Except.ok.injEq, Prod.mk.injEq] at hStep

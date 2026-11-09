@@ -852,10 +852,10 @@ reply's restart frame or the delivered reply's staging, each into a thread the
 reply leg found blocked on its reply at the entry's start. -/
 theorem replyTransferOnCoreChecked_savedRegsWrittenFree {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
-    {msg : IpcMessage} {ec e : CoreId} {st st' : SystemState}
+    {msg : IpcMessage} {grant : Bool} {ec e : CoreId} {st st' : SystemState}
     (hD : st.currentDequeuedUnique) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
     (hInv : st.objects.invExt)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg ec st = .ok ((), st')) :
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant ec st = .ok ((), st')) :
     savedRegsWrittenFree e st st st' := by
   unfold replyTransferOnCoreChecked at h
   split at h
@@ -872,13 +872,20 @@ theorem replyTransferOnCoreChecked_savedRegsWrittenFree {ctx : LabelingContext}
     | error _ => intro h; cases h
     | ok _ =>
       intro h
-      cases h
-      have h1 := endpointReplyCrossCoreDispatchChecked_savedRegsUnwritten ctx replier callerTid
-        msg ec hInv
-      rw [hR] at h1
-      exact h1.writtenFree.trans (.of_kept (stageDeliveredMessage_savedRegsKeptExcept s callerTid
-        0 h1.2).1 fun _ e => e ▸ offCoreFree_of_notReady hD hRT hBNR
-          (endpointReplyCrossCoreDispatchChecked_ok_target_notReady hR))
+      simp only [] at h
+      cases hX : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hX] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hX] at h
+        cases h
+        have h1 := endpointReplyCrossCoreDispatchChecked_savedRegsUnwritten ctx replier callerTid
+          msg ec hInv
+        rw [hR] at h1
+        have h2 := h1.trans (receiveTransferCaps_savedRegsUnwritten h1.2 hX)
+        exact h2.writtenFree.trans (.of_kept (stageDeliveredMessage_savedRegsKeptExcept sX
+          callerTid summary.capInfo h2.2).1 fun _ e => e ▸ offCoreFree_of_notReady hD hRT hBNR
+            (endpointReplyCrossCoreDispatchChecked_ok_target_notReady hR))
 
 /-- Answering the `.replyRecv` caller writes the saved registers of that caller
 only: the staging of its delivered message, or the fault outcome (a restart frame

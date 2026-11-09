@@ -117,6 +117,22 @@ The specification's IPC capability transfer is restated as seL4's
   `2^63` and would be a heap number as a `Nat`.  The Rust `MAX_LABEL`,
   `ERROR_LABEL_BASE` and the blocked-resume sentinel follow, and the shared
   ABI layout table (`tests/fixtures/abi_layout.expected`) is regenerated.
+- **A reply transfers capabilities, as seL4's `doReplyTransfer`**
+  (`replyTransferCaps`): a `.reply` to an unfaulted caller runs the transfer
+  of seL4's `doIPCTransfer` with no endpoint and the reply capability's grant
+  right (`replyTransferOnCore … grant`).  The replier's extra capabilities are
+  installed into the one receive slot the caller's buffer names; with no
+  endpoint nothing unwraps (`capUnwrapsAt` takes an `Option`), and without
+  grant the replier names none.  The caller's staged message info reports the
+  count (`summary.capInfo`).  The caller's receive slot CNode is in the reply
+  footprint (`replyInstallCNode?`,
+  `lockSet_endpointReplyOnCore_covers_replyInstall`, size ≤ 16 under the
+  ceiling of 29), and the reply's in-place arms are taken only when the
+  transfer moves nothing (`replyTransferInertW`,
+  `replyTransferCaps_of_inert`, `replyTransferOnCore_of_no_fault_inert`);
+  otherwise the arm runs the specification.  The syscall entry captures the
+  answered caller's receive path on a `.reply` (`transferReceiverCode`).  A
+  faulted caller takes no transfer, as seL4.
 - **Fixed**: `docs/CLAIM_EVIDENCE_INDEX.md` cited two theorems that do not
   exist (`CapSpaceAgrees.storeSendRendezvous`, `.storeCallRendezvous`); the row
   now cites the frame lemmas the in-place transfers use.

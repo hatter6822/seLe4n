@@ -774,7 +774,7 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.tabl
 
 /-- **The capability transfer keeps the table back-links**: every object it
 writes is a CNode or a thread's links. -/
-theorem ipcUnwrapCaps_tableReferenceFrame {caps : Array TransferCap} {endpointId : SeLe4n.ObjId}
+theorem ipcUnwrapCaps_tableReferenceFrame {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
     {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -799,7 +799,7 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.rele
 
 /-- **The capability transfer holds the release queues**: it writes no
 scheduler slot, and every object it writes is a CNode or a thread's links. -/
-theorem ipcUnwrapCaps_releaseStateAgree {caps : Array TransferCap} {endpointId : SeLe4n.ObjId}
+theorem ipcUnwrapCaps_releaseStateAgree {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
     {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -829,7 +829,7 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.refi
 
 /-- The capability transfer keeps every context's refill view: every object it
 writes is a CNode or a thread's links. -/
-theorem ipcUnwrapCaps_refillViewsKept {caps : Array TransferCap} {endpointId : SeLe4n.ObjId}
+theorem ipcUnwrapCaps_refillViewsKept {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
     {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -854,7 +854,7 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.yiel
 
 /-- The capability transfer keeps every yield code: every object it writes is
 a CNode or a thread's links. -/
-theorem ipcUnwrapCaps_yieldLinksKept {caps : Array TransferCap} {endpointId : SeLe4n.ObjId}
+theorem ipcUnwrapCaps_yieldLinksKept {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
     {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -866,7 +866,7 @@ theorem ipcUnwrapCaps_yieldLinksKept {caps : Array TransferCap} {endpointId : Se
 
 /-- The cap transfer writes CNodes, the derivation tree and slot links: every
 thread's TCB reads as it did off its slot links. -/
-theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {endpointId : SeLe4n.ObjId}
+theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
     {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) : RunQueueStage st st' :=
   have hS := ipcUnwrapCaps_preserves_scheduler caps endpointId rtcb slot? st st' summary h
@@ -886,7 +886,7 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {endpointId : SeL
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
 receiver-side unwrap. -/
 theorem receiveTransferCaps_runQueueStage
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) : RunQueueStage st st' := by
   unfold receiveTransferCaps at h

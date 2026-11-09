@@ -764,9 +764,9 @@ runs; its arms are the checked dispatch's, ungated. -/
 
 /-- The unchecked reply: the fault reply, or the reply and the delivered frame. -/
 theorem replyTransferOnCore_mappingStage {replier callerTid : SeLe4n.ThreadId}
-    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage}
+    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
     {executingCore : Concurrency.CoreId} {st st' : SystemState}
-    (h : replyTransferOnCore replier callerTid mi regs msg executingCore st = .ok ((), st')) :
+    (h : replyTransferOnCore replier callerTid mi regs msg grant executingCore st = .ok ((), st')) :
     MappingStage st st' := by
   unfold replyTransferOnCore at h
   split at h
@@ -787,8 +787,15 @@ theorem replyTransferOnCore_mappingStage {replier callerTid : SeLe4n.ThreadId}
     | error _ => intro h; cases h
     | ok _ =>
       intro h hR
-      cases h
-      exact hR.trans (stageDeliveredMessage_mappingStage s callerTid 0)
+      simp only [] at h
+      cases hX : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hX] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hX] at h
+        cases h
+        exact (hR.trans (receiveTransferCaps_mappingStage hX)).trans
+          (stageDeliveredMessage_mappingStage sX callerTid summary.capInfo)
 
 /-- **Every arm the unchecked `dispatchWithCap` routes keeps the mappings
 recorded**, the capability-only arms included. -/

@@ -100,11 +100,12 @@ def receiveSlot? (st : SystemState) (tcb : TCB) : Option CSpaceAddr :=
 
 /-- **A capability the transfer unwraps**: one to the endpoint the message was
 sent on (seL4: an endpoint capability whose object is that endpoint).  Only its
-badge is delivered. -/
-@[inline] def capUnwrapsAt (cap : Capability) (endpointId : SeLe4n.ObjId) : Bool :=
-  match cap.target with
-  | .object id => id == endpointId
-  | _ => false
+badge is delivered.  A reply is sent on no endpoint (seL4's `doReplyTransfer`
+passes `NULL` to `doIPCTransfer`), so it unwraps nothing. -/
+@[inline] def capUnwrapsAt (cap : Capability) (endpointId : Option SeLe4n.ObjId) : Bool :=
+  match cap.target, endpointId with
+  | .object id, some ep => id == ep
+  | _, _ => false
 
 open SeLe4n.Kernel.Architecture.IpcBufferRead in
 /-- **The badge an unwrapped capability delivers, written to the receiver's
@@ -137,7 +138,7 @@ def recordUnwrappedBadge (st : SystemState) (tcb : TCB) (i : Nat) (badge : SeLe4
 `idx`: unwrap a capability to the endpoint (its badge to the receiver's buffer),
 or install it in the receive slot `slot?` and use the slot up, or stop.
 Termination is structural on `fuel` (`caps.size` at the entry). -/
-def ipcUnwrapCapsLoop (caps : Array TransferCap) (endpointId : SeLe4n.ObjId) (rtcb : TCB)
+def ipcUnwrapCapsLoop (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId) (rtcb : TCB)
     (idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult) (fuel : Nat) :
     Kernel CapTransferSummary :=
   match fuel with
@@ -163,7 +164,7 @@ def ipcUnwrapCapsLoop (caps : Array TransferCap) (endpointId : SeLe4n.ObjId) (rt
 /-- **Transfer the capabilities resolved at the rendezvous** (seL4's
 `transferCapsToSlots`) to the receiver `rtcb`, whose receive slot is `slot?`,
 for a message sent on `endpointId`. -/
-def ipcUnwrapCaps (caps : Array TransferCap) (endpointId : SeLe4n.ObjId) (rtcb : TCB)
+def ipcUnwrapCaps (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId) (rtcb : TCB)
     (slot? : Option CSpaceAddr) : Kernel CapTransferSummary :=
   ipcUnwrapCapsLoop caps endpointId rtcb 0 slot? #[] caps.size
 
@@ -173,7 +174,7 @@ satisfies, and that an install into the receive slot satisfies, relates the
 loop's result to its start. -/
 theorem ipcUnwrapCapsLoop_rel (R : SystemState → SystemState → Prop)
     (hRefl : ∀ s, R s s) (hTrans : ∀ a b c, R c b → R b a → R c a)
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId) (rtcb : TCB)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId) (rtcb : TCB)
     (hBadge : ∀ s i b, R (recordUnwrappedBadge s rtcb i b) s) :
     ∀ (fuel idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult)
       (st st' : SystemState) (summary : CapTransferSummary),
@@ -217,7 +218,7 @@ theorem ipcUnwrapCapsLoop_rel (R : SystemState → SystemState → Prop)
 /-- `ipcUnwrapCapsLoop_rel` at the entry. -/
 theorem ipcUnwrapCaps_rel (R : SystemState → SystemState → Prop)
     (hRefl : ∀ s, R s s) (hTrans : ∀ a b c, R c b → R b a → R c a)
-    {caps : Array TransferCap} {endpointId : SeLe4n.ObjId} {rtcb : TCB}
+    {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId} {rtcb : TCB}
     {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (hBadge : ∀ s i b, R (recordUnwrappedBadge s rtcb i b) s)
     (hInst : ∀ dst s s' (tc : TransferCap), slot? = some dst → (∃ i : Nat, caps[i]? = some tc) →
@@ -226,7 +227,7 @@ theorem ipcUnwrapCaps_rel (R : SystemState → SystemState → Prop)
   ipcUnwrapCapsLoop_rel R hRefl hTrans caps endpointId rtcb hBadge _ _ _ _ _ _ _ hInst h
 
 theorem ipcUnwrapCaps_preserves_scheduler (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     st'.scheduler = st.scheduler :=
@@ -237,7 +238,7 @@ theorem ipcUnwrapCaps_preserves_scheduler (caps : Array TransferCap)
 /-- WS-SM SM8.B.2: the transfer never touches the machine, so no core's banked
 `RegisterFile` moves: a badge goes to the write ledger, an install to a CNode. -/
 theorem ipcUnwrapCaps_preserves_machine (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     st'.machine = st.machine :=
@@ -247,7 +248,7 @@ theorem ipcUnwrapCaps_preserves_machine (caps : Array TransferCap)
 
 /-- WS-RR RR2.6: the transfer preserves the object store's extended invariant. -/
 theorem ipcUnwrapCaps_preserves_objects_invExt (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -271,7 +272,7 @@ theorem agreeMeta_cnode_back {st st' : SystemState} {oid : SeLe4n.ObjId}
 to derivation metadata, or it is the receive slot's CNode, a CNode before and
 after.  Every per-object frame below is a corollary. -/
 theorem ipcUnwrapCaps_object_cases (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -314,7 +315,7 @@ theorem ipcUnwrapCaps_object_cases (caps : Array TransferCap)
 /-- The transfer holds every object other than the receive slot's CNode up to
 derivation metadata. -/
 theorem ipcUnwrapCaps_preserves_objects_ne (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (hNe : ∀ dst, slot? = some dst → oid ≠ dst.cnode) (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -327,7 +328,7 @@ theorem ipcUnwrapCaps_preserves_objects_ne (caps : Array TransferCap)
 writes the receive slot's CNode, and every other object up to derivation
 metadata, which only CNodes and threads carry. -/
 theorem ipcUnwrapCaps_preserves_nonCNode (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     {o : KernelObject} (hNotCn : ∀ cn, o ≠ .cnode cn) (hNoMeta : ∀ t, o ≠ .tcb t)
     (hO : st.objects[oid]? = some o) (hObjInv : st.objects.invExt)
@@ -339,7 +340,7 @@ theorem ipcUnwrapCaps_preserves_nonCNode (caps : Array TransferCap)
 
 /-- And back: a non-CNode object after the transfer was there before. -/
 theorem ipcUnwrapCaps_nonCNode_backward (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     {o : KernelObject} (hNotCn : ∀ cn, o ≠ .cnode cn) (hNoMeta : ∀ t, o ≠ .tcb t)
     (hO : st'.objects[oid]? = some o) (hObjInv : st.objects.invExt)
@@ -350,7 +351,7 @@ theorem ipcUnwrapCaps_nonCNode_backward (caps : Array TransferCap)
   · rw [hO] at hCn; exact absurd (Option.some.inj hCn) (hNotCn cn)
 
 theorem ipcUnwrapCaps_preserves_ntfn_objects (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (ntfn : Notification) (hNtfn : st.objects[oid]? = some (.notification ntfn))
     (hObjInv : st.objects.invExt)
@@ -360,7 +361,7 @@ theorem ipcUnwrapCaps_preserves_ntfn_objects (caps : Array TransferCap)
     hObjInv h
 
 theorem ipcUnwrapCaps_preserves_ep_objects (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (ep : Endpoint) (hEp : st.objects[oid]? = some (.endpoint ep))
     (hObjInv : st.objects.invExt)
@@ -370,7 +371,7 @@ theorem ipcUnwrapCaps_preserves_ep_objects (caps : Array TransferCap)
     hObjInv h
 
 theorem ipcUnwrapCaps_preserves_schedContext_objects (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (sc : SchedContext) (hSc : st.objects[oid]? = some (.schedContext sc))
     (hObjInv : st.objects.invExt)
@@ -380,7 +381,7 @@ theorem ipcUnwrapCaps_preserves_schedContext_objects (caps : Array TransferCap)
     hObjInv h
 
 theorem ipcUnwrapCaps_preserves_reply_objects (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (r : SeLe4n.Kernel.Reply) (hR : st.objects[oid]? = some (.reply r))
     (hObjInv : st.objects.invExt)
@@ -392,7 +393,7 @@ theorem ipcUnwrapCaps_preserves_reply_objects (caps : Array TransferCap)
 /-- IPC de-threading D4 Slice 2b: a post-state endpoint pulls back to the same
 pre-state endpoint. -/
 theorem ipcUnwrapCaps_endpoint_backward (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (ep : Endpoint) (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
@@ -403,7 +404,7 @@ theorem ipcUnwrapCaps_endpoint_backward (caps : Array TransferCap)
 
 /-- A post-state notification was there before. -/
 theorem ipcUnwrapCaps_ntfn_backward (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (ntfn : Notification) (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
@@ -414,7 +415,7 @@ theorem ipcUnwrapCaps_ntfn_backward (caps : Array TransferCap)
 
 /-- A post-state scheduling context was there before. -/
 theorem ipcUnwrapCaps_schedContext_backward (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (sc : SchedContext) (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
@@ -425,7 +426,7 @@ theorem ipcUnwrapCaps_schedContext_backward (caps : Array TransferCap)
 
 /-- A post-state reply object was there before. -/
 theorem ipcUnwrapCaps_reply_backward (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
@@ -436,7 +437,7 @@ theorem ipcUnwrapCaps_reply_backward (caps : Array TransferCap)
 
 /-- Every TCB survives the transfer off its space slots' derivation links. -/
 theorem ipcUnwrapCaps_preserves_tcb_objects (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (tcb : TCB) (hTcb : st.objects[oid]? = some (.tcb tcb)) (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -448,7 +449,7 @@ theorem ipcUnwrapCaps_preserves_tcb_objects (caps : Array TransferCap)
 /-- IPC de-threading D2: a TCB after the transfer was a TCB before, with the same
 fields off its space slots' derivation links. -/
 theorem ipcUnwrapCaps_tcb_backward (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (tcb : TCB) (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
@@ -461,7 +462,7 @@ theorem ipcUnwrapCaps_tcb_backward (caps : Array TransferCap)
 /-- **WS-RR RR8.12**: the transfer fixes the whole `getTcb?` projection off the
 space slots' derivation links. -/
 theorem ipcUnwrapCaps_getTcb?_eq (caps : Array TransferCap)
-    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -495,7 +496,7 @@ theorem ipcUnwrapCaps_getTcb?_eq (caps : Array TransferCap)
 /-- A transfer with no receive slot installs nothing: it unwraps or stops, and
 writes no object. -/
 theorem ipcUnwrapCaps_objects_of_noSlot {caps : Array TransferCap}
-    {endpointId : SeLe4n.ObjId} {rtcb : TCB} {st st' : SystemState}
+    {endpointId : Option SeLe4n.ObjId} {rtcb : TCB} {st st' : SystemState}
     {summary : CapTransferSummary}
     (h : ipcUnwrapCaps caps endpointId rtcb none st = .ok (summary, st')) :
     st'.objects = st.objects ∧ st'.cdt = st.cdt :=

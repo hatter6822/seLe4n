@@ -33,7 +33,7 @@ open SeLe4n.Model
 /-- **A transfer to a receiver that can take no capability is the identity and
 reports none.** -/
 theorem receiveTransferCaps_of_noTarget
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)) (endpointId : SeLe4n.ObjId)
+    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)) (endpointId : Option SeLe4n.ObjId)
     (st : SystemState) :
     receiveTransferCaps req endpointId none st = .ok ({ results := #[] }, st) := by
   unfold receiveTransferCaps
@@ -268,6 +268,19 @@ theorem receiveSlotAbsentW_eq (st : SystemState) (tcb : TCB) :
     cases receiverBufferWord? st tcb Architecture.IpcBufferRead.ipcBufferReceiveIndexWord <;>
     cases receiverBufferWord? st tcb Architecture.IpcBufferRead.ipcBufferReceiveDepthWord <;>
     first | rfl | exact receivePathAbsentW_eq _ _ _ _ _
+
+/-- **A reply transfers no capability, decided in place**: the reply
+capability lacks the grant right, or the caller `ct` has no IPC buffer the
+kernel may write, or its buffer names no receive slot.  A reply is sent on no
+endpoint, so nothing unwraps, and the decision is the specification's
+(`replyTransferInert_of_W`, then `replyTransferCaps_of_inert`). -/
+@[inline] def replyTransferInertW (st : SystemState) (ct : TCB) (grant : Bool) : Bool :=
+  !grant || !receiverHasBuffer st ct || receiveSlotAbsentW st ct
+
+theorem replyTransferInert_of_W {st : SystemState} {ct : TCB} {grant : Bool}
+    (h : replyTransferInertW st ct grant = true) :
+    (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true := by
+  rwa [replyTransferInertW, receiveSlotAbsentW_eq] at h
 
 /-- The capability an address names does not unwrap at `endpointId` (or the
 address names none), decided in place (`extraCapStaysW_eq`). -/

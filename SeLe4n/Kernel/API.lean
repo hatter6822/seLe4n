@@ -4374,7 +4374,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             -- the fault handler's reply would wake the faulted thread `.ready`
             -- with its saved PC still addressing the instruction that faulted.
             replyTransferOnCore tid callerTid decoded.msgInfo decoded.msgRegs
-              { registers := body, badge := cap.badge } executingCore st
+              { registers := body, badge := cap.badge } (cap.rights.mem .grant) executingCore st
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
   -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
@@ -4897,7 +4897,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
               -- the unchecked one exactly when that gate admits
               -- (`replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed`).
               replyTransferOnCoreChecked ctx tid callerTid decoded.msgInfo decoded.msgRegs
-                { registers := body, badge := cap.badge } executingCore st
+                { registers := body, badge := cap.badge } (cap.rights.mem .grant) executingCore st
             else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
@@ -5917,7 +5917,7 @@ theorem checkedDispatch_reply_eq_unchecked_when_allowed
   -- WS-RR RR4.14: the seam collapses on *both* branches under the same flow
   -- guard, so the fault branch costs this proof nothing.
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid callerTid
-    decoded.msgInfo decoded.msgRegs _ _ st hFlow]
+    decoded.msgInfo decoded.msgRegs _ _ _ st hFlow]
 
 /-- AJ1-D (M-01) / WS-SM SM6.D: When the information-flow policy allows both legs
 (reply + receive), checked and unchecked `.replyRecv` dispatch produce identical
@@ -6750,7 +6750,7 @@ theorem dispatchWithCap_reply_populates_msg
             -- pre-RR4 body verbatim — cross-core reply plus the RA.B.5b
             -- delivered-message staging (`replyTransferOnCore_of_no_fault`).
             replyTransferOnCore tid callerTid decoded.msgInfo decoded.msgRegs
-              { registers := body, badge := cap.badge } executingCore st := by
+              { registers := body, badge := cap.badge } (cap.rights.mem .grant) executingCore st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================
@@ -6984,7 +6984,12 @@ pending fault.  A faulted caller's reply is seL4's fault reply — it installs a
 restart frame or abandons the thread — and delivers no message, so there is no
 `.message` frame for the boundary to read.  `hNoFault` is a fact about the
 pre-state of an ordinary `.call`, whose caller faulted at no point: a fault
-delivery is itself a Call, and the two cannot be the same one. -/
+delivery is itself a Call, and the two cannot be the same one.
+
+The frame reports the reply's capability transfer (`replyTransferCaps`, seL4's
+`doReplyTransfer` → `doIPCTransfer` under the reply capability's grant right):
+the boundary reads the delivered reply with the transfer's `capInfo`, in the
+state the transfer leaves. -/
 theorem dispatchArm_call_frame_delivered_by_reply
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (rid : SeLe4n.ReplyId) (reply : Reply)
@@ -7000,19 +7005,21 @@ theorem dispatchArm_call_frame_delivered_by_reply
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           badge := cap.badge }
         executingCore st = (st1, .ok sgi))
-    (hTcb : st1.getTcb? callerTid = some tcb)
+    (summary : CapTransferSummary) (stX : SystemState)
+    (hX : replyTransferCaps st tid callerTid (cap.rights.mem .grant) st1 = .ok (summary, stX))
+    (hTcb : stX.getTcb? callerTid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
-    (hObjInv : st1.objects.invExt) :
+    (hObjInv : stX.objects.invExt) :
     Architecture.syscallReturnShape .call = .message ∧
     ∃ stPost, dispatchWithCap decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost callerTid
-        = Architecture.returnFrameOfMessage msg 0
-            (Architecture.messageOverflowWrites st1 tcb msg).length := by
-  refine ⟨rfl, Architecture.stageDeliveredMessage st1 callerTid 0, ?_, ?_⟩
+        = Architecture.returnFrameOfMessage msg summary.capInfo
+            (Architecture.messageOverflowWrites stX tcb msg).length := by
+  refine ⟨rfl, Architecture.stageDeliveredMessage stX callerTid summary.capInfo, ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
-      replyAnsweredCaller?, hReply, hCaller, replyTransferOnCore, hNoFault, hDispatch]
-  · exact Architecture.blockedReturn_staged_in_waiter_frame st1 callerTid tcb msg 0
+      replyAnsweredCaller?, hReply, hCaller, replyTransferOnCore, hNoFault, hDispatch, hX]
+  · exact Architecture.blockedReturn_staged_in_waiter_frame stX callerTid tcb msg summary.capInfo
       hTcb hReady hMsg hObjInv
 
 -- ============================================================================

@@ -1282,6 +1282,18 @@ theorem answeredFrameHeadContext?_congr {s1 s2 : SystemState} (target : SeLe4n.T
   | none => rfl
   | some rid => exact replyFrameHeadHolder?_congr rid (hReply rid) hSc
 
+/-- **The CNode a reply's capability install writes**: the answered caller's
+receive slot's CNode, read from the pre-state through the expression the
+transfer reads (`receiverCapSlot?`, the slot `replyTransferCaps` installs into),
+when the replier's frame asks to transfer capabilities.  The footprint does not
+see the reply capability's grant right, so the member is declared whenever the
+frame asks, granted or not: a superset of what the transfer writes, never a
+subset. -/
+def replyInstallCNode? (st : SystemState) (replier target : SeLe4n.ThreadId) :
+    Option SeLe4n.ObjId :=
+  if (replyCapRequest st replier true).isSome then (receiverCapSlot? st target).map (·.cnode)
+  else none
+
 /-- WS-SM SM6.C.1: the concrete lock-set a cross-core `endpointReplyOnCore` on
 state `st` acquires — `lockSet_endpointReply` with the pop's members **pre-resolved
 from `st`** through `answeredFrameHeadContext?`, the expression the pop itself
@@ -1342,7 +1354,8 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
   let belowHead := match answeredFrameHeadContextId? st target with
     | none => (none, none)
     | some scId => replyStackBelowHead? st scId
-  lockSet_endpointReply server cnodeRootObjId target
+  lockSetExtendOpt
+  (lockSet_endpointReply server cnodeRootObjId target
     (answeredFrameHeadContextId? st target)
     ((answeredFrameHeadContext? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
@@ -1383,7 +1396,10 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
       (donationOriginRecipient? st))
     -- **WS-ZA ZA4.6**: and the answered caller's reply-waiter predecessor and
     -- successor, which `unlinkReplyWaiter target expected` links past it.
-    (st.replyWaiterPrev? target) (st.replyWaiterNext? target)
+    (st.replyWaiterPrev? target) (st.replyWaiterNext? target))
+    -- And the CNode the reply's capability transfer installs into
+    -- (`replyInstallCNode?`, seL4's `doReplyTransfer` → `doIPCTransfer`).
+    ((replyInstallCNode? st replier target).map (fun r => (cnodeLock r, AccessMode.write)))
 
 /-- **WS-RR RR8.12 (PR #897 Codex review): does this thread carry an outstanding
 `Call`?** -- the PRE-state sibling of `rendezvousDequeuedCall`, clause for clause.
@@ -2082,6 +2098,44 @@ theorem endpointReplyOnCore_not_blocked_no_sgi
 -- §5  SM6.C.1/.5 — Lock-set correctness (`.reply` / `.replyRecv`)
 -- ============================================================================
 
+/-- A **write**-mode `insertOrMerge` always leaves its key write-locked
+(write is the `AccessMode.lub` top).  (Local private copy of the SM6.B structural
+fact, kept private so the reply module needs no import of the notification
+module.) -/
+private theorem self_write_mem_insertOrMerge (S : LockSet) (l : LockKey) :
+    (l, AccessMode.write) ∈ (S.insertOrMerge l AccessMode.write).pairs := by
+  unfold LockSet.insertOrMerge
+  split
+  · rename_i hc
+    rw [LockSet.containsKey, List.any_eq_true] at hc
+    obtain ⟨p, hpmem, hpfst⟩ := hc
+    have hEq : p.fst = l := of_decide_eq_true hpfst
+    exact List.mem_map.mpr ⟨p, hpmem, by rw [if_pos hEq, AccessMode.lub_write_right]⟩
+  · exact List.mem_cons.mpr (Or.inl rfl)
+
+/-- An existing write-lock survives *any* further write `insertOrMerge`: a
+distinct key leaves it untouched; the same key merges write+write = write. -/
+private theorem write_mem_insertOrMerge_of_write_mem (S : LockSet) (l k : LockKey)
+    (h : (l, AccessMode.write) ∈ S.pairs) :
+    (l, AccessMode.write) ∈ (S.insertOrMerge k AccessMode.write).pairs := by
+  by_cases hEq : k = l
+  · rw [hEq]; exact self_write_mem_insertOrMerge S l
+  · exact mem_insertOrMerge_of_mem_of_ne S k AccessMode.write (l, AccessMode.write) h
+      (fun hh => hEq hh.symm)
+
+/-- An existing write-lock survives `lockSetExtendOpt` with a *write*-mode
+extension (a `.map (fun x => (f x, .write))`): the `none` extension is the
+identity; a `some` extension is `write_mem_insertOrMerge_of_write_mem`. -/
+private theorem write_mem_lockSetExtendOpt_map {α : Type} (S : LockSet) (l : LockKey)
+    (o : Option α) (f : α → LockKey) (h : (l, AccessMode.write) ∈ S.pairs) :
+    (l, AccessMode.write)
+      ∈ (lockSetExtendOpt S (o.map (fun x => (f x, AccessMode.write)))).pairs := by
+  cases o with
+  | none => simpa only [Option.map_none, lockSetExtendOpt] using h
+  | some x =>
+      simp only [Option.map_some, lockSetExtendOpt]
+      exact write_mem_insertOrMerge_of_write_mem S l (f x) h
+
 /-- WS-SM SM6.C.1 (`endpointReply_lockSet_correct`): the `endpointReply` lock-set
 is **hierarchically correct** — every lock it declares has a kind in
 `permittedKinds .reply` (so the acquisitions respect the SM0.I lock ladder), and
@@ -2135,7 +2189,12 @@ theorem lockSet_endpointReplyOnCore_correct
     ∀ p ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs,
       p.fst.kind ∈ permittedKinds .reply := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_consistent_reply _ cnodeRootObjId target _ _ _ _ _ _ _ _ _ _ _
+  refine lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_reply _ cnodeRootObjId target _ _ _ _ _ _ _ _ _ _ _) ?_
+  intro pp h
+  simp only [Option.map_eq_some_iff] at h
+  obtain ⟨r, -, rfl⟩ := h
+  simp [cnodeLock, permittedKinds]
 
 /-- WS-SM SM6.C.5 (`endpointReplyRecv_lockSet_correct`): the combined `replyRecv`
 lock-set — the reply footprint extended with the receive-leg endpoint write and
@@ -2238,8 +2297,10 @@ theorem lockSet_endpointReplyOnCore_covers_replyWaiterNeighbours
       (tcbLock t, AccessMode.write)
         ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs) := by
   refine ⟨fun t h => ?_, fun t h => ?_⟩ <;> unfold lockSet_endpointReplyOnCore <;> rw [h]
-  · exact lockSet_endpointReply_replyWaiterPrev_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
-  · exact lockSet_endpointReply_replyWaiterNext_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact write_mem_lockSetExtendOpt_map _ _ _ _
+      (lockSet_endpointReply_replyWaiterPrev_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+  · exact write_mem_lockSetExtendOpt_map _ _ _ _
+      (lockSet_endpointReply_replyWaiterNext_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _)
 
 /-- **WS-ZA ZA4.6**: and `.replyRecv`'s -- the same two for its reply leg, and
 the replier's old reply-waiter head its receive leg's call rendezvous relinks. -/
@@ -2460,44 +2521,6 @@ theorem endpointReplyOnCore_ok_target_ready
 -- ── SM6.C.6 — the caller-TCB write lock is in the footprint (the reply-state
 --    lifecycle write `blockedOnReply → .ready` lands on this lock) ──
 
-/-- A **write**-mode `insertOrMerge` always leaves its key write-locked
-(write is the `AccessMode.lub` top).  (Local private copy of the SM6.B structural
-fact, kept private so the reply module needs no import of the notification
-module.) -/
-private theorem self_write_mem_insertOrMerge (S : LockSet) (l : LockKey) :
-    (l, AccessMode.write) ∈ (S.insertOrMerge l AccessMode.write).pairs := by
-  unfold LockSet.insertOrMerge
-  split
-  · rename_i hc
-    rw [LockSet.containsKey, List.any_eq_true] at hc
-    obtain ⟨p, hpmem, hpfst⟩ := hc
-    have hEq : p.fst = l := of_decide_eq_true hpfst
-    exact List.mem_map.mpr ⟨p, hpmem, by rw [if_pos hEq, AccessMode.lub_write_right]⟩
-  · exact List.mem_cons.mpr (Or.inl rfl)
-
-/-- An existing write-lock survives *any* further write `insertOrMerge`: a
-distinct key leaves it untouched; the same key merges write+write = write. -/
-private theorem write_mem_insertOrMerge_of_write_mem (S : LockSet) (l k : LockKey)
-    (h : (l, AccessMode.write) ∈ S.pairs) :
-    (l, AccessMode.write) ∈ (S.insertOrMerge k AccessMode.write).pairs := by
-  by_cases hEq : k = l
-  · rw [hEq]; exact self_write_mem_insertOrMerge S l
-  · exact mem_insertOrMerge_of_mem_of_ne S k AccessMode.write (l, AccessMode.write) h
-      (fun hh => hEq hh.symm)
-
-/-- An existing write-lock survives `lockSetExtendOpt` with a *write*-mode
-extension (a `.map (fun x => (f x, .write))`): the `none` extension is the
-identity; a `some` extension is `write_mem_insertOrMerge_of_write_mem`. -/
-private theorem write_mem_lockSetExtendOpt_map {α : Type} (S : LockSet) (l : LockKey)
-    (o : Option α) (f : α → LockKey) (h : (l, AccessMode.write) ∈ S.pairs) :
-    (l, AccessMode.write)
-      ∈ (lockSetExtendOpt S (o.map (fun x => (f x, AccessMode.write)))).pairs := by
-  cases o with
-  | none => simpa only [Option.map_none, lockSetExtendOpt] using h
-  | some x =>
-      simp only [Option.map_some, lockSetExtendOpt]
-      exact write_mem_insertOrMerge_of_write_mem S l (f x) h
-
 /-- WS-SM SM6.C.6 (reply-state lifecycle under lock-set): the **caller-TCB write
 lock** — under which the reply writes the caller's `blockedOnReply → .ready`
 state transition (the reply-state "object" lifecycle; this kernel has no separate
@@ -2716,6 +2739,49 @@ theorem lockSet_endpointReceiveOnCore_covers_cdt
     (receiveRendezvousDonatedSc? st endpointId receiver)
     (receiveSideQueueStructureNeighbor? st endpointId)
     _ _ _ _ _ _ _ _
+/-- **The reply footprint declares the CNode its capability transfer
+installs into** (`replyInstallCNode?`) as a **write** member. -/
+theorem lockSet_endpointReplyOnCore_covers_replyInstall
+    (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (r : SeLe4n.ObjId)
+    (hR : replyInstallCNode? st replier target = some r) :
+    (cnodeLock r, AccessMode.write)
+      ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
+  unfold lockSet_endpointReplyOnCore
+  rw [hR]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **A reply's capability transfer writes only the CNode its footprint
+names**: any other object agrees with the pre-transfer state off derivation
+metadata (`receiveTransferCaps_object_cases`), whatever the grant right. -/
+theorem replyTransferCaps_writes_destination (pre st st' : SystemState)
+    (replier target : SeLe4n.ThreadId) (grant : Bool) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (hObjInv : st.objects.invExt)
+    (hStep : replyTransferCaps pre replier target grant st = .ok (summary, st'))
+    (hNe : replyInstallCNode? pre replier target ≠ some oid) :
+    SystemState.objectAgreesOffDerivationMetadataAt st' st oid := by
+  unfold replyTransferCaps at hStep
+  have hNone : ∀ q, replyCapRequest pre replier grant = none →
+      receiveTransferCaps (replyCapRequest pre replier grant) none
+        (receiverCapTarget? pre target) st = .ok q → q.2 = st := by
+    intro q hq h; rw [hq] at h; simp only [receiveTransferCaps, Except.ok.injEq] at h; rw [← h]
+  cases hRq : replyCapRequest pre replier grant with
+  | none =>
+    have h := hNone _ hRq hStep
+    simp only at h
+    exact .of_eq (by rw [h])
+  | some req =>
+    rcases receiveTransferCaps_object_cases oid hObjInv hStep with h | ⟨dst, hD, hO, -⟩
+    · exact h
+    · exfalso; apply hNe
+      have hT : (replyCapRequest pre replier true).isSome = true := by
+        cases grant
+        · unfold replyCapRequest senderFrameCapRequest at hRq; split at hRq <;> simp at hRq
+        · rw [hRq]; rfl
+      unfold replyInstallCNode? receiverCapSlot?
+      simp only [hT, ↓reduceIte]
+      rw [hD]; simp [hO]
+
 /-- **WS-RR RR7.11**: and the receiver's own CSpace root in **write** mode, the
 member `ipcTransferSingleCap`'s `cspaceInsertSlot` needs. -/
 theorem lockSet_endpointReceiveOnCore_covers_capsDestination
@@ -2929,11 +2995,12 @@ theorem lockSet_endpointReplyOnCore_covers_donationPop
         ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
   unfold lockSet_endpointReplyOnCore
   rw [hCtx]
-  refine ⟨lockSet_endpointReply_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
+  refine ⟨write_mem_lockSetExtendOpt_map _ _ _ _ <|
+    lockSet_endpointReply_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
     fun holder hHead => ?_⟩
   rw [hHead]
   simp only [Option.map_some]
-  exact lockSet_endpointReply_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact write_mem_lockSetExtendOpt_map _ _ _ _ <| lockSet_endpointReply_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
 /-- **WS-HP HP6.2**: and `.replyRecv`'s, which is the same pop because its reply
@@ -2986,10 +3053,10 @@ theorem lockSet_endpointReplyOnCore_covers_pop
   · intro head hHead
     have h2 : Option.bind (some scId) (replyStackHead? st) = some head := hHead
     rw [h2]
-    exact lockSet_endpointReply_donatedHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact write_mem_lockSetExtendOpt_map _ _ _ _ <| lockSet_endpointReply_donatedHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
   · intro below hBelow
     rw [hBelow]
-    exact lockSet_endpointReply_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact write_mem_lockSetExtendOpt_map _ _ _ _ <| lockSet_endpointReply_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
 /-- **WS-OD (`v0.35.4`)**: the old head the receive leg's re-donation push
@@ -3061,7 +3128,7 @@ theorem lockSet_endpointReplyOnCore_covers_splicedFrameAbove
       ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
   unfold lockSet_endpointReplyOnCore
   rw [hAbove]
-  exact lockSet_endpointReply_frameAbove_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact write_mem_lockSetExtendOpt_map _ _ _ _ <| lockSet_endpointReply_frameAbove_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
 /-- **WS-RM (`v0.35.6`)**: and `.replyRecv`'s, which is the same splice because
@@ -3105,7 +3172,7 @@ theorem lockSet_endpointReplyOnCore_covers_splicedFrameBelow
       ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
   unfold lockSet_endpointReplyOnCore
   rw [hBelow]
-  exact lockSet_endpointReply_frameBelow_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact write_mem_lockSetExtendOpt_map _ _ _ _ <| lockSet_endpointReply_frameBelow_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
 /-- **WS-HP HP3.3**: and `.replyRecv`'s, which is the same removal because its
@@ -3153,7 +3220,7 @@ theorem lockSet_endpointReplyOnCore_covers_originRecipient
   unfold lockSet_endpointReplyOnCore
   rw [hCtx]
   simp only [Option.bind_some, hOrigin]
-  exact lockSet_endpointReply_originRecipient_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact write_mem_lockSetExtendOpt_map _ _ _ _ <| lockSet_endpointReply_originRecipient_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
 /-- **WS-HP HP10.6**: and `.replyRecv`'s, which is the same write because its

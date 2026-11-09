@@ -136,7 +136,7 @@ theorem endpointQueueEnqueue_ipcStateFrame
 /-- WS-RR RR8.16: the capability transfer writes only the receiver's CSpace and
 slot links, and a post-state TCB is its pre-state self off those links. -/
 theorem ipcUnwrapCaps_ipcStateFrame
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
@@ -150,7 +150,7 @@ theorem ipcUnwrapCaps_ipcStateFrame
 /-- WS-ZA ZA4.7: and so does the rendezvous transfer, which resolves the
 sender's capabilities (CDT nodes only) before it installs them. -/
 theorem receiveTransferCaps_ipcStateFrame
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
     (hStep : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :

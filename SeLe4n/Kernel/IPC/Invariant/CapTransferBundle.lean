@@ -72,7 +72,7 @@ open SeLe4n.Model
 off its slot links,
 and a pre-state SchedContext survives the transfer forward. -/
 theorem ipcUnwrapCaps_preserves_blockedThreadTimeoutConsistent
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
@@ -119,7 +119,7 @@ The donation trio falls out of the two donation frames: the transfer writes no
 TCB, so `sameSchedContextBindings` holds outright, and `donationOwnerFrame`
 carries the SchedContext and owner readings forward. -/
 theorem ipcUnwrapCaps_preserves_ipcInvariantFull
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)

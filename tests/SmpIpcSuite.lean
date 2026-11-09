@@ -4757,7 +4757,7 @@ private def runCallReplyFootprintChecks : IO Unit := do
     assertBool "(d) the footprint names replenish-queue write locks on cores 0 and 1, and run-queue write locks on the client's home and the server's placement"
       (hasReplenishWrite fpD c0 && hasReplenishWrite fpD c1 && replenishMemberCount fpD == 2
         && hasRunQueueWrite fpD c0 && hasRunQueueWrite fpD c1)
-    match replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stQ with
+    match replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty true c1 stQ with
     | .error e => assertBool s!"(d) the live `.reply` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
       assertBool "(d) PAYOFF: the live `.reply` migrated the context back to the client's home (1 -> 0)"
@@ -4779,7 +4779,7 @@ private def runCallReplyFootprintChecks : IO Unit := do
       (decide (segE = []) && replenishMemberCount fpE == 0)
     assertBool "(e) ...while the run segment names the answered client's home"
       (hasRunQueueWrite fpE c0)
-    match replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stL with
+    match replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty true c1 stL with
     | .error e => assertBool s!"(e) the live legacy `.reply` must succeed (got {reprStr e})" false
     | .ok (_, stOutE) =>
       assertBool "(e) PAYOFF: the live `.reply` moves no replenishment on any core"

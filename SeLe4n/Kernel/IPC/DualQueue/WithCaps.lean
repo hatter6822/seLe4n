@@ -79,11 +79,12 @@ the capabilities a sender asked to transfer, looked up in its CSpace now
 (`resolveExtraCaps`, seL4's `lookupExtraCaps`: a capability revoked while the
 sender waited is never transferred), then transferred to the receiver's side
 `target?` (`ipcUnwrapCaps`, seL4's `transferCaps`) for a message sent on
-`endpointId`.  The grant right was checked when the request was formed.  No
+`endpointId` (`none` for a reply, which seL4's `doReplyTransfer` sends on no
+endpoint, so nothing unwraps).  The grant right was checked when the request was formed.  No
 request, nothing that resolves, or a receiver that can take no capability,
 transfers nothing. -/
 def receiveTransferCaps (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
-    (endpointId : SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr)) :
+    (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr)) :
     Kernel CapTransferSummary :=
   fun st =>
     match req with
@@ -95,6 +96,68 @@ def receiveTransferCaps (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
           match target? with
           | none => .ok ({ results := #[] }, st)
           | some (rtcb, slot?) => ipcUnwrapCaps caps endpointId rtcb slot? st
+
+/-- **The capabilities a reply asks to transfer**: the request the replier's
+frame makes (`senderFrameCapRequest`, read from its saved registers and IPC
+buffer as a sender's is) under the reply capability's grant right `grant`
+(seL4's `cap_reply_cap_get_capReplyCanGrant`, which `doReplyTransfer` passes
+to `doIPCTransfer`).  A replier without that right transfers nothing. -/
+def replyCapRequest (st : SystemState) (replier : SeLe4n.ThreadId) (grant : Bool) :
+    Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
+  match st.getTcb? replier with
+  | none => none
+  | some tcb => senderFrameCapRequest st replier tcb grant
+
+/-- **A reply's capability transfer** (seL4's `doReplyTransfer` →
+`doIPCTransfer(sender, NULL, 0, grant, receiver)`): the replier's request,
+transferred to the answered caller's side, both read from the pre-state `pre`,
+for a message sent on no endpoint, so no capability unwraps and the first one
+the caller's receive slot cannot take stops the transfer. -/
+def replyTransferCaps (pre : SystemState) (replier caller : SeLe4n.ThreadId) (grant : Bool) :
+    Kernel CapTransferSummary :=
+  receiveTransferCaps (replyCapRequest pre replier grant) none (receiverCapTarget? pre caller)
+
+/-- **A reply transfers nothing** when the reply capability lacks the grant
+right, the caller has no IPC buffer the kernel may write, or its buffer names
+no receive slot: with no endpoint nothing unwraps, so the loop stops at the
+first capability (`ipcUnwrapCapsLoop`) and the report is zero. -/
+theorem replyTransferCaps_of_inert (pre : SystemState) (replier caller : SeLe4n.ThreadId)
+    (grant : Bool) (ct : TCB) (hT : pre.getTcb? caller = some ct)
+    (hW : (!grant || !receiverHasBuffer pre ct || (receiveSlot? pre ct).isNone) = true)
+    (st : SystemState) :
+    replyTransferCaps pre replier caller grant st = .ok ({ results := #[] }, st) := by
+  unfold replyTransferCaps receiveTransferCaps
+  cases grant
+  · have : replyCapRequest pre replier false = none := by
+      unfold replyCapRequest; split
+      · rfl
+      · rfl
+    rw [this]
+  cases hB : receiverHasBuffer pre ct
+  · have : receiverCapTarget? pre caller = none := by
+      simp [receiverCapTarget?, hT, hB]
+    rw [this]
+    rcases replyCapRequest pre replier true with _ | ⟨_, _, _⟩
+    · rfl
+    · simp only []; split <;> rfl
+  have hS : receiveSlot? pre ct = none := by simpa [hB] using hW
+  have : receiverCapTarget? pre caller = some (ct, none) := by
+    simp [receiverCapTarget?, hT, hB, hS]
+  rw [this]
+  rcases replyCapRequest pre replier true with _ | ⟨root, addrs, depth⟩
+  · rfl
+  simp only []
+  split
+  · rfl
+  unfold ipcUnwrapCaps
+  generalize resolveExtraCaps root addrs depth true st = caps
+  cases hN : caps.size with
+  | zero => simp [ipcUnwrapCapsLoop]
+  | succ n =>
+    simp only [ipcUnwrapCapsLoop]
+    cases caps[0]? with
+    | none => rfl
+    | some tc => simp [capUnwrapsAt]
 
 /-- M-D01: Extended send with capability transfer.
 
@@ -195,7 +258,7 @@ def endpointCallWithCaps
 transfer's object frame is `ipcUnwrapCaps_object_cases` at the slot of its
 target. -/
 theorem receiveTransferCaps_object_cases
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
     {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
     {summary : CapTransferSummary} (oid : SeLe4n.ObjId) (hObjInv : st.objects.invExt)
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :

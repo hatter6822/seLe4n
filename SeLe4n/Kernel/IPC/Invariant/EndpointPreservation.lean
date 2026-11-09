@@ -2041,7 +2041,7 @@ theorem endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates
 transfer was there before (`ipcUnwrapCaps_ntfn_backward`). No precondition
 needed. -/
 theorem ipcUnwrapCaps_preserves_ipcInvariant
-    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
