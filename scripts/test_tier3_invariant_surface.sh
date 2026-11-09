@@ -881,11 +881,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveInstallCNode\? st endpointObjId replier" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_receiveSlot($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_receiveSlot($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The reply-receive's reply leg runs `doReplyTransfer`, so its footprint declares
+# the CNode that transfer installs into (the answered caller's receive slot),
+# proven a write member and proven the only CNode the transfer writes.
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*replyInstallCNode\? st replier target" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_replyInstall($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_replyInstall($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvReplyTransfer_writes_destination($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
 # The parametric receive and reply-receive footprints sit strictly below the
 # ceiling, which is what leaves room for the receive slot's CNode the resolved
 # footprints add (`lockSet_endpoint{Receive,ReplyRecv}OnCore_size_le`).
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReceive_size_lt[^\n]*(\n([ \t][^\n]*)?)*< maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_lt[^\n]*(\n([ \t][^\n]*)?)*< maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_add_two_le[^\n]*(\n([ \t][^\n]*)?)*\.size \+ 2\n *≤ maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
 # A short capability-carrying rendezvous whose transfer transfers nothing is
 # written in place: the transfer is the identity on any state reading every
 # CNode alike, and each arm decides it with the in-place decision the
@@ -924,7 +931,7 @@ run_check "INVARIANT" rg -n '^theorem errorLabelWord_eq_encode($|[ ({:\[\]])' Se
 run_negative_check "INVARIANT" rg -n '^def receiveWindowClosed' SeLe4n/
 # The ceiling and the figures derived from it move together -- the point of
 # stating them as theorems rather than paragraphs.
-run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 29' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 30' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 11" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # NEGATIVE: the superseded figure must not come back.  Mutating by deleting the
 # theorem would be caught by the positive; this keeps it at the old number.
@@ -2221,7 +2228,7 @@ run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(donation, no caps\) size 
 # OD3.5: the ceiling, and the figure derived from it.  `maxLockSetSize` is the
 # WCRT headline's first factor, so a cut that widens a footprint pays here —
 # visibly, as a theorem rather than a paragraph.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 29$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 30$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 # WS-RM (`v0.35.6`) NEGATIVE: the superseded ceiling must not come back.  The
 # positive above would be satisfied by a *deleted* constant only if the whole
 # definition went, which the build catches; this keeps it at the old value, which
@@ -10690,7 +10697,7 @@ run_check "INVARIANT" rg -n 'a caps-installing .\.receive. declares the state-le
 # WS-OD OD3.7: the label names the CONSTANT, not the numeral it holds -- this
 # anchor pinned `= 11` and went stale the moment the ceiling moved, which is the
 # same defect the `_size_le_maxLockSetSize` negative below refuses in Lean.
-run_check "INVARIANT" rg -n 'with the receive slot.s CNode it is maxLockSetSize \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'with the reply install.s CNode too it is maxLockSetSize \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
 # WS-RR RR7.12: the declared footprint is ACQUIRED at the live syscall seam.
 # Before this row exactly one live export bracketed (the raw cross-core
 # suspend seam, retired at WS-ZA ZA6.10), so "per-object reader-writer fine locks"

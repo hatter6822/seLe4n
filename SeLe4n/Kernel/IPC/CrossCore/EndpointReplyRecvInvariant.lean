@@ -778,6 +778,27 @@ theorem replyRecvReplyTransfer_objects_invExt {answer : Option Architecture.Faul
   rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at h
   exact receiveTransferCaps_objects_invExt hI h
 
+/-- **The reply leg's capability transfer writes only the CNode the
+`.replyRecv` footprint names** (`replyInstallCNode?`,
+`lockSet_endpointReplyRecvOnCore_covers_replyInstall`): any other object agrees
+with the pre-transfer state off derivation metadata, whatever the grant right
+and whatever the answer (a fault answer transfers nothing). -/
+theorem replyRecvReplyTransfer_writes_destination
+    (answer : Option Architecture.FaultReplyOutcome) (pre st st' : SystemState)
+    (replier target : SeLe4n.ThreadId) (grant : Bool) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (hObjInv : st.objects.invExt)
+    (hStep : replyRecvReplyTransfer answer pre replier target grant st = .ok (summary, st'))
+    (hNe : replyInstallCNode? pre replier target ≠ some oid) :
+    SystemState.objectAgreesOffDerivationMetadataAt st' st oid := by
+  cases answer with
+  | none =>
+    exact replyTransferCaps_writes_destination pre st st' replier target grant summary oid
+      hObjInv hStep hNe
+  | some o =>
+    rw [replyRecvReplyTransfer_some] at hStep
+    cases hStep
+    exact .of_eq rfl
+
 @[simp] theorem replyRecvReceiveLegState_eq_of_ok (answer : Option Architecture.FaultReplyOutcome)
     (pre : SystemState) (replier : SeLe4n.ThreadId) (grant : Bool) (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId)

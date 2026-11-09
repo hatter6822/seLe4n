@@ -2431,7 +2431,7 @@ theorem applyCallDonationOnCoreLockSet_size_le_maxLockSetSize
   have hSeg := schedFootprintOfCores_length_le (runCores := ([] : List CoreId))
     (replenishCores := [donorHome, doneeHome])
   have hN : Concurrency.numCores = 4 := rfl
-  have hM : Concurrency.maxLockSetSize = 29 := rfl
+  have hM : Concurrency.maxLockSetSize = 30 := rfl
   unfold applyCallDonationOnCoreLockSet
   omega
 

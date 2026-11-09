@@ -75,7 +75,7 @@ honest statement is the budget condition solved for the measurable factor:
 `admissibleCriticalSection` gives the largest per-lock cost a budget admits
 (`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **11 µs**
 (`admissibleCriticalSection_rpi5Tick`).  The 60 µs the master plan §7.2 assumed
-does **not** fit — `29 · 3 · 60 = 5220 µs`
+does **not** fit — `30 · 3 · 60 = 5400 µs`
 (`rpi5Tick_refuses_sixty_micro_sections`), nor did it at any previous ceiling —
 and the boundary at that cost is a footprint of five locks
 (`rpi5Tick_sixty_micro_section_footprint_boundary`), which is what the plan's
@@ -324,6 +324,9 @@ CSpace root of the sender a receive dequeues, read when that sender's extra
 capabilities are looked up at the rendezvous: `1000 / (28 · 3)` floors to 11.
 The `v0.37.5` receive slot raised it 28 → 29, for the CNode a receive's install
 writes, which the receiver's IPC buffer names: `1000 / (29 · 3)` still floors to 11.
+The `v0.37.6` reply-receive reply transfer raised it 29 → 30, for the CNode the
+reply leg's capability transfer installs into, the answered caller's receive
+slot's: `1000 / (30 · 3)` still floors to 11.
 
 How much of the ceiling no reachable state takes up is stated where the
 footprint is, not here: `lockSet_endpointReplyRecvOnCore_size_le_onEveryState` and
@@ -336,9 +339,9 @@ theorem admissibleCriticalSection_rpi5Tick :
     admissibleCriticalSection rpi5TickBudgetMicros = 11 := by decide
 
 /-- WS-RR RR7.31: **and the plan's own assumption fails it.**  A 60 µs per-lock
-section gives `29 · 3 · 60 = 5220 µs`, which is outside the 1 ms tick — so the
+section gives `30 · 3 · 60 = 5400 µs`, which is outside the 1 ms tick — so the
 §7.2 conclusion "comfortably fits within the 1-ms timer tick budget" is false at
-`maxLockSetSize = 29`.  Stated as a negative so the arithmetic is pinned in the
+`maxLockSetSize = 30`.  Stated as a negative so the arithmetic is pinned in the
 direction that matters: a future cut that raises `maxLockSetSize` again, or that
 grounds `tCs` at 60 µs, has to confront this theorem rather than a paragraph.
 WS-OD OD3.5 is the first cut to have done so.

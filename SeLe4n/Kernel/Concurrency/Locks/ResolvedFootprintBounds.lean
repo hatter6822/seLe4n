@@ -108,7 +108,11 @@ the **invoking** receiver's own pre-receive return touches.
 Twenty-one is what the *definition* can produce; no reachable state carries the
 last five and the re-donation members at once, which
 `lockSet_endpointReplyRecvOnCore_size_le_sharp` states.  (The ceiling has since
-grown to `maxLockSetSize`'s twenty-nine; its docstring carries the history.) -/
+grown to `maxLockSetSize`'s thirty; its docstring carries the history.)  The
+parametric reply-receive footprint sits two below the ceiling
+(`lockSet_replyRecv_size_add_two_le`), and the two CNodes the resolved one adds --
+the receive slot the receive leg installs into and the answered caller's receive
+slot the reply leg's capability transfer installs into -- take it to the ceiling. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
@@ -116,7 +120,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
       ≤ maxLockSetSize := by
   unfold lockSet_endpointReplyRecvOnCore
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
-  exact Nat.succ_le_of_lt (lockSet_replyRecv_size_lt ..)
+  refine Nat.le_trans (Nat.succ_le_succ (lockSetExtendOpt_size_le _ _)) ?_
+  exact lockSet_replyRecv_size_add_two_le ..
 
 /-- WS-OD OD1.5: `none` extends nothing. -/
 private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
@@ -197,13 +202,18 @@ reachable state.
 dequeued sender's CSpace root, which the receive leg reads when it looks the
 sender's extra capabilities up, is live exactly on a rendezvous
 (`receiveCapRequest_of_no_queued_sender`), so that branch's figure moves 21 → 22
-and the blocking branch's does not; twenty-two still bounds both. -/
+and the blocking branch's does not; twenty-two still bounds both.
+
+**`v0.37.6`**: the reply leg's capability transfer installs into the answered
+caller's receive slot (`replyInstallCNode?`), live on every branch, so this
+figure moves by one, to twenty-four. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 23 := by
+      ≤ 24 := by
   unfold lockSet_endpointReplyRecvOnCore
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   -- **WS-HP HP10.6**: split on the pop's trigger first, so the origin member and
   -- the two below-head members are decided by one answer.  A frame that heads no
@@ -301,13 +311,18 @@ tombstone above.
 branches only, and each of them already has two members it provably lacks — the
 below-head pair where no context heads a stack or the redirect fires, the splice's
 pair where one does (`lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin`)
-— so the new member fits under the same figure. -/
+— so the new member fits under the same figure.
+
+**`v0.37.6`**: the CNode the reply leg's capability transfer installs into
+(`replyInstallCNode?`) is live on every branch and excluded by nothing, so this
+figure moves by one, to twenty-three. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 22 := by
+      ≤ 23 := by
   unfold lockSet_endpointReplyRecvOnCore
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   cases hHead : answeredFrameHeadContextId? st target with
   | none =>
