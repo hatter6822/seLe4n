@@ -4157,6 +4157,15 @@ run_check "INVARIANT" rg -n '^theorem cspaceCopy_preserves_liveMappingsRecorded(
 run_check "INVARIANT" rg -n '^theorem cspaceMintWithCdt_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem cspaceMove_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem mintReplyCapWithCdt_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
+# A reply capability carries seL4-MCS's `capReplyCanGrant`: the mint gives
+# `.write` and the source's `.grant` (`replyCapRightsFrom`), in the
+# specification's mint, its admitted-writes capability and its compiled form.
+run_check "INVARIANT" rg -n '^theorem replyCapRightsFrom_mem_grant($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem replyCapRightsFrom_mem_write($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem replyCapRightsFrom_subset($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -U -n 'target := \.replyCap rid\n *rights := replyCapRightsFrom parent\.rights' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'rights := replyCapRightsFrom parentRights \}' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'insertFields dst\.slot t \(replyCapRightsFrom parent\.rights\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean

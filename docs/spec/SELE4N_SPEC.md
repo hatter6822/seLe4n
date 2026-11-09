@@ -7562,6 +7562,18 @@ buffer or no receive slot, so an ordinary word-only reply stays in place
 whatever receive path its caller configured; otherwise the specification
 runs.
 
+The grant right a reply capability carries is seL4-MCS's `capReplyCanGrant`
+(since `v0.37.6`).  seL4 creates a Reply object's capability with the bit set
+(`createObject`'s `cap_reply_cap_new(…, true)`), a derived copy keeps it only
+under a grant-bearing mask (`maskCapRights`), and a reply invocation hands it
+to `doReplyTransfer` as its grant.  Here the retyped Reply is held as an
+`.object` capability, and the reply-capability mint cuts the reply capability
+from it: `.write`, the right every reply gate asks, and `.grant` exactly when
+the source carries it (`replyCapRightsFrom`, `replyCapRightsFrom_mem_grant`).
+A carved Reply's capability carries `.grant` (`kernelObjectRights`), so its
+reply capability grants unless the holder masks the grant away, by minting
+from a grant-less copy or by a `cspaceMint` that drops it.
+
 A reply-receive's reply leg runs the same transfer (since `v0.37.6`), as seL4's
 `handleReplyRecv` → `doReplyTransfer` does: after the donation pop and before
 the receive leg (`replyRecvReplyTransfer`, in `endpointReplyRecvAnsweringOnCore`),

@@ -791,7 +791,9 @@ def mintReplyCap_derives_backed_reply_cap : IO Unit := do
         [ ((SeLe4n.Slot.ofNat 0),
             { target := .object target, rights := AccessRightSet.ofList [.read, .write] })
         , ((SeLe4n.Slot.ofNat 2),
-            { target := .object plain, rights := AccessRightSet.ofList [.read, .write] }) ]))
+            { target := .object plain, rights := AccessRightSet.ofList [.read, .write] })
+        , ((SeLe4n.Slot.ofNat 4),
+            { target := .object target, rights := AccessRightSet.ofList [.read, .write, .grant] }) ]))
   let st : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject target (.reply { replyId := rid })
@@ -806,8 +808,24 @@ def mintReplyCap_derives_backed_reply_cap : IO Unit := do
       | .ok (cap, _) =>
           expect "minted cap targets the Reply object" (decide (cap.target = .replyCap rid))
           expect "minted reply cap is backed (getReply? resolves)" ((st'.getReply? rid).isSome)
+          -- seL4 MCS `maskCapRights`: a parent without grant masks the reply
+          -- capability's `capReplyCanGrant`, leaving the reply right alone.
+          expect "a grant-less parent mints a non-granting reply cap"
+            (decide (cap.rights = AccessRightSet.ofList [.write]))
       | .error _ => throw <| IO.userError "minted reply cap should be present at dst"
   | .error _ => throw <| IO.userError "mintReplyCap from an object-to-Reply cap should succeed"
+  -- A grant-bearing parent mints a granting reply cap (seL4 MCS: the Reply
+  -- object's capability carries `capReplyCanGrant`).
+  let grantSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 4 }
+  let grantDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 5 }
+  match SeLe4n.Kernel.mintReplyCap grantSrc grantDst st with
+  | .ok ((), st') =>
+      match SeLe4n.Kernel.cspaceLookupSlot grantDst st' with
+      | .ok (cap, _) =>
+          expect "a grant-bearing parent mints a granting reply cap"
+            (decide (cap.rights = AccessRightSet.ofList [.write, .grant]))
+      | .error _ => throw <| IO.userError "the granting reply cap should be present at dst"
+  | .error _ => throw <| IO.userError "mintReplyCap from a grant-bearing object cap should succeed"
   -- negative: minting from an `.object` cap whose target is NOT a Reply → invalidCapability.
   let badSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 2 }
   let badDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 3 }
@@ -1016,6 +1034,9 @@ def reply_cap_end_to_end_carve_mint_link : IO Unit := do
           | .error _ => throw <| IO.userError "minted reply cap should be present at dst"
           | .ok (cap, _) =>
               expect "minted cap targets the retyped Reply" (decide (cap.target = .replyCap rid))
+              -- seL4 MCS: the retyped Reply's capability carries
+              -- `capReplyCanGrant`, so its reply capability grants.
+              expect "the carved Reply's reply cap grants" (cap.rights.mem .grant)
               expect "minted reply cap resolves (getReply?)" ((st2.getReply? rid).isSome)
               -- 3. Use the reply cap: link the blocked caller through the production op.
               match SystemState.linkCallerReply caller rid st2 with
