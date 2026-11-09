@@ -184,8 +184,8 @@ the transfer reads of them (`capTransferK`), read before the rendezvous. -/
     (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
   let X := (wakeThread (storeSendRendezvousReady st endpointId r nextCode) r core).1
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
-    deliverCapsFrame (capStepsInfo endpointId x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
-      (capStepsApply endpointId rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+    deliverCapsFrame (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
       r layout rf len badgeWord badged
 
 /-- **The staged send rendezvous that transfers capabilities is the delivered

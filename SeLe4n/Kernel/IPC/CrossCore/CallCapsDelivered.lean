@@ -280,8 +280,8 @@ them (`capTransferK`), read before the rendezvous. -/
     (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
   let X := storeCallRendezvousReady st endpointId caller r nextCode rid core
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
-    finishCallCaps (capStepsInfo endpointId x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
-      (capStepsApply endpointId rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+    finishCallCaps (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
       r core layout rf len badgeWord badged
 
 /-- **The staged call rendezvous that transfers capabilities is the delivered
@@ -431,8 +431,8 @@ transfer reads of them (`capTransferK`), read before the take. -/
   let X := (wakeThread ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
     s receiverReady) s core).1.updateTcb receiver receiverReady
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
-    finishTakeCaps (capStepsInfo endpointId x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
-      (capStepsApply endpointId rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+    finishTakeCaps (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
       s receiver layout len w0 w2 w3 w4 w5
 
 /-- A thread made ready before a run that keeps every thread's binding is
@@ -503,8 +503,8 @@ of them (`capTransferK`), read before the take. -/
     (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
   let X := storeReceiveCallReady st endpointId s nextCode receiver rid
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
-    finishCallCaps (capStepsInfo endpointId x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
-      (capStepsApply endpointId rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+    finishCallCaps (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
       receiver core layout rf len badgeWord badged
 
 end SeLe4n.Kernel

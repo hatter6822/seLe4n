@@ -325,25 +325,40 @@ theorem capBadgeOrZero_eq (cap : Capability) :
   unfold capBadgeOrZero Capability.badge
   cases cap.badged <;> rfl
 
+/-- **The endpoint a transfer unwraps at**: `ep` for a message sent on it
+(`unw`), none for a reply, which seL4's `doReplyTransfer` sends on no endpoint.
+The in-place loop takes the flag and the word, so it builds no option. -/
+@[inline] def transferEndpoint? (unw : Bool) (ep : SeLe4n.ObjId) : Option SeLe4n.ObjId :=
+  if unw then some ep else none
+
+theorem capUnwrapsAt_transferEndpoint (cap : Capability) (unw : Bool) (ep : SeLe4n.ObjId) :
+    capUnwrapsAt cap (transferEndpoint? unw ep) = (unw && capUnwrapsAt cap (some ep)) := by
+  cases unw with
+  | true => rfl
+  | false =>
+    show capUnwrapsAt cap none = false
+    unfold capUnwrapsAt
+    cases cap.target <;> rfl
+
 /-- **seL4's `transferCapsToSlots` loop, in place**, over the capabilities
 `c0`, `c1`, `c2` read from the slots `(r0c, r0s)`, `(r1c, r1s)`, `(r2c, r2s)`:
 from index `idx`, a capability to the endpoint unwraps (its badge to the
-receiver's buffer); any other is installed in the receive slot `(dcn, dsl)` if
+receiver's buffer) when the message was sent on one (`unw`); any other is installed in the receive slot `(dcn, dsl)` if
 it is still free and the install's checks pass, and the slot is used up; or
 the loop stops. -/
-def capStepsApply (ep : SeLe4n.ObjId) (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (c0 c1 c2 : Capability)
+def capStepsApply (ep : SeLe4n.ObjId) (unw : Bool) (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (c0 c1 c2 : Capability)
     (r0c : SeLe4n.ObjId) (r0s : SeLe4n.Slot) (r1c : SeLe4n.ObjId) (r1s : SeLe4n.Slot)
     (r2c : SeLe4n.ObjId) (r2s : SeLe4n.Slot) (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot) :
     (idx fuel : Nat) → (free : Bool) → SystemState → SystemState
   | _, 0, _, st => st
   | idx, fuel + 1, free, st =>
     let cap := pick3 idx c0 c1 c2
-    if capUnwrapsAt cap (some ep) then
-      capStepsApply ep rv rb c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl (idx + 1) fuel free
+    if unw && capUnwrapsAt cap (some ep) then
+      capStepsApply ep unw rv rb c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl (idx + 1) fuel free
         (recordBadgeOf st rv rb idx (capBadgeOrZero cap))
     else if free && transferInstallAdmitted (pick3 idx r0c r1c r2c) (pick3 idx r0s r1s r2s)
         dcn dsl cap st then
-      capStepsApply ep rv rb c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl (idx + 1) fuel false
+      capStepsApply ep unw rv rb c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl (idx + 1) fuel false
         (transferInstallPerform (pick3 idx r0c r1c r2c) (pick3 idx r0s r1s r2s) dcn dsl cap st)
     else st
 
@@ -351,19 +366,19 @@ def capStepsApply (ep : SeLe4n.ObjId) (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (c
 capabilities it processes plus four times the mask of those it unwraps
 (`CapTransferSummary.capInfo`), from the counts `n` and `m` so far.  The
 install's checks read objects only, which the badge writes before it keep. -/
-def capStepsInfo (ep : SeLe4n.ObjId) (c0 c1 c2 : Capability)
+def capStepsInfo (ep : SeLe4n.ObjId) (unw : Bool) (c0 c1 c2 : Capability)
     (r0c : SeLe4n.ObjId) (r0s : SeLe4n.Slot) (r1c : SeLe4n.ObjId) (r1s : SeLe4n.Slot)
     (r2c : SeLe4n.ObjId) (r2s : SeLe4n.Slot) (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot)
     (st : SystemState) : (idx fuel : Nat) → (free : Bool) → (n m : Nat) → Nat
   | _, 0, _, n, m => n + 4 * m
   | idx, fuel + 1, free, n, m =>
     let cap := pick3 idx c0 c1 c2
-    if capUnwrapsAt cap (some ep) then
-      capStepsInfo ep c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl st (idx + 1) fuel free (n + 1)
+    if unw && capUnwrapsAt cap (some ep) then
+      capStepsInfo ep unw c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl st (idx + 1) fuel free (n + 1)
         (m + 2 ^ n)
     else if free && transferInstallAdmitted (pick3 idx r0c r1c r2c) (pick3 idx r0s r1s r2s)
         dcn dsl cap st then
-      capStepsInfo ep c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl st (idx + 1) fuel false (n + 1) m
+      capStepsInfo ep unw c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl st (idx + 1) fuel false (n + 1) m
     else n + 4 * m
 
 /-- The transfer's capability `j` of the three. -/
@@ -402,7 +417,7 @@ theorem transferInstallAdmitted_ledgerOnly {Zs Z : SystemState} (h : LedgerOnly 
 /-- **The specification's loop is the loop in place**, over capabilities the
 array holds at the indices the loop visits: the same state, and a summary whose
 report is the in-place report read off the state the loop starts from. -/
-theorem ipcUnwrapCapsLoop_eq_capSteps (ep : SeLe4n.ObjId) (rt : TCB) (c0 c1 c2 : Capability)
+theorem ipcUnwrapCapsLoop_eq_capSteps (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB) (c0 c1 c2 : Capability)
     (r0c : SeLe4n.ObjId) (r0s : SeLe4n.Slot) (r1c : SeLe4n.ObjId) (r1s : SeLe4n.Slot)
     (r2c : SeLe4n.ObjId) (r2s : SeLe4n.Slot) (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot)
     (caps : Array TransferCap) (Zs : SystemState) :
@@ -410,9 +425,9 @@ theorem ipcUnwrapCapsLoop_eq_capSteps (ep : SeLe4n.ObjId) (rt : TCB) (c0 c1 c2 :
       (∀ j, j < fuel → caps[idx + j]? = some (transferCapAt c0 c1 c2 r0c r0s r1c r1s r2c r2s (idx + j))) →
       (free = true → LedgerOnly Zs Z) →
       ∃ s : CapTransferSummary,
-        ipcUnwrapCapsLoop caps (some ep) rt idx (if free then some ⟨dcn, dsl⟩ else none) acc fuel Z =
-          .ok (s, capStepsApply ep rt.vspaceRoot rt.ipcBuffer c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl idx fuel free Z) ∧
-        s.capInfo = capStepsInfo ep c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl Zs idx fuel free
+        ipcUnwrapCapsLoop caps (transferEndpoint? unw ep) rt idx (if free then some ⟨dcn, dsl⟩ else none) acc fuel Z =
+          .ok (s, capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl idx fuel free Z) ∧
+        s.capInfo = capStepsInfo ep unw c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl Zs idx fuel free
           (capInfoCounts acc).1 (capInfoCounts acc).2
   | 0, idx, free, acc, Z, _, _ => ⟨{ results := acc }, rfl, rfl⟩
   | fuel + 1, idx, free, acc, Z, hC, hL => by
@@ -426,13 +441,14 @@ theorem ipcUnwrapCapsLoop_eq_capSteps (ep : SeLe4n.ObjId) (rt : TCB) (c0 c1 c2 :
     simp only [ipcUnwrapCapsLoop, h0, capStepsApply, capStepsInfo]
     unfold transferCapAt TransferCap.fromSlot
     dsimp only
+    rw [capUnwrapsAt_transferEndpoint]
     split
     · next hU =>
       have hCounts : capInfoCounts (acc.push (.unwrapped ((pick3 idx c0 c1 c2).badge.getD
           SeLe4n.Badge.zero))) = ((capInfoCounts acc).1 + 1,
             (capInfoCounts acc).2 + 2 ^ (capInfoCounts acc).1) := by
         unfold capInfoCounts; rw [Array.foldl_push]; rfl
-      obtain ⟨s, hs, hi⟩ := ipcUnwrapCapsLoop_eq_capSteps ep rt c0 c1 c2 r0c r0s r1c r1s r2c r2s
+      obtain ⟨s, hs, hi⟩ := ipcUnwrapCapsLoop_eq_capSteps ep unw rt c0 c1 c2 r0c r0s r1c r1s r2c r2s
         dcn dsl caps Zs fuel (idx + 1) free _ _ hC'
         (fun hf => (hL hf).badge rt idx _)
       refine ⟨s, ?_, ?_⟩
@@ -455,7 +471,7 @@ theorem ipcUnwrapCapsLoop_eq_capSteps (ep : SeLe4n.ObjId) (rt : TCB) (c0 c1 c2 :
           have hCounts : capInfoCounts (acc.push (.installed dcn dsl)) =
               ((capInfoCounts acc).1 + 1, (capInfoCounts acc).2) := by
             unfold capInfoCounts; rw [Array.foldl_push]; rfl
-          obtain ⟨s, hs, hi⟩ := ipcUnwrapCapsLoop_eq_capSteps ep rt c0 c1 c2 r0c r0s r1c r1s
+          obtain ⟨s, hs, hi⟩ := ipcUnwrapCapsLoop_eq_capSteps ep unw rt c0 c1 c2 r0c r0s r1c r1s
             r2c r2s dcn dsl caps Zs fuel (idx + 1) false _ _ hC' (fun hf => by cases hf)
           refine ⟨s, ?_, ?_⟩
           · exact hs
@@ -548,18 +564,18 @@ def capTargetOf (st : SystemState) (rt : TCB) : Option (TCB × Option CSpaceAddr
 /-- **The specification's transfer over capabilities read into the three**:
 its loop from the start is the loop in place, its summary's report the
 in-place report. -/
-theorem ipcUnwrapCaps_eq_run {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (rt : TCB)
+theorem ipcUnwrapCaps_eq_run {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB)
     (K : Nat → SystemState → α) (caps : Array TransferCap) (n : Nat)
     (x0 x1 x2 : Capability) (a0 : SeLe4n.ObjId) (b0 : SeLe4n.Slot) (a1 : SeLe4n.ObjId)
     (b1 : SeLe4n.Slot) (a2 : SeLe4n.ObjId) (b2 : SeLe4n.Slot)
     (hSize : caps.size = n)
     (hAt : ∀ j, j < n → caps[j]? = some (transferCapAt x0 x1 x2 a0 b0 a1 b1 a2 b2 j)) :
     receiveSlotK st rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot
-        (fun _ => K (capStepsInfo ep x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default st 0 n false 0 0)
-          (capStepsApply ep rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default 0 n false st))
-        (fun dcn dsl => K (capStepsInfo ep x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n true 0 0)
-          (capStepsApply ep rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n true st)) =
-      match ipcUnwrapCaps caps (some ep) rt (receiveSlot? st rt) st with
+        (fun _ => K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default st 0 n false 0 0)
+          (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default 0 n false st))
+        (fun dcn dsl => K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n true 0 0)
+          (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n true st)) =
+      match ipcUnwrapCaps caps (transferEndpoint? unw ep) rt (receiveSlot? st rt) st with
       | .ok (s, st') => K s.capInfo st'
       | .error _ => K 0 st := by
   have hAt' : ∀ j, j < n → caps[0 + j]? = some (transferCapAt x0 x1 x2 a0 b0 a1 b1 a2 b2 (0 + j)) := by
@@ -569,13 +585,13 @@ theorem ipcUnwrapCaps_eq_run {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) 
   rw [hSize]
   cases receiveSlot? st rt with
   | none =>
-    obtain ⟨s, hs, hi⟩ := ipcUnwrapCapsLoop_eq_capSteps ep rt x0 x1 x2 a0 b0 a1 b1 a2 b2 ep
+    obtain ⟨s, hs, hi⟩ := ipcUnwrapCapsLoop_eq_capSteps ep unw rt x0 x1 x2 a0 b0 a1 b1 a2 b2 ep
       default caps st n 0 false #[] st hAt' (fun h => by cases h)
     simp only [Bool.false_eq_true, ↓reduceIte] at hs
     simp only [hs, hi]
     rfl
   | some d =>
-    obtain ⟨s, hs, hi⟩ := ipcUnwrapCapsLoop_eq_capSteps ep rt x0 x1 x2 a0 b0 a1 b1 a2 b2 d.cnode
+    obtain ⟨s, hs, hi⟩ := ipcUnwrapCapsLoop_eq_capSteps ep unw rt x0 x1 x2 a0 b0 a1 b1 a2 b2 d.cnode
       d.slot caps st n 0 true #[] st hAt' (fun _ => LedgerOnly.refl st)
     simp only [↓reduceIte] at hs
     simp only [hs, hi]
@@ -633,85 +649,85 @@ theorem receiveTransferCaps_some (root : SeLe4n.ObjId) (addrs : Array SeLe4n.CPt
 /-- The in-place transfer's last step: the loop in place over `n` capabilities,
 its report and state handed to `K`, the receive slot free when the buffer names
 one. -/
-abbrev capRunFinish {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (rt : TCB)
+abbrev capRunFinish {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB)
     (K : Nat → SystemState → α) (n : Nat) (x0 x1 x2 : Capability) (a0 : SeLe4n.ObjId)
     (b0 : SeLe4n.Slot) (a1 : SeLe4n.ObjId) (b1 : SeLe4n.Slot) (a2 : SeLe4n.ObjId)
     (b2 : SeLe4n.Slot) : α :=
   receiveSlotK st rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot
-    (fun _ => K (capStepsInfo ep x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default st 0 n false 0 0)
-      (capStepsApply ep rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default 0 n false st))
-    (fun dcn dsl => K (capStepsInfo ep x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n true 0 0)
-      (capStepsApply ep rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n true st))
+    (fun _ => K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default st 0 n false 0 0)
+      (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 ep default 0 n false st))
+    (fun dcn dsl => K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n true 0 0)
+      (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n true st))
 
 /-- The specification's transfer over the capabilities `caps` resolved, to a
 receiver with a buffer, its answer handed to `K`. -/
-abbrev capSpecFinish {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (rt : TCB)
+abbrev capSpecFinish {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB)
     (K : Nat → SystemState → α) (caps : Array TransferCap) : α :=
   match (if caps.isEmpty then .ok ({ results := #[] }, st)
-      else ipcUnwrapCaps caps (some ep) rt (receiveSlot? st rt) st) with
+      else ipcUnwrapCaps caps (transferEndpoint? unw ep) rt (receiveSlot? st rt) st) with
   | .ok (s, st') => K s.capInfo st'
   | .error _ => K 0 st
 
-theorem capRunFinish_zero {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (rt : TCB)
+theorem capRunFinish_zero {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB)
     (K : Nat → SystemState → α) (x0 x1 x2 : Capability) (a0 : SeLe4n.ObjId)
     (b0 : SeLe4n.Slot) (a1 : SeLe4n.ObjId) (b1 : SeLe4n.Slot) (a2 : SeLe4n.ObjId)
     (b2 : SeLe4n.Slot) :
-    capRunFinish st ep rt K 0 x0 x1 x2 a0 b0 a1 b1 a2 b2 = capSpecFinish st ep rt K #[] := by
+    capRunFinish st ep unw rt K 0 x0 x1 x2 a0 b0 a1 b1 a2 b2 = capSpecFinish st ep unw rt K #[] := by
   unfold capRunFinish
   rw [receiveSlotK_eq]
   cases receiveSlot? st rt <;> rfl
 
-theorem capRunFinish_eq {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (rt : TCB)
+theorem capRunFinish_eq {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB)
     (K : Nat → SystemState → α) (caps : Array TransferCap) (n : Nat)
     (x0 x1 x2 : Capability) (a0 : SeLe4n.ObjId) (b0 : SeLe4n.Slot) (a1 : SeLe4n.ObjId)
     (b1 : SeLe4n.Slot) (a2 : SeLe4n.ObjId) (b2 : SeLe4n.Slot)
     (hSize : caps.size = n) (hn : n ≠ 0)
     (hAt : ∀ j, j < n → caps[j]? = some (transferCapAt x0 x1 x2 a0 b0 a1 b1 a2 b2 j)) :
-    capRunFinish st ep rt K n x0 x1 x2 a0 b0 a1 b1 a2 b2 = capSpecFinish st ep rt K caps := by
+    capRunFinish st ep unw rt K n x0 x1 x2 a0 b0 a1 b1 a2 b2 = capSpecFinish st ep unw rt K caps := by
   have hE : caps.isEmpty = false := by
     rw [Array.isEmpty_eq_false_iff]; intro h; rw [h] at hSize; exact hn hSize.symm
   unfold capRunFinish capSpecFinish
-  rw [ipcUnwrapCaps_eq_run st ep rt K caps n x0 x1 x2 a0 b0 a1 b1 a2 b2 hSize hAt, hE]
+  rw [ipcUnwrapCaps_eq_run st ep unw rt K caps n x0 x1 x2 a0 b0 a1 b1 a2 b2 hSize hAt, hE]
   rfl
 
 section ReadLemmas
-variable {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (rt : TCB)
+variable {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB)
   (K : Nat → SystemState → α) (a0 : SeLe4n.ObjId) (b0 : SeLe4n.Slot) (a1 : SeLe4n.ObjId)
   (b1 : SeLe4n.Slot) (a2 : SeLe4n.ObjId) (b2 : SeLe4n.Slot)
 
 theorem transferCapsReadK_one :
     transferCapsReadK st 1 a0 b0 a1 b1 a2 b2
-        (fun n x0 x1 x2 => capRunFinish st ep rt K n x0 x1 x2 a0 b0 a1 b1 a2 b2) =
-      capSpecFinish st ep rt K (extraCapsFromSlots st [⟨a0, b0⟩] #[]) := by
+        (fun n x0 x1 x2 => capRunFinish st ep unw rt K n x0 x1 x2 a0 b0 a1 b1 a2 b2) =
+      capSpecFinish st ep unw rt K (extraCapsFromSlots st [⟨a0, b0⟩] #[]) := by
   unfold transferCapsReadK
   simp only [extraCapsFromSlots]
   cases SystemState.lookupSlotCap st ⟨a0, b0⟩ with
-  | none => exact capRunFinish_zero _ _ _ _ _ _ _ _ _ _ _ _ _
+  | none => exact capRunFinish_zero _ _ _ _ _ _ _ _ _ _ _ _ _ _
   | some x0 =>
     simp only [Nat.le_refl, ↓reduceIte]
-    refine capRunFinish_eq _ _ _ _ _ 1 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
+    refine capRunFinish_eq _ _ _ _ _ _ 1 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
     intro j hj
     match j, hj with
     | 0, _ => rfl
 
 theorem transferCapsReadK_two :
     transferCapsReadK st 2 a0 b0 a1 b1 a2 b2
-        (fun n x0 x1 x2 => capRunFinish st ep rt K n x0 x1 x2 a0 b0 a1 b1 a2 b2) =
-      capSpecFinish st ep rt K (extraCapsFromSlots st [⟨a0, b0⟩, ⟨a1, b1⟩] #[]) := by
+        (fun n x0 x1 x2 => capRunFinish st ep unw rt K n x0 x1 x2 a0 b0 a1 b1 a2 b2) =
+      capSpecFinish st ep unw rt K (extraCapsFromSlots st [⟨a0, b0⟩, ⟨a1, b1⟩] #[]) := by
   unfold transferCapsReadK
   simp only [extraCapsFromSlots]
   cases SystemState.lookupSlotCap st ⟨a0, b0⟩ with
-  | none => exact capRunFinish_zero _ _ _ _ _ _ _ _ _ _ _ _ _
+  | none => exact capRunFinish_zero _ _ _ _ _ _ _ _ _ _ _ _ _ _
   | some x0 =>
     simp only [show ¬(2 ≤ 1) by decide, ↓reduceIte, Nat.le_refl]
     cases SystemState.lookupSlotCap st ⟨a1, b1⟩ with
     | none =>
-      refine capRunFinish_eq _ _ _ _ _ 1 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
+      refine capRunFinish_eq _ _ _ _ _ _ 1 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
       intro j hj
       match j, hj with
       | 0, _ => rfl
     | some x1 =>
-      refine capRunFinish_eq _ _ _ _ _ 2 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
+      refine capRunFinish_eq _ _ _ _ _ _ 2 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
       intro j hj
       match j, hj with
       | 0, _ => rfl
@@ -719,30 +735,30 @@ theorem transferCapsReadK_two :
 
 theorem transferCapsReadK_three (c : Nat) :
     transferCapsReadK st (c + 3) a0 b0 a1 b1 a2 b2
-        (fun n x0 x1 x2 => capRunFinish st ep rt K n x0 x1 x2 a0 b0 a1 b1 a2 b2) =
-      capSpecFinish st ep rt K (extraCapsFromSlots st [⟨a0, b0⟩, ⟨a1, b1⟩, ⟨a2, b2⟩] #[]) := by
+        (fun n x0 x1 x2 => capRunFinish st ep unw rt K n x0 x1 x2 a0 b0 a1 b1 a2 b2) =
+      capSpecFinish st ep unw rt K (extraCapsFromSlots st [⟨a0, b0⟩, ⟨a1, b1⟩, ⟨a2, b2⟩] #[]) := by
   unfold transferCapsReadK
   simp only [extraCapsFromSlots]
   cases SystemState.lookupSlotCap st ⟨a0, b0⟩ with
-  | none => exact capRunFinish_zero _ _ _ _ _ _ _ _ _ _ _ _ _
+  | none => exact capRunFinish_zero _ _ _ _ _ _ _ _ _ _ _ _ _ _
   | some x0 =>
     simp only [show ¬(c + 3 ≤ 1) by omega, show ¬(c + 3 ≤ 2) by omega, ↓reduceIte]
     cases SystemState.lookupSlotCap st ⟨a1, b1⟩ with
     | none =>
-      refine capRunFinish_eq _ _ _ _ _ 1 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
+      refine capRunFinish_eq _ _ _ _ _ _ 1 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
       intro j hj
       match j, hj with
       | 0, _ => rfl
     | some x1 =>
       cases SystemState.lookupSlotCap st ⟨a2, b2⟩ with
       | none =>
-        refine capRunFinish_eq _ _ _ _ _ 2 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
+        refine capRunFinish_eq _ _ _ _ _ _ 2 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
         intro j hj
         match j, hj with
         | 0, _ => rfl
         | 1, _ => rfl
       | some x2 =>
-        refine capRunFinish_eq _ _ _ _ _ 3 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
+        refine capRunFinish_eq _ _ _ _ _ _ 3 _ _ _ _ _ _ _ _ _ rfl (by decide) ?_
         intro j hj
         match j, hj with
         | 0, _ => rfl
@@ -761,13 +777,13 @@ theorem resolveExtraCaps_list (root : SeLe4n.ObjId) (depth : Nat) (st : SystemSt
   simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
   rfl
 
-theorem capSpecFinish_request {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (rt : TCB)
+theorem capSpecFinish_request {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB)
     (K : Nat → SystemState → α) (root : SeLe4n.ObjId) (addrs : Array SeLe4n.CPtr) (depth : Nat) :
     (match receiveTransferCaps (if addrs.isEmpty then none else some (root, addrs, depth))
-        (some ep) (some (rt, receiveSlot? st rt)) st with
+        (transferEndpoint? unw ep) (some (rt, receiveSlot? st rt)) st with
       | .ok (s, st') => K s.capInfo st'
       | .error _ => K 0 st) =
-      capSpecFinish st ep rt K (resolveExtraCaps root addrs depth true st) := by
+      capSpecFinish st ep unw rt K (resolveExtraCaps root addrs depth true st) := by
   cases hE : addrs.isEmpty with
   | true =>
     have : addrs = #[] := by
@@ -781,14 +797,15 @@ theorem capSpecFinish_request {α : Type} (st : SystemState) (ep : SeLe4n.ObjId)
 /-- **The transfer in place is the specification's transfer**: for a sender's
 request read off its frame (`frameCapRequestOf`) and the receiver's side
 (`capTargetOf`), the report and the state the in-place transfer hands on are the
-summary's report and the state the specification's transfer answers. -/
-theorem capTransferK_eq {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (stcb : TCB)
+summary's report and the state the specification's transfer answers, for a
+message sent on `ep` (`unw`) or on no endpoint. -/
+theorem capTransferK_eq_at {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (unw : Bool) (stcb : TCB)
     (count : Nat) (rt : TCB) (K : Nat → SystemState → α) :
     capTransferK st ep stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count rt.vspaceRoot
         rt.ipcBuffer rt.cspaceRoot (fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
-        K (capStepsInfo ep x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n free 0 0)
-          (capStepsApply ep rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free st)) =
-      match receiveTransferCaps (frameCapRequestOf st stcb count) (some ep)
+        K (capStepsInfo ep unw x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n free 0 0)
+          (capStepsApply ep unw rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free st)) =
+      match receiveTransferCaps (frameCapRequestOf st stcb count) (transferEndpoint? unw ep)
           (capTargetOf st rt) st with
       | .ok (s, st') => K s.capInfo st'
       | .error _ => K 0 st := by
@@ -824,7 +841,7 @@ theorem capTransferK_eq {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (stcb
         cases hr0 : resolveCapAddress stcb.cspaceRoot a rootCn.depth st with
         | error _ => rfl
         | ok r0 =>
-          exact transferCapsReadK_one st ep rt K r0.cnode r0.slot r0.cnode r0.slot r0.cnode r0.slot
+          exact transferCapsReadK_one st ep unw rt K r0.cnode r0.slot r0.cnode r0.slot r0.cnode r0.slot
     | 2 =>
       simp only [transferRefsK, senderExtraCapAddrs_two, extraCapRefK_eq,
         show (2 : Nat) ≠ 0 by decide, show ¬(2 ≤ 1) by decide, ↓reduceIte, Nat.le_refl]
@@ -845,7 +862,7 @@ theorem capTransferK_eq {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (stcb
             cases hr1 : resolveCapAddress stcb.cspaceRoot b rootCn.depth st with
             | error _ => rfl
             | ok r1 =>
-              exact transferCapsReadK_two st ep rt K r0.cnode r0.slot r1.cnode r1.slot r1.cnode r1.slot
+              exact transferCapsReadK_two st ep unw rt K r0.cnode r0.slot r1.cnode r1.slot r1.cnode r1.slot
     | c + 3 =>
       simp only [transferRefsK, senderExtraCapAddrs_three, extraCapRefK_eq,
         show c + 3 ≠ 0 by omega, show ¬(c + 3 ≤ 1) by omega, show ¬(c + 3 ≤ 2) by omega,
@@ -877,7 +894,22 @@ theorem capTransferK_eq {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (stcb
                 cases hr2 : resolveCapAddress stcb.cspaceRoot d rootCn.depth st with
                 | error _ => rfl
                 | ok r2 =>
-                  exact transferCapsReadK_three st ep rt K r0.cnode r0.slot r1.cnode r1.slot
+                  exact transferCapsReadK_three st ep unw rt K r0.cnode r0.slot r1.cnode r1.slot
                     r2.cnode r2.slot c
+
+/-- **The transfer in place is the specification's transfer** of a message
+sent on `ep` (`capTransferK_eq_at`). -/
+theorem capTransferK_eq {α : Type} (st : SystemState) (ep : SeLe4n.ObjId) (stcb : TCB)
+    (count : Nat) (rt : TCB) (K : Nat → SystemState → α) :
+    capTransferK st ep stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count rt.vspaceRoot
+        rt.ipcBuffer rt.cspaceRoot (fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+        K (capStepsInfo ep true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl st 0 n free 0 0)
+          (capStepsApply ep true rt.vspaceRoot rt.ipcBuffer x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n
+            free st)) =
+      match receiveTransferCaps (frameCapRequestOf st stcb count) (some ep)
+          (capTargetOf st rt) st with
+      | .ok (s, st') => K s.capInfo st'
+      | .error _ => K 0 st :=
+  capTransferK_eq_at st ep true stcb count rt K
 
 end SeLe4n.Kernel
