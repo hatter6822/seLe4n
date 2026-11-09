@@ -247,4 +247,90 @@ theorem sendRendezvousCaps_eq_delivered (st : SystemState) (endpointId : SeLe4n.
     returnFrameOfMessage_regMessageBody_caps]
   rfl
 
+/-! ### The request a routed frame makes -/
+
+/-- The extra-capability count a register-routed frame names: bits 7–8 of its
+message-info word (`decodeMsgInfoWord`). -/
+@[inline] def routedExtraCaps (rf : SeLe4n.RegisterFile) : Nat :=
+  ((SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg >>> 7) &&& 3).toNat
+
+theorem routedExtraCaps_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr : SeLe4n.CPtr}
+    {mi : MessageInfo}
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+      .transferring sid capAddr mi) :
+    routedExtraCaps rf = mi.extraCaps := by
+  unfold Architecture.RegisterDecode.registerRoutedSyscall at hR
+  split at hR
+  · unfold Architecture.RegisterDecode.registerRoutedSyscallOf at hR
+    dsimp only at hR
+    cases hD : Architecture.RegisterDecode.decodeMsgInfoWord
+        (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg) with
+    | error e => rw [hD] at hR; cases hR
+    | ok m =>
+      rw [hD] at hR
+      have hm : m = mi := by
+        simp only [Architecture.RegisterDecode.routedShortTail_eq,
+          Architecture.RegisterDecode.routedLongTail_eq] at hR
+        repeat' split at hR
+        all_goals first
+          | (cases hR; rfl)
+          | (cases hR; done)
+          | (rcases Architecture.RegisterDecode.unroutedSyscall_eq hR with h | ⟨h, -⟩ <;> cases h)
+          | skip
+        all_goals done
+      subst hm
+      unfold Architecture.RegisterDecode.decodeMsgInfoWord at hD
+      split at hD
+      · cases hD; rfl
+      · cases hD
+  · cases hR
+
+theorem frameCapRequestOf_zero (st : SystemState) (tcb : TCB) : frameCapRequestOf st tcb 0 = none := by
+  unfold frameCapRequestOf
+  rw [senderExtraCapAddrs_zero]
+  rfl
+
+/-- **The request a routed short frame makes**: what the sender's frame asks
+to transfer (`senderFrameCapRequest`) is the request for the count its
+message-info word names, under its capability's grant right. -/
+theorem senderFrameCapRequest_routed (st : SystemState) (tid : SeLe4n.ThreadId) (stcb : TCB)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
+    (g : Bool) (hRf : stcb.registerContext = rf)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+      .transferring sid capAddr mi)
+    (hLen : mi.length ≤ 4) :
+    senderFrameCapRequest st tid stcb g =
+      frameCapRequestOf st stcb (if g then routedExtraCaps rf else 0) := by
+  unfold senderFrameCapRequest
+  cases g
+  · simp only [Bool.not_false, ↓reduceIte, Bool.false_eq_true, frameCapRequestOf_zero]
+  · obtain ⟨-, -, -, hShort, -⟩ :=
+      Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedTransferring st tid _ _ 32
+        sid capAddr mi hR
+    have hDec := hShort hLen
+    rw [← hRf] at hDec
+    simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte, blockedSenderDecode, hDec,
+      routedExtraCaps_eq hR]
+    rfl
+
+theorem sendCapRequest_routed (st : SystemState) (epId : SeLe4n.ObjId) (tid r : SeLe4n.ThreadId)
+    (stcb : TCB) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (sid : SyscallId) (b : Option SeLe4n.Badge) (g : Bool)
+    (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some r)
+    (hS : st.getTcb? tid = some stcb) (hRf : stcb.registerContext = rf)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+      .transferring sid capAddr mi)
+    (hLen : mi.length ≤ 4) :
+    sendCapRequest st epId tid (.frame b g) =
+      frameCapRequestOf st stcb (if g then routedExtraCaps rf else 0) := by
+  unfold sendCapRequest
+  rw [hRecv]
+  simp only [hS]
+  exact senderFrameCapRequest_routed st tid stcb rf capAddr mi sid g hRf hR hLen
+
+theorem receiverCapTarget?_eq_capTargetOf {st : SystemState} {r : SeLe4n.ThreadId} {rt : TCB}
+    (hT : st.getTcb? r = some rt) : receiverCapTarget? st r = capTargetOf st rt := by
+  unfold receiverCapTarget? capTargetOf
+  rw [hT]
+
 end SeLe4n.Kernel

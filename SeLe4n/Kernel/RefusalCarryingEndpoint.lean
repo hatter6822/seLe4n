@@ -19,6 +19,7 @@ import SeLe4n.Kernel.IPC.CrossCore.InertCapTransferInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongSendInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace
+import SeLe4n.Kernel.IPC.CrossCore.CapTransferDelivered
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -207,6 +208,43 @@ theorem sendDispatchChecked_inPlace_inert (ctx : LabelingContext) (st : SystemSt
   simp only [sendWakesInPlaceCode_eq, storeSendRendezvousCode_eq, TCB.ofOptCode_queueNextCode,
     hE, hH, hSTcb, hT, hW, hM, ↓reduceIte, Option.bind_some, hTr]
   split <;> exact ⟨_, rfl, rfl⟩
+
+/-- **A checked send to a waiting receiver, in place up to its transfer**: the
+in-place rendezvous and the receiver's wake, then the specification's transfer
+of the sender's request to the receiver's side, both read before the
+rendezvous. -/
+theorem sendDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender r : SeLe4n.ThreadId) (rt : TCB)
+    (payload : SendPayload) (msg : IpcMessage) (executingCore : Concurrency.CoreId)
+    (hM : sendPayloadMessage st sender payload = msg)
+    (hE : st.getEndpoint? endpointId = some ep) (hH : ep.receiveQ.head = some r)
+    (hT : st.getTcb? r = some rt) (hS : (st.getTcb? sender).isSome = true)
+    (hW : sendWakesInPlace st endpointId r rt.queueNext = true)
+    (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+      (ctx.endpointLabelOf endpointId) = true) :
+    endpointSendCrossCoreDispatchChecked ctx endpointId sender payload executingCore st =
+      match receiveTransferCaps (sendCapRequest st endpointId sender payload) (some endpointId)
+          (receiverCapTarget? st r)
+          (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r executingCore).1 with
+      | .ok (s, st'') =>
+        (st'', .ok (s, (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r
+          executingCore).2))
+      | .error e =>
+        ((wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r executingCore).1,
+          .error e) := by
+  obtain ⟨sTcb, hSTcb⟩ := Option.isSome_iff_exists.mp hS
+  unfold endpointSendCrossCoreDispatchChecked
+  rw [if_pos hFlow]
+  unfold endpointSendDualWithCapsOnCore
+  rw [endpointSendDualOnCore_eq_impl]
+  unfold endpointSendDualOnCoreImpl
+  simp only [sendWakesInPlaceCode_eq, storeSendRendezvousCode_eq, TCB.ofOptCode_queueNextCode,
+    hE, hH, hSTcb, hT, hW, hM, ↓reduceIte, Option.bind_some]
+  cases sendCapRequest st endpointId sender payload with
+  | none => rfl
+  | some _ =>
+    simp only [Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
+    split <;> next h => rw [h]
 
 /-- **A call's transfer that transfers nothing is the identity**: the WithCaps
 call returns the call rendezvous's state, transferring nothing, when the
@@ -1862,9 +1900,12 @@ them), so one whose checks all pass blocks in place
 nothing (`senderTransferInertW`, the specification's `capTransferInert`: the
 receiver takes no capability, or its buffer names no receive slot and the first
 capability does not unwrap, so seL4's `transferCaps` stops at it) writes the
-rendezvous in place (`sendDispatchChecked_inPlace_inert`); any other resolves the
-capabilities in its CSpace and installs them in the receiver's through the
-specification's transfer (`endpointSendCapsGeneralR`). -/
+rendezvous in place (`sendDispatchChecked_inPlace_inert`); any other of at most
+four words writes the rendezvous in place, resolves the capabilities in its
+CSpace and installs or unwraps them in the receiver's in place, and writes the
+frame with the transfer's report (`performSendCapsDelivered`, the
+specification's transfer by `sendRendezvousCaps_eq_delivered`).  A longer one
+runs the specification's transfer (`endpointSendCapsGeneralR`). -/
 @[inline] def endpointSendCapsCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
     (len : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
     RefusalCarrying Unit :=
@@ -1883,6 +1924,18 @@ specification's transfer (`endpointSendCapsGeneralR`). -/
                         sendWakesInPlaceCode st epId r rt.queueNextCode then
                       .ok ((), performSendDelivered st epId r rt.queueNextCode
                         SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged executingCore)
+                    else if decide (len ≤ 4) &&
+                        endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                          (ctx.endpointLabelOf epId) &&
+                        sendWakesInPlaceCode st epId r rt.queueNextCode then
+                      match st.getTcb? tid with
+                      | some stcb =>
+                        .ok ((), performSendCapsDelivered st epId r rt.queueNextCode
+                          SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged executingCore
+                          stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+                          (if cap.rights.mem .grant then routedExtraCaps rf else 0)
+                          rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
+                      | none => endpointSendCapsGeneralR ctx tid executingCore cap st
                     else endpointSendCapsGeneralR ctx tid executingCore cap st
                 | none => endpointSendCapsGeneralR ctx tid executingCore cap st
             | none =>
@@ -1936,7 +1989,43 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
             rw [← TCB.optCode_queueNext,
               ← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
             rfl
-          · rfl
+          · split
+            · next hG =>
+              simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
+              obtain ⟨⟨hShort, hFlow⟩, hW⟩ := hG
+              rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
+              have hNo : st.objects.noResizeDue := by
+                simp only [sendWakesInPlace, Bool.and_eq_true] at hW
+                exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2
+              have hSz : Architecture.regMessageLength SeLe4n.arm64DefaultLayout mi.length ≤ 4 := by
+                unfold Architecture.regMessageLength; omega
+              split
+              · next stcb hS =>
+                have hMsg := routedTransferringMessage st tid rf capAddr mi sid hFrame hR hShort
+                have hSome : (st.getTcb? tid).isSome = true := by rw [hS]; rfl
+                have hb : cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged := rfl
+                unfold endpointSendCapsGeneralR
+                simp only [hTgt, hE, Option.bind_some, hH]
+                rw [sendDispatchChecked_inPlace_transfer ctx st epId ep tid r rt _ _ executingCore
+                  (hMsg _ _ hSome) hE hH hT hSome hW hFlow,
+                  sendCapRequest_routed st epId tid r stcb rf capAddr mi sid _ _
+                    (by simp only [hE, Option.bind_some, hH]) hS (hFrame stcb hS) hR hShort,
+                  receiverCapTarget?_eq_capTargetOf hT, hb]
+                have hEq := sendRendezvousCaps_eq_delivered st epId r rt.queueNext
+                  SeLe4n.arm64DefaultLayout rf mi.length cap.badgeWord cap.badged executingCore
+                  stcb rt (if cap.rights.mem .grant then routedExtraCaps rf else 0) hNo hSz
+                rw [TCB.optCode_queueNext] at hEq
+                obtain ⟨s, st'', hOk⟩ := receiveTransferCaps_ok
+                  (frameCapRequestOf st stcb (if cap.rights.mem .grant then routedExtraCaps rf else 0))
+                  (some epId) (capTargetOf st rt)
+                  (wakeThread (storeSendRendezvous st epId r rt.queueNext
+                    { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf mi.length,
+                      badge := SeLe4n.Badge.opt cap.badgeWord cap.badged }) r executingCore).1
+                rw [hOk] at hEq ⊢
+                dsimp only at hEq ⊢
+                rw [hEq]
+              · rfl
+            · rfl
         · rfl
       · next hH =>
         split
