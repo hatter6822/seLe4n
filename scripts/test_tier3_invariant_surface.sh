@@ -4529,7 +4529,22 @@ run_check "INVARIANT" rg -n -U '                        \.ok \(\(\), performRepl
 run_check "INVARIANT" rg -n -U '                  if replyRecvBlocksFast st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvBlockCapsDelivered st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '                  else if replyRecvDonatedBlocks st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvDonatedCapsDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '                  else if replyRecvUnheldBlocks st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvUnheldCapsDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '      else replyRecvLongCapsR epId tid c rid badge grant rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '      else replyRecvLongPopR epId tid c rid badge grant rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# The long reply-receive whose reply pops a donation (the server's loan, or a
+# context no thread holds) writes in place with the long frame, inert and
+# installing, its buffer reads kept across every write before the copy.
+run_check "INVARIANT" rg -n '^theorem replyRecvBlockTail_stagedLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvDonatedTail_stagedLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_deliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_deliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvLongCapsR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvLongPopR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvLongDonatedAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvDonatedDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvUnheldDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvLongDonatedCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvDonatedCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvUnheldCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvLongCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvBlockCapsDeliveredLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # ...and a final delete of an orphaned caller's head reply asks the unheld pop's
 # commit test through the in-place gate first, so the admission resolves no
