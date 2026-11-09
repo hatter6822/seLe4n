@@ -344,4 +344,444 @@ theorem replyRecvOnCore_blocks_capsDelivered (st : SystemState) (epId : SeLe4n.O
   rw [hX]
   exact congrArg (fun Z => (.ok ((), Z) : Except KernelError (Unit × SystemState))) hK.symm
 
+/-! ### The donated reply-receive -/
+
+/-- **The donated reply-receive that blocks, its reply leg transferring**: as
+`replyRecvAnsweringOnCore_donated_inPlace`, with the reply leg's transfer
+answering `(summary, S2)` on the state the pop leaves and the receive's block
+admissible on `S2`. -/
+theorem replyRecvOnCore_donated_transfer (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
+    (core : CoreId) (ct : TCB) (ep0 : SeLe4n.ObjId) (ep : Endpoint) (rp : Reply)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
+    (hRO : ct.replyObject = some rid)
+    (hSRes : tid.isReserved = false)
+    (hG : replyPopsInPlace st c ct.scBindingScCode tid rid = true)
+    (hS : ep.sendQ.head = none)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    {summary : CapTransferSummary} {S2 : SystemState}
+    (hXf : replyTransferCaps st tid c grant
+      (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
+        ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) = .ok (summary, S2))
+    (hE2 : S2.objects[epId]? = some (.endpoint ep)) {rt2 : TCB}
+    (hR2 : S2.objects[tid.toObjId]? = some (.tcb rt2)) (hA2 : receiveBlockAdmits rt2 = true)
+    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) :
+    endpointReplyRecvOnCore epId tid rid c msg grant core st =
+      .ok ({ results := #[] }, Architecture.stageDeliveredMessage
+        (PriorityInheritance.propagatePipChainCrossCore
+          (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock S2 epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1 c
+          summary.capInfo) := by
+  obtain ⟨rp', scId, sc, hRp', hN, hScO, hHead, hBelow, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR,
+    _, hPop⟩ := replyPopsInPlace_donation st c tid rid msg ct hT hSRes hG
+  rw [hRp] at hRp'
+  cases hRp'
+  have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
+    rw [hCode]; rfl
+  rw [hSc] at hXf
+  obtain ⟨hEq, _⟩ := replyOnCore_eq_store st tid c tid ct ep0 rid rp msg core hSz hT hIpc hRO
+    hCRes hLC hFC hLR hFR hRp (Or.inr ⟨scId, hN⟩)
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hRecS : recordedReplyServer? st c = some tid := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  rw [← storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hPop
+  generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hPop hXf
+  generalize hP : popDonationSettledInPlace S1 c tid scId (determineTargetCore st c) = P
+    at hPop hXf
+  have hXf' : replyRecvReplyTransfer none st tid c grant P = .ok (summary, S2) := hXf
+  have hEp2 : S2.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
+  have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core S2 =
+      (removeRunnableOnCore (storeReceiveBlock S2 epId tid ep.recvTailCode
+        (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [receiveBlock_inPlace_eq S2 epId ep tid rt2 (some rid) core hE2 hS hR2 hA2 hG2]
+    have hSnd : (receiveRendezvousSender? S2 epId).isNone = true := by
+      simp [receiveRendezvousSender?, hEp2, hS]
+    simp only [hSnd, ↓reduceIte]
+  obtain ⟨tb, hTb, hBk⟩ := receiveBlock_receiver_blocked S2 epId ep tid rt2 (some rid) core hE2 hR2
+    hA2 hG2
+  have hDq : rendezvousDequeuedCall (removeRunnableOnCore (storeReceiveBlock S2 epId tid
+      ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid = false := by
+    unfold rendezvousDequeuedCall lookupTcb
+    simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
+  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
+  simp only [hRecS, Option.getD_some, hEq, hPop, hXf', hRecv, hEp2, Option.bind_some, hS]
+  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff,
+    Architecture.stageWokenSendCompletion_none, replyRecvAnswerCaller]
+
+/-- The donated receive leg after the reply's transfer: the server's block on
+the endpoint, the server taken off its core and off its placement, then its
+priority walk. -/
+@[inline] def storeReplyRecvDonatedTail (Y : SystemState) (tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat) (core : CoreId) :
+    SystemState :=
+  (PriorityInheritance.propagatePipChainCrossCore
+    (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock Y epId tid tailCode
+      (rid.val + 1)) tid core) tid) tid core).1
+
+/-- **The donated reply-receive whose reply leg transfers, delivered**: the
+reply's writes, the pop and its settle, the transfer in place on no endpoint,
+the server's block, deschedule and priority walk, then the caller's frame with
+the transfer's report. -/
+@[noinline] def performReplyRecvDonatedCapsDelivered (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (epId : SeLe4n.ObjId)
+    (tailCode : Nat) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (core : CoreId)
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+  let X := popDonationSettledInPlace (storeReplyRendezvousReady st c tid rid) c tid scId home
+  capTransferK X c.toObjId sv sb sroot count rv rb rroot
+    fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    deliverReplyRecvCapsFrame
+      (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (storeReplyRecvDonatedTail
+        (capStepsApply c.toObjId false rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+        tid rid epId tailCode core)
+      c layout rf len badge
+
+theorem replyRecvDonatedTail_staged (Y : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (ep : Endpoint) (core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (capInfo : Nat)
+    (hNo : Y.objects.noResizeDue) (hNe : tid ≠ c)
+    (hSz4 : Architecture.regMessageLength layout len - 1 ≤ 4)
+    (hE2 : (Y.mapTcbInPlace c (holdMessage
+      { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })).objects[epId]? =
+        some (.endpoint ep)) {rt2 : TCB}
+    (hR2 : (Y.mapTcbInPlace c (holdMessage
+      { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })).objects[tid.toObjId]? =
+        some (.tcb rt2))
+    (hA2 : receiveBlockAdmits rt2 = true)
+    (hG2 : receiveBlocksInPlace (Y.mapTcbInPlace c (holdMessage
+      { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })) epId tid
+        ep.receiveQ.tail (some rid) = true) :
+    Architecture.stageDeliveredMessage (Architecture.stageDeliveredMessage
+        (PriorityInheritance.propagatePipChainCrossCore
+          (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock (Y.mapTcbInPlace c
+            (holdMessage { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }))
+            epId tid ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1
+        c capInfo) tid 0 =
+      deliverReplyRecvCapsFrame capInfo
+        (storeReplyRecvDonatedTail Y tid rid epId ep.recvTailCode core) c layout rf len badge := by
+  have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
+  obtain ⟨t, hT1, hB⟩ := receiveBlock_receiver_blocked _ epId ep tid rt2 (some rid) core hE2 hR2
+    hA2 hG2
+  have h3 := removeRunnableOnCore_noResizeDue _ tid core
+    (storeReceiveBlock_noResizeDue _ epId tid ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid)) hNo)
+  have h5 := descheduleAtPlacement_noResizeDue _ tid h3
+  rw [storeReceiveBlock_msg _ _ _ _ _ _ _ hNo hNe, removeRunnableOnCore_msg,
+    SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hCT] at hT1
+  obtain ⟨x1, hX1, e1⟩ := descheduleAtPlacement_ipcStateCarried _ tid tid t hT1
+  obtain ⟨x, hX, hEq⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core h5 tid x1 hX1
+  rw [storeReceiveBlock_msg _ _ _ _ _ _ _ hNo hNe, removeRunnableOnCore_msg,
+    descheduleAtPlacement_msg, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ h5,
+    stageDeliveredMessage_holdMessage_caps _ _ _ _ (propagatePipChainCrossCore_noResizeDue _ _ _ h5)
+      (by rw [Architecture.regReplyRecvBody_size]; exact hSz4),
+    returnFrameOfMessage_regReplyRecvBody_caps]
+  exact stageDeliveredMessage_writeDeliveredFrameIfReady_blocked
+    (storeReplyRecvDonatedTail Y tid rid epId ep.recvTailCode core) c tid _ _ 0 hCT x hX
+    (by rw [hEq, e1, hB]; exact fun h => by cases h)
+
+/-- **The donated reply-receive whose reply leg transfers, delivered**: under
+the guard of `replyRecvOnCore_donated_inPlace` (its inert transfer replaced by a
+granting replier whose frame asks for `count` capabilities), a reply of at most
+four words and `replyTransferStoresInPlace`, the checked arm's result is
+`performReplyRecvDonatedCapsDelivered`. -/
+theorem replyRecvOnCore_donated_capsDelivered (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (stcb : TCB) (count : Nat)
+    (hSz4 : Architecture.regMessageLength layout len - 1 ≤ 4)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
+    (hRO : ct.replyObject = some rid)
+    (hSRes : tid.isReserved = false)
+    (hG : replyPopsInPlace st c ct.scBindingScCode tid rid = true)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : enqueueAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count)
+    (hW : replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+      count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot = true) :
+    (match endpointReplyRecvOnCore epId tid rid c
+        { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } true core st with
+      | .ok (summary, st') =>
+          (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
+            Except KernelError (Unit × SystemState))
+      | .error e => .error e) =
+      .ok ((), performReplyRecvDonatedCapsDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
+        (determineTargetCore st c) epId ep.recvTailCode layout rf len badge core stcb.vspaceRoot
+        stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
+    unfold receiverCapTarget? capTargetOf; rw [hTc]
+  have hSz : ¬ (Architecture.regReplyRecvBody layout rf len).size > maxMessageRegisters := by
+    rw [Architecture.regReplyRecvBody_size]; unfold maxMessageRegisters; omega
+  generalize hMsg : ({ registers := Architecture.regReplyRecvBody layout rf len, badge := badge } :
+    IpcMessage) = msg
+  obtain ⟨rp', scId, sc, hRp', hN, hScO, hHead, hBelow, hCode, -, hNe', hNo, -, hFC, -⟩ :=
+    replyPopsInPlace_donation st c tid rid msg ct hT hSRes hG
+  rw [hRp] at hRp'
+  cases hRp'
+  have hNe : tid ≠ c := fun e => hNe' e.symm
+  have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
+    rw [hCode]; rfl
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := popDonationSettled_receiveGuard st c tid rid msg ct rp
+    epId ep rt scId sc (determineTargetCore st c) hNo hT hFC hRp hN hScO hHead hBelow
+    hNe hE hR hA hEnq hStash hRec
+  have hNoX := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
+  have hAX := ipcBufferReadsAgree_storeReplyRendezvousReady st c tid rid hNo
+  obtain ⟨hIX, hLX⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
+  have hP1 : popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid scId
+      (determineTargetCore st c) =
+      (popDonationSettledInPlace (storeReplyRendezvousReady st c tid rid) c tid scId
+        (determineTargetCore st c)).mapTcbInPlace c (holdMessage msg) := by
+    rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo]
+    exact popDonationSettledInPlace_msg c id _ id _ c tid scId _ hNoX hNe'
+  have hFrP := (settleReturnedContext_popFrame _ (determineTargetCore st c) scId).trans
+    (returnDonatedSchedContextInPlace_popFrame (storeReplyRendezvousReady st c tid rid) tid c scId
+      hNoX)
+  have hAP := (ipcBufferReadsAgree_settleReturnedContext _ (determineTargetCore st c) scId).trans
+    ((ipcBufferReadsAgree_returnDonatedSchedContextInPlace _ tid c scId hNoX).trans hAX)
+  have hNoP := popDonationSettledInPlace_noResizeDue _ c tid scId (determineTargetCore st c) hNoX
+  generalize hX : popDonationSettledInPlace (storeReplyRendezvousReady st c tid rid) c tid scId
+    (determineTargetCore st c) = X at hP1 hNoP
+  have hAX' : ipcBufferReadsAgree X st := hX ▸ hAP
+  have hIX' : X.objectIndexSet = st.objectIndexSet := hX ▸ hFrP.1.trans hIX
+  have hLX' : X.lifecycle = st.lifecycle := hX ▸ hFrP.2.1.trans hLX
+  rw [hP1] at hE1 hR1 hG1
+  obtain ⟨s, Y1, hT1⟩ := receiveTransferCaps_ok (frameCapRequestOf st stcb count) none
+    (capTargetOf st ct) X
+  have hNoY := receiveTransferCaps_noResizeDue _ _ _ X Y1 s hNoP hT1
+  have hHT : receiveTransferCaps (frameCapRequestOf st stcb count) none (capTargetOf st ct)
+      (X.mapTcbInPlace c (holdMessage msg)) = .ok (s, Y1.mapTcbInPlace c (holdMessage msg)) := by
+    rw [receiveTransferCaps_mapTcbInPlace (LinkBlindWrite.withMessageSlots _ _ _) c _ _ _ X hNoP, hT1]
+    rfl
+  have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
+    ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX')
+    hIX' hLX' ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hW hHT).1
+  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveGuard_of_transferFrame hFr hE1 hR1 hA1 hG1
+  have hXf : replyTransferCaps st tid c true
+      (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
+        ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) =
+      .ok (s, Y1.mapTcbInPlace c (holdMessage msg)) := by
+    unfold replyTransferCaps
+    rw [hReq, hTgt, hSc, hP1, hHT]
+  rw [replyRecvOnCore_donated_transfer st epId tid c rid msg true core ct ep0 ep rp (hMsg ▸ hSz) hT
+    hIpc hRO hSRes hG hS hRp hXf hE2 hR2 hA2 hG2]
+  dsimp only
+  subst hMsg
+  simp only [CapTransferSummary.capInfo_empty]
+  rw [replyRecvDonatedTail_staged Y1 c tid rid epId ep core layout rf len badge s.capInfo hNoY hNe
+    hSz4 hE2 hR2 hA2 hG2]
+  have hK := capTransferK_eq_at X c.toObjId false stcb count ct
+    (fun i Y => deliverReplyRecvCapsFrame i (storeReplyRecvDonatedTail Y tid rid epId ep.recvTailCode
+      core) c layout rf len badge)
+  simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte] at hK
+  rw [hAX'.frameCapRequestOf, hAX'.capTargetOf, hT1] at hK
+  unfold performReplyRecvDonatedCapsDelivered
+  rw [hSc, hX]
+  exact congrArg (fun Z => (.ok ((), Z) : Except KernelError (Unit × SystemState))) hK.symm
+
+/-! ### The reply-receive answering a caller recording no server -/
+
+/-- **The unheld reply-receive that blocks, its reply leg transferring**: as
+`replyRecvAnsweringOnCore_unheld_inPlace`, with the reply leg's transfer
+answering `(summary, S2)` on the state the pop leaves and the receive's block
+admissible on `S2`. -/
+theorem replyRecvOnCore_unheld_transfer (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
+    (core : CoreId) (ct : TCB) (ep0 : SeLe4n.ObjId) (ep : Endpoint) (rp : Reply)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnheldPopsInPlace st c rid = true)
+    (hS : ep.sendQ.head = none)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    {summary : CapTransferSummary} {S2 : SystemState}
+    (hXf : replyTransferCaps st tid c grant
+      (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+        (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
+        (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) = .ok (summary, S2))
+    (hE2 : S2.objects[epId]? = some (.endpoint ep)) {rt2 : TCB}
+    (hR2 : S2.objects[tid.toObjId]? = some (.tcb rt2)) (hA2 : receiveBlockAdmits rt2 = true)
+    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) :
+    endpointReplyRecvOnCore epId tid rid c msg grant core st =
+      .ok ({ results := #[] }, Architecture.stageDeliveredMessage
+        (PriorityInheritance.propagatePipChainCrossCore
+          (removeRunnableOnCore (storeReceiveBlock S2 epId tid ep.recvTailCode
+            (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c summary.capInfo) := by
+  obtain ⟨rp', scId, hRp', hN, hCode, hCRes, hNo, hLC, hFC, hLR, hFR, hPopR, -⟩ :=
+    replyUnheldPopsInPlace_pop st c rid msg ct hT hG
+  rw [hRp] at hRp'
+  cases hRp'
+  have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
+    rw [hCode]; rfl
+  rw [hSc] at hXf
+  obtain ⟨hEq, _⟩ := replyOnCore_eq_storeLeg st tid c none ct ep0 rid rp msg core hSz hT hIpc hRO
+    hCRes hLC hFC hLR hFR hRp (Or.inr ⟨scId, hN⟩)
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hRecS : recordedReplyServer? st c = none := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  rw [← storeReplyLeg_eq_hold _ _ _ _ hNo] at hPopR
+  simp only [SystemState.unlinkReplyWaiterOpt] at hEq
+  generalize hS1 : storeReplyLeg st c rid msg = S1 at hEq hPopR hXf
+  generalize hP : SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace S1 c scId)
+    (determineTargetCore st c) scId = P at hPopR hXf
+  have hXf' : replyRecvReplyTransfer none st tid c grant P = .ok (summary, S2) := hXf
+  have hEp2 : S2.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
+  have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core S2 =
+      (removeRunnableOnCore (storeReceiveBlock S2 epId tid ep.recvTailCode
+        (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [receiveBlock_inPlace_eq S2 epId ep tid rt2 (some rid) core hE2 hS hR2 hA2 hG2]
+    have hSnd : (receiveRendezvousSender? S2 epId).isNone = true := by
+      simp [receiveRendezvousSender?, hEp2, hS]
+    simp only [hSnd, ↓reduceIte]
+  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
+  simp only [hRecS, Option.getD_none, hEq, hPopR, hXf', hRecv, hEp2, Option.bind_some, hS]
+  simp [replyRecvPostReceiveDonation, applyReceiveLegPipHandoff,
+    Architecture.stageWokenSendCompletion_none, replyRecvAnswerCaller]
+
+/-- **The unheld reply-receive whose reply leg transfers, delivered**: the reply
+leg's writes, the unheld pop and its settle, the transfer in place on no
+endpoint, the replier's block and priority walk, then the caller's frame with
+the transfer's report. -/
+@[noinline] def performReplyRecvUnheldCapsDelivered (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (epId : SeLe4n.ObjId)
+    (tailCode : Nat) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (core : CoreId)
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+  let X := SchedContextOps.settleReturnedContext
+    (returnUnheldSchedContextInPlace (storeReplyLegReady st c rid) c scId) home scId
+  capTransferK X c.toObjId sv sb sroot count rv rb rroot
+    fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    deliverReplyRecvCapsFrame
+      (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (storeReplyRecvBlockTail
+        (capStepsApply c.toObjId false rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+        tid rid epId tailCode core)
+      c layout rf len badge
+
+/-- **The unheld reply-receive whose reply leg transfers, delivered**: under the
+guard of `replyRecvOnCore_unheld_inPlace` (its inert transfer replaced by a
+granting replier whose frame asks for `count` capabilities), a reply of at most
+four words and `replyTransferStoresInPlace`, the checked arm's result is
+`performReplyRecvUnheldCapsDelivered`. -/
+theorem replyRecvOnCore_unheld_capsDelivered (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (stcb : TCB) (count : Nat)
+    (hSz4 : Architecture.regMessageLength layout len - 1 ≤ 4)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnheldPopsInPlace st c rid = true)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count)
+    (hW : replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+      count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot = true) :
+    (match endpointReplyRecvOnCore epId tid rid c
+        { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } true core st with
+      | .ok (summary, st') =>
+          (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
+            Except KernelError (Unit × SystemState))
+      | .error e => .error e) =
+      .ok ((), performReplyRecvUnheldCapsDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
+        (determineTargetCore st c) epId ep.recvTailCode layout rf len badge core stcb.vspaceRoot
+        stcb.ipcBuffer stcb.cspaceRoot count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
+    unfold receiverCapTarget? capTargetOf; rw [hTc]
+  have hSz : ¬ (Architecture.regReplyRecvBody layout rf len).size > maxMessageRegisters := by
+    rw [Architecture.regReplyRecvBody_size]; unfold maxMessageRegisters; omega
+  generalize hMsg : ({ registers := Architecture.regReplyRecvBody layout rf len, badge := badge } :
+    IpcMessage) = msg
+  obtain ⟨rp', scId, hRp', hN, hCode, -, hNo, -, hFC, -⟩ :=
+    replyUnheldPopsInPlace_pop st c rid msg ct hT hG
+  rw [hRp] at hRp'
+  cases hRp'
+  obtain ⟨rp2, scId2, sc, hRp2, hN2, hScO, hHead, hBelow⟩ := replyUnheldPopsInPlace_stack st c rid hG
+  rw [hRp] at hRp2
+  cases hRp2
+  rw [hN] at hN2
+  injection hN2 with hN2
+  injection hN2 with hN2
+  subst hN2
+  have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
+    rw [hCode]; rfl
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := popUnheldSettled_receiveGuard st c tid rid msg ct rp
+    epId ep rt scId sc (determineTargetCore st c) hNo hT hFC hRp hN hScO hHead hBelow hNe hE hR
+    hA hEnq hStash hRec
+  have hNoX := storeReplyLegReady_noResizeDue st c rid hNo
+  have hAX := ipcBufferReadsAgree_storeReplyLegReady st c rid hNo
+  obtain ⟨hIX, hLX⟩ := storeReplyLegReady_fields st c rid hNo
+  have hP1 : SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+        (storeReplyLeg st c rid msg) c scId) (determineTargetCore st c) scId =
+      (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+        (storeReplyLegReady st c rid) c scId) (determineTargetCore st c) scId).mapTcbInPlace c
+        (holdMessage msg) := by
+    rw [storeReplyLeg_eq_hold _ _ _ _ hNo, returnUnheldSchedContextInPlace_msg c id _ id _ c scId hNoX,
+      settleReturnedContext_msg]
+  have hFrP := (settleReturnedContext_popFrame _ (determineTargetCore st c) scId).trans
+    (returnUnheldSchedContextInPlace_popFrame (storeReplyLegReady st c rid) c scId hNoX)
+  have hAP := (ipcBufferReadsAgree_settleReturnedContext _ (determineTargetCore st c) scId).trans
+    ((ipcBufferReadsAgree_returnUnheldSchedContextInPlace _ c scId hNoX).trans hAX)
+  have hNoP := settleReturnedContext_noResizeDue _ (determineTargetCore st c) scId
+    (returnUnheldSchedContextInPlace_noResizeDue _ c scId hNoX)
+  generalize hX : SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+    (storeReplyLegReady st c rid) c scId) (determineTargetCore st c) scId = X at hP1 hNoP
+  have hAX' : ipcBufferReadsAgree X st := hX ▸ hAP
+  have hIX' : X.objectIndexSet = st.objectIndexSet := hX ▸ hFrP.1.trans hIX
+  have hLX' : X.lifecycle = st.lifecycle := hX ▸ hFrP.2.1.trans hLX
+  rw [hP1] at hE1 hR1 hG1
+  obtain ⟨s, Y1, hT1⟩ := receiveTransferCaps_ok (frameCapRequestOf st stcb count) none
+    (capTargetOf st ct) X
+  have hNoY := receiveTransferCaps_noResizeDue _ _ _ X Y1 s hNoP hT1
+  have hHT : receiveTransferCaps (frameCapRequestOf st stcb count) none (capTargetOf st ct)
+      (X.mapTcbInPlace c (holdMessage msg)) = .ok (s, Y1.mapTcbInPlace c (holdMessage msg)) := by
+    rw [receiveTransferCaps_mapTcbInPlace (LinkBlindWrite.withMessageSlots _ _ _) c _ _ _ X hNoP, hT1]
+    rfl
+  have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
+    ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX')
+    hIX' hLX' ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hW hHT).1
+  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveGuard_of_transferFrame hFr hE1 hR1 hA1 hG1
+  have hXf : replyTransferCaps st tid c true
+      (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+        (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
+        (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) =
+      .ok (s, Y1.mapTcbInPlace c (holdMessage msg)) := by
+    unfold replyTransferCaps
+    rw [hReq, hTgt, hSc, hP1, hHT]
+  rw [replyRecvOnCore_unheld_transfer st epId tid c rid msg true core ct ep0 ep rp (hMsg ▸ hSz) hT
+    hIpc hRO hG hS hRp hXf hE2 hR2 hA2 hG2]
+  dsimp only
+  subst hMsg
+  simp only [CapTransferSummary.capInfo_empty]
+  rw [replyRecvBlockTail_staged Y1 c tid rid epId ep core layout rf len badge s.capInfo hNoY hNe
+    hSz4 hE2 hR2 hA2 hG2]
+  have hK := capTransferK_eq_at X c.toObjId false stcb count ct
+    (fun i Y => deliverReplyRecvCapsFrame i (storeReplyRecvBlockTail Y tid rid epId ep.recvTailCode
+      core) c layout rf len badge)
+  simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte] at hK
+  rw [hAX'.frameCapRequestOf, hAX'.capTargetOf, hT1] at hK
+  unfold performReplyRecvUnheldCapsDelivered
+  rw [hSc, hX]
+  exact congrArg (fun Z => (.ok ((), Z) : Except KernelError (Unit × SystemState))) hK.symm
+
 end SeLe4n.Kernel
