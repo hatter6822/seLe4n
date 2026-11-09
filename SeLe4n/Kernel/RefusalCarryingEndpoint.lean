@@ -15,7 +15,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDonatedInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyUnheldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
-import SeLe4n.Kernel.IPC.CrossCore.ClosedReceiveWindow
+import SeLe4n.Kernel.IPC.CrossCore.InertCapTransferInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongSendInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace
@@ -169,19 +169,21 @@ theorem sendDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     hE, hH, hSTcb, hT, hW, hM, ↓reduceIte]
   rfl
 
-/-- **A checked send to a waiting receiver whose receive window is closed, in
-place**: the receiver can take no capability (`receiveWindowClosed`: it has no IPC
-buffer), so the transfer transfers none and writes nothing
-(`receiveTransferCaps_of_windowClosed`); the send is the
-in-place rendezvous and the receiver's wake, as one that transfers nothing. -/
-theorem sendDispatchChecked_inPlace_windowClosed (ctx : LabelingContext) (st : SystemState)
+/-- **A checked send to a waiting receiver whose transfer transfers nothing, in
+place**: the receiver takes no capability, or its buffer names no receive slot
+and the first capability does not unwrap (`capTransferInert`), so the transfer,
+run after the rendezvous, which writes no CNode, transfers none and writes
+nothing (`receiveTransferCaps_of_inert`); the send is the in-place rendezvous and
+the receiver's wake, as one that transfers nothing. -/
+theorem sendDispatchChecked_inPlace_inert (ctx : LabelingContext) (st : SystemState)
     (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender r : SeLe4n.ThreadId) (rt : TCB)
     (payload : SendPayload) (msg : IpcMessage) (executingCore : Concurrency.CoreId)
     (hM : sendPayloadMessage st sender payload = msg)
     (hE : st.getEndpoint? endpointId = some ep) (hH : ep.receiveQ.head = some r)
     (hT : st.getTcb? r = some rt) (hS : (st.getTcb? sender).isSome = true)
     (hW : sendWakesInPlace st endpointId r rt.queueNext = true)
-    (hWin : receiveWindowClosed st r = true)
+    (hInert : capTransferInert st endpointId (receiverCapTarget? st r)
+      (sendCapRequest st endpointId sender payload) = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true) :
     ∃ s : CapTransferSummary, s.capInfo = 0 ∧
@@ -191,38 +193,44 @@ theorem sendDispatchChecked_inPlace_windowClosed (ctx : LabelingContext) (st : S
         .ok (s, (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r
             executingCore).2)) := by
   obtain ⟨sTcb, hSTcb⟩ := Option.isSome_iff_exists.mp hS
-  have hTgt := receiverCapTarget?_of_windowClosed hWin
+  have hNo : st.objects.noResizeDue := by
+    have hW' := hW
+    simp only [sendWakesInPlace, Bool.and_eq_true] at hW'
+    exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW'.1.1.1.2
+  have hTr := receiveTransferCaps_of_inert hInert
+    (getCNode?_sendRendezvousWoken st endpointId r rt.queueNext msg executingCore hNo)
   unfold endpointSendCrossCoreDispatchChecked
   rw [if_pos hFlow]
   unfold endpointSendDualWithCapsOnCore
   rw [endpointSendDualOnCore_eq_impl]
   unfold endpointSendDualOnCoreImpl
   simp only [sendWakesInPlaceCode_eq, storeSendRendezvousCode_eq, TCB.ofOptCode_queueNextCode,
-    hE, hH, hSTcb, hT, hW, hM, ↓reduceIte, Option.bind_some, hTgt,
-    receiveTransferCaps_of_windowClosed]
+    hE, hH, hSTcb, hT, hW, hM, ↓reduceIte, Option.bind_some, hTr]
   split <;> exact ⟨_, rfl, rfl⟩
 
-/-- **A call's transfer to a receiver that can take no capability is the
-identity**: the WithCaps call returns the call rendezvous's state, transferring
-nothing. -/
-theorem endpointCallWithCapsOnCore_windowClosed (endpointId : SeLe4n.ObjId)
+/-- **A call's transfer that transfers nothing is the identity**: the WithCaps
+call returns the call rendezvous's state, transferring nothing, when the
+rendezvous reads every CNode as the call found it. -/
+theorem endpointCallWithCapsOnCore_inert (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (payload : SendPayload) (core : Concurrency.CoreId)
     (st st' : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
     (hCall : endpointCallOnCore endpointId caller payload core st = (st', .ok sgi))
     (hRecv : (st.getEndpoint? endpointId).bind (·.receiveQ.head) = some r)
-    (hWin : receiveWindowClosed st r = true) :
+    (hInert : capTransferInert st endpointId (receiverCapTarget? st r)
+      (sendCapRequest st endpointId caller payload) = true)
+    (hCNode : ∀ id, st'.getCNode? id = st.getCNode? id) :
     ∃ s : CapTransferSummary, s.capInfo = 0 ∧
       endpointCallWithCapsOnCore endpointId caller payload core st =
         (st', .ok (s, sgi)) := by
-  have hTgt := receiverCapTarget?_of_windowClosed hWin
+  have hTr := receiveTransferCaps_of_inert hInert hCNode
   unfold endpointCallWithCapsOnCore
-  simp only [hCall, hRecv, Option.bind_some, hTgt, receiveTransferCaps_of_windowClosed]
+  simp only [hCall, hRecv, Option.bind_some, hTr]
   split <;> exact ⟨_, rfl, rfl⟩
 
-/-- **The checked call dispatch to a receiver whose receive window is closed,
-in place**: as `callDispatchChecked_inPlace`, the receiver taking none of the
-capabilities the caller asks to transfer. -/
-theorem callDispatchChecked_inPlace_windowClosed (ctx : LabelingContext) (st : SystemState)
+/-- **The checked call dispatch whose transfer transfers nothing, in place**:
+as `callDispatchChecked_inPlace`, the receiver taking none of the capabilities
+the caller asks to transfer (`capTransferInert`). -/
+theorem callDispatchChecked_inPlace_inert (ctx : LabelingContext) (st : SystemState)
     (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
     (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage)
     (core : Concurrency.CoreId)
@@ -230,7 +238,8 @@ theorem callDispatchChecked_inPlace_windowClosed (ctx : LabelingContext) (st : S
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
     (hG : callWakesInPlace st endpointId caller r rt rid = true)
-    (hWin : receiveWindowClosed st r = true)
+    (hInert : capTransferInert st endpointId (receiverCapTarget? st r)
+      (sendCapRequest st endpointId caller payload) = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
     ∃ s : CapTransferSummary, s.capInfo = 0 ∧ ∃ sgi,
@@ -247,8 +256,10 @@ theorem callDispatchChecked_inPlace_windowClosed (ctx : LabelingContext) (st : S
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
   obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg core hM
     hE hH hT hRid hG
-  obtain ⟨s, hC, hW⟩ := endpointCallWithCapsOnCore_windowClosed endpointId caller r payload core st
-    _ _ hEq (by simp only [hEp, Option.bind_some, hH]) hWin
+  obtain ⟨s, hC, hW⟩ := endpointCallWithCapsOnCore_inert endpointId caller r payload core st
+    _ _ hEq (by simp only [hEp, Option.bind_some, hH]) hInert
+    (getCNode?_storeCallRendezvous st endpointId caller r rt.queueNext rid msg core hNo
+      (callWakesInPlace_ne hG))
   obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff caller).mpr hCRes)
   obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff r).mpr hRRes)
   have hcv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv
@@ -285,10 +296,11 @@ theorem blockedSender_of_routedTransferring (st : SystemState) (s : SeLe4n.Threa
   simp only [hF, Bool.false_eq_true, ↓reduceIte, senderFrameMessage]
   rfl
 
-/-- **The take of a blocked capability-carrying send by a receiver whose
-receive window is closed, in place**: as `receiveTake_delivered`, the receiver
-taking none of the capabilities the sender asks to transfer, so the WithCaps
-receive transfers none and writes nothing (`receiveTransferCaps_of_windowClosed`). -/
+/-- **The take of a blocked capability-carrying send whose transfer transfers
+nothing, in place**: as `receiveTake_delivered`, the receiver taking none of the
+capabilities the sender asks to transfer (`capTransferInert`), so the WithCaps
+receive, run after the take, which writes no CNode, transfers none and writes
+nothing (`receiveTransferCaps_of_inert`). -/
 theorem receiveTakeCaps_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (core : Concurrency.CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
@@ -299,7 +311,8 @@ theorem receiveTakeCaps_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .transferring .send capAddr mi)
     (hLen : mi.length ≤ 4) (hF : sTcb.ipcFaultSend = false)
-    (hWin : receiveWindowClosed st receiver = true) :
+    (hInert : capTransferInert st endpointId (receiverCapTarget? st receiver)
+      (receiveCapRequest st endpointId) = true) :
     let P := storePopHead st endpointId false s sTcb.queueNext
     let W := wakeThread (P.updateTcb s receiverReady) s core
     let S4 := W.1.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb))
@@ -321,11 +334,21 @@ theorem receiveTakeCaps_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
   have hSnd : receiveRendezvousSender? st endpointId = some s := by
     simp only [receiveRendezvousSender?, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE,
       Option.bind_some, hH]
+  have hSW : sendWakesInPlace st endpointId s sTcb.queueNext = true := by
+    have hG' := hG
+    unfold receiveTakesInPlace at hG'
+    revert hG'
+    cases sendWakesInPlace st endpointId s sTcb.queueNext <;> simp
+  have hNo : st.objects.noResizeDue := by
+    simp only [sendWakesInPlace, Bool.and_eq_true] at hSW
+    exact RobinHood.RHTable.noResizeDue_of_findsInPlace hSW.1.1.1.2
+  have hTr := receiveTransferCaps_of_inert hInert
+    (getCNode?_receiveTake st endpointId receiver s sTcb.queueNext
+      (blockedSenderMessage (storePopHead st endpointId false s sTcb.queueNext) s sTcb) core hNo)
   refine ⟨{ results := #[] }, rfl, ?_⟩
   unfold endpointReceiveDualWithCapsOnCore
   rw [hTake]
-  simp only [hSnd, Option.isNone_some, Bool.false_eq_true, ↓reduceIte,
-    receiverCapTarget?_of_windowClosed hWin, receiveTransferCaps_of_windowClosed]
+  simp only [hSnd, Option.isNone_some, Bool.false_eq_true, ↓reduceIte, hTr]
   rfl
 
 /-- WS-ZA ZA4.7: **the staged send rendezvous is the delivered one** for a
@@ -1807,11 +1830,11 @@ capabilities, refusing in the state it was handed
 no capability (seL4's `sendIPC` blocks the sender with its message and
 capability addresses where they are; the receive that takes it resolves
 them), so one whose checks all pass blocks in place
-(`sendBlock_inPlace_eq`).  One of at most four words that meets a receiver
-whose receive window is closed (`receiveWindowClosed`: no empty slot to
-install in, so the transfer installs none and writes nothing, as seL4's
-`transferCaps` with no receive slot) writes the rendezvous in place
-(`sendDispatchChecked_inPlace_windowClosed`); any other resolves the
+(`sendBlock_inPlace_eq`).  One of at most four words whose transfer transfers
+nothing (`senderTransferInertW`, the specification's `capTransferInert`: the
+receiver takes no capability, or its buffer names no receive slot and the first
+capability does not unwrap, so seL4's `transferCaps` stops at it) writes the
+rendezvous in place (`sendDispatchChecked_inPlace_inert`); any other resolves the
 capabilities in its CSpace and installs them in the receiver's through the
 specification's transfer (`endpointSendCapsGeneralR`). -/
 @[inline] def endpointSendCapsCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
@@ -1826,11 +1849,10 @@ specification's transfer (`endpointSendCapsGeneralR`). -/
             | some r =>
                 match st.getTcb? r with
                 | some rt =>
-                    if decide (len ≤ 4) && (st.getTcb? tid).isSome &&
+                    if decide (len ≤ 4) && senderTransferInertW st epId rt tid rf len &&
                         endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                           (ctx.endpointLabelOf epId) &&
-                        sendWakesInPlaceCode st epId r rt.queueNextCode &&
-                        receiveWindowClosed st r then
+                        sendWakesInPlaceCode st epId r rt.queueNextCode then
                       .ok ((), performSendDelivered st epId r rt.queueNextCode
                         SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged executingCore)
                     else endpointSendCapsGeneralR ctx tid executingCore cap st
@@ -1866,7 +1888,8 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
           split
           · next hG =>
             simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
-            obtain ⟨⟨⟨⟨hShort, hS⟩, hFlow⟩, hW⟩, hWin⟩ := hG
+            obtain ⟨⟨⟨hShort, hSI⟩, hFlow⟩, hW⟩ := hG
+            have hS := senderTransferInertW_isSome hSI
             rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
             have hNo : st.objects.noResizeDue := by
               simp only [sendWakesInPlace, Bool.and_eq_true] at hW
@@ -1876,8 +1899,10 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
             have hMsg := routedTransferringMessage st tid rf capAddr mi sid hFrame hR hShort
             unfold endpointSendCapsGeneralR
             simp only [hTgt, hE, Option.bind_some, hH]
-            obtain ⟨s, hC, hD⟩ := sendDispatchChecked_inPlace_windowClosed ctx st epId ep tid r rt
-              _ _ executingCore (hMsg _ _ hS) hE hH hT hS hW hWin hFlow
+            have hInert := capTransferInert_sendCapRequest_of_W st epId r rt tid rf cap.badge
+              (cap.rights.mem .grant) sid capAddr mi hFrame hT hR hShort hSI
+            obtain ⟨s, hC, hD⟩ := sendDispatchChecked_inPlace_inert ctx st epId ep tid r rt
+              _ _ executingCore (hMsg _ _ hS) hE hH hT hS hW hInert hFlow
             rw [hD]
             simp only [hC]
             rw [← TCB.optCode_queueNext,
@@ -1936,9 +1961,9 @@ theorem endpointSendCapsCheckedArmR_eq (ctx : LabelingContext)
 capabilities, refusing in the state it was handed
 (`endpointCallCapsCheckedArmR_eq`): one with no receiver waiting whose checks
 all pass blocks in place, resolving nothing (`callBlock_inPlace_eq`); one of
-at most four words that meets a receiver whose receive window is closed writes
-the call rendezvous in place, the transfer installing nothing
-(`callDispatchChecked_inPlace_windowClosed`); any other takes the general
+at most four words whose transfer transfers nothing (`senderTransferInertW`)
+writes the call rendezvous in place, the transfer installing nothing
+(`callDispatchChecked_inPlace_inert`); any other takes the general
 arm, which resolves and installs the capabilities at the rendezvous through
 the specification's transfer and refuses in the state it was handed
 (`endpointCallCheckedArmGeneralR`). -/
@@ -1956,11 +1981,10 @@ the specification's transfer and refuses in the state it was handed
                 | some rt =>
                     match rt.pendingReceiveReply with
                     | some rid =>
-                        if decide (len ≤ 4) && (st.getTcb? tid).isSome &&
+                        if decide (len ≤ 4) && senderTransferInertW st epId rt tid rf len &&
                             endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
-                            callWakesInPlace st epId tid r rt rid &&
-                            receiveWindowClosed st r then
+                            callWakesInPlace st epId tid r rt rid then
                           .ok ((), callRendezvousDelivered st epId tid r rt.queueNextCode rid
                             SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged
                             executingCore)
@@ -2000,13 +2024,16 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
             split
             · next hG =>
               simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
-              obtain ⟨⟨⟨⟨hShort, hS⟩, hFlow⟩, hW⟩, hWin⟩ := hG
+              obtain ⟨⟨⟨hShort, hSI⟩, hFlow⟩, hW⟩ := hG
+              have hS := senderTransferInertW_isSome hSI
               have hMsg := routedTransferringMessage st tid rf capAddr mi sid hFrame hR hShort
-              obtain ⟨s, hC, sgi, hD⟩ := callDispatchChecked_inPlace_windowClosed ctx st epId ep
+              have hInert := capTransferInert_sendCapRequest_of_W st epId r rt tid rf cap.badge
+                (cap.rights.mem .grant) sid capAddr mi hFrame hT hR hShort hSI
+              obtain ⟨s, hC, sgi, hD⟩ := callDispatchChecked_inPlace_inert ctx st epId ep
                 tid r rt rid (.frame cap.badge (cap.rights.mem .grant)) _ executingCore
                 (hMsg cap.badge (cap.rights.mem .grant) hS)
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hWin hFlow
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hInert hFlow
               rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD, hC]
               rfl
@@ -2640,7 +2667,7 @@ other rendezvous goes through the specification
           | .transferring .send _ mi =>
             if decide (mi.length ≤ 4) && !sTcb.ipcFaultSend &&
                 receiveTakesInPlace st epId tid s sTcb &&
-                receiveWindowClosed st tid then
+                receiverTransferInertW st epId tid sTcb mi.length then
               let f := Architecture.regMessageFrameW SeLe4n.arm64DefaultLayout sTcb.registerContext
                 mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
               .ok ((), performReceiveDelivered st epId s sTcb.queueNextCode tid executingCore
@@ -2771,11 +2798,13 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
           split
           · next hG =>
             simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
-            obtain ⟨⟨⟨hLen, hF⟩, hG⟩, hWin⟩ := hG
+            obtain ⟨⟨⟨hLen, hF⟩, hG⟩, hRI⟩ := hG
+            have hInert := capTransferInert_receiveCapRequest_of_W st epId ep tid s sTcb .send
+              capAddr mi hEp hH hT hR hLen hRI
             obtain ⟨⟨summary, hC, h1⟩, h2, h3⟩ := receiveTakeCaps_delivered st epId ep tid
               (SeLe4n.ReplyId.ofOptCode replyCode) executingCore s sTcb
               capAddr mi ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp)
-              hH ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hR hLen hF hWin
+              hH ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hR hLen hF hInert
             rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
             unfold endpointReceiveRendezvousR
             simp only [hEp, Option.bind_some, hH, h1, h2, hC]

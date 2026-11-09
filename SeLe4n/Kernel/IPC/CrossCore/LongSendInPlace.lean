@@ -38,27 +38,31 @@ open SeLe4n.Model
 /-! ## What an IPC-buffer read reads -/
 
 /-- What an IPC-buffer read reads of an object: a thread's VSpace root and
-buffer address, a VSpace root itself, nothing of any other object. -/
-@[inline] def ipcBufferViewOf : KernelObject → Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot)
+buffer address, a VSpace root itself -- and a CNode itself, which a capability
+transfer's lookups read (the receive slot the buffer names, the sender's
+extra capabilities) -- nothing of any other object. -/
+@[inline] def ipcBufferViewOf :
+    KernelObject → Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode)
   | .tcb t => some (.inl (t.vspaceRoot, t.ipcBuffer))
-  | .vspaceRoot r => some (.inr r)
+  | .vspaceRoot r => some (.inr (.inl r))
+  | .cnode cn => some (.inr (.inr cn))
   | _ => none
 
 /-- The VSpace root a view names. -/
-@[inline] def viewVSpaceRoot : Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot) →
+@[inline] def viewVSpaceRoot : Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode) →
     Option VSpaceRoot
-  | some (.inr r) => some r
+  | some (.inr (.inl r)) => some r
   | _ => none
 
 /-- The thread's VSpace root and buffer address a view names. -/
-@[inline] def viewBuffer : Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot) →
+@[inline] def viewBuffer : Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode) →
     Option (SeLe4n.ObjId × SeLe4n.VAddr)
   | some (.inl p) => some p
   | _ => none
 
-/-- **Two states read every IPC buffer alike**: at every key the same view
-(`ipcBufferViewOf`), and the same machine, whose memory and entry words the
-reads return. -/
+/-- **Two states read every IPC buffer and every CNode alike**: at every key
+the same view (`ipcBufferViewOf`), and the same machine, whose memory and entry
+words the reads return. -/
 def ipcBufferReadsAgree (st' st : SystemState) : Prop :=
   (∀ x : SeLe4n.ObjId,
     (st'.objects[x]?).bind ipcBufferViewOf = (st.objects[x]?).bind ipcBufferViewOf) ∧
@@ -85,6 +89,19 @@ theorem getVSpaceRoot?_eq_view (st : SystemState) (id : SeLe4n.ObjId) :
   | none => rfl
   | some o => cases o <;> rfl
 
+/-- The CNode at a key, as the view names it. -/
+@[inline] def viewCNode : Option ((SeLe4n.ObjId × SeLe4n.VAddr) ⊕ VSpaceRoot ⊕ CNode) →
+    Option CNode
+  | some (.inr (.inr cn)) => some cn
+  | _ => none
+
+theorem getCNode?_eq_view (st : SystemState) (id : SeLe4n.ObjId) :
+    st.getCNode? id = viewCNode ((st.objects[id]?).bind ipcBufferViewOf) := by
+  unfold SystemState.getCNode?
+  cases st.objects[id]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
 theorem getTcb?_buffer_eq_view (st : SystemState) (t : SeLe4n.ThreadId) :
     (st.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) =
       viewBuffer ((st.objects[t.toObjId]?).bind ipcBufferViewOf) := by
@@ -100,6 +117,10 @@ include h
 
 theorem getVSpaceRoot? (id : SeLe4n.ObjId) : st'.getVSpaceRoot? id = st.getVSpaceRoot? id := by
   rw [getVSpaceRoot?_eq_view, getVSpaceRoot?_eq_view, h.1]
+
+/-- Every CNode is read alike, so every capability lookup is. -/
+theorem getCNode? (id : SeLe4n.ObjId) : st'.getCNode? id = st.getCNode? id := by
+  rw [getCNode?_eq_view, getCNode?_eq_view, h.1]
 
 theorem getTcb?_buffer (t : SeLe4n.ThreadId) :
     (st'.getTcb? t).map (fun tcb => (tcb.vspaceRoot, tcb.ipcBuffer)) =

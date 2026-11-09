@@ -886,6 +886,19 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_rec
 # footprints add (`lockSet_endpoint{Receive,ReplyRecv}OnCore_size_le`).
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReceive_size_lt[^\n]*(\n([ \t][^\n]*)?)*< maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_lt[^\n]*(\n([ \t][^\n]*)?)*< maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+# A short capability-carrying rendezvous whose transfer transfers nothing is
+# written in place: the transfer is the identity on any state reading every
+# CNode alike, and each arm decides it with the in-place decision the
+# specification's is proven equal to.
+run_check "INVARIANT" rg -n '^theorem receiveTransferCaps_of_inert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def capTransferInert[^\n]*(\n([ \t][^\n]*)?)*capUnwrapsAt cap endpointId" SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSendCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid rf len" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointCallCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid rf len" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*receiverTransferInertW st epId tid sTcb mi.length" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" rg -n '^theorem capTransferInert_sendCapRequest_of_W($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransferInPlace.lean
+run_check "INVARIANT" rg -n '^theorem capTransferInert_receiveCapRequest_of_W($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransferInPlace.lean
+# NEGATIVE: the no-buffer predicate this generalises is retired.
+run_negative_check "INVARIANT" rg -n '^def receiveWindowClosed' SeLe4n/
 # The ceiling and the figures derived from it move together -- the point of
 # stating them as theorems rather than paragraphs.
 run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 29' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean

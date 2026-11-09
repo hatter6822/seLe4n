@@ -68,6 +68,29 @@ The specification's IPC capability transfer is restated as seL4's
   (any state, ≤ 23) and `lockSet_endpointReplyRecvOnCore_size_le_sharp`
   (the reachable shapes, ≤ 22).
 
+- **A transfer that transfers nothing is written in place for receivers with
+  a buffer too** (`capTransferInert`, `InertCapTransfer.lean`): a short
+  capability-carrying send, call or take whose receiver has no IPC buffer, or
+  whose buffer names no receive slot (none, occupied or unresolvable) when the
+  first extra capability is not one the transfer unwraps, transfers nothing,
+  as seL4's `transferCaps` stops there.  The arms decide it before any write
+  from the sender's registers and the receiver's buffer, through
+  continuation-form lookups (`senderTransferInertW`, `receiverTransferInertW`,
+  `receiveSlotAbsentW`, `extraCapStaysW`), proven equal to the specification's
+  decision (`capTransferInert_sendCapRequest_of_W`,
+  `capTransferInert_receiveCapRequest_of_W`).  The specification runs the
+  transfer after the rendezvous; the rendezvous writes no CNode
+  (`ipcBufferViewOf` now names CNodes, so `ipcBufferReadsAgree` carries every
+  CNode read, `ipcBufferReadsAgree.getCNode?`), so the transfer is the identity
+  reporting zero (`receiveTransferCaps_of_inert`,
+  `sendDispatchChecked_inPlace_inert`, `callDispatchChecked_inPlace_inert`,
+  `receiveTakeCaps_delivered`).  The no-buffer predicate it generalises
+  (`receiveWindowClosed` and its two lemmas) is removed, and
+  `ClosedReceiveWindow.lean` is renamed `InertCapTransfer.lean`.
+- **Fixed**: `docs/CLAIM_EVIDENCE_INDEX.md` cited two theorems that do not
+  exist (`CapSpaceAgrees.storeSendRendezvous`, `.storeCallRendezvous`); the row
+  now cites the frame lemmas the in-place transfers use.
+
 ### Security
 
 - A receive's capability install was declared in no lock footprint: the

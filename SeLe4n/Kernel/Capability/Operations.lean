@@ -276,6 +276,35 @@ theorem resolveCapAddress_congr_objects
       | rfl
       | (exact ih _ (by omega) _)
 
+/-- `resolveCapAddress` reads only CNodes: two states that read every CNode
+alike resolve every address alike.  A capability transfer resolves the
+sender's addresses after the rendezvous, which writes no CNode, so this is how
+the resolution is taken back to the state the send found. -/
+theorem resolveCapAddress_congr_getCNode?
+    (st₁ st₂ : SystemState) (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id)
+    (addr : SeLe4n.CPtr) :
+    ∀ (bitsRemaining : Nat) (rootId : SeLe4n.ObjId),
+      resolveCapAddress rootId addr bitsRemaining st₁
+        = resolveCapAddress rootId addr bitsRemaining st₂ := by
+  intro bitsRemaining
+  induction bitsRemaining using Nat.strongRecOn with
+  | _ bits ih =>
+    intro rootId
+    rw [resolveCapAddress, resolveCapAddress, hCNode rootId]
+    repeat' (first | split | (simp only []; split))
+    all_goals first
+      | rfl
+      | (exact ih _ (by omega) _)
+
+/-- …and `lookupSlotCap` reads only the slot's CNode. -/
+theorem lookupSlotCap_congr_getCNode?
+    (st₁ st₂ : SystemState) (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id)
+    (ref : SlotRef) :
+    SystemState.lookupSlotCap st₁ ref = SystemState.lookupSlotCap st₂ ref := by
+  have h := hCNode ref.cnode
+  simp only [SystemState.getCNode?] at h
+  simp only [SystemState.lookupSlotCap, SystemState.lookupCNode, h]
+
 /-- **WS-RR RR7.3**: `lookupSlotCap` reads the object store and nothing else. -/
 theorem lookupSlotCap_congr_objects
     (st₁ st₂ : SystemState) (ref : SlotRef)

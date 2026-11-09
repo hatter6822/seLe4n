@@ -6617,14 +6617,18 @@ Every kernel object has a decidable well-formedness predicate:
   capabilities takes its own arm (`RegisterRoutedSyscall.transferring`,
   `dispatchTransferringCheckedR_eq`).  As in seL4, such a message's
   capabilities are looked up only at the rendezvous: one that blocks writes in
-  place.  One of at most four words that meets a receiver that can take no
-  capability (it has no IPC buffer the kernel may write, `receiveWindowClosed`)
-  writes the send or call rendezvous in place, the transfer transferring
-  nothing (`receiveTransferCaps_of_windowClosed`,
-  `sendDispatchChecked_inPlace_windowClosed`,
-  `callDispatchChecked_inPlace_windowClosed`), as seL4's `transferCaps` with
-  no receive buffer; the receive that takes a blocked capability-carrying send
-  of at most four words for such a receiver writes in place too
+  place.  One of at most four words whose transfer transfers nothing writes
+  the send or call rendezvous in place (`capTransferInert`: the receiver has
+  no IPC buffer the kernel may write, or its buffer names no receive slot and
+  the first extra capability is not one the transfer unwraps, so seL4's
+  `transferCaps` stops at it; decided before any write from the sender's
+  registers and the receiver's buffer, `senderTransferInertW`,
+  `capTransferInert_sendCapRequest_of_W`).  The transfer runs after the
+  rendezvous, which writes no CNode (`ipcBufferReadsAgree.getCNode?`), so it is
+  the identity and reports zero (`receiveTransferCaps_of_inert`,
+  `sendDispatchChecked_inPlace_inert`, `callDispatchChecked_inPlace_inert`);
+  the receive that takes a blocked capability-carrying send of at most four
+  words whose transfer transfers nothing writes in place too
   (`receiveTakeCaps_delivered`), as does the receive that takes a blocked short
   call (`receiveCallTake_delivered`).  The receiver's side is read in the
   pre-state (`receiverCapTarget?`).  Any other rendezvous transfer takes the
