@@ -4508,6 +4508,9 @@ run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_capsDelivered($|[ 
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_capsDelivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCapsDelivered.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_blocks_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCapsDelivered.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_blocks_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_donated_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_unheld_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '                  if replyRecvBlocksFast st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvBlockCapsDelivered st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '                  else if replyRecvDonatedBlocks st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvDonatedCapsDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean

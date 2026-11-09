@@ -555,6 +555,82 @@ theorem replyRecvCapsArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     · rfl
   · rfl
 
+/-- **The installing reply-receive does not reach the general path when its
+checks pass**: on a replier whose frame routes as a reply-receive under the
+default layout, with the grant right, a reply of at most four words and the
+transfer's stores in place -- every check read on the pre-state, before any
+write -- a receive leg that blocks in place runs the plain performer.  The
+general path (`replyRecvRendezvousR`) is reached only when one of those checks
+fails, on the state the arm was handed. -/
+theorem replyRecvCapsArmR_blocks_inPlace (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
+    (executingCore : Concurrency.CoreId) (st : SystemState) (stcb ct : TCB)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hS : st.getTcb? tid = some stcb)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
+      stcb.registerContext = .replyRecv capAddr mi)
+    (hC : st.getTcb? c = some ct)
+    (hAdm : (grant && decide (Architecture.regMessageLength layout len - 1 ≤ 4) &&
+      replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) = true)
+    (hB : replyRecvBlocksFast st epId tid c rid = true) :
+    replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st =
+      .ok ((), performReplyRecvBlockCapsDelivered st c tid rid epId
+        (receiveQueueTailCode st epId) layout rf len badge executingCore stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+  unfold replyRecvCapsArmR
+  simp only [hS, hR, hC, hAdm, hB, if_true]
+
+/-- The same for the donated shape (`replyRecvDonatedBlocks`), when the plain
+one does not hold. -/
+theorem replyRecvCapsArmR_donated_inPlace (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
+    (executingCore : Concurrency.CoreId) (st : SystemState) (stcb ct : TCB)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hS : st.getTcb? tid = some stcb)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
+      stcb.registerContext = .replyRecv capAddr mi)
+    (hC : st.getTcb? c = some ct)
+    (hAdm : (grant && decide (Architecture.regMessageLength layout len - 1 ≤ 4) &&
+      replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) = true)
+    (hB : replyRecvBlocksFast st epId tid c rid = false)
+    (hD : replyRecvDonatedBlocks st epId tid c rid = true) :
+    replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st =
+      .ok ((), performReplyRecvDonatedCapsDelivered st c tid rid
+        ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId
+        (receiveQueueTailCode st epId) layout rf len badge executingCore stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+  unfold replyRecvCapsArmR
+  simp only [hS, hR, hC, hAdm, hB, hD, if_true, Bool.false_eq_true, if_false]
+
+/-- The same for the shape answering a caller recording no server
+(`replyRecvUnheldBlocks`), when neither other shape holds. -/
+theorem replyRecvCapsArmR_unheld_inPlace (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
+    (executingCore : Concurrency.CoreId) (st : SystemState) (stcb ct : TCB)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hS : st.getTcb? tid = some stcb)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
+      stcb.registerContext = .replyRecv capAddr mi)
+    (hC : st.getTcb? c = some ct)
+    (hAdm : (grant && decide (Architecture.regMessageLength layout len - 1 ≤ 4) &&
+      replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) = true)
+    (hB : replyRecvBlocksFast st epId tid c rid = false)
+    (hD : replyRecvDonatedBlocks st epId tid c rid = false)
+    (hU : replyRecvUnheldBlocks st epId tid c rid = true) :
+    replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st =
+      .ok ((), performReplyRecvUnheldCapsDelivered st c tid rid
+        ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId
+        (receiveQueueTailCode st epId) layout rf len badge executingCore stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
+        (routedExtraCaps stcb.registerContext) ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot) := by
+  unfold replyRecvCapsArmR
+  simp only [hS, hR, hC, hAdm, hB, hD, hU, if_true, Bool.false_eq_true, if_false]
+
 /-- WS-ZA ZA6.34: whether a reply-receive of at most four words answering a
 caller recording no server may block in place (`replyRecvUnheldBlocks`), its
 reply leg transferring no capability (`replyRecvReplyInertW`).  Out of
