@@ -41,9 +41,11 @@ pre-state and copies every table it writes, and allocated on the kernel heap.
   and `unheld-reply-recv-installs-cap`, each followed by a signal through the
   installed copy, a wait and a delete, are pinned at 0 heap cells on the first
   call and at steady state.
-- **Debt**: the table C row "A reply-receive whose reply leg installs a
-  capability runs the specification's general path, which allocates" is
-  removed.
+- **Debt**: the table C row is rewritten to name exactly what still runs
+  the general path, each measured by a new pinned scenario: the reply-receive
+  whose receive leg meets a waiting sender (`queued-sender-reply-recv`, 135
+  cells), the long donated and unheld reply-receives, and the long reply and
+  reply-receive answering a faulted caller.
 
 ### Security
 

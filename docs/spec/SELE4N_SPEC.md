@@ -6681,7 +6681,13 @@ Every kernel object has a decidable well-formedness predicate:
   them when its pre-state checks pass (`replyRecvCapsArmR_blocks_inPlace`,
   `replyRecvCapsArmR_donated_inPlace`, `replyRecvCapsArmR_unheld_inPlace`),
   so its general path is reached only when a check read before any write
-  fails.  With the default layout the router hands the decoded arm
+  fails.  The reply-receive whose receive leg meets a waiting sender, the
+  long reply-receive on a donated or unheld reply object and the long reply
+  or reply-receive answering a faulted caller still take the general path,
+  which allocates (`docs/REGISTERED_DEBT.md` table C).  Every in-place arm's
+  store guard (`storeLeavesIndexAndTypes`) also fails while the object-index
+  set or the type table sits at its resize load, once per doubling; WS-UC
+  UC2 retires both tables (the heap-capacity row of table C).  With the default layout the router hands the decoded arm
   nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
   whose registers lie out of bounds or which has no message register.
   An IPC buffer is found through its page (`validateIpcBufferAddress` looks
@@ -7653,7 +7659,7 @@ transfer in place between the reply's writes and the receive leg, each proven
 equal to the specification (`replyRecvOnCore_blocks_capsDelivered`,
 `replyRecvOnCore_donated_capsDelivered`, `replyRecvOnCore_unheld_capsDelivered`,
 `replyRecvOnCore_blocks_capsDeliveredLong`); any other reply-receive runs the
-specification.
+specification, which allocates (`docs/REGISTERED_DEBT.md` table C).
 
 **No message holds a capability** (`v0.36.121`, WS-ZA ZA5.4 part 11).  An
 `IpcMessage` is registers and a badge: it has no capability field and no grant
