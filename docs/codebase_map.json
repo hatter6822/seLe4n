@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/cap-transfer-inplace",
-      "commit_sha": "2e88ed8b69b1a4a96695fd6d980cd3726437da7f",
-      "tree_sha": "74e33137abe8c02a3fdd006fdb277aa029de63cd",
-      "committed_at_utc": "2026-11-09T09:32:38+00:00"
+      "commit_sha": "4b4a7099fa4547b1c02e054b152135398a6e6648",
+      "tree_sha": "8ad35c9e5b451480b6aa733101f2ad190c044377",
+      "committed_at_utc": "2026-11-09T10:20:57+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0fbd0d334627472715fee6df04a38399824b4f858c862ea28a499c2c010fe2ab"
+    "source_digest": "046458174bdc1de4e46088025c4ea83cb613b8d643198a0febae0e196e17eac8"
   },
   "summary": {
     "module_count": 673,
-    "declaration_count": 35110
+    "declaration_count": 35119
   },
   "readme_sync": {
     "version": "0.37.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 603,
-    "production_loc": 605383,
+    "production_loc": 605609,
     "test_files": 70,
-    "test_loc": 88929,
-    "proved_theorem_lemma_decls": 23228,
+    "test_loc": 88945,
+    "proved_theorem_lemma_decls": 23236,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -57585,8 +57585,8 @@
         },
         {
           "kind": "theorem",
-          "name": "lockSet_endpointReply_extendOpt_size_le",
-          "full_name": "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_extendOpt_size_le",
+          "name": "lockSet_endpointReply_extendOpt_extendOpt_size_le",
+          "full_name": "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_extendOpt_extendOpt_size_le",
           "line": 1133,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
@@ -57606,7 +57606,7 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_size_le_twentytwo_of_no_preReturn_of_no_origin",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_twentytwo_of_no_preReturn_of_no_origin",
-          "line": 1187,
+          "line": 1191,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_none",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -57621,7 +57621,7 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin",
-          "line": 1217,
+          "line": 1221,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_none",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -57636,7 +57636,7 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_size_le_twentytwo_of_no_sender_of_no_origin",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_twentytwo_of_no_sender_of_no_origin",
-          "line": 1243,
+          "line": 1247,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_none",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -57651,7 +57651,7 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_frameAbove_of_no_origin",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_frameAbove_of_no_origin",
-          "line": 1272,
+          "line": 1276,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_none",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -57666,7 +57666,7 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_head_of_no_origin",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_head_of_no_origin",
-          "line": 1301,
+          "line": 1305,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_none",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -57681,7 +57681,7 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead",
-          "line": 1344,
+          "line": 1348,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_none",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -57696,7 +57696,7 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_size_le_twentyone_of_no_sender_of_no_belowHead",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_twentyone_of_no_sender_of_no_belowHead",
-          "line": 1368,
+          "line": 1372,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_none",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -57711,7 +57711,7 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_frameAbove_of_no_belowHead",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_frameAbove_of_no_belowHead",
-          "line": 1394,
+          "line": 1398,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_none",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -57724,9 +57724,9 @@
         },
         {
           "kind": "theorem",
-          "name": "lockSet_replyRecv_size_add_two_le",
-          "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_add_two_le",
-          "line": 1420,
+          "name": "lockSet_replyRecv_size_add_three_le",
+          "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_add_three_le",
+          "line": 1424,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -57742,10 +57742,10 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le",
-          "line": 1464,
+          "line": 1468,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
-            "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_add_two_le",
+            "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_add_three_le",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.ObjId",
             "SeLe4n.ReplyId",
@@ -57757,7 +57757,7 @@
           "kind": "theorem",
           "name": "lockSet_notificationSignal_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_notificationSignal_size_le",
-          "line": 1493,
+          "line": 1497,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_notificationSignal",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -57770,7 +57770,7 @@
           "kind": "theorem",
           "name": "lockSet_declassifySignal_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_declassifySignal_size_le",
-          "line": 1510,
+          "line": 1514,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_declassifySignal",
             "SeLe4n.Kernel.Concurrency.lockSet_notificationSignal",
@@ -57784,7 +57784,7 @@
           "kind": "theorem",
           "name": "lockSet_notificationWait_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_notificationWait_size_le",
-          "line": 1520,
+          "line": 1524,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_notificationWait",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -57797,7 +57797,7 @@
           "kind": "theorem",
           "name": "lockSet_cspaceMint_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_cspaceMint_size_le",
-          "line": 1525,
+          "line": 1529,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_cspaceMint",
@@ -57810,7 +57810,7 @@
           "kind": "theorem",
           "name": "lockSet_cspaceCopy_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_cspaceCopy_size_le",
-          "line": 1530,
+          "line": 1534,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_cspaceCopy",
@@ -57823,7 +57823,7 @@
           "kind": "theorem",
           "name": "lockSet_cspaceMove_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_cspaceMove_size_le",
-          "line": 1535,
+          "line": 1539,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_cspaceMove",
@@ -57836,7 +57836,7 @@
           "kind": "theorem",
           "name": "lockSet_cspaceDelete_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete_size_le",
-          "line": 1540,
+          "line": 1544,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -57849,7 +57849,7 @@
           "kind": "theorem",
           "name": "lockSet_untypedRetype_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_untypedRetype_size_le",
-          "line": 1547,
+          "line": 1551,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_untypedRetype",
@@ -57863,7 +57863,7 @@
           "kind": "theorem",
           "name": "lockSet_untypedReset_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_untypedReset_size_le",
-          "line": 1554,
+          "line": 1558,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_untypedReset",
@@ -57876,7 +57876,7 @@
           "kind": "theorem",
           "name": "lockSet_vspaceMap_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_vspaceMap_size_le",
-          "line": 1559,
+          "line": 1563,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_vspaceMap",
@@ -57889,7 +57889,7 @@
           "kind": "theorem",
           "name": "lockSet_vspaceUnmap_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_vspaceUnmap_size_le",
-          "line": 1564,
+          "line": 1568,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_vspaceUnmap",
@@ -57902,7 +57902,7 @@
           "kind": "theorem",
           "name": "lockSet_vspaceUnifyInstruction_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_vspaceUnifyInstruction_size_le",
-          "line": 1572,
+          "line": 1576,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_vspaceUnifyInstruction",
@@ -57915,7 +57915,7 @@
           "kind": "theorem",
           "name": "lockSet_declassify_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_declassify_size_le",
-          "line": 1583,
+          "line": 1587,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockKey",
             "SeLe4n.Kernel.Concurrency.lockSet_declassify",
@@ -57929,7 +57929,7 @@
           "kind": "theorem",
           "name": "lockSet_auditRead_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_auditRead_size_le",
-          "line": 1592,
+          "line": 1596,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_auditRead",
@@ -57942,7 +57942,7 @@
           "kind": "theorem",
           "name": "lockSet_auditDrain_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_auditDrain_size_le",
-          "line": 1599,
+          "line": 1603,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_auditDrain",
@@ -57955,7 +57955,7 @@
           "kind": "theorem",
           "name": "lockSet_serviceRegister_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_serviceRegister_size_le",
-          "line": 1604,
+          "line": 1608,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_serviceRegister",
@@ -57968,7 +57968,7 @@
           "kind": "theorem",
           "name": "lockSet_serviceRevoke_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_serviceRevoke_size_le",
-          "line": 1609,
+          "line": 1613,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_serviceRevoke",
@@ -57981,7 +57981,7 @@
           "kind": "theorem",
           "name": "lockSet_serviceQuery_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_serviceQuery_size_le",
-          "line": 1614,
+          "line": 1618,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_serviceQuery",
@@ -57994,7 +57994,7 @@
           "kind": "theorem",
           "name": "lockSet_schedContextConfigure_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_schedContextConfigure_size_le",
-          "line": 1619,
+          "line": 1623,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_schedContextConfigure",
@@ -58009,7 +58009,7 @@
           "kind": "theorem",
           "name": "lockSet_schedContextBind_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_schedContextBind_size_le",
-          "line": 1626,
+          "line": 1630,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_schedContextBind",
@@ -58024,7 +58024,7 @@
           "kind": "theorem",
           "name": "lockSet_schedContextUnbind_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_schedContextUnbind_size_le",
-          "line": 1632,
+          "line": 1636,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_schedContextUnbind",
@@ -58039,7 +58039,7 @@
           "kind": "theorem",
           "name": "lockSet_schedContextConsumed_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_schedContextConsumed_size_le",
-          "line": 1639,
+          "line": 1643,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_schedContextConsumed",
@@ -58053,7 +58053,7 @@
           "kind": "theorem",
           "name": "lockSet_schedContextYieldTo_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_schedContextYieldTo_size_le",
-          "line": 1647,
+          "line": 1651,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_size_le",
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
@@ -58068,7 +58068,7 @@
           "kind": "theorem",
           "name": "lockSet_irqHandlerAck_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_irqHandlerAck_size_le",
-          "line": 1655,
+          "line": 1659,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_irqHandlerAck",
@@ -58081,7 +58081,7 @@
           "kind": "theorem",
           "name": "lockSet_irqControlGet_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_irqControlGet_size_le",
-          "line": 1661,
+          "line": 1665,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_irqControlGet",
@@ -58094,7 +58094,7 @@
           "kind": "theorem",
           "name": "lockSet_irqHandlerSetNotification_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_irqHandlerSetNotification_size_le",
-          "line": 1668,
+          "line": 1672,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_irqHandlerSetNotification",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -58107,7 +58107,7 @@
           "kind": "theorem",
           "name": "lockSet_irqHandlerClear_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_irqHandlerClear_size_le",
-          "line": 1676,
+          "line": 1680,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_irqHandlerClear",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -58120,7 +58120,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbResume_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_tcbResume_size_le",
-          "line": 1686,
+          "line": 1690,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbResume",
@@ -58134,7 +58134,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbSetPriority_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority_size_le",
-          "line": 1691,
+          "line": 1695,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority",
@@ -58149,7 +58149,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbSetMCPriority_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_tcbSetMCPriority_size_le",
-          "line": 1697,
+          "line": 1701,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbSetMCPriority",
@@ -58164,7 +58164,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbSetIPCBuffer_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_tcbSetIPCBuffer_size_le",
-          "line": 1703,
+          "line": 1707,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbSetIPCBuffer",
@@ -58178,7 +58178,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbSetFaultHandler_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_tcbSetFaultHandler_size_le",
-          "line": 1709,
+          "line": 1713,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbSetFaultHandler",
@@ -58192,7 +58192,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbSetSpace_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_tcbSetSpace_size_le",
-          "line": 1715,
+          "line": 1719,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbSetSpace",
@@ -58206,7 +58206,7 @@
           "kind": "theorem",
           "name": "lockSet_pageTableMap_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_pageTableMap_size_le",
-          "line": 1721,
+          "line": 1725,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_pageTableMap",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -58219,7 +58219,7 @@
           "kind": "theorem",
           "name": "lockSet_pageTableUnmap_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_pageTableUnmap_size_le",
-          "line": 1726,
+          "line": 1730,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_pageTableUnmap",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -58232,7 +58232,7 @@
           "kind": "theorem",
           "name": "lockSet_mintReplyCap_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_mintReplyCap_size_le",
-          "line": 1744,
+          "line": 1748,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetOfList_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_mintReplyCap",
@@ -58245,7 +58245,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbBindNotification_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_tcbBindNotification_size_le",
-          "line": 1751,
+          "line": 1755,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbBindNotification",
@@ -58259,7 +58259,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbUnbindNotification_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_tcbUnbindNotification_size_le",
-          "line": 1758,
+          "line": 1762,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbUnbindNotification",
@@ -58273,7 +58273,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbSetAffinity_size_le",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSet_tcbSetAffinity_size_le",
-          "line": 1767,
+          "line": 1771,
           "called": [
             "SeLe4n.Kernel.Concurrency.QueueOwner",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbSetAffinity",
@@ -58288,7 +58288,7 @@
           "kind": "theorem",
           "name": "lockSetTransitions_within_bound",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetTransitions_within_bound",
-          "line": 1789,
+          "line": 1793,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_auditDrain",
             "SeLe4n.Kernel.Concurrency.lockSet_auditDrain_size_le",
@@ -58379,7 +58379,7 @@
           "kind": "structure",
           "name": "KernelOperation",
           "full_name": "SeLe4n.Kernel.Concurrency.KernelOperation",
-          "line": 1888,
+          "line": 1892,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.LockSet.size",
@@ -58390,7 +58390,7 @@
           "kind": "def",
           "name": "KernelOperation.ofEndpointCall",
           "full_name": "SeLe4n.Kernel.Concurrency.KernelOperation.ofEndpointCall",
-          "line": 1899,
+          "line": 1903,
           "called": [
             "SeLe4n.Kernel.Concurrency.KernelOperation",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointCall",
@@ -58404,7 +58404,7 @@
           "kind": "def",
           "name": "KernelOperation.ofReplyRecv",
           "full_name": "SeLe4n.Kernel.Concurrency.KernelOperation.ofReplyRecv",
-          "line": 1931,
+          "line": 1935,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le",
@@ -58418,7 +58418,7 @@
           "kind": "def",
           "name": "otherCores",
           "full_name": "SeLe4n.Kernel.Concurrency.otherCores",
-          "line": 1981,
+          "line": 1985,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.allCores"
@@ -58428,7 +58428,7 @@
           "kind": "theorem",
           "name": "otherCores_length_eq",
           "full_name": "SeLe4n.Kernel.Concurrency.otherCores_length_eq",
-          "line": 1985,
+          "line": 1989,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -58439,7 +58439,7 @@
           "kind": "def",
           "name": "contendersAhead",
           "full_name": "SeLe4n.Kernel.Concurrency.contendersAhead",
-          "line": 1991,
+          "line": 1995,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -58452,7 +58452,7 @@
           "kind": "theorem",
           "name": "contendersAhead_le",
           "full_name": "SeLe4n.Kernel.Concurrency.contendersAhead_le",
-          "line": 1996,
+          "line": 2000,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -58466,21 +58466,21 @@
           "kind": "theorem",
           "name": "sum_le_length_mul",
           "full_name": "SeLe4n.Kernel.Concurrency.sum_le_length_mul",
-          "line": 2004,
+          "line": 2008,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "sum_map_le_sum_map",
           "full_name": "SeLe4n.Kernel.Concurrency.sum_map_le_sum_map",
-          "line": 2015,
+          "line": 2019,
           "called": []
         },
         {
           "kind": "def",
           "name": "WCRT",
           "full_name": "SeLe4n.Kernel.Concurrency.WCRT",
-          "line": 2031,
+          "line": 2035,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -58493,7 +58493,7 @@
           "kind": "theorem",
           "name": "boundedWait_under_2pl",
           "full_name": "SeLe4n.Kernel.Concurrency.boundedWait_under_2pl",
-          "line": 2047,
+          "line": 2051,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -58516,7 +58516,7 @@
           "kind": "theorem",
           "name": "WCRT_le_totalWaitCost",
           "full_name": "SeLe4n.Kernel.Concurrency.WCRT_le_totalWaitCost",
-          "line": 2066,
+          "line": 2070,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -58532,7 +58532,7 @@
           "kind": "theorem",
           "name": "acquireOrder_nodup",
           "full_name": "SeLe4n.Kernel.Concurrency.acquireOrder_nodup",
-          "line": 2091,
+          "line": 2095,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_perm",
@@ -58543,7 +58543,7 @@
           "kind": "def",
           "name": "CorePrefixOf",
           "full_name": "SeLe4n.Kernel.Concurrency.CorePrefixOf",
-          "line": 2103,
+          "line": 2107,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -58556,7 +58556,7 @@
           "kind": "theorem",
           "name": "coreFollows2PL_of_prefix",
           "full_name": "SeLe4n.Kernel.Concurrency.coreFollows2PL_of_prefix",
-          "line": 2112,
+          "line": 2116,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.CorePrefixOf",
@@ -58570,7 +58570,7 @@
           "kind": "theorem",
           "name": "coreAcquiresInOrder_of_prefix",
           "full_name": "SeLe4n.Kernel.Concurrency.coreAcquiresInOrder_of_prefix",
-          "line": 2128,
+          "line": 2132,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.CorePrefixOf",
@@ -58584,7 +58584,7 @@
           "kind": "theorem",
           "name": "execution_satisfies_hypotheses_of_all_prefix",
           "full_name": "SeLe4n.Kernel.Concurrency.execution_satisfies_hypotheses_of_all_prefix",
-          "line": 2149,
+          "line": 2153,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.CorePrefixOf",
@@ -58601,7 +58601,7 @@
           "kind": "def",
           "name": "executionOfHeld",
           "full_name": "SeLe4n.Kernel.Concurrency.executionOfHeld",
-          "line": 2185,
+          "line": 2189,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -58614,7 +58614,7 @@
           "kind": "theorem",
           "name": "executionOfHeld_heldBy",
           "full_name": "SeLe4n.Kernel.Concurrency.executionOfHeld_heldBy",
-          "line": 2191,
+          "line": 2195,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -58628,7 +58628,7 @@
           "kind": "theorem",
           "name": "heldAll_realizes_heldBy",
           "full_name": "SeLe4n.Kernel.Concurrency.heldAll_realizes_heldBy",
-          "line": 2210,
+          "line": 2214,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -58646,7 +58646,7 @@
           "kind": "def",
           "name": "twoCorePathScenario",
           "full_name": "SeLe4n.Kernel.Concurrency.twoCorePathScenario",
-          "line": 2233,
+          "line": 2237,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -58657,7 +58657,7 @@
           "kind": "instance",
           "name": "",
           "full_name": null,
-          "line": 2239,
+          "line": 2243,
           "called": []
         }
       ]
@@ -60857,7 +60857,7 @@
           "kind": "def",
           "name": "maxLockSetSize",
           "full_name": "SeLe4n.Kernel.Concurrency.maxLockSetSize",
-          "line": 1124,
+          "line": 1133,
           "called": []
         }
       ]
@@ -61037,7 +61037,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall",
       "path": "SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean",
-      "declaration_count": 65,
+      "declaration_count": 67,
       "declarations": [
         {
           "kind": "def",
@@ -61693,9 +61693,32 @@
         },
         {
           "kind": "theorem",
+          "name": "lockSetForSyscall_reply_covers_replyInstallCdt",
+          "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_reply_covers_replyInstallCdt",
+          "line": 904,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockSet",
+            "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
+            "SeLe4n.Kernel.Concurrency.lockSetForSyscall",
+            "SeLe4n.Kernel.Concurrency.lockSetForSyscall_reply_eq",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
+            "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_replyInstallCdt",
+            "SeLe4n.Kernel.replyAnsweredCaller?",
+            "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "lockSetForSyscall_replyRecv_eq",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_replyRecv_eq",
-          "line": 905,
+          "line": 923,
           "called": [
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
             "SeLe4n.Kernel.Concurrency.lockSetForSyscall",
@@ -61714,7 +61737,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_replyRecv_covers_writes",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_replyRecv_covers_writes",
-          "line": 919,
+          "line": 937,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61740,7 +61763,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_replyRecv_covers_replyInstall",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_replyRecv_covers_replyInstall",
-          "line": 940,
+          "line": 958,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61762,9 +61785,33 @@
         },
         {
           "kind": "theorem",
+          "name": "lockSetForSyscall_replyRecv_covers_replyInstallCdt",
+          "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_replyRecv_covers_replyInstallCdt",
+          "line": 977,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockSet",
+            "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
+            "SeLe4n.Kernel.Concurrency.lockSetForSyscall",
+            "SeLe4n.Kernel.Concurrency.lockSetForSyscall_replyRecv_eq",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
+            "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt",
+            "SeLe4n.Kernel.replyAnsweredCaller?",
+            "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.ObjId",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "lockSetForSyscall_replyRecv_covers_capsWrites",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_replyRecv_covers_capsWrites",
-          "line": 958,
+          "line": 995,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61792,7 +61839,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_replyRecv_covers_queueNeighbour",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_replyRecv_covers_queueNeighbour",
-          "line": 982,
+          "line": 1019,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61815,7 +61862,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_replyRecv_covers_redonation",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_replyRecv_covers_redonation",
-          "line": 1009,
+          "line": 1046,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61843,7 +61890,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_notificationSignal_eq",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_notificationSignal_eq",
-          "line": 1031,
+          "line": 1068,
           "called": [
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
             "SeLe4n.Kernel.Concurrency.lockSetForSyscall",
@@ -61859,7 +61906,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_notificationSignal_covers_writes",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_notificationSignal_covers_writes",
-          "line": 1043,
+          "line": 1080,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61879,7 +61926,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_notificationSignal_covers_boundDelivery",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_notificationSignal_covers_boundDelivery",
-          "line": 1063,
+          "line": 1100,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61902,7 +61949,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_notificationSignal_covers_spliceNeighbors",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_notificationSignal_covers_spliceNeighbors",
-          "line": 1087,
+          "line": 1124,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61926,7 +61973,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_notificationWait_eq",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_notificationWait_eq",
-          "line": 1107,
+          "line": 1144,
           "called": [
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
             "SeLe4n.Kernel.Concurrency.lockSetForSyscall",
@@ -61942,7 +61989,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_notificationWait_covers_writes",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_notificationWait_covers_writes",
-          "line": 1120,
+          "line": 1157,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61966,7 +62013,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_send_object_writes_declared",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_send_object_writes_declared",
-          "line": 1147,
+          "line": 1184,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -61993,7 +62040,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_call_object_writes_declared",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_call_object_writes_declared",
-          "line": 1171,
+          "line": 1208,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -62020,7 +62067,7 @@
           "kind": "def",
           "name": "declaredFootprintSyscall",
           "full_name": "SeLe4n.Kernel.Concurrency.declaredFootprintSyscall",
-          "line": 1209,
+          "line": 1246,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -62029,7 +62076,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_ofThreadTarget_undeclared",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_ofThreadTarget_undeclared",
-          "line": 1248,
+          "line": 1285,
           "called": [
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands.ofThreadTarget",
             "SeLe4n.Kernel.Concurrency.lockSetForSyscall",
@@ -62042,7 +62089,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_ignores_sched_operands",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_ignores_sched_operands",
-          "line": 1273,
+          "line": 1310,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
@@ -62059,7 +62106,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_undeclared_none",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none",
-          "line": 1299,
+          "line": 1336,
           "called": [
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
             "SeLe4n.Kernel.Concurrency.declaredFootprintSyscall",
@@ -62072,7 +62119,7 @@
           "kind": "theorem",
           "name": "declaredFootprintSyscall_declared_set",
           "full_name": "SeLe4n.Kernel.Concurrency.declaredFootprintSyscall_declared_set",
-          "line": 1310,
+          "line": 1347,
           "called": [
             "SeLe4n.Kernel.Concurrency.declaredFootprintSyscall",
             "SeLe4n.Model.SyscallId",
@@ -62084,7 +62131,7 @@
           "kind": "theorem",
           "name": "suspendFootprintOf_isSome_iff",
           "full_name": "SeLe4n.Kernel.Concurrency.suspendFootprintOf_isSome_iff",
-          "line": 1336,
+          "line": 1373,
           "called": [
             "SeLe4n.Kernel.Concurrency.suspendFootprintOf",
             "SeLe4n.Kernel.cancelledCallerAlreadyBound",
@@ -62097,7 +62144,7 @@
           "kind": "theorem",
           "name": "suspendFootprintOf_eq",
           "full_name": "SeLe4n.Kernel.Concurrency.suspendFootprintOf_eq",
-          "line": 1360,
+          "line": 1397,
           "called": [
             "SeLe4n.Kernel.Concurrency.suspendFootprintOf",
             "SeLe4n.Kernel.cancelledCallerAlreadyBound",
@@ -62113,7 +62160,7 @@
           "kind": "theorem",
           "name": "suspendFootprintOf_eq_lockSet",
           "full_name": "SeLe4n.Kernel.Concurrency.suspendFootprintOf_eq_lockSet",
-          "line": 1374,
+          "line": 1411,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.suspendFootprintOf",
@@ -62127,7 +62174,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_tcbSuspend_eq_lockSet",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_tcbSuspend_eq_lockSet",
-          "line": 1388,
+          "line": 1425,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
@@ -62144,7 +62191,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_tcbSuspend_covers_victim",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_tcbSuspend_covers_victim",
-          "line": 1400,
+          "line": 1437,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -62162,7 +62209,7 @@
           "kind": "theorem",
           "name": "lockSetForSyscall_tcbSuspend_covers_cancellation",
           "full_name": "SeLe4n.Kernel.Concurrency.lockSetForSyscall_tcbSuspend_covers_cancellation",
-          "line": 1420,
+          "line": 1457,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -69989,7 +70036,7 @@
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_size_le",
           "line": 92,
           "called": [
-            "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_extendOpt_size_le",
+            "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_extendOpt_extendOpt_size_le",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
             "SeLe4n.Model.SystemState",
@@ -70001,10 +70048,10 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_size_le",
-          "line": 116,
+          "line": 117,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_size_le",
-            "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_add_two_le",
+            "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_add_three_le",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore",
             "SeLe4n.Model.SystemState",
@@ -70016,7 +70063,7 @@
           "kind": "theorem",
           "name": "extendOpt_none",
           "full_name": "SeLe4n.Kernel.extendOpt_none",
-          "line": 127,
+          "line": 129,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt"
@@ -70027,7 +70074,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_size_le_onEveryState",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_size_le_onEveryState",
-          "line": 210,
+          "line": 215,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead",
@@ -70053,7 +70100,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_size_le_sharp",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_size_le_sharp",
-          "line": 319,
+          "line": 327,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_frameAbove_of_no_belowHead",
@@ -70082,7 +70129,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_size_le",
-          "line": 439,
+          "line": 448,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSetExtendOpt_size_le",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReceive_size_lt",
@@ -70098,7 +70145,7 @@
           "kind": "theorem",
           "name": "lockSet_notificationSignalOnCore_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_notificationSignalOnCore_size_le",
-          "line": 457,
+          "line": 466,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_notificationSignal_size_le",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -70112,7 +70159,7 @@
           "kind": "theorem",
           "name": "lockSet_notificationWaitOnCore_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_notificationWaitOnCore_size_le",
-          "line": 466,
+          "line": 475,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_notificationWait_size_le",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -70126,7 +70173,7 @@
           "kind": "theorem",
           "name": "lockSet_cancelIpcBlocking_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_cancelIpcBlocking_size_le",
-          "line": 481,
+          "line": 490,
           "called": [
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.Concurrency.size_le_11",
@@ -70141,7 +70188,7 @@
           "kind": "theorem",
           "name": "lockSet_cancelDonation_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_cancelDonation_size_le",
-          "line": 511,
+          "line": 520,
           "called": [
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.Concurrency.size_le_6",
@@ -70155,7 +70202,7 @@
           "kind": "theorem",
           "name": "lockSet_cancelIpcBlocking_reply_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_cancelIpcBlocking_reply_size_le",
-          "line": 545,
+          "line": 554,
           "called": [
             "SeLe4n.Kernel.Concurrency.size_le_9",
             "SeLe4n.Kernel.extendOpt_none",
@@ -70169,7 +70216,7 @@
           "kind": "theorem",
           "name": "lockSet_cancelIpcBlocking_noDonation_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_cancelIpcBlocking_noDonation_size_le",
-          "line": 567,
+          "line": 576,
           "called": [
             "SeLe4n.Kernel.Concurrency.size_le_5",
             "SeLe4n.Kernel.extendOpt_none",
@@ -70183,7 +70230,7 @@
           "kind": "theorem",
           "name": "size_le_3_over",
           "full_name": "SeLe4n.Kernel.size_le_3_over",
-          "line": 583,
+          "line": 592,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -70198,7 +70245,7 @@
           "kind": "theorem",
           "name": "lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation",
           "full_name": "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation",
-          "line": 598,
+          "line": 607,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelledCallerDonation?",
             "SeLe4n.Kernel.cancelBelowHeadReads?_of_no_donation",
@@ -70221,7 +70268,7 @@
           "kind": "theorem",
           "name": "lockSet_cancelIpcBlockingOnCore_size_le_of_donation",
           "full_name": "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_size_le_of_donation",
-          "line": 621,
+          "line": 630,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelledCallerDonation?",
             "SeLe4n.Kernel.cancelBlockedEndpoint?",
@@ -70241,7 +70288,7 @@
           "kind": "theorem",
           "name": "lockSet_cancelIpcBlockingOnCore_size_le_thirteen",
           "full_name": "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_size_le_thirteen",
-          "line": 672,
+          "line": 681,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelledCallerDonation?",
             "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore",
@@ -70257,7 +70304,7 @@
           "kind": "theorem",
           "name": "lockSet_cancelIpcBlockingOnCore_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_size_le",
-          "line": 695,
+          "line": 704,
           "called": [
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore",
@@ -70270,7 +70317,7 @@
           "kind": "theorem",
           "name": "lockSet_cancelDonationOnCore_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_cancelDonationOnCore_size_le",
-          "line": 703,
+          "line": 712,
           "called": [
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.lockSet_cancelDonationOnCore",
@@ -70283,7 +70330,7 @@
           "kind": "theorem",
           "name": "suspend_reclaim_tail_bound",
           "full_name": "SeLe4n.Kernel.suspend_reclaim_tail_bound",
-          "line": 718,
+          "line": 727,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -70300,7 +70347,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbSuspendOnCore_size_le_eighteen",
           "full_name": "SeLe4n.Kernel.lockSet_tcbSuspendOnCore_size_le_eighteen",
-          "line": 767,
+          "line": 776,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
@@ -70332,7 +70379,7 @@
           "kind": "theorem",
           "name": "lockSet_tcbSuspendOnCore_size_le",
           "full_name": "SeLe4n.Kernel.lockSet_tcbSuspendOnCore_size_le",
-          "line": 838,
+          "line": 847,
           "called": [
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.lockSet_tcbSuspendOnCore",
@@ -70346,7 +70393,7 @@
           "kind": "def",
           "name": "KernelOperation.ofTcbSuspendOnCore",
           "full_name": "SeLe4n.Kernel.KernelOperation.ofTcbSuspendOnCore",
-          "line": 848,
+          "line": 857,
           "called": [
             "SeLe4n.Kernel.Concurrency.KernelOperation",
             "SeLe4n.Kernel.lockSet_tcbSuspendOnCore",
@@ -102484,7 +102531,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointReply",
       "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean",
-      "declaration_count": 226,
+      "declaration_count": 231,
       "declarations": [
         {
           "kind": "def",
@@ -103541,9 +103588,23 @@
         },
         {
           "kind": "def",
+          "name": "replyInstallCdtLock?",
+          "full_name": "SeLe4n.Kernel.replyInstallCdtLock?",
+          "line": 1305,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
+            "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "lockSet_endpointReplyOnCore",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
-          "line": 1323,
+          "line": 1335,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -103557,6 +103618,7 @@
             "SeLe4n.Kernel.donationOriginRecipient?",
             "SeLe4n.Kernel.recordedReplyServer?",
             "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Kernel.replyInstallCdtLock?",
             "SeLe4n.Kernel.replyStackBelowHead?",
             "SeLe4n.Kernel.replyStackHead?",
             "SeLe4n.Model.SystemState",
@@ -103571,7 +103633,7 @@
           "kind": "def",
           "name": "rendezvousSenderIsCall",
           "full_name": "SeLe4n.Kernel.rendezvousSenderIsCall",
-          "line": 1420,
+          "line": 1434,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Model.SystemState",
@@ -103582,7 +103644,7 @@
           "kind": "theorem",
           "name": "rendezvousSenderIsCall_of_blockedOnCall",
           "full_name": "SeLe4n.Kernel.rendezvousSenderIsCall_of_blockedOnCall",
-          "line": 1430,
+          "line": 1444,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.rendezvousSenderIsCall",
@@ -103597,7 +103659,7 @@
           "kind": "theorem",
           "name": "rendezvousSenderIsCall_of_blockedOnSend",
           "full_name": "SeLe4n.Kernel.rendezvousSenderIsCall_of_blockedOnSend",
-          "line": 1444,
+          "line": 1458,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.rendezvousSenderIsCall",
@@ -103612,7 +103674,7 @@
           "kind": "def",
           "name": "receiveRendezvousCallSender?",
           "full_name": "SeLe4n.Kernel.receiveRendezvousCallSender?",
-          "line": 1459,
+          "line": 1473,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousSender?",
             "SeLe4n.Kernel.rendezvousSenderIsCall",
@@ -103625,7 +103687,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousCallSender?_eq_sender",
           "full_name": "SeLe4n.Kernel.receiveRendezvousCallSender?_eq_sender",
-          "line": 1466,
+          "line": 1480,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
             "SeLe4n.Kernel.receiveRendezvousSender?",
@@ -103638,7 +103700,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousCallSender?_of_blocked",
           "full_name": "SeLe4n.Kernel.receiveRendezvousCallSender?_of_blocked",
-          "line": 1483,
+          "line": 1497,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
             "SeLe4n.Kernel.receiveRendezvousSender?",
@@ -103654,7 +103716,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousCallSender?_of_blockedOnSend",
           "full_name": "SeLe4n.Kernel.receiveRendezvousCallSender?_of_blockedOnSend",
-          "line": 1494,
+          "line": 1508,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
@@ -103675,7 +103737,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousCallSender?_of_blockedOnCall",
           "full_name": "SeLe4n.Kernel.receiveRendezvousCallSender?_of_blockedOnCall",
-          "line": 1510,
+          "line": 1524,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
@@ -103696,7 +103758,7 @@
           "kind": "def",
           "name": "receiveRendezvousDonatedSc?",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatedSc?",
-          "line": 1548,
+          "line": 1562,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
@@ -103710,7 +103772,7 @@
           "kind": "def",
           "name": "receiveRendezvousReplyWaiterHead?",
           "full_name": "SeLe4n.Kernel.receiveRendezvousReplyWaiterHead?",
-          "line": 1558,
+          "line": 1572,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
             "SeLe4n.Model.SystemState",
@@ -103723,7 +103785,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousDonatedSc?_of_no_sender",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatedSc?_of_no_sender",
-          "line": 1569,
+          "line": 1583,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
             "SeLe4n.Kernel.receiveRendezvousDonatedSc?",
@@ -103736,7 +103798,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousDonatedSc?_of_no_queued_sender",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatedSc?_of_no_queued_sender",
-          "line": 1579,
+          "line": 1593,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
             "SeLe4n.Kernel.receiveRendezvousDonatedSc?",
@@ -103751,7 +103813,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousReplyWaiterHead?_of_no_queued_sender",
           "full_name": "SeLe4n.Kernel.receiveRendezvousReplyWaiterHead?_of_no_queued_sender",
-          "line": 1588,
+          "line": 1602,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
             "SeLe4n.Kernel.receiveRendezvousReplyWaiterHead?",
@@ -103765,7 +103827,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousDonatedSc?_of_sender",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatedSc?_of_sender",
-          "line": 1602,
+          "line": 1616,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
@@ -103779,7 +103841,7 @@
           "kind": "def",
           "name": "receivePreReturn?",
           "full_name": "SeLe4n.Kernel.receivePreReturn?",
-          "line": 1639,
+          "line": 1653,
           "called": [
             "SeLe4n.Kernel.endpointReplyDonation?",
             "SeLe4n.Kernel.receiveRendezvousSender?",
@@ -103793,7 +103855,7 @@
           "kind": "theorem",
           "name": "receivePreReturn?_of_sender",
           "full_name": "SeLe4n.Kernel.receivePreReturn?_of_sender",
-          "line": 1647,
+          "line": 1661,
           "called": [
             "SeLe4n.Kernel.receivePreReturn?",
             "SeLe4n.Kernel.receiveRendezvousSender?",
@@ -103806,7 +103868,7 @@
           "kind": "theorem",
           "name": "receivePreReturn?_of_no_sender",
           "full_name": "SeLe4n.Kernel.receivePreReturn?_of_no_sender",
-          "line": 1655,
+          "line": 1669,
           "called": [
             "SeLe4n.Kernel.endpointReplyDonation?",
             "SeLe4n.Kernel.receivePreReturn?",
@@ -103820,7 +103882,7 @@
           "kind": "def",
           "name": "receivePreReturnStack?",
           "full_name": "SeLe4n.Kernel.receivePreReturnStack?",
-          "line": 1664,
+          "line": 1678,
           "called": [
             "SeLe4n.Kernel.receivePreReturn?",
             "SeLe4n.Kernel.replyStackBelowHead?",
@@ -103835,7 +103897,7 @@
           "kind": "theorem",
           "name": "receivePreReturnStack?_of_sender",
           "full_name": "SeLe4n.Kernel.receivePreReturnStack?_of_sender",
-          "line": 1677,
+          "line": 1691,
           "called": [
             "SeLe4n.Kernel.receivePreReturn?_of_sender",
             "SeLe4n.Kernel.receivePreReturnStack?",
@@ -103849,7 +103911,7 @@
           "kind": "def",
           "name": "receiveInstallCNode?",
           "full_name": "SeLe4n.Kernel.receiveInstallCNode?",
-          "line": 1691,
+          "line": 1705,
           "called": [
             "SeLe4n.Kernel.receiveInstallsCaps",
             "SeLe4n.Kernel.receiverCapSlot?",
@@ -103862,7 +103924,7 @@
           "kind": "def",
           "name": "lockSet_endpointReplyRecvOnCore",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore",
-          "line": 1707,
+          "line": 1721,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -103885,6 +103947,7 @@
             "SeLe4n.Kernel.receiveSideQueueStructureNeighbor?",
             "SeLe4n.Kernel.recordedReplyServer?",
             "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Kernel.replyInstallCdtLock?",
             "SeLe4n.Kernel.replyStackBelowHead?",
             "SeLe4n.Kernel.replyStackHead?",
             "SeLe4n.Model.SystemState",
@@ -103899,7 +103962,7 @@
           "kind": "def",
           "name": "lockSet_endpointReceiveOnCore",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore",
-          "line": 1858,
+          "line": 1875,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -103926,7 +103989,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_receiveSlot",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_receiveSlot",
-          "line": 1894,
+          "line": 1911,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.AccessMode",
@@ -103947,7 +104010,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_receiveSlot",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_receiveSlot",
-          "line": 1906,
+          "line": 1923,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.AccessMode",
@@ -103968,12 +104031,13 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_replyInstall",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_replyInstall",
-          "line": 1921,
+          "line": 1939,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.LockSet.mem_insertOrMerge_write_self",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
+            "SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt",
             "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore",
             "SeLe4n.Kernel.replyInstallCNode?",
             "SeLe4n.Model.SystemState",
@@ -103985,7 +104049,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_reply_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_reply_eq",
-          "line": 1945,
+          "line": 1963,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReplyOnCore",
@@ -104007,7 +104071,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_reply_eq_linked",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_reply_eq_linked",
-          "line": 1973,
+          "line": 1991,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReplyOnCore",
@@ -104032,7 +104096,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_reply_snd_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_reply_snd_eq",
-          "line": 2001,
+          "line": 2019,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReplyOnCore",
@@ -104055,7 +104119,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_not_blocked_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_not_blocked_eq",
-          "line": 2024,
+          "line": 2042,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReplyOnCore",
@@ -104072,7 +104136,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_delegated_replier_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_delegated_replier_eq",
-          "line": 2043,
+          "line": 2061,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReplyOnCore",
@@ -104095,7 +104159,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_remote_wake",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_remote_wake",
-          "line": 2070,
+          "line": 2088,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -104119,7 +104183,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_no_sgi_if_local",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_no_sgi_if_local",
-          "line": 2089,
+          "line": 2107,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.determineTargetCore",
@@ -104141,7 +104205,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_not_blocked_no_sgi",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_not_blocked_no_sgi",
-          "line": 2106,
+          "line": 2124,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReplyOnCore",
@@ -104159,7 +104223,7 @@
           "kind": "theorem",
           "name": "self_write_mem_insertOrMerge",
           "full_name": "SeLe4n.Kernel.self_write_mem_insertOrMerge",
-          "line": 2123,
+          "line": 2141,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.AccessMode.lub_write_right",
@@ -104174,7 +104238,7 @@
           "kind": "theorem",
           "name": "write_mem_insertOrMerge_of_write_mem",
           "full_name": "SeLe4n.Kernel.write_mem_insertOrMerge_of_write_mem",
-          "line": 2136,
+          "line": 2154,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -104189,7 +104253,7 @@
           "kind": "theorem",
           "name": "write_mem_lockSetExtendOpt_map",
           "full_name": "SeLe4n.Kernel.write_mem_lockSetExtendOpt_map",
-          "line": 2147,
+          "line": 2165,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -104203,7 +104267,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_lockSet_correct",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_lockSet_correct",
-          "line": 2164,
+          "line": 2182,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_consistent_reply",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply",
@@ -104218,13 +104282,15 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyOnCore_correct",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_correct",
-          "line": 2204,
+          "line": 2222,
           "called": [
             "SeLe4n.Kernel.Concurrency.cnodeLock",
             "SeLe4n.Kernel.Concurrency.lockSet_consistent_extendOpt",
             "SeLe4n.Kernel.Concurrency.lockSet_consistent_reply",
             "SeLe4n.Kernel.Concurrency.permittedKinds",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
             "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
+            "SeLe4n.Kernel.replyInstallCdtLock?",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
             "SeLe4n.ThreadId"
@@ -104234,7 +104300,7 @@
           "kind": "theorem",
           "name": "endpointReplyRecv_lockSet_correct",
           "full_name": "SeLe4n.Kernel.endpointReplyRecv_lockSet_correct",
-          "line": 2222,
+          "line": 2244,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_consistent_replyRecv",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
@@ -104249,7 +104315,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_queueNeighbour",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_queueNeighbour",
-          "line": 2288,
+          "line": 2310,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -104268,11 +104334,12 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyOnCore_covers_replyWaiterNeighbours",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_replyWaiterNeighbours",
-          "line": 2309,
+          "line": 2331,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_replyWaiterNext_write_mem",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_replyWaiterPrev_write_mem",
+            "SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt",
             "SeLe4n.Kernel.Concurrency.tcbLock",
             "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
             "SeLe4n.Kernel.write_mem_lockSetExtendOpt_map",
@@ -104287,7 +104354,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_replyWaiters",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_replyWaiters",
-          "line": 2326,
+          "line": 2348,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_replyWaiterNext_write_mem",
@@ -104308,7 +104375,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_senderCapLookup",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_senderCapLookup",
-          "line": 2351,
+          "line": 2373,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
@@ -104325,14 +104392,16 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_correct",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_correct",
-          "line": 2365,
+          "line": 2387,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
             "SeLe4n.Kernel.Concurrency.lockSet_consistent_extendOpt",
             "SeLe4n.Kernel.Concurrency.lockSet_consistent_replyRecv",
             "SeLe4n.Kernel.Concurrency.permittedKinds",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
             "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore",
+            "SeLe4n.Kernel.replyInstallCdtLock?",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
             "SeLe4n.ThreadId"
@@ -104342,7 +104411,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_fromTcb_self",
           "full_name": "SeLe4n.Kernel.storeTcbIpcStateAndMessage_fromTcb_self",
-          "line": 2389,
+          "line": 2416,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeTcbIpcStateAndMessage_fromTcb",
@@ -104363,7 +104432,7 @@
           "kind": "theorem",
           "name": "wakeThread_getTcb?_of_ready",
           "full_name": "SeLe4n.Kernel.wakeThread_getTcb?_of_ready",
-          "line": 2407,
+          "line": 2434,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -104383,7 +104452,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_perCore_delivery",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_perCore_delivery",
-          "line": 2426,
+          "line": 2453,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -104421,7 +104490,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_ok_decompose",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_ok_decompose",
-          "line": 2483,
+          "line": 2510,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -104441,7 +104510,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_ok_target_ready",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_ok_target_ready",
-          "line": 2525,
+          "line": 2552,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -104461,7 +104530,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReply_target_tcb_write_mem",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReply_target_tcb_write_mem",
-          "line": 2556,
+          "line": 2583,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -104480,7 +104549,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReply_reply_write_mem",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReply_reply_write_mem",
-          "line": 2597,
+          "line": 2624,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply",
@@ -104497,7 +104566,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceive_reply_write_mem",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceive_reply_write_mem",
-          "line": 2632,
+          "line": 2659,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReceive",
@@ -104514,7 +104583,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceive_capsInstall_write_mem",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceive_capsInstall_write_mem",
-          "line": 2675,
+          "line": 2702,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -104534,7 +104603,7 @@
           "kind": "theorem",
           "name": "lockSet_replyRecv_capsInstall_write_mem",
           "full_name": "SeLe4n.Kernel.lockSet_replyRecv_capsInstall_write_mem",
-          "line": 2706,
+          "line": 2733,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -104554,7 +104623,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_cdt",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_cdt",
-          "line": 2752,
+          "line": 2779,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReceive_stateLevel_write_mem",
@@ -104575,12 +104644,13 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyOnCore_covers_replyInstall",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_replyInstall",
-          "line": 2767,
+          "line": 2794,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.LockSet.mem_insertOrMerge_write_self",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
+            "SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt",
             "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
             "SeLe4n.Kernel.replyInstallCNode?",
             "SeLe4n.Model.SystemState",
@@ -104590,9 +104660,83 @@
         },
         {
           "kind": "theorem",
+          "name": "lockSet_endpointReplyOnCore_covers_replyInstallCdt",
+          "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_replyInstallCdt",
+          "line": 2807,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockSet",
+            "SeLe4n.Kernel.Concurrency.LockSet.mem_insertOrMerge_write_self",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
+            "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
+            "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Kernel.replyInstallCdtLock?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyTransferCaps_of_noInstall",
+          "full_name": "SeLe4n.Kernel.replyTransferCaps_of_noInstall",
+          "line": 2825,
+          "called": [
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.receiverCapSlot?",
+            "SeLe4n.Kernel.receiverCapTarget?",
+            "SeLe4n.Kernel.replyCapRequest",
+            "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Kernel.replyTransferCaps",
+            "SeLe4n.Kernel.replyTransferCaps_of_inert",
+            "SeLe4n.Kernel.senderFrameCapRequest",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_endpointReplyOnCore_covers_replyTransferCdt",
+          "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_replyTransferCdt",
+          "line": 2876,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
+            "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
+            "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_replyInstallCdt",
+            "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Kernel.replyTransferCaps",
+            "SeLe4n.Kernel.replyTransferCaps_of_noInstall",
+            "SeLe4n.Model.CapTransferSummary",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt",
+          "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt",
+          "line": 2895,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockSet",
+            "SeLe4n.Kernel.Concurrency.LockSet.mem_insertOrMerge_write_self",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
+            "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore",
+            "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Kernel.replyInstallCdtLock?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "replyTransferCaps_writes_destination",
           "full_name": "SeLe4n.Kernel.replyTransferCaps_writes_destination",
-          "line": 2780,
+          "line": 2910,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.receiveTransferCaps",
@@ -104613,7 +104757,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_capsDestination",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_capsDestination",
-          "line": 2810,
+          "line": 2940,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
@@ -104634,7 +104778,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_queueNeighbour",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_queueNeighbour",
-          "line": 2833,
+          "line": 2963,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -104654,7 +104798,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_senderCapLookup",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_senderCapLookup",
-          "line": 2852,
+          "line": 2982,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
@@ -104672,7 +104816,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_replyWaiterOldHead",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_replyWaiterOldHead",
-          "line": 2866,
+          "line": 2996,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReceive_replyWaiterOldHead_write_mem",
@@ -104690,7 +104834,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_donatedSc",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_donatedSc",
-          "line": 2886,
+          "line": 3016,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReceive_donated_sc_write_mem",
@@ -104712,7 +104856,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_donationIndex",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_donationIndex",
-          "line": 2903,
+          "line": 3033,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReceive_donation_stateLevel_write_mem",
@@ -104734,7 +104878,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_cdt",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_cdt",
-          "line": 2919,
+          "line": 3049,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_stateLevel_write_mem",
@@ -104751,7 +104895,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_donationOldHead",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_donationOldHead",
-          "line": 2933,
+          "line": 3063,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReceive_donationOldHead_write_mem",
@@ -104771,7 +104915,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReceiveOnCore_covers_preReturn",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReceiveOnCore_covers_preReturn",
-          "line": 2953,
+          "line": 3083,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -104802,11 +104946,12 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyOnCore_covers_donationPop",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_donationPop",
-          "line": 3010,
+          "line": 3140,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_donatedHolder_tcb_write_mem",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_donatedSc_write_mem",
+            "SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt",
             "SeLe4n.Kernel.Concurrency.schedContextLock",
             "SeLe4n.Kernel.Concurrency.tcbLock",
             "SeLe4n.Kernel.answeredFrameHeadContext?",
@@ -104823,7 +104968,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_donationPop",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_donationPop",
-          "line": 3033,
+          "line": 3163,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_donatedHolder_tcb_write_mem",
@@ -104844,11 +104989,12 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyOnCore_covers_pop",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_pop",
-          "line": 3062,
+          "line": 3192,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_belowHead_write_mem",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_donatedHead_write_mem",
+            "SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt",
             "SeLe4n.Kernel.Concurrency.replyLock",
             "SeLe4n.Kernel.answeredFrameHeadContextId?",
             "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
@@ -104865,7 +105011,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_redonationOldHead",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_redonationOldHead",
-          "line": 3087,
+          "line": 3217,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_redonationOldHead_write_mem",
@@ -104885,7 +105031,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_pop",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_pop",
-          "line": 3107,
+          "line": 3237,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_belowHead_write_mem",
@@ -104906,10 +105052,11 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyOnCore_covers_splicedFrameAbove",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_splicedFrameAbove",
-          "line": 3146,
+          "line": 3276,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_frameAbove_write_mem",
+            "SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt",
             "SeLe4n.Kernel.Concurrency.replyLock",
             "SeLe4n.Kernel.answeredReplyFrameAbove?",
             "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
@@ -104924,7 +105071,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove",
-          "line": 3159,
+          "line": 3289,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_frameAbove_write_mem",
@@ -104942,10 +105089,11 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyOnCore_covers_splicedFrameBelow",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_splicedFrameBelow",
-          "line": 3190,
+          "line": 3320,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_frameBelow_write_mem",
+            "SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt",
             "SeLe4n.Kernel.Concurrency.replyLock",
             "SeLe4n.Kernel.answeredReplyFrameBelow?",
             "SeLe4n.Kernel.lockSet_endpointReplyOnCore",
@@ -104960,7 +105108,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_splicedFrameBelow",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_splicedFrameBelow",
-          "line": 3203,
+          "line": 3333,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_frameBelow_write_mem",
@@ -104978,10 +105126,11 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyOnCore_covers_originRecipient",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyOnCore_covers_originRecipient",
-          "line": 3235,
+          "line": 3365,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply_originRecipient_write_mem",
+            "SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt",
             "SeLe4n.Kernel.Concurrency.tcbLock",
             "SeLe4n.Kernel.answeredFrameHeadContextId?",
             "SeLe4n.Kernel.donationOriginRecipient?",
@@ -104997,7 +105146,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_originRecipient",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_originRecipient",
-          "line": 3251,
+          "line": 3381,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_originRecipient_write_mem",
@@ -105016,7 +105165,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointReplyRecvOnCore_covers_preReturn",
           "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_preReturn",
-          "line": 3285,
+          "line": 3415,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_preReturn_belowHead_write_mem",
@@ -105042,7 +105191,7 @@
           "kind": "theorem",
           "name": "lockSet_endpointCallWithCaps_reply_write_mem",
           "full_name": "SeLe4n.Kernel.lockSet_endpointCallWithCaps_reply_write_mem",
-          "line": 3343,
+          "line": 3473,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointCall_reply_write_mem",
@@ -105058,7 +105207,7 @@
           "kind": "theorem",
           "name": "lookupTcb_some_of_getTcb?_some",
           "full_name": "SeLe4n.Kernel.lookupTcb_some_of_getTcb?_some",
-          "line": 3360,
+          "line": 3490,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Model.SystemState",
@@ -105074,7 +105223,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_replay_rejected",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_replay_rejected",
-          "line": 3384,
+          "line": 3514,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105098,7 +105247,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_atomic_under_lockSet",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_atomic_under_lockSet",
-          "line": 3418,
+          "line": 3548,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockState.bracket",
@@ -105118,7 +105267,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_perCore_consistent",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_perCore_consistent",
-          "line": 3457,
+          "line": 3587,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.determineTargetCore",
@@ -105151,7 +105300,7 @@
           "kind": "def",
           "name": "applyReplyDonationOnCoreLockSet",
           "full_name": "SeLe4n.Kernel.applyReplyDonationOnCoreLockSet",
-          "line": 3525,
+          "line": 3655,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -105163,7 +105312,7 @@
           "kind": "theorem",
           "name": "applyReplyDonationOnCoreLockSet_write_only",
           "full_name": "SeLe4n.Kernel.applyReplyDonationOnCoreLockSet_write_only",
-          "line": 3531,
+          "line": 3661,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -105175,7 +105324,7 @@
           "kind": "theorem",
           "name": "applyReplyDonationOnCoreLockSet_contains_replenish_write",
           "full_name": "SeLe4n.Kernel.applyReplyDonationOnCoreLockSet_contains_replenish_write",
-          "line": 3541,
+          "line": 3671,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -105188,7 +105337,7 @@
           "kind": "theorem",
           "name": "applyReplyDonationOnCoreLockSet_contains_descheduleCore_write",
           "full_name": "SeLe4n.Kernel.applyReplyDonationOnCoreLockSet_contains_descheduleCore_write",
-          "line": 3549,
+          "line": 3679,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -105201,7 +105350,7 @@
           "kind": "theorem",
           "name": "applyReplyDonationOnCoreLockSet_pairwise_le",
           "full_name": "SeLe4n.Kernel.applyReplyDonationOnCoreLockSet_pairwise_le",
-          "line": 3557,
+          "line": 3687,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.applyReplyDonationOnCoreLockSet",
@@ -105212,7 +105361,7 @@
           "kind": "theorem",
           "name": "applyReplyDonationOnCoreLockSet_size_le_maxLockSetSize",
           "full_name": "SeLe4n.Kernel.applyReplyDonationOnCoreLockSet_size_le_maxLockSetSize",
-          "line": 3569,
+          "line": 3699,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -105225,7 +105374,7 @@
           "kind": "def",
           "name": "endpointReplyCrossCoreDispatchLockSet",
           "full_name": "SeLe4n.Kernel.endpointReplyCrossCoreDispatchLockSet",
-          "line": 3599,
+          "line": 3729,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -105237,7 +105386,7 @@
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatchLockSet_pairwise_le",
           "full_name": "SeLe4n.Kernel.endpointReplyCrossCoreDispatchLockSet_pairwise_le",
-          "line": 3605,
+          "line": 3735,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReplyCrossCoreDispatchLockSet",
@@ -105248,7 +105397,7 @@
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatchLockSet_covers_donation",
           "full_name": "SeLe4n.Kernel.endpointReplyCrossCoreDispatchLockSet_covers_donation",
-          "line": 3614,
+          "line": 3744,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.applyReplyDonationOnCoreLockSet",
@@ -105260,7 +105409,7 @@
           "kind": "def",
           "name": "endpointReceiveDualWriteSet",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWriteSet",
-          "line": 3650,
+          "line": 3780,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.determineTargetCore",
@@ -105273,7 +105422,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWriteSet_of_sender",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWriteSet_of_sender",
-          "line": 3669,
+          "line": 3799,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.determineTargetCore",
@@ -105289,7 +105438,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWriteSet_of_blocked",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWriteSet_of_blocked",
-          "line": 3685,
+          "line": 3815,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveDualWriteSet",
@@ -105305,7 +105454,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_preserves_objects_invExt",
-          "line": 3696,
+          "line": 3826,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105342,7 +105491,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous",
-          "line": 3814,
+          "line": 3944,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105377,7 +105526,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous",
-          "line": 3902,
+          "line": 4032,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105401,7 +105550,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous",
-          "line": 3940,
+          "line": 4070,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105437,7 +105586,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_getSchedContext?_eq_of_rendezvous",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_getSchedContext?_eq_of_rendezvous",
-          "line": 4027,
+          "line": 4157,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105462,7 +105611,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous",
-          "line": 4073,
+          "line": 4203,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105499,7 +105648,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_preserves_objects_invExt",
-          "line": 4160,
+          "line": 4290,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105517,7 +105666,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous",
-          "line": 4190,
+          "line": 4320,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105541,7 +105690,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousDonatedSc?_some_of_post",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatedSc?_some_of_post",
-          "line": 4237,
+          "line": 4367,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105569,7 +105718,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous",
-          "line": 4269,
+          "line": 4399,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointQueuePopHead_scheduler_eq",
@@ -105593,7 +105742,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_replenishQueueOnCore_of_blocked",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_replenishQueueOnCore_of_blocked",
-          "line": 4320,
+          "line": 4450,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -105619,7 +105768,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_replenishQueueOnCore_of_no_donation",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_replenishQueueOnCore_of_no_donation",
-          "line": 4364,
+          "line": 4494,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.cleanupPreReceiveDonationMigrated_of_no_donation",
@@ -105645,7 +105794,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_rendezvous",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_rendezvous",
-          "line": 4399,
+          "line": 4529,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous",
@@ -105666,7 +105815,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_blocked",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_blocked",
-          "line": 4414,
+          "line": 4544,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -105691,7 +105840,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_donation",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_donation",
-          "line": 4445,
+          "line": 4575,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveDualOnCore_replenishQueueOnCore_of_no_donation",
@@ -105713,7 +105862,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_state_of_no_endpoint",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_state_of_no_endpoint",
-          "line": 4459,
+          "line": 4589,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveDualOnCore",
@@ -105728,7 +105877,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_ok_dequeued_eq_head",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_ok_dequeued_eq_head",
-          "line": 4478,
+          "line": 4608,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -105751,7 +105900,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_ok_dequeued_eq_receiver_of_blocked",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_ok_dequeued_eq_receiver_of_blocked",
-          "line": 4516,
+          "line": 4646,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -105768,7 +105917,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_receiver_of_blocked",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_receiver_of_blocked",
-          "line": 4544,
+          "line": 4674,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -105787,7 +105936,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head",
-          "line": 4574,
+          "line": 4704,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -105809,7 +105958,7 @@
           "kind": "theorem",
           "name": "removeRunnableOnCore_preserves_replenishQueueAffinityConsistent_smp",
           "full_name": "SeLe4n.Kernel.removeRunnableOnCore_preserves_replenishQueueAffinityConsistent_smp",
-          "line": 4605,
+          "line": 4735,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.removeRunnableOnCore",
@@ -105827,7 +105976,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp",
-          "line": 4625,
+          "line": 4755,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105875,7 +106024,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_preserves_replenishQueueAffinityConsistent_smp",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_preserves_replenishQueueAffinityConsistent_smp",
-          "line": 4736,
+          "line": 4866,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -105898,7 +106047,7 @@
           "kind": "def",
           "name": "receiveRendezvousDonatingSender?",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatingSender?",
-          "line": 4790,
+          "line": 4920,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
@@ -105911,7 +106060,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousDonatingSender?_eq_callSender",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatingSender?_eq_callSender",
-          "line": 4797,
+          "line": 4927,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
             "SeLe4n.Kernel.receiveRendezvousDonatingSender?",
@@ -105924,7 +106073,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousDonatingSender?_of_no_callSender",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatingSender?_of_no_callSender",
-          "line": 4812,
+          "line": 4942,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
             "SeLe4n.Kernel.receiveRendezvousDonatingSender?",
@@ -105937,7 +106086,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousDonatingSender?_of_no_donation",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatingSender?_of_no_donation",
-          "line": 4822,
+          "line": 4952,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
@@ -105951,7 +106100,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousDonatingSender?_of_donation",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatingSender?_of_donation",
-          "line": 4834,
+          "line": 4964,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
@@ -105966,7 +106115,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousDonatedSc?_isSome_iff_donatingSender",
           "full_name": "SeLe4n.Kernel.receiveRendezvousDonatedSc?_isSome_iff_donatingSender",
-          "line": 4863,
+          "line": 4993,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.receiveRendezvousCallSender?",
@@ -105981,7 +106130,7 @@
           "kind": "theorem",
           "name": "rendezvousDequeuedCall_congr_getTcb?",
           "full_name": "SeLe4n.Kernel.rendezvousDequeuedCall_congr_getTcb?",
-          "line": 4879,
+          "line": 5009,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.rendezvousDequeuedCall",
@@ -105998,7 +106147,7 @@
           "kind": "theorem",
           "name": "rendezvousDequeuedCall_false_of_getTcb?_ready",
           "full_name": "SeLe4n.Kernel.rendezvousDequeuedCall_false_of_getTcb?_ready",
-          "line": 4898,
+          "line": 5028,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.rendezvousDequeuedCall",
@@ -106014,7 +106163,7 @@
           "kind": "theorem",
           "name": "rendezvousDequeuedCall_false_of_blockedOnSend",
           "full_name": "SeLe4n.Kernel.rendezvousDequeuedCall_false_of_blockedOnSend",
-          "line": 4914,
+          "line": 5044,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.rendezvousDequeuedCall",
@@ -106030,7 +106179,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend",
-          "line": 4947,
+          "line": 5077,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -106072,7 +106221,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend",
-          "line": 5040,
+          "line": 5170,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -106100,7 +106249,7 @@
           "kind": "def",
           "name": "receivePreReturnReplenishCores",
           "full_name": "SeLe4n.Kernel.receivePreReturnReplenishCores",
-          "line": 5088,
+          "line": 5218,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.determineTargetCore",
@@ -106114,7 +106263,7 @@
           "kind": "theorem",
           "name": "receivePreReturnReplenishCores_of_none",
           "full_name": "SeLe4n.Kernel.receivePreReturnReplenishCores_of_none",
-          "line": 5095,
+          "line": 5225,
           "called": [
             "SeLe4n.Kernel.receivePreReturn?",
             "SeLe4n.Kernel.receivePreReturnReplenishCores",
@@ -106127,7 +106276,7 @@
           "kind": "theorem",
           "name": "receivePreReturnReplenishCores_of_sender",
           "full_name": "SeLe4n.Kernel.receivePreReturnReplenishCores_of_sender",
-          "line": 5103,
+          "line": 5233,
           "called": [
             "SeLe4n.Kernel.receivePreReturn?_of_sender",
             "SeLe4n.Kernel.receivePreReturnReplenishCores",
@@ -106142,7 +106291,7 @@
           "kind": "theorem",
           "name": "receivePreReturnReplenishCores_of_no_sender_no_loan",
           "full_name": "SeLe4n.Kernel.receivePreReturnReplenishCores_of_no_sender_no_loan",
-          "line": 5111,
+          "line": 5241,
           "called": [
             "SeLe4n.Kernel.endpointReplyDonation?",
             "SeLe4n.Kernel.receivePreReturn?_of_no_sender",
@@ -106157,7 +106306,7 @@
           "kind": "theorem",
           "name": "receivePreReturnReplenishCores_of_no_sender_returning",
           "full_name": "SeLe4n.Kernel.receivePreReturnReplenishCores_of_no_sender_returning",
-          "line": 5120,
+          "line": 5250,
           "called": [
             "SeLe4n.Kernel.determineTargetCore",
             "SeLe4n.Kernel.endpointReplyDonation?",
@@ -106174,7 +106323,7 @@
           "kind": "theorem",
           "name": "receivePreReturnReplenishCores_eq_migration",
           "full_name": "SeLe4n.Kernel.receivePreReturnReplenishCores_eq_migration",
-          "line": 5141,
+          "line": 5271,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cleanupPreReceiveDonationChecked",
@@ -106196,7 +106345,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne",
-          "line": 5165,
+          "line": 5295,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -106222,7 +106371,7 @@
           "kind": "def",
           "name": "endpointReceiveHandoffReplenishCores",
           "full_name": "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores",
-          "line": 5258,
+          "line": 5388,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.determineTargetCore",
@@ -106237,7 +106386,7 @@
           "kind": "theorem",
           "name": "receiveRendezvousSender?_of_blocked",
           "full_name": "SeLe4n.Kernel.receiveRendezvousSender?_of_blocked",
-          "line": 5266,
+          "line": 5396,
           "called": [
             "SeLe4n.Kernel.receiveRendezvousSender?",
             "SeLe4n.Model.Endpoint",
@@ -106252,7 +106401,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne",
-          "line": 5283,
+          "line": 5413,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -106278,7 +106427,7 @@
           "kind": "theorem",
           "name": "endpointReceiveHandoffReplenishCores_of_blocked",
           "full_name": "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores_of_blocked",
-          "line": 5321,
+          "line": 5451,
           "called": [
             "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores",
             "SeLe4n.Kernel.endpointReplyDonation?",
@@ -106299,7 +106448,7 @@
           "kind": "theorem",
           "name": "endpointReceiveHandoffReplenishCores_of_blocked_returning",
           "full_name": "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores_of_blocked_returning",
-          "line": 5337,
+          "line": 5467,
           "called": [
             "SeLe4n.Kernel.determineTargetCore",
             "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores",
@@ -106322,7 +106471,7 @@
           "kind": "theorem",
           "name": "endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration",
           "full_name": "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration",
-          "line": 5360,
+          "line": 5490,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cleanupPreReceiveDonationChecked",
@@ -106347,7 +106496,7 @@
           "kind": "theorem",
           "name": "endpointReceiveHandoffReplenishCores_of_blockedOnSend",
           "full_name": "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores_of_blockedOnSend",
-          "line": 5382,
+          "line": 5512,
           "called": [
             "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores",
             "SeLe4n.Kernel.lookupTcb",
@@ -106370,7 +106519,7 @@
           "kind": "theorem",
           "name": "endpointReceiveHandoffReplenishCores_of_no_donation",
           "full_name": "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores_of_no_donation",
-          "line": 5404,
+          "line": 5534,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores",
@@ -106394,7 +106543,7 @@
           "kind": "theorem",
           "name": "endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous",
           "full_name": "SeLe4n.Kernel.endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous",
-          "line": 5441,
+          "line": 5571,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -106423,7 +106572,7 @@
           "kind": "def",
           "name": "endpointReceiveHandoffChainWriteSet",
           "full_name": "SeLe4n.Kernel.endpointReceiveHandoffChainWriteSet",
-          "line": 5495,
+          "line": 5625,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.applyReceiveRendezvousDonation",
@@ -106440,7 +106589,7 @@
           "kind": "def",
           "name": "schedLockSet_endpointReceiveOnCore",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore",
-          "line": 5509,
+          "line": 5639,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -106459,7 +106608,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReceiveOnCore_contains_sender_runQueue_write",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore_contains_sender_runQueue_write",
-          "line": 5527,
+          "line": 5657,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -106479,7 +106628,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReceiveOnCore_contains_executing_runQueue_write",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore_contains_executing_runQueue_write",
-          "line": 5542,
+          "line": 5672,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -106501,7 +106650,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked",
-          "line": 5560,
+          "line": 5690,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -106524,7 +106673,7 @@
           "kind": "theorem",
           "name": "applyReceiveRendezvousDonation_eq_self_of_blockedOnSend",
           "full_name": "SeLe4n.Kernel.applyReceiveRendezvousDonation_eq_self_of_blockedOnSend",
-          "line": 5582,
+          "line": 5712,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -106549,7 +106698,7 @@
           "kind": "theorem",
           "name": "applyReceiveRendezvousHandoff_eq_self_of_blockedOnSend",
           "full_name": "SeLe4n.Kernel.applyReceiveRendezvousHandoff_eq_self_of_blockedOnSend",
-          "line": 5613,
+          "line": 5743,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -106574,7 +106723,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend",
-          "line": 5637,
+          "line": 5767,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -106599,7 +106748,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_callDonationSchedContext?_none_of_none",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_callDonationSchedContext?_none_of_none",
-          "line": 5661,
+          "line": 5791,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -106621,7 +106770,7 @@
           "kind": "theorem",
           "name": "applyReceiveRendezvousDonation_eq_self_of_no_donation",
           "full_name": "SeLe4n.Kernel.applyReceiveRendezvousDonation_eq_self_of_no_donation",
-          "line": 5683,
+          "line": 5813,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -106647,7 +106796,7 @@
           "kind": "theorem",
           "name": "applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation",
           "full_name": "SeLe4n.Kernel.applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation",
-          "line": 5712,
+          "line": 5842,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_replenish_readings",
@@ -106676,7 +106825,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation",
-          "line": 5745,
+          "line": 5875,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -106702,7 +106851,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReceiveOnCore_covers_donation",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore_covers_donation",
-          "line": 5790,
+          "line": 5920,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -106733,7 +106882,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReceiveOnCore_contains_preReturn_replenish_writes",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore_contains_preReturn_replenish_writes",
-          "line": 5823,
+          "line": 5953,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -106758,7 +106907,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReceiveOnCore_covers_preReturnMigration",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore_covers_preReturnMigration",
-          "line": 5854,
+          "line": 5984,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -112442,7 +112591,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInvariant",
       "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean",
-      "declaration_count": 49,
+      "declaration_count": 51,
       "declarations": [
         {
           "kind": "theorem",
@@ -112873,9 +113022,43 @@
         },
         {
           "kind": "theorem",
+          "name": "replyRecvReplyTransfer_of_noInstall",
+          "full_name": "SeLe4n.Kernel.replyRecvReplyTransfer_of_noInstall",
+          "line": 805,
+          "called": [
+            "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
+            "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Kernel.replyRecvReplyTransfer",
+            "SeLe4n.Kernel.replyTransferCaps_of_noInstall",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt",
+          "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt",
+          "line": 818,
+          "called": [
+            "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
+            "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore",
+            "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt",
+            "SeLe4n.Kernel.replyInstallCNode?",
+            "SeLe4n.Kernel.replyRecvReplyTransfer",
+            "SeLe4n.Kernel.replyRecvReplyTransfer_of_noInstall",
+            "SeLe4n.Model.CapTransferSummary",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "replyRecvReceiveLegState_eq_of_ok",
           "full_name": "SeLe4n.Kernel.replyRecvReceiveLegState_eq_of_ok",
-          "line": 802,
+          "line": 837,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.replyRecvPopDonation",
@@ -112892,7 +113075,7 @@
           "kind": "theorem",
           "name": "replyRecvPoppedDonation_eq_of_ok",
           "full_name": "SeLe4n.Kernel.replyRecvPoppedDonation_eq_of_ok",
-          "line": 812,
+          "line": 847,
           "called": [
             "SeLe4n.Kernel.replyRecvPopDonation",
             "SeLe4n.Kernel.replyRecvPoppedDonation",
@@ -112906,7 +113089,7 @@
           "kind": "theorem",
           "name": "replyRecvReceiveLegState_eq_of_error",
           "full_name": "SeLe4n.Kernel.replyRecvReceiveLegState_eq_of_error",
-          "line": 819,
+          "line": 854,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.replyRecvPopDonation",
@@ -112921,7 +113104,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveDonation_preserves_ipcInvariantFull",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveDonation_preserves_ipcInvariantFull",
-          "line": 849,
+          "line": 884,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -112953,7 +113136,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveReplenishCores_none",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveReplenishCores_none",
-          "line": 935,
+          "line": 970,
           "called": [
             "SeLe4n.Kernel.replyRecvPostReceiveReplenishCores",
             "SeLe4n.Model.SystemState",
@@ -112964,7 +113147,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveReplenishCores_of_no_call",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveReplenishCores_of_no_call",
-          "line": 939,
+          "line": 974,
           "called": [
             "SeLe4n.Kernel.rendezvousDequeuedCall",
             "SeLe4n.Kernel.replyRecvPostReceiveReplenishCores",
@@ -112977,7 +113160,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveReplenishCores_of_call",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveReplenishCores_of_call",
-          "line": 946,
+          "line": 981,
           "called": [
             "SeLe4n.Kernel.rendezvousCallDonationReplenishCores",
             "SeLe4n.Kernel.rendezvousDequeuedCall",
@@ -112992,7 +113175,7 @@
           "kind": "theorem",
           "name": "replyRecvHandoffReplenishCores_eq_of_pop",
           "full_name": "SeLe4n.Kernel.replyRecvHandoffReplenishCores_eq_of_pop",
-          "line": 958,
+          "line": 993,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -113018,7 +113201,7 @@
           "kind": "theorem",
           "name": "replyRecvHandoffReplenishCores_eq_of_legs",
           "full_name": "SeLe4n.Kernel.replyRecvHandoffReplenishCores_eq_of_legs",
-          "line": 982,
+          "line": 1017,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -113045,7 +113228,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyRecvOnCore_contains_prevCaller_runQueue_write",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReplyRecvOnCore_contains_prevCaller_runQueue_write",
-          "line": 1007,
+          "line": 1042,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -113066,7 +113249,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyRecvOnCore_covers_receiveLeg",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReplyRecvOnCore_covers_receiveLeg",
-          "line": 1020,
+          "line": 1055,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -113093,7 +113276,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyRecvOnCore_covers_pop",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReplyRecvOnCore_covers_pop",
-          "line": 1047,
+          "line": 1082,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -113118,7 +113301,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyRecvOnCore_covers_preReturnMigration",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReplyRecvOnCore_covers_preReturnMigration",
-          "line": 1075,
+          "line": 1110,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -113153,7 +113336,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyRecvOnCore_covers_postReceiveDonation",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReplyRecvOnCore_covers_postReceiveDonation",
-          "line": 1115,
+          "line": 1150,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -113184,7 +113367,7 @@
           "kind": "theorem",
           "name": "replyRecvHandoffReplenishCores_of_no_donation",
           "full_name": "SeLe4n.Kernel.replyRecvHandoffReplenishCores_of_no_donation",
-          "line": 1148,
+          "line": 1183,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -113210,7 +113393,7 @@
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation",
           "full_name": "SeLe4n.Kernel.schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation",
-          "line": 1173,
+          "line": 1208,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -113236,7 +113419,7 @@
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_preReturn",
           "full_name": "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_preReturn",
-          "line": 1198,
+          "line": 1233,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveDualOnCore_state_of_no_endpoint",
@@ -113260,7 +113443,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveDonation_ok_none_eq",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveDonation_ok_none_eq",
-          "line": 1235,
+          "line": 1270,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
@@ -113273,7 +113456,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveDonation_replenishQueueOnCore_of_none",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveDonation_replenishQueueOnCore_of_none",
-          "line": 1245,
+          "line": 1280,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_replenish_readings",
@@ -113289,7 +113472,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveDonation_replenishQueueOnCore_ne",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveDonation_replenishQueueOnCore_ne",
-          "line": 1266,
+          "line": 1301,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
@@ -113318,7 +113501,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveDonation_preserves_objects_invExt_of_none",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveDonation_preserves_objects_invExt_of_none",
-          "line": 1325,
+          "line": 1360,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt",
@@ -113333,7 +113516,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveDonation_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveDonation_preserves_objects_invExt",
-          "line": 1340,
+          "line": 1375,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
@@ -113356,7 +113539,7 @@
           "kind": "theorem",
           "name": "endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation",
           "full_name": "SeLe4n.Kernel.endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation",
-          "line": 1406,
+          "line": 1441,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion_scheduler_eq",
@@ -113397,7 +113580,7 @@
           "kind": "theorem",
           "name": "endpointReplyRecvOnCore_replenishQueueOnCore_ne",
           "full_name": "SeLe4n.Kernel.endpointReplyRecvOnCore_replenishQueueOnCore_ne",
-          "line": 1481,
+          "line": 1516,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion_scheduler_eq",
@@ -113438,7 +113621,7 @@
           "kind": "theorem",
           "name": "endpointReceiveLegAndDonation_replenishQueueOnCore_ne",
           "full_name": "SeLe4n.Kernel.endpointReceiveLegAndDonation_replenishQueueOnCore_ne",
-          "line": 1601,
+          "line": 1636,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -113484,7 +113667,7 @@
           "kind": "theorem",
           "name": "endpointReplyRecvOnCore_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.endpointReplyRecvOnCore_preserves_objects_invExt",
-          "line": 1740,
+          "line": 1775,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -113516,7 +113699,7 @@
           "kind": "theorem",
           "name": "endpointReplyRecvOnCore_observer_atomic",
           "full_name": "SeLe4n.Kernel.endpointReplyRecvOnCore_observer_atomic",
-          "line": 1812,
+          "line": 1847,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockedSystemState",
@@ -382147,7 +382330,7 @@
           "kind": "theorem",
           "name": "admissibleCriticalSection_rpi5Tick",
           "full_name": "SeLe4n.Kernel.admissibleCriticalSection_rpi5Tick",
-          "line": 338,
+          "line": 340,
           "called": [
             "SeLe4n.Kernel.admissibleCriticalSection",
             "SeLe4n.Kernel.rpi5TickBudgetMicros"
@@ -382157,7 +382340,7 @@
           "kind": "theorem",
           "name": "rpi5Tick_refuses_sixty_micro_sections",
           "full_name": "SeLe4n.Kernel.rpi5Tick_refuses_sixty_micro_sections",
-          "line": 352,
+          "line": 354,
           "called": [
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -382168,7 +382351,7 @@
           "kind": "theorem",
           "name": "rpi5Tick_sixty_micro_section_footprint_boundary",
           "full_name": "SeLe4n.Kernel.rpi5Tick_sixty_micro_section_footprint_boundary",
-          "line": 363,
+          "line": 365,
           "called": [
             "SeLe4n.Kernel.Concurrency.numCores",
             "SeLe4n.Kernel.rpi5TickBudgetMicros"
@@ -382178,7 +382361,7 @@
           "kind": "theorem",
           "name": "rpi5Tick_refused_sixty_micro_sections_at_the_previous_ceiling",
           "full_name": "SeLe4n.Kernel.rpi5Tick_refused_sixty_micro_sections_at_the_previous_ceiling",
-          "line": 370,
+          "line": 372,
           "called": [
             "SeLe4n.Kernel.Concurrency.numCores",
             "SeLe4n.Kernel.rpi5TickBudgetMicros"
@@ -382188,7 +382371,7 @@
           "kind": "theorem",
           "name": "wcrt_bound_rpi5_smp",
           "full_name": "SeLe4n.Kernel.wcrt_bound_rpi5_smp",
-          "line": 399,
+          "line": 401,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382205,7 +382388,7 @@
           "kind": "def",
           "name": "WCRT_smp",
           "full_name": "SeLe4n.Kernel.WCRT_smp",
-          "line": 418,
+          "line": 420,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382217,7 +382400,7 @@
           "kind": "theorem",
           "name": "WCRT_smp_decomposition",
           "full_name": "SeLe4n.Kernel.WCRT_smp_decomposition",
-          "line": 423,
+          "line": 425,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382230,7 +382413,7 @@
           "kind": "theorem",
           "name": "WCRT_smp_r5_component_le",
           "full_name": "SeLe4n.Kernel.WCRT_smp_r5_component_le",
-          "line": 430,
+          "line": 432,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382242,7 +382425,7 @@
           "kind": "theorem",
           "name": "WCRT_smp_lockSet_component_le",
           "full_name": "SeLe4n.Kernel.WCRT_smp_lockSet_component_le",
-          "line": 437,
+          "line": 439,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382254,7 +382437,7 @@
           "kind": "theorem",
           "name": "wcrt_smp_bound_rpi5",
           "full_name": "SeLe4n.Kernel.wcrt_smp_bound_rpi5",
-          "line": 445,
+          "line": 447,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382268,7 +382451,7 @@
           "kind": "theorem",
           "name": "wcrt_op_bounded_of_size",
           "full_name": "SeLe4n.Kernel.wcrt_op_bounded_of_size",
-          "line": 463,
+          "line": 465,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382281,7 +382464,7 @@
           "kind": "theorem",
           "name": "wcrt_chooseThreadOnCore_eq",
           "full_name": "SeLe4n.Kernel.wcrt_chooseThreadOnCore_eq",
-          "line": 471,
+          "line": 473,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.WCRT_lockSet",
@@ -382294,7 +382477,7 @@
           "kind": "theorem",
           "name": "wcrt_chooseThreadOnCore_bounded",
           "full_name": "SeLe4n.Kernel.wcrt_chooseThreadOnCore_bounded",
-          "line": 476,
+          "line": 478,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -382308,7 +382491,7 @@
           "kind": "theorem",
           "name": "wcrt_switchToThreadOnCore_eq",
           "full_name": "SeLe4n.Kernel.wcrt_switchToThreadOnCore_eq",
-          "line": 482,
+          "line": 484,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.WCRT_lockSet",
@@ -382321,7 +382504,7 @@
           "kind": "theorem",
           "name": "wcrt_switchToThreadOnCore_bounded",
           "full_name": "SeLe4n.Kernel.wcrt_switchToThreadOnCore_bounded",
-          "line": 487,
+          "line": 489,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -382335,7 +382518,7 @@
           "kind": "theorem",
           "name": "wcrt_wakeThread_eq",
           "full_name": "SeLe4n.Kernel.wcrt_wakeThread_eq",
-          "line": 493,
+          "line": 495,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.WCRT_lockSet",
@@ -382348,7 +382531,7 @@
           "kind": "theorem",
           "name": "wcrt_wakeThread_bounded",
           "full_name": "SeLe4n.Kernel.wcrt_wakeThread_bounded",
-          "line": 498,
+          "line": 500,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -382362,7 +382545,7 @@
           "kind": "theorem",
           "name": "wcrt_timerTickOnCore_eq",
           "full_name": "SeLe4n.Kernel.wcrt_timerTickOnCore_eq",
-          "line": 504,
+          "line": 506,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.WCRT_lockSet",
@@ -382375,7 +382558,7 @@
           "kind": "theorem",
           "name": "wcrt_timerTickOnCore_bounded",
           "full_name": "SeLe4n.Kernel.wcrt_timerTickOnCore_bounded",
-          "line": 509,
+          "line": 511,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -382389,7 +382572,7 @@
           "kind": "theorem",
           "name": "wcrt_replenishOnCore_eq",
           "full_name": "SeLe4n.Kernel.wcrt_replenishOnCore_eq",
-          "line": 515,
+          "line": 517,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.WCRT_lockSet",
@@ -382402,7 +382585,7 @@
           "kind": "theorem",
           "name": "wcrt_replenishOnCore_bounded",
           "full_name": "SeLe4n.Kernel.wcrt_replenishOnCore_bounded",
-          "line": 520,
+          "line": 522,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -382416,7 +382599,7 @@
           "kind": "theorem",
           "name": "wcrt_advanceDomainOnCore_bounded",
           "full_name": "SeLe4n.Kernel.wcrt_advanceDomainOnCore_bounded",
-          "line": 526,
+          "line": 528,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -382430,7 +382613,7 @@
           "kind": "theorem",
           "name": "wcrt_handleRescheduleSgiOnCore_bounded",
           "full_name": "SeLe4n.Kernel.wcrt_handleRescheduleSgiOnCore_bounded",
-          "line": 534,
+          "line": 536,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -382445,7 +382628,7 @@
           "kind": "theorem",
           "name": "wcrt_timerTickOnCoreComplete_bounded",
           "full_name": "SeLe4n.Kernel.wcrt_timerTickOnCoreComplete_bounded",
-          "line": 544,
+          "line": 546,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -382459,7 +382642,7 @@
           "kind": "theorem",
           "name": "WCRT_lockSet_mode_independent",
           "full_name": "SeLe4n.Kernel.WCRT_lockSet_mode_independent",
-          "line": 561,
+          "line": 563,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382470,7 +382653,7 @@
           "kind": "theorem",
           "name": "WCRT_lockSet_eq_totalWaitCost_of_length_eq",
           "full_name": "SeLe4n.Kernel.WCRT_lockSet_eq_totalWaitCost_of_length_eq",
-          "line": 572,
+          "line": 574,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382486,7 +382669,7 @@
           "kind": "theorem",
           "name": "kernelWait_le_WCRT_lockSet_of_length_eq",
           "full_name": "SeLe4n.Kernel.kernelWait_le_WCRT_lockSet_of_length_eq",
-          "line": 585,
+          "line": 587,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -382504,7 +382687,7 @@
           "kind": "theorem",
           "name": "wcrt_bound_smp",
           "full_name": "SeLe4n.Kernel.wcrt_bound_smp",
-          "line": 599,
+          "line": 601,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382517,7 +382700,7 @@
           "kind": "def",
           "name": "WCRT_smp_cycles",
           "full_name": "SeLe4n.Kernel.WCRT_smp_cycles",
-          "line": 611,
+          "line": 613,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382529,7 +382712,7 @@
           "kind": "theorem",
           "name": "WCRT_smp_cycles_one",
           "full_name": "SeLe4n.Kernel.WCRT_smp_cycles_one",
-          "line": 616,
+          "line": 618,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382541,7 +382724,7 @@
           "kind": "theorem",
           "name": "WCRT_smp_cycles_decomposition",
           "full_name": "SeLe4n.Kernel.WCRT_smp_cycles_decomposition",
-          "line": 623,
+          "line": 625,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -382554,7 +382737,7 @@
           "kind": "theorem",
           "name": "schedulerNoStall_smp",
           "full_name": "SeLe4n.Kernel.schedulerNoStall_smp",
-          "line": 641,
+          "line": 643,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -382569,7 +382752,7 @@
           "kind": "theorem",
           "name": "boundedKernelWait_smp",
           "full_name": "SeLe4n.Kernel.boundedKernelWait_smp",
-          "line": 655,
+          "line": 657,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -382587,7 +382770,7 @@
           "kind": "theorem",
           "name": "thread_eventually_scheduled_onCore",
           "full_name": "SeLe4n.Kernel.thread_eventually_scheduled_onCore",
-          "line": 679,
+          "line": 681,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Liveness.SchedulerTrace",
@@ -382611,7 +382794,7 @@
           "kind": "theorem",
           "name": "thread_eventually_scheduled_within_smp_bound",
           "full_name": "SeLe4n.Kernel.thread_eventually_scheduled_within_smp_bound",
-          "line": 709,
+          "line": 711,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -382638,7 +382821,7 @@
           "kind": "theorem",
           "name": "no_starvation_under_smp",
           "full_name": "SeLe4n.Kernel.no_starvation_under_smp",
-          "line": 750,
+          "line": 752,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.KernelExecution",
@@ -382675,7 +382858,7 @@
           "kind": "theorem",
           "name": "r5_latency_within_smp_bound",
           "full_name": "SeLe4n.Kernel.r5_latency_within_smp_bound",
-          "line": 790,
+          "line": 792,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -495840,7 +496023,7 @@
           "kind": "def",
           "name": "runNewlyBoundedFootprintChecks",
           "full_name": "SeLe4n.Testing.DeadlockFreedom.runNewlyBoundedFootprintChecks",
-          "line": 811,
+          "line": 815,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
@@ -495863,7 +496046,7 @@
           "kind": "def",
           "name": "runWCRTChecks",
           "full_name": "SeLe4n.Testing.DeadlockFreedom.runWCRTChecks",
-          "line": 929,
+          "line": 933,
           "called": [
             "SeLe4n.Kernel.Concurrency.KernelOperation",
             "SeLe4n.Kernel.Concurrency.KernelOperation.ofEndpointCall",
@@ -495892,7 +496075,7 @@
           "kind": "def",
           "name": "runBridgeChecks",
           "full_name": "SeLe4n.Testing.DeadlockFreedom.runBridgeChecks",
-          "line": 961,
+          "line": 965,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.singleton",
             "SeLe4n.Kernel.Concurrency.executionOfHeld",
@@ -495913,7 +496096,7 @@
           "kind": "def",
           "name": "runInventoryChecks",
           "full_name": "SeLe4n.Testing.DeadlockFreedom.runInventoryChecks",
-          "line": 974,
+          "line": 978,
           "called": [
             "SeLe4n.Kernel.Concurrency.deadlockTheorems",
             "SeLe4n.Testing.DeadlockFreedom.assertBool"
@@ -495924,7 +496107,7 @@
           "kind": "def",
           "name": "runDeadlockFreedomChecks",
           "full_name": "SeLe4n.Testing.DeadlockFreedom.runDeadlockFreedomChecks",
-          "line": 1008,
+          "line": 1012,
           "called": [
             "SeLe4n.Testing.DeadlockFreedom.runBoundedWaitChecks",
             "SeLe4n.Testing.DeadlockFreedom.runBridgeChecks",
@@ -495944,7 +496127,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1028,
+          "line": 1032,
           "called": [
             "SeLe4n.Testing.DeadlockFreedom.runDeadlockFreedomChecks"
           ]
@@ -505668,6 +505851,7 @@
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.Concurrency.replyLock",
+            "SeLe4n.Kernel.Concurrency.stateLevelLock",
             "SeLe4n.Kernel.Concurrency.tcbLock",
             "SeLe4n.Kernel.lockSet_tcbSuspendOnCore",
             "SeLe4n.ObjId.ofNat",
@@ -505679,7 +505863,7 @@
           "kind": "def",
           "name": "runUnionChecks",
           "full_name": "SeLe4n.Testing.LockSet.runUnionChecks",
-          "line": 1405,
+          "line": 1415,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.LockSet.empty",
@@ -505695,7 +505879,7 @@
           "kind": "def",
           "name": "runConsistencyRuntimeChecks",
           "full_name": "SeLe4n.Testing.LockSet.runConsistencyRuntimeChecks",
-          "line": 1418,
+          "line": 1428,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
@@ -505722,7 +505906,7 @@
           "kind": "def",
           "name": "runQueueOwnerFootprintChecks",
           "full_name": "SeLe4n.Testing.LockSet.runQueueOwnerFootprintChecks",
-          "line": 1540,
+          "line": 1550,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.QueueOwner",
@@ -505743,7 +505927,7 @@
           "kind": "def",
           "name": "runDonationPushFootprintChecks",
           "full_name": "SeLe4n.Testing.LockSet.runDonationPushFootprintChecks",
-          "line": 1586,
+          "line": 1596,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointCall",
@@ -505763,7 +505947,7 @@
           "kind": "def",
           "name": "runAuditPass6FootprintChecks",
           "full_name": "SeLe4n.Testing.LockSet.runAuditPass6FootprintChecks",
-          "line": 1615,
+          "line": 1625,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_serviceRegister",
             "SeLe4n.Kernel.Concurrency.lockSet_tcbSetIPCBuffer",
@@ -505778,7 +505962,7 @@
           "kind": "def",
           "name": "runCanonicalSortRuntimeChecks",
           "full_name": "SeLe4n.Testing.LockSet.runCanonicalSortRuntimeChecks",
-          "line": 1664,
+          "line": 1674,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -505794,7 +505978,7 @@
           "kind": "def",
           "name": "runFstInjChecks",
           "full_name": "SeLe4n.Testing.LockSet.runFstInjChecks",
-          "line": 1699,
+          "line": 1709,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -505810,7 +505994,7 @@
           "kind": "def",
           "name": "runInventoryChecks",
           "full_name": "SeLe4n.Testing.LockSet.runInventoryChecks",
-          "line": 1722,
+          "line": 1732,
           "called": [
             "SeLe4n.Kernel.Concurrency.declaresStaticLockFootprint",
             "SeLe4n.Kernel.Concurrency.lockSetTheorems",
@@ -505823,7 +506007,7 @@
           "kind": "def",
           "name": "runPipChainStartChecks",
           "full_name": "SeLe4n.Testing.LockSet.runPipChainStartChecks",
-          "line": 1754,
+          "line": 1764,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_endpointCall",
             "SeLe4n.Kernel.Concurrency.lockSet_endpointReply",
@@ -505842,7 +506026,7 @@
           "kind": "def",
           "name": "runLockSetChecks",
           "full_name": "SeLe4n.Testing.LockSet.runLockSetChecks",
-          "line": 1816,
+          "line": 1826,
           "called": [
             "SeLe4n.Testing.LockSet.runAccessModeAlgebraChecks",
             "SeLe4n.Testing.LockSet.runAuditPass6FootprintChecks",
@@ -505866,7 +506050,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1840,
+          "line": 1850,
           "called": [
             "SeLe4n.Testing.LockSet.runLockSetChecks"
           ]
@@ -545873,7 +546057,7 @@
           "kind": "def",
           "name": "runRpi5BoundChecks",
           "full_name": "SeLe4n.Testing.SmpWcrt.runRpi5BoundChecks",
-          "line": 271,
+          "line": 272,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -545892,7 +546076,7 @@
           "kind": "def",
           "name": "runWcrtSmpChecks",
           "full_name": "SeLe4n.Testing.SmpWcrt.runWcrtSmpChecks",
-          "line": 349,
+          "line": 351,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.Liveness.wcrtBound",
@@ -545910,7 +546094,7 @@
           "kind": "def",
           "name": "runNoStallChecks",
           "full_name": "SeLe4n.Testing.SmpWcrt.runNoStallChecks",
-          "line": 376,
+          "line": 378,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -545929,7 +546113,7 @@
           "kind": "def",
           "name": "runRefinementChecks",
           "full_name": "SeLe4n.Testing.SmpWcrt.runRefinementChecks",
-          "line": 396,
+          "line": 398,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -545950,7 +546134,7 @@
           "kind": "def",
           "name": "runInventoryChecks",
           "full_name": "SeLe4n.Testing.SmpWcrt.runInventoryChecks",
-          "line": 422,
+          "line": 424,
           "called": [
             "SeLe4n.Kernel.perCoreWcrtTheorems",
             "SeLe4n.Testing.SmpWcrt.assertBool"
@@ -545961,7 +546145,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "SeLe4n.Testing.SmpWcrt.main",
-          "line": 439,
+          "line": 441,
           "called": [
             "SeLe4n.Testing.SmpWcrt.runInventoryChecks",
             "SeLe4n.Testing.SmpWcrt.runNoStallChecks",
@@ -545975,7 +546159,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 451,
+          "line": 453,
           "called": [
             "SeLe4n.Testing.SmpWcrt.main"
           ]
