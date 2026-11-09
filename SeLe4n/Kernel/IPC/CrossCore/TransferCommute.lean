@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.DeliveryCommute
 import SeLe4n.Kernel.IPC.DualQueue.WithCaps
+import SeLe4n.Kernel.IPC.CrossCore.InertCapTransfer
 
 /-!
 # A capability transfer commutes with a thread's message write
@@ -440,6 +441,94 @@ theorem recordUnwrappedBadge_mapTcbInPlace (Z : SystemState) (rtcb : TCB) (i : N
   unfold recordUnwrappedBadge
   rw [ipcBufferWordPAddr?_mapTcbInPlace (G := G) x]
   split <;> rfl
+
+theorem recordUnwrappedBadge_noResizeDue (Z : SystemState) (rtcb : TCB) (i : Nat)
+    (b : SeLe4n.Badge) (hNo : Z.objects.noResizeDue) :
+    (recordUnwrappedBadge Z rtcb i b).objects.noResizeDue := by
+  rw [recordUnwrappedBadge_objects]; exact hNo
+
+include hG in
+/-- **The transfer loop commutes with the thread write.** -/
+theorem ipcUnwrapCapsLoop_mapTcbInPlace (caps : Array TransferCap)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) :
+    ∀ (fuel idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult)
+      (Z : SystemState), Z.objects.noResizeDue →
+      ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc fuel (Z.mapTcbInPlace x G) =
+        mapStepState x G (ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc fuel Z)
+  | 0, _, _, _, _, _ => rfl
+  | fuel + 1, idx, slot?, acc, Z, hNo => by
+    simp only [ipcUnwrapCapsLoop]
+    cases caps[idx]? with
+    | none => rfl
+    | some tc =>
+      simp only []
+      split
+      · rw [recordUnwrappedBadge_mapTcbInPlace (G := G) x]
+        exact ipcUnwrapCapsLoop_mapTcbInPlace caps endpointId rtcb fuel _ _ _ _
+          (recordUnwrappedBadge_noResizeDue _ _ _ _ hNo)
+      · cases slot? with
+        | none => rfl
+        | some dst =>
+          simp only []
+          rw [ipcTransferSingleCap_mapTcbInPlace hG x _ _ _ _ hNo]
+          cases hT : ipcTransferSingleCap tc.cap tc.srcSlot dst Z with
+          | error e => rfl
+          | ok p =>
+            obtain ⟨⟨⟩, Zp⟩ := p
+            exact ipcUnwrapCapsLoop_mapTcbInPlace caps endpointId rtcb fuel _ _ _ _
+              (ipcTransferSingleCap_noResizeDue _ _ _ _ _ hNo hT)
+
+/-- The transfer loop keeps the object table free of a pending resize. -/
+theorem ipcUnwrapCapsLoop_noResizeDue (caps : Array TransferCap)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) :
+    ∀ (fuel idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult)
+      (Z Z' : SystemState) (r : CapTransferSummary), Z.objects.noResizeDue →
+      ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc fuel Z = .ok (r, Z') →
+      Z'.objects.noResizeDue := by
+  intro fuel idx slot? acc Z Z' r hNo h
+  exact ipcUnwrapCapsLoop_rel (fun a b => b.objects.noResizeDue → a.objects.noResizeDue)
+    (fun _ h => h) (fun _ _ _ h1 h2 h => h1 (h2 h)) caps endpointId rtcb
+    (fun s i b h => recordUnwrappedBadge_noResizeDue s rtcb i b h)
+    fuel idx slot? acc Z Z' r
+    (fun _ _ _ _ _ _ hT h => ipcTransferSingleCap_noResizeDue _ _ _ _ _ h hT) h hNo
+
+include hG in
+/-- **The specification's capability transfer commutes with a link-blind
+thread write**: transferring after writing a thread's message slots, or before,
+yields the same summary and the same state up to that write. -/
+theorem receiveTransferCaps_mapTcbInPlace
+    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr))
+    (Z : SystemState) (hNo : Z.objects.noResizeDue) :
+    receiveTransferCaps req endpointId target? (Z.mapTcbInPlace x G) =
+      mapStepState x G (receiveTransferCaps req endpointId target? Z) := by
+  unfold receiveTransferCaps
+  rcases req with _ | ⟨root, addrs, depth⟩
+  · rfl
+  · simp only []
+    rw [resolveExtraCaps_congr_getCNode? (Z.mapTcbInPlace x G) Z
+      (getCNode?_mapTcbInPlace_blind (G := G) x Z)]
+    split
+    · rfl
+    · rcases target? with _ | ⟨rtcb, slot?⟩
+      · rfl
+      · exact ipcUnwrapCapsLoop_mapTcbInPlace hG x _ _ _ _ _ _ _ _ hNo
+
+theorem receiveTransferCaps_noResizeDue
+    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr))
+    (Z Z' : SystemState) (r : CapTransferSummary) (hNo : Z.objects.noResizeDue)
+    (h : receiveTransferCaps req endpointId target? Z = .ok (r, Z')) :
+    Z'.objects.noResizeDue := by
+  unfold receiveTransferCaps at h
+  rcases req with _ | ⟨root, addrs, depth⟩
+  · cases h; exact hNo
+  · simp only [] at h
+    split at h
+    · cases h; exact hNo
+    · rcases target? with _ | ⟨rtcb, slot?⟩
+      · cases h; exact hNo
+      · exact ipcUnwrapCapsLoop_noResizeDue _ _ _ _ _ _ _ _ _ _ hNo h
 
 end
 
