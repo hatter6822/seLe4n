@@ -233,7 +233,7 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     unfold dispatchOverflowedCheckedR
     rw [if_neg hI, if_neg hAu]
     exact dispatchReceiveCheckedR_eq ctx (overflowedDecode S tid rf .receive capAddr mi)
-      tid executingCore mi.length _ rfl rfl rfl hA
+      tid executingCore mi.length _ rfl rfl hA
   · -- the configure
     unfold dispatchOverflowedCheckedR
     rw [if_neg hI, if_neg hAu]
@@ -283,7 +283,7 @@ theorem dispatchWithCapChecked_eq_shortArgs (ctx : LabelingContext)
       .error (if fiveWordArgsTarget decoded.syscallId cap.target then .invalidMessageInfo
         else .invalidCapability) := by
   obtain ⟨hC, hS⟩ := decodeFiveWordArgs_short decoded rf hRegs
-  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, capRecvSlot, inlineCount, overflowCount⟩
+  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
   simp only at hR
   cases sid <;> simp only [routedOverflowOne, Bool.false_eq_true] at hR <;>

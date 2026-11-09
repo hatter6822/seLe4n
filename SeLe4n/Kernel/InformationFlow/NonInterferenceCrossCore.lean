@@ -73,20 +73,20 @@ receiver, or any boosted server. -/
 theorem endpointCallCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointCallDispatchWriteSet endpointId caller payload
-      receiverSlotBase executingCore st)
+      executingCore st)
     (hShared : sharedViewUnchanged ctx observer st
       (endpointCallCrossCoreDispatch endpointId caller payload
-        receiverSlotBase executingCore st).1) :
+        executingCore st).1) :
     projectStateOnCore ctx observer
         (endpointCallCrossCoreDispatch endpointId caller payload
-          receiverSlotBase executingCore st).1 c
+          executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
     (endpointCallCrossCoreDispatch_confinedToCores endpointId caller payload
-      receiverSlotBase executingCore st hObjInv)
+      executingCore st hObjInv)
     hShared
 
 /-- SM8.B.2 (**the live `.reply` non-interference**): the syscall arm the kernel
@@ -117,19 +117,15 @@ theorem endpointReplyRecvOnCore_crossCoreNonInterference (ctx : LabelingContext)
     {answer : Option Architecture.FaultReplyOutcome}
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
-        receiverCspaceRoot receiverSlotBase executingCore st
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg executingCore st
       = .ok (summary, st'))
-    (hne : c ∉ endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg
-      receiverCspaceRoot receiverSlotBase executingCore st)
+    (hne : c ∉ endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg executingCore st)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
-      receiverSlotBase executingCore st st' summary hObjInv hStep)
+    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg executingCore st st' summary hObjInv hStep)
     hShared
 
 /-- The `.replyRecv` arm's transition at the answer its caller's fault record
@@ -138,17 +134,14 @@ selects: a faulted caller's restart or abandon lands on the cores
 theorem replyRecvTransferOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg
-        receiverCspaceRoot receiverSlotBase executingCore st = .ok (summary, st'))
-    (hne : c ∉ replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg
-      receiverCspaceRoot receiverSlotBase executingCore st)
+    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg executingCore st = .ok (summary, st'))
+    (hne : c ∉ replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg executingCore st)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   endpointReplyRecvOnCore_crossCoreNonInterference ctx observer endpointId receiver replyId
-    prevCaller _ receiverCspaceRoot receiverSlotBase executingCore st st' summary c hObjInv hStep
+    prevCaller _ executingCore st st' summary c hObjInv hStep
     hne hShared
 
 /-- SM8.B.2 (**the live `.tcbSuspend` non-interference**): the syscall arm the
@@ -186,39 +179,38 @@ clearance of the sender or of the woken receiver. -/
 theorem endpointSendDualWithCapsOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointSendWriteSet st endpointId executingCore)
     (hShared : sharedViewUnchanged ctx observer st
       (endpointSendDualWithCapsOnCore endpointId sender payload
-        receiverSlotBase executingCore st).1) :
+        executingCore st).1) :
     projectStateOnCore ctx observer
         (endpointSendDualWithCapsOnCore endpointId sender payload
-          receiverSlotBase executingCore st).1 c
+          executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
     (endpointSendDualWithCapsOnCore_confinedToCores endpointId sender payload
-      receiverSlotBase executingCore st hObjInv)
+      executingCore st hObjInv)
     hShared
 
 /-- SM8.B.2 (**the live checked `.send` non-interference**). -/
 theorem endpointSendCrossCoreDispatchChecked_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointSendWriteSet st endpointId executingCore)
     (hShared : sharedViewUnchanged ctx observer st
       (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-        receiverSlotBase executingCore st).1) :
+        executingCore st).1) :
     projectStateOnCore ctx observer
         (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-          receiverSlotBase executingCore st).1 c
+          executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
     (endpointSendCrossCoreDispatchChecked_confinedToCores ctx endpointId sender payload
-      receiverSlotBase executingCore st hObjInv)
+      executingCore st hObjInv)
     hShared
 
 /-- SM8.B.2 (**the live `.schedContextUnbind` non-interference**): unbinding is
@@ -680,20 +672,17 @@ this is the receive's turn. The bound is unchanged, because the install writes
 no core. -/
 theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointReceiveDualWriteSet st endpointId executingCore)
     (hShared : sharedViewUnchanged ctx observer st
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1) :
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1) :
     projectStateOnCore ctx observer
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1 c
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId
-      receiverCspaceRoot receiverSlotBase executingCore st hObjInv)
+    (endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId executingCore st hObjInv)
     hShared
 
 /-- SM8.B.2 (SM6.B, **the live `.signal` bound-delivery arm**): a bound-aware

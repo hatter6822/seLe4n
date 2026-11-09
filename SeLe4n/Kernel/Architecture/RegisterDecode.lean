@@ -93,9 +93,9 @@ open SeLe4n.Model
     operations, each small enough to be a scalar, so a word `≥ 2^63` builds no
     heap number (`decodeMsgInfoWord_eq`). -/
 @[inline] def decodeMsgInfoWord (w : UInt64) : Except KernelError MessageInfo :=
-  if (w &&& 0x7F) ≤ 120 && ((w >>> 7) &&& 3) ≤ 3 && (w >>> 9) ≤ 0xFFFFF then
+  if (w &&& 0x7F) ≤ 120 && ((w >>> 7) &&& 3) ≤ 3 && (w >>> 12) ≤ 0xFFFFF then
     .ok { length := (w &&& 0x7F).toNat, extraCaps := ((w >>> 7) &&& 3).toNat,
-          label := (w >>> 9).toNat }
+          label := (w >>> 12).toNat, capsUnwrapped := ((w >>> 9) &&& 7).toNat }
   else .error .invalidMessageInfo
 
 theorem decodeMsgInfoWord_eq (w : UInt64) :
@@ -104,10 +104,12 @@ theorem decodeMsgInfoWord_eq (w : UInt64) :
   have h1 : (w &&& 0x7F).toNat = w.toNat &&& 0x7F := by simp [UInt64.toNat_and]
   have h2 : ((w >>> 7) &&& 3).toNat = (w.toNat >>> 7) &&& 0x3 := by
     simp [UInt64.toNat_and, UInt64.toNat_shiftRight]
-  have h3 : (w >>> 9).toNat = w.toNat >>> 9 := by simp [UInt64.toNat_shiftRight]
-  simp only [UInt64.le_iff_toNat_le, h1, h2, h3]
+  have h3 : (w >>> 12).toNat = w.toNat >>> 12 := by simp [UInt64.toNat_shiftRight]
+  have h4 : ((w >>> 9) &&& 7).toNat = (w.toNat >>> 9) &&& 0x7 := by
+    simp [UInt64.toNat_and, UInt64.toNat_shiftRight]
+  simp only [UInt64.le_iff_toNat_le, h1, h2, h3, h4]
   simp only [maxMessageRegisters, Model.maxExtraCaps, MessageInfo.maxLabel]
-  by_cases hc : ((w.toNat &&& 127 ≤ 120 ∧ w.toNat >>> 7 &&& 3 ≤ 3) ∧ w.toNat >>> 9 ≤ 1048575)
+  by_cases hc : ((w.toNat &&& 127 ≤ 120 ∧ w.toNat >>> 7 &&& 3 ≤ 3) ∧ w.toNat >>> 12 ≤ 1048575)
   · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
     simp [hc]
   · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
@@ -398,10 +400,11 @@ theorem decodeSyscallId_roundtrip (s : SyscallId) :
 theorem decodeMsgInfo_roundtrip (mi : MessageInfo)
     (hLen : mi.length ≤ maxMessageRegisters)
     (hCaps : mi.extraCaps ≤ maxExtraCaps)
-    (hLabel : mi.label ≤ MessageInfo.maxLabel := by omega) :
+    (hLabel : mi.label ≤ MessageInfo.maxLabel := by omega)
+    (hUnw : mi.capsUnwrapped ≤ MessageInfo.maxCapsUnwrapped := by omega) :
     decodeMsgInfo (encodeMsgInfo mi) = .ok mi := by
   simp only [decodeMsgInfo, encodeMsgInfo]
-  have h := MessageInfo.encode_decode_roundtrip mi hLen hCaps hLabel
+  have h := MessageInfo.encode_decode_roundtrip mi hLen hCaps hLabel hUnw
   simp only [h]
 
 /-- All three per-component round-trips compose: given a well-formed
@@ -412,12 +415,13 @@ theorem decode_components_roundtrip (decoded : SyscallDecodeResult)
     (hLen : decoded.msgInfo.length ≤ maxMessageRegisters)
     (hCaps : decoded.msgInfo.extraCaps ≤ maxExtraCaps)
     (hLabel : decoded.msgInfo.label ≤ MessageInfo.maxLabel := by omega)
+    (hUnw : decoded.msgInfo.capsUnwrapped ≤ MessageInfo.maxCapsUnwrapped := by omega)
     (hCapBound : isWord64 decoded.capAddr.toNat) :
     decodeCapPtr (encodeCapPtr decoded.capAddr) = .ok decoded.capAddr ∧
     decodeMsgInfo (encodeMsgInfo decoded.msgInfo) = .ok decoded.msgInfo ∧
     decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId :=
   ⟨decodeCapPtr_roundtrip decoded.capAddr hCapBound,
-   decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps hLabel,
+   decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps hLabel hUnw,
    decodeSyscallId_roundtrip decoded.syscallId⟩
 
 -- ============================================================================

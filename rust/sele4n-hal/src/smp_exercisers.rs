@@ -2194,7 +2194,7 @@ const LONG_SEND_LENGTH: u64 = 6;
 const INVALID_MESSAGE_INFO: u64 = 32;
 #[cfg(feature = "hw_target")]
 const REFUSED_MESSAGE_INFO: Option<(u64, Option<u64>)> = Some((
-    (crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_MESSAGE_INFO) << 9,
+    (crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_MESSAGE_INFO) << 12,
     None,
 ));
 
@@ -3211,7 +3211,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         // place; then the buffers put back.
         RoundTrip {
             returns: Some((
-                (crate::svc_dispatch::ERROR_LABEL_BASE + ALIGNMENT_ERROR) << 9,
+                (crate::svc_dispatch::ERROR_LABEL_BASE + ALIGNMENT_ERROR) << 12,
                 None,
             )),
             ..invocation(
@@ -5320,7 +5320,7 @@ const DECLASSIFICATION_REFUSAL: RoundTrip = RoundTrip {
     primed: None,
     blocks: false,
     returns: Some((
-        (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 9,
+        (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
         None,
     )),
 };
@@ -5749,7 +5749,7 @@ const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     primed: None,
     blocks: false,
     returns: Some((
-        (crate::svc_dispatch::ERROR_LABEL_BASE + DECLASSIFICATION_DENIED_AT_RECEIVER) << 9,
+        (crate::svc_dispatch::ERROR_LABEL_BASE + DECLASSIFICATION_DENIED_AT_RECEIVER) << 12,
         None,
     )),
 };
@@ -6526,7 +6526,7 @@ const HEAP_REFUSED_RETYPE: RoundTrip = RoundTrip {
     primed: None,
     blocks: false,
     returns: Some((
-        (crate::svc_dispatch::ERROR_LABEL_BASE + UNTYPED_REGION_EXHAUSTED) << 9,
+        (crate::svc_dispatch::ERROR_LABEL_BASE + UNTYPED_REGION_EXHAUSTED) << 12,
         None,
     )),
 };
@@ -7055,7 +7055,7 @@ const FAULT_HANDLER_CAP: u64 = cap_address(FAULT_HANDLER_SLOT);
 /// (`seL4_Fault_VMFault`, 6, the MCS layout's) as the label and its four
 /// words as the length.
 #[cfg(feature = "hw_target")]
-const VM_FAULT_MESSAGE_INFO: u64 = (6 << 9) | 4;
+const VM_FAULT_MESSAGE_INFO: u64 = (6 << 12) | 4;
 
 /// The five faults each fault scenario raises: a data abort and an
 /// instruction abort (seL4's `handleVMFaultEvent`), a capability fault at an
@@ -7578,14 +7578,14 @@ fn dispatch_round_trip_at(
         // returns the fault's tag as its label, which the round trip names
         // exactly (`returns`).
         Ok(crate::svc_dispatch::SvcOutcome::Frame(regs))
-            if regs[1] >> 9 == 0 || trip.returns.is_some_and(|(x1, _)| regs[1] == x1) =>
+            if regs[1] >> 12 == 0 || trip.returns.is_some_and(|(x1, _)| regs[1] == x1) =>
         {
             Dispatched::Returned(regs)
         }
         Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: refused (x1 label {:#x})",
-                regs[1] >> 9
+                regs[1] >> 12
             );
             Dispatched::Failed
         }
@@ -8174,7 +8174,7 @@ fn heap_allocations_round_trip_resuming(
             // names the slot it emptied, so the gate can relate each carved
             // kind to the delete of its capability (WS-UC UC1).
             if trip.syscall == UNTYPED_RETYPE
-                && regs[1] >> 9 < crate::svc_dispatch::ERROR_LABEL_BASE
+                && regs[1] >> 12 < crate::svc_dispatch::ERROR_LABEL_BASE
             {
                 crate::kprintln!(
                     "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: carved {}/{} at {} into {:#x}/{}",
@@ -8186,7 +8186,7 @@ fn heap_allocations_round_trip_resuming(
                 );
             }
             if trip.syscall == CSPACE_DELETE
-                && regs[1] >> 9 < crate::svc_dispatch::ERROR_LABEL_BASE
+                && regs[1] >> 12 < crate::svc_dispatch::ERROR_LABEL_BASE
             {
                 crate::kprintln!(
                     "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: deleted {:#x}/{}",

@@ -171,80 +171,46 @@ transferred cap has a valid badge. The CDT-edge step (`addEdge`) leaves objects
 unchanged, so the badge effect is exactly the
 `cspaceInsertSlot` write. -/
 theorem ipcTransferSingleCap_preserves_badgeWellFormed
-    (cap : Capability) (srcNode : SlotRef)
-    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
-    (scanLimit : Nat) (st st' : SystemState) (result : CapTransferResult)
+    (cap : Capability) (srcNode : SlotRef) (dst : CSpaceAddr) (st st' : SystemState)
     (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
     (hCapValid : ∀ b, cap.badge = some b → b.valid)
-    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
-             = .ok (result, st')) :
+    (hStep : ipcTransferSingleCap cap srcNode dst st = .ok ((), st')) :
     badgeWellFormed st' := by
-  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨emptySlot, st2, -, -, -, hIns, -, rfl⟩⟩ :=
-    ipcTransferSingleCap_ok_cases hStep
-  · exact hInv
-  · have hInvMid := cspaceInsertSlot_preserves_objects_invExt st st2 _ cap.withoutMapping hObjInv hIns
-    have hAdd := SystemState.cdtAddChild_agreeObjects hInvMid srcNode
-      { cnode := receiverRoot, slot := emptySlot } .ipcTransfer
-    exact untypedSourceSetFull_preserves_badgeWellFormed
-      (badgeWellFormed_of_agreeOffDerivationLinks hAdd.1
-        (cspaceInsertSlot_preserves_badgeWellFormed st st2
-          { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv hObjInv hCapValid hIns))
-      hAdd.2
-
-/-- IPC de-threading D8: `ipcUnwrapCapsLoop` preserves `badgeWellFormed` when every
-cap in `caps` carries a valid badge (each transferred cap feeds the single-cap
-frame; the error/short-circuit branch leaves state unchanged). -/
-theorem ipcUnwrapCapsLoop_preserves_badgeWellFormed
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
-    (hCaps : ∀ (i : Nat) (c : TransferCap), caps[i]? = some c → ∀ b, c.cap.badge = some b → b.valid)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    badgeWellFormed st' := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact hInv
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact hInv
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hInvNext := ipcTransferSingleCap_preserves_badgeWellFormed tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hInv hObjInv (hCaps idx tc hCap) hTransfer
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact ih _ _ _ _ hInvNext hObjInvNext hStep
-        | noSlot => exact ih _ _ _ _ hInvNext hObjInvNext hStep
-        | grantDenied => exact ih _ _ _ _ hInvNext hObjInvNext hStep
-        | sourceRevoked => exact ih _ _ _ _ hInvNext hObjInvNext hStep
+  obtain ⟨_, st2, -, -, -, hIns, rfl⟩ := ipcTransferSingleCap_ok_cases hStep
+  have hInvMid := cspaceInsertSlot_preserves_objects_invExt st st2 _ cap.withoutMapping hObjInv hIns
+  have hAdd := SystemState.cdtAddChild_agreeObjects hInvMid srcNode dst .ipcTransfer
+  exact untypedSourceSetFull_preserves_badgeWellFormed
+    (badgeWellFormed_of_agreeOffDerivationLinks hAdd.1
+      (cspaceInsertSlot_preserves_badgeWellFormed st st2 dst cap.withoutMapping hInv hObjInv
+        hCapValid hIns))
+    hAdd.2
 
 /-- IPC de-threading D8: `ipcUnwrapCaps` preserves `badgeWellFormed` when every message
-cap carries a valid badge. Grant-denied path leaves state unchanged. -/
+cap carries a valid badge: an install writes one of them (each transferred cap
+feeds the single-cap frame), and an unwrapped badge goes to the receiver's
+buffer, not to any slot. -/
 theorem ipcUnwrapCaps_preserves_badgeWellFormed
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
     (hCaps : ∀ (i : Nat) (c : TransferCap), caps[i]? = some c → ∀ b, c.cap.badge = some b → b.valid)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
-    badgeWellFormed st' := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
-  · exact ipcUnwrapCapsLoop_preserves_badgeWellFormed _ _ _ _ _ _ _ _ _ hInv hObjInv hCaps hStep
+    (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    badgeWellFormed st' :=
+  (ipcUnwrapCaps_rel
+    (fun a b => badgeWellFormed b → b.objects.invExt → badgeWellFormed a ∧ a.objects.invExt)
+    (fun _ h1 h2 => ⟨h1, h2⟩)
+    (fun _ _ _ h1 h2 hA hI => let r := h2 hA hI; h1 r.1 r.2)
+    (fun s i b hA hI => by
+      unfold recordUnwrappedBadge
+      split
+      · exact ⟨hA, hI⟩
+      · exact ⟨hA, hI⟩)
+    (fun dst s s' tc _ ⟨i, hi⟩ hT hA hI =>
+      ⟨ipcTransferSingleCap_preserves_badgeWellFormed tc.cap tc.srcSlot dst s s' hA hI
+          (hCaps i tc hi) hT,
+        ipcTransferSingleCap_preserves_objects_invExt _ _ _ _ _ hI hT⟩)
+    hStep hInv hObjInv).1
 
 -- ============================================================================
 -- M3-E4: dualQueueSystemInvariant preservation for WithCaps wrappers
@@ -252,67 +218,40 @@ theorem ipcUnwrapCaps_preserves_badgeWellFormed
 
 /-- M3-E4: ipcUnwrapCaps preserves dualQueueSystemInvariant.
 ipcUnwrapCaps only modifies CNode objects and CDT — endpoint objects, TCB objects
-(queue links), and scheduler state are all preserved. The CNode precondition is
-established by `lookupCspaceRoot` which verifies receiverRoot is a CNode. -/
+(queue links), and scheduler state are all preserved. -/
 theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : dualQueueSystemInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st
              = .ok (summary, st')) :
     dualQueueSystemInvariant st' := by
-  -- WS-RR RR3.11: the CNode at the receiver root is no longer a hypothesis. When
-  -- the root is not a CNode the transfer cannot write anything
-  -- (`ipcUnwrapCaps_state_eq_of_root_not_cnode`), so the invariant carries for the
-  -- trivial reason; when it is, the original argument applies. Taking the CNode as
-  -- a hypothesis is what forced the `*WithCaps` wrappers to quantify it over *every*
-  -- ObjId, which no state with an endpoint in it satisfies -- so those wrappers, and
-  -- the `ipcInvariantFull` bundles above them, were vacuous on their own success path.
-  cases hCnOpt : st.getCNode? receiverRoot with
-  | none =>
-    rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps receiverRoot slotBase grantRight
-      st st' summary hCnOpt hStep]
-    exact hInv
-  | some cn =>
-  have hCn : st.objects[receiverRoot]? = some (.cnode cn) :=
-    (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCnOpt
-  -- receiverRoot stays CNode throughout the operation
-  have ⟨cn', hCn'⟩ := ipcUnwrapCaps_preserves_cnode_at_root caps receiverRoot
-    slotBase grantRight st st' summary cn hCn hObjInv hStep
   obtain ⟨hEpWf, hLink, hAcyclic, hPP, hHD⟩ := hInv
   -- Helper: transfer TCB preservation from st to st' for any oid
   have tcbTransfer : ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
       st.objects[oid]? = some (KernelObject.tcb tcb) →
       ∃ tcb', st'.objects[oid]? = some (KernelObject.tcb tcb') ∧
         tcb'.withoutLinks = tcb.withoutLinks :=
-    fun oid tcb h => ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
-      grantRight st st' summary oid tcb h hObjInv hStep
+    fun oid tcb h => ipcUnwrapCaps_preserves_tcb_objects caps endpointId rtcb
+      slot? st st' summary oid tcb h hObjInv hStep
   -- Helper: pull a post-state TCB back, off its slot links
   have tcbBack : ∀ (oid : SeLe4n.ObjId) (tcb' : TCB),
       st'.objects[oid]? = some (KernelObject.tcb tcb') →
       ∃ tcb, st.objects[oid]? = some (KernelObject.tcb tcb) ∧
         tcb'.withoutLinks = tcb.withoutLinks :=
-    fun oid tcb' h => ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase
-      grantRight st st' summary oid tcb' hObjInv hStep h
-  -- Helper: transfer object identity from st' to st for non-receiverRoot
-  have objBack : ∀ oid, oid ≠ receiverRoot → ∀ {o : KernelObject},
-      st'.objects[oid]? = some o → (∀ cn, o ≠ .cnode cn) → (∀ t, o ≠ .tcb t) →
-      st.objects[oid]? = some o :=
-    fun oid hNe {_} h' hn ht => (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase
-      grantRight st st' summary oid hNe hObjInv hStep).obj_back h' hn ht
+    fun oid tcb' h => ipcUnwrapCaps_tcb_backward caps endpointId rtcb
+      slot? st st' summary oid tcb' hObjInv hStep h
   have hLinkFwd := hLink.1
   have hLinkBwd := hLink.2
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
   -- Part 1: endpoint well-formedness
   · intro epId ep hEpSt'
-    -- ep is the same in st (receiverRoot is CNode, can't be endpoint)
-    have hEpPre : st.objects[epId]? = some (.endpoint ep) := by
-      by_cases hNe : epId = receiverRoot
-      · subst hNe; simp [hCn'] at hEpSt'
-      · exact objBack epId hNe hEpSt' (fun _ e => KernelObject.noConfusion e)
-          (fun _ e => KernelObject.noConfusion e)
+    -- ep is the same in st (the transfer writes only a CNode)
+    have hEpPre : st.objects[epId]? = some (.endpoint ep) :=
+      ipcUnwrapCaps_endpoint_backward caps endpointId rtcb slot? st st' summary epId ep hObjInv
+        hStep hEpSt'
     -- dualQueueEndpointWellFormed in st, reduced via hEpPre
     have hWf := hEpWf epId ep hEpPre
     unfold dualQueueEndpointWellFormed at hWf ⊢
@@ -371,52 +310,25 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
     exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hPP tid t0 h0)
   -- Part 5 (**PR #897 review**): the fifth conjunct.  The transfer writes the
   -- receiver's CSpace root, so no endpoint object moves.
-  · refine endpointQueueHeadDisjoint_of_endpointBackward (fun epId ep hEp => ?_) hHD
-    by_cases hNe : epId = receiverRoot
-    · subst hNe; simp [hCn'] at hEp
-    · exact objBack _ hNe hEp (fun _ e => KernelObject.noConfusion e)
-        (fun _ e => KernelObject.noConfusion e)
-
-/-- WS-RR RR2.14: a Reply object present after a capability transfer was present
-before it. The transfer writes the receiver's CSpace root and nothing else
-(`ipcUnwrapCaps_preserves_objects_ne`), and the root holds a CNode after the
-write, so a post-state Reply is at a different key and reads through. The
-missing sibling of `ipcUnwrapCaps_tcb_backward` / `_endpoint_backward`. -/
-theorem ipcUnwrapCaps_reply_backward
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (r : Reply)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st'))
-    (hReply' : st'.objects[oid]? = some (.reply r)) :
-    st.objects[oid]? = some (.reply r) := by
-  by_cases hNe : oid = receiverRoot
-  · rw [hNe] at hReply' ⊢
-    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps receiverRoot slotBase
-      grantRight st st' summary hObjInv hStep with h | ⟨cn, h⟩
-    · rw [← h]; exact hReply'
-    · rw [h] at hReply'; cases hReply'
-  · exact (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase grantRight
-      st st' summary oid hNe hObjInv hStep).obj_back hReply'
-      (fun _ e => KernelObject.noConfusion e)
+  · exact endpointQueueHeadDisjoint_of_endpointBackward (fun epId ep hEp =>
+      ipcUnwrapCaps_endpoint_backward caps endpointId rtcb slot? st st' summary epId ep hObjInv
+        hStep hEp) hHD
 
 /-- WS-RR RR2.14: the capability transfer preserves
 `blockedThreadsPendingMessageConsistent` — it writes no thread field but slot
 links, so every post-state TCB is its pre-state self off them
 (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hInv : blockedThreadsPendingMessageConsistent st)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st
              = .ok (summary, st')) :
     blockedThreadsPendingMessageConsistent st' := by
   intro tid tcb hTcb'
-  obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+  obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps endpointId rtcb slot?
     st st' summary tid.toObjId tcb hObjInv hStep hTcb'
   exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hInv tid t0 h0)
 
@@ -425,28 +337,28 @@ theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
 pre-state self, a pre-state Reply survives forward, and a post-state Reply was
 one before (`ipcUnwrapCaps_reply_backward`). -/
 theorem ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hInv : replyCallerLinkageReciprocal st)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st
              = .ok (summary, st')) :
     replyCallerLinkageReciprocal st' := by
   refine ⟨?_, ?_⟩
   · intro tid tcb rid hTcb' hRO
-    obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+    obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps endpointId rtcb slot?
       st st' summary tid.toObjId tcb hObjInv hStep hTcb'
     obtain ⟨r, hr, hrc⟩ := hInv.1 tid t0 rid h0
       (TCB.of_withoutLinks_eq hw.symm (fun _ => Iff.rfl) hRO)
-    exact ⟨r, ipcUnwrapCaps_preserves_reply_objects caps receiverRoot slotBase
-      grantRight st st' summary rid.toObjId r hr hObjInv hStep, hrc⟩
+    exact ⟨r, ipcUnwrapCaps_preserves_reply_objects caps endpointId rtcb
+      slot? st st' summary rid.toObjId r hr hObjInv hStep, hrc⟩
   · intro rid r tid hr' hrc
     obtain ⟨tcb, hTcb, hRO, hBlk⟩ := hInv.2 rid r tid
-      (ipcUnwrapCaps_reply_backward caps receiverRoot slotBase grantRight
+      (ipcUnwrapCaps_reply_backward caps endpointId rtcb slot?
         st st' summary rid.toObjId r hObjInv hStep hr') hrc
-    obtain ⟨t', h', hw⟩ := ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
-      grantRight st st' summary tid.toObjId tcb hTcb hObjInv hStep
+    obtain ⟨t', h', hw⟩ := ipcUnwrapCaps_preserves_tcb_objects caps endpointId rtcb
+      slot? st st' summary tid.toObjId tcb hTcb hObjInv hStep
     exact ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hRO,
       TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hBlk⟩
 
@@ -457,7 +369,6 @@ receiver's cspaceRoot points to an actual CNode in the intermediate state. -/
 theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : dualQueueSystemInvariant st)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
@@ -477,11 +388,11 @@ theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
     -- `∀ recvRoot, ... ∃ cn, stMid.objects[recvRoot]? = some (.cnode cn)` — every
     -- ObjId a CNode — which is false in any state holding the endpoint this step
     -- requires, so the theorem asserted nothing on its own success path. The
-    -- transfer's frame now covers the non-CNode case itself
-    -- (`ipcUnwrapCaps_state_eq_of_root_not_cnode`: it writes nothing).
+    -- transfer's frame covers it itself (`ipcUnwrapCaps_object_cases`: it writes
+    -- only the CNode of the receive slot its receiver's IPC buffer names).
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender payload
-              receiverSlotBase st = .ok (summary, st')) :
+              st = .ok (summary, st')) :
     dualQueueSystemInvariant st' := by
   have hStepW := hStep
   simp only [endpointSendDualWithCaps] at hStep
@@ -498,18 +409,18 @@ theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
     obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hT
     have hInvR : dualQueueSystemInvariant stR :=
       dualQueueSystemInvariant_of_storeAgrees (fun k => by rw [hO]) hInvMid
-    rcases hOr with rfl | hU
+    rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
     · exact hInvR
-    · exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant _ recvRoot
-        receiverSlotBase _ stR _ _ hInvR (hO ▸ hObjInvMid) hU
+    · exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant _ _ _ _
+        stR _ _ hInvR (hO ▸ hObjInvMid) hU
 
 /-- M3-E4: endpointReceiveDualWithCaps preserves dualQueueSystemInvariant.
 Composes endpointReceiveDual base preservation with ipcUnwrapCaps preservation. -/
 theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot)
+
+
     (st st' : SystemState) (senderId : SeLe4n.ThreadId)
     (summary : CapTransferSummary)
     (hInv : dualQueueSystemInvariant st)
@@ -529,8 +440,7 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
     -- WS-RR RR3.11: the receiver-root CNode hypothesis is gone — the transfer's own
     -- frame covers the non-CNode case (it writes nothing there).
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
-              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId st = .ok ((senderId, summary), st')) :
     dualQueueSystemInvariant st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
   cases hRecv : endpointReceiveDual endpointId receiver replyId st with
@@ -550,8 +460,7 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
     simp only [hRv] at hStep
     -- WS-ZA ZA4.7: the dequeued sender's capabilities are resolved (CDT nodes
     -- only) and installed (`receiveTransferCaps_frame`).
-    cases hT : receiveTransferCaps (receiveCapRequest st endpointId) receiverCspaceRoot
-        receiverSlotBase stMid with
+    cases hT : receiveTransferCaps (receiveCapRequest st endpointId) endpointId (receiverCapTarget? st receiver) stMid with
     | error e => simp [hT] at hStep
     | ok p =>
       obtain ⟨s, stF⟩ := p
@@ -560,10 +469,9 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
       obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hT
       have hInvR : dualQueueSystemInvariant stR :=
         dualQueueSystemInvariant_of_storeAgrees (fun k => by rw [hO]) hInvMid
-      rcases hOr with rfl | hU
+      rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
       · exact hInvR
-      · exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant _ receiverCspaceRoot
-          receiverSlotBase _ stR _ _ hInvR (hO ▸ hObjInvMid) hU
+      · exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant _ _ _ _ stR _ _ hInvR (hO ▸ hObjInvMid) hU
 /-- WS-RR RR3.11: `endpointCallWithCaps` preserves `dualQueueSystemInvariant` —
 the missing third member of the M3-E4 WithCaps family (send and receive already
 had one, and its absence is why the `.call` bundle threaded the conjunct on its
@@ -571,7 +479,6 @@ post-state). Composes the base call preservation with the cap-transfer frame. -/
 theorem endpointCallWithCaps_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : dualQueueSystemInvariant st)
     (hObjInv : st.objects.invExt)
@@ -589,7 +496,7 @@ theorem endpointCallWithCaps_preserves_dualQueueSystemInvariant
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointCallWithCaps endpointId caller payload
-             receiverSlotBase st = .ok (summary, st')) :
+             st = .ok (summary, st')) :
     dualQueueSystemInvariant st' := by
   have hStepW := hStep
   simp only [endpointCallWithCaps] at hStep
@@ -607,10 +514,10 @@ theorem endpointCallWithCaps_preserves_dualQueueSystemInvariant
     obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hT
     have hInvR : dualQueueSystemInvariant stR :=
       dualQueueSystemInvariant_of_storeAgrees (fun k => by rw [hO]) hMid
-    rcases hOr with rfl | hU
+    rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
     · exact hInvR
-    · exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant _ recvRoot
-        receiverSlotBase _ stR _ _ hInvR (hO ▸ hObjInvMid) hU
+    · exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant _ _ _ _
+        stR _ _ hInvR (hO ▸ hObjInvMid) hU
 
 -- ============================================================================
 -- WS-RR RR3.11: `badgeWellFormed` for the WithCaps wrappers.
@@ -636,12 +543,11 @@ from the pre-state; the caps it installs are resolved from the sender's CSpace. 
 theorem endpointSendDualWithCaps_preserves_badgeWellFormed
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender payload
-             receiverSlotBase st = .ok (summary, st')) :
+             st = .ok (summary, st')) :
     badgeWellFormed st' := by
   have hStepW := hStep
   simp only [endpointSendDualWithCaps] at hStep
@@ -660,10 +566,10 @@ theorem endpointSendDualWithCaps_preserves_badgeWellFormed
     have hMidR : badgeWellFormed stR :=
       ⟨fun oid n b h hb => hMid.1 oid n b (hO ▸ h) hb,
        fun oid cn slot cap b h => hMid.2 oid cn slot cap b (hO ▸ h)⟩
-    rcases hOr with rfl | hU
+    rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
     · exact hMidR
-    · exact ipcUnwrapCaps_preserves_badgeWellFormed _ recvRoot
-        receiverSlotBase _ stR _ _ hMidR (hO ▸ hObjInvMid)
+    · exact ipcUnwrapCaps_preserves_badgeWellFormed _ _ _ _
+        stR _ _ hMidR (hO ▸ hObjInvMid)
         (fun i c hc b hb => hCaps hMid.2 i c hc b hb) hU
 
 /-- WS-RR RR3.11: `endpointCallWithCaps` **establishes** `badgeWellFormed`
@@ -671,12 +577,11 @@ from the pre-state; the caps it installs are resolved from the caller's CSpace. 
 theorem endpointCallWithCaps_preserves_badgeWellFormed
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller payload
-             receiverSlotBase st = .ok (summary, st')) :
+             st = .ok (summary, st')) :
     badgeWellFormed st' := by
   have hStepW := hStep
   simp only [endpointCallWithCaps] at hStep
@@ -694,10 +599,10 @@ theorem endpointCallWithCaps_preserves_badgeWellFormed
     have hMidR : badgeWellFormed stR :=
       ⟨fun oid n b h hb => hMid.1 oid n b (hO ▸ h) hb,
        fun oid cn slot cap b h => hMid.2 oid cn slot cap b (hO ▸ h)⟩
-    rcases hOr with rfl | hU
+    rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
     · exact hMidR
-    · exact ipcUnwrapCaps_preserves_badgeWellFormed _ recvRoot
-        receiverSlotBase _ stR _ _ hMidR (hO ▸ hObjInvMid)
+    · exact ipcUnwrapCaps_preserves_badgeWellFormed _ _ _ _
+        stR _ _ hMidR (hO ▸ hObjInvMid)
         (fun i c hc b hb => hCaps hMid.2 i c hc b hb) hU
 
 /-- WS-RR RR3.11: `endpointReceiveDualWithCaps` **establishes** `badgeWellFormed`
@@ -709,13 +614,11 @@ the at-rest badge invariant of that CSpace, already part of `badgeWellFormed`. -
 theorem endpointReceiveDualWithCaps_preserves_badgeWellFormed
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId)
     (summary : CapTransferSummary)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
-             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId st = .ok ((senderId, summary), st')) :
     badgeWellFormed st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
   cases hRecv : endpointReceiveDual endpointId receiver replyId st with
@@ -735,8 +638,7 @@ theorem endpointReceiveDualWithCaps_preserves_badgeWellFormed
     -- WS-ZA ZA4.7: the installed capabilities are the sender's own, resolved from
     -- its CSpace at the rendezvous, so their badges are valid because the badges
     -- at rest in that CSpace are (`receiveTransferCaps_frame`).
-    cases hT : receiveTransferCaps (receiveCapRequest st endpointId) receiverCspaceRoot
-        receiverSlotBase stMid with
+    cases hT : receiveTransferCaps (receiveCapRequest st endpointId) endpointId (receiverCapTarget? st receiver) stMid with
     | error e => simp [hT] at hStep
     | ok p =>
       obtain ⟨s, stF⟩ := p
@@ -746,10 +648,9 @@ theorem endpointReceiveDualWithCaps_preserves_badgeWellFormed
       have hMidR : badgeWellFormed stR :=
         ⟨fun oid n b h hb => hMid.1 oid n b (hO ▸ h) hb,
          fun oid cn slot cap b h => hMid.2 oid cn slot cap b (hO ▸ h)⟩
-      rcases hOr with rfl | hU
+      rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
       · exact hMidR
-      · exact ipcUnwrapCaps_preserves_badgeWellFormed _ receiverCspaceRoot
-          receiverSlotBase _ stR _ _ hMidR (hO ▸ hObjInvMid)
+      · exact ipcUnwrapCaps_preserves_badgeWellFormed _ _ _ _ stR _ _ hMidR (hO ▸ hObjInvMid)
           (fun i c hc b hb => hCaps hMid.2 i c hc b hb) hU
 
 

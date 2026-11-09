@@ -157,17 +157,15 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .send =>
       ops.targetObject.bind fun epId =>
         LockSet.ofList? (schedLockSet_endpointSendOnCore st epId executingCore)
-  -- **WS-LS LS2.3**: the receiver's CSpace root is read the way `.replyRecv`'s
-  -- is (`abiEntrySchedReceiverCspaceRoot`), and the slot base is the syscall's
-  -- own operand, because the footprint now re-runs the receive leg to read the
-  -- chain walk's write set at the state the walk runs on.
+  -- **WS-LS LS2.3**: the footprint re-runs the receive leg to read the chain
+  -- walk's write set at the state the walk runs on.  The capability transfer's
+  -- receive slot is named by the receiver's IPC buffer, which the leg reads off
+  -- the state itself, so the arm reads no operand beyond the endpoint.
   | .receive =>
       ops.targetObject.bind fun epId =>
-        ops.receiverSlotBase.bind fun slotBase =>
-          (st.getTcb? ops.caller).bind fun receiver =>
-            LockSet.ofList?
-              (schedLockSet_endpointReceiveOnCore st epId ops.caller ops.targetReply
-                receiver.cspaceRoot slotBase executingCore)
+        LockSet.ofList?
+          (schedLockSet_endpointReceiveOnCore st epId ops.caller ops.targetReply
+            executingCore)
   -- **WS-ZA ZA4.7**: read at the entry's own state.  The call resolves no
   -- capability before it runs -- the transfer is looked up at the rendezvous
   -- (`sendCapRequest`) -- so the write set, which re-runs the dispatch, reads
@@ -175,10 +173,8 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .call =>
       ops.targetObject.bind fun epId =>
         ops.payload.bind fun payload =>
-          ops.receiverSlotBase.bind fun slotBase =>
-            LockSet.ofList?
-              (schedLockSet_endpointCallOnCore epId ops.caller payload slotBase
-                executingCore st)
+          LockSet.ofList?
+            (schedLockSet_endpointCallOnCore epId ops.caller payload executingCore st)
   | .reply =>
       ops.targetReply.bind fun rid =>
         (replyAnsweredCaller? st rid).bind fun answered =>
@@ -192,13 +188,11 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
       ops.targetObject.bind fun epId =>
         ops.targetReply.bind fun rid =>
           (replyAnsweredCaller? st rid).bind fun prevCaller =>
-            (st.getTcb? ops.caller).bind fun receiver =>
-              ops.message.bind fun msg =>
-                ops.replyMessageInfo.bind fun mi =>
-                  ops.receiverSlotBase.bind fun slotBase =>
-                    LockSet.ofList?
-                      (schedLockSet_replyRecvTransferOnCore epId ops.caller rid prevCaller
-                        mi.label msg receiver.cspaceRoot slotBase executingCore st)
+            ops.message.bind fun msg =>
+              ops.replyMessageInfo.bind fun mi =>
+                LockSet.ofList?
+                  (schedLockSet_replyRecvTransferOnCore epId ops.caller rid prevCaller
+                    mi.label msg executingCore st)
   -- **WS-ZA ZA5.4 part 23**: a delete that destroys the last capability to an
   -- endpoint or a notification wakes its cancelled waiters on their own cores,
   -- one that destroys the last capability to a thread or a scheduling context
@@ -380,16 +374,14 @@ theorem schedLockSetForSyscall_schedContextConfigure_isSome_iff (ops : SyscallLo
   cases ops.targetObject <;> cases ops.controlCore <;>
     simp [LockSet.ofList?, schedLockSet_schedControlConfigure, schedFootprintOfCores_keys_nodup]
 
-/-- `.receive` needs the endpoint, the receiver's slot base and the receiver's
-TCB (its CSpace root) — **WS-LS LS2.3**: its footprint re-runs the receive leg,
-which reads all three. -/
+/-- `.receive` needs the endpoint — **WS-LS LS2.3**: its footprint re-runs the
+receive leg, which reads the receive slot off the receiver's IPC buffer. -/
 theorem schedLockSetForSyscall_receive_isSome_iff
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .receive ops executingCore st).isSome
-      ↔ ops.targetObject.isSome ∧ ops.receiverSlotBase.isSome ∧
-        (st.getTcb? ops.caller).isSome := by
+      ↔ ops.targetObject.isSome := by
   unfold schedLockSetForSyscall
-  cases ops.targetObject <;> cases ops.receiverSlotBase <;> cases st.getTcb? ops.caller <;>
+  cases ops.targetObject <;>
     simp [LockSet.ofList?, schedLockSet_endpointReceiveOnCore,
       schedFootprintOfCores_keys_nodup]
 
@@ -432,14 +424,14 @@ theorem schedLockSetForSyscall_lifecycle_isSome_iff
           simp [hV, LockSet.ofList?, schedLockSet_suspendThreadOnCore,
             schedLockSet_resumeThreadOnCore, schedFootprintOfCores_keys_nodup])
 
-/-- `.call` needs the endpoint, the payload and the receiver's slot base; its
-write set re-runs the dispatch, which reads all of them. -/
+/-- `.call` needs the endpoint and the payload; its write set re-runs the
+dispatch, which reads both. -/
 theorem schedLockSetForSyscall_call_isSome_iff
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .call ops executingCore st).isSome
-      ↔ ops.targetObject.isSome ∧ ops.payload.isSome ∧ ops.receiverSlotBase.isSome := by
+      ↔ ops.targetObject.isSome ∧ ops.payload.isSome := by
   unfold schedLockSetForSyscall
-  cases ops.targetObject <;> cases ops.payload <;> cases ops.receiverSlotBase <;>
+  cases ops.targetObject <;> cases ops.payload <;>
     simp [LockSet.ofList?, schedLockSet_endpointCallOnCore, schedFootprintOfCores_keys_nodup]
 
 /-- `.reply` needs the Reply object to resolve to an answered caller, and the
@@ -458,17 +450,14 @@ theorem schedLockSetForSyscall_reply_isSome_iff
           simp [hA, LockSet.ofList?, schedLockSet_replyTransferOnCore,
             schedFootprintOfCores_keys_nodup]
 
-/-- `.replyRecv` needs both targets, the answered caller, the caller's own TCB
-(its CSpace root is what the capability transfer writes through), the message,
-the `MessageInfo` whose label a faulted caller's answer decodes, and the
-receiver's slot base. -/
+/-- `.replyRecv` needs both targets, the answered caller, the message and the
+`MessageInfo` whose label a faulted caller's answer decodes. -/
 theorem schedLockSetForSyscall_replyRecv_isSome_iff
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .replyRecv ops executingCore st).isSome
       ↔ ops.targetObject.isSome ∧
         (∃ rid, ops.targetReply = some rid ∧ (replyAnsweredCaller? st rid).isSome) ∧
-        (st.getTcb? ops.caller).isSome ∧ ops.message.isSome ∧ ops.replyMessageInfo.isSome ∧
-          ops.receiverSlotBase.isSome := by
+        ops.message.isSome ∧ ops.replyMessageInfo.isSome := by
   unfold schedLockSetForSyscall
   cases ops.targetObject with
   | none => simp
@@ -477,8 +466,7 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
       | none => simp
       | some rid =>
           cases hA : replyAnsweredCaller? st rid <;>
-            cases st.getTcb? ops.caller <;> cases ops.message <;>
-              cases ops.replyMessageInfo <;> cases ops.receiverSlotBase <;>
+            cases ops.message <;> cases ops.replyMessageInfo <;>
                 simp [hA, LockSet.ofList?, schedLockSet_replyRecvTransferOnCore,
                   schedFootprintOfCores_keys_nodup]
 
@@ -612,25 +600,6 @@ theorem declaredSchedulerLockSetForAbiEntry_shares_decode (ctx : LabelingContext
     simp only
     rw [hOps]
     rfl
-
-/-- **Cut C4b**: the receiver CSpace root the `.replyRecv` footprint resolves IS
-the root the live arm installs through.
-
-The live arm hands `endpointReplyRecvOnCore` the **gate's** `cspaceRoot`; the scheduler
-resolver has no gate to read, so it takes the caller's TCB at the same state.
-`abiEntryLockOperands_caller` says that caller is the entry's own `tid`, and
-`abiEntryGate_cspaceRoot` says the gate's root is that thread's — so the two are
-one lookup rather than two readings of one question, which is the shape that
-would let a footprint name a root the transition does not walk. -/
-theorem abiEntrySchedReceiverCspaceRoot (decoded : SyscallDecodeResult)
-    (tid : SeLe4n.ThreadId) (s : SystemState) (ops : Concurrency.SyscallLockOperands)
-    (tcb : TCB) (gate : SyscallGate)
-    (hOps : abiEntryLockOperands decoded tid s = some ops)
-    (hGate : abiEntryGate decoded tid s = some (tcb, gate)) :
-    s.getTcb? ops.caller = some tcb ∧ gate.cspaceRoot = tcb.cspaceRoot := by
-  obtain ⟨hLookup, hRoot, _⟩ := abiEntryGate_cspaceRoot decoded tid s tcb gate hGate
-  rw [abiEntryLockOperands_caller decoded tid s ops hOps]
-  exact ⟨hLookup, hRoot⟩
 
 -- ============================================================================
 -- §3   The UNIFIED syscall footprint — one ladder over both domains

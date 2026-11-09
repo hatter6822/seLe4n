@@ -136,20 +136,19 @@ sender on its own, which is the two-element run segment; it moves no scheduling
 context, so the replenish segment is empty and the frame is whole-state. -/
 theorem schedLockSet_endpointSendOnCore_coversWrites (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (S : LockSet)
     (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_endpointSendOnCore st endpointId executingCore)
       = some S) :
     footprintCoversWrites S st
       (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-        receiverSlotBase executingCore st).1 :=
+        executingCore st).1 :=
   footprintCoversWrites_of_confined S (endpointSendWriteSet st endpointId executingCore)
     [] st _ (LockSet.ofList?_pairs hS)
     (endpointSendCrossCoreDispatchChecked_confinedToCores ctx endpointId sender payload
-      receiverSlotBase executingCore st hObjInv)
+      executingCore st hObjInv)
     (fun d _ => endpointSendCrossCoreDispatchChecked_replenishQueueOnCore ctx endpointId sender
-      payload receiverSlotBase executingCore st _ d rfl)
+      payload executingCore st _ d rfl)
 
 -- ============================================================================
 -- §4  The three TCB-control arms
@@ -281,22 +280,22 @@ structure by construction (Cut C3a), which is what makes the exactness frame one
 case split rather than a second reading of the transition. -/
 theorem schedLockSet_endpointCallOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_endpointCallOnCore endpointId caller payload
-      receiverSlotBase executingCore st) = some S) :
+      executingCore st) = some S) :
     footprintCoversWrites S st
-      (endpointCallCrossCoreDispatch endpointId caller payload receiverSlotBase
+      (endpointCallCrossCoreDispatch endpointId caller payload
         executingCore st).1 :=
   footprintCoversWrites_of_confined S
-    (endpointCallDispatchWriteSet endpointId caller payload receiverSlotBase
+    (endpointCallDispatchWriteSet endpointId caller payload
       executingCore st)
-    (endpointCallDispatchReplenishCores endpointId caller payload receiverSlotBase
+    (endpointCallDispatchReplenishCores endpointId caller payload
       executingCore st) st _ (LockSet.ofList?_pairs hS)
     (endpointCallCrossCoreDispatch_confinedToCores endpointId caller payload
-      receiverSlotBase executingCore st hObjInv)
+      executingCore st hObjInv)
     (fun d hd => endpointCallCrossCoreDispatch_replenishQueueOnCore_ne endpointId caller payload
-      receiverSlotBase executingCore st d hd)
+      executingCore st d hd)
 
 /-- **WS-RR RR8.12 Cut C6d**: `.reply`'s footprint covers its writes — of the
 **arm**, `replyTransferOnCore`, not of the dispatch beneath it.
@@ -351,42 +350,33 @@ the tail writing no replenish queue at all. -/
 theorem schedLockSet_endpointReplyRecvOnCore_coversWrites
     {answer : Option Architecture.FaultReplyOutcome} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (msg : IpcMessage)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedFootprintOfCores
-      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg
-        receiverCspaceRoot receiverSlotBase executingCore st)
-      (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg
-        receiverCspaceRoot receiverSlotBase executingCore st)) = some S)
-    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
-        receiverCspaceRoot receiverSlotBase executingCore st = .ok (summary, st')) :
+      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg executingCore st)
+      (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st)) = some S)
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg executingCore st = .ok (summary, st')) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_confined S
-    (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg
-      receiverCspaceRoot receiverSlotBase executingCore st)
-    (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
-      receiverSlotBase executingCore st) st st' (LockSet.ofList?_pairs hS)
-    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
-      receiverSlotBase executingCore st st' summary hObjInv hStep)
-    (fun d hd => endpointReplyRecvOnCore_replenishQueueOnCore_ne endpointId receiver replyId prevCaller msg
-      receiverCspaceRoot receiverSlotBase executingCore st st' summary d hObjInv hd hStep)
+    (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg executingCore st)
+    (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st) st st' (LockSet.ofList?_pairs hS)
+    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg executingCore st st' summary hObjInv hStep)
+    (fun d hd => endpointReplyRecvOnCore_replenishQueueOnCore_ne endpointId receiver replyId prevCaller msg executingCore st st' summary d hObjInv hd hStep)
 
 /-- The `.replyRecv` arm's transition is covered by its declared footprint: the
 composite at the answer the caller's fault record selects, so a faulted caller's
 restart or abandon lands on the cores `replyRecvAnswerCores` names. -/
 theorem schedLockSet_replyRecvTransferOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st st' : SystemState)
+    (label : Nat) (msg : IpcMessage)
+    (executingCore : CoreId) (st st' : SystemState)
     (summary : CapTransferSummary) (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_replyRecvTransferOnCore endpointId receiver replyId
-      prevCaller label msg receiverCspaceRoot receiverSlotBase executingCore st) = some S)
-    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg
-        receiverCspaceRoot receiverSlotBase executingCore st = .ok (summary, st')) :
+      prevCaller label msg executingCore st) = some S)
+    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg executingCore st = .ok (summary, st')) :
     footprintCoversWrites S st st' :=
-  schedLockSet_endpointReplyRecvOnCore_coversWrites endpointId receiver replyId prevCaller _
-    receiverCspaceRoot receiverSlotBase executingCore st st' summary S hObjInv hS hStep
+  schedLockSet_endpointReplyRecvOnCore_coversWrites endpointId receiver replyId prevCaller _ executingCore st st' summary S hObjInv hS hStep
 
 /-- **Cut C6f (`v0.35.179`) / WS-LS LS2.3**: the live `.receive` ARM's coverage —
 the leg composed with the **whole hand-off**.
@@ -402,20 +392,16 @@ donation's pair, and the walk moves no scheduling context
 (`propagatePipChainCrossCore_replenishQueueOnCore`). -/
 theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
     (hObjInv : st.objects.invExt) (hHeads : queueHeadBlockedConsistent st)
-    (hS : LockSet.ofList? (schedLockSet_endpointReceiveOnCore st endpointId receiver replyId
-      receiverCspaceRoot receiverSlotBase executingCore) = some S)
-    (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-      receiverSlotBase executingCore st = (st1, .ok (dequeued, summary, sgi)))
+    (hS : LockSet.ofList? (schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore) = some S)
+    (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st = (st1, .ok (dequeued, summary, sgi)))
     (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
     footprintCoversWrites S st st' := by
   obtain ⟨stDon, hDon, hEq⟩ :=
     applyReceiveRendezvousHandoff_ok_decompose st1 st' receiver dequeued executingCore hHand
-  have hChain : endpointReceiveHandoffChainWriteSet st endpointId receiver replyId
-      receiverCspaceRoot receiverSlotBase executingCore
+  have hChain : endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore
       = if rendezvousDequeuedCall st1 dequeued then
           pipChainWriteSet stDon receiver executingCore stDon.objectIndex.length
         else [] := by
@@ -425,20 +411,17 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.Obj
     rw [hDon]
   have hLegConf : observableSlotsConfinedToCores st st1
       (endpointReceiveDualWriteSet st endpointId executingCore) := by
-    have h := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId
-      receiverCspaceRoot receiverSlotBase executingCore st hObjInv
+    have h := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId executingCore st hObjInv
     rw [hLeg] at h
     exact h
   have hDonConf := applyReceiveRendezvousDonation_confinedToCores st1 stDon receiver dequeued hDon
   have hReplDon : ∀ d : CoreId, d ∉ endpointReceiveHandoffReplenishCores st endpointId receiver →
       stDon.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d :=
-    fun d hd => endpointReceiveLegAndDonation_replenishQueueOnCore_ne endpointId receiver replyId
-      receiverCspaceRoot receiverSlotBase executingCore st st1 stDon dequeued summary sgi d
+    fun d hd => endpointReceiveLegAndDonation_replenishQueueOnCore_ne endpointId receiver replyId executingCore st st1 stDon dequeued summary sgi d
       hObjInv hHeads hd hLeg hDon
   refine footprintCoversWrites_of_confined S
     (endpointReceiveDualWriteSet st endpointId executingCore
-      ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore)
+      ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore)
     (endpointReceiveHandoffReplenishCores st endpointId receiver) st st'
     (LockSet.ofList?_pairs hS) ?_ ?_
   · rw [hChain]

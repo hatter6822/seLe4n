@@ -66,12 +66,16 @@ pub use rights::{AccessRight, AccessRights, AccessRightsError};
 ///   `KernelError` discriminant `d`, and every label below
 ///   [`ERROR_LABEL_BASE`] is a delivered message's own label (a fault
 ///   handler's `seL4_Fault_tag`, for one).
+/// * Version **4** — seL4's `seL4_MessageInfo_t` layout: `capsUnwrapped`
+///   in bits 9-11 and the label from bit 12, and the IPC buffer's receive
+///   path (`receive_cnode`, `receive_index`, `receive_depth`) after its
+///   `caps_or_badges` words.
 ///
 /// Mirrored by Lean's `Architecture.syscallAbiVersion` and the HAL's
 /// `svc_dispatch::SYSCALL_ABI_VERSION`; each side's conformance suite
 /// pins its own constant to the same literal, so a half-bumped tree
 /// fails its own suite rather than mis-decoding at runtime.
-pub const SYSCALL_ABI_VERSION: u64 = 3;
+pub const SYSCALL_ABI_VERSION: u64 = 4;
 
 /// WS-RR RR4 (ABI v3): the first kernel-status label.  A `MessageInfo`
 /// label at or above this value in `x1` is a kernel error (discriminant

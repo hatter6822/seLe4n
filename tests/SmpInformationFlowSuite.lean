@@ -2188,8 +2188,8 @@ no observer projects, the write is confined to no core at all. -/
 #check @SeLe4n.Kernel.lockSet_endpointSendOnCore_covers_cdt
 #check @SeLe4n.Kernel.lockSet_endpointCallOnCore_covers_cdt
 #check @SeLe4n.Kernel.rendezvousCapsDestination?
-#check @SeLe4n.Kernel.endpointSendDualWithCaps_reduces_to_unwrap
-#check @SeLe4n.Kernel.endpointCallWithCaps_reduces_to_unwrap
+#check @SeLe4n.Kernel.endpointSendDualWithCaps_writes_destination
+#check @SeLe4n.Kernel.endpointCallWithCaps_writes_destination
 
 -- SM9.D audit: the taint table's per-key realisation, owed by the representation
 -- cut.  The footprints declare the objects' own locks for taint keys while the
@@ -4515,10 +4515,6 @@ absent from the fixture, so it heads no donation frame and the pop between the
 legs is the identity. -/
 private def replyRecvReplyId : SeLe4n.ReplyId := ⟨1100⟩
 
-/-- The receiver's CSpace root for the receive leg's capability installation
-(the received message carries none). -/
-private def replyRecvCnRoot : SeLe4n.ObjId := ⟨1101⟩
-
 /-- §5.2c  The three live cross-core arms (fourth review round). -/
 private def runLiveCrossCoreArmChecks : IO Unit := do
   IO.println "--- §5.2c the live cross-core arms: bound signal, receive dual, replyRecv ---"
@@ -4581,19 +4577,19 @@ private def runLiveCrossCoreArmChecks : IO Unit := do
             replyRecvMsg c0 replyRecvState).1
           crossCoreEndpoint c0
      decide ((SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
-        replyRecvReplyId replyBlockedCaller replyRecvMsg replyRecvCnRoot (SeLe4n.Slot.ofNat 0)
+        replyRecvReplyId replyBlockedCaller replyRecvMsg
         c0 replyRecvState).take (1 + rs.length)
       = SeLe4n.Kernel.determineTargetCore replyRecvState replyBlockedCaller :: rs))
   assertBool "…and it names two DIFFERENT cores — a real union, not a coincidence"
     (decide ((SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
-      replyRecvReplyId replyBlockedCaller replyRecvMsg replyRecvCnRoot (SeLe4n.Slot.ofNat 0)
+      replyRecvReplyId replyBlockedCaller replyRecvMsg
       c0 replyRecvState).take 2 = [c3, c2]))
   -- The load-bearing negative: when the reply leg fails closed the tail is
   -- empty, so the composition is genuinely conditional on the leg's outcome
   -- rather than always appending the receive set.
   assertBool "NEGATIVE: a failed reply leg contributes no receive-leg cores"
     (decide (SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
-      replyRecvReplyId crossCoreSender replyRecvMsg replyRecvCnRoot (SeLe4n.Slot.ofNat 0)
+      replyRecvReplyId crossCoreSender replyRecvMsg
       c0 blockedSenderState = [c2]))
 
 -- §5.3b fixtures — a re-bucketing write, the case `RunQueue.toList` misses.
@@ -6152,7 +6148,7 @@ private def crossCoreSendUnder (ctx : LabelingContext) (epId : SeLe4n.ObjId) :
       Except KernelError (CapTransferSummary ×
         Option (CoreId × SeLe4n.Kernel.Concurrency.SgiKind)) :=
   endpointSendCrossCoreDispatchChecked ctx epId lowCurrent (.frame none false)
-    (SeLe4n.Slot.ofNat 0) c0 niState
+    c0 niState
 
 /-- §6.8  The live per-endpoint flow policy — SM8.B's registered debt (a). -/
 private def runEndpointPolicyGateChecks : IO Unit := do
@@ -7667,7 +7663,9 @@ private def ipcSenderTcb : TCB :=
 private def ipcFootprintState : SystemState :=
   { niState with
       objects :=
-        ((((niState.objects.insert ipcReplyId.toObjId
+        (((((niState.objects.insert ipcReceiverRoot
+              (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))).insert
+              ipcReplyId.toObjId
               (.reply { replyId := ipcReplyId, callerCode := SeLe4n.ThreadId.optCode (some lowQueued) })).insert
             ipcReceiver.toObjId (.tcb ipcReceiverTcb)).insert
             ipcSender.toObjId (.tcb ipcSenderTcb)).insert
@@ -7675,6 +7673,7 @@ private def ipcFootprintState : SystemState :=
           (.endpoint (Endpoint.ofQueues { head := some ipcSender, tail := some ipcSender } { head := some ipcReceiver, tail := some ipcReceiver }))) }
     |> fun st => SeLe4n.Testing.withSenderFrame st lowCurrent ipcMessage
         #[SeLe4n.CPtr.ofNat 0]
+    |> fun st => SeLe4n.Testing.withReceiveSlot st ipcReceiver ⟨1046⟩ 0
 
 /-- **WS-OD OD3.6** — the SchedContext a rendezvous donates.  Only the sender's
 `schedContextBinding` is read (`endpointCallDonatedSc?`), so the fixture need
@@ -10609,7 +10608,7 @@ slot 2, MR0 = the reply CPtr (slot 3), `msgInfo.length = 1` so the MR0-present
 guard the arm enforces is satisfied here too. -/
 private def replyLegDecoded : SyscallDecodeResult :=
   { syscallId := .replyRecv, capAddr := SeLe4n.CPtr.ofNat 2,
-    msgInfo := SeLe4n.Model.MessageInfo.mk 1 0 0,
+    msgInfo := SeLe4n.Model.MessageInfo.mk 1 0 0 0,
     msgRegs := #[⟨3⟩] }
 
 /-- §12.4  SM9.D.8-.D.11 — propagation, through the **live** entry. -/
@@ -10730,10 +10729,10 @@ private def runTaintPropagationChecks : IO Unit := do
   -- …and the planner's own edges are the ones the arm computes.
   assertBool "an inert syscall's plan is empty, whatever the state"
     (decide (syscallTaintPlan taintedEndpointState highCurrent
-       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
+       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 0,
          syscallId := .tcbSetPriority } = TaintPlan.inert) &&
      decide (syscallTaintPlan taintedEndpointState highCurrent
-       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
+       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 0,
          syscallId := .receive } ≠ TaintPlan.inert))
 
 /-- §12.5 fixture — an object carrying one specific declassification identity. -/
@@ -10989,11 +10988,11 @@ edge list must name the receiver's CNode; `sendRendezvousCaplessDecoded` below i
 the same rendezvous with a plain message, and must not. -/
 private def sendRendezvousDecoded : SyscallDecodeResult :=
   { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 4,
-    msgInfo := SeLe4n.Model.MessageInfo.mk 0 1 0 }
+    msgInfo := SeLe4n.Model.MessageInfo.mk 0 1 0 0 }
 
 private def sendRendezvousCaplessDecoded : SyscallDecodeResult :=
   { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 4,
-    msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 }
+    msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 0 }
 
 private def sendRendezvousEdges : List TaintFlowEdge :=
   contentFlowEdges sendRendezvousState highCurrent sendRendezvousDecoded
@@ -11850,7 +11849,7 @@ private def flowReceiverFalse : LabelingContext := flowLabeling highLabel highLa
 private def flowCall (ctx : LabelingContext) : SystemState :=
   (endpointCallCrossCoreDispatchChecked ctx flowEp flowClient
     (.frame none ((AccessRightSet.ofList [.read, .write, .grant]).mem .grant))
-    (SeLe4n.Slot.ofNat 0) bootCoreId
+    bootCoreId
     flowState).1
 
 /-- Did the rendezvous lend the client's reservation to the server? -/

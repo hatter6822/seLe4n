@@ -696,12 +696,12 @@ ready and the fault answer's abandon may deschedule it. -/
 theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
-    {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : Concurrency.CoreId}
+    {c : Concurrency.CoreId}
     {st st' : SystemState} {s : CapTransferSummary}
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg root base c st =
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg c st =
       .ok (s, st')) :
     SystemState.RunQueueEntryStage st st' := by
   have hPrev : ∀ sgi?, (endpointReplyOnCore tid prevCaller msg c st).2 = .ok sgi? →
@@ -751,11 +751,11 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture
     activeKeptStage.of_stage (replyRecvPopDonation_runQueueStage hPop) hI1 hR1 tid hA1
   have hHp := hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
       (hQ1 _ rfl))
-  have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) root base c
+  have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
     st1p hHp ((hPC c).trans hC1) hNI hAp
-  have hRK := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) root base c
+  have hRK := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) c
     st1p hHp ((hPC c).trans hC1) hNI hAp
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) root base c st1p = q at hR hRK h
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c st1p = q at hR hRK h
   obtain ⟨st2, r2⟩ := q
   dsimp only at hR hRK
   rcases r2 with _ | ⟨nt, sm, _⟩ <;> dsimp only at h

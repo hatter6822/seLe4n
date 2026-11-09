@@ -179,7 +179,7 @@ private def sd002_errorLabelCarriage : IO Unit := do
           s!"errorLabel must be errorLabelBase + discriminant for {disc}"
         let frame := Kernel.Architecture.errorFrame e
         expect s!"sd002c_frame_x1_{disc}"
-          (frame.x1 == ((Kernel.Architecture.errorLabelBase + disc) <<< 9).toUInt64)
+          (frame.x1 == ((Kernel.Architecture.errorLabelBase + disc) <<< 12).toUInt64)
           s!"errorFrame x1 must carry label errorLabelBase + {disc} at bit 9"
         expect s!"sd002d_frame_rest_zero_{disc}"
           (frame.x0 == 0 && frame.x2 == 0 && frame.x3 == 0 &&
@@ -592,7 +592,7 @@ private def sd037_entryWordPairs : IO Unit := do
   expect "sd037g_a_high_bit_message_info_asks_its_overflow"
     (overflowStop 7 == 3 && overflowStop 4 == 0 && overflowStop 121 == 0 &&
       overflowStop ((7 : UInt64) ||| ((1 : UInt64) <<< 63)) == 0 &&
-      overflowStop ((7 : UInt64) ||| ((5 : UInt64) <<< 9)) == 3)
+      overflowStop ((7 : UInt64) ||| ((5 : UInt64) <<< 12)) == 3)
     "the overflow count must follow the MessageInfo decode, label bits included"
 
 /-- SD-035: Sequential dispatches — the IO.Ref state evolves
@@ -2020,8 +2020,8 @@ private def sd052_endpointReplyRecvOnCore : IO Unit := do
       |>.build)
   let msg : IpcMessage :=
     { registers := #[SeLe4n.RegValue.ofNat 99], badge := Badge.ofNatMasked 0 }
-  match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg (SeLe4n.ObjId.ofNat 0)
-      (SeLe4n.Slot.ofNat 0) bootCoreId st with
+  match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg
+      bootCoreId st with
   | .ok (_, st') =>
       expect "sd052a_prev_caller_replied"
         ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
@@ -2094,8 +2094,8 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
   | (st1, .ok _) =>
       let msg : IpcMessage :=
         { registers := #[SeLe4n.RegValue.ofNat 99], badge := Badge.ofNatMasked 0 }
-      match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg (SeLe4n.ObjId.ofNat 0)
-          (SeLe4n.Slot.ofNat 0) bootCoreId st1 with
+      match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg
+          bootCoreId st1 with
       | .error _ => failLine "sd052b" "endpointReplyRecvOnCore should succeed"
       | .ok (_, st') =>
           expect "sd052b_prev_caller_replied"
@@ -2158,8 +2158,8 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
     (SeLe4n.Kernel.replyFrameHeadHolder? st0 rid == some (scA, server))
     "the frame must head the context the RECORDED server holds, not the delegate"
   -- No queued sender on the endpoint → the delegate blocks on the receive leg.
-  match SeLe4n.Kernel.endpointReplyRecvOnCore epId delegate rid clientA msg (SeLe4n.ObjId.ofNat 0)
-      (SeLe4n.Slot.ofNat 0) bootCoreId st0 with
+  match SeLe4n.Kernel.endpointReplyRecvOnCore epId delegate rid clientA msg
+      bootCoreId st0 with
   | .error _ => failLine "sd052c" "delegated endpointReplyRecvOnCore should succeed (cap-based authority)"
   | .ok (_, st') =>
       expect "sd052c_prev_caller_replied"

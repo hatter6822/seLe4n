@@ -53,24 +53,24 @@ Returns the post-state, the capability-transfer summary, and the optional
 cross-core SGI. -/
 def endpointCallWithCapsOnCore
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   let req := sendCapRequest st endpointId caller payload
   let receiver? := (st.getEndpoint? endpointId).bind (·.receiveQ.head)
+  -- The receiver's side of the transfer (its IPC buffer and the receive slot
+  -- the buffer names), read from the pre-state as the specification reads it.
+  let target? := receiver?.bind (receiverCapTarget? st)
   match endpointCallOnCore endpointId caller payload executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok sgi) =>
       if req.isNone then (st', .ok ({ results := #[] }, sgi))
       else
         match receiver? with
-        | some receiverId =>
-          match lookupCspaceRoot st' receiverId with
-          | some recvRoot =>
-            match receiveTransferCaps req recvRoot receiverSlotBase st' with
-            | .error e => (st', .error e)
-            | .ok (summary, st'') => (st'', .ok (summary, sgi))
-          | none => (st', .error .invalidCapability)
+        | some _ =>
+          match receiveTransferCaps req endpointId target? st' with
+          | .error e => (st', .error e)
+          | .ok (summary, st'') => (st'', .ok (summary, sgi))
         | none => (st', .ok ({ results := #[] }, sgi))
 
 -- ============================================================================
@@ -97,13 +97,13 @@ invariant `replenishQueueAffinityConsistentOnCore` says they must live on the
 the invariant holds on every core afterwards. -/
 def endpointCallCrossCoreDispatch
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   let maybeReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head
     | none => none
-  match endpointCallWithCapsOnCore endpointId caller payload receiverSlotBase executingCore st with
+  match endpointCallWithCapsOnCore endpointId caller payload executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok (summary, sgi)) =>
       match maybeReceiver with
@@ -156,13 +156,13 @@ through, replacing the boot-pinned `endpointCallChecked` so the receiver is woke
 on its *home* core. -/
 def endpointCallCrossCoreDispatchChecked
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   -- WS-SM SM8.C: global lattice check AND this endpoint's configured override.
   if endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) then
-    endpointCallCrossCoreDispatch endpointId caller payload receiverSlotBase executingCore st
+    endpointCallCrossCoreDispatch endpointId caller payload executingCore st
   else
     (st, .error .flowDenied)
 
@@ -171,11 +171,10 @@ checked cross-core dispatch is fail-closed (state unchanged, `.flowDenied`). -/
 theorem endpointCallCrossCoreDispatchChecked_flow_denied
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = false) :
     endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
-        receiverSlotBase executingCore st = (st, .error .flowDenied) := by
+        executingCore st = (st, .error .flowDenied) := by
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the override says,
   -- so the hypothesis is the one this theorem always had.
   simp [endpointCallCrossCoreDispatchChecked,
@@ -186,16 +185,15 @@ unchecked cross-core dispatch — the guard is a pure precondition. -/
 theorem endpointCallCrossCoreDispatchChecked_flow_allowed
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hAllow : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true)
     -- WS-SM SM8.C: the endpoint's override must admit the flow too.
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
     endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
-        receiverSlotBase executingCore st
+        executingCore st
       = endpointCallCrossCoreDispatch endpointId caller payload
-          receiverSlotBase executingCore st := by
+          executingCore st := by
   simp [endpointCallCrossCoreDispatchChecked,
     endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 
@@ -209,9 +207,9 @@ surfaced SGI is the bare call's — the SM6.A.3 SGI characterisation carries to
 the WithCaps path. -/
 theorem endpointCallWithCapsOnCore_no_caps
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hCaps : sendCapRequest st endpointId caller payload = none) :
-    endpointCallWithCapsOnCore endpointId caller payload receiverSlotBase executingCore st
+    endpointCallWithCapsOnCore endpointId caller payload executingCore st
       = ((endpointCallOnCore endpointId caller payload executingCore st).1,
          (endpointCallOnCore endpointId caller payload executingCore st).2.map
            (fun sgi => ({ results := #[] }, sgi))) := by
@@ -226,17 +224,17 @@ the cross-core dispatch performs no donation — it is exactly the WithCaps call
 Donation only fires on an immediate rendezvous with a passive server. -/
 theorem endpointCallCrossCoreDispatch_no_receiver
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hNoRecv : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head | none => none) = none) :
     endpointCallCrossCoreDispatch endpointId caller payload
-        receiverSlotBase executingCore st
+        executingCore st
       = endpointCallWithCapsOnCore endpointId caller payload
-          receiverSlotBase executingCore st := by
+          executingCore st := by
   unfold endpointCallCrossCoreDispatch
   rw [hNoRecv]
   cases h : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st with
+      executingCore st with
   | mk st' res => cases res with
     | error e => rfl
     | ok pair => rfl
@@ -272,10 +270,9 @@ exactness licence composes it, and a staged frame is one a production footprint
 cannot read. -/
 theorem endpointCallWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     (endpointCallWithCapsOnCore endpointId caller payload
-        receiverSlotBase executingCore st).1.scheduler
+        executingCore st).1.scheduler
       = (endpointCallOnCore endpointId caller payload executingCore st).1.scheduler := by
   unfold endpointCallWithCapsOnCore
   cases hCall : endpointCallOnCore endpointId caller payload executingCore st with
@@ -294,10 +291,10 @@ queue either — the bare call's frame `endpointCallOnCore_replenishQueueOnCore`
 through the scheduler equality above. -/
 theorem endpointCallWithCapsOnCore_replenishQueueOnCore (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (c : CoreId) :
     (endpointCallWithCapsOnCore endpointId caller payload
-        receiverSlotBase executingCore st).1.scheduler.replenishQueueOnCore c
+        executingCore st).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   rw [endpointCallWithCapsOnCore_scheduler_eq]
   exact endpointCallOnCore_replenishQueueOnCore endpointId caller _ executingCore st c
@@ -315,12 +312,12 @@ confinement theorem is in the production `SlotConfinement/IpcArms.lean` since
 WS-LS LS2.3. -/
 def endpointCallDispatchChainWriteSet
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (executingCore : CoreId)
     (st : SystemState) : List CoreId :=
   let maybeReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head
     | none => none
-  match endpointCallWithCapsOnCore endpointId caller payload receiverSlotBase executingCore st with
+  match endpointCallWithCapsOnCore endpointId caller payload executingCore st with
   | (_, .error _) => []
   | (st', .ok _) =>
       match maybeReceiver with
@@ -348,11 +345,11 @@ confinement theorem is in the production `SlotConfinement/IpcArms.lean` since
 WS-LS LS2.3. -/
 def endpointCallDispatchWriteSet
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (executingCore : CoreId)
     (st : SystemState) : List CoreId :=
   endpointCallWriteSet st endpointId executingCore
     ++ endpointCallDispatchChainWriteSet endpointId caller payload
-        receiverSlotBase executingCore st
+        executingCore st
 
 /-- **WS-RR RR8.16 (`v0.35.189`)**: and installing the call's capabilities writes
 no binding either (`ipcUnwrapCaps_sameSchedContextBindings`), so the whole leg the
@@ -365,10 +362,9 @@ resolver's own bridge: the footprint resolves before the transition runs and
 what makes those one answer. -/
 theorem endpointCallWithCapsOnCore_sameSchedContextBindings
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     sameSchedContextBindings st
-      (endpointCallWithCapsOnCore endpointId caller payload receiverSlotBase
+      (endpointCallWithCapsOnCore endpointId caller payload
         executingCore st).1 := by
   have hLeg := endpointCallOnCore_sameSchedContextBindings endpointId caller
     payload executingCore st hObjInv
@@ -405,18 +401,17 @@ which is the direction `callDonationSchedContext?_some_of_sameSchedContextBindin
 gives and the only one a backward frame can. -/
 theorem endpointCallDonatedSc?_some_of_post
     (endpointId : SeLe4n.ObjId) (caller receiver : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
     (hRecv : endpointCallReceiver? st endpointId = some receiver)
     (hPost : callDonationSchedContext?
-      (endpointCallWithCapsOnCore endpointId caller payload receiverSlotBase
+      (endpointCallWithCapsOnCore endpointId caller payload
         executingCore st).1 caller receiver = some scId) :
     endpointCallDonatedSc? st endpointId caller = some scId := by
   rw [endpointCallDonatedSc?_of_receiver st endpointId caller receiver hRecv]
   exact callDonationSchedContext?_some_of_sameSchedContextBindings
     (endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller payload
-      receiverSlotBase executingCore st hObjInv)
+      executingCore st hObjInv)
     caller receiver scId hPost
 
 /-- **WS-RR RR8.12 Cut C3a**: the replenish-queue cores the live `.call` dispatch's
@@ -442,12 +437,12 @@ naming two cores for a migration that does not happen is a footprint wider than
 its operation — the over-declaration Cut C1 removed from the `.receive` segment. -/
 def endpointCallDispatchReplenishCores
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (executingCore : CoreId)
     (st : SystemState) : List CoreId :=
   let maybeReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head
     | none => none
-  match endpointCallWithCapsOnCore endpointId caller payload receiverSlotBase executingCore st with
+  match endpointCallWithCapsOnCore endpointId caller payload executingCore st with
   | (_, .error _) => []
   | (st', .ok _) =>
       match maybeReceiver with
@@ -464,18 +459,18 @@ def endpointCallDispatchReplenishCores
 endpoints, read where the dispatch reads them. -/
 theorem endpointCallDispatchReplenishCores_of_donation (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st stWith : SystemState)
+    (executingCore : CoreId) (st stWith : SystemState)
     (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
     (scId : SeLe4n.SchedContextId)
     (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
     (hWith : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+      executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
     endpointCallDispatchReplenishCores endpointId caller payload
-        receiverSlotBase executingCore st
+        executingCore st
       = [determineTargetCore st caller, determineTargetCore st receiverTid] := by
   have hRecv' : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head
@@ -486,17 +481,17 @@ theorem endpointCallDispatchReplenishCores_of_donation (endpointId : SeLe4n.ObjI
 /-- Where the guard declines, no core. -/
 theorem endpointCallDispatchReplenishCores_of_no_donation (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st stWith : SystemState)
+    (executingCore : CoreId) (st stWith : SystemState)
     (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
     (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
     (hWith : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+      executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none) :
     endpointCallDispatchReplenishCores endpointId caller payload
-        receiverSlotBase executingCore st = [] := by
+        executingCore st = [] := by
   have hRecv' : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head
       | none => none) = some receiverTid := hRecv
@@ -506,15 +501,15 @@ theorem endpointCallDispatchReplenishCores_of_no_donation (endpointId : SeLe4n.O
 /-- And with no receiver — the block path — none either, whatever the leg did. -/
 theorem endpointCallDispatchReplenishCores_of_no_receiver (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hRecv : endpointCallReceiver? st endpointId = none) :
     endpointCallDispatchReplenishCores endpointId caller payload
-        receiverSlotBase executingCore st = [] := by
+        executingCore st = [] := by
   have hRecv' : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head
       | none => none) = none := hRecv
   unfold endpointCallDispatchReplenishCores
-  cases endpointCallWithCapsOnCore endpointId caller payload receiverSlotBase
+  cases endpointCallWithCapsOnCore endpointId caller payload
       executingCore st with
   | mk st' res =>
     cases res with
@@ -549,12 +544,12 @@ resolved cores (`…_covers_parametric`), and names besides the chain members th
 parametric form left to the walker. -/
 def schedLockSet_endpointCallOnCore
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (executingCore : CoreId)
     (st : SystemState) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
-    (endpointCallDispatchWriteSet endpointId caller payload receiverSlotBase
+    (endpointCallDispatchWriteSet endpointId caller payload
       executingCore st)
-    (endpointCallDispatchReplenishCores endpointId caller payload receiverSlotBase
+    (endpointCallDispatchReplenishCores endpointId caller payload
       executingCore st)
 
 -- No `_write_only` / `_pairwise_le` restatement here, and that is deliberate: both
@@ -565,11 +560,10 @@ def schedLockSet_endpointCallOnCore
 both paths — it is descheduled there whether it rendezvouses or blocks. -/
 theorem schedLockSet_endpointCallOnCore_contains_executing_runQueue_write
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointCallOnCore endpointId caller payload
-          receiverSlotBase executingCore st := by
+          executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointCallDispatchWriteSet
   exact List.mem_append.mpr
@@ -580,12 +574,11 @@ core — resolved through `endpointCallReceiver?`, the resolver the object-domai
 footprint's own receiver member comes from. -/
 theorem schedLockSet_endpointCallOnCore_contains_receiver_runQueue_write
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hRecv : endpointCallReceiver? st endpointId = some receiver) :
     (LockKey.runQueue (determineTargetCore st receiver), Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointCallOnCore endpointId caller payload
-          receiverSlotBase executingCore st := by
+          executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointCallDispatchWriteSet
   rw [endpointCallWriteSet_of_receiver st endpointId executingCore receiver hRecv]
@@ -602,22 +595,22 @@ post-state), because those are the only shape on which there is a migration to
 cover. -/
 theorem schedLockSet_endpointCallOnCore_covers_donation (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st stWith : SystemState)
+    (executingCore : CoreId) (st stWith : SystemState)
     (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
     (scId : SeLe4n.SchedContextId)
     (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
     (hWith : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+      executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
     ∀ p ∈ applyCallDonationOnCoreLockSet (determineTargetCore st caller)
              (determineTargetCore st receiverTid),
       p ∈ schedLockSet_endpointCallOnCore endpointId caller payload
-            receiverSlotBase executingCore st := by
+            executingCore st := by
   have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller payload
-    receiverSlotBase executingCore st stWith receiverTid callerV receiverV
+    executingCore st stWith receiverTid callerV receiverV
     summary sgi scId hRecv hWith hCallerV hRecvV hSc
   unfold applyCallDonationOnCoreLockSet schedLockSet_endpointCallOnCore
   rw [hSeg]
@@ -632,13 +625,13 @@ extension.  The RR2.4 lemmas are stated over the parametric shape; this is what
 carries them to the footprint the syscall resolver consumes. -/
 theorem schedLockSet_endpointCallOnCore_covers_parametric (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st stWith : SystemState)
+    (executingCore : CoreId) (st stWith : SystemState)
     (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
     (scId : SeLe4n.SchedContextId)
     (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
     (hWith : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+      executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
@@ -646,9 +639,9 @@ theorem schedLockSet_endpointCallOnCore_covers_parametric (endpointId : SeLe4n.O
              (determineTargetCore st receiverTid) (determineTargetCore st caller)
              (determineTargetCore st receiverTid),
       p ∈ schedLockSet_endpointCallOnCore endpointId caller payload
-            receiverSlotBase executingCore st := by
+            executingCore st := by
   have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller payload
-    receiverSlotBase executingCore st stWith receiverTid callerV receiverV
+    executingCore st stWith receiverTid callerV receiverV
     summary sgi scId hRecv hWith hCallerV hRecvV hSc
   unfold endpointCallCrossCoreDispatchLockSet schedLockSet_endpointCallOnCore
   rw [hSeg]
@@ -666,24 +659,23 @@ not free (SM8.D's CC-5), and
 that the transition writes none there either. -/
 theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_donation
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st stWith : SystemState) (receiverTid : SeLe4n.ThreadId)
     (callerV receiverV : SeLe4n.ValidThreadId) (summary : CapTransferSummary)
     (sgi : Option (CoreId × SgiKind))
     (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
     (hWith : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+      executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none)
     (c : CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_endpointCallOnCore endpointId caller payload
-          receiverSlotBase executingCore st := by
+          executingCore st := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointCallDispatchReplenishCores_of_no_donation endpointId caller payload
-    receiverSlotBase executingCore st stWith receiverTid callerV receiverV summary sgi hRecv
+    executingCore st stWith receiverTid callerV receiverV summary sgi hRecv
     hWith hCallerV hRecvV hNone] at this
   simp at this
 
@@ -691,16 +683,15 @@ theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_donation
 rendezvous and no donation — none either. -/
 theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_receiver
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hRecv : endpointCallReceiver? st endpointId = none) (c : CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_endpointCallOnCore endpointId caller payload
-          receiverSlotBase executingCore st := by
+          executingCore st := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointCallDispatchReplenishCores_of_no_receiver endpointId caller payload
-    receiverSlotBase executingCore st hRecv] at this
+    executingCore st hRecv] at this
   simp at this
 
 /-- **WS-RR RR8.12 Cut C3a (the empty segment, transition side)**: on the block
@@ -708,16 +699,15 @@ path the live dispatch is the WithCaps leg alone
 (`endpointCallCrossCoreDispatch_no_receiver`), which writes no replenish queue. -/
 theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_receiver
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hRecv : endpointCallReceiver? st endpointId = none) (c : CoreId) :
-    (endpointCallCrossCoreDispatch endpointId caller payload receiverSlotBase
+    (endpointCallCrossCoreDispatch endpointId caller payload
         executingCore st).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   rw [endpointCallCrossCoreDispatch_no_receiver endpointId caller payload
-    receiverSlotBase executingCore st hRecv]
+    executingCore st hRecv]
   exact endpointCallWithCapsOnCore_replenishQueueOnCore endpointId caller payload
-    receiverSlotBase executingCore st c
+    executingCore st c
 
 /-- **WS-RR RR8.12 Cut C3a (the empty segment, transition side)**: and where the
 guard declines on a rendezvous, the live dispatch writes no replenish queue either
@@ -730,19 +720,18 @@ exact, not merely narrow: the footprint declares no replenish lock there, and th
 transition writes none. -/
 theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st stWith stDisp : SystemState)
     (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
     (res : Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)))
     (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
     (hWith : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+      executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none)
     (hDisp : endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st = (stDisp, res)) (c : CoreId) :
+      executingCore st = (stDisp, res)) (c : CoreId) :
     stDisp.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   have hRecv' : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head
@@ -750,7 +739,7 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation
   have hWithRep : stWith.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
     have h := endpointCallWithCapsOnCore_replenishQueueOnCore endpointId caller payload
-      receiverSlotBase executingCore st c
+      executingCore st c
     rw [hWith] at h
     exact h
   unfold endpointCallCrossCoreDispatch at hDisp
@@ -782,20 +771,20 @@ segment empty and the step's own frame applies, and the resolving arm is the
 migration's `_other` frame at exactly the pair the segment names. -/
 theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hne : c ∉ endpointCallDispatchReplenishCores endpointId caller payload
-      receiverSlotBase executingCore st) :
-    (endpointCallCrossCoreDispatch endpointId caller payload receiverSlotBase
+      executingCore st) :
+    (endpointCallCrossCoreDispatch endpointId caller payload
         executingCore st).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   unfold endpointCallCrossCoreDispatch endpointCallDispatchReplenishCores at *
-  cases hW : endpointCallWithCapsOnCore endpointId caller payload receiverSlotBase
+  cases hW : endpointCallWithCapsOnCore endpointId caller payload
       executingCore st with
   | mk stW res =>
     rw [hW] at hne
     have hFrame : stW.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
       have h0 := endpointCallWithCapsOnCore_replenishQueueOnCore endpointId caller payload
-        receiverSlotBase executingCore st c
+        executingCore st c
       rw [hW] at h0
       exact h0
     simp only at hne ⊢
@@ -836,10 +825,10 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne (endpointId : SeLe
 extended invariant. -/
 theorem endpointCallWithCapsOnCore_preserves_objects_invExt
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
     (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1.objects.invExt := by
+      executingCore st).1.objects.invExt := by
   have hBareInv := endpointCallOnCore_preserves_objects_invExt endpointId caller
     payload executingCore st hObjInv
   unfold endpointCallWithCapsOnCore
@@ -878,21 +867,21 @@ request is `sendCapRequest`, resolved from the sender's CSpace at the rendezvous
 so the obligation also covers the CDT nodes that resolution mints).
 
 The residue — a usable bundle lemma for a grant-bearing transfer — is registered
-debt, and `ipcTransferSingleCap`'s use of the **unchecked** slot scan is the
-reason it cannot simply be proved today. -/
+debt. -/
 def receiveTransferCapsPreservesCapabilityBundle
-    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)) (slotBase : SeLe4n.Slot) : Prop :=
-  ∀ (receiverRoot : SeLe4n.ObjId) (stI stJ : SystemState) (summary : CapTransferSummary),
+    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)) (endpointId : SeLe4n.ObjId) : Prop :=
+  ∀ (target? : Option (TCB × Option CSpaceAddr)) (stI stJ : SystemState)
+    (summary : CapTransferSummary),
     capabilityInvariantBundle stI →
-    receiveTransferCaps req receiverRoot slotBase stI = .ok (summary, stJ) →
+    receiveTransferCaps req endpointId target? stI = .ok (summary, stJ) →
     capabilityInvariantBundle stJ
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and it holds outright when the send asks
 to transfer nothing (no grant right, no extra-cap addresses, or a fault) — the
 transfer is then the identity.  The inhabitation witness: a hypothesis nothing
 exhibits is indistinguishable from one that cannot hold. -/
-theorem receiveTransferCapsPreservesCapabilityBundle_of_none (slotBase : SeLe4n.Slot) :
-    receiveTransferCapsPreservesCapabilityBundle none slotBase := by
+theorem receiveTransferCapsPreservesCapabilityBundle_of_none (endpointId : SeLe4n.ObjId) :
+    receiveTransferCapsPreservesCapabilityBundle none endpointId := by
   intro _ stI stJ summary hInv hStep
   simp only [receiveTransferCaps, Except.ok.injEq, Prod.mk.injEq] at hStep
   rw [← hStep.2]; exact hInv
@@ -913,14 +902,14 @@ CNodes and slot links.
 endpoint alone, so the capability transfer is invisible to it. -/
 theorem endpointCallWithCapsOnCore_preserves_schedulerInvariantBase_smp
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hNotCur : ∀ ep, st.getEndpoint? endpointId = some ep →
       ∀ r, ep.receiveQ.head = some r →
         st.scheduler.currentOnCore (determineTargetCore st r) ≠ some r)
     (h : schedulerInvariantBase_smp st) :
     schedulerInvariantBase_smp (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   have hBare := endpointCallOnCore_preserves_schedulerInvariantBase_smp endpointId caller
     payload executingCore st hObjInv
     hNotCur h
@@ -957,12 +946,12 @@ nothing.  Where the send asks to transfer no capabilities the step is not
 reached at all, and `…_of_no_caps` below is unconditional. -/
 theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hTransfer : receiveTransferCapsPreservesCapabilityBundle
-      (sendCapRequest st endpointId caller payload) receiverSlotBase)
+      (sendCapRequest st endpointId caller payload) endpointId)
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   have hBare := endpointCallOnCore_preserves_capabilityInvariantBundle endpointId caller
     payload executingCore st h
   unfold endpointCallWithCapsOnCore
@@ -990,15 +979,15 @@ their composition. Needed because the fault delivery writes the fault record
 onto the chain's post-state, and that write is an `insert`. -/
 theorem endpointCallCrossCoreDispatch_preserves_objects_invExt
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
     (endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st).1.objects.invExt := by
+      executingCore st).1.objects.invExt := by
   have hWc := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
-    receiverSlotBase executingCore st hObjInv
+    executingCore st hObjInv
   unfold endpointCallCrossCoreDispatch
   cases hWcEq : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st with
+      executingCore st with
   | mk stW resW =>
       rw [hWcEq] at hWc
       simp only at hWc ⊢
@@ -1081,21 +1070,21 @@ thread's placement and the chain walk re-buckets on each member's *home* core, s
 neither can make a woken receiver current where it was not. -/
 theorem endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hNotCur : ∀ ep, st.getEndpoint? endpointId = some ep →
       ∀ r, ep.receiveQ.head = some r →
         st.scheduler.currentOnCore (determineTargetCore st r) ≠ some r)
     (h : schedulerInvariantBase_smp st) :
     schedulerInvariantBase_smp (endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   have hWc := endpointCallWithCapsOnCore_preserves_schedulerInvariantBase_smp endpointId caller
-    payload receiverSlotBase executingCore st hObjInv hNotCur h
+    payload executingCore st hObjInv hNotCur h
   have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
-    receiverSlotBase executingCore st hObjInv
+    executingCore st hObjInv
   unfold endpointCallCrossCoreDispatch
   cases hWcEq : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st with
+      executingCore st with
   | mk stW resW =>
       rw [hWcEq] at hWc hWcInv
       simp only at hWc hWcInv ⊢
@@ -1127,17 +1116,17 @@ nothing at all, which is the difference between a chain that installs
 capabilities and one that does not. -/
 theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hTransfer : receiveTransferCapsPreservesCapabilityBundle
-      (sendCapRequest st endpointId caller payload) receiverSlotBase)
+      (sendCapRequest st endpointId caller payload) endpointId)
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   have hWc := endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle endpointId caller
-    payload receiverSlotBase executingCore st hTransfer h
+    payload executingCore st hTransfer h
   unfold endpointCallCrossCoreDispatch
   cases hWcEq : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st with
+      executingCore st with
   | mk stW resW =>
       rw [hWcEq] at hWc
       simp only at hWc ⊢
@@ -1160,36 +1149,36 @@ theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle
 capabilities the leg preserves the bundle outright.
 
 `endpointCallWithCapsOnCore` short-circuits on an empty request
-(`sendCapRequest`) *before* it resolves the receiver's CSpace root, so no
+(`sendCapRequest`) *before* it reads the receiver's receive slot, so no
 capability is resolved or installed and the whole leg is the bare rendezvous.
 This is what makes the fault delivery's lift unconditional: a fault payload
 requests nothing (`sendCapRequest_fault`). -/
 theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle_of_no_caps
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hNoCaps : sendCapRequest st endpointId caller payload = none)
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   have hBare := endpointCallOnCore_preserves_capabilityInvariantBundle endpointId caller
     payload executingCore st h
-  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ hNoCaps]
+  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hNoCaps]
   exact hBare
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the whole `.call` chain, same
 condition — the donation and the chain walk never reach a capability transfer. -/
 theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hNoCaps : sendCapRequest st endpointId caller payload = none)
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   have hWc := endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle_of_no_caps
-    endpointId caller payload receiverSlotBase executingCore st hNoCaps h
+    endpointId caller payload executingCore st hNoCaps h
   unfold endpointCallCrossCoreDispatch
   cases hWcEq : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st with
+      executingCore st with
   | mk stW resW =>
       rw [hWcEq] at hWc
       simp only at hWc ⊢

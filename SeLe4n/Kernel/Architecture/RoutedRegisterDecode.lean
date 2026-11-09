@@ -157,7 +157,6 @@ theorem decodeSyscallArgsFromState_of_routedSend
     ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
       decoded.syscallId = .send ∧ decoded.capAddr = capAddr ∧
       decoded.overflowCount = 0 ∧ decoded.msgInfo = msgInfo ∧ msgInfo.extraCaps = 0 ∧
-      decoded.capRecvSlot = SeLe4n.Slot.ofNat 0 ∧
       decoded.msgRegs = layout.msgRegs.map (readReg regs) := by
   unfold registerRoutedSyscall at h
   split at h
@@ -176,7 +175,7 @@ theorem decodeSyscallArgsFromState_of_routedSend
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       cases h
       exact ⟨_, hD .send ‹_ = SyscallId.send.toNat›, rfl, rfl, rfl, rfl,
-        ‹msgInfo.extraCaps = 0›, rfl, rfl⟩
+        ‹msgInfo.extraCaps = 0›, rfl⟩
     · repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -192,7 +191,6 @@ theorem decodeSyscallArgsFromState_of_routedCall
     ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
       decoded.syscallId = .call ∧ decoded.capAddr = capAddr ∧
       decoded.overflowCount = 0 ∧ decoded.msgInfo = msgInfo ∧ msgInfo.extraCaps = 0 ∧
-      decoded.capRecvSlot = SeLe4n.Slot.ofNat 0 ∧
       decoded.msgRegs = layout.msgRegs.map (readReg regs) := by
   unfold registerRoutedSyscall at h
   split at h
@@ -211,7 +209,7 @@ theorem decodeSyscallArgsFromState_of_routedCall
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       cases h
       exact ⟨_, hD .call ‹_ = SyscallId.call.toNat›, rfl, rfl, rfl, rfl,
-        ‹msgInfo.extraCaps = 0›, rfl, rfl⟩
+        ‹msgInfo.extraCaps = 0›, rfl⟩
     · repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -259,7 +257,6 @@ theorem decodeSyscallArgsFromState_of_routedReceive
     ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
       decoded.syscallId = .receive ∧ decoded.capAddr = capAddr ∧
       decoded.overflowCount = 0 ∧ decoded.msgInfo.length = len ∧
-      decoded.capRecvSlot = SeLe4n.Slot.ofNat 0 ∧
       (len ≠ 0 → decoded.msgRegs[0]? = some ⟨replyAddr.toNat⟩) := by
   unfold registerRoutedSyscall at h
   split at h
@@ -278,7 +275,7 @@ theorem decodeSyscallArgsFromState_of_routedReceive
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       all_goals
         cases h
-        refine ⟨_, hD .receive ‹_›, rfl, rfl, rfl, rfl, rfl, fun hN => ?_⟩
+        refine ⟨_, hD .receive ‹_›, rfl, rfl, rfl, rfl, fun hN => ?_⟩
       · simp only [Array.getElem?_map, Array.getElem?_eq_getElem ‹0 < layout.msgRegs.size›,
           Option.map_some, CPtr.ofWord_toNat, ← readReg_val_eq_word]
       · exact absurd (Nat.lt_of_lt_of_le (Nat.pos_of_ne_zero hN) hLen) ‹¬0 < layout.msgRegs.size›
@@ -297,7 +294,6 @@ theorem decodeSyscallArgsFromState_of_routedReplyRecv
     ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
       decoded.syscallId = .replyRecv ∧ decoded.capAddr = capAddr ∧
       decoded.overflowCount = 0 ∧ decoded.msgInfo = msgInfo ∧
-      decoded.capRecvSlot = SeLe4n.Slot.ofNat 0 ∧
       decoded.msgRegs = layout.msgRegs.map (readReg regs) := by
   unfold registerRoutedSyscall at h
   split at h
@@ -315,7 +311,7 @@ theorem decodeSyscallArgsFromState_of_routedReplyRecv
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       cases h
-      exact ⟨_, hD .replyRecv ‹_ = SyscallId.replyRecv.toNat›, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      exact ⟨_, hD .replyRecv ‹_ = SyscallId.replyRecv.toNat›, rfl, rfl, rfl, rfl, rfl⟩
     · repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h

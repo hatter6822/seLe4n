@@ -8,9 +8,9 @@ bit 5 length
 bit 6 length
 bit 7 extraCaps
 bit 8 extraCaps
-bit 9 label
-bit 10 label
-bit 11 label
+bit 9 capsUnwrapped
+bit 10 capsUnwrapped
+bit 11 capsUnwrapped
 bit 12 label
 bit 13 label
 bit 14 label
@@ -28,9 +28,9 @@ bit 25 label
 bit 26 label
 bit 27 label
 bit 28 label
-bit 29 reserved
-bit 30 reserved
-bit 31 reserved
+bit 29 label
+bit 30 label
+bit 31 label
 bit 32 reserved
 bit 33 reserved
 bit 34 reserved
@@ -65,7 +65,8 @@ bit 62 reserved
 bit 63 reserved
 field length shift 0 width 7
 field extraCaps shift 7 width 2
-field label shift 9 width 20
+field capsUnwrapped shift 9 width 3
+field label shift 12 width 20
 register capPtr x0
 register msgInfo x1
 register msgReg0 x2
@@ -77,4 +78,4 @@ maxMessageRegisters 120
 maxExtraCaps 3
 maxLabel 1048575
 errorLabelBase 1048320
-syscallAbiVersion 3
+syscallAbiVersion 4

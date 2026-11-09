@@ -450,7 +450,7 @@ slot, the replenishment migrated from the donor's home core to the server's
 walk. -/
 theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : SystemState)
     (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
-    (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage) (slot : SeLe4n.Slot)
+    (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage)
     (core : Concurrency.CoreId)
     (hM : sendPayloadMessage st caller payload = msg)
     (hReq : sendCapRequest st endpointId caller payload = none)
@@ -459,7 +459,7 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
     (hG : callDonatesInPlace st endpointId caller r rt rid = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
-    ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload slot core st =
+    ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload core st =
       (performCallDonating st endpointId caller r rt.queueNext rid (callerScId st caller)
         (determineTargetCore st caller) (determineTargetCore st r) msg core,
        .ok ({ results := #[] }, sgi)) := by
@@ -569,7 +569,7 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
   unfold endpointCallCrossCoreDispatchChecked
   rw [if_pos hFlow]
   unfold endpointCallCrossCoreDispatch
-  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ hReq, hEq]
+  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq, hEq]
   simp only [Except.map, hEp, hH, hcv, hrv]
   unfold applyCallDonationOnCore
   rw [applyCallDonation_characterisation, hcv', hrv', hDonId]

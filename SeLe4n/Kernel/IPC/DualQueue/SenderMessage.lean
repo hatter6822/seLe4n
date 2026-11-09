@@ -57,56 +57,71 @@ theorem faultMessage_bounded (f : Fault) (ctx : FaultContext)
     (badge : Option SeLe4n.Badge) : (faultMessage f ctx badge).bounded :=
   Architecture.encodeFault_within_budget f ctx
 
-/-- M-D01: Resolve extra capability addresses from the sender's CSpace
-into actual capabilities for IPC message transfer.
+/-- **The capabilities in the resolved slots, up to the first empty one.**  An
+empty slot holds seL4's null capability, which `transferCaps` neither unwraps
+nor derives, so the transfer stops there; the slots after it are never read. -/
+def extraCapsFromSlots (st : SystemState) : List SlotRef → Array TransferCap → Array TransferCap
+  | [], acc => acc
+  | ref :: rest, acc =>
+    match SystemState.lookupSlotCap st ref with
+    | none => acc
+    | some cap => extraCapsFromSlots st rest (acc.push (TransferCap.fromSlot cap ref))
 
-For each CPtr in `capAddrs`, resolve it via `resolveCapAddress` in the
-sender's CSpace root, then look up the capability at the resolved slot.
-Caps that fail to resolve are silently dropped (seL4 behavior).
-Returns the resolved capabilities as an array. -/
-/- W5-G: Resolves extra capabilities from IPC buffer. Failed resolutions are
-   silently dropped (matching seL4 `lookupExtraCaps` behavior). This means
-   the receiver gets fewer extra caps than the sender specified. For
-   debugging, callers should check `extraCaps.length` against the expected
-   count from `MessageInfo.extraCaps`.
-   X5-I (L-4): Confirmed v0.22.17 audit — silent dropping matches seL4
-   reference semantics. No security impact: caps that fail resolution
-   simply don't transfer.
+/-- **Resolve the extra capability addresses a sender names** (seL4's
+`lookupExtraCaps`), in its CSpace, at the rendezvous.
 
-   **AC3-D / API-01 — Silent-drop semantics**: The returned `Array Capability`
-   contains only successfully resolved capabilities. Its `.size` equals the
-   count of *successfully resolved* extra caps, which may be strictly less than
-   `capAddrs.size` (the sender's requested count). Receivers should compare
-   the actual resolved count against the expected count from the original
-   `MessageInfo.extraCaps` to detect drops. This is seL4-compatible behavior:
-   `lookupExtraCaps` in the C kernel also silently discards unresolvable
-   capabilities and returns only valid ones in the IPC buffer.
+seL4 semantics: the lookup of the addresses is all or nothing — if any address
+fails to resolve to a slot, the message carries no capabilities
+(`doNormalTransfer` clears the list on a lookup failure).  The capabilities are
+then the slots' contents in order, up to the first empty slot, at which seL4's
+transfer stops (`extraCapsFromSlots`).  A sender without the grant right
+transfers nothing, and its addresses are not looked up at all (PR #873 round 14:
+the authority is checked once, where it decides something).
 
-   **AI6-A (M-02) — Spec cross-reference**: See `docs/spec/SELE4N_SPEC.md`
-   §8.10.4 "IPC Extra Capability Resolution — Silent-Drop Semantics" for the
-   normative specification, including the seL4 reference C kernel equivalence. -/
+Resolution is a pure read.  Each capability carries the address of the slot it
+was read from: the slot is its own derivation node (WS-ZA ZA5.3), so the
+transfer that installs it records the edge from that slot, and nothing is
+minted here.  A send resolves its addresses at the rendezvous only, so no source
+address is ever held across a syscall. -/
 def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
     (st : SystemState) : Array TransferCap :=
-  -- PR #873 round 14: **the authority is checked once, where it decides
-  -- something** -- a sender without the Grant right transfers nothing, so its
-  -- addresses are not looked up at all.
-  --
-  -- WS-ZA ZA5.3: resolution is a pure read (seL4 `lookupExtraCaps`).  Each
-  -- capability carries the address of the slot it was read from: the slot is
-  -- its own derivation node, so the transfer that installs it records the edge
-  -- from that slot, and nothing is minted here.  A send resolves its addresses
-  -- at the rendezvous only, so no source address is ever held across a
-  -- syscall.
   if !granted then #[] else
-  capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth st with
-    | .error _ => acc
-    | .ok ref =>
-        match SystemState.lookupSlotCap st ref with
-        | none => acc
-        | some cap => acc.push (TransferCap.fromSlot cap ref)) #[]
+  match capAddrs.toList.mapM (fun addr => (resolveCapAddress cspaceRoot addr depth st).toOption) with
+  | none => #[]
+  | some refs => extraCapsFromSlots st refs #[]
 
+
+/-- Every capability `extraCapsFromSlots` collects is the content of the slot it
+names. -/
+theorem extraCapsFromSlots_slot (st : SystemState) :
+    ∀ (refs : List SlotRef) (acc : Array TransferCap),
+      (∀ c ∈ acc, SystemState.lookupSlotCap st c.srcSlot = some c.cap) →
+      ∀ c ∈ extraCapsFromSlots st refs acc, SystemState.lookupSlotCap st c.srcSlot = some c.cap
+  | [], _, hAcc => hAcc
+  | ref :: rest, acc, hAcc => by
+    unfold extraCapsFromSlots
+    split
+    · exact hAcc
+    · rename_i cap hLk
+      refine extraCapsFromSlots_slot st rest _ ?_
+      intro c hc
+      rcases Array.mem_push.mp hc with hc | rfl
+      · exact hAcc c hc
+      · exact hLk
+
+/-- **Every resolved capability is the content of its source slot** in the state
+it is resolved in. -/
+theorem resolveExtraCaps_slot (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr)
+    (depth : Nat) (granted : Bool) (st : SystemState) (c : TransferCap)
+    (hc : c ∈ resolveExtraCaps cspaceRoot capAddrs depth granted st) :
+    SystemState.lookupSlotCap st c.srcSlot = some c.cap := by
+  unfold resolveExtraCaps at hc
+  split at hc
+  · simp at hc
+  · split at hc
+    · simp at hc
+    · exact extraCapsFromSlots_slot st _ #[] (by simp) c hc
 
 /-- WS-ZA ZA4.7: the decode of a blocked sender's saved frame — the entry's own
 decoder (`decodeSyscallArgsFromState`) on the registers the entry saved

@@ -33,14 +33,14 @@ def endpointSendDualChecked
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
+    : Kernel CapTransferSummary :=
   fun st =>
     let senderLabel := ctx.threadLabelOf sender
     let endpointLabel := ctx.endpointLabelOf endpointId
     -- WS-SM SM8.C: the global lattice check AND this endpoint's configured
     -- override. A conjunction, so the override can only narrow.
     if endpointFlowGate ctx endpointId senderLabel endpointLabel then
-      endpointSendDualWithCaps endpointId sender payload receiverSlotBase st
+      endpointSendDualWithCaps endpointId sender payload st
     else
       .error .flowDenied
 
@@ -74,7 +74,6 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hFlow : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = true)
@@ -83,8 +82,8 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
     -- `endpointOverrideAllows_default` discharges it where none is configured.
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = true) :
-    endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
-      endpointSendDualWithCaps endpointId sender payload receiverSlotBase st := by
+    endpointSendDualChecked ctx endpointId sender payload st =
+      endpointSendDualWithCaps endpointId sender payload st := by
   have hGate := endpointFlowGate_of ctx endpointId _ _ hFlow hOverride
   -- Verified load-bearing: dropping `hGate` leaves the
   -- `if endpointFlowGate … then … else .flowDenied` unreduced, so `hOverride`
@@ -100,11 +99,10 @@ theorem endpointSendDualChecked_flowDenied
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = false) :
-    endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
+    endpointSendDualChecked ctx endpointId sender payload st =
       .error .flowDenied := by
   unfold endpointSendDualChecked
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the override
@@ -484,15 +482,14 @@ errors, so the conclusion ¬∃ r st' still holds unconditionally. -/
 theorem endpointSendDualChecked_denied_preserves_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = false) :
     ¬∃ (r : CapTransferSummary) (st' : SystemState),
-        endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
+        endpointSendDualChecked ctx endpointId sender payload st =
         .ok (r, st') := by
   intro ⟨r, st', h⟩
-  rw [endpointSendDualChecked_flowDenied ctx endpointId sender payload receiverSlotBase st
+  rw [endpointSendDualChecked_flowDenied ctx endpointId sender payload st
     hDeny] at h
   cases h
 
@@ -518,17 +515,16 @@ outcomes with the message argument they checked. -/
 theorem enforcement_sufficiency_endpointSendDual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) :
     -- WS-SM SM8.C: the two flow disjuncts are stated against `endpointFlowGate`,
     -- the predicate the wrapper actually branches on.
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
         (ctx.endpointLabelOf endpointId) = true ∧
-       endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
-       endpointSendDualWithCaps endpointId sender payload receiverSlotBase st) ∨
+       endpointSendDualChecked ctx endpointId sender payload st =
+       endpointSendDualWithCaps endpointId sender payload st) ∨
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
         (ctx.endpointLabelOf endpointId) = false ∧
-       endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
+       endpointSendDualChecked ctx endpointId sender payload st =
          .error .flowDenied) := by
   unfold endpointSendDualChecked
   cases hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
@@ -819,13 +815,13 @@ def endpointCallChecked
     (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
+    : Kernel CapTransferSummary :=
   fun st =>
     let callerLabel := ctx.threadLabelOf caller
     let endpointLabel := ctx.endpointLabelOf endpointId
     -- WS-SM SM8.C: global check ∧ this endpoint's override.
     if endpointFlowGate ctx endpointId callerLabel endpointLabel then
-      endpointCallWithCaps endpointId caller payload receiverSlotBase st
+      endpointCallWithCaps endpointId caller payload st
     else
       .error .flowDenied
 

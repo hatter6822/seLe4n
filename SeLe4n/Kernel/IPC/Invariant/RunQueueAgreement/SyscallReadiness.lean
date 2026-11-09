@@ -207,12 +207,12 @@ stages, and the receive half blocks the caller. -/
 theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
-    {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : CoreId}
+    {c : CoreId}
     {st st' : SystemState} {s : CapTransferSummary}
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg root base c st =
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg c st =
       .ok (s, st')) :
     readyKeptStage (· = tid) st st' := by
   have hE := endpointReplyOnCore_runQueueStage tid prevCaller msg c st
@@ -247,11 +247,11 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
   have hAp : st1p.activeAt tid :=
     let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
     activeKeptStage.of_stage (replyRecvPopDonation_runQueueStage hPop) hI1 hR1 tid hA1
-  have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) root base c
+  have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
     st1p hH2 ((hPC c).trans hC1) hNI hAp
-  have rR := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) root base c
+  have rR := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) c
     st1p hH2 ((hPC c).trans hC1) hNI hAp
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) root base c st1p = q at hR rR h
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c st1p = q at hR rR h
   obtain ⟨st2, r2⟩ := q
   dsimp only at hR rR
   rcases r2 with _ | ⟨nt, sm, _⟩ <;> dsimp only at h
@@ -1213,26 +1213,26 @@ theorem clearStashStage_readyKeptStage {S : SeLe4n.ThreadId → Prop} {st s st' 
 
 theorem endpointSendCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId)
+    (c : CoreId)
     (st : SystemState) (P : SyscallArmPremises st c sender) :
     readyKeptStage (· = sender) st
-      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload base c st).1 := by
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload c st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   repeat' split
   all_goals first
     | exact .refl _
-    | exact endpointSendDualWithCapsOnCore_readyKeptStage _ _ _ _ _ _ P.endpointHeads
+    | exact endpointSendDualWithCapsOnCore_readyKeptStage _ _ _ _ _ P.endpointHeads
         P.current P.notIdle
 
 theorem endpointCallCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId)
+    (c : CoreId)
     (st : SystemState) (P : SyscallArmPremises st c caller) :
     readyKeptStage (· = caller) st
-      (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload base c st).1 := by
+      (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload c st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
-  · exact endpointCallCrossCoreDispatch_readyKeptStage _ _ _ _ _ _ P.endpointHeads
+  · exact endpointCallCrossCoreDispatch_readyKeptStage _ _ _ _ _ P.endpointHeads
       P.current P.notIdle
   · exact .refl _
 
@@ -1297,9 +1297,9 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     rename_i hSend
     exact clearStashStage_readyKeptStage
       ((runQueueStage_of_pair_eq
-        (endpointSendCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ _ P) hSend))
+        (endpointSendCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ P) hSend))
       ((runQueueStage_of_pair_eq
-        (endpointSendCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ _ _ P) hSend))
+        (endpointSendCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ _ P) hSend))
       (fun x => stageWokenDelivery_runQueueStage x _ _) h
   case none.receive.object epId =>
     repeat' split at h
@@ -1307,11 +1307,11 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     rename_i summ _ hRecv _ stDon hHand
     cases h
     have E := runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ _ P.endpointHeads
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ P.endpointHeads
         P.current P.notIdle P.currentActive) hRecv
     obtain ⟨_, hR2⟩ := E.1.links P.objInv P.refined
     exact (runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ _ _ P.endpointHeads
+      (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ P.endpointHeads
         P.current P.notIdle P.currentActive) hRecv).trans E.1
       (.of_stage (((applyReceiveRendezvousHandoff_runQueueStage
           ((E.2 P.objInv P.refined hR2 P.dequeued).coherent _) hHand).trans
@@ -1322,9 +1322,9 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     · rename_i hCall
       cases h
       exact (runQueueStage_of_pair_eq
-        (endpointCallCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ _ _ P) hCall).trans
+        (endpointCallCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ _ P) hCall).trans
         (runQueueStage_of_pair_eq
-          (endpointCallCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ _ P) hCall).1
+          (endpointCallCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ P) hCall).1
         (.of_stage (stageWokenDelivery_runQueueStage _ _ _))
     · cases h
   case none.reply.replyCap rid =>

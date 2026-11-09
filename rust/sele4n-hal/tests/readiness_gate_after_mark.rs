@@ -66,7 +66,7 @@ fn dispatch_svc_routes_to_inner_dispatcher() {
     assert_eq!(result, Ok(SvcOutcome::Frame(error_frame_regs(17))));
     // The frame's x1 word is the status label in MessageInfo position
     // (ABI v3: the top of the label range, base 0xFFF00).
-    assert_eq!(error_frame_regs(17)[1], (0xFFF00u64 + 17) << 9);
+    assert_eq!(error_frame_regs(17)[1], (0xFFF00u64 + 17) << 12);
 }
 
 /// Moved from `svc_dispatch`'s unit tests at RR5.6 (see this file's header).
@@ -109,7 +109,7 @@ fn unknown_syscall_id_on_ready_core_publishes_status_frame() {
     frame.gprs[0] = 0xDEAD;
     handle_synchronous_exception(&mut frame);
     assert_eq!(frame.x0(), 0);
-    assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 31) << 9);
+    assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 31) << 12);
     assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
 }
 
@@ -127,8 +127,8 @@ fn wide_syscall_number_on_ready_core_is_unknown_syscall() {
     frame.gprs[7] = 0x1_0000_0002;
     handle_synchronous_exception(&mut frame);
     assert_eq!(frame.x0(), 0);
-    assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 31) << 9);
-    assert_ne!(frame.x1(), (ERROR_LABEL_BASE + 17) << 9);
+    assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 31) << 12);
+    assert_ne!(frame.x1(), (ERROR_LABEL_BASE + 17) << 12);
 }
 
 /// PR #889 review: with the core ready, the prefilters run and refuse as
@@ -207,7 +207,7 @@ fn svc_arm_never_publishes_a_success_label() {
     let mut frame = zero_frame();
     frame.esr_el1 = (EC_SVC_AARCH64 << 26) | 0x42; // lower bits ignored
     handle_synchronous_exception(&mut frame);
-    let label = frame.x1() >> 9;
+    let label = frame.x1() >> 12;
     assert_ne!(
         label, 0,
         "an SVC outcome must not decode as success (label 0)"
@@ -236,7 +236,7 @@ fn handle_sync_reads_esr_from_frame() {
     frame.esr_el1 = (EC_SVC_AARCH64 << 26) | 0x42; // lower bits ignored
     handle_synchronous_exception(&mut frame);
     assert_eq!(frame.x0(), 0);
-    assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 17) << 9);
+    assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 17) << 12);
     assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
 }
 

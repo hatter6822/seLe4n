@@ -143,13 +143,13 @@ records, and the answer either finds the caller carrying no fault record or
 clears the one it answers. -/
 theorem endpointReplyRecvAnsweringOnCore {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
-    {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {root : SeLe4n.ObjId} {base : SeLe4n.Slot}
+    {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
     {c : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
     (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hAns : answer = none → NoFaultAt st prevCaller)
     (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
-      root base c st = .ok (summary, st')) :
+      c st = .ok (summary, st')) :
     RecordsStep st st' := by
   unfold _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
@@ -169,10 +169,10 @@ theorem endpointReplyRecvAnsweringOnCore {answer : Option Architecture.FaultRepl
   obtain ⟨hQp, hRp, -⟩ := replyRecvReceiveLegFacts hInv hQ hR hPop hReady
   have F1 := RecordsFrame.replyRecvPopDonation A.1.invExt hPop
   have S2 := endpointReceiveDualWithCapsOnCore (endpointId := epId) (replyId := some rid)
-    (receiverCspaceRoot := root) (receiverSlotBase := base) (c := c) F1.invExt hQp
+    (c := c) F1.invExt hQp
     (fun x hx => by rw [hRp x hx]; exact ipcParked_ready)
   revert h S2
-  generalize _root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId tid (some rid) root base
+  generalize _root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId tid (some rid)
     c st1p = r2
   obtain ⟨st2, res2⟩ := r2
   cases res2 with
@@ -221,11 +221,11 @@ answer to a faulted caller clears its fault record, any other answer finds none.
 theorem RecordsStage.endpointReplyRecvAnsweringOnCore
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
-    {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : CoreId} {st st' : SystemState}
+    {c : CoreId} {st st' : SystemState}
     {summary : CapTransferSummary} (hR : ipcReachable st) (hC : CallerReady st tid)
     (hAns : answer = none → NoFaultAt st prevCaller)
     (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
-      root base c st = .ok (summary, st')) : RecordsStage st st' :=
+      c st = .ok (summary, st')) : RecordsStage st st' :=
   have hQ := hR.ipcInvariantFull.queueHeadBlockedConsistent
   RecordsStage.of_step (RecordsStep.endpointReplyRecvAnsweringOnCore hR.objects_invExt hQ hC.ready hAns h)
     fun hW => by
@@ -248,7 +248,7 @@ theorem RecordsStage.endpointReplyRecvAnsweringOnCore
           (_root_.SeLe4n.Kernel.endpointReplyOnCore tid prevCaller msg c st).1 = st1p := by
         rw [hRl]; unfold replyRecvPostPopState; rw [hP]
       refine endpointReplyRecvOnCore_preserves_replyWaitersConsistent epId tid rid prevCaller msg
-        root base c st st' summary hR.objects_invExt hW ?_ ?_ h
+        c st st' summary hR.objects_invExt hW ?_ ?_ h
       · rw [hPost]
         intro v hv
         obtain ⟨t, hT, rfl⟩ := tcb_of_replyViews hv
@@ -267,9 +267,9 @@ caller's own fault record selects, so a caller answered with its message
 carries no fault record. -/
 theorem RecordsStage.replyRecvTransferOnCore {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
-    {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : CoreId} {st st' : SystemState}
+    {c : CoreId} {st st' : SystemState}
     {summary : CapTransferSummary} (hR : ipcReachable st) (hC : CallerReady st tid)
-    (h : _root_.SeLe4n.Kernel.replyRecvTransferOnCore epId tid rid prevCaller label msg root base
+    (h : _root_.SeLe4n.Kernel.replyRecvTransferOnCore epId tid rid prevCaller label msg
       c st = .ok (summary, st')) : RecordsStage st st' := by
   unfold _root_.SeLe4n.Kernel.replyRecvTransferOnCore at h
   refine RecordsStage.endpointReplyRecvAnsweringOnCore hR hC (fun hA x hx => ?_) h

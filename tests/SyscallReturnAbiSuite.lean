@@ -83,8 +83,8 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Kernel.Architecture.blockedReturn_staged_in_waiter_frame
 #check @SeLe4n.Kernel.Architecture.blockedUnitReturn_staged_in_sender_frame
 -- PR #866 round-2 — the transfer-honesty surface (installed, never requested)
-#check @SeLe4n.Model.CapTransferSummary.installedCount
-#check @SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_le_installed
+#check @SeLe4n.Model.CapTransferSummary.capInfo
+#check @SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_le_capInfo
 #check @SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_zero
 -- RA.B.8 — the per-arm shape-coherence family (over the live dispatch arms)
 #check @SeLe4n.Kernel.dispatchArm_notificationWait_matches_returnShape
@@ -256,8 +256,8 @@ private def core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
 /-- The shared CNode with all the capabilities (the §3 notification cap,
 the endpoint and reply caps the blocked orderings need, and the 9h
 transfer pair: the no-grant endpoint cap + the payload cap).  Slot 0 is
-deliberately free — it is the default `capRecvSlot` the granted transfer
-installs into. -/
+deliberately free — the receiver's receive path names it
+(`capsSendScenario`), so the granted transfer installs there. -/
 private def sharedCn : SeLe4n.Model.CNode :=
   (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
@@ -573,8 +573,11 @@ receive slot.  Returns (staged frame, receive-slot-0 occupied?). -/
 private def capsSendScenario (epPtr : Nat) :
     Except KernelError
       (Kernel.Architecture.SyscallReturnFrame × Bool) := do
+  -- The receiver's IPC buffer names slot 0 of its CNode as its receive slot
+  -- (seL4's `seL4_SetCapReceivePath`).
+  let st0 := SeLe4n.Testing.withReceiveSlot twoThreadState callerTid ⟨0x7701⟩ 0
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 twoThreadState
+    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 st0
   if out1 != .blocks then throw .illegalState
   -- msgInfo {length := 1, extraCaps := 1}: MR0 (x2) is the body word 7,
   -- MR1 (x3) the extra-cap address (`decodeExtraCapAddrs` reads
@@ -1088,7 +1091,7 @@ alone, and the field that comes back non-zero — holding `2^(j - shift)` and
 re-encoding to the same word — owns it.  A shift or width changed in the
 decoder therefore changes the table even if nobody edits a constant. -/
 
-private def abiLayoutFields : List String := ["length", "extraCaps", "label"]
+private def abiLayoutFields : List String := ["length", "extraCaps", "capsUnwrapped", "label"]
 
 /-- Which field owns bit `j`, decided by decoding `2^j` alone and requiring the
 round trip; `reserved` for a bit the decoder refuses. -/
@@ -1097,11 +1100,12 @@ private def abiLayoutBitOwner (j : Nat) : String :=
   | none => "reserved"
   | some mi =>
     if MessageInfo.encode mi != 2 ^ j then "inconsistent"
-    else match mi.length != 0, mi.extraCaps != 0, mi.label != 0 with
-      | true, false, false => "length"
-      | false, true, false => "extraCaps"
-      | false, false, true => "label"
-      | _, _, _ => "inconsistent"
+    else match mi.length != 0, mi.extraCaps != 0, mi.capsUnwrapped != 0, mi.label != 0 with
+      | true, false, false, false => "length"
+      | false, true, false, false => "extraCaps"
+      | false, false, true, false => "capsUnwrapped"
+      | false, false, false, true => "label"
+      | _, _, _, _ => "inconsistent"
 
 /-- A field's shift and width, read off the bit ownership — or `noncontiguous`
 if its bits do not form one run. -/

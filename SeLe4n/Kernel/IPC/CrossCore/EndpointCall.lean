@@ -657,16 +657,16 @@ theorem lockSet_endpointSendOnCore_correct
 /-! ## What `ipcUnwrapCaps` writes, and where it is declared
 
 `ipcTransferSingleCap` — the one place an `.ipcTransfer` edge is made — writes
-exactly two things on its installing path: the **CNode at
-`receiverCspaceRoot`** (through `cspaceInsertSlot`), and the **`SystemState`-level
+exactly two things on its installing path: the **CNode of the receive slot**
+the receiver's IPC buffer names (through `cspaceInsertSlot`), and the **`SystemState`-level
 derivation tree** (the edge and both of its maps). Nothing else in the transfer mutates state.
 
 Both are declared, and each theorem below names one. The destination is the
 resolver's own output, so there is no gap between "the lock the bracket takes"
 and "the object the transfer writes": `rendezvousCapsDestination?` is the
 expression `endpointSendDualWithCaps` and `endpointCallWithCaps` evaluate
-(`endpointSendDualWithCaps_reduces_to_unwrap`,
-`endpointCallWithCaps_reduces_to_unwrap`), read from the same pre-state.
+(`endpointSendDualWithCaps_writes_destination`,
+`endpointCallWithCaps_writes_destination`), read from the same pre-state.
 -/
 
 /-- **WS-RR RR7.8**: a caps-carrying `.call` holds the destination CSpace root
@@ -913,11 +913,11 @@ declared write-mode in the footprint its bracket acquires.**
 This is what "the transfer's write set is contained in the declared footprint"
 means as a theorem, and what the registered `capTransferReceiverCnode` domain
 was registered for. It composes three facts that were each true and separately
-stated: the transfer changes no object but the receiver root
-(`ipcUnwrapCaps_preserves_objects_ne`), the root it is handed is the resolver's
-own output (`endpointSendDualWithCaps_reduces_to_unwrap`, since RR7.8 both read
-the same pre-state; since WS-ZA ZA4.7 the capability lookup before the unwrap
-writes no object, `receiveTransferCaps_frame`), and the resolver's output is declared
+stated: the transfer changes no object but the CNode of the receive slot its
+receiver's IPC buffer names (`ipcUnwrapCaps_object_cases`), that CNode is the
+resolver's own output (`endpointSendDualWithCaps_writes_destination`: both read
+the same pre-state; the capability lookup before the transfer writes no object,
+`receiveTransferCaps_frame`), and the resolver's output is declared
 (`lockSet_endpointSendOnCore_covers_capsDestination`).
 
 "Changes" is read off derivation metadata
@@ -940,30 +940,23 @@ it holds the lock, not of a lock whether something used it. -/
 theorem endpointSendDualWithCaps_object_writes_declared
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (cnodeRootObjId : SeLe4n.ObjId)
     (st st' st'' : SystemState) (recvRoot : SeLe4n.ObjId)
     (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (hSend : endpointSendDual endpointId sender payload st = .ok ((), st'))
     (hDest : rendezvousCapsDestination? st endpointId sender payload = some recvRoot)
     (hObjInv : st'.objects.invExt)
-    (hStep : endpointSendDualWithCaps endpointId sender payload receiverSlotBase st
+    (hStep : endpointSendDualWithCaps endpointId sender payload st
       = .ok (summary, st''))
     (hChanged : ¬ SystemState.objectAgreesOffDerivationMetadataAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write)
       ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs := by
-  rw [endpointSendDualWithCaps_reduces_to_unwrap endpointId sender payload
-    receiverSlotBase st st' recvRoot hSend hDest] at hStep
-  -- WS-ZA ZA4.7: the resolution writes no object (`receiveTransferCaps_frame`),
-  -- so only the unwrap into `recvRoot` can change one.
-  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
   by_cases hEq : oid = recvRoot
   · subst hEq
     exact lockSet_endpointSendOnCore_covers_capsDestination st endpointId sender
       cnodeRootObjId payload oid hDest
-  · rcases hOr with rfl | hU
-    · exact absurd (.of_eq (by rw [hO])) hChanged
-    · exact absurd ((ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq
-        (hO ▸ hObjInv) hU).trans (.of_eq (by rw [hO]))) hChanged
+  · exact absurd (endpointSendDualWithCaps_writes_destination endpointId sender payload st st' st'' summary
+      oid hSend hObjInv hStep (by rw [hDest]; exact fun h => hEq (Option.some.inj h).symm)) hChanged
 
 /-- **WS-RR RR7.8**: and the same capstone on the `.call` arm — the same
 transfer, reached through the same resolver, declared in the same two
@@ -971,28 +964,23 @@ members. -/
 theorem endpointCallWithCaps_object_writes_declared
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (cnodeRootObjId : SeLe4n.ObjId)
     (st st' st'' : SystemState) (recvRoot : SeLe4n.ObjId)
     (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (hCall : endpointCall endpointId caller payload st = .ok ((), st'))
     (hDest : rendezvousCapsDestination? st endpointId caller payload = some recvRoot)
     (hObjInv : st'.objects.invExt)
-    (hStep : endpointCallWithCaps endpointId caller payload receiverSlotBase st
+    (hStep : endpointCallWithCaps endpointId caller payload st
       = .ok (summary, st''))
     (hChanged : ¬ SystemState.objectAgreesOffDerivationMetadataAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write)
       ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
-  rw [endpointCallWithCaps_reduces_to_unwrap endpointId caller payload
-    receiverSlotBase st st' recvRoot hCall hDest] at hStep
-  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
   by_cases hEq : oid = recvRoot
   · subst hEq
     exact lockSet_endpointCallOnCore_covers_capsDestination st endpointId caller
       cnodeRootObjId payload oid hDest
-  · rcases hOr with rfl | hU
-    · exact absurd (.of_eq (by rw [hO])) hChanged
-    · exact absurd ((ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq
-        (hO ▸ hObjInv) hU).trans (.of_eq (by rw [hO]))) hChanged
+  · exact absurd (endpointCallWithCaps_writes_destination endpointId caller payload st st' st'' summary
+      oid hCall hObjInv hStep (by rw [hDest]; exact fun h => hEq (Option.some.inj h).symm)) hChanged
 
 -- ============================================================================
 -- §8 SM6.A.5 — Donation-chain lock-set extension
@@ -1549,14 +1537,14 @@ both directions (`ipcUnwrapCaps_getTcb?_eq`), so the `getTcb?` projection is
 fixed off the threads' slot links -- a strictly stronger fact than the affinity
 this needs, which is why no per-field argument appears here. -/
 theorem ipcUnwrapCaps_determineTargetCore_eq (caps : Array TransferCap)
-    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     determineTargetCore st' x = determineTargetCore st x := by
   exact determineTargetCore_congr st st' x
     (TCB.map_proj_of_map_withoutLinks_eq (·.cpuAffinity)
-      (ipcUnwrapCaps_getTcb?_eq caps receiverRoot slotBase grantRight st st' summary x hObjInv hStep))
+      (ipcUnwrapCaps_getTcb?_eq caps endpointId rtcb slot? st st' summary x hObjInv hStep))
 
 -- ============================================================================
 -- §11b  `v0.35.161` (register row 57) — the SchedContext-resolution frames of
@@ -1870,41 +1858,23 @@ theorem linkCallerReply_getSchedContext?_eq (st st' : SystemState)
       · simp at hStep
 
 /-- `v0.35.161`: installing the capabilities a parked send was carrying writes CNodes
-and the CDT, and no SchedContext.  At the receiver's root a SchedContext already there
-is carried forward (`ipcUnwrapCaps_preserves_schedContext_objects`) and anything else
-either survives or becomes a CNode (`ipcUnwrapCaps_objects_at_root_orig_or_cnode`);
-every other key keeps its object, a CNode's derivation links aside. -/
+and the CDT, and no SchedContext: the receive slot's CNode is a CNode before and
+after, and every other key keeps its object, a CNode's or a thread's derivation
+links aside (`ipcUnwrapCaps_object_cases`). -/
 theorem ipcUnwrapCaps_getSchedContext?_eq (caps : Array TransferCap)
-    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary) (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     st'.getSchedContext? scId = st.getSchedContext? scId := by
   unfold SystemState.getSchedContext?
-  by_cases hRoot : scId.toObjId = receiverRoot
-  · cases hPre : st.objects[scId.toObjId]? with
-    | some obj =>
-      cases obj with
-      | schedContext sc =>
-        rw [ipcUnwrapCaps_preserves_schedContext_objects caps receiverRoot slotBase grantRight
-          st st' summary scId.toObjId sc hPre hObjInv hStep]
-      | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | reply _ | endpoint _ | frame _ | pageTable _ =>
-        rw [hRoot] at hPre ⊢
-        rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps receiverRoot slotBase grantRight
-          st st' summary hObjInv hStep with hOrig | ⟨cn', hCn⟩
-        · rw [hOrig, hPre]
-        · rw [hCn]
-    | none =>
-      rw [hRoot] at hPre ⊢
-      rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps receiverRoot slotBase grantRight
-        st st' summary hObjInv hStep with hOrig | ⟨cn', hCn⟩
-      · rw [hOrig, hPre]
-      · rw [hCn]
-  · rcases ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase grantRight st st' summary
-      scId.toObjId hRoot hObjInv hStep with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
+  rcases ipcUnwrapCaps_object_cases caps endpointId rtcb slot? st st' summary scId.toObjId
+      hObjInv hStep with h | ⟨_, -, -, ⟨cn, hc⟩, ⟨cn', hc'⟩⟩
+  · rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
     · rw [e]
     · rw [ha, hb]
     · rw [ha, hb]
+  · rw [hc, hc']
 
 /-- `v0.35.161`: waking an already-`.ready` thread writes only TCB run-queue links,
 so it frames every SchedContext resolution — the shape the receive leg's plain-`Send` wake has,
@@ -2701,70 +2671,70 @@ the receive's or the send's) resolves the sender's capabilities -- writing CDT n
 with one `ipcUnwrapCaps`; so it frames everything the unwrap frames. -/
 
 section receiveTransferCapsFrames
-variable {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
-  {base : SeLe4n.Slot} {st st'' : SystemState} {summary : CapTransferSummary}
+variable {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+  {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState} {summary : CapTransferSummary}
 
 theorem receiveTransferCaps_scheduler_eq
-    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
     st''.scheduler = st.scheduler := by
   obtain ⟨stR, caps, _, hS, _, hOr⟩ := receiveTransferCaps_frame h
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact hS
   · rw [ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ hU, hS]
 
 theorem receiveTransferCaps_objects_invExt (hI : st.objects.invExt)
-    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
     st''.objects.invExt := by
   obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
   have hIR : stR.objects.invExt := hO ▸ hI
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact hIR
   · exact ipcUnwrapCaps_preserves_objects_invExt _ _ _ _ stR _ _ hIR hU
 
 theorem receiveTransferCaps_getSchedContext?_eq (scId : SeLe4n.SchedContextId)
     (hI : st.objects.invExt)
-    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
     st''.getSchedContext? scId = st.getSchedContext? scId := by
   obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
   have hIR : stR.objects.invExt := hO ▸ hI
   have hR : stR.getSchedContext? scId = st.getSchedContext? scId := by
     unfold SystemState.getSchedContext?; rw [hO]
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact hR
   · exact (ipcUnwrapCaps_getSchedContext?_eq _ _ _ _ stR _ _ scId hIR hU).trans hR
 
 theorem receiveTransferCaps_determineTargetCore_eq (x : SeLe4n.ThreadId)
     (hI : st.objects.invExt)
-    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
     determineTargetCore st'' x = determineTargetCore st x := by
   obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
   have hIR : stR.objects.invExt := hO ▸ hI
   have hR := determineTargetCore_of_objectsAgreeOffRunLinks
     (st := st) (st' := stR) (fun _ => by rw [hO]) x
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact hR
   · exact (ipcUnwrapCaps_determineTargetCore_eq _ _ _ _ stR _ _ x hIR hU).trans hR
 
 theorem receiveTransferCaps_sameSchedContextBindings (hI : st.objects.invExt)
-    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
     sameSchedContextBindings st st'' := by
   obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
   have hIR : stR.objects.invExt := hO ▸ hI
   have hR : sameSchedContextBindings st stR :=
     sameSchedContextBindings.of_objectsAgreeOffRunLinks (fun _ => by rw [hO])
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact hR
   · exact hR.trans (ipcUnwrapCaps_sameSchedContextBindings _ _ _ _ stR _ _ hIR hU)
 
 theorem receiveTransferCaps_getTcb?_eq (tid : SeLe4n.ThreadId)
     (hI : st.objects.invExt)
-    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
     (st''.getTcb? tid).map TCB.withoutLinks = (st.getTcb? tid).map TCB.withoutLinks := by
   obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
   have hIR : stR.objects.invExt := hO ▸ hI
   have hR : stR.getTcb? tid = st.getTcb? tid := by
     unfold SystemState.getTcb?; rw [hO]
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · rw [hR]
   · rw [← hR]; exact ipcUnwrapCaps_getTcb?_eq _ _ _ _ stR _ _ tid hIR hU
 

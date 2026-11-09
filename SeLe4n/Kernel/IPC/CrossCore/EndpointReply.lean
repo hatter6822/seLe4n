@@ -931,7 +931,6 @@ receive's cross-core SGI. -/
 def endpointReceiveDualWithCapsOnCore
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState ×
       Except KernelError
@@ -939,6 +938,8 @@ def endpointReceiveDualWithCapsOnCore
   -- WS-ZA ZA4.7: what the dequeued sender asks to transfer, read from the
   -- pre-state the transition branches on (`receiveCapRequest`).
   let req := receiveCapRequest st endpointId
+  -- The receiver's side of the transfer, read from the same pre-state.
+  let target? := receiverCapTarget? st receiver
   match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok (senderId, sgi)) =>
@@ -950,9 +951,9 @@ def endpointReceiveDualWithCapsOnCore
         (st', .ok (senderId, { results := #[] }, sgi))
       else
       -- The dequeued sender's capabilities are resolved in its CSpace now and
-      -- installed in the receiver's, as the single-core receive does
+      -- transferred to the receiver, as the single-core receive does
       -- (`receiveTransferCaps`).
-      match receiveTransferCaps req receiverCspaceRoot receiverSlotBase st' with
+      match receiveTransferCaps req endpointId target? st' with
       | .error e => (st', .error e)
       | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
 
@@ -962,14 +963,13 @@ the bare transition still describes the live arm.  WS-ZA ZA4.7: "nothing to
 install" is the dequeued sender asking for no transfer (`receiveCapRequest`). -/
 theorem endpointReceiveDualWithCapsOnCore_no_caps
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st st' : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st st' : SystemState)
     (senderId : SeLe4n.ThreadId) (sgi : Option (CoreId × SgiKind))
     (hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st
       = (st', .ok (senderId, sgi)))
     (hNoCaps : receiveCapRequest st endpointId = none) :
-    endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st
       = (st', .ok (senderId, { results := #[] }, sgi)) := by
   unfold endpointReceiveDualWithCapsOnCore
   simp only [hRecv, hNoCaps, receiveTransferCaps]
@@ -985,10 +985,8 @@ delivered message with no caps, a sender with no CSpace root — returns the bar
 receive's own post-state. -/
 theorem endpointReceiveDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
-    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1.scheduler
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1.scheduler
       = (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.scheduler := by
   unfold endpointReceiveDualWithCapsOnCore
   cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
@@ -1021,14 +1019,13 @@ bare transition branches on, so this is a fact about the two agreeing rather tha
 a guard bolted on beside them. -/
 theorem endpointReceiveDualWithCapsOnCore_blocked_installs_nothing
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st st' : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st st' : SystemState)
     (senderId : SeLe4n.ThreadId) (sgi : Option (CoreId × SgiKind))
     (hBlocked : receiveRendezvousSender? st endpointId = none)
     (hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st
       = (st', .ok (senderId, sgi))) :
-    endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st
       = (st', .ok (senderId, { results := #[] }, sgi)) := by
   unfold endpointReceiveDualWithCapsOnCore
   simp [hRecv, hBlocked]
@@ -3765,13 +3762,12 @@ the last returns the bare receive's own post-state, and the last is an
 `ipcUnwrapCaps`, which fixes the whole `getTcb?` projection. -/
 theorem endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (ep : Endpoint) (sender x : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender) :
     determineTargetCore
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1 x
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 x
       = determineTargetCore st x := by
   have hLeg := endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous endpointId
     receiver replyId executingCore st ep sender x hObjInv hEp hHead
@@ -3891,13 +3887,12 @@ every SchedContext as before too — `ipcUnwrapCaps_getSchedContext?_eq` on the 
 branch that installs, the bare leg's own post-state on every other. -/
 theorem endpointReceiveDualWithCapsOnCore_getSchedContext?_eq_of_rendezvous
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender) :
-    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1.getSchedContext? scId
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1.getSchedContext? scId
       = st.getSchedContext? scId := by
   have hLeg := endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous endpointId
     receiver replyId executingCore st ep sender scId hObjInv hEp hHead
@@ -4025,11 +4020,10 @@ is an `ipcUnwrapCaps` (`ipcUnwrapCaps_preserves_objects_invExt`).  What the chai
 walk's replenish frame below reads of the leg's post-state. -/
 theorem endpointReceiveDualWithCapsOnCore_preserves_objects_invExt
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
-    ((endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1).objects.invExt := by
+    ((endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1).objects.invExt := by
   have hLegInv :
       ((endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1).objects.invExt :=
     endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId executingCore
@@ -4056,13 +4050,12 @@ the licence `endpointReceiveDualWithCapsOnCore_callDonationSchedContext?_none_of
 composes with the resolver's bridge. -/
 theorem endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender) :
     sameSchedContextBindings st
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1 := by
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 := by
   have hLeg := endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous endpointId
     receiver replyId executingCore st ep sender hObjInv hEp hHead
   have hLegInv :
@@ -4104,15 +4097,14 @@ is what makes the declaration exact, and this is the theorem that the narrowing
 lost nothing. -/
 theorem receiveRendezvousDonatedSc?_some_of_post
     (endpointId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (ep : Endpoint) (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep)
     (hSender : receiveRendezvousCallSender? st endpointId = some sender)
     (hPost : callDonationSchedContext?
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1 sender receiver = some scId) :
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender receiver = some scId) :
     receiveRendezvousDonatedSc? st endpointId receiver = some scId := by
   rw [receiveRendezvousDonatedSc?_of_sender st endpointId receiver sender hSender]
   have hHead : ep.sendQ.head = some sender := by
@@ -4121,7 +4113,7 @@ theorem receiveRendezvousDonatedSc?_some_of_post
     simpa [hEp] using hS
   exact callDonationSchedContext?_some_of_sameSchedContextBindings
     (endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous endpointId receiver
-      replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender hObjInv hEp hHead)
+      replyId executingCore st ep sender hObjInv hEp hHead)
     sender receiver scId hPost
 
 /-- **WS-RR RR8.12 (frame), restated per arm at `v0.35.161`**: a cross-core receive
@@ -4267,13 +4259,13 @@ no replenish queue on a rendezvous either — the capability install writes CNod
 the CDT, never the scheduler (`ipcUnwrapCaps_preserves_scheduler`). -/
 theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_rendezvous
     (epId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (cnRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (ec : CoreId) (st : SystemState)
+    (ec : CoreId) (st : SystemState)
     (ep : Endpoint) (sender : SeLe4n.ThreadId)
     (hEp : st.getEndpoint? epId = some ep) (hHead : ep.sendQ.head = some sender) (c : CoreId) :
-    (endpointReceiveDualWithCapsOnCore epId receiver replyId cnRoot slotBase ec
+    (endpointReceiveDualWithCapsOnCore epId receiver replyId ec
         st).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
-  rw [endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId cnRoot slotBase ec st]
+  rw [endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId ec st]
   exact endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous epId receiver replyId ec st
     ep sender hEp hHead c
 
@@ -4282,16 +4274,16 @@ pre-receive return's, exactly as the bare leg's are — a receive that dequeued 
 installs nothing. -/
 theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_blocked
     (epId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (cnRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (ec : CoreId) (st st' : SystemState)
+    (ec : CoreId) (st st' : SystemState)
     (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (sgi : Option (CoreId × SgiKind)) (ep : Endpoint)
     (hEp : st.getEndpoint? epId = some ep) (hHead : ep.sendQ.head = none)
-    (hStep : endpointReceiveDualWithCapsOnCore epId receiver replyId cnRoot slotBase ec st
+    (hStep : endpointReceiveDualWithCapsOnCore epId receiver replyId ec st
       = (st', .ok (senderId, summary, sgi))) :
     ∃ stClean, cleanupPreReceiveDonationMigrated st receiver = .ok stClean ∧
       ∀ c, st'.scheduler.replenishQueueOnCore c = stClean.scheduler.replenishQueueOnCore c := by
-  have hSched := endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId cnRoot
-    slotBase ec st
+  have hSched := endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId
+    ec st
   rw [hStep] at hSched
   have hLegOk : ∃ stL sid sgi',
       endpointReceiveDualOnCore epId receiver replyId ec st = (stL, .ok (sid, sgi')) := by
@@ -4313,14 +4305,14 @@ theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_blocked
 replenish queue on the block path either. -/
 theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_donation
     (epId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (cnRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (ec : CoreId) (st : SystemState)
+    (ec : CoreId) (st : SystemState)
     (ep : Endpoint)
     (hEp : st.getEndpoint? epId = some ep) (hHead : ep.sendQ.head = none)
     (hNoDon : preReceiveDonation? st receiver = none) (c : CoreId) :
-    (endpointReceiveDualWithCapsOnCore epId receiver replyId cnRoot slotBase ec
+    (endpointReceiveDualWithCapsOnCore epId receiver replyId ec
         st).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
-  rw [endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId cnRoot slotBase ec st]
+  rw [endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId ec st]
   exact endpointReceiveDualOnCore_replenishQueueOnCore_of_no_donation epId receiver replyId ec st
     ep hEp hHead hNoDon c
 
@@ -4412,12 +4404,10 @@ theorem endpointReceiveDualOnCore_ok_dequeued_eq_receiver_of_blocked (endpointId
 /-- ...and the caps-carrying form reports the receiver there too. -/
 theorem endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_receiver_of_blocked
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
     (hNoSender : receiveRendezvousSender? st endpointId = none)
-    (hStep : endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st = (st', .ok (dequeued, summary, sgi))) :
+    (hStep : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st = (st', .ok (dequeued, summary, sgi))) :
     dequeued = receiver := by
   unfold endpointReceiveDualWithCapsOnCore at hStep
   cases hLeg : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
@@ -4444,13 +4434,11 @@ theorem endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_receiver_of_blocked
 summary, never the dequeued thread. -/
 theorem endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
     (ep : Endpoint) (sender : SeLe4n.ThreadId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
-    (hStep : endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st = (st', .ok (dequeued, summary, sgi))) :
+    (hStep : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st = (st', .ok (dequeued, summary, sgi))) :
     dequeued = sender := by
   unfold endpointReceiveDualWithCapsOnCore at hStep
   cases hLeg : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
@@ -4608,13 +4596,12 @@ theorem endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp
 (`ipcUnwrapCaps_determineTargetCore_eq`). -/
 theorem endpointReceiveDualWithCapsOnCore_preserves_replenishQueueAffinityConsistent_smp
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st) :
     replenishQueueAffinityConsistent_smp
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1 := by
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 := by
   have hLeg := endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp endpointId
     receiver replyId executingCore st hObjInv hCons
   have hLegInv :
@@ -4913,16 +4900,15 @@ every branch but the last returns the bare leg's own post-state, and the last is
 `ipcUnwrapCaps`, which fixes the whole `getTcb?` projection. -/
 theorem endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
     (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
     rendezvousDequeuedCall
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1 sender
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender
       = false := by
   have hLeg := endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend endpointId receiver
     replyId executingCore st ep sender senderTcb sendEp hObjInv hEp hHead hTcb hSend
@@ -5157,30 +5143,30 @@ at the same segment.  The composition is what lets `.receive`'s and `.replyRecv`
 coverage proofs cite one frame rather than re-run the leg's case analysis. -/
 theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne
     (epId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (cnRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (ec : CoreId) (st st' : SystemState)
+    (ec : CoreId) (st st' : SystemState)
     (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (sgi : Option (CoreId × SgiKind)) (c : CoreId) (hObjInv : st.objects.invExt)
     (hne : c ∉ receivePreReturnReplenishCores st epId receiver)
-    (hStep : endpointReceiveDualWithCapsOnCore epId receiver replyId cnRoot slotBase ec st
+    (hStep : endpointReceiveDualWithCapsOnCore epId receiver replyId ec st
       = (st', .ok (senderId, summary, sgi))) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   cases hEp : st.getEndpoint? epId with
   | none =>
-    have hSched := endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId cnRoot
-      slotBase ec st
+    have hSched := endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId
+      ec st
     rw [hStep] at hSched
     rw [hSched, endpointReceiveDualOnCore_state_of_no_endpoint epId receiver replyId ec st hEp]
   | some ep =>
     cases hHead : ep.sendQ.head with
     | some sender =>
       have hFrame := endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_rendezvous epId
-        receiver replyId cnRoot slotBase ec st ep sender hEp hHead c
+        receiver replyId ec st ep sender hEp hHead c
       rw [hStep] at hFrame
       exact hFrame
     | none =>
       obtain ⟨stClean, hClean, hRepl⟩ :=
         endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_blocked epId receiver replyId
-          cnRoot slotBase ec st st' senderId summary sgi ep hEp hHead hStep
+          ec st st' senderId summary sgi ep hEp hHead hStep
       rw [hRepl c]
       exact cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne st stClean epId receiver c
         hObjInv (receiveRendezvousSender?_of_blocked st epId ep hEp hHead) hne hClean
@@ -5315,8 +5301,8 @@ is `endpointReceiveHandoffReplenishCores_of_blockedOnSend`, the declined-`Call` 
 `endpointReceiveHandoffReplenishCores_of_no_donation`. -/
 theorem endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous (st : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (callEp : SeLe4n.ObjId)
     (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
@@ -5326,13 +5312,11 @@ theorem endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous (st : S
     (hDon : callDonationSchedContext? st sender receiver = some scId) :
     endpointReceiveHandoffReplenishCores st endpointId receiver
       = [determineTargetCore
-             (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-               receiverSlotBase executingCore st).1 sender,
+             (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender,
          determineTargetCore
-             (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-               receiverSlotBase executingCore st).1 receiver] := by
+             (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 receiver] := by
   have hFrame := endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous
-    endpointId receiver replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender
+    endpointId receiver replyId executingCore st ep sender
   unfold endpointReceiveHandoffReplenishCores
   rw [receiveRendezvousDonatingSender?_of_donation st endpointId receiver sender scId
     (receiveRendezvousCallSender?_of_blockedOnCall st endpointId ep sender senderTcb callEp
@@ -5371,10 +5355,8 @@ writes, so `schedLockSet_endpointReceiveOnCore_coversWrites` is stated of the
 arm's step and not of its donation half. -/
 def endpointReceiveHandoffChainWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) : List CoreId :=
-  match endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-      receiverSlotBase executingCore st with
+  match endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st with
   | (_, .error _) => []
   | (st1, .ok (dequeued, _, _)) =>
     match applyReceiveRendezvousDonation st1 receiver dequeued with
@@ -5387,13 +5369,11 @@ def endpointReceiveHandoffChainWriteSet (st : SystemState) (endpointId : SeLe4n.
 
 def schedLockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) :
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
     (endpointReceiveDualWriteSet st endpointId executingCore
-      ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore)
+      ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore)
     (endpointReceiveHandoffReplenishCores st endpointId receiver)
 
 -- No `_write_only` / `_pairwise_le` restatement here, and that is deliberate: both
@@ -5407,12 +5387,11 @@ sender's home core — resolved through `receiveRendezvousSender?`, the resolver
 object-domain footprint's own sender member comes from. -/
 theorem schedLockSet_endpointReceiveOnCore_contains_sender_runQueue_write (st : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (executingCore : CoreId)
     (sender : SeLe4n.ThreadId)
     (hSender : receiveRendezvousSender? st endpointId = some sender) :
     (LockKey.runQueue (determineTargetCore st sender), Concurrency.AccessMode.write)
-      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore := by
+      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   rw [endpointReceiveDualWriteSet_of_sender st endpointId executingCore sender hSender]
   simp
@@ -5423,11 +5402,10 @@ that rendezvouses does not block — so the run segment is one member either
 way. -/
 theorem schedLockSet_endpointReceiveOnCore_contains_executing_runQueue_write (st : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (executingCore : CoreId)
     (ep : Endpoint) (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
     (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
-      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore := by
+      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   rw [endpointReceiveDualWriteSet_of_blocked st endpointId executingCore ep hEp hHead]
   simp
@@ -5442,12 +5420,11 @@ pre-receive return migrates between
 the transition writes none on this shape. -/
 theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked (st : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (executingCore : CoreId)
     (ep : Endpoint) (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
     (hNoDon : endpointReplyDonation? st receiver = none) (c : CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore := by
+      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointReceiveHandoffReplenishCores_of_blocked st endpointId receiver ep hEp hHead
@@ -5465,21 +5442,19 @@ claim about the *object* domain — the arm still writes the endpoint and the tw
 TCBs, and `lockSet_endpointReceive` still declares them. -/
 theorem applyReceiveRendezvousDonation_eq_self_of_blockedOnSend
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
     (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
     applyReceiveRendezvousDonation
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1 receiver sender
-      = .ok (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-              receiverSlotBase executingCore st).1 :=
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 receiver sender
+      = .ok (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 :=
   applyReceiveRendezvousDonation_of_no_call _ receiver sender
     (endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend endpointId receiver
-      replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender senderTcb sendEp
+      replyId executingCore st ep sender senderTcb sendEp
       hObjInv hEp hHead hTcb hSend)
 
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: and the step the live arm actually runs
@@ -5498,21 +5473,19 @@ own licence is the donation half; this states the arm's step so that neither hal
 can be read as the other.) -/
 theorem applyReceiveRendezvousHandoff_eq_self_of_blockedOnSend
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore handoffCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore handoffCore : CoreId) (st : SystemState)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
     (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
     applyReceiveRendezvousHandoff
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1 receiver sender handoffCore
-      = .ok (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-              receiverSlotBase executingCore st).1 :=
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 receiver sender handoffCore
+      = .ok (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 :=
   applyReceiveRendezvousHandoff_of_no_call _ receiver sender handoffCore
     (endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend endpointId receiver
-      replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender senderTcb sendEp
+      replyId executingCore st ep sender senderTcb sendEp
       hObjInv hEp hHead hTcb hSend)
 
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: and so the `.receive` footprint declares
@@ -5524,15 +5497,13 @@ Over-declaring is sound and not free: lock contention is an observable channel
 (SM8.D's CC-5), and WS-OD OD3.5 narrowed a footprint for exactly this reason. -/
 theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
     (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hSend : senderTcb.ipcState = .blockedOnSend sendEp) (c : CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore := by
+      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointReceiveHandoffReplenishCores_of_blockedOnSend st endpointId receiver ep sender
@@ -5550,18 +5521,17 @@ and a post-state `some` pulls back to a pre-state `some`
 pre-state resolver never omits a migration. -/
 theorem endpointReceiveDualWithCapsOnCore_callDonationSchedContext?_none_of_none
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hNone : callDonationSchedContext? st sender receiver = none) :
     callDonationSchedContext?
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1 sender receiver
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender receiver
       = none :=
   callDonationSchedContext?_none_of_sameSchedContextBindings
     (endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous endpointId receiver
-      replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender hObjInv hEp hHead)
+      replyId executingCore st ep sender hObjInv hEp hHead)
     sender receiver hNone
 
 /-- **WS-RR RR8.12 Cut C1 (payoff)**: on a queued `Call` the resolver declines, the
@@ -5573,8 +5543,8 @@ promotable, which the donation's own signature demands; a reserved id never reac
 a rendezvous, so on the live arm they are facts rather than obligations. -/
 theorem applyReceiveRendezvousDonation_eq_self_of_no_donation
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb receiverTcb : TCB)
     (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
@@ -5582,15 +5552,13 @@ theorem applyReceiveRendezvousDonation_eq_self_of_no_donation
     (hRecv : lookupTcb st receiver = some receiverTcb)
     (hNone : callDonationSchedContext? st sender receiver = none) :
     applyReceiveRendezvousDonation
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1 receiver sender
-      = .ok (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-              receiverSlotBase executingCore st).1 := by
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 receiver sender
+      = .ok (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 := by
   obtain ⟨senderV, hSV, _⟩ := lookupTcb_some_toValid? st sender senderTcb hTcb
   obtain ⟨receiverV, hRV, _⟩ := lookupTcb_some_toValid? st receiver receiverTcb hRecv
   exact applyReceiveRendezvousDonation_of_no_donation _ receiver sender senderV receiverV hSV hRV
     (endpointReceiveDualWithCapsOnCore_callDonationSchedContext?_none_of_none endpointId receiver
-      replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender hObjInv hEp hHead
+      replyId executingCore st ep sender hObjInv hEp hHead
       hNone)
 
 /-- **WS-RR RR8.12 Cut C1 (arm-level payoff)**: and the step the live arm actually
@@ -5604,8 +5572,8 @@ segment is about — *a proxy is not the fact*, so the claim is made of the arm'
 and not only of its component. -/
 theorem applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore handoffCore : CoreId) (st : SystemState)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore handoffCore : CoreId) (st : SystemState)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb receiverTcb : TCB)
     (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
@@ -5614,15 +5582,12 @@ theorem applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation
     (hNone : callDonationSchedContext? st sender receiver = none)
     (st'' : SystemState) (c : CoreId)
     (hHandoff : applyReceiveRendezvousHandoff
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1 receiver sender handoffCore = .ok st'') :
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 receiver sender handoffCore = .ok st'') :
     st''.scheduler.replenishQueueOnCore c
-      = (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1.scheduler.replenishQueueOnCore c := by
+      = (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1.scheduler.replenishQueueOnCore c := by
   obtain ⟨stDon, hDon, hEq⟩ := applyReceiveRendezvousHandoff_ok_decompose _ st'' receiver sender
     handoffCore hHandoff
-  rw [applyReceiveRendezvousDonation_eq_self_of_no_donation endpointId receiver replyId
-    receiverCspaceRoot receiverSlotBase executingCore st ep sender senderTcb receiverTcb hObjInv
+  rw [applyReceiveRendezvousDonation_eq_self_of_no_donation endpointId receiver replyId executingCore st ep sender senderTcb receiverTcb hObjInv
     hEp hHead hTcb hRecv hNone] at hDon
   obtain rfl := Except.ok.inj hDon
   subst hEq
@@ -5630,8 +5595,7 @@ theorem applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation
   · unfold applyReceiverPipHandoff
     exact (PriorityInheritance.propagatePipChainCrossCore_replenish_readings _ receiver
       handoffCore _
-      (endpointReceiveDualWithCapsOnCore_preserves_objects_invExt endpointId receiver replyId
-        receiverCspaceRoot receiverSlotBase executingCore st hObjInv)).1 c
+      (endpointReceiveDualWithCapsOnCore_preserves_objects_invExt endpointId receiver replyId executingCore st hObjInv)).1 c
   · rfl
 
 /-- **WS-RR RR8.12 Cut C1**: and so the `.receive` footprint declares **no**
@@ -5641,7 +5605,6 @@ Over-declaring is sound and not free: lock contention is an observable channel
 (SM8.D's CC-5), and WS-OD OD3.5 narrowed a footprint for exactly this reason. -/
 theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
     (senderTcb : TCB) (callEp : SeLe4n.ObjId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
@@ -5649,8 +5612,7 @@ theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation
     (hCall : senderTcb.ipcState = .blockedOnCall callEp)
     (hNone : callDonationSchedContext? st sender receiver = none) (c : CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore := by
+      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointReceiveHandoffReplenishCores_of_no_donation st endpointId receiver ep sender
@@ -5688,8 +5650,8 @@ happen (`applyReceiveRendezvousDonation_eq_self_of_no_donation`), so as before a
 coverage claim there would be covering nothing. -/
 theorem schedLockSet_endpointReceiveOnCore_covers_donation (st : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId)
     (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (callEp : SeLe4n.ObjId)
     (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
@@ -5697,26 +5659,22 @@ theorem schedLockSet_endpointReceiveOnCore_covers_donation (st : SystemState)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hCall : senderTcb.ipcState = .blockedOnCall callEp)
     (hDon : callDonationSchedContext?
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-          receiverSlotBase executingCore st).1 sender receiver = some scId) :
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender receiver = some scId) :
     ∀ p ∈ applyCallDonationOnCoreLockSet
              (determineTargetCore
-               (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-                 receiverSlotBase executingCore st).1 sender)
+               (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender)
              (determineTargetCore
-               (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-                 receiverSlotBase executingCore st).1 receiver),
-      p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore := by
+               (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 receiver),
+      p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   have hDonPre : callDonationSchedContext? st sender receiver = some scId :=
     callDonationSchedContext?_some_of_sameSchedContextBindings
       (endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous endpointId
-        receiver replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender hObjInv
+        receiver replyId executingCore st ep sender hObjInv
         hEp hHead)
       sender receiver scId hDon
   refine schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun c hc => ?_)
   rw [endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous st endpointId receiver
-    replyId receiverCspaceRoot receiverSlotBase executingCore ep sender senderTcb callEp scId
+    replyId executingCore ep sender senderTcb callEp scId
     hObjInv hEp hHead hTcb hCall hDonPre]
   exact hc
 
@@ -5725,17 +5683,14 @@ footprint names both replenish-queue write locks the pre-receive return's migrat
 takes — the receiver's home core and the owner's. -/
 theorem schedLockSet_endpointReceiveOnCore_contains_preReturn_replenish_writes
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (ep : Endpoint) (scId : SeLe4n.SchedContextId)
     (owner : SeLe4n.ThreadId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
     (hDon : endpointReplyDonation? st receiver = some (scId, owner)) :
     (LockKey.replenishQueue (determineTargetCore st receiver), Concurrency.AccessMode.write)
-        ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore ∧
+        ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore ∧
     (LockKey.replenishQueue (determineTargetCore st owner), Concurrency.AccessMode.write)
-        ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore := by
+        ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   constructor <;>
   · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
     rw [endpointReceiveHandoffReplenishCores_of_blocked_returning st endpointId receiver ep scId
@@ -5759,7 +5714,6 @@ a migration to cover; where the guard declines the segment is empty
 be covering nothing while reading like coverage. -/
 theorem schedLockSet_endpointReceiveOnCore_covers_preReturnMigration
     (st stClean : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (ep : Endpoint) (scId : SeLe4n.SchedContextId)
     (owner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
@@ -5768,8 +5722,7 @@ theorem schedLockSet_endpointReceiveOnCore_covers_preReturnMigration
     (hClean : cleanupPreReceiveDonationChecked st receiver = .ok stClean) :
     ∀ p ∈ migrateSchedContextReplenishmentLockSet (determineTargetCore st receiver)
              (replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)),
-      p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore := by
+      p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   intro p hp
   simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil,
     or_false] at hp

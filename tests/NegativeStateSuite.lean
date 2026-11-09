@@ -525,11 +525,11 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
   -- frame (WS-ZA ZA4.7), so their bound is the message-info decode's: a word
   -- declaring more than 120 registers does not decode, and its two-bit
   -- extra-caps field names at most three capabilities.
-  if (MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0).encode).isNone then
+  if (MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0 0).encode).isNone then
     IO.println "negative check passed [a message-info word declaring 121 registers does not decode]"
   else
     throw <| IO.userError "a message-info word declaring 121 registers decoded"
-  match MessageInfo.decode (MessageInfo.mk 0 (maxExtraCaps + 1) 0).encode with
+  match MessageInfo.decode (MessageInfo.mk 0 (maxExtraCaps + 1) 0 0).encode with
   | some mi =>
     if mi.extraCaps ≤ maxExtraCaps then
       IO.println "negative check passed [a message-info word names at most three extra caps]"
@@ -552,7 +552,7 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
     .ipcMessageTooLarge
 
   -- The boundary message (exactly 120 registers, 3 extra caps) decodes.
-  if (MessageInfo.decode (MessageInfo.mk maxMessageRegisters maxExtraCaps 0).encode).isSome then
+  if (MessageInfo.decode (MessageInfo.mk maxMessageRegisters maxExtraCaps 0 0).encode).isSome then
     IO.println "positive check passed [boundary message not rejected by bounds]"
   else
     throw <| IO.userError "boundary message (120 regs, 3 caps) rejected by the message-info decode"
@@ -1748,7 +1748,7 @@ private def runAuditCoverageChecks : IO Unit := do
   -- Now execute replyRecv: receiver replies to caller and waits on endpoint
   let (_, stReplyRecv) ← expectOkSt "replyRecv success"
     (SeLe4n.Kernel.endpointReplyRecvOnCore endpointId (SeLe4n.ThreadId.ofNat 8) rrReplyId
-      (SeLe4n.ThreadId.ofNat 7) .empty cnodeId (SeLe4n.Slot.ofNat 0) bootCoreId stCallSetup2)
+      (SeLe4n.ThreadId.ofNat 7) .empty bootCoreId stCallSetup2)
   -- Verify caller is unblocked (ready)
   match (stReplyRecv.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
   | some (KernelObject.tcb unblocked) =>
@@ -3025,15 +3025,18 @@ def runWSL4BlockedThreadChecks : IO Unit := do
 
   IO.println "all WS-L4-C blocked thread IPC rejection tests passed"
 
-/-- SCN-IPC-CAP-TRANSFER-FULL-CNODE (M3-G3): When the receiver's CNode is
-full (all scanned slots occupied), ipcTransferSingleCap returns .noSlot
-and the state is unchanged. -/
+/-- SCN-IPC-CAP-TRANSFER-OCCUPIED-SLOT (M3-G3): seL4's `transferCaps` installs
+into the receiver's one receive slot, which must be empty (`getReceiveSlots`).
+An install into an occupied slot is refused, and the transfer stops there: it
+reports nothing and writes nothing.  With no receive slot at all the transfer
+stops at the first capability it cannot unwrap. -/
 def runWSM3CapTransferNegativeChecks : IO Unit := do
-  IO.println "\n=== WS-M3-G3: IPC cap transfer full CNode negative test ==="
+  IO.println "\n=== WS-M3-G3: IPC cap transfer receive-slot negative tests ==="
 
   let receiverRoot : SeLe4n.ObjId := ⟨5000⟩
   let senderRoot : SeLe4n.ObjId := ⟨5001⟩
   let targetObj : SeLe4n.ObjId := ⟨5010⟩
+  let endpointObj : SeLe4n.ObjId := ⟨5011⟩
 
   let cap : Capability := {
     target := .object targetObj,
@@ -3050,58 +3053,86 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
       |>.withObject receiverRoot (.cnode fullCNode)
       |>.withObject senderRoot (.cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap)]))
       |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject endpointObj (.endpoint {})
       |>.buildChecked)
 
-  -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot.
   -- The derivation parent is the source slot itself, as `resolveExtraCaps`
   -- names it, so the transfer records the slot the revoke walk would reach.
   let srcSlot : SlotRef := { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
-  let result := SeLe4n.Kernel.ipcTransferSingleCap cap srcSlot receiverRoot (SeLe4n.Slot.ofNat 0) 4 st0
-  match result with
-  | .ok (transferResult, st') =>
-    let isNoSlot := match transferResult with
-      | .noSlot => true
-      | _ => false
-    if !isNoSlot then
-      throw <| IO.userError "expected .noSlot for full CNode, got different result"
-    IO.println "check passed [full CNode returns .noSlot]"
-    -- State should be unchanged
-    let unchanged := st'.objects == st0.objects
-    if !unchanged then
-      throw <| IO.userError "state should be unchanged after .noSlot"
-    IO.println "check passed [state unchanged after .noSlot]"
-  | .error e =>
-    throw <| IO.userError s!"ipcTransferSingleCap returned error: {toString e}"
+  let occupied : SeLe4n.Kernel.CSpaceAddr := { cnode := receiverRoot, slot := SeLe4n.Slot.ofNat 0 }
+  match SeLe4n.Kernel.ipcTransferSingleCap cap srcSlot occupied st0 with
+  | .ok _ => throw <| IO.userError "an install into an occupied receive slot was not refused"
+  | .error _ => IO.println "check passed [an install into an occupied receive slot is refused]"
+
+  let caps : Array TransferCap := #[TransferCap.fromSlot cap srcSlot]
+  let rtcb : TCB :=
+    { tid := ⟨5002⟩, priority := ⟨100⟩, domain := ⟨0⟩,
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverRoot receiverRoot,
+      ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
+  match SeLe4n.Kernel.ipcUnwrapCaps caps endpointObj rtcb (some occupied) st0 with
+  | .ok (summary, st') =>
+    if summary.results.size != 0 || summary.capInfo != 0 then
+      throw <| IO.userError "a refused install still reported a capability"
+    if st'.objects != st0.objects then
+      throw <| IO.userError "a refused install changed the objects"
+    IO.println "check passed [a refused install stops the transfer: nothing reported, nothing written]"
+  | .error e => throw <| IO.userError s!"ipcUnwrapCaps returned error: {toString e}"
+
+  match SeLe4n.Kernel.ipcUnwrapCaps caps endpointObj rtcb none st0 with
+  | .ok (summary, st') =>
+    if summary.results.size != 0 || st'.objects != st0.objects then
+      throw <| IO.userError "a transfer with no receive slot installed something"
+    IO.println "check passed [no receive slot: the transfer stops, nothing written]"
+  | .error e => throw <| IO.userError s!"ipcUnwrapCaps returned error: {toString e}"
+
+  -- seL4's unwrap: a badged capability to the endpoint the message was sent on
+  -- delivers its badge and installs nothing, even with no receive slot; the
+  -- transfer then stops at the next capability, which it cannot install.
+  let epCap : Capability :=
+    { target := .object endpointObj, rights := AccessRightSet.ofList [.write],
+      badgeWord := SeLe4n.Badge.ofNatMasked 7, badged := true }
+  let unwrapCaps : Array TransferCap :=
+    #[TransferCap.fromSlot epCap srcSlot, TransferCap.fromSlot cap srcSlot]
+  match SeLe4n.Kernel.ipcUnwrapCaps unwrapCaps endpointObj rtcb none st0 with
+  | .ok (summary, st') =>
+    if summary.results != #[.unwrapped (SeLe4n.Badge.ofNatMasked 7)] then
+      throw <| IO.userError s!"expected one unwrapped badge, got {reprStr summary.results}"
+    if summary.capInfo != 1 + 4 * 1 then
+      throw <| IO.userError s!"expected capInfo 5 (one processed, bit 0 unwrapped), got {summary.capInfo}"
+    if st'.objects != st0.objects then
+      throw <| IO.userError "an unwrap changed the objects"
+    IO.println "check passed [an unwrap reports its badge and bit, installs nothing]"
+  | .error e => throw <| IO.userError s!"ipcUnwrapCaps returned error: {toString e}"
 
   IO.println "all WS-M3-G3 cap transfer negative tests passed"
 
 -- ============================================================================
--- L-13: Cap transfer short-circuit on fatal error (Design C)
+-- L-13: Cap transfer stops at an install that fails
 -- ============================================================================
 
-/-- L-13 (Design C): When receiver CSpace root is not a CNode,
-ipcUnwrapCapsLoop short-circuits: the current cap gets `.noSlot` and all
-remaining caps are filled with `.noSlot` via `fillRemainingNoSlot`.  State
-is returned unchanged.
+/-- L-13: an install that fails stops seL4's `transferCaps` loop (`cteInsert`
+is not reached): a receive slot whose CNode is not a CNode, or whose object is
+missing, refuses the install, so the transfer reports none of the capabilities
+and writes nothing.
 
 Scenarios:
-- L13-01: 3 caps, receiver root is a TCB (not CNode) → all 3 get `.noSlot`
-- L13-02: State unchanged after short-circuit
-- L13-03: 1 cap, receiver root missing entirely → `.noSlot`, state unchanged
+- L13-01: 3 caps, the receive slot's CNode is a TCB → nothing reported
+- L13-02: State unchanged after the stop
+- L13-03: 1 cap, the receive slot's CNode is missing → nothing, state unchanged
 -/
 def runL13CapTransferShortCircuitChecks : IO Unit := do
-  IO.println "\n=== L-13: Cap transfer short-circuit on fatal error ==="
+  IO.println "\n=== L-13: Cap transfer stops at an install that fails ==="
 
   let receiverRoot : SeLe4n.ObjId := ⟨5050⟩
   let senderRoot : SeLe4n.ObjId := ⟨5051⟩
   let targetObj : SeLe4n.ObjId := ⟨5060⟩
+  let endpointObj : SeLe4n.ObjId := ⟨5061⟩
 
   let cap : Capability := {
     target := .object targetObj,
     rights := AccessRightSet.ofList [.read],
   }
 
-  -- Receiver root is a TCB, not a CNode → ipcTransferSingleCap will error
   let tcbObj : TCB := {
     tid := ⟨5050⟩,
     priority := ⟨100⟩,
@@ -3122,59 +3153,37 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
       |>.buildChecked)
 
   -- Distinct source slots: the transfer records its derivation edge against
-  -- each capability's own slot, so a fixture that reused one address would
-  -- not exercise the per-capability provenance the loop now threads.
+  -- each capability's own slot.
   let caps : Array TransferCap :=
     #[TransferCap.fromSlot cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 },
       TransferCap.fromSlot cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 1 },
       TransferCap.fromSlot cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 2 }]
 
-  -- L13-01: 3 caps with receiver root = TCB → short-circuit, all .noSlot
-  let result := SeLe4n.Kernel.ipcUnwrapCapsLoop caps receiverRoot
-    0 (SeLe4n.Slot.ofNat 0) #[] caps.size st0
-  match result with
+  -- L13-01: the receive slot names a TCB, not a CNode → the install fails
+  let notCNode : SeLe4n.Kernel.CSpaceAddr := { cnode := receiverRoot, slot := SeLe4n.Slot.ofNat 0 }
+  match SeLe4n.Kernel.ipcUnwrapCaps caps endpointObj tcbObj (some notCNode) st0 with
   | .ok (summary, st') =>
-    if summary.results.size != 3 then
-      throw <| IO.userError s!"expected 3 results, got {summary.results.size}"
-    let allNoSlot := summary.results.all fun r => match r with
-      | .noSlot => true
-      | _ => false
-    if !allNoSlot then
-      throw <| IO.userError "expected all results to be .noSlot"
-    IO.println "check passed [3 caps, receiver root is TCB → all .noSlot]"
-
-    -- L13-02: State unchanged after short-circuit
+    if summary.results.size != 0 then
+      throw <| IO.userError s!"expected no results, got {summary.results.size}"
+    IO.println "check passed [3 caps, the receive slot's CNode is a TCB → nothing reported]"
+    -- L13-02: State unchanged after the stop
     if st'.objects != st0.objects then
-      throw <| IO.userError "objects should be unchanged after short-circuit"
-    IO.println "check passed [state unchanged after short-circuit]"
+      throw <| IO.userError "objects should be unchanged after the stop"
+    IO.println "check passed [state unchanged after the stop]"
   | .error e =>
-    throw <| IO.userError s!"ipcUnwrapCapsLoop returned error: {toString e}"
+    throw <| IO.userError s!"ipcUnwrapCaps returned error: {toString e}"
 
-  -- L13-03: 1 cap with receiver root missing entirely (no object at that OID)
-  let missingRoot : SeLe4n.ObjId := ⟨9999⟩
-  let st1 :=
-    (BootstrapBuilder.empty
-      |>.withObject senderRoot (.cnode senderCNode)
-      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
-      |>.buildChecked)
-
-  let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[TransferCap.fromSlot cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }]
-    missingRoot
-    0 (SeLe4n.Slot.ofNat 0) #[] 1 st1
-  match result1 with
+  -- L13-03: 1 cap, the receive slot's CNode is missing entirely
+  let missing : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨9999⟩, slot := SeLe4n.Slot.ofNat 0 }
+  match SeLe4n.Kernel.ipcUnwrapCaps
+      #[TransferCap.fromSlot cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }]
+      endpointObj tcbObj (some missing) st0 with
   | .ok (summary1, st1') =>
-    if summary1.results.size != 1 then
-      throw <| IO.userError s!"expected 1 result, got {summary1.results.size}"
-    let isNoSlot := match summary1.results[0]? with
-      | some .noSlot => true
-      | _ => false
-    if !isNoSlot then
-      throw <| IO.userError "expected .noSlot for missing receiver root"
-    if st1'.objects != st1.objects then
-      throw <| IO.userError "state should be unchanged"
-    IO.println "check passed [1 cap, missing receiver root → .noSlot, state unchanged]"
+    if summary1.results.size != 0 || st1'.objects != st0.objects then
+      throw <| IO.userError "a missing receive CNode installed something"
+    IO.println "check passed [1 cap, missing receive CNode → nothing, state unchanged]"
   | .error e =>
-    throw <| IO.userError s!"ipcUnwrapCapsLoop returned error: {toString e}"
+    throw <| IO.userError s!"ipcUnwrapCaps returned error: {toString e}"
 
   IO.println "all L-13 cap transfer short-circuit tests passed"
 
@@ -4322,7 +4331,7 @@ private def r1FaultyState (st : SystemState) : SystemState :=
 
 private def r1CheckHealthyState (stQueued : SystemState) : IO Unit := do
   let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
-    (.frame none (r1EndpointRights.mem .grant)) (SeLe4n.Slot.ofNat 0) (r1Framed stQueued)
+    (.frame none (r1EndpointRights.mem .grant)) (r1Framed stQueued)
   match result with
   | .ok _ =>
       IO.println "positive check passed [R1-NEG-01 endpointCallWithCaps healthy state succeeds]"
@@ -4332,7 +4341,7 @@ private def r1CheckHealthyState (stQueued : SystemState) : IO Unit := do
 
 private def r1CheckFaultyState (stFaulty : SystemState) : IO Unit := do
   let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
-    (.frame none (r1EndpointRights.mem .grant)) (SeLe4n.Slot.ofNat 0) (r1Framed stFaulty)
+    (.frame none (r1EndpointRights.mem .grant)) (r1Framed stFaulty)
   match result with
   | .ok _ =>
       throw <| IO.userError
@@ -4341,36 +4350,21 @@ private def r1CheckFaultyState (stFaulty : SystemState) : IO Unit := do
       IO.println
         "negative check passed [R1-NEG-02 endpointCallWithCaps fail-closed on missing-TCB receiver]"
 
-private def r1CheckLookupCspaceRoot (stFaulty : SystemState) : IO Unit := do
-  if SeLe4n.Kernel.lookupCspaceRoot stFaulty r1ReceiverTid = none then
-    IO.println
-      "negative check passed [R1-NEG-03 lookupCspaceRoot none witnesses guarded fault arm]"
-  else
-    throw <| IO.userError
-      "R1-NEG-03: lookupCspaceRoot should return none on missing-TCB receiver"
+/-- WS-RC R1 (DEEP-IPC-03): Confirm `endpointCallWithCaps` fails closed on a
+structural fault of its receiver, as `endpointSendDualWithCaps` and
+`endpointReceiveDualWithCaps` do.
 
-/-- WS-RC R1 (DEEP-IPC-03): Confirm `endpointCallWithCaps` shares the
-fail-closed semantics of `endpointSendDualWithCaps` and
-`endpointReceiveDualWithCaps` on the missing-CSpace-root structural fault.
+The call path once returned `.ok ({ results := #[] }, st')` there, giving a
+per-domain covert channel via `KernelError`.  This test exercises the invariant
+that the call wrapper never silently succeeds under the missing-TCB structural
+fault.
 
-Background: AK1-I (I-M07) closed the asymmetry between the send and
-receive WithCaps wrappers — both fail closed with `.error .invalidCapability`
-when the dequeued peer's CSpace root cannot be resolved. The call path was
-the remaining outlier, returning `.ok ({ results := #[] }, st')` and giving
-a per-domain covert channel via `KernelError`. This test exercises the
-post-R1 invariant: the call wrapper must never silently succeed under the
-missing-TCB structural fault.
-
-Three cases are checked:
+Two cases are checked:
 - R1-NEG-01: Healthy state with a properly enqueued receiver — wrapper
   returns success.
 - R1-NEG-02: Faulty state with the receiver's TCB erased after enqueue —
-  wrapper MUST return `.error _` (any error code; the inner `endpointCall`
-  will surface `.objectNotFound` from `endpointQueuePopHead` before the
-  `lookupCspaceRoot = none` arm fires, but the wrapper never returns `.ok`).
-- R1-NEG-03: `lookupCspaceRoot` returns `none` on the faulty state, which
-  is exactly the invariant-violating predicate that the new `.error`
-  arm guards against in source. -/
+  wrapper MUST return `.error _` (the inner `endpointCall` surfaces
+  `.objectNotFound` from `endpointQueuePopHead`). -/
 def runR1IpcCallPathSymmetryChecks : IO Unit := do
   IO.println "\n=== WS-RC R1 (DEEP-IPC-03): IPC call-path NI symmetry ==="
   match r1QueuedState with
@@ -4380,7 +4374,6 @@ def runR1IpcCallPathSymmetryChecks : IO Unit := do
     r1CheckHealthyState stQueued
     let stFaulty := r1FaultyState stQueued
     r1CheckFaultyState stFaulty
-    r1CheckLookupCspaceRoot stFaulty
   IO.println "all WS-RC R1 IPC call-path NI symmetry checks passed"
 
 -- ============================================================================
@@ -4476,9 +4469,7 @@ target CNode's radix width cannot address.
 index at or above `slotCount` can be **stored** and can never be **reached**.
 The four install paths — `cspaceCopy`, `cspaceMint`, `cspaceMove` and the IPC
 capability transfer — all pass through `cspaceInsertSlot`, which is where the
-range check lives; the transfer's own slot scan is radix-bounded so that a
-receiver CNode with no free in-range slot answers `.noSlot` rather than
-scanning past its own width. -/
+range check lives, so a transfer's receive slot outside the radix is refused. -/
 private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   IO.println "=== WS-RR RR8.16: CSpace destination slots are radix-bounded ==="
   -- A four-slot CNode (indices 0..3) holding one capability at slot 0.
@@ -4549,27 +4540,13 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
                ++ s!"slot 9 of a {cn'.slotCount}-slot CNode stores nothing, leaving "
                ++ s!"slots.size = {cn'.occupiedCount}]")
 
-  -- The IPC transfer path scans within the radix, so a receiver with no free
-  -- in-range slot answers `.noSlot` rather than installing out of range.
-  let (transferResult, _) ← expectOkVal "RR8-CSR-06 ipcTransferSingleCap on a full receiver CNode"
+  -- The IPC transfer installs into the receive slot through the same guarded
+  -- insert, so a receive slot the CNode's radix cannot address is refused like
+  -- any other install.
+  expectErr "RR8-CSR-06 ipcTransferSingleCap into an unaddressable receive slot"
     (SeLe4n.Kernel.ipcTransferSingleCap occupied
-      { cnode := fullCnodeId, slot := SeLe4n.Slot.ofNat 0 } fullCnodeId (SeLe4n.Slot.ofNat 0) 8 fullState)
-  match transferResult with
-  | .noSlot => IO.println "negative check passed [RR8-CSR-06: a full receiver CNode answers .noSlot]"
-  | other =>
-      throw <| IO.userError
-        s!"RR8-CSR-06: expected .noSlot from a full receiver CNode, got {reprStr other}"
-  -- ...where the unchecked scan walks straight past the CNode's own width.
-  match fullCnode.findFirstEmptySlot (SeLe4n.Slot.ofNat 0) 8 with
-  | none => throw <| IO.userError "RR8-CSR-07: the retired unchecked scan was expected to answer a slot"
-  | some s =>
-      if s.toNat < fullCnode.slotCount then
-        throw <| IO.userError
-          s!"RR8-CSR-07: the retired scan answered in-range slot {s.toNat}; expected one past the radix"
-      else
-        IO.println
-          ("negative check passed [RR8-CSR-07: the retired unchecked scan answers slot "
-           ++ s!"{s.toNat} of a {fullCnode.slotCount}-slot CNode]")
+      { cnode := fullCnodeId, slot := SeLe4n.Slot.ofNat 0 } fullOutOfRangeDst fullState)
+    .invalidArgument
 
   IO.println "all WS-RR RR8.16 CSpace slot-range checks passed"
 

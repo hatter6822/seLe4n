@@ -43,59 +43,36 @@ theorem MappingStage.of_postAgrees {st r1 st' : SystemState}
 /-! ### The capability transfer -/
 
 theorem ipcTransferSingleCap_mappingStage {cap : Capability} {srcNode : SlotRef}
-    {receiverRoot : SeLe4n.ObjId} {slotBase : SeLe4n.Slot} {scanLimit : Nat}
-    {st st' : SystemState} {result : CapTransferResult}
-    (h : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st = .ok (result, st')) :
+    {dst : CSpaceAddr} {st st' : SystemState}
+    (h : ipcTransferSingleCap cap srcNode dst st = .ok ((), st')) :
     MappingStage st st' := fun hInv => by
-  refine ⟨ipcTransferSingleCap_preserves_objects_invExt _ _ _ _ _ _ _ _ hInv h, fun hL => ?_⟩
-  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨_, st2, -, -, -, hIns, -, rfl⟩⟩ := ipcTransferSingleCap_ok_cases h
-  · exact hL
-  · have hI2 := cspaceInsertSlot_objects_invExt hInv hIns
-    exact untypedSourceSetFull_preserves_liveMappingsRecorded
-      ((SystemState.cdtAddChild_reach st2 _ _ _).invExt hI2)
-      (cdtAddChild_preserves_liveMappingsRecorded hI2
-        (cspaceInsertSlot_preserves_liveMappingsRecorded hInv hIns hL))
+  refine ⟨ipcTransferSingleCap_preserves_objects_invExt _ _ _ _ _ hInv h, fun hL => ?_⟩
+  obtain ⟨_, st2, -, -, -, hIns, rfl⟩ := ipcTransferSingleCap_ok_cases h
+  have hI2 := cspaceInsertSlot_objects_invExt hInv hIns
+  exact untypedSourceSetFull_preserves_liveMappingsRecorded
+    ((SystemState.cdtAddChild_reach st2 _ _ _).invExt hI2)
+    (cdtAddChild_preserves_liveMappingsRecorded hI2
+      (cspaceInsertSlot_preserves_liveMappingsRecorded hInv hIns hL))
 
-theorem ipcUnwrapCapsLoop_mappingStage {caps : Array TransferCap} {receiverRoot : SeLe4n.ObjId}
-    {idx : Nat} {nextBase : SeLe4n.Slot} {accResults : Array CapTransferResult} {fuel : Nat}
-    {st st' : SystemState} {summary : CapTransferSummary}
-    (h : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st = .ok (summary, st')) :
-    MappingStage st st' := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at h
-    obtain ⟨_, rfl⟩ := h; exact MappingStage.refl _
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at h
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at h; obtain ⟨_, rfl⟩ := h; exact MappingStage.refl _
-    | some tc =>
-      simp [hCap] at h
-      cases hT : ipcTransferSingleCap tc.cap tc.srcSlot receiverRoot nextBase maxExtraCaps st with
-      | error e => simp [hT] at h; obtain ⟨_, rfl⟩ := h; exact MappingStage.refl _
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have h1 := ipcTransferSingleCap_mappingStage hT
-        simp [hT] at h
-        cases result <;> exact h1.trans (ih h)
-
-theorem ipcUnwrapCaps_mappingStage {caps : Array TransferCap} {receiverRoot : SeLe4n.ObjId}
-    {slotBase : SeLe4n.Slot} {grantRight : Bool} {st st' : SystemState}
+theorem ipcUnwrapCaps_mappingStage {caps : Array TransferCap} {endpointId : SeLe4n.ObjId}
+    {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState}
     {summary : CapTransferSummary}
-    (h : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
-    MappingStage st st' := by
-  unfold ipcUnwrapCaps at h
-  split at h
-  · simp at h; obtain ⟨_, rfl⟩ := h; exact MappingStage.refl _
-  · exact ipcUnwrapCapsLoop_mappingStage h
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    MappingStage st st' :=
+  ipcUnwrapCaps_rel (fun a b => MappingStage b a) (fun _ => MappingStage.refl _)
+    (fun _ _ _ h1 h2 => h2.trans h1)
+    (fun _ _ _ => MappingStage.of_objects_eq (recordUnwrappedBadge_objects _ _ _ _))
+    (fun _ _ _ _ _ _ hT => ipcTransferSingleCap_mappingStage hT) h
 
 theorem receiveTransferCaps_mappingStage
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {st st' : SystemState} {summary : CapTransferSummary}
-    (h : receiveTransferCaps req root base st = .ok (summary, st')) : MappingStage st st' := by
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
+    {summary : CapTransferSummary}
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
+    MappingStage st st' := by
   obtain ⟨stR, _, hO, -, _, hOr⟩ := receiveTransferCaps_frame h
   have h1 : MappingStage st stR := MappingStage.of_objects_eq hO
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact h1
   · exact h1.trans (ipcUnwrapCaps_mappingStage hU)
 
@@ -116,9 +93,9 @@ theorem endpointSendDualOnCore_mappingStage {endpointId : SeLe4n.ObjId}
 /-- The send with capability transfer keeps the mappings recorded. -/
 theorem endpointSendDualWithCapsOnCore_mappingStage {endpointId : SeLe4n.ObjId}
     {sender : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState} :
+    {executingCore : CoreId} {st : SystemState} :
     MappingStage st (endpointSendDualWithCapsOnCore endpointId sender payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   unfold endpointSendDualWithCapsOnCore
   have hSend := endpointSendDualOnCore_mappingStage (endpointId := endpointId) (sender := sender)
     (payload := payload) (executingCore := executingCore) (st := st)
@@ -136,9 +113,9 @@ theorem endpointSendDualWithCapsOnCore_mappingStage {endpointId : SeLe4n.ObjId}
 
 theorem endpointSendCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
     {endpointId : SeLe4n.ObjId} {sender : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState} :
+    {executingCore : CoreId} {st : SystemState} :
     MappingStage st (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   split
   · exact endpointSendDualWithCapsOnCore_mappingStage
@@ -160,10 +137,9 @@ theorem endpointReceiveDualOnCore_mappingStage {endpointId : SeLe4n.ObjId}
 
 theorem endpointReceiveDualWithCapsOnCore_mappingStage {endpointId : SeLe4n.ObjId}
     {receiver : SeLe4n.ThreadId} {replyId : Option SeLe4n.ReplyId}
-    {receiverCspaceRoot : SeLe4n.ObjId} {receiverSlotBase : SeLe4n.Slot}
+
     {executingCore : CoreId} {st : SystemState} :
-    MappingStage st (endpointReceiveDualWithCapsOnCore endpointId receiver replyId
-      receiverCspaceRoot receiverSlotBase executingCore st).1 := by
+    MappingStage st (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 := by
   unfold endpointReceiveDualWithCapsOnCore
   have hRcv := endpointReceiveDualOnCore_mappingStage (endpointId := endpointId)
     (receiver := receiver) (replyId := replyId) (executingCore := executingCore) (st := st)
@@ -226,9 +202,9 @@ theorem endpointCallOnCore_mappingStage {endpointId : SeLe4n.ObjId}
 
 theorem endpointCallWithCapsOnCore_mappingStage {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState} :
+    {executingCore : CoreId} {st : SystemState} :
     MappingStage st (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   unfold endpointCallWithCapsOnCore
   have hC := endpointCallOnCore_mappingStage (endpointId := endpointId) (caller := caller)
     (payload := payload) (executingCore := executingCore) (st := st)
@@ -246,15 +222,15 @@ theorem endpointCallWithCapsOnCore_mappingStage {endpointId : SeLe4n.ObjId}
 
 theorem endpointCallCrossCoreDispatch_mappingStage {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState} :
+    {executingCore : CoreId} {st : SystemState} :
     MappingStage st (endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   unfold endpointCallCrossCoreDispatch
   have hC := endpointCallWithCapsOnCore_mappingStage (endpointId := endpointId)
-    (caller := caller) (payload := payload) (receiverSlotBase := receiverSlotBase)
+    (caller := caller) (payload := payload)
     (executingCore := executingCore) (st := st)
   generalize endpointCallWithCapsOnCore endpointId caller payload
-    receiverSlotBase executingCore st = r at hC
+    executingCore st = r at hC
   obtain ⟨st1, res⟩ := r
   dsimp only at hC ⊢
   cases res with
@@ -271,9 +247,9 @@ theorem endpointCallCrossCoreDispatch_mappingStage {endpointId : SeLe4n.ObjId}
 
 theorem endpointCallCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
     {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState} :
+    {executingCore : CoreId} {st : SystemState} :
     MappingStage st (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch_mappingStage
@@ -661,10 +637,9 @@ theorem replyRecvAnswerCaller_mappingStage (answer : Option Architecture.FaultRe
 theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
-    {msg : IpcMessage} {receiverCspaceRoot : SeLe4n.ObjId} {receiverSlotBase : SeLe4n.Slot}
+    {msg : IpcMessage}
     {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg receiverCspaceRoot
-      receiverSlotBase executingCore st = .ok (summary, st')) : MappingStage st st' := by
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg executingCore st = .ok (summary, st')) : MappingStage st st' := by
   unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
   have hR := endpointReplyOnCore_mappingStage (replier := tid) (target := prevCaller)
@@ -682,11 +657,10 @@ theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.Fault
   rename_i ret st1p hPop
   have hP := replyRecvPopDonation_mappingStage hPop
   have hV := endpointReceiveDualWithCapsOnCore_mappingStage (endpointId := epId)
-    (receiver := tid) (replyId := some rid) (receiverCspaceRoot := receiverCspaceRoot)
-    (receiverSlotBase := receiverSlotBase) (executingCore := executingCore) (st := st1p)
+    (receiver := tid) (replyId := some rid)
+    (executingCore := executingCore) (st := st1p)
   revert h hV
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) receiverCspaceRoot
-    receiverSlotBase executingCore st1p = r2
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore st1p = r2
   obtain ⟨st2, res2⟩ := r2
   cases res2 with
   | error _ => intro h; cases h

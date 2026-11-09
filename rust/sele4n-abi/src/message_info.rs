@@ -3,10 +3,11 @@
 //!
 //! Lean source: `SeLe4n/Model/Object/Types.lean` lines 717–860.
 //!
-//! Bit layout (seL4 convention):
-//! - bits 0–6:  length (7 bits, max 120)
-//! - bits 7–8:  extraCaps (2 bits, max 3)
-//! - bits 9–28: label (20 bits, user-defined; seL4 convention)
+//! Bit layout (seL4's `seL4_MessageInfo_t`):
+//! - bits 0–6:   length (7 bits, max 120)
+//! - bits 7–8:   extraCaps (2 bits, max 3)
+//! - bits 9–11:  capsUnwrapped (3 bits, set by the kernel on delivery)
+//! - bits 12–31: label (20 bits, user-defined)
 
 use sele4n_types::KernelError;
 
@@ -61,6 +62,10 @@ pub struct MessageInfo {
     extra_caps: u8,
     /// User-defined label (must fit in 20 bits: 0..=2^20-1; seL4 convention).
     label: u64,
+    /// Which extra capabilities the kernel unwrapped to their badge on
+    /// delivery (bit `i` for capability `i`), seL4's `capsUnwrapped`.  A
+    /// sender's value is ignored by the kernel.
+    caps_unwrapped: u8,
 }
 
 impl MessageInfo {
@@ -77,6 +82,7 @@ impl MessageInfo {
                 length,
                 extra_caps,
                 label,
+                caps_unwrapped: 0,
             })
         }
     }
@@ -102,6 +108,7 @@ impl MessageInfo {
             length,
             extra_caps,
             label,
+            caps_unwrapped: 0,
         }
     }
 
@@ -129,17 +136,25 @@ impl MessageInfo {
         self.label
     }
 
+    /// Which extra capabilities a delivery unwrapped to their badge (bit `i`
+    /// for capability `i`); the badge is in the receiver's IPC buffer's
+    /// `caps_or_badges[i]`.
+    #[inline]
+    pub const fn caps_unwrapped(&self) -> u8 {
+        self.caps_unwrapped
+    }
+
     /// Encode into a single 64-bit register word.
     ///
     /// ## Bit layout (U3-H / U-L10)
     ///
     /// ```text
-    /// 63         29 28                  9  8  7  6                  0
-    /// ┌──────────┬────────────────────────┬────┬────────────────────┐
-    /// │ reserved │    label (20 bits)     │ ec │  length (7 bits)   │
-    /// └──────────┴────────────────────────┴────┴────────────────────┘
-    ///              bits 9–28: label        7–8   bits 0–6: length
-    ///              (user-defined)          extra_caps (2 bits)
+    /// 63         32 31                 12 11  9  8  7  6                  0
+    /// ┌──────────┬────────────────────────┬─────┬────┬────────────────────┐
+    /// │ reserved │    label (20 bits)     │ cu  │ ec │  length (7 bits)   │
+    /// └──────────┴────────────────────────┴─────┴────┴────────────────────┘
+    ///              bits 12–31: label      9–11   7–8   bits 0–6: length
+    ///                                     caps_unwrapped, extra_caps
     /// ```
     ///
     /// V2-H/M-API-3: Returns `InvalidMessageInfo` if `self.label >= 2^20`,
@@ -151,7 +166,10 @@ impl MessageInfo {
         if self.label > MAX_LABEL {
             return Err(KernelError::InvalidMessageInfo);
         }
-        Ok((self.length as u64 & 0x7F) | ((self.extra_caps as u64 & 0x3) << 7) | (self.label << 9))
+        Ok((self.length as u64 & 0x7F)
+            | ((self.extra_caps as u64 & 0x3) << 7)
+            | ((self.caps_unwrapped as u64 & 0x7) << 9)
+            | (self.label << 12))
     }
 
     /// Decode a raw 64-bit word into MessageInfo.
@@ -159,10 +177,10 @@ impl MessageInfo {
     /// ## Bit layout (V2-H / M-API-3)
     ///
     /// ```text
-    /// 63         29 28                  9  8  7  6                  0
-    /// ┌──────────┬────────────────────────┬────┬────────────────────┐
-    /// │ reserved │    label (20 bits)     │ ec │  length (7 bits)   │
-    /// └──────────┴────────────────────────┴────┴────────────────────┘
+    /// 63         32 31                 12 11  9  8  7  6                  0
+    /// ┌──────────┬────────────────────────┬─────┬────┬────────────────────┐
+    /// │ reserved │    label (20 bits)     │ cu  │ ec │  length (7 bits)   │
+    /// └──────────┴────────────────────────┴─────┴────┴────────────────────┘
     /// ```
     ///
     /// Returns `InvalidMessageInfo` if length > 120, extraCaps > 3, or
@@ -173,7 +191,8 @@ impl MessageInfo {
     pub const fn decode(raw: u64) -> Result<Self, KernelError> {
         let length = (raw & 0x7F) as u8;
         let extra_caps = ((raw >> 7) & 0x3) as u8;
-        let label = raw >> 9;
+        let caps_unwrapped = ((raw >> 9) & 0x7) as u8;
+        let label = raw >> 12;
         if length as u64 <= MAX_MSG_LENGTH
             && extra_caps as u64 <= MAX_EXTRA_CAPS
             && label <= MAX_LABEL
@@ -182,6 +201,7 @@ impl MessageInfo {
                 length,
                 extra_caps,
                 label,
+                caps_unwrapped,
             })
         } else {
             Err(KernelError::InvalidMessageInfo)
@@ -238,7 +258,17 @@ mod tests {
     #[test]
     fn bit_layout_label() {
         let mi = MessageInfo::new(0, 0, 5).unwrap();
-        assert_eq!(mi.encode().unwrap(), 5 << 9);
+        assert_eq!(mi.encode().unwrap(), 5 << 12);
+    }
+
+    #[test]
+    fn caps_unwrapped_decodes_and_reencodes() {
+        let raw: u64 = (0x1234 << 12) | (0b101 << 9) | (2 << 7) | 3;
+        let mi = MessageInfo::decode(raw).unwrap();
+        assert_eq!(mi.caps_unwrapped(), 0b101);
+        assert_eq!(mi.extra_caps(), 2);
+        assert_eq!(mi.label(), 0x1234);
+        assert_eq!(mi.encode().unwrap(), raw);
     }
 
     #[test]
@@ -267,7 +297,7 @@ mod tests {
     #[test]
     fn decode_rejects_oversized_label() {
         // Encode a raw word with label = 2^20 (just over the limit)
-        let raw: u64 = (1u64 << 20) << 9; // label field starts at bit 9
+        let raw: u64 = (1u64 << 20) << 12; // label field starts at bit 12
         assert_eq!(
             MessageInfo::decode(raw),
             Err(KernelError::InvalidMessageInfo)

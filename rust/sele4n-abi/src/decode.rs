@@ -104,9 +104,9 @@ mod tests {
     use super::*;
 
     /// The status label in `x1` position: discriminant →
-    /// `(ERROR_LABEL_BASE + d) << 9` (ABI v3).
+    /// `(ERROR_LABEL_BASE + d) << 12` (ABI v3).
     fn error_x1(disc: u64) -> u64 {
-        (ERROR_LABEL_BASE + disc) << 9
+        (ERROR_LABEL_BASE + disc) << 12
     }
 
     #[test]
@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(decode_response(regs), Err(KernelError::ObjectNotFound));
         // The literal, so a drift in the base is caught here and not only
         // by the cross-crate pin.
-        assert_eq!(error_x1(1), 0xFFF01 << 9);
+        assert_eq!(error_x1(1), 0xFFF01 << 12);
     }
 
     #[test]
@@ -166,7 +166,7 @@ mod tests {
         for (tag, words) in [(1u64, 4u64), (2, 13), (3, 5), (6, 4)] {
             // x1 = MessageInfo { length: words (clamped to 4 inline),
             // extraCaps 0, label: tag }.
-            let regs = [7, (tag << 9) | words.min(4), 10, 20, 30, 40, 0];
+            let regs = [7, (tag << 12) | words.min(4), 10, 20, 30, 40, 0];
             let resp = decode_response(regs)
                 .unwrap_or_else(|e| panic!("fault tag {tag} must decode as a delivery, got {e:?}"));
             assert_eq!(
@@ -184,10 +184,10 @@ mod tests {
     #[test]
     fn decode_status_range_boundary() {
         let last_delivery = ERROR_LABEL_BASE - 1;
-        let resp = decode_response([0, last_delivery << 9, 0, 0, 0, 0, 0]).unwrap();
+        let resp = decode_response([0, last_delivery << 12, 0, 0, 0, 0, 0]).unwrap();
         assert_eq!(resp.msg_info().label(), last_delivery);
         assert_eq!(
-            decode_response([0, ERROR_LABEL_BASE << 9, 0, 0, 0, 0, 0]),
+            decode_response([0, ERROR_LABEL_BASE << 12, 0, 0, 0, 0, 0]),
             Err(KernelError::InvalidCapability),
             "the base itself is discriminant 0"
         );
@@ -212,7 +212,7 @@ mod tests {
         // The top of the range — the blocked-resume sentinel's label,
         // discriminant 255 — is the same fail-closed answer.
         let regs = [0, error_x1(255), 0, 0, 0, 0, 0];
-        assert_eq!(error_x1(255) >> 9, (1 << 20) - 1);
+        assert_eq!(error_x1(255) >> 12, (1 << 20) - 1);
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
     }
 

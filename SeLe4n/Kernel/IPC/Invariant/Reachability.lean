@@ -774,14 +774,14 @@ theorem notificationHead_serverFree {st : SystemState} (hN : notificationWaiterC
 off the reachable-state pack and the running caller. -/
 theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reachable
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (c : CoreId) (st : SystemState)
     (hReach : ipcReachable st) (tcb : TCB) (hT : st.objects[caller.toObjId]? = some (.tcb tcb))
     (hReady : tcb.ipcState = .ready) :
-    (endpointCallCrossCoreDispatch endpointId caller payload base c
+    (endpointCallCrossCoreDispatch endpointId caller payload c
       st).1.replyWaitersConsistent :=
   have hI := hReach.ipcInvariantFull
   endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent endpointId caller payload
-    base c st hReach.objects_invExt hReach.replyWaitersConsistent
+    c st hReach.objects_invExt hReach.replyWaitersConsistent
     (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hReady]))
     (fun ep r hE hH => ⟨fun h => by
         subst h
@@ -792,14 +792,14 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reacha
 /-- **The live receive carries the reply-waiter queues**, likewise. -/
 theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId) (base : SeLe4n.Slot) (c : CoreId)
+    (replyId : Option SeLe4n.ReplyId) (c : CoreId)
     (st : SystemState) (hReach : ipcReachable st) (tcb : TCB)
     (hT : st.objects[receiver.toObjId]? = some (.tcb tcb)) (hReady : tcb.ipcState = .ready) :
-    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId root base c
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId c
       st).1.replyWaitersConsistent :=
   have hI := hReach.ipcInvariantFull
   endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent endpointId receiver
-    replyId root base c st hReach.objects_invExt hReach.replyWaitersConsistent
+    replyId c st hReach.objects_invExt hReach.replyWaitersConsistent
     (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hReady]))
     (fun ep s hE hH => ⟨fun h => by
         subst h
@@ -810,13 +810,13 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_re
 /-- **The live send carries the reply-waiter queues**, likewise. -/
 theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (c : CoreId) (st : SystemState)
     (hReach : ipcReachable st) (tcb : TCB) (hT : st.objects[sender.toObjId]? = some (.tcb tcb))
     (hReady : tcb.ipcState = .ready) :
-    (endpointSendDualWithCapsOnCore endpointId sender payload base c
+    (endpointSendDualWithCapsOnCore endpointId sender payload c
       st).1.replyWaitersConsistent :=
   endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent endpointId sender payload
-    base c st hReach.objects_invExt hReach.replyWaitersConsistent
+    c st hReach.objects_invExt hReach.replyWaitersConsistent
     (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hReady]))
     (fun _ _ hE hH => receiveHead_serverFree hReach.ipcInvariantFull.queueHeadBlockedConsistent hE hH)
 

@@ -43,7 +43,7 @@ fn xval_001_endpoint_send() {
         &req,
         &[
             (0, 100, "x0=CPtr"),
-            (1, 2 | (0x10 << 9), "x1=MessageInfo"),
+            (1, 2 | (0x10 << 12), "x1=MessageInfo"),
             (2, 0xAAAA, "x2=msg_reg[0]"),
             (3, 0xBBBB, "x3=msg_reg[1]"),
             (6, 0, "x7=SyscallId::Send"),
@@ -83,7 +83,7 @@ fn xval_003_endpoint_call() {
         &req,
         &[
             (0, 300, "x0=CPtr"),
-            (1, 1 | (42 << 9), "x1=MessageInfo"),
+            (1, 1 | (42 << 12), "x1=MessageInfo"),
             (2, 0xDEAD, "x2=msg_reg[0]"),
             (6, 2, "x7=SyscallId::Call"),
         ],
@@ -918,7 +918,7 @@ fn register_file_bounds() {
 /// U3-I: IpcBuffer layout matches expected size and alignment.
 #[test]
 fn ipc_buffer_layout() {
-    assert_eq!(core::mem::size_of::<IpcBuffer>(), 960);
+    assert_eq!(core::mem::size_of::<IpcBuffer>(), 984);
     assert_eq!(core::mem::align_of::<IpcBuffer>(), 8);
 }
 
@@ -945,8 +945,8 @@ fn decode_response_u64_overflow() {
     assert_eq!(decode_response(regs), Err(KernelError::InvalidMessageInfo));
 
     // The first over-wide x1 word: one bit past the 20-bit label field
-    // (bit 29 of the raw word) — rejected, not truncated to label 0.
-    let regs = [0, 1u64 << 29, 0, 0, 0, 0, 0];
+    // (bit 32 of the raw word) — rejected, not truncated to label 0.
+    let regs = [0, 1u64 << 32, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::InvalidMessageInfo));
 }
 
@@ -961,20 +961,20 @@ fn unknown_kernel_error_fallback() {
     // the 20-bit range — label ERROR_LABEL_BASE + d names discriminant d.
     // Discriminant 58 — first unrecognized after IpcCancelled (57).
     let base = sele4n_types::ERROR_LABEL_BASE;
-    let regs = [0, (base + 58) << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 58) << 12, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
-    let regs = [0, (base + 100) << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 100) << 12, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 254 — just below the sentinel
-    let regs = [0, (base + 254) << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 254) << 12, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 255 — the blocked-resume sentinel (MAX_LABEL) resolves to
     // UnknownKernelError directly: it is the last label of the status range.
-    let regs = [0, (base + 255) << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 255) << 12, 0, 0, 0, 0, 0];
     assert_eq!(base + 255, sele4n_abi::message_info::MAX_LABEL);
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
@@ -983,7 +983,7 @@ fn unknown_kernel_error_fallback() {
     // `UnknownKernelError`, and a fault handler's tag-6 message was
     // discriminant 5.
     for label in [58u64, 101, 255, 6, 1] {
-        let resp = decode_response([0, label << 9, 0, 0, 0, 0, 0])
+        let resp = decode_response([0, label << 12, 0, 0, 0, 0, 0])
             .unwrap_or_else(|e| panic!("label {label} must be a delivery, got {e:?}"));
         assert_eq!(resp.msg_info().label(), label);
     }
@@ -995,7 +995,15 @@ fn unknown_kernel_error_fallback() {
 fn missing_sched_context_decode() {
     use sele4n_abi::decode_response;
 
-    let regs = [0, (sele4n_types::ERROR_LABEL_BASE + 52) << 9, 0, 0, 0, 0, 0];
+    let regs = [
+        0,
+        (sele4n_types::ERROR_LABEL_BASE + 52) << 12,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ];
     assert_eq!(decode_response(regs), Err(KernelError::MissingSchedContext));
 }
 
@@ -1005,7 +1013,15 @@ fn missing_sched_context_decode() {
 fn thread_on_different_core_decode() {
     use sele4n_abi::decode_response;
 
-    let regs = [0, (sele4n_types::ERROR_LABEL_BASE + 53) << 9, 0, 0, 0, 0, 0];
+    let regs = [
+        0,
+        (sele4n_types::ERROR_LABEL_BASE + 53) << 12,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ];
     assert_eq!(
         decode_response(regs),
         Err(KernelError::ThreadOnDifferentCore)
@@ -2081,7 +2097,7 @@ fn sys_sched_context_module_exports() {
 /// and a half-bumped tree fails whichever suite still reads the old value.
 #[test]
 fn syscall_abi_version_pinned() {
-    assert_eq!(sele4n_types::SYSCALL_ABI_VERSION, 3);
+    assert_eq!(sele4n_types::SYSCALL_ABI_VERSION, 4);
 }
 
 /// WS-RR RR4 (ABI v3): the status-range base, pinned as a literal on the
@@ -2334,10 +2350,16 @@ fn abi_layout_matches_the_lean_table() {
         if mi.encode() != Ok(word) {
             return "inconsistent";
         }
-        match (mi.length() != 0, mi.extra_caps() != 0, mi.label() != 0) {
-            (true, false, false) => "length",
-            (false, true, false) => "extraCaps",
-            (false, false, true) => "label",
+        match (
+            mi.length() != 0,
+            mi.extra_caps() != 0,
+            mi.caps_unwrapped() != 0,
+            mi.label() != 0,
+        ) {
+            (true, false, false, false) => "length",
+            (false, true, false, false) => "extraCaps",
+            (false, false, true, false) => "capsUnwrapped",
+            (false, false, false, true) => "label",
             _ => "inconsistent",
         }
     }
@@ -2346,7 +2368,7 @@ fn abi_layout_matches_the_lean_table() {
     for j in 0..64 {
         rendered.push_str(&std::format!("bit {j} {}\n", owner(j)));
     }
-    for field in ["length", "extraCaps", "label"] {
+    for field in ["length", "extraCaps", "capsUnwrapped", "label"] {
         let bits: std::vec::Vec<u32> = (0..64).filter(|&j| owner(j) == field).collect();
         let line = match (bits.first(), bits.last()) {
             (Some(&lo), Some(&hi)) if bits.len() as u32 == hi - lo + 1 => {

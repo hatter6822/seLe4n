@@ -688,7 +688,7 @@ call dispatch commits on a rendezvous that donates nothing. -/
 `performCallRendezvous`'s state with an empty transfer summary. -/
 theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
-    (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage) (slot : SeLe4n.Slot)
+    (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage)
     (core : Concurrency.CoreId)
     (hM : sendPayloadMessage st caller payload = msg)
     (hReq : sendCapRequest st endpointId caller payload = none)
@@ -697,7 +697,7 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (hG : callWakesInPlace st endpointId caller r rt rid = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
-    ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload slot core st =
+    ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload core st =
       (performCallRendezvous st endpointId caller r rt.queueNext rid msg core,
        .ok ({ results := #[] }, sgi)) := by
   have hG' := hG
@@ -717,7 +717,7 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   unfold endpointCallCrossCoreDispatchChecked
   rw [if_pos hFlow]
   unfold endpointCallCrossCoreDispatch
-  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ hReq, hEq]
+  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq, hEq]
   simp only [Except.map, hEp, hH, hcv, hrv]
   unfold applyCallDonationOnCore
   rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]

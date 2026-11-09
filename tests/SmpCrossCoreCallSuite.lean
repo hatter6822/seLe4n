@@ -358,11 +358,11 @@ private def runNoReceiverChecks : IO Unit := do
   -- on the no-receiver path (no caps to transfer; no donation without a server).
   assertBool "no-receiver WithCaps cross-core call also surfaces no SGI"
     (match (endpointCallWithCapsOnCore epId callerTid (.frame none false)
-        (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
+        bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
   assertBool "no-receiver cross-core dispatch performs no donation (= WithCaps)"
     (match (endpointCallCrossCoreDispatch epId callerTid (.frame none false)
-        (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
+        bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
 
 private def runRendezvousChecks : IO Unit := do
@@ -941,7 +941,6 @@ transition behind the **live** `.send` dispatch — preserves every core's
 bundle view. -/
 example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -964,10 +963,10 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDualWithCaps endpointId sender payload
-             receiverSlotBase st = .ok (summary, st')) :
+             st = .ok (summary, st')) :
     ipcInvariantFull_perCore st' c :=
   endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore endpointId sender payload
-    receiverSlotBase st st' summary hInv hObjInv
+    st st' summary hInv hObjInv
     hAllBudgetsNone hFreshSender hSendTailFresh
     hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
 
@@ -1398,7 +1397,7 @@ private def runAbiSchedFootprintChecks : IO Unit := do
        (match abiEntryLockOperands decoded tid stFilled with
         | some ops =>
           decide (Concurrency.lockSetForSyscall decoded.syscallId
-                    { ops with receiverSlotBase := none,
+                    { ops with message := none,
                                replyMessageInfo := none, replyRegisters := none,
                                affinity := none } stFilled
                     = Concurrency.lockSetForSyscall decoded.syscallId ops stFilled)

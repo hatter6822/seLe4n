@@ -144,14 +144,14 @@ finds a receiver and transfers no capability commits `performCallRendezvous`'s
 state with an empty transfer summary. -/
 theorem callDispatch_inPlace (st : SystemState)
     (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
-    (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage) (slot : SeLe4n.Slot)
+    (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage)
     (core : CoreId)
     (hM : sendPayloadMessage st caller payload = msg)
     (hReq : sendCapRequest st endpointId caller payload = none)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
     (hG : callWakesInPlace st endpointId caller r rt rid = true) :
-    ∃ sgi, endpointCallCrossCoreDispatch endpointId caller payload slot core st =
+    ∃ sgi, endpointCallCrossCoreDispatch endpointId caller payload core st =
       (performCallRendezvous st endpointId caller r rt.queueNext rid msg core,
        .ok ({ results := #[] }, sgi)) := by
   have hG' := hG
@@ -171,7 +171,7 @@ theorem callDispatch_inPlace (st : SystemState)
   refine ⟨(wakeThread ((storePopHead st endpointId true r rt.queueNext).updateTcb r
     (callReceiverTcb msg)) r core).2, ?_⟩
   unfold endpointCallCrossCoreDispatch
-  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ hReq, hEq]
+  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq, hEq]
   simp only [Except.map, hEp, hH, hcv, hrv]
   unfold applyCallDonationOnCore
   rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]
@@ -215,8 +215,9 @@ written past the frame.  Out of line, as `regMessageInfoWord`, so the
 `MessageInfo` it encodes is never built. -/
 @[noinline] def faultInfoWord (k overflow : Nat) : UInt64 :=
   (({ length := min (min (faultLengthOfKind k) (4 + overflow)) maxMessageRegisters
-      extraCaps := min 0 Model.maxExtraCaps
-      label := min (faultLabelOfKind k) (errorLabelBase - 1) } : MessageInfo).encode).toUInt64
+      extraCaps := 0 % 4
+      label := min (faultLabelOfKind k) (errorLabelBase - 1)
+      capsUnwrapped := 0 / 4 % 8 } : MessageInfo).encode).toUInt64
 
 /-- The frame's `MR0` for a fault of kind `k`.  Each register word is chosen
 out of line, so the frame is a straight run of words and never built. -/
@@ -298,6 +299,7 @@ theorem ipcBufferSlotPAddr?_mapTcbInPlace (X : SystemState) (r : SeLe4n.ThreadId
     Architecture.IpcBufferRead.ipcBufferSlotPAddr? (X.mapTcbInPlace r g) t' idx needWrite =
       Architecture.IpcBufferRead.ipcBufferSlotPAddr? X t idx needWrite := by
   unfold Architecture.IpcBufferRead.ipcBufferSlotPAddr?
+    Architecture.IpcBufferRead.ipcBufferWordPAddr?
   rw [hV, hB, getVSpaceRoot?_mapTcbInPlace]
   rfl
 
@@ -833,13 +835,13 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
             subst hw
             obtain ⟨sgi, hD⟩ := callDispatch_inPlace st tgt.endpoint ep tid r rt rid
               (.fault f ctx tgt.cap.badge) (faultMessage f ctx tgt.cap.badge)
-              (SeLe4n.Slot.ofNat 0) c rfl
+              c rfl
               (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl)
               hE hH hT' hRid hIn
             unfold faultDeliverOnCore
             simp only [hRes, hEp, Option.bind_some, hH, hD]
             rw [recordPendingFault_eq_words, ← TCB.optCode_queueNext]
-            have hIC : CapTransferSummary.installedCount { results := #[] } = 0 := rfl
+            have hIC : CapTransferSummary.capInfo { results := #[] } = 0 := rfl
             rw [hIC, ← performFaultCallDelivered_eq st tgt.endpoint tid r rt.queueNext rid tgt.cap
               f ctx c (callWakesInPlace_noResizeDue hIn) (callWakesInPlace_ne hIn),
               faultWordsOf_fields]
@@ -864,8 +866,8 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
             simp only [hEp, hH]
           unfold faultDeliverOnCore
           simp only [hRes, hEp, Option.bind_some, hH]
-          rw [endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ _ hNoR,
-            endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _
+          rw [endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoR,
+            endpointCallWithCapsOnCore_no_caps _ _ _ _ _
               (sendCapRequest_of_no_receiver _ _ _ _ (by simp only [hEp, Option.bind_some, hH])),
             hBlk]
           simp only [Except.map, Architecture.stageWokenDelivery_none]

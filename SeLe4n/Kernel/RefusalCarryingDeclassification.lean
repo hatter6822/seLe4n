@@ -43,7 +43,7 @@ far as its arm reads it: the syscall, the operand address and the layout's
 message registers read from the caller's file (`dispatchWithCapChecked_eq_auditedArmSpec`). -/
 def auditedDecoded (sid : SyscallId) (capAddr : SeLe4n.CPtr) (regs : SeLe4n.RegisterFile) :
     SyscallDecodeResult :=
-  { capAddr, msgInfo := ⟨0, 0, 0⟩, syscallId := sid,
+  { capAddr, msgInfo := ⟨0, 0, 0, 0⟩, syscallId := sid,
     msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs),
     inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size }
 
@@ -73,7 +73,7 @@ theorem dispatchWithCapChecked_eq_auditedArmSpec (ctx : LabelingContext)
     (hRight : gate.requiredRight = syscallRequiredRight decoded.syscallId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       auditedArmSpec ctx decoded.syscallId decoded.capAddr regs tid executingCore cap := by
-  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, capRecvSlot, inlineCount, overflowCount⟩
+  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   have hR : ∀ i, i < 4 → Architecture.SyscallArgDecode.requireMsgReg msgRegs i =
       Architecture.SyscallArgDecode.requireMsgReg
         (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) i := hRegs

@@ -504,10 +504,9 @@ theorem enforcementSoundness_endpointSendDualChecked_gate
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
     (hStep : endpointSendDualChecked ctx endpointId sender payload
-              receiverSlotBase st = .ok (r, st')) :
+              st = .ok (r, st')) :
     endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true := by
   unfold endpointSendDualChecked at hStep
@@ -527,14 +526,13 @@ theorem enforcementSoundness_endpointSendDualChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
     (hStep : endpointSendDualChecked ctx endpointId sender payload
-              receiverSlotBase st = .ok (r, st')) :
+              st = .ok (r, st')) :
     securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true := by
   exact endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _
     (enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender payload
-      receiverSlotBase st r st' hStep)
+      st r st' hStep)
 
 /-- WS-H8/A-35: Enforcement soundness for notificationSignalChecked. -/
 theorem enforcementSoundness_notificationSignalChecked
@@ -609,10 +607,9 @@ theorem enforcementSoundness_endpointCallChecked_gate
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
     (hStep : endpointCallChecked ctx endpointId caller payload
-              receiverSlotBase st = .ok (r, st')) :
+              st = .ok (r, st')) :
     endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true := by
   unfold endpointCallChecked at hStep
@@ -627,14 +624,13 @@ theorem enforcementSoundness_endpointCallChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
     (hStep : endpointCallChecked ctx endpointId caller payload
-              receiverSlotBase st = .ok (r, st')) :
+              st = .ok (r, st')) :
     securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true := by
   exact endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _
     (enforcementSoundness_endpointCallChecked_gate ctx endpointId caller payload
-      receiverSlotBase st r st' hStep)
+      st r st' hStep)
 
 /-- Y2-E: Enforcement soundness for endpointReplyChecked.
 Success implies replier→target flow is allowed. -/
@@ -965,20 +961,20 @@ The full NI composition (linking checked dispatch to low-equivalence
 preservation) is in `Invariant/Composition.lean`. -/
 theorem checkedDispatch_flowDenied_preserves_state :
     (∀ ctx epId sender payload
-        (receiverSlotBase : SeLe4n.Slot) st,
+    st,
       securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf epId) = false →
       ¬∃ (r : CapTransferSummary) (st' : SystemState),
         endpointSendDualChecked ctx epId sender payload
-        receiverSlotBase st = .ok (r, st')) ∧
+        st = .ok (r, st')) ∧
     (∀ ctx src dst rights badge st,
       securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false →
       ¬∃ st', cspaceMintChecked ctx src dst rights badge st = .ok ((), st')) ∧
     (∀ ctx caller reg st,
       registrationWriteAdmitted ctx caller reg = false →
       ¬∃ st', registerServiceChecked ctx caller reg st = .ok ((), st')) :=
-  ⟨fun ctx epId sender payload receiverSlotBase st hDeny =>
+  ⟨fun ctx epId sender payload st hDeny =>
     endpointSendDualChecked_denied_preserves_state ctx epId sender payload
-      receiverSlotBase st hDeny,
+      st hDeny,
    fun ctx src dst rights badge st hDeny =>
     cspaceMintChecked_denied_preserves_state ctx src dst rights badge st hDeny,
    fun ctx caller reg st hDeny => by
@@ -1036,9 +1032,9 @@ theorem enforcementBridge_to_NonInterferenceStep
     (ctx : LabelingContext) (st st' : SystemState) :
     -- 1. endpointSendDualChecked: success implies sender→endpoint flow allowed
     (∀ eid sender payload
-        (receiverSlotBase : SeLe4n.Slot) (r : CapTransferSummary),
+    (r : CapTransferSummary),
       endpointSendDualChecked ctx eid sender payload
-        receiverSlotBase st = .ok (r, st') →
+        st = .ok (r, st') →
       securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf eid) = true) ∧
     -- 2. notificationSignalChecked: success implies signaler→notification flow allowed
     (∀ ntfnId signaler badge,
@@ -1061,8 +1057,8 @@ theorem enforcementBridge_to_NonInterferenceStep
       registerServiceChecked ctx caller reg st = .ok ((), st') →
       registrationWriteAdmitted ctx caller reg = true) ∧
     -- 7. endpointCallChecked: success implies caller→endpoint flow allowed
-    (∀ eid caller payload slotBase r,
-      endpointCallChecked ctx eid caller payload slotBase st = .ok (r, st') →
+    (∀ eid caller payload r,
+      endpointCallChecked ctx eid caller payload st = .ok (r, st') →
       securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf eid) = true) ∧
     -- 8. endpointReplyChecked: success implies replier→target flow allowed
     (∀ replier target payload,
@@ -1090,9 +1086,9 @@ theorem enforcementBridge_to_NonInterferenceStep
       revokeServiceChecked ctx caller epId st = .ok ((), st') →
       serviceEndpointWriteAdmitted ctx caller epId = true) := by
   exact ⟨
-    fun eid sender payload receiverSlotBase r hStep =>
+    fun eid sender payload r hStep =>
       enforcementSoundness_endpointSendDualChecked ctx eid sender payload
-        receiverSlotBase st r st' hStep,
+        st r st' hStep,
     fun ntfnId signaler badge hStep =>
       enforcementSoundness_notificationSignalChecked ctx ntfnId signaler badge st st' hStep,
     fun src dst hStep =>
@@ -1103,8 +1099,8 @@ theorem enforcementBridge_to_NonInterferenceStep
       enforcementSoundness_endpointReceiveDualChecked ctx eid receiver replyId st r st' hStep,
     fun caller reg hStep =>
       enforcementSoundness_registerServiceChecked ctx caller reg st st' hStep,
-    fun eid caller payload slotBase r hStep =>
-      enforcementSoundness_endpointCallChecked ctx eid caller payload slotBase st r st' hStep,
+    fun eid caller payload r hStep =>
+      enforcementSoundness_endpointCallChecked ctx eid caller payload st r st' hStep,
     fun replier target payload hStep =>
       enforcementSoundness_endpointReplyChecked ctx replier target payload st st' hStep,
     fun src dst rights badge hStep =>
@@ -1154,13 +1150,12 @@ and an operator cannot open this path by installing an override. -/
 theorem endpointCallChecked_denied_preserves_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf caller)
                (ctx.endpointLabelOf endpointId) = false) :
     ¬∃ (r : CapTransferSummary) (st' : SystemState),
       endpointCallChecked ctx endpointId caller payload
-        receiverSlotBase st = .ok (r, st') := by
+        st = .ok (r, st') := by
   intro ⟨r, st', h⟩
   simp [endpointCallChecked,
     endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
@@ -1169,18 +1164,17 @@ theorem endpointCallChecked_denied_preserves_state
 theorem enforcement_sufficiency_endpointCall
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) :
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
         (ctx.endpointLabelOf endpointId) = true ∧
        endpointCallChecked ctx endpointId caller payload
-           receiverSlotBase st =
+           st =
          endpointCallWithCaps endpointId caller payload
-           receiverSlotBase st) ∨
+           st) ∨
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
         (ctx.endpointLabelOf endpointId) = false ∧
        endpointCallChecked ctx endpointId caller payload
-           receiverSlotBase st = .error .flowDenied) := by
+           st = .error .flowDenied) := by
   cases hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) with
   | true => left; exact ⟨rfl, by simp [endpointCallChecked, hFlow]⟩

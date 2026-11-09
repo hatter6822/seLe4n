@@ -78,6 +78,33 @@ inductive IpcBufferReadError where
     (matches `rust/sele4n-abi/src/ipc_buffer.rs:OVERFLOW_SLOTS`). -/
 def maxOverflowSlots : Nat := maxMessageRegisters - 4
 
+/-! The words of the IPC buffer past the message (seL4's `seL4_IPCBuffer`
+after `msg`; the Rust mirror is `sele4n_abi::ipc_buffer::IpcBuffer`): one
+`userData` word, the `caps_or_badges` words, then the receive path. -/
+
+/-- Word `i` of `caps_or_badges`, where a delivery writes the badge of the
+`i`-th extra capability it unwrapped (seL4's `setExtraBadge`). -/
+def ipcBufferBadgeWord (i : Nat) : Nat := maxOverflowSlots + 1 + i
+
+/-- The `receiveCNode` word: the CNode capability, in the receiver's CSpace,
+its receive slot is addressed in. -/
+def ipcBufferReceiveCNodeWord : Nat := maxOverflowSlots + 1 + maxExtraCaps
+
+/-- The `receiveIndex` word: the receive slot's address within that CNode. -/
+def ipcBufferReceiveIndexWord : Nat := ipcBufferReceiveCNodeWord + 1
+
+/-- The `receiveDepth` word: how many bits of the index resolve the slot. -/
+def ipcBufferReceiveDepthWord : Nat := ipcBufferReceiveCNodeWord + 2
+
+/-- The buffer's words: the message's overflow, `userData`, the badges and the
+receive path (984 bytes, inside the 1024-byte aligned buffer). -/
+def ipcBufferWords : Nat := ipcBufferReceiveDepthWord + 1
+
+theorem ipcBufferWords_eq : ipcBufferWords = 123 := by decide
+
+/-- The buffer's words lie inside its alignment, so in one frame. -/
+theorem ipcBufferWords_within_alignment : ipcBufferWords * 8 ≤ ipcBufferAlignment := by decide
+
 -- ============================================================================
 -- AK4-A.1: Pure IPC-buffer word read helper
 -- ============================================================================
@@ -472,9 +499,9 @@ eight-byte aligned word of RAM past the kernel's reserved extent
 (`user_translation::user_word_admissible`), every address it answers is one the
 HAL performs: a mapped frame is carved from an untyped, and the boot refuses an
 untyped over the kernel's extent. -/
-@[inline] def ipcBufferSlotPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
+@[inline] def ipcBufferWordPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
     (needWrite : Bool) : Option PAddr :=
-  if idx < maxOverflowSlots then
+  if idx < ipcBufferWords then
     match st.getVSpaceRoot? tcb.vspaceRoot with
     | some root =>
       match root.lookup (ipcBufferSlotPage tcb.ipcBuffer idx) with
@@ -487,6 +514,13 @@ untyped over the kernel's extent. -/
     | none => none
   else none
 
+/-- **Where overflow slot `idx` lives**: word `idx` of the buffer, for a slot
+of the message's overflow (`ipcBufferWordPAddr?`); the words past the message
+are not message registers. -/
+@[inline] def ipcBufferSlotPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
+    (needWrite : Bool) : Option PAddr :=
+  if idx < maxOverflowSlots then ipcBufferWordPAddr? st tcb idx needWrite else none
+
 /-- **WS-BP BP7.8**: where the resolver answers, the read reads exactly that
 word — so the entry's RAM sync and the decode's read name one address. -/
 theorem ipcBufferReadMr_of_slotPAddr? (st : SystemState) (tid : ThreadId)
@@ -497,25 +531,28 @@ theorem ipcBufferReadMr_of_slotPAddr? (st : SystemState) (tid : ThreadId)
   unfold ipcBufferSlotPAddr? at hPa
   split at hPa
   · rename_i hBound
+    unfold ipcBufferWordPAddr? at hPa
     split at hPa
-    · rename_i root hRoot
-      split at hPa
-      · rename_i paddr perms hMapped
-        dsimp only at hPa
+    · split at hPa
+      · rename_i root hRoot
         split at hPa
-        · cases hPa
-          exact ipcBufferReadMr_ok_of_mapped st tid tcb root idx paddr perms hBound hTcb
-            hRoot hMapped
+        · rename_i paddr perms hMapped
+          dsimp only at hPa
+          split at hPa
+          · cases hPa
+            exact ipcBufferReadMr_ok_of_mapped st tid tcb root idx paddr perms hBound hTcb
+              hRoot hMapped
+          · cases hPa
         · cases hPa
       · cases hPa
     · cases hPa
   · cases hPa
 
-/-- An answered slot is eight-byte aligned. -/
-theorem ipcBufferSlotPAddr?_aligned (st : SystemState) (tcb : SeLe4n.Model.TCB)
+/-- An answered word is eight-byte aligned. -/
+theorem ipcBufferWordPAddr?_aligned (st : SystemState) (tcb : SeLe4n.Model.TCB)
     (idx : Nat) (needWrite : Bool) (pa : PAddr)
-    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) : pa.toNat % 8 = 0 := by
-  unfold ipcBufferSlotPAddr? at hPa
+    (hPa : ipcBufferWordPAddr? st tcb idx needWrite = some pa) : pa.toNat % 8 = 0 := by
+  unfold ipcBufferWordPAddr? at hPa
   split at hPa
   · split at hPa
     · split at hPa
@@ -530,12 +567,12 @@ theorem ipcBufferSlotPAddr?_aligned (st : SystemState) (tcb : SeLe4n.Model.TCB)
     · cases hPa
   · cases hPa
 
-/-- An answered slot is declared RAM. -/
-theorem ipcBufferSlotPAddr?_ram (st : SystemState) (tcb : SeLe4n.Model.TCB)
+/-- An answered word is declared RAM. -/
+theorem ipcBufferWordPAddr?_ram (st : SystemState) (tcb : SeLe4n.Model.TCB)
     (idx : Nat) (needWrite : Bool) (pa : PAddr)
-    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) :
+    (hPa : ipcBufferWordPAddr? st tcb idx needWrite = some pa) :
     st.machine.addrInRange pa = true := by
-  unfold ipcBufferSlotPAddr? at hPa
+  unfold ipcBufferWordPAddr? at hPa
   split at hPa
   · split at hPa
     · split at hPa
@@ -548,6 +585,25 @@ theorem ipcBufferSlotPAddr?_ram (st : SystemState) (tcb : SeLe4n.Model.TCB)
         · cases hPa
       · cases hPa
     · cases hPa
+  · cases hPa
+
+/-- An answered slot is eight-byte aligned. -/
+theorem ipcBufferSlotPAddr?_aligned (st : SystemState) (tcb : SeLe4n.Model.TCB)
+    (idx : Nat) (needWrite : Bool) (pa : PAddr)
+    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) : pa.toNat % 8 = 0 := by
+  unfold ipcBufferSlotPAddr? at hPa
+  split at hPa
+  · exact ipcBufferWordPAddr?_aligned st tcb idx needWrite pa hPa
+  · cases hPa
+
+/-- An answered slot is declared RAM. -/
+theorem ipcBufferSlotPAddr?_ram (st : SystemState) (tcb : SeLe4n.Model.TCB)
+    (idx : Nat) (needWrite : Bool) (pa : PAddr)
+    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) :
+    st.machine.addrInRange pa = true := by
+  unfold ipcBufferSlotPAddr? at hPa
+  split at hPa
+  · exact ipcBufferWordPAddr?_ram st tcb idx needWrite pa hPa
   · cases hPa
 
 /-- **How many overflow slots a `MessageInfo` word asks the decode to read**:
@@ -563,7 +619,7 @@ def overflowStop (msgInfo : UInt64) : Nat :=
 @[inline] def overflowStopImpl (w : UInt64) : Nat :=
   let length := (w &&& 0x7F).toNat
   if length ≤ maxMessageRegisters && ((w >>> 7) &&& 0x3).toNat ≤ SeLe4n.Model.maxExtraCaps &&
-      (w >>> 9).toNat ≤ SeLe4n.Model.MessageInfo.maxLabel then
+      (w >>> 12).toNat ≤ SeLe4n.Model.MessageInfo.maxLabel then
     min (length - 4) maxOverflowSlots
   else 0
 
@@ -572,13 +628,13 @@ def overflowStop (msgInfo : UInt64) : Nat :=
   unfold overflowStop overflowStopImpl SeLe4n.Model.MessageInfo.decode
   simp only [UInt64.toNat_and, UInt64.toNat_shiftRight]
   have h7 : (7 : UInt64).toNat % 64 = 7 := rfl
-  have h9 : (9 : UInt64).toNat % 64 = 9 := rfl
+  have h9 : (12 : UInt64).toNat % 64 = 12 := rfl
   have h7f : (0x7F : UInt64).toNat = 0x7F := rfl
   have h3 : (0x3 : UInt64).toNat = 0x3 := rfl
   rw [h7, h9, h7f, h3]
   by_cases hc : (decide ((w.toNat &&& 0x7F) ≤ maxMessageRegisters) &&
       decide ((w.toNat >>> 7 &&& 0x3) ≤ SeLe4n.Model.maxExtraCaps) &&
-      decide ((w.toNat >>> 9) ≤ SeLe4n.Model.MessageInfo.maxLabel)) = true
+      decide ((w.toNat >>> 12) ≤ SeLe4n.Model.MessageInfo.maxLabel)) = true
   · rw [if_pos hc, if_pos hc]
   · rw [if_neg hc, if_neg hc]
 

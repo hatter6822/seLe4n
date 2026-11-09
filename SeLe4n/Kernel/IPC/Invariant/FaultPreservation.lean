@@ -230,15 +230,15 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull
       (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
       (faultSuspendOnCore_preserves_ipcInvariantFull st tid c hObjInv hInv)
   · have hCall := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull tgt.endpoint tid
-      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0)
+      (SendPayload.fault f ctx tgt.cap.badge)
       c st hInv hObjInv hAllBudgetsNone
       hFreshCaller (hSendTailFresh tgt.endpoint) hNotRecv hCallerReady hNotReply
       (fun ep r hEp hHead => hNotSelf tgt.endpoint ep r hEp hHead)
     have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0)
+      (SendPayload.fault f ctx tgt.cap.badge)
       c st hObjInv
     rcases hStep : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
+        (SendPayload.fault f ctx tgt.cap.badge) c st with ⟨stC, res⟩
     rw [hStep] at hCall hCallObj
     simp only at hCall hCallObj
     cases res with
@@ -264,10 +264,10 @@ theorem faultDeliverOnCore_preserves_objects_invExt
     exact recordPendingFault_preserves_objects_invExt _ tid _
       (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
   · have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0)
+      (SendPayload.fault f ctx tgt.cap.badge)
       c st hObjInv
     rcases hStep : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
+        (SendPayload.fault f ctx tgt.cap.badge) c st with ⟨stC, res⟩
     rw [hStep] at hCallObj
     simp only at hCallObj
     cases res with

@@ -280,14 +280,13 @@ def faultDeliverOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault)
       -- neither the fault tag nor `MR0`-`MR3` — the frame the ABI promises.
       let wokenReceiver? := (st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head)
       match endpointCallCrossCoreDispatch tgt.endpoint tid
-          (.fault f ctx tgt.cap.badge)
-          (SeLe4n.Slot.ofNat 0) executingCore st with
+          (.fault f ctx tgt.cap.badge) executingCore st with
       | (_, .error _) =>
           (recordPendingFault (faultSuspendOnCore st tid executingCore) tid tf,
            { disposition := .suspended })
       | (st', .ok (summary, sgi?)) =>
           (recordPendingFault
-             (Architecture.stageWokenDelivery st' wokenReceiver? summary.installedCount)
+             (Architecture.stageWokenDelivery st' wokenReceiver? summary.capInfo)
              tid tf,
            { disposition := .delivered tgt.endpoint, sgi := sgi? })
 
@@ -341,12 +340,11 @@ theorem faultDeliverOnCore_delivered_eq (st : SystemState) (tid : SeLe4n.ThreadI
     (sgi? : Option (CoreId × SgiKind))
     (hRes : resolveFaultHandler st tid = .ok tgt)
     (hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (.fault f ctx tgt.cap.badge)
-        (SeLe4n.Slot.ofNat 0) c st = (st', .ok (summary, sgi?))) :
+        (.fault f ctx tgt.cap.badge) c st = (st', .ok (summary, sgi?))) :
     faultDeliverOnCore st tid f ctx c =
       (recordPendingFault
          (Architecture.stageWokenDelivery st'
-           ((st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head)) summary.installedCount)
+           ((st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head)) summary.capInfo)
          tid { fault := f, context := ctx },
        { disposition := .delivered tgt.endpoint, sgi := sgi? }) := by
   unfold faultDeliverOnCore; rw [hRes]; simp only; rw [hCall]

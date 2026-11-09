@@ -234,22 +234,6 @@ private def rhInt002_revokeTargetLocal : IO Unit := do
   expect "RH-INT-002c other target preserved" (cn'.lookup (SeLe4n.Slot.ofNat 2) == some capOther)
 
 open CNode in
-/-- RH-INT-003: CNode.findFirstEmptySlot with RHTable-backed slots -/
-private def rhInt003_findFirstEmptySlot : IO Unit := do
-  let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read] }
-  -- CNode with slots 0 and 1 occupied
-  let cn := (rhIntCNode.insert (SeLe4n.Slot.ofNat 0) cap).insert (SeLe4n.Slot.ofNat 1) cap
-  -- Find first empty starting from slot 0 with limit 4
-  let result := cn.findFirstEmptySlot (SeLe4n.Slot.ofNat 0) 4
-  expect "RH-INT-003a finds empty slot" (result.isSome)
-  -- Slot 2 should be the first empty (0 and 1 are occupied)
-  expect "RH-INT-003b correct empty slot" (result == some (SeLe4n.Slot.ofNat 2))
-  -- Verify the found slot is actually empty
-  match result with
-  | some s => expect "RH-INT-003c slot is empty" (cn.lookup s == none)
-  | none => throw <| IO.userError "RH-INT-003c: expected some"
-
-open CNode in
 /-- RH-INT-004: CNode slotCountBounded after insert sequence -/
 private def rhInt004_slotCountBounded : IO Unit := do
   let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read] }
@@ -309,7 +293,6 @@ private def runRobinHoodSuite : IO Unit := do
   IO.println "--- Integration Tests (RH-INT-001 to RH-INT-006) ---"
   rhInt001_cnodeLookupInsertRemove
   rhInt002_revokeTargetLocal
-  rhInt003_findFirstEmptySlot
   rhInt004_slotCountBounded
   rhInt005_cspaceResolution
   rhInt006_cnodeBEq

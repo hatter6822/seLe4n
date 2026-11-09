@@ -136,28 +136,28 @@ theorem endpointQueueEnqueue_ipcStateFrame
 /-- WS-RR RR8.16: the capability transfer writes only the receiver's CSpace and
 slot links, and a post-state TCB is its pre-state self off those links. -/
 theorem ipcUnwrapCaps_ipcStateFrame
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     ipcStateFrame st st' :=
   fun t tcb' hTcb' =>
-    let ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
+    let ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps endpointId rtcb slot? st st'
       summary t.toObjId tcb' hObjInv hStep hTcb'
     ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩
 
 /-- WS-ZA ZA4.7: and so does the rendezvous transfer, which resolves the
 sender's capabilities (CDT nodes only) before it installs them. -/
 theorem receiveTransferCaps_ipcStateFrame
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {st st' : SystemState} {summary : CapTransferSummary}
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
-    (hStep : receiveTransferCaps req root base st = .ok (summary, st')) :
+    (hStep : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
     ipcStateFrame st st' := by
   obtain ⟨stR, _, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
   have hR : ipcStateFrame st stR := ipcStateFrame_of_objects_eq hO
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact hR
   · exact ipcStateFrame.trans hR
       (ipcUnwrapCaps_ipcStateFrame _ _ _ _ stR _ _ (hO ▸ hObjInv) hU)
@@ -415,13 +415,13 @@ why the fact is established at that state first and the transfer extends it. -/
 theorem endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st)
     (hGate : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true) :
     blockedSenderFlowsToEndpoint ctx
       (endpointSendDualWithCapsOnCore endpointId sender payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   have hSendPre := endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint ctx
     endpointId sender payload executingCore st
     hObjInv hPre hGate
@@ -457,17 +457,17 @@ discharges the blocking store's obligation is the gate this dispatch evaluates. 
 theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st) :
     blockedSenderFlowsToEndpoint ctx
       (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   split
   · rename_i hGate
     exact endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint ctx
-      endpointId sender payload receiverSlotBase executingCore st hObjInv hPre
+      endpointId sender payload executingCore st hObjInv hPre
       (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
   · exact hPre
 
@@ -596,13 +596,13 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
 theorem endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st)
     (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true) :
     blockedSenderFlowsToEndpoint ctx
       (endpointCallWithCapsOnCore endpointId caller payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   have hCallPre := endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint ctx endpointId
     caller payload executingCore st hObjInv
     hPre hGate
@@ -636,20 +636,20 @@ when it reads `blockingServer` from the pre-mutation state. -/
 theorem endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st)
     (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true) :
     blockedSenderFlowsToEndpoint ctx
       (endpointCallCrossCoreDispatch endpointId caller payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   have hWcPre := endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint ctx
-    endpointId caller payload receiverSlotBase executingCore st hObjInv hPre hGate
+    endpointId caller payload executingCore st hObjInv hPre hGate
   have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
-    receiverSlotBase executingCore st hObjInv
+    executingCore st hObjInv
   unfold endpointCallCrossCoreDispatch
   cases hWc : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st with
+      executingCore st with
   | mk st' res =>
     rw [hWc] at hWcPre hWcInv
     simp only at hWcPre hWcInv
@@ -685,17 +685,17 @@ under the gate the branch condition supplies. -/
 theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st) :
     blockedSenderFlowsToEndpoint ctx
       (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
   · rename_i hGate
     exact endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint ctx endpointId
-      caller payload receiverSlotBase executingCore st hObjInv hPre
+      caller payload executingCore st hObjInv hPre
       (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
   · exact hPre
 
@@ -776,11 +776,10 @@ theorem endpointSendDualOnCore_sameSchedContextBindings
 CNodes and the derivation tree. -/
 theorem endpointSendDualWithCapsOnCore_sameSchedContextBindings
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     sameSchedContextBindings st
       (endpointSendDualWithCapsOnCore endpointId sender payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   have hSend := endpointSendDualOnCore_sameSchedContextBindings endpointId sender
     payload executingCore st hObjInv
   have hSendInv := endpointSendDualOnCore_preserves_objects_invExt endpointId sender
@@ -818,17 +817,17 @@ strength. -/
 theorem endpointSendCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : donationOwnerFlowsToHolder ctx st) :
     donationOwnerFlowsToHolder ctx
       (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   split
   · exact donationOwnerFlowsToHolder_of_sameSchedContextBindings hPre
       (endpointSendDualWithCapsOnCore_sameSchedContextBindings endpointId sender payload
-        receiverSlotBase executingCore st hObjInv)
+        executingCore st hObjInv)
   · exact hPre
 
 -- ============================================================================
@@ -992,7 +991,7 @@ the post-state resolves a receiver the pre-state also holds. -/
 theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : donationOwnerFlowsToHolder ctx st)
     (hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st)
@@ -1001,14 +1000,14 @@ theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
       (ctx.endpointLabelOf endpointId) = true) :
     donationOwnerFlowsToHolder ctx
       (endpointCallCrossCoreDispatch endpointId caller payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   have hWcFrame := endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller payload
-    receiverSlotBase executingCore st hObjInv
+    executingCore st hObjInv
   have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
-    receiverSlotBase executingCore st hObjInv
+    executingCore st hObjInv
   unfold endpointCallCrossCoreDispatch
   cases hWc : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st with
+      executingCore st with
   | mk st' res =>
     rw [hWc] at hWcFrame hWcInv
     simp only at hWcFrame hWcInv
@@ -1064,19 +1063,19 @@ composition needs is the branch condition itself. -/
 theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : donationOwnerFlowsToHolder ctx st)
     (hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st)
     (hQueueHeads : queueHeadBlockedConsistent st) :
     donationOwnerFlowsToHolder ctx
       (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
   · rename_i hGate
     exact endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder ctx endpointId
-      caller payload receiverSlotBase executingCore st hObjInv hPre
+      caller payload executingCore st hObjInv hPre
       hBlockedReceivers hQueueHeads
       (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
   · exact hPre

@@ -4198,8 +4198,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- `endpointSendDualWithCapsOnCore … executingCore` wakes the receiver on
         -- *its* home core and removes the sender from *its own* core; on the boot
         -- core it is the single-core transition.
-        match endpointSendDualWithCapsOnCore epId tid payload
-            decoded.capRecvSlot executingCore st with
+        match endpointSendDualWithCapsOnCore epId tid payload executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
             match clearWokenReceiverStash wokenReceiver? st' with
@@ -4213,7 +4212,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 -- summary's INSTALLED count — a grant-denied or slot-exhausted
                 -- transfer reports zero, never the number of addresses the sender named.
                 .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
-                          summary.installedCount)
+                          summary.capInfo)
     | _ => fun _ => .error .invalidCapability
   | .receive =>
     match cap.target with
@@ -4259,8 +4258,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           -- read by the request the receive resolves (`blockedSenderCapRequest`),
           -- which is what makes the two orderings agree rather than merely both
           -- do something.
-          match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
-              decoded.capRecvSlot executingCore st with
+          match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
           | (st', .ok (dequeued, summary, _sgi)) =>
               -- **WS-OD OD3.6: seL4-MCS's `maybeDonateSchedContext`.**  A receive
               -- that rendezvoused with a queued `Call` hands the caller's
@@ -4305,7 +4303,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 -- a grant-denied or slot-exhausted transfer still reports zero.
                 .ok ((), Architecture.stageDeliveredMessage
                           (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
-                          summary.installedCount)
+                          summary.capInfo)
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
@@ -4332,14 +4330,13 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- message in its `pendingMessage`; stage its return frame (the CALLER
         -- itself always blocks — §3.5 — and is owed its frame by the reply path).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid payload
-            decoded.capRecvSlot executingCore st with
+        match endpointCallCrossCoreDispatch epId tid payload executingCore st with
         -- PR #866 round-2: the woken receiver's `extraCaps` is the transfer
         -- summary's INSTALLED count (zero on grant-denied / slot-exhausted
         -- transfers), never the number of addresses the sender named.
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
-                      summary.installedCount)
+                      summary.capInfo)
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
@@ -4543,7 +4540,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             -- answers it — restart or abandon, fault record cleared
             -- (`replyRecvTransferOnCore`, seL4's `doReplyTransfer` fault branch).
             match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
-                gate.cspaceRoot decoded.capRecvSlot executingCore st with
+            executingCore st with
             -- PR #873 round 7: the receive leg inside `endpointReplyRecvOnCore` now runs
             -- the **WithCaps** per-core receive, so a capability-bearing sender
             -- that parked before this `.replyRecv` delivers its capabilities
@@ -4553,7 +4550,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             -- count, the same honest figure `.send`, `.call` and `.receive`
             -- report; it was hardcoded to zero while this leg installed nothing.
             | .ok (summary, st') =>
-                .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
+                .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
             | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM8.C.9: **there is no unchecked declassification.**
@@ -4731,8 +4728,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- (mirrors the unchecked arm; `endpointSendDualChecked` was boot-pinned
         -- through `endpointSendDualWithCaps`).  Bounds first, then the
         -- sender→endpoint flow gate, then the per-core transition.
-        match endpointSendCrossCoreDispatchChecked ctx epId tid payload
-            decoded.capRecvSlot executingCore st with
+        match endpointSendCrossCoreDispatchChecked ctx epId tid payload executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
             match clearWokenReceiverStash wokenReceiver? st' with
@@ -4744,7 +4740,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 -- `extraCaps` = the summary's INSTALLED count, like the
                 -- unchecked arm.
                 .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
-                          summary.installedCount)
+                          summary.capInfo)
     | _ => fun _ => .error .invalidCapability
   -- T6-I: IPC receive — checked for endpoint→receiver flow
   | .receive =>
@@ -4793,8 +4789,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
             -- recorded on the message.  The endpoint→receiver flow is gated
             -- above, so the *unchecked* per-core WithCaps receive is correct
             -- here for the same reason the bare one was.
-            match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
-                decoded.capRecvSlot executingCore st with
+            match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
             | (st', .ok (dequeued, summary, _sgi)) =>
                 -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
                 -- `maybeDonateSchedContext` step, and the *same* definition.  No
@@ -4822,7 +4817,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                   -- hardcoded to zero while the receive installed nothing.
                   .ok ((), Architecture.stageDeliveredMessage
                             (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
-                            summary.installedCount)
+                            summary.capInfo)
             | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
@@ -4853,13 +4848,12 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- WS-RA RA.B.5b: the woken receiver's staged frame (checked twin; the
         -- call's own flow gate ran inside the checked dispatch, before the wake).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatchChecked ctx epId tid payload
-            decoded.capRecvSlot executingCore st with
+        match endpointCallCrossCoreDispatchChecked ctx epId tid payload executingCore st with
         -- PR #866 round-2: `extraCaps` = the summary's INSTALLED count, like
         -- the unchecked arm.
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
-                      summary.installedCount)
+                      summary.capInfo)
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
@@ -5053,14 +5047,14 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 -- twin of the unchecked arm's staging; the receive leg's own
                 -- flow gate governs the consumed message).
                 match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
-                    gate.cspaceRoot decoded.capRecvSlot executingCore st with
+                executingCore st with
                 -- PR #873 round 7: the checked twin of the unchecked arm's
                 -- WithCaps receive leg — the endpoint→receiver flow is gated
                 -- above, so the *unchecked* per-core WithCaps receive inside
                 -- the shared body is correct here for the same reason the bare
                 -- one was, and `extraCaps` is the summary's installed count.
                 | .ok (summary, st') =>
-                    .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
+                    .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
                 | .error e => .error e
               else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
@@ -6683,15 +6677,14 @@ theorem dispatchWithCap_send_uses_withCaps
         -- receiver looks them up at the rendezvous).
         let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointSendDualWithCapsOnCore epId tid payload
-            decoded.capRecvSlot executingCore st with
+        match endpointSendDualWithCapsOnCore epId tid payload executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
             match clearWokenReceiverStash wokenReceiver? st' with
             | .error e => .error e
             | .ok ((), st'') =>
                 .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
-                          summary.installedCount) := by
+                          summary.capInfo) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E/M-D01 / WS-SM SM6.A: When call dispatch is invoked, the IPC message
@@ -6717,11 +6710,10 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         -- separate post-dispatch link step.
         -- WS-RA RA.B.5b: the woken receiver's staged frame rides in the RHS.
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid payload
-            decoded.capRecvSlot executingCore st with
+        match endpointCallCrossCoreDispatch epId tid payload executingCore st with
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
-                      summary.installedCount)
+                      summary.capInfo)
         | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
@@ -6913,8 +6905,7 @@ theorem dispatchArm_receive_matches_returnShape
     -- PR #873 round 6: the arm runs the WithCaps per-core receive, so the
     -- hypothesis names that transition and the staged `extraCaps` is the
     -- transfer summary's installed count rather than a hardcoded zero.
-    (hDispatch : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
-        decoded.capRecvSlot executingCore st
+    (hDispatch : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st
         = (st', .ok (next, summary, sgi)))
     -- WS-OD OD3.6: the arm's `maybeDonateSchedContext` step runs between the
     -- receive and the staging, so the boundary read is of the state it leaves.
@@ -6936,17 +6927,17 @@ theorem dispatchArm_receive_matches_returnShape
     Architecture.syscallReturnShape .receive = .message ∧
     ∃ stPost, dispatchWithCap decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg summary.installedCount
+        = Architecture.returnFrameOfMessage msg summary.capInfo
             (Architecture.messageOverflowWrites (Architecture.stageWokenSendCompletion stDon
               ((st.getEndpoint? epId).bind (·.sendQ.head))) tcb msg).length := by
   refine ⟨rfl,
     Architecture.stageDeliveredMessage
       (Architecture.stageWokenSendCompletion stDon
-        ((st.getEndpoint? epId).bind (·.sendQ.head))) tid summary.installedCount,
+        ((st.getEndpoint? epId).bind (·.sendQ.head))) tid summary.capInfo,
     ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply, hDispatch, hDon]
   · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg
-      summary.installedCount hTcb hReady hMsg hObjInv
+      summary.capInfo hTcb hReady hMsg hObjInv
 
 /-- RA.B.8, `.replyRecv` (`.message`): the compound arm's receive leg stages
 the delivered message for the server exactly as `.receive` does — and, since
@@ -6964,7 +6955,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
             (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           badge := replyBadge }
-        gate.cspaceRoot decoded.capRecvSlot
+
         executingCore st = .ok (summary, stB))
     (hTcb : stB.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
@@ -6973,12 +6964,12 @@ theorem dispatchArm_replyRecv_matches_returnShape
     Architecture.syscallReturnShape .replyRecv = .message ∧
     ∃ stPost, dispatchWithCap decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg summary.installedCount
+        = Architecture.returnFrameOfMessage msg summary.capInfo
             (Architecture.messageOverflowWrites stB tcb msg).length := by
-  refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.installedCount, ?_, ?_⟩
+  refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.capInfo, ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hResolve, hBody]
   · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
-      summary.installedCount hTcb hReady hMsg hObjInv
+      summary.capInfo hTcb hReady hMsg hObjInv
 
 /-- RA.B.8, `.call` (`.message`) — **through the reply arm**, per §3.5: a
 successful call leaves the caller `blockedOnReply` in every ordering, so
@@ -8512,8 +8503,7 @@ theorem dispatchWithCapChecked_receive_delegates
       -- WS-OD OD3.6: including the rendezvous donation, which the checked arm
       -- performs with the *same* definition and behind no extra gate -- the
       -- delegation claim is about the whole arm, so it names every step of it.
-      (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
-              decoded.capRecvSlot executingCore st with
+      (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
        | (st', .ok (dequeued, summary, _)) =>
            (match applyReceiveRendezvousHandoff st' tid dequeued
                     executingCore with
@@ -8522,7 +8512,7 @@ theorem dispatchWithCapChecked_receive_delegates
                 .ok ((), Architecture.stageDeliveredMessage
                           (Architecture.stageWokenSendCompletion stDon
                             ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
-                          summary.installedCount))
+                          summary.capInfo))
        | (_, .error e) => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
@@ -8543,7 +8533,6 @@ theorem dispatchWithCap_send_delegates
     (hTarget : cap.target = .object epId) :
     dispatchWithCap decoded tid executingCore gate cap st =
       (match endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant))
-              decoded.capRecvSlot
               executingCore st with
        | (_, .error e) => .error e
        | (st', .ok (summary, _)) =>
@@ -8552,7 +8541,7 @@ theorem dispatchWithCap_send_delegates
            | .ok ((), st'') =>
                .ok ((), Architecture.stageWokenDelivery st''
                          ((st.getEndpoint? epId).bind (·.receiveQ.head))
-                         summary.installedCount)) := by
+                         summary.capInfo)) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
@@ -8566,7 +8555,6 @@ theorem dispatchWithCapChecked_send_delegates
     (hTarget : cap.target = .object epId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant))
-              decoded.capRecvSlot
               executingCore st with
        | (_, .error e) => .error e
        | (st', .ok (summary, _)) =>
@@ -8575,7 +8563,7 @@ theorem dispatchWithCapChecked_send_delegates
            | .ok ((), st'') =>
                .ok ((), Architecture.stageWokenDelivery st''
                          ((st.getEndpoint? epId).bind (·.receiveQ.head))
-                         summary.installedCount)) := by
+                         summary.capInfo)) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- **The live `.tcbSetPriority` arm routes to `setPriorityOnCore`.**
@@ -8668,7 +8656,6 @@ def syscallDelegates : SyscallId → Prop
         cap.target = .object epId →
         dispatchWithCap decoded tid executingCore gate cap st =
           (match endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant))
-                  decoded.capRecvSlot
                   executingCore st with
            | (_, .error e) => .error e
            | (st', .ok (summary, _)) =>
@@ -8677,7 +8664,7 @@ def syscallDelegates : SyscallId → Prop
                | .ok ((), st'') =>
                    .ok ((), Architecture.stageWokenDelivery st''
                              ((st.getEndpoint? epId).bind (·.receiveQ.head))
-                             summary.installedCount))
+                             summary.capInfo))
   | .tcbSetPriority =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
@@ -8721,8 +8708,7 @@ def syscallDelegates : SyscallId → Prop
           (ctx.threadLabelOf tid) = true →
         resolveRecvReplyId gate decoded st = .ok replyIdOpt →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-          (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
-                  decoded.capRecvSlot executingCore st with
+          (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
            -- WS-RA RA.B.6: the arm stages the non-blocking consume's delivery
            -- into the caller's return frame.  PR #873 round 6: with the receive
            -- routed through the WithCaps transition, the staged `extraCaps` is
@@ -8739,7 +8725,7 @@ def syscallDelegates : SyscallId → Prop
                     .ok ((), Architecture.stageDeliveredMessage
                               (Architecture.stageWokenSendCompletion stDon
                                 ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
-                              summary.installedCount))
+                              summary.capInfo))
            | (_, .error e) => .error e)
   | .tcbSuspend =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)

@@ -136,7 +136,8 @@ theorem overflowSlotOf (r : SeLe4n.ThreadId) (i : Nat) :
   · rfl
   · next t' t =>
     obtain ⟨hv, hb⟩ := hT
-    simp only [Architecture.IpcBufferRead.ipcBufferSlotPAddr?]
+    simp only [Architecture.IpcBufferRead.ipcBufferSlotPAddr?,
+      Architecture.IpcBufferRead.ipcBufferWordPAddr?]
     rw [hv, hb, h.getVSpaceRoot?, h.2]
 
 end ipcBufferReadsAgree
@@ -363,8 +364,9 @@ layout's message registers of `rf` and the rest the overflow slots of thread
 words having arrived.  Out of line, as `regMessageInfoWord`. -/
 @[noinline] def longMessageInfoWord (len k : Nat) : UInt64 :=
   (({ length := min (min len (4 + k)) maxMessageRegisters
-      extraCaps := min 0 Model.maxExtraCaps
-      label := min 0 (Architecture.errorLabelBase - 1) } : MessageInfo).encode).toUInt64
+      extraCaps := 0 % 4
+      label := min 0 (Architecture.errorLabelBase - 1)
+      capsUnwrapped := 0 / 4 % 8 } : MessageInfo).encode).toUInt64
 
 /-- The long message held where the woken receiver is, unexpectedly, not ready.
 Out of line, so the message is built only on that path. -/

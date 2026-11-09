@@ -595,8 +595,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
             (footprintCoversWrites_of_scheduler_eq S hTable
               (Architecture.stageWokenDelivery_scheduler_eq _ _ _)))
         rw [← show _ = st₂ from congrArg Prod.fst hSend]
-        exact schedLockSet_endpointSendOnCore_coversWrites ctx epId tid _
-          decoded.capRecvSlot e _ S hObjInv hSched
+        exact schedLockSet_endpointSendOnCore_coversWrites ctx epId tid _ e _ S hObjInv hSched
   -- ---- `.call` ------------------------------------------------------------
   case call =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps
@@ -616,8 +615,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
           (footprintCoversWrites_of_scheduler_eq S hTable
             (Architecture.stageWokenDelivery_scheduler_eq _ _ _))
         rw [← show _ = st₂ from congrArg Prod.fst hCallC]
-        exact schedLockSet_endpointCallOnCore_coversWrites epId tid _
-          decoded.capRecvSlot e _ S hObjInv hSched
+        exact schedLockSet_endpointCallOnCore_coversWrites epId tid _ e _ S hObjInv hSched
       · exact absurd (congrArg Prod.snd hCallC) (by simp)
     · exact absurd hDisp (by simp)
   -- ---- `.receive` ---------------------------------------------------------
@@ -630,8 +628,6 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       injection hOps with hOps
       subst hOps
       simp only [schedLockSetForSyscall, Option.bind_some] at hSched
-      rw [hTcb] at hSched
-      simp only [Option.bind_some] at hSched
       rw [hT] at hDisp
       simp only at hDisp
       split at hDisp
@@ -646,13 +642,11 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
             simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
             subst hDisp
             subst hGateEq
-            simp only at hLeg
             refine footprintCoversWrites_trans S (st₂ := stDon) ?_
               (footprintCoversWrites_of_scheduler_eq S hTable
                 (by rw [Architecture.stageDeliveredMessage_scheduler_eq,
                   Architecture.stageWokenSendCompletion_scheduler_eq]))
-            exact schedLockSet_endpointReceiveOnCore_coversWrites epId tid replyId? tcb.cspaceRoot
-              decoded.capRecvSlot e st st₁ stDon dequeued summary sgi S hObjInv hHeads hSched hLeg
+            exact schedLockSet_endpointReceiveOnCore_coversWrites epId tid replyId? e st st₁ stDon dequeued summary sgi S hObjInv hHeads hSched hLeg
               hHand
         · exact absurd hDisp (by simp)
   -- ---- `.reply` -----------------------------------------------------------
@@ -687,8 +681,6 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       simp only [schedLockSetForSyscall, Option.bind_some] at hSched
       rw [resolveReplyRecvReply_answered gate decoded st rid prev replyBadge hRRR] at hSched
       simp only [Option.bind_some] at hSched
-      rw [hTcb] at hSched
-      simp only [Option.bind_some] at hSched
       rw [hT] at hDisp
       simp only at hDisp
       split at hDisp
@@ -701,11 +693,10 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
             simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
             subst hDisp
             subst hGateEq
-            simp only at hStep
             refine footprintCoversWrites_trans S ?_ (footprintCoversWrites_of_scheduler_eq S hTable
               (Architecture.stageDeliveredMessage_scheduler_eq _ _ _))
             exact schedLockSet_replyRecvTransferOnCore_coversWrites epId tid rid prev _ _
-              tcb.cspaceRoot decoded.capRecvSlot e st st₁ summary S hObjInv hSched hStep
+              e st st₁ summary S hObjInv hSched hStep
           · exact absurd hDisp (by simp)
         · exact absurd hDisp (by simp)
 

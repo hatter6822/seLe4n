@@ -126,12 +126,12 @@ theorem endpointCallOnCore_callerParked {endpointId : SeLe4n.ObjId} {caller : Se
   · split <;> (intro _ h; cases h)
 
 theorem endpointCallWithCapsOnCore_callerParked {endpointId : SeLe4n.ObjId}
-    {caller : SeLe4n.ThreadId} {payload : SendPayload} {receiverSlotBase : SeLe4n.Slot}
+    {caller : SeLe4n.ThreadId} {payload : SendPayload}
     {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st) :
     ∀ v, (_root_.SeLe4n.Kernel.endpointCallWithCapsOnCore endpointId caller payload
-        receiverSlotBase c st).2 = .ok v →
+        c st).2 = .ok v →
       FaultParkedAt (_root_.SeLe4n.Kernel.endpointCallWithCapsOnCore endpointId caller payload
-        receiverSlotBase c st).1 caller := by
+        c st).1 caller := by
   unfold _root_.SeLe4n.Kernel.endpointCallWithCapsOnCore
   have S := RecordsStep.endpointCallOnCore (endpointId := endpointId) (caller := caller)
     (payload := payload) (c := c) hInv hQ
@@ -153,19 +153,19 @@ theorem endpointCallWithCapsOnCore_callerParked {endpointId : SeLe4n.ObjId}
       | (intro _ h; cases h)
 
 theorem endpointCallCrossCoreDispatch_callerParked {endpointId : SeLe4n.ObjId}
-    {caller : SeLe4n.ThreadId} {payload : SendPayload} {receiverSlotBase : SeLe4n.Slot}
+    {caller : SeLe4n.ThreadId} {payload : SendPayload}
     {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st) :
     ∀ v, (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch endpointId caller payload
-        receiverSlotBase c st).2 = .ok v →
+        c st).2 = .ok v →
       FaultParkedAt (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch endpointId caller payload
-        receiverSlotBase c st).1 caller := by
+        c st).1 caller := by
   unfold _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch
   have S := RecordsStep.endpointCallWithCapsOnCore (endpointId := endpointId) (caller := caller)
-    (payload := payload) (receiverSlotBase := receiverSlotBase) (c := c) hInv hQ
+    (payload := payload) (c := c) hInv hQ
   have P := endpointCallWithCapsOnCore_callerParked (endpointId := endpointId) (caller := caller)
-    (payload := payload) (receiverSlotBase := receiverSlotBase) (c := c) hInv hQ
+    (payload := payload) (c := c) hInv hQ
   generalize _root_.SeLe4n.Kernel.endpointCallWithCapsOnCore endpointId caller payload
-    receiverSlotBase c st = r at S P
+    c st = r at S P
   obtain ⟨st1, res⟩ := r
   dsimp only at S P ⊢
   cases res with
@@ -237,13 +237,13 @@ theorem faultDeliverOnCore {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
   · exact sus
   · rename_i tgt _
     have S := endpointCallCrossCoreDispatch (endpointId := tgt.endpoint) (caller := t)
-      (payload := .fault f fctx tgt.cap.badge) (receiverSlotBase := SeLe4n.Slot.ofNat 0)
+      (payload := .fault f fctx tgt.cap.badge)
       (c := c) hInv hQ
     have P := endpointCallCrossCoreDispatch_callerParked (endpointId := tgt.endpoint)
       (caller := t) (payload := .fault f fctx tgt.cap.badge)
-      (receiverSlotBase := SeLe4n.Slot.ofNat 0) (c := c) hInv hQ
+      (c := c) hInv hQ
     generalize _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch tgt.endpoint t
-      (.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st = r at S P ⊢
+      (.fault f fctx tgt.cap.badge) c st = r at S P ⊢
     obtain ⟨st1, res⟩ := r
     dsimp only at S P ⊢
     cases res with

@@ -452,20 +452,14 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           | some valid => some (.ofThreadTarget tid valid.val)
       | .send, .object epId =>
           some (SyscallLockOperands.ofObjectTarget tid epId (some (abiEntryPayload cap)))
-      -- **WS-RR RR8.12 Cut C4b**: `.call` additionally carries the receiver's
-      -- **slot base**, which the arm's SCHEDULER-domain footprint needs —
-      -- `endpointCallDispatchWriteSet` re-runs the dispatch, and the live arm
-      -- hands it exactly `decoded.capRecvSlot`.  The object domain ignores it.
       | .call, .object epId =>
           some { caller := tid, targetObject := some epId,
-                 payload := some (abiEntryPayload cap),
-                 receiverSlotBase := some decoded.capRecvSlot }
+                 payload := some (abiEntryPayload cap) }
       | .receive, .object epId =>
           match resolveRecvReplyId gate decoded s with
           | .error _ => none
           | .ok replyId? =>
-              some { caller := tid, targetObject := some epId, targetReply := replyId?,
-                     receiverSlotBase := some decoded.capRecvSlot }
+              some { caller := tid, targetObject := some epId, targetReply := replyId? }
       | .notificationSignal, .object nId => some (.ofObjectTarget tid nId)
       | .notificationWait, .object nId => some (.ofObjectTarget tid nId)
       -- **Cut C4b**: `.reply` carries the message the live arm builds and the
@@ -484,8 +478,8 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       -- **Cut C4b**: `.replyRecv` carries the reply *payload* — MR1.. , the
       -- leading control register stripped exactly as the live arm strips it —
       -- badged with the REPLY cap's badge rather than the endpoint receive
-      -- cap's, the `MessageInfo` whose label a faulted caller's answer decodes,
-      -- and the receiver's slot base.
+      -- cap's, and the `MessageInfo` whose label a faulted caller's answer
+      -- decodes.
       | .replyRecv, .object epId =>
           match resolveReplyRecvReply gate decoded s with
           | .error _ => none
@@ -496,8 +490,7 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                      message := some
                        { registers := full.extract 1 full.size,
                          badge := replyBadge },
-                     replyMessageInfo := some decoded.msgInfo,
-                     receiverSlotBase := some decoded.capRecvSlot }
+                     replyMessageInfo := some decoded.msgInfo }
       -- **Cut C4b**: the eight arms the OBJECT domain declares nothing for and
       -- the scheduler domain does.  Each names its target the way its own live
       -- dispatch arm names it — the capability's object read as a thread for the

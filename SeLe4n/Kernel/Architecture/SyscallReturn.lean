@@ -479,56 +479,58 @@ theorem errorLabelBase_eq : errorLabelBase = 0xFFF00 := by decide
 /-- The `MessageInfo` a delivered message returns in `x1`.  `IpcMessage`
 carries no `MessageInfo` (it is discarded at decode time), so the return
 word is synthesized — here, once, for every delivery site: `length` is the
-inline window actually delivered in `x2`-`x5`, `extraCaps` the number of
-capabilities **actually installed** in the receiver's CSpace, clamped to
-the protocol bound, `label` `0` (success).
+inline window actually delivered in `x2`-`x5`, `extraCaps` and
+`capsUnwrapped` what the capability transfer reports (`capInfo`), and
+`label` the message's own, clamped below the status labels.
 
-**`installedCaps` is the transfer summary's `installedCount`, never the
-requested count** (PR #866 round-2 review): `ipcUnwrapCaps`
-succeeds with zero installs when the endpoint lacks `Grant` or the
-receiver's CNode has no free slot, and the sender's frame keeps the
-*requested* addresses either way — so a count read off the request
-tells the receiver capabilities arrived when none did, and it
-would interpret whatever its receive slots already held as freshly
-delivered authority.  The parameter is deliberately **not defaulted**: a
-site that cannot name its installed count has no business synthesizing a
-message frame.  Arms whose path runs no unwrap at all (the receive legs
-— tracked debt, see the plan — the reply delivery, and badge-only
-notification wakes) pass `0`, the honest count for a path that installs
-nothing.
+**`capInfo` is the transfer's report, seL4's `transferCaps` answer**
+(`CapTransferSummary.capInfo`): the low two bits are the number of extra
+capabilities the transfer processed before it stopped (each unwrapped to its
+badge or installed in the receive slot), the next three which of them were
+unwrapped.  It is never read off the sender's request: a transfer that stops
+at its first capability reports none, and a count read off the request would
+tell the receiver its receive slot holds fresh authority when it does not.
+The parameter is deliberately **not defaulted**: a site that cannot name the
+transfer's report has no business synthesizing a message frame.  Arms whose
+path runs no transfer (the reply delivery, badge-only notification wakes)
+pass `0`.
 
 **`overflow` is the count of message registers past the fourth the delivery
 actually wrote into the receiver's IPC buffer** (WS-BP BP7.8,
 `overflowDeliveryWrites`), and the length reports exactly what arrived: the
 inline window plus those words, never more than the message holds.  Like
-`installedCaps` it is not defaulted — a delivery that wrote none says `0`, and a
+`capInfo` it is not defaulted — a delivery that wrote none says `0`, and a
 receiver whose buffer resolves nowhere reads a length of at most four, which is
 seL4's own answer for a receiver with no IPC buffer (`copyMRs` copies the
 registers alone). -/
-@[inline] def returnMessageInfo (msg : IpcMessage) (installedCaps overflow : Nat) : MessageInfo :=
+@[inline] def returnMessageInfo (msg : IpcMessage) (capInfo overflow : Nat) : MessageInfo :=
   { length    := min (min msg.registers.size (4 + overflow)) maxMessageRegisters
-    extraCaps := min installedCaps Model.maxExtraCaps
-    label     := min msg.label (errorLabelBase - 1) }
+    extraCaps := capInfo % 4
+    label     := min msg.label (errorLabelBase - 1)
+    capsUnwrapped := capInfo / 4 % 8 }
 
 /-- The window bound, stated: the returned length never exceeds the four inline
 message registers plus the overflow words the delivery wrote. -/
-theorem returnFrame_message_window (msg : IpcMessage) (installedCaps overflow : Nat) :
-    (returnMessageInfo msg installedCaps overflow).length ≤ 4 + overflow :=
+theorem returnFrame_message_window (msg : IpcMessage) (capInfo overflow : Nat) :
+    (returnMessageInfo msg capInfo overflow).length ≤ 4 + overflow :=
   Nat.le_trans (Nat.min_le_left _ _) (Nat.min_le_right _ _)
 
-/-- The synthesized word is well-formed for the 20-bit-label encoding:
-length ≤ 120, extraCaps ≤ 3, label ≤ 2^20 − 1. -/
-theorem returnMessageInfo_wellFormed (msg : IpcMessage) (installedCaps overflow : Nat) :
-    (returnMessageInfo msg installedCaps overflow).wellFormed := by
-  refine ⟨Nat.min_le_right _ _, ?_, ?_⟩
-  · exact Nat.min_le_right _ _
+/-- The synthesized word is well-formed for seL4's encoding:
+length ≤ 120, extraCaps ≤ 3, label ≤ 2^20 − 1, capsUnwrapped ≤ 7. -/
+theorem returnMessageInfo_wellFormed (msg : IpcMessage) (capInfo overflow : Nat) :
+    (returnMessageInfo msg capInfo overflow).wellFormed := by
+  refine ⟨Nat.min_le_right _ _, ?_, ?_, ?_⟩
+  · show capInfo % 4 ≤ Model.maxExtraCaps
+    unfold Model.maxExtraCaps; omega
   · exact Nat.le_trans (Nat.min_le_right _ _) (by rw [errorLabelBase_eq]; decide)
+  · show capInfo / 4 % 8 ≤ MessageInfo.maxCapsUnwrapped
+    unfold MessageInfo.maxCapsUnwrapped; omega
 
 /-- **A delivered message never carries a status label** (ABI v3): the
 synthesized label is below `errorLabelBase`, so a receiver's decoder cannot
 read a delivery as a kernel error whatever the message's label was. -/
-theorem returnMessageInfo_label_lt_errorLabelBase (msg : IpcMessage) (installedCaps overflow : Nat) :
-    (returnMessageInfo msg installedCaps overflow).label < errorLabelBase := by
+theorem returnMessageInfo_label_lt_errorLabelBase (msg : IpcMessage) (capInfo overflow : Nat) :
+    (returnMessageInfo msg capInfo overflow).label < errorLabelBase := by
   unfold returnMessageInfo
   have : errorLabelBase - 1 < errorLabelBase := by rw [errorLabelBase_eq]; decide
   exact Nat.lt_of_le_of_lt (Nat.min_le_right _ _) this
@@ -539,26 +541,26 @@ out-of-range label, never a rewrite of a real one.  Every kernel-emitted label
 satisfies the hypothesis (`Architecture.faultLabel_lt_errorLabelBase` for a
 fault message; a user send carries label `0`), so on every live path this
 reads as the identity. -/
-@[simp] theorem returnMessageInfo_label_of_lt (msg : IpcMessage) (installedCaps overflow : Nat)
+@[simp] theorem returnMessageInfo_label_of_lt (msg : IpcMessage) (capInfo overflow : Nat)
     (h : msg.label < errorLabelBase) :
-    (returnMessageInfo msg installedCaps overflow).label = msg.label :=
+    (returnMessageInfo msg capInfo overflow).label = msg.label :=
   Nat.min_eq_left (Nat.le_sub_one_of_lt h)
 
 /-- WS-RR RR4.4: a message carrying no label (the default, and every message
 built before RR4) delivers the `0` label the pre-RR4 synthesis hard-coded —
 the backward-compatibility bridge. -/
-@[simp] theorem returnMessageInfo_label_zero (msg : IpcMessage) (installedCaps overflow : Nat)
-    (h : msg.label = 0) : (returnMessageInfo msg installedCaps overflow).label = 0 := by
+@[simp] theorem returnMessageInfo_label_zero (msg : IpcMessage) (capInfo overflow : Nat)
+    (h : msg.label = 0) : (returnMessageInfo msg capInfo overflow).label = 0 := by
   simp [returnMessageInfo, h]
 
 /-- The honesty bound (PR #866 round-2): the returned `extraCaps` never
-exceeds the installed count — in particular, a path that installed
+exceeds the transfer's report — in particular, a path that transferred
 nothing reports zero, however many capabilities the sender asked to
 transfer. -/
-theorem returnMessageInfo_extraCaps_le_installed
-    (msg : IpcMessage) (installedCaps overflow : Nat) :
-    (returnMessageInfo msg installedCaps overflow).extraCaps ≤ installedCaps :=
-  Nat.min_le_left _ _
+theorem returnMessageInfo_extraCaps_le_capInfo
+    (msg : IpcMessage) (capInfo overflow : Nat) :
+    (returnMessageInfo msg capInfo overflow).extraCaps ≤ capInfo :=
+  Nat.mod_le _ _
 
 @[simp] theorem returnMessageInfo_extraCaps_zero (msg : IpcMessage) (overflow : Nat) :
     (returnMessageInfo msg 0 overflow).extraCaps = 0 := rfl
@@ -567,12 +569,12 @@ theorem returnMessageInfo_extraCaps_le_installed
 `MessageInfo` to `x1`, the inline register window to `x2`-`x5` (RA.A.3).
 The **single** place a message becomes a frame, used by every RA.B.5b
 staging site, so the synthesis cannot drift between sites.
-`installedCaps` per `returnMessageInfo`: the count of caps actually
-installed by this delivery's transfer, `0` for paths that run none. -/
-@[inline] def returnFrameOfMessage (msg : IpcMessage) (installedCaps overflow : Nat) :
+`capInfo` per `returnMessageInfo`: this delivery's transfer report,
+`0` for paths that run none. -/
+@[inline] def returnFrameOfMessage (msg : IpcMessage) (capInfo overflow : Nat) :
     SyscallReturnFrame :=
   { x0 := (msg.badge.map Badge.word).getD 0
-    x1 := (returnMessageInfo msg installedCaps overflow).encode.toUInt64
+    x1 := (returnMessageInfo msg capInfo overflow).encode.toUInt64
     x2 := ((msg.registers[0]?.map RegValue.val).getD 0).toUInt64
     x3 := ((msg.registers[1]?.map RegValue.val).getD 0).toUInt64
     x4 := ((msg.registers[2]?.map RegValue.val).getD 0).toUInt64
@@ -1003,9 +1005,10 @@ the boundary's shape-driven read then sees whatever the arm staged, so
 receive arms pair this with the shape theorem rather than relying on
 incidental register content.
 
-`installedCaps` (PR #866 round-2 review) is the count of capabilities the
-delivering transfer **actually installed** — the arm's transfer-summary
-`installedCount`, or `0` on a path that runs no unwrap.  It is never the
+`capInfo` (PR #866 round-2 review) is the delivering transfer's report — the
+arm's transfer-summary `capInfo`, or `0` on a path that runs no transfer: the
+number of capabilities seL4's `transferCaps` **processed** (installed or
+unwrapped), plus four times the mask of those it unwrapped.  It is never the
 number of addresses the sender's frame names, which records what the sender
 *requested*.
 
@@ -1013,14 +1016,14 @@ number of addresses the sender's frame names, which records what the sender
 receiver's IPC buffer (`messageOverflowWrites`), recorded on the physical-write
 ledger, and the frame's length counts them. -/
 def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId)
-    (installedCaps : Nat) : SystemState :=
+    (capInfo : Nat) : SystemState :=
   match st.getTcb? tid with
   | some tcb =>
       if tcb.ipcState = .ready then
         match tcb.pendingMessage with
         | some msg =>
             recordPhysicalWrites
-              (writeDeliveredFrameToTcb st tid (returnFrameOfMessage msg installedCaps
+              (writeDeliveredFrameToTcb st tid (returnFrameOfMessage msg capInfo
                 (messageOverflowWrites st tcb msg).length))
               (messageOverflowWrites st tcb msg)
         | none => st
@@ -1044,8 +1047,8 @@ theorem writeReturnFrameToTcb_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
 every arm is either `writeReturnFrameToTcb` (whose `_scheduler_eq` this
 lifts) or the identity. -/
 theorem stageDeliveredMessage_scheduler_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat) :
-    (stageDeliveredMessage st tid installedCaps).scheduler = st.scheduler := by
+    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat) :
+    (stageDeliveredMessage st tid capInfo).scheduler = st.scheduler := by
   unfold stageDeliveredMessage
   cases st.getTcb? tid with
   | none => rfl
@@ -1060,8 +1063,8 @@ theorem stageDeliveredMessage_scheduler_eq
 /-- RA.B.5b frame lemma: delivery staging never touches the machine — the
 staging writes the TCB's saved context only, never the machine mirror. -/
 theorem stageDeliveredMessage_machine_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat) :
-    (stageDeliveredMessage st tid installedCaps).machine = st.machine := by
+    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat) :
+    (stageDeliveredMessage st tid capInfo).machine = st.machine := by
   unfold stageDeliveredMessage
   cases st.getTcb? tid with
   | none => rfl
@@ -1077,8 +1080,8 @@ theorem stageDeliveredMessage_machine_eq
 declassification audit trail (the lift of
 `writeReturnFrameToTcb_declassificationAuditLog_eq`). -/
 theorem stageDeliveredMessage_declassificationAuditLog_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat) :
-    (stageDeliveredMessage st tid installedCaps).declassificationAuditLog =
+    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat) :
+    (stageDeliveredMessage st tid capInfo).declassificationAuditLog =
       st.declassificationAuditLog := by
   unfold stageDeliveredMessage
   cases st.getTcb? tid with
@@ -1094,10 +1097,10 @@ theorem stageDeliveredMessage_declassificationAuditLog_eq
 /-- A blocked caller stages nothing — `stageDeliveredMessage` is the
 identity whenever the caller's post-state is not `.ready`. -/
 theorem stageDeliveredMessage_id_when_blocked
-    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat) (tcb : TCB)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb)
     (hBlocked : tcb.ipcState ≠ .ready) :
-    stageDeliveredMessage st tid installedCaps = st := by
+    stageDeliveredMessage st tid capInfo = st := by
   unfold stageDeliveredMessage
   rw [hTcb]
   simp [hBlocked]
@@ -1156,22 +1159,22 @@ pre-resolved wake target (`none` when no counterparty was blocked).  The
 inner `.ready` + `pendingMessage` guards make this the identity whenever
 the wake did not actually happen (the transition errored short of the
 wake, the counterparty vanished, or it is still blocked).
-`installedCaps` per `stageDeliveredMessage` (PR #866 round-2): the
-delivering transfer's `installedCount`, `0` on unwrap-free paths. -/
+`capInfo` per `stageDeliveredMessage` (PR #866 round-2): the
+delivering transfer's `capInfo`, `0` on transfer-free paths. -/
 @[inline] def stageWokenDelivery (st : SystemState) (woken? : Option SeLe4n.ThreadId)
-    (installedCaps : Nat) : SystemState :=
+    (capInfo : Nat) : SystemState :=
   match woken? with
-  | some tid => stageDeliveredMessage st tid installedCaps
+  | some tid => stageDeliveredMessage st tid capInfo
   | none => st
 
 @[simp] theorem stageWokenDelivery_none (st : SystemState)
-    (installedCaps : Nat) :
-    stageWokenDelivery st none installedCaps = st := rfl
+    (capInfo : Nat) :
+    stageWokenDelivery st none capInfo = st := rfl
 
 @[simp] theorem stageWokenDelivery_some (st : SystemState)
-    (tid : SeLe4n.ThreadId) (installedCaps : Nat) :
-    stageWokenDelivery st (some tid) installedCaps
-      = stageDeliveredMessage st tid installedCaps := rfl
+    (tid : SeLe4n.ThreadId) (capInfo : Nat) :
+    stageWokenDelivery st (some tid) capInfo
+      = stageDeliveredMessage st tid capInfo := rfl
 
 /-- WS-RA RA.B.5b: stage the **unit success frame** for a woken plain
 sender whose send completed at a rendezvous.  Guarded on the
@@ -1237,17 +1240,17 @@ theorem stageWokenSendCompletion_stages_zero
 
 /-- RA.B.5b frame lemma: neither stager touches the scheduler. -/
 theorem stageWokenDelivery_scheduler_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) :
-    (stageWokenDelivery st woken? installedCaps).scheduler = st.scheduler := by
+    (woken? : Option SeLe4n.ThreadId) (capInfo : Nat) :
+    (stageWokenDelivery st woken? capInfo).scheduler = st.scheduler := by
   cases woken? with
   | none => rfl
-  | some tid => exact stageDeliveredMessage_scheduler_eq st tid installedCaps
+  | some tid => exact stageDeliveredMessage_scheduler_eq st tid capInfo
 
 /-- **WS-RR RR8.16** (`v0.35.200`): delivery staging is a `kindPreservingWrite`
 — every arm is either the identity or one return-frame write. -/
 theorem stageDeliveredMessage_kindPreservingWrite (st : SystemState)
-    (tid : SeLe4n.ThreadId) (installedCaps : Nat) (hObjInv : st.objects.invExt) :
-    SeLe4n.Model.kindPreservingWrite st (stageDeliveredMessage st tid installedCaps) := by
+    (tid : SeLe4n.ThreadId) (capInfo : Nat) (hObjInv : st.objects.invExt) :
+    SeLe4n.Model.kindPreservingWrite st (stageDeliveredMessage st tid capInfo) := by
   unfold stageDeliveredMessage
   cases st.getTcb? tid with
   | none => exact SeLe4n.Model.kindPreservingWrite.refl st
@@ -1262,8 +1265,8 @@ theorem stageDeliveredMessage_kindPreservingWrite (st : SystemState)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and writes neither derivation table. -/
 theorem stageDeliveredMessage_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (installedCaps : Nat) :
-    (stageDeliveredMessage st tid installedCaps).cdt = st.cdt := by
+    (capInfo : Nat) :
+    (stageDeliveredMessage st tid capInfo).cdt = st.cdt := by
   unfold stageDeliveredMessage
   cases st.getTcb? tid with
   | none => all_goals rfl
@@ -1278,36 +1281,36 @@ theorem stageDeliveredMessage_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): and the woken-delivery stager inherits both. -/
 theorem stageWokenDelivery_kindPreservingWrite (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) (hObjInv : st.objects.invExt) :
-    SeLe4n.Model.kindPreservingWrite st (stageWokenDelivery st woken? installedCaps) := by
+    (woken? : Option SeLe4n.ThreadId) (capInfo : Nat) (hObjInv : st.objects.invExt) :
+    SeLe4n.Model.kindPreservingWrite st (stageWokenDelivery st woken? capInfo) := by
   cases woken? with
   | none => exact SeLe4n.Model.kindPreservingWrite.refl st
-  | some tid => exact stageDeliveredMessage_kindPreservingWrite st tid installedCaps hObjInv
+  | some tid => exact stageDeliveredMessage_kindPreservingWrite st tid capInfo hObjInv
 
 theorem stageWokenDelivery_cdt_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) :
-    (stageWokenDelivery st woken? installedCaps).cdt = st.cdt := by
+    (woken? : Option SeLe4n.ThreadId) (capInfo : Nat) :
+    (stageWokenDelivery st woken? capInfo).cdt = st.cdt := by
   cases woken? with
   | none => all_goals rfl
-  | some tid => exact stageDeliveredMessage_cdt_eq st tid installedCaps
+  | some tid => exact stageDeliveredMessage_cdt_eq st tid capInfo
 
 /-- RA.B.5b frame lemma: neither stager touches the machine. -/
 theorem stageWokenDelivery_machine_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) :
-    (stageWokenDelivery st woken? installedCaps).machine = st.machine := by
+    (woken? : Option SeLe4n.ThreadId) (capInfo : Nat) :
+    (stageWokenDelivery st woken? capInfo).machine = st.machine := by
   cases woken? with
   | none => rfl
-  | some tid => exact stageDeliveredMessage_machine_eq st tid installedCaps
+  | some tid => exact stageDeliveredMessage_machine_eq st tid capInfo
 
 /-- WS-SM SM9.C.8 frame lemma: the delivery stager never touches the
 declassification audit trail. -/
 theorem stageWokenDelivery_declassificationAuditLog_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) :
-    (stageWokenDelivery st woken? installedCaps).declassificationAuditLog =
+    (woken? : Option SeLe4n.ThreadId) (capInfo : Nat) :
+    (stageWokenDelivery st woken? capInfo).declassificationAuditLog =
       st.declassificationAuditLog := by
   cases woken? with
   | none => rfl
-  | some tid => exact stageDeliveredMessage_declassificationAuditLog_eq st tid installedCaps
+  | some tid => exact stageDeliveredMessage_declassificationAuditLog_eq st tid capInfo
 
 /-- RA.B.5b frame lemma: the completion stager never touches the
 scheduler. -/
@@ -1354,20 +1357,20 @@ counting the overflow words written into the waiter's IPC buffer (WS-BP BP7.8)
 (WS-BP BP7.6)'s; what this pins is that the frame is *there* to deliver. -/
 theorem blockedReturn_staged_in_waiter_frame
     (st : SystemState) (w : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage)
-    (installedCaps : Nat)
+    (capInfo : Nat)
     (hTcb : st.getTcb? w = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
     (hObjInv : st.objects.invExt) :
-    readReturnFrame (stageWokenDelivery st (some w) installedCaps) w
-      = returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length := by
-  show readReturnFrame (stageDeliveredMessage st w installedCaps) w
-    = returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length
+    readReturnFrame (stageWokenDelivery st (some w) capInfo) w
+      = returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length := by
+  show readReturnFrame (stageDeliveredMessage st w capInfo) w
+    = returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length
   unfold stageDeliveredMessage
   rw [hTcb]
   simp only [hReady, hMsg]
   exact readReturnFrame_writeDeliveredFrame st w
-    (returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length)
+    (returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length)
     tcb hTcb hObjInv
 
 /-- WS-RA RA.B.5b — the completion dual: a woken plain sender's staged
@@ -1477,10 +1480,10 @@ theorem errorLabelBase_add_range_eq_maxLabel :
 
 /-- The load-bearing negative for RA.A.6: an over-wide `x1` word is not
 silently truncated — `MessageInfo.decode` fail-closes on any word whose
-label bits exceed `maxLabel` (bits ≥ 29 set), so a corrupted status
+label bits exceed `maxLabel` (bits ≥ 32 set), so a corrupted status
 register decodes as an explicit failure rather than a wrong error. -/
 theorem overWideLabel_rejected :
-    MessageInfo.decode ((MessageInfo.maxLabel + 1) <<< 9) = none := by
+    MessageInfo.decode ((MessageInfo.maxLabel + 1) <<< 12) = none := by
   decide
 
 /-- The error frame the boundary returns on a failed syscall: `x0 = 0`,
@@ -2041,15 +2044,20 @@ theorem bit63Encoding_not_injective_on_badges :
   delivered message's label below it.  A v2 decoder reads a v3 error frame as
   `UnknownKernelError` and a v3 fault delivery as a spurious error, which is
   why this is a version bump and not a patch.
+* Version **4** — seL4's `seL4_MessageInfo_t` layout: `capsUnwrapped` in
+  bits 9-11 and the label from bit 12, and the IPC buffer's receive path
+  (`receiveCNode`, `receiveIndex`, `receiveDepth`) after its
+  `caps_or_badges` words.  A v3 decoder reads every v4 label shifted by
+  three bits, so this is a version bump.
 
 Mirrored as `SYSCALL_ABI_VERSION` in `rust/sele4n-types` at each flip, with
 each side's conformance suite pinning its own constant to the same literal —
 so a half-bumped tree fails its own suite rather than mis-decoding at
 runtime (plan §3.6). -/
-def syscallAbiVersion : Nat := 3
+def syscallAbiVersion : Nat := 4
 
 /-- The Lean half of the version pin (RA.A.7).  The Rust conformance test
 asserts the identical literal; a bump that forgets one side fails there. -/
-theorem syscallAbiVersion_pinned : syscallAbiVersion = 3 := rfl
+theorem syscallAbiVersion_pinned : syscallAbiVersion = 4 := rfl
 
 end SeLe4n.Kernel.Architecture

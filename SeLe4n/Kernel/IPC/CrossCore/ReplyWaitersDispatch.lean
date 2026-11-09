@@ -155,31 +155,31 @@ theorem faultAbandonOnCore_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId
   rw [h, removeRunnableOnCore_replyViews_eq]
 
 /-- The capability unwrap writes CNodes alone. -/
-theorem ipcUnwrapCaps_replyViews_eq (caps : Array TransferCap) (root : SeLe4n.ObjId)
-    (base : SeLe4n.Slot) (grant : Bool) {st st' : SystemState} {sum : CapTransferSummary}
-    (hInv : st.objects.invExt) (h : ipcUnwrapCaps caps root base grant st = .ok (sum, st')) :
+theorem ipcUnwrapCaps_replyViews_eq (caps : Array TransferCap) (endpointId : SeLe4n.ObjId)
+    (rtcb : TCB) (slot? : Option CSpaceAddr) {st st' : SystemState} {sum : CapTransferSummary}
+    (hInv : st.objects.invExt) (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (sum, st')) :
     st'.replyViews = st.replyViews :=
   replyViews_eq_of_tcbs
     (fun k t0 hk =>
-      let ⟨t', h', hw⟩ := ipcUnwrapCaps_preserves_tcb_objects caps root base grant st st' sum
+      let ⟨t', h', hw⟩ := ipcUnwrapCaps_preserves_tcb_objects caps endpointId rtcb slot? st st' sum
         k t0 hk hInv h
       ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩)
     (fun k t' hk =>
-      let ⟨t0, h0, _⟩ := ipcUnwrapCaps_tcb_backward caps root base grant st st' sum k t'
+      let ⟨t0, h0, _⟩ := ipcUnwrapCaps_tcb_backward caps endpointId rtcb slot? st st' sum k t'
         hInv h hk
       ⟨t0, h0⟩)
 
 /-- The rendezvous capability lookup reads the sender's CSpace and writes the
 receiver's CNodes alone. -/
 theorem receiveTransferCaps_replyViews_eq
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {st st' : SystemState} {sum : CapTransferSummary}
-    (hInv : st.objects.invExt) (h : receiveTransferCaps req root base st = .ok (sum, st')) :
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {sum : CapTransferSummary}
+    (hInv : st.objects.invExt) (h : receiveTransferCaps req endpointId target? st = .ok (sum, st')) :
     st'.replyViews = st.replyViews := by
   obtain ⟨stR, _, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
   have hR : stR.replyViews = st.replyViews := by
     funext k; unfold SystemState.replyViews SystemState.getObject?; rw [hO]
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact hR
   · exact (ipcUnwrapCaps_replyViews_eq _ _ _ _ (hO ▸ hInv) hU).trans hR
 
@@ -314,12 +314,12 @@ receive links a dequeued caller to the receiver, and the capability unwrap
 after it writes CNodes alone. -/
 theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId) (base : SeLe4n.Slot) (c : CoreId)
+    (replyId : Option SeLe4n.ReplyId) (c : CoreId)
     (st : SystemState) (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hRecv : ReplyViews.serverFree st.replyViews receiver)
     (hHead : ∀ ep s, st.objects[endpointId]? = some (.endpoint ep) → ep.sendQ.head = some s →
       s ≠ receiver ∧ ReplyViews.serverFree st.replyViews s) :
-    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId root base c
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId c
       st).1.replyWaitersConsistent := by
   have hB := endpointReceiveDualOnCore_preserves_replyWaitersConsistent endpointId receiver
     replyId c st hInv hC hRecv hHead
@@ -341,12 +341,12 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent
 
 theorem endpointCallWithCapsOnCore_preserves_replyWaitersConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (c : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hCaller : ReplyViews.serverFree st.replyViews caller)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       r ≠ caller ∧ ReplyViews.serverFree st.replyViews r) :
-    (endpointCallWithCapsOnCore endpointId caller payload base c
+    (endpointCallWithCapsOnCore endpointId caller payload c
       st).1.replyWaitersConsistent := by
   have hB := endpointCallOnCore_preserves_replyWaitersConsistent endpointId caller
     payload c st hInv hC hCaller hHead
@@ -371,19 +371,19 @@ the caller to the receiver it rendezvoused with; the donation and the priority
 walk after it keep the views. -/
 theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (c : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hCaller : ReplyViews.serverFree st.replyViews caller)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       r ≠ caller ∧ ReplyViews.serverFree st.replyViews r) :
-    (endpointCallCrossCoreDispatch endpointId caller payload base c
+    (endpointCallCrossCoreDispatch endpointId caller payload c
       st).1.replyWaitersConsistent := by
   have hB := endpointCallWithCapsOnCore_preserves_replyWaitersConsistent endpointId caller payload
-    base c st hInv hC hCaller hHead
+    c st hInv hC hCaller hHead
   have hI := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
-    base c st hInv
+    c st hInv
   unfold endpointCallCrossCoreDispatch
-  cases hR : endpointCallWithCapsOnCore endpointId caller payload base c st with
+  cases hR : endpointCallWithCapsOnCore endpointId caller payload c st with
   | mk s1 res =>
     rw [hR] at hB hI
     cases res with
@@ -453,12 +453,12 @@ theorem faultDeliverOnCore_preserves_replyWaitersConsistent (st : SystemState)
   · exact hSus
   · rename_i tgt _
     have hB := endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent tgt.endpoint tid
-      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hInv hC
+      (SendPayload.fault f ctx tgt.cap.badge) c st hInv hC
       hFaulted (hHead tgt.endpoint)
     have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hInv
+      (SendPayload.fault f ctx tgt.cap.badge) c st hInv
     cases hR : endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge)
-        (SeLe4n.Slot.ofNat 0) c st with
+        c st with
     | mk s1 res =>
       rw [hR] at hB hI
       cases res with
@@ -581,8 +581,8 @@ other composite theorems state theirs. -/
 theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
     {answer : Option Architecture.FaultReplyOutcome}
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (root : SeLe4n.ObjId)
-    (base : SeLe4n.Slot) (ec : CoreId) (st stOut : SystemState) (summary : CapTransferSummary)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (ec : CoreId) (st stOut : SystemState) (summary : CapTransferSummary)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hRecv1 : ReplyViews.serverFree (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller msg ec st).1).replyViews tid)
@@ -590,7 +590,7 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
         (endpointReplyOnCore tid prevCaller msg ec st).1).objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head = some s → s ≠ tid ∧ ReplyViews.serverFree (replyRecvPostPopState rid
         prevCaller (endpointReplyOnCore tid prevCaller msg ec st).1).replyViews s)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg root base ec st
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg ec st
       = .ok (summary, stOut)) :
     stOut.replyWaitersConsistent := by
   have hB1 := endpointReplyOnCore_preserves_replyWaitersConsistent tid prevCaller msg ec st hInv hC
@@ -614,9 +614,9 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
         have hBp : st1p.replyWaitersConsistent :=
           replyWaitersConsistent.of_views (replyRecvPopDonation_replyViews_eq hI1 hP) hB1
         have hB2 := endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent epId tid
-          (some rid) root base ec st1p hIp hBp hRecv1 hHead1
+          (some rid) ec st1p hIp hBp hRecv1 hHead1
         have hI2 := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid
-          (some rid) root base ec st1p hIp
+          (some rid) ec st1p hIp
         split at h
         · cases h
         · rename_i st2 nxt sum2 sgi2 hW
@@ -697,12 +697,12 @@ theorem endpointSendDualOnCore_preserves_replyWaitersConsistent (endpointId : Se
 
 theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (c : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hSender : ReplyViews.serverFree st.replyViews sender)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       ReplyViews.serverFree st.replyViews r) :
-    (endpointSendDualWithCapsOnCore endpointId sender payload base c
+    (endpointSendDualWithCapsOnCore endpointId sender payload c
       st).1.replyWaitersConsistent := by
   have hB := endpointSendDualOnCore_preserves_replyWaitersConsistent endpointId sender
     payload c st hInv hC hSender hHead

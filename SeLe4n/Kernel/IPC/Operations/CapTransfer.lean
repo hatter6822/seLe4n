@@ -8,993 +8,500 @@
 -/
 
 import SeLe4n.Kernel.Capability.Operations
+import SeLe4n.Kernel.Architecture.IpcBufferRead
+import SeLe4n.Kernel.Architecture.HardwareTables
 
-/-! # IPC Capability Transfer Operations (M-D01 / WS-M3)
+/-! # IPC Capability Transfer (seL4's `transferCaps`)
 
-This module implements the batch capability unwrap operation for IPC rendezvous.
 During an IPC send or call, the capabilities the sender's frame names are
 resolved in the sender's CSpace at the rendezvous (`resolveExtraCaps`, seL4's
-`lookupExtraCaps`) and the resulting transient array is installed into the
-receiver's CSpace in the same step.  No resolved capability is ever stored in a
-message or a thread: `IpcMessage` has no capability field.
+`lookupExtraCaps`), and the resulting transient array is transferred to the
+receiver in the same step.  No resolved capability is ever stored in a message
+or a thread: `IpcMessage` has no capability field.
 
-**seL4 semantics**:
-- The endpoint capability must have `Grant` right for any cap transfer to occur.
-- If `Grant` is absent, all caps are silently dropped (`.grantDenied`).
-- Each cap is independently transferred via `ipcTransferSingleCap`.
-- Non-fatal failures (`.noSlot`, `.grantDenied`) do NOT abort remaining transfers.
-- The sender retains all transferred capabilities (IPC transfer is copy).
-
-**Key operation**: `ipcUnwrapCaps` — iterates over the resolved capability array, threading state
-and advancing the receiver's slot base only after successful insertion.  On
-error (missing CNode root or insert failure), the slot base is NOT advanced
-and the loop short-circuits: all remaining caps are filled with `.noSlot` via
-`fillRemainingNoSlot`.  This avoids slot gaps in the receiver's CNode and
-aligns with seL4's cursor-preservation semantics, while the short-circuit
-exploits the observation that error conditions persist (the receiver's CSpace
-root hasn't changed, so subsequent transfers would fail identically).
-
-**Error-to-noSlot conversion (F-03/AD2-C):** When `ipcTransferSingleCap` fails
-(e.g., receiver CSpace root not found, or slot insertion error), the error is
-converted to `.noSlot` in the transfer results array by `ipcUnwrapCapsLoop`.
-Remaining capabilities in the batch are padded with `.noSlot` via short-circuit
-semantics. This matches seL4's cursor-preservation behavior: the receiver sees
-a consistent result count regardless of individual transfer failures. The
-conversion is intentional and does NOT mask security-relevant failures — the
-receiver simply sees fewer successfully transferred capabilities, which is the
-correct degraded behavior. No capability can be silently installed or lost;
-the sender retains all originals.
+**seL4 semantics** (`transferCaps`, `transferCapsToSlots`):
+- The receiver names **one** receive slot, in its IPC buffer's receive path
+  (`receiveCNode`, `receiveIndex`, `receiveDepth`; seL4's
+  `seL4_SetCapReceivePath`), resolved at the transfer (`receiveSlot?`, seL4's
+  `getReceiveSlots`).  A path that does not resolve to an empty slot names
+  none.
+- A receiver with no IPC buffer the kernel may write receives nothing.
+- The capabilities are processed in order.  One to the endpoint the message
+  was sent on is **unwrapped**: its badge is written to the receiver's
+  `caps_or_badges` word at its index and its bit set in `capsUnwrapped`; no
+  capability is installed.  Any other is derived and installed in the receive
+  slot (`ipcTransferSingleCap`), which is then used up.
+- The transfer **stops** at the first capability it can neither unwrap nor
+  install — no receive slot, or one already used, or a derivation seL4 refuses
+  — with no fault.  What it already transferred stays.
+- The report (`CapTransferSummary.capInfo`) is the number of capabilities
+  processed and which were unwrapped; the receiver's `MessageInfo` carries it.
+- The sender keeps every capability (IPC transfer is a copy).
 -/
 
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Pad remaining cap transfer results with `.noSlot` for caps at indices
-`idx, idx+1, ...` up to the fuel bound. Used to short-circuit when a fatal
-error (e.g., receiver CSpace root not a CNode) makes all remaining transfers
-impossible. Mirrors the array-bounds structure of `ipcUnwrapCapsLoop` so that
-the result count matches exactly.
+open SeLe4n.Kernel.Architecture.IpcBufferRead in
+/-- A word of a thread's IPC buffer, as the kernel reads it there (the entry's
+words ahead of the model's memory, `userWordAt`); `none` where the buffer does
+not resolve. -/
+@[inline] def receiverBufferWord? (st : SystemState) (tcb : TCB) (idx : Nat) : Option UInt64 :=
+  (ipcBufferWordPAddr? st tcb idx false).map (userWordAt st.machine)
 
-**AN3-F (IPC LOW #5) contract clarification.**  The returned array
-`acc` is extended by exactly `min fuel (caps.size - idx)` elements.
-Each appended element is `CapTransferResult.noSlot`, indicating to the
-receiver's IPC buffer that no slot was allocated for that index's
-capability.  The fuel parameter is seeded by callers at
-`caps.size - idx`, so termination is structural and the "padding"
-always covers every remaining cap.  The `none` branch of `caps[idx]?`
-is reached when `idx = caps.size`; the `some _ => … fuel'` recursion
-consumes one fuel unit per real cap index, so the two termination
-conditions (fuel-exhausted vs. array-exhausted) agree at the terminal
-step.  This helper is `private` because all real callers live in
-`ipcUnwrapCapsLoop` below and in `endpointSendDualWithCaps` /
-`endpointCallWithCaps`; exposing it publicly would invite misuse
-(e.g., supplying a fuel budget smaller than `caps.size - idx`, which
-would silently truncate the result without surfacing an error). -/
-private def fillRemainingNoSlot
-    (caps : Array TransferCap) (idx : Nat)
-    (acc : Array CapTransferResult) (fuel : Nat) : Array CapTransferResult :=
+open SeLe4n.Kernel.Architecture.IpcBufferRead in
+/-- **The receiver has an IPC buffer the kernel may write** (seL4's
+`lookupIPCBuffer(true, receiver)` answering a buffer): its first word resolves
+writable through its own VSpace.  The buffer lies in one frame
+(`ipcBufferWords_within_alignment`), so its other words resolve through the same
+mapping. -/
+@[inline] def receiverHasBuffer (st : SystemState) (tcb : TCB) : Bool :=
+  (ipcBufferWordPAddr? st tcb 0 true).isSome
+
+/-- **The slot a receive path names** (seL4's `getReceiveSlots`): the
+`receiveCNode` word looked up in the receiver's CSpace (`lookupCap`) must name a
+CNode, in which `receiveIndex` resolves `receiveDepth` bits deep (seL4's
+`lookupTargetSlot`, a depth from 1 to the word's 64 bits) to a slot that is
+empty.  Any failure names no slot, and a transfer then installs nothing; seL4
+raises no fault for it. -/
+def receivePathSlot? (st : SystemState) (tcb : TCB) (cnodeWord indexWord depthWord : UInt64) :
+    Option CSpaceAddr :=
+  match st.getCNode? tcb.cspaceRoot with
+  | none => none
+  | some rootCn =>
+    match resolveCapAddress tcb.cspaceRoot (SeLe4n.CPtr.ofWord cnodeWord) rootCn.depth st with
+    | .error _ => none
+    | .ok ref =>
+      match SystemState.lookupSlotCap st ref with
+      | none => none
+      | some cap =>
+        match cap.target with
+        | .object cnodeId =>
+          match st.getCNode? cnodeId with
+          | none => none
+          | some _ =>
+            if depthWord.toNat = 0 ∨ 64 < depthWord.toNat then none else
+            match resolveCapAddress cnodeId (SeLe4n.CPtr.ofWord indexWord) depthWord.toNat st with
+            | .error _ => none
+            | .ok slot =>
+              if (SystemState.lookupSlotCap st slot).isNone then some slot else none
+        | _ => none
+
+open SeLe4n.Kernel.Architecture.IpcBufferRead in
+/-- **The receiver's receive slot** (seL4's `getReceiveSlots`): the slot its
+IPC buffer's receive path names, read from the buffer at the transfer. -/
+def receiveSlot? (st : SystemState) (tcb : TCB) : Option CSpaceAddr :=
+  match receiverBufferWord? st tcb ipcBufferReceiveCNodeWord,
+      receiverBufferWord? st tcb ipcBufferReceiveIndexWord,
+      receiverBufferWord? st tcb ipcBufferReceiveDepthWord with
+  | some c, some i, some d => receivePathSlot? st tcb c i d
+  | _, _, _ => none
+
+/-- **A capability the transfer unwraps**: one to the endpoint the message was
+sent on (seL4: an endpoint capability whose object is that endpoint).  Only its
+badge is delivered. -/
+@[inline] def capUnwrapsAt (cap : Capability) (endpointId : SeLe4n.ObjId) : Bool :=
+  match cap.target with
+  | .object id => id == endpointId
+  | _ => false
+
+open SeLe4n.Kernel.Architecture.IpcBufferRead in
+/-- **The badge an unwrapped capability delivers, written to the receiver's
+`caps_or_badges` word at its index** (seL4's `setExtraBadge`), into the ledger
+of the physical writes the step makes.  The word is in the receiver's buffer,
+which the transfer checked the kernel may write (`receiverHasBuffer`). -/
+def recordUnwrappedBadge (st : SystemState) (tcb : TCB) (i : Nat) (badge : SeLe4n.Badge) :
+    SystemState :=
+  match ipcBufferWordPAddr? st tcb (ipcBufferBadgeWord i) true with
+  | some pa => Architecture.recordPhysicalWrites st [.storeUserWord pa badge.word]
+  | none => st
+
+@[simp] theorem recordUnwrappedBadge_objects (st : SystemState) (tcb : TCB) (i : Nat)
+    (b : SeLe4n.Badge) : (recordUnwrappedBadge st tcb i b).objects = st.objects := by
+  unfold recordUnwrappedBadge; split <;> rfl
+
+@[simp] theorem recordUnwrappedBadge_scheduler (st : SystemState) (tcb : TCB) (i : Nat)
+    (b : SeLe4n.Badge) : (recordUnwrappedBadge st tcb i b).scheduler = st.scheduler := by
+  unfold recordUnwrappedBadge; split <;> rfl
+
+@[simp] theorem recordUnwrappedBadge_machine (st : SystemState) (tcb : TCB) (i : Nat)
+    (b : SeLe4n.Badge) : (recordUnwrappedBadge st tcb i b).machine = st.machine := by
+  unfold recordUnwrappedBadge; split <;> rfl
+
+@[simp] theorem recordUnwrappedBadge_cdt (st : SystemState) (tcb : TCB) (i : Nat)
+    (b : SeLe4n.Badge) : (recordUnwrappedBadge st tcb i b).cdt = st.cdt := by
+  unfold recordUnwrappedBadge; split <;> rfl
+
+/-- **One capability's turn of seL4's `transferCapsToSlots` loop**, from index
+`idx`: unwrap a capability to the endpoint (its badge to the receiver's buffer),
+or install it in the receive slot `slot?` and use the slot up, or stop.
+Termination is structural on `fuel` (`caps.size` at the entry). -/
+def ipcUnwrapCapsLoop (caps : Array TransferCap) (endpointId : SeLe4n.ObjId) (rtcb : TCB)
+    (idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult) (fuel : Nat) :
+    Kernel CapTransferSummary :=
   match fuel with
-  | 0 => acc
+  | 0 => fun st => .ok ({ results := acc }, st)
   | fuel' + 1 =>
     match caps[idx]? with
-    | none => acc
-    | some _ => fillRemainingNoSlot caps (idx + 1) (acc.push .noSlot) fuel'
+    | none => fun st => .ok ({ results := acc }, st)
+    | some tc => fun st =>
+      if capUnwrapsAt tc.cap endpointId then
+        let b := tc.cap.badge.getD SeLe4n.Badge.zero
+        ipcUnwrapCapsLoop caps endpointId rtcb (idx + 1) slot? (acc.push (.unwrapped b)) fuel'
+          (recordUnwrappedBadge st rtcb idx b)
+      else
+        match slot? with
+        | none => .ok ({ results := acc }, st)
+        | some dst =>
+          match ipcTransferSingleCap tc.cap tc.srcSlot dst st with
+          | .error _ => .ok ({ results := acc }, st)
+          | .ok ((), st') =>
+            ipcUnwrapCapsLoop caps endpointId rtcb (idx + 1) none
+              (acc.push (.installed dst.cnode dst.slot)) fuel' st'
 
-/-- M-D01: Recursive helper for unwrapping caps. Processes caps from index
-`idx` to the end of the array. Termination is structural on `fuel`
-(initially `caps.size - idx`).
+/-- **Transfer the capabilities resolved at the rendezvous** (seL4's
+`transferCapsToSlots`) to the receiver `rtcb`, whose receive slot is `slot?`,
+for a message sent on `endpointId`. -/
+def ipcUnwrapCaps (caps : Array TransferCap) (endpointId : SeLe4n.ObjId) (rtcb : TCB)
+    (slot? : Option CSpaceAddr) : Kernel CapTransferSummary :=
+  ipcUnwrapCapsLoop caps endpointId rtcb 0 slot? #[] caps.size
 
-**AK1-G (I-M05) — Internal recursion helper.** This function is the
-recursive worker for `ipcUnwrapCaps` and **must only be called from
-`ipcUnwrapCaps`** (which always supplies `idx := 0` and `accResults := #[]`).
-Calling it externally with `idx > 0` produces off-by-one padding and
-silently drops capabilities because the `fuel` parameter is keyed off
-`caps.size - idx`. Making this `private` would fail the module build
-because `IPC/DualQueue/WithCaps.lean` and
-`Capability/Invariant/Preservation.lean` reference the associated
-preservation theorems (`ipcUnwrapCapsLoop_preserves_*`) by name.
-
-The static invariant `ipcUnwrapCaps` only calls this with `idx = 0` can be
-verified by `grep -rn "ipcUnwrapCapsLoop " SeLe4n/Kernel/IPC/` — the only
-production call site in code (non-proof) is at the `ipcUnwrapCaps`
-recursion entry below. -/
-def ipcUnwrapCapsLoop
-    (caps : Array TransferCap)
-    (receiverCspaceRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot)
-    (accResults : Array CapTransferResult)
-    (fuel : Nat) : Kernel CapTransferSummary :=
-  match fuel with
-  | 0 => fun st => .ok ({ results := accResults }, st)
-  | fuel' + 1 =>
-    match caps[idx]? with
-    | none => fun st => .ok ({ results := accResults }, st)
-    | some tc =>
-      fun st =>
-        -- The derivation parent is the slot this capability was actually
-        -- resolved from (`tc.srcSlot`).  CDT nodes are keyed by the full
-        -- `SlotRef`, so recording the edge from any other address puts the
-        -- transferred copy under a node that revoking the true source never
-        -- reaches — the copy would survive a revoke that was meant to destroy
-        -- it, and an unrelated capability at the stand-in address would be
-        -- destroyed by a revoke that had nothing to do with it.
-        match ipcTransferSingleCap tc.cap tc.srcSlot
-            receiverCspaceRoot nextBase maxExtraCaps st with
-        | .error _e =>
-            -- The transfer stops: the receiver CSpace root is not a CNode
-            -- (or insert failed on a slot that findFirstEmptySlot said was
-            -- empty, which is unreachable in the single-threaded model), or —
-            -- WS-ZA ZA5.4 part 13 — this capability names an untyped whose
-            -- source slot has a derivation child, which seL4's `deriveCap`
-            -- refuses and at which seL4's transfer loop stops.  The
-            -- capabilities already installed stay.  Short-circuit: pad the
-            -- results with `.noSlot` for every remaining cap and return
-            -- immediately with the original state.  This avoids slot gaps
-            -- in the receiver's CNode (no `nextBase` advancement on error)
-            -- and aligns with seL4's cursor-preservation semantics.
-            let finalResults :=
-              fillRemainingNoSlot caps (idx + 1) (accResults.push .noSlot) fuel'
-            .ok ({ results := finalResults }, st)
-        | .ok (result, stNext) =>
-            let nextBase' := match result with
-              | .installed _ _ => SeLe4n.Slot.ofNat (nextBase.toNat + 1)
-              | _ => nextBase
-            ipcUnwrapCapsLoop caps receiverCspaceRoot
-              (idx + 1) nextBase'
-              (accResults.push result) fuel' stNext
-
-/-- M-D01: Unwrap the extra capabilities resolved at the rendezvous into the
-receiver's CSpace. This is the top-level cap-transfer entry point, called
-during IPC rendezvous after message delivery.
-
-seL4 semantics:
-- If the endpoint capability lacks `Grant` right, all caps are skipped
-  (returns array of `.grantDenied` results).
-- Otherwise, each cap in `caps` is transferred via
-  `ipcTransferSingleCap`, scanning consecutive slots starting from
-  `receiverSlotBase`. The scan window advances by 1 after each successful
-  insertion to avoid overwriting.
-- Failures on individual caps (`.noSlot`) do NOT abort the remaining
-  transfers — each cap is independently processed.
-- A transfer that stops (receiver CSpace root not a CNode, or an untyped
-  capability whose source slot has a derivation child, seL4's refused
-  `deriveCap`) short-circuits the loop: the capabilities already installed
-  stay, the rest are filled with `.noSlot`, and nothing more is written.
-- The sender retains all transferred capabilities (IPC transfer is copy). -/
-def ipcUnwrapCaps
-    (caps : Array TransferCap)
-    (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot)
-    (endpointGrantRight : Bool) : Kernel CapTransferSummary :=
-  fun st =>
-    if !endpointGrantRight then
-      let results := caps.map fun _ => CapTransferResult.grantDenied
-      .ok ({ results }, st)
-    else
-      ipcUnwrapCapsLoop caps receiverCspaceRoot
-        0 receiverSlotBase #[] caps.size st
-
-/-- AK1-G (I-M05): Static assertion that the production call site in
-    `ipcUnwrapCaps` invokes `ipcUnwrapCapsLoop` with `idx := 0` and
-    `accResults := #[]`. This Lean-level check formalises the plan's
-    "only called with idx = 0" contract by spelling out the exact
-    argument shape the loop receives at its single non-proof call site.
-    If future refactors break this invariant (e.g., introducing a second
-    caller with a non-zero `idx`), this assertion will fail to compile,
-    surfacing the contract violation at build time. -/
-example
-    (caps : Array TransferCap) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (st : SystemState) :
-    ipcUnwrapCaps caps receiverCspaceRoot receiverSlotBase true st =
-      ipcUnwrapCapsLoop caps receiverCspaceRoot
-        0 receiverSlotBase #[] caps.size st := by
-  unfold ipcUnwrapCaps
-  simp
-
-/-- WS-RR RR3.11: **a cap transfer into a non-CNode receiver root is a state
-no-op.**
-
-`ipcTransferSingleCap` resolves the receiver root through `getCNode?` and fails
-`.objectNotFound` when it is absent or wrong-kinded; the loop treats that as
-fatal, pads the remaining results with `.noSlot` and returns the state it was
-given.  Stated because it is what lets the conjunct frames drop their CNode
-hypothesis: without it they had to *assume* a CNode at the root, and the WithCaps
-wrappers stated that assumption in a shape (`∀ recvRoot`) no state satisfies, so
-the theorems above them were vacuous. -/
-theorem ipcUnwrapCapsLoop_state_eq_of_root_not_cnode
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hNotCnode : st.getCNode? receiverRoot = none)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st' = st := by
-  cases fuel with
-  | zero =>
-    simp only [ipcUnwrapCapsLoop, Except.ok.injEq, Prod.mk.injEq] at hStep
-    exact hStep.2.symm
-  | succ fuel' =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
+/-- **The loop's frame, once for every relation it is stated for**: a relation
+between post- and pre-state that is reflexive and transitive, that a badge write
+satisfies, and that an install into the receive slot satisfies, relates the
+loop's result to its start. -/
+theorem ipcUnwrapCapsLoop_rel (R : SystemState → SystemState → Prop)
+    (hRefl : ∀ s, R s s) (hTrans : ∀ a b c, R c b → R b a → R c a)
+    (caps : Array TransferCap) (endpointId : SeLe4n.ObjId) (rtcb : TCB)
+    (hBadge : ∀ s i b, R (recordUnwrappedBadge s rtcb i b) s) :
+    ∀ (fuel idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult)
+      (st st' : SystemState) (summary : CapTransferSummary),
+      (∀ dst s s' (tc : TransferCap), slot? = some dst → (∃ i : Nat, caps[i]? = some tc) →
+        ipcTransferSingleCap tc.cap tc.srcSlot dst s = .ok ((), s') → R s' s) →
+      ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc fuel st = .ok (summary, st') →
+      R st' st
+  | 0, _, _, _, st, st', _, _, h => by
+    simp only [ipcUnwrapCapsLoop, Except.ok.injEq, Prod.mk.injEq] at h
+    rw [← h.2]; exact hRefl st
+  | fuel + 1, idx, slot?, acc, st, st', summary, hInst, h => by
+    simp only [ipcUnwrapCapsLoop] at h
+    cases hC : caps[idx]? with
     | none =>
-      simp only [hCap, Except.ok.injEq, Prod.mk.injEq] at hStep
-      exact hStep.2.symm
+      simp only [hC, Except.ok.injEq, Prod.mk.injEq] at h
+      rw [← h.2]; exact hRefl st
     | some tc =>
-      simp only [hCap] at hStep
-      have hErr : ipcTransferSingleCap tc.cap tc.srcSlot receiverRoot nextBase maxExtraCaps st
-          = .error .objectNotFound := by
-        simp only [ipcTransferSingleCap, hNotCnode]
-      simp only [hErr, Except.ok.injEq, Prod.mk.injEq] at hStep
-      exact hStep.2.symm
+      simp only [hC] at h
+      split at h
+      · exact hTrans _ _ _
+          (ipcUnwrapCapsLoop_rel R hRefl hTrans caps endpointId rtcb hBadge fuel _ _ _ _ _ _
+            hInst h) (hBadge _ _ _)
+      · cases hS : slot? with
+        | none =>
+          simp only [hS, Except.ok.injEq, Prod.mk.injEq] at h
+          rw [← h.2]; exact hRefl st
+        | some dst =>
+          simp only [hS] at h
+          cases hT : ipcTransferSingleCap tc.cap tc.srcSlot dst st with
+          | error e =>
+            simp only [hT, Except.ok.injEq, Prod.mk.injEq] at h
+            rw [← h.2]; exact hRefl st
+          | ok pair =>
+            obtain ⟨⟨⟩, sI⟩ := pair
+            simp only [hT] at h
+            exact hTrans _ _ _
+              (ipcUnwrapCapsLoop_rel R hRefl hTrans caps endpointId rtcb hBadge fuel _ none _ _ _ _
+                (fun _ _ _ _ hN => by cases hN) h)
+              (hInst dst st sI tc hS ⟨idx, hC⟩ hT)
 
-/-- WS-RR RR3.11: the `ipcUnwrapCaps` form of the no-op above. -/
-theorem ipcUnwrapCaps_state_eq_of_root_not_cnode
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+/-- `ipcUnwrapCapsLoop_rel` at the entry. -/
+theorem ipcUnwrapCaps_rel (R : SystemState → SystemState → Prop)
+    (hRefl : ∀ s, R s s) (hTrans : ∀ a b c, R c b → R b a → R c a)
+    {caps : Array TransferCap} {endpointId : SeLe4n.ObjId} {rtcb : TCB}
+    {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
+    (hBadge : ∀ s i b, R (recordUnwrappedBadge s rtcb i b) s)
+    (hInst : ∀ dst s s' (tc : TransferCap), slot? = some dst → (∃ i : Nat, caps[i]? = some tc) →
+      ipcTransferSingleCap tc.cap tc.srcSlot dst s = .ok ((), s') → R s' s)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) : R st' st :=
+  ipcUnwrapCapsLoop_rel R hRefl hTrans caps endpointId rtcb hBadge _ _ _ _ _ _ _ hInst h
+
+theorem ipcUnwrapCaps_preserves_scheduler (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
-    (hNotCnode : st.getCNode? receiverRoot = none)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st' = st := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact hStep.2.symm
-  · exact ipcUnwrapCapsLoop_state_eq_of_root_not_cnode _ receiverRoot _ _ _ _ st st'
-      summary hNotCnode hStep
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    st'.scheduler = st.scheduler :=
+  ipcUnwrapCaps_rel (fun a b => a.scheduler = b.scheduler) (fun _ => rfl)
+    (fun _ _ _ h1 h2 => h1.trans h2) (fun _ _ _ => recordUnwrappedBadge_scheduler _ _ _ _)
+    (fun _ _ _ _ _ _ hT => ipcTransferSingleCap_preserves_scheduler _ _ _ _ _ hT) h
 
-theorem ipcUnwrapCapsLoop_preserves_scheduler
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.scheduler = st.scheduler := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; rfl
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; rfl
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hSched := ipcTransferSingleCap_preserves_scheduler tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => rw [ih _ _ _ _ hStep, hSched]
-        | noSlot => rw [ih _ _ _ _ hStep, hSched]
-        | grantDenied => rw [ih _ _ _ _ hStep, hSched]
-        | sourceRevoked => rw [ih _ _ _ _ hStep, hSched]
-
-theorem ipcUnwrapCaps_preserves_scheduler
-    (caps : Array TransferCap)
-    (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+/-- WS-SM SM8.B.2: the transfer never touches the machine, so no core's banked
+`RegisterFile` moves: a badge goes to the write ledger, an install to a CNode. -/
+theorem ipcUnwrapCaps_preserves_machine (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st'.scheduler = st.scheduler := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-  · exact ipcUnwrapCapsLoop_preserves_scheduler _ _ _ _ _ _ _ _ _ hStep
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    st'.machine = st.machine :=
+  ipcUnwrapCaps_rel (fun a b => a.machine = b.machine) (fun _ => rfl)
+    (fun _ _ _ h1 h2 => h1.trans h2) (fun _ _ _ => recordUnwrappedBadge_machine _ _ _ _)
+    (fun _ _ _ _ _ _ hT => ipcTransferSingleCap_preserves_machine _ _ _ _ _ hT) h
 
-/-- WS-SM SM8.B.2: the transfer loop never touches the machine, so no core's
-banked `RegisterFile` moves.  Same induction as the scheduler companion above,
-one `ipcTransferSingleCap_preserves_machine` per step. -/
-theorem ipcUnwrapCapsLoop_preserves_machine
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.machine = st.machine := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; rfl
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; rfl
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hMach := ipcTransferSingleCap_preserves_machine tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => rw [ih _ _ _ _ hStep, hMach]
-        | noSlot => rw [ih _ _ _ _ hStep, hMach]
-        | grantDenied => rw [ih _ _ _ _ hStep, hMach]
-        | sourceRevoked => rw [ih _ _ _ _ hStep, hMach]
-
-/-- WS-SM SM8.B.2: IPC capability transfer is machine-invariant.  Paired with
-`ipcUnwrapCaps_preserves_scheduler`, this is what makes the WithCaps leg of the
-cross-core `.call` contribute nothing to the transition's per-core write set. -/
-theorem ipcUnwrapCaps_preserves_machine
-    (caps : Array TransferCap)
-    (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+/-- WS-RR RR2.6: the transfer preserves the object store's extended invariant. -/
+theorem ipcUnwrapCaps_preserves_objects_invExt (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st'.machine = st.machine := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-  · exact ipcUnwrapCapsLoop_preserves_machine _ _ _ _ _ _ _ _ _ hStep
-
-theorem ipcUnwrapCapsLoop_preserves_objects_ne
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (hNe : oid ≠ receiverRoot)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    st'.objects.invExt :=
+  ipcUnwrapCaps_rel (fun a b => b.objects.invExt → a.objects.invExt) (fun _ h => h)
+    (fun _ _ _ h1 h2 hA => h1 (h2 hA))
+    (fun _ _ _ hA => by rw [recordUnwrappedBadge_objects]; exact hA)
+    (fun _ _ _ _ _ _ hT hA => ipcTransferSingleCap_preserves_objects_invExt _ _ _ _ _ hA hT)
+    h hObjInv
+
+/-- A CNode in the later state of a metadata agreement was a CNode before. -/
+theorem agreeMeta_cnode_back {st st' : SystemState} {oid : SeLe4n.ObjId}
+    (h : SystemState.objectAgreesOffDerivationMetadataAt st' st oid) {cn' : CNode}
+    (h' : st'.objects[oid]? = some (.cnode cn')) : ∃ cn, st.objects[oid]? = some (.cnode cn) := by
+  rcases h with e | ⟨cn, _, ha, _, _⟩ | ⟨_, _, _, hb, _⟩
+  · exact ⟨cn', e ▸ h'⟩
+  · exact ⟨cn, ha⟩
+  · rw [hb] at h'; cases h'
+
+/-- **What the transfer does to one object**: it holds the pre-state's object up
+to derivation metadata, or it is the receive slot's CNode, a CNode before and
+after.  Every per-object frame below is a corollary. -/
+theorem ipcUnwrapCaps_object_cases (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    SystemState.objectAgreesOffDerivationMetadataAt st' st oid ∨
+      ∃ dst, slot? = some dst ∧ oid = dst.cnode ∧
+        (∃ cn, st.objects[oid]? = some (.cnode cn)) ∧
+        ∃ cn', st'.objects[oid]? = some (.cnode cn') := by
+  let P : SystemState → SystemState → Prop := fun a b =>
+    b.objects.invExt → a.objects.invExt ∧
+      (SystemState.objectAgreesOffDerivationMetadataAt a b oid ∨
+        ∃ dst, slot? = some dst ∧ oid = dst.cnode ∧
+          (∃ cn, b.objects[oid]? = some (.cnode cn)) ∧
+          ∃ cn', a.objects[oid]? = some (.cnode cn'))
+  have hP : P st' st := by
+    refine ipcUnwrapCaps_rel P (fun _ hI => ⟨hI, .inl (.of_eq rfl)⟩) ?_ ?_ ?_ h
+    · intro a b c h1 h2 hA
+      obtain ⟨hB, r2⟩ := h2 hA
+      obtain ⟨hC, r1⟩ := h1 hB
+      refine ⟨hC, ?_⟩
+      rcases r1 with r1 | ⟨d1, hd1, ho1, ⟨cnB, hcnB⟩, ⟨cnC, hcnC⟩⟩ <;>
+        rcases r2 with r2 | ⟨d2, hd2, ho2, ⟨cnA, hcnA⟩, ⟨cnB2, hcnB2⟩⟩
+      · exact .inl (r1.trans r2)
+      · obtain ⟨c', hc', -⟩ := r1.cnode_fwd hcnB2
+        exact .inr ⟨d2, hd2, ho2, ⟨cnA, hcnA⟩, c', hc'⟩
+      · exact .inr ⟨d1, hd1, ho1, agreeMeta_cnode_back r2 hcnB, cnC, hcnC⟩
+      · exact .inr ⟨d2, hd2, ho2, ⟨cnA, hcnA⟩, cnC, hcnC⟩
+    · intro s i b hA
+      exact ⟨by rw [recordUnwrappedBadge_objects]; exact hA,
+        .inl (.of_eq (by rw [recordUnwrappedBadge_objects]))⟩
+    · intro dst s s' tc hS _ hT hA
+      refine ⟨ipcTransferSingleCap_preserves_objects_invExt _ _ _ _ _ hA hT, ?_⟩
+      by_cases hEq : oid = dst.cnode
+      · subst hEq
+        obtain ⟨cn, hCn⟩ := ipcTransferSingleCap_ok_implies_cnode_at_dst _ _ _ _ _ hT
+        exact .inr ⟨dst, hS, rfl, ⟨cn, hCn⟩,
+          ipcTransferSingleCap_dst_stays_cnode _ _ _ _ _ hA hT⟩
+      · exact .inl (ipcTransferSingleCap_preserves_objects_ne _ _ _ _ _ oid hEq hA hT)
+  exact (hP hObjInv).2
+
+/-- The transfer holds every object other than the receive slot's CNode up to
+derivation metadata. -/
+theorem ipcUnwrapCaps_preserves_objects_ne (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (hNe : ∀ dst, slot? = some dst → oid ≠ dst.cnode) (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     SystemState.objectAgreesOffDerivationMetadataAt st' st oid := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        have hObj := ipcTransferSingleCap_preserves_objects_ne tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result oid hNe hObjInv hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact (ih _ _ _ _ hObjInvNext hStep).trans hObj
-        | noSlot => exact (ih _ _ _ _ hObjInvNext hStep).trans hObj
-        | grantDenied => exact (ih _ _ _ _ hObjInvNext hStep).trans hObj
-        | sourceRevoked => exact (ih _ _ _ _ hObjInvNext hStep).trans hObj
+  rcases ipcUnwrapCaps_object_cases _ _ _ _ _ _ _ oid hObjInv h with h1 | ⟨dst, hS, hO, -⟩
+  · exact h1
+  · exact absurd hO (hNe dst hS)
 
-/-- WS-RR RR2.6: the transfer loop preserves the object store's extended
-invariant — every write it makes is an `ipcTransferSingleCap`, which does. -/
-theorem ipcUnwrapCapsLoop_preserves_objects_invExt
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.objects.invExt := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact hObjInv
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact hObjInv
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot
-          nextBase maxExtraCaps st stNext result hObjInv hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact ih _ _ _ _ hObjInvNext hStep
-        | noSlot => exact ih _ _ _ _ hObjInvNext hStep
-        | grantDenied => exact ih _ _ _ _ hObjInvNext hStep
-        | sourceRevoked => exact ih _ _ _ _ hObjInvNext hStep
+/-- **An object that is not a CNode survives the transfer**: the transfer
+writes the receive slot's CNode, and every other object up to derivation
+metadata, which only CNodes and threads carry. -/
+theorem ipcUnwrapCaps_preserves_nonCNode (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    {o : KernelObject} (hNotCn : ∀ cn, o ≠ .cnode cn) (hNoMeta : ∀ t, o ≠ .tcb t)
+    (hO : st.objects[oid]? = some o) (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    st'.objects[oid]? = some o := by
+  rcases ipcUnwrapCaps_object_cases _ _ _ _ _ _ _ oid hObjInv h with h1 | ⟨_, -, -, ⟨cn, hCn⟩, -⟩
+  · exact h1.obj_fwd hO hNotCn hNoMeta
+  · rw [hO] at hCn; exact absurd (Option.some.inj hCn) (hNotCn cn)
 
-/-- WS-RR RR2.6: the capability transfer preserves the object store's extended
-invariant.  Needed by every consumer that runs a *further* object-store
-operation after it — the live cross-core `.call` dispatch runs two (the
-SchedContext donation and the priority-inheritance chain walk), and neither has
-an unconditional form. -/
-theorem ipcUnwrapCaps_preserves_objects_invExt
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st'.objects.invExt := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
-  · exact ipcUnwrapCapsLoop_preserves_objects_invExt _ _ _ _ _ _ _ _ _ hObjInv hStep
+/-- And back: a non-CNode object after the transfer was there before. -/
+theorem ipcUnwrapCaps_nonCNode_backward (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    {o : KernelObject} (hNotCn : ∀ cn, o ≠ .cnode cn) (hNoMeta : ∀ t, o ≠ .tcb t)
+    (hO : st'.objects[oid]? = some o) (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    st.objects[oid]? = some o := by
+  rcases ipcUnwrapCaps_object_cases _ _ _ _ _ _ _ oid hObjInv h with h1 | ⟨_, -, -, -, ⟨cn, hCn⟩⟩
+  · exact h1.obj_back hO hNotCn hNoMeta
+  · rw [hO] at hCn; exact absurd (Option.some.inj hCn) (hNotCn cn)
 
-/-- ipcUnwrapCaps preserves objects at keys other than the receiver root CNode,
-up to derivation metadata (`ipcTransferSingleCap_preserves_objects_ne`). -/
-theorem ipcUnwrapCaps_preserves_objects_ne
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (hNe : oid ≠ receiverRoot)
+theorem ipcUnwrapCaps_preserves_ntfn_objects (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (ntfn : Notification) (hNtfn : st.objects[oid]? = some (.notification ntfn))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    SystemState.objectAgreesOffDerivationMetadataAt st' st oid := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-  · exact ipcUnwrapCapsLoop_preserves_objects_ne _ _ _ _ _ _ _ _ _ _ hNe hObjInv hStep
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    st'.objects[oid]? = some (.notification ntfn) :=
+  ipcUnwrapCaps_preserves_nonCNode _ _ _ _ _ _ _ oid (by intro _ e; cases e) (by intro _ e; cases e) hNtfn
+    hObjInv h
 
-theorem ipcUnwrapCapsLoop_preserves_ntfn_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (ntfn : Notification)
-    (hNtfn : st.objects[oid]? = some (.notification ntfn))
+theorem ipcUnwrapCaps_preserves_ep_objects (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (ep : Endpoint) (hEp : st.objects[oid]? = some (.endpoint ep))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.objects[oid]? = some (.notification ntfn) := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact hNtfn
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hNtfn
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact hNtfn
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        have hNtfnNext := ipcTransferSingleCap_preserves_ntfn_objects tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result oid ntfn hNtfn hObjInv hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact ih _ _ _ _ hNtfnNext hObjInvNext hStep
-        | noSlot => exact ih _ _ _ _ hNtfnNext hObjInvNext hStep
-        | grantDenied => exact ih _ _ _ _ hNtfnNext hObjInvNext hStep
-        | sourceRevoked => exact ih _ _ _ _ hNtfnNext hObjInvNext hStep
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    st'.objects[oid]? = some (.endpoint ep) :=
+  ipcUnwrapCaps_preserves_nonCNode _ _ _ _ _ _ _ oid (by intro _ e; cases e) (by intro _ e; cases e) hEp
+    hObjInv h
 
-/-- M3-E4: ipcUnwrapCaps preserves all notification objects. Any notification
-in st survives unchanged in st' because ipcUnwrapCaps only modifies CNode
-objects (via cspaceInsertSlot at receiverRoot) and CDT fields. -/
-theorem ipcUnwrapCaps_preserves_ntfn_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (ntfn : Notification)
-    (hNtfn : st.objects[oid]? = some (.notification ntfn))
+theorem ipcUnwrapCaps_preserves_schedContext_objects (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (sc : SchedContext) (hSc : st.objects[oid]? = some (.schedContext sc))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st'.objects[oid]? = some (.notification ntfn) := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hNtfn
-  · exact ipcUnwrapCapsLoop_preserves_ntfn_objects _ _ _ _ _ _ _ _ _ _ _ hNtfn hObjInv hStep
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    st'.objects[oid]? = some (.schedContext sc) :=
+  ipcUnwrapCaps_preserves_nonCNode _ _ _ _ _ _ _ oid (by intro _ e; cases e) (by intro _ e; cases e) hSc
+    hObjInv h
 
-/-- IPC de-threading D3: `ipcUnwrapCapsLoop` preserves all `.reply` objects (it only
-ever writes a CNode at `receiverRoot`).  Mirror of
-`ipcUnwrapCapsLoop_preserves_ntfn_objects`. -/
-theorem ipcUnwrapCapsLoop_preserves_reply_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
-    (hReply : st.objects[oid]? = some (.reply r))
+theorem ipcUnwrapCaps_preserves_reply_objects (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (r : SeLe4n.Kernel.Reply) (hR : st.objects[oid]? = some (.reply r))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.objects[oid]? = some (.reply r) := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact hReply
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hReply
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact hReply
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        have hReplyNext := ipcTransferSingleCap_preserves_reply_objects tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result oid r hReply hObjInv hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
-        | noSlot => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
-        | grantDenied => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
-        | sourceRevoked => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    st'.objects[oid]? = some (.reply r) :=
+  ipcUnwrapCaps_preserves_nonCNode _ _ _ _ _ _ _ oid (by intro _ e; cases e) (by intro _ e; cases e) hR
+    hObjInv h
 
-/-- IPC de-threading D3: `ipcUnwrapCaps` preserves all `.reply` objects. Any reply
-in `st` survives unchanged in `st'` because cap transfer only writes CNodes (via
-`cspaceInsertSlot` at `receiverRoot`) and CDT fields. -/
-theorem ipcUnwrapCaps_preserves_reply_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
-    (hReply : st.objects[oid]? = some (.reply r))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st'.objects[oid]? = some (.reply r) := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hReply
-  · exact ipcUnwrapCapsLoop_preserves_reply_objects _ _ _ _ _ _ _ _ _ _ _ hReply hObjInv hStep
+/-- IPC de-threading D4 Slice 2b: a post-state endpoint pulls back to the same
+pre-state endpoint. -/
+theorem ipcUnwrapCaps_endpoint_backward (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (ep : Endpoint) (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
+    (hEp' : st'.objects[oid]? = some (.endpoint ep)) :
+    st.objects[oid]? = some (.endpoint ep) :=
+  ipcUnwrapCaps_nonCNode_backward _ _ _ _ _ _ _ oid (by intro _ e; cases e) (by intro _ e; cases e) hEp'
+    hObjInv h
 
-theorem ipcUnwrapCapsLoop_receiverRoot_not_ntfn
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hNotNtfn : ∀ ntfn, st.objects[receiverRoot]? ≠ some (.notification ntfn))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    ∀ ntfn, st'.objects[receiverRoot]? ≠ some (.notification ntfn) := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact hNotNtfn
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hNotNtfn
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact hNotNtfn
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        have hNextNotNtfn := ipcTransferSingleCap_receiverRoot_not_ntfn tc.cap _
-          receiverRoot nextBase maxExtraCaps st stNext result hObjInv hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
-        | noSlot => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
-        | grantDenied => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
-        | sourceRevoked => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
+/-- A post-state notification was there before. -/
+theorem ipcUnwrapCaps_ntfn_backward (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (ntfn : Notification) (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
+    (hN' : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) :=
+  ipcUnwrapCaps_nonCNode_backward _ _ _ _ _ _ _ oid (by intro _ e; cases e) (by intro _ e; cases e) hN'
+    hObjInv h
 
-theorem ipcUnwrapCapsLoop_preserves_ep_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (ep : Endpoint)
-    (hEp : st.objects[oid]? = some (.endpoint ep))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.objects[oid]? = some (.endpoint ep) := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact hEp
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hEp
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact hEp
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        have hEpNext := ipcTransferSingleCap_preserves_ep_objects tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result oid ep hEp hObjInv hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact ih _ _ _ _ hEpNext hObjInvNext hStep
-        | noSlot => exact ih _ _ _ _ hEpNext hObjInvNext hStep
-        | grantDenied => exact ih _ _ _ _ hEpNext hObjInvNext hStep
-        | sourceRevoked => exact ih _ _ _ _ hEpNext hObjInvNext hStep
+/-- A post-state scheduling context was there before. -/
+theorem ipcUnwrapCaps_schedContext_backward (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (sc : SchedContext) (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
+    (hS' : st'.objects[oid]? = some (.schedContext sc)) :
+    st.objects[oid]? = some (.schedContext sc) :=
+  ipcUnwrapCaps_nonCNode_backward _ _ _ _ _ _ _ oid (by intro _ e; cases e) (by intro _ e; cases e) hS'
+    hObjInv h
 
-/-- ipcUnwrapCaps preserves all endpoint objects. -/
-theorem ipcUnwrapCaps_preserves_ep_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (ep : Endpoint)
-    (hEp : st.objects[oid]? = some (.endpoint ep))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st'.objects[oid]? = some (.endpoint ep) := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hEp
-  · exact ipcUnwrapCapsLoop_preserves_ep_objects _ _ _ _ _ _ _ _ _ _ _ hEp hObjInv hStep
+/-- A post-state reply object was there before. -/
+theorem ipcUnwrapCaps_reply_backward (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
+    (hR' : st'.objects[oid]? = some (.reply r)) :
+    st.objects[oid]? = some (.reply r) :=
+  ipcUnwrapCaps_nonCNode_backward _ _ _ _ _ _ _ oid (by intro _ e; cases e) (by intro _ e; cases e) hR'
+    hObjInv h
 
-theorem ipcUnwrapCapsLoop_preserves_tcb_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (tcb : TCB)
-    (hTcb : st.objects[oid]? = some (.tcb tcb))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
+/-- Every TCB survives the transfer off its space slots' derivation links. -/
+theorem ipcUnwrapCaps_preserves_tcb_objects (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (tcb : TCB) (hTcb : st.objects[oid]? = some (.tcb tcb)) (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') ∧ tcb'.withoutLinks = tcb.withoutLinks := by
-  induction fuel generalizing idx nextBase accResults st tcb with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact ⟨tcb, hTcb, rfl⟩
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨tcb, hTcb, rfl⟩
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact ⟨tcb, hTcb, rfl⟩
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        obtain ⟨t1, hT1, hw1⟩ := ipcTransferSingleCap_preserves_tcb_objects tc.cap _ receiverRoot
-          nextBase maxExtraCaps st stNext result oid tcb hTcb hObjInv hTransfer
-        simp [hTransfer] at hStep
-        cases result <;>
-          (obtain ⟨t2, hT2, hw2⟩ := ih _ _ _ _ _ hT1 hObjInvNext hStep
-           exact ⟨t2, hT2, hw2.trans hw1⟩)
+  rcases ipcUnwrapCaps_object_cases _ _ _ _ _ _ _ oid hObjInv h with h1 | ⟨_, -, -, ⟨cn, hCn⟩, -⟩
+  · exact h1.tcb_fwd hTcb
+  · rw [hTcb] at hCn; cases hCn
 
-/-- IPC de-threading D6 helper: each step of `ipcUnwrapCapsLoop` preserves a SchedContext at
-`oid` — mirror of `ipcUnwrapCapsLoop_preserves_tcb_objects`. -/
-theorem ipcUnwrapCapsLoop_preserves_schedContext_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (sc : SchedContext)
-    (hSc : st.objects[oid]? = some (.schedContext sc))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.objects[oid]? = some (.schedContext sc) := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact hSc
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSc
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact hSc
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        have hScNext := ipcTransferSingleCap_preserves_schedContext_objects tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result oid sc hSc hObjInv hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact ih _ _ _ _ hScNext hObjInvNext hStep
-        | noSlot => exact ih _ _ _ _ hScNext hObjInvNext hStep
-        | grantDenied => exact ih _ _ _ _ hScNext hObjInvNext hStep
-        | sourceRevoked => exact ih _ _ _ _ hScNext hObjInvNext hStep
-
-/-- IPC de-threading D6 helper: `ipcUnwrapCaps` preserves all SchedContext objects. -/
-theorem ipcUnwrapCaps_preserves_schedContext_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (sc : SchedContext)
-    (hSc : st.objects[oid]? = some (.schedContext sc))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st'.objects[oid]? = some (.schedContext sc) := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSc
-  · exact ipcUnwrapCapsLoop_preserves_schedContext_objects _ _ _ _ _ _ _ _ _ _ _ hSc hObjInv hStep
-
-/-- ipcUnwrapCaps preserves every TCB object off its space slots' derivation
-links. -/
-theorem ipcUnwrapCaps_preserves_tcb_objects
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (tcb : TCB)
-    (hTcb : st.objects[oid]? = some (.tcb tcb))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    ∃ tcb', st'.objects[oid]? = some (.tcb tcb') ∧ tcb'.withoutLinks = tcb.withoutLinks := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨tcb, hTcb, rfl⟩
-  · exact ipcUnwrapCapsLoop_preserves_tcb_objects _ _ _ _ _ _ _ _ _ _ _ hTcb hObjInv hStep
-
-/-- IPC de-threading D2: each step of `ipcUnwrapCapsLoop` leaves `receiverRoot` **either
-unchanged or a CNode** — a step that mutates `receiverRoot` does so only via a successful
-`ipcTransferSingleCap`, which requires (and preserves) a CNode there; otherwise it
-short-circuits with the state unchanged.  So the post-loop object at `receiverRoot` is
-either the original or a CNode — never a freshly-introduced object of another kind. -/
-theorem ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.objects[receiverRoot]? = st.objects[receiverRoot]? ∨
-      ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e => simp [hTransfer] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        obtain ⟨cn, hCn⟩ := ipcTransferSingleCap_ok_implies_cnode_at_root tc.cap _ receiverRoot
-          nextBase maxExtraCaps st stNext result hTransfer
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        obtain ⟨cnNext, hCnNext⟩ := ipcTransferSingleCap_receiverRoot_stays_cnode tc.cap _ receiverRoot
-          nextBase maxExtraCaps st stNext result hObjInv hTransfer
-        simp [hTransfer] at hStep
-        have key : st'.objects[receiverRoot]? = stNext.objects[receiverRoot]? ∨
-            ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
-          cases result with
-          | installed c s => exact ih _ _ _ stNext hObjInvNext hStep
-          | noSlot => exact ih _ _ _ stNext hObjInvNext hStep
-          | grantDenied => exact ih _ _ _ stNext hObjInvNext hStep
-          | sourceRevoked => exact ih _ _ _ stNext hObjInvNext hStep
-        rcases key with h | h
-        · exact Or.inr ⟨cnNext, h.trans hCnNext⟩
-        · exact Or.inr h
-
-/-- M3-E4: ipcUnwrapCapsLoop preserves CNode type at receiverRoot.
-If receiverRoot is a CNode before the loop, it remains a CNode after
-(though the CNode contents may change as caps are inserted). -/
-theorem ipcUnwrapCapsLoop_preserves_cnode_at_root
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (cn : CNode)
-    (hCn : st.objects[receiverRoot]? = some (.cnode cn))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
-  induction fuel generalizing idx nextBase accResults st cn with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        simp [hTransfer] at hStep
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hObjInv hTransfer
-        have ⟨cn', hCn'⟩ := ipcTransferSingleCap_receiverRoot_stays_cnode tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st stNext result hObjInv hTransfer
-        cases result with
-        | installed c s => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
-        | noSlot => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
-        | grantDenied => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
-        | sourceRevoked => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
-
-/-- M3-E4: ipcUnwrapCaps preserves CNode type at receiverRoot. -/
-theorem ipcUnwrapCaps_preserves_cnode_at_root
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (cn : CNode)
-    (hCn : st.objects[receiverRoot]? = some (.cnode cn))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
-  · exact ipcUnwrapCapsLoop_preserves_cnode_at_root _ _ _ _ _ _ _ _ _ _ hCn hObjInv hStep
-
-/-- IPC de-threading D2: `ipcUnwrapCaps` leaves `receiverRoot` either unchanged or a CNode
-(grant-denied / no-grant paths leave the whole state unchanged; the loop case is
-`ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode`). -/
-theorem ipcUnwrapCaps_objects_at_root_orig_or_cnode
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st'.objects[receiverRoot]? = st.objects[receiverRoot]? ∨
-      ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-  · exact ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode _ _ _ _ _ _ _ _ _ hObjInv hStep
-
-/-- IPC de-threading D2: `ipcUnwrapCaps` preserves TCB objects **backward** — a `.tcb` in
-the post-state was a `.tcb` in the pre-state, with the same fields off its space
-slots' derivation links (`TCB.withoutLinks`).  Cap transfer never creates a
-TCB: it writes only `receiverRoot`, and only as a CNode
-(`ipcUnwrapCaps_objects_at_root_orig_or_cnode`), so a post-state TCB at `receiverRoot`
-means that slot was unchanged; every other slot is framed by
-`ipcUnwrapCaps_preserves_objects_ne`. -/
-theorem ipcUnwrapCaps_tcb_backward
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (tcb : TCB)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st'))
+/-- IPC de-threading D2: a TCB after the transfer was a TCB before, with the same
+fields off its space slots' derivation links. -/
+theorem ipcUnwrapCaps_tcb_backward (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (tcb : TCB) (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'))
     (hTcb' : st'.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb₀, st.objects[oid]? = some (.tcb tcb₀) ∧ tcb.withoutLinks = tcb₀.withoutLinks := by
-  by_cases hNe : oid = receiverRoot
-  · rw [hNe] at hTcb' ⊢
-    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps receiverRoot slotBase
-      grantRight st st' summary hObjInv hStep with h | h
-    · rw [h] at hTcb'; exact ⟨tcb, hTcb', rfl⟩
-    · obtain ⟨cn', hCn'⟩ := h; rw [hCn'] at hTcb'; exact absurd hTcb' (by simp)
-  · exact (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase grantRight
-        st st' summary oid hNe hObjInv hStep).tcb_back hTcb'
+  rcases ipcUnwrapCaps_object_cases _ _ _ _ _ _ _ oid hObjInv h with h1 | ⟨_, -, -, -, ⟨cn, hCn⟩⟩
+  · exact h1.tcb_back hTcb'
+  · rw [hTcb'] at hCn; cases hCn
 
-/-- IPC de-threading D4 Slice 2b: `ipcUnwrapCaps` backward-preserves endpoints (mirror of
-`ipcUnwrapCaps_tcb_backward`): a post-state endpoint pulls back to the same pre-state endpoint,
-since the cap transfer writes only a CNode at `receiverRoot`. -/
-theorem ipcUnwrapCaps_endpoint_backward
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (ep : Endpoint)
+/-- **WS-RR RR8.12**: the transfer fixes the whole `getTcb?` projection off the
+space slots' derivation links. -/
+theorem ipcUnwrapCaps_getTcb?_eq (caps : Array TransferCap)
+    (endpointId : SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
+    (st st' : SystemState) (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st'))
-    (hEp' : st'.objects[oid]? = some (.endpoint ep)) :
-    st.objects[oid]? = some (.endpoint ep) := by
-  by_cases hNe : oid = receiverRoot
-  · rw [hNe] at hEp' ⊢
-    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps receiverRoot slotBase
-      grantRight st st' summary hObjInv hStep with h | h
-    · rw [h] at hEp'; exact hEp'
-    · obtain ⟨cn', hCn'⟩ := h; rw [hCn'] at hEp'; exact absurd hEp' (by simp)
-  · exact (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase grantRight
-        st st' summary oid hNe hObjInv hStep).obj_back hEp'
-      (fun _ h => KernelObject.noConfusion h)
-
-/-- M3-E4: receiverRoot is never a notification after ipcUnwrapCaps. In the
-grant-denied path state is unchanged. In the loop, each ipcTransferSingleCap
-either errors (state unchanged) or stores a CNode at receiverRoot. -/
-theorem ipcUnwrapCaps_receiverRoot_not_ntfn
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hNotNtfn : ∀ ntfn, st.objects[receiverRoot]? ≠ some (.notification ntfn))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    ∀ ntfn, st'.objects[receiverRoot]? ≠ some (.notification ntfn) := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hNotNtfn
-  · exact ipcUnwrapCapsLoop_receiverRoot_not_ntfn _ _ _ _ _ _ _ _ _ hNotNtfn hObjInv hStep
-
-/-- **WS-RR RR8.12 (PR #897 Codex review)**: `ipcUnwrapCaps` fixes the whole
-`getTcb?` projection off the space slots' derivation links -- forward by `ipcUnwrapCaps_preserves_tcb_objects`, back by
-`ipcUnwrapCaps_tcb_backward`, so the two directions join into an equality.
-
-Cap transfer writes only `receiverRoot`, and only as a CNode, so no TCB is
-created, destroyed or altered.  The `determineTargetCore` family reaches the same
-conclusion one field down; this is the whole record, because the donation guard
-reads `ipcState` rather than `cpuAffinity`.
-
-**WS-RR RR8.16** (`v0.35.200`): relocated here from
-`IPC/CrossCore/EndpointReply.lean`, where it was `private`.  It frames a
-model-layer primitive declared in this module, and the cross-core `.call` leg's
-scheduler-bundle lift asks the same question of the same step — so it belongs
-beside `ipcUnwrapCaps`, not in whichever consumer first needed it. -/
-theorem ipcUnwrapCaps_getTcb?_eq (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool) (st st' : SystemState)
-    (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     (st'.getTcb? x).map TCB.withoutLinks = (st.getTcb? x).map TCB.withoutLinks := by
-  have hFwd : ∀ t, st.objects[x.toObjId]? = some (.tcb t) →
-      ∃ t', st'.objects[x.toObjId]? = some (.tcb t') ∧ t'.withoutLinks = t.withoutLinks :=
-    fun t hT => ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase grantRight st st'
-      summary x.toObjId t hT hObjInv hStep
   simp only [SystemState.getTcb?]
   cases hT' : st'.objects[x.toObjId]? with
   | some obj' =>
     cases obj' with
     | tcb tcb' =>
-      obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-        st st' summary x.toObjId tcb' hObjInv hStep hT'
+      obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward _ _ _ _ _ _ _ x.toObjId tcb' hObjInv h hT'
       rw [h0]; simp only [Option.map_some, hw]
     | _ =>
       cases hT : st.objects[x.toObjId]? with
       | none => rfl
       | some obj =>
         cases obj with
-        | tcb t => obtain ⟨t', h', _⟩ := hFwd t hT; rw [h'] at hT'; cases hT'
+        | tcb t =>
+          obtain ⟨t', h', _⟩ := ipcUnwrapCaps_preserves_tcb_objects _ _ _ _ _ _ _ x.toObjId t hT hObjInv h
+          rw [h'] at hT'; cases hT'
         | _ => rfl
   | none =>
     cases hT : st.objects[x.toObjId]? with
     | none => rfl
     | some obj =>
       cases obj with
-      | tcb t => obtain ⟨t', h', _⟩ := hFwd t hT; rw [h'] at hT'; cases hT'
+      | tcb t =>
+        obtain ⟨t', h', _⟩ := ipcUnwrapCaps_preserves_tcb_objects _ _ _ _ _ _ _ x.toObjId t hT hObjInv h
+        rw [h'] at hT'; cases hT'
       | _ => rfl
+
+/-- A transfer with no receive slot installs nothing: it unwraps or stops, and
+writes no object. -/
+theorem ipcUnwrapCaps_objects_of_noSlot {caps : Array TransferCap}
+    {endpointId : SeLe4n.ObjId} {rtcb : TCB} {st st' : SystemState}
+    {summary : CapTransferSummary}
+    (h : ipcUnwrapCaps caps endpointId rtcb none st = .ok (summary, st')) :
+    st'.objects = st.objects ∧ st'.cdt = st.cdt :=
+  ipcUnwrapCaps_rel (fun a b => a.objects = b.objects ∧ a.cdt = b.cdt) (fun _ => ⟨rfl, rfl⟩)
+    (fun _ _ _ h1 h2 => ⟨h1.1.trans h2.1, h1.2.trans h2.2⟩)
+    (fun _ _ _ => ⟨recordUnwrappedBadge_objects _ _ _ _, recordUnwrappedBadge_cdt _ _ _ _⟩)
+    (fun _ _ _ _ hN => by cases hN) h
 
 end SeLe4n.Kernel

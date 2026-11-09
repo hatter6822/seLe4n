@@ -395,10 +395,10 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
   · split <;> exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- Installing transferred capabilities writes CNodes and the CDT only. -/
-theorem ipcUnwrapCaps_keyFrame {caps : Array TransferCap} {receiverRoot : SeLe4n.ObjId}
-    {slotBase : SeLe4n.Slot} {grantRight : Bool} {st st' : SystemState}
+theorem ipcUnwrapCaps_keyFrame {caps : Array TransferCap} {endpointId : SeLe4n.ObjId}
+    {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState}
     {summary : CapTransferSummary} (hInv : st.objects.invExt)
-    (h : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     capabilityKeyFrame st st' :=
   ⟨keyInputsEq_of_lookups
       (fun t => TCB.map_proj_of_map_withoutLinks_eq tcbKeyCore
@@ -408,27 +408,28 @@ theorem ipcUnwrapCaps_keyFrame {caps : Array TransferCap} {receiverRoot : SeLe4n
     ipcUnwrapCaps_preserves_objects_invExt _ _ _ _ _ _ _ hInv h⟩
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup mints CDT nodes in the sender's
-CSpace and installs into the receiver's CNodes: no key input. -/
+CSpace and installs into the receive slot's CNode: no key input. -/
 theorem receiveTransferCaps_keyFrame
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {st st' : SystemState} {summary : CapTransferSummary}
-    (hInv : st.objects.invExt) (h : receiveTransferCaps req root base st = .ok (summary, st')) :
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
+    {summary : CapTransferSummary} (hInv : st.objects.invExt)
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
     capabilityKeyFrame st st' := by
   obtain ⟨stR, _, hO, hS, _, hOr⟩ := receiveTransferCaps_frame h
   have h1 := capabilityKeyFrame_of_objects_scheduler_eq hInv hO hS
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact h1
   · exact h1.trans (ipcUnwrapCaps_keyFrame h1.2.2 hU)
 
 /-- The send with capability transfer covers on every outcome. -/
 theorem endpointSendDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
     {sender : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState}
+    {executingCore : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
     stepCovers e st (endpointSendDualWithCapsOnCore endpointId sender payload
-      receiverSlotBase executingCore st).1 ∧
+      executingCore st).1 ∧
     (endpointSendDualWithCapsOnCore endpointId sender payload
-      receiverSlotBase executingCore st).1.objects.invExt := by
+      executingCore st).1.objects.invExt := by
   unfold endpointSendDualWithCapsOnCore
   obtain ⟨hSend, hSendInv⟩ := endpointSendDualOnCore_stepCovers e
     (endpointId := endpointId) (sender := sender)
@@ -453,12 +454,12 @@ theorem endpointSendDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeL
 /-- The live checked send covers on every outcome. -/
 theorem endpointSendCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {endpointId : SeLe4n.ObjId} {sender : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId}
+    {executingCore : CoreId}
     {st : SystemState} (hInv : st.objects.invExt) :
     stepCovers e st (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-      receiverSlotBase executingCore st).1 ∧
+      executingCore st).1 ∧
     (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-      receiverSlotBase executingCore st).1.objects.invExt := by
+      executingCore st).1.objects.invExt := by
   unfold endpointSendCrossCoreDispatchChecked
   split
   · exact endpointSendDualWithCapsOnCore_stepCovers e hInv
@@ -610,12 +611,10 @@ theorem endpointReceiveDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.O
 /-- The receive with capability transfer covers on every outcome. -/
 theorem endpointReceiveDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
     {receiver : SeLe4n.ThreadId} {replyId : Option SeLe4n.ReplyId}
-    {receiverCspaceRoot : SeLe4n.ObjId} {receiverSlotBase : SeLe4n.Slot}
+
     {executingCore : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    stepCovers e st (endpointReceiveDualWithCapsOnCore endpointId receiver replyId
-      receiverCspaceRoot receiverSlotBase executingCore st).1 ∧
-    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId
-      receiverCspaceRoot receiverSlotBase executingCore st).1.objects.invExt := by
+    stepCovers e st (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 ∧
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1.objects.invExt := by
   unfold endpointReceiveDualWithCapsOnCore
   obtain ⟨hRcv, hRcvInv⟩ := endpointReceiveDualOnCore_stepCovers e
     (endpointId := endpointId) (receiver := receiver) (replyId := replyId)
@@ -896,12 +895,12 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
 
 theorem endpointCallWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState}
+    {executingCore : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
     stepCovers e st (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1 ∧
+      executingCore st).1 ∧
     (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1.objects.invExt := by
+      executingCore st).1.objects.invExt := by
   unfold endpointCallWithCapsOnCore
   obtain ⟨hC, hCInv⟩ := endpointCallOnCore_stepCovers e
     (endpointId := endpointId) (caller := caller)
@@ -926,19 +925,18 @@ theorem endpointCallWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.
 the chain walk from it. -/
 theorem endpointCallCrossCoreDispatch_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState}
+    {executingCore : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
     stepCovers e st (endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st).1 ∧
+      executingCore st).1 ∧
     (endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st).1.objects.invExt := by
+      executingCore st).1.objects.invExt := by
   unfold endpointCallCrossCoreDispatch
   obtain ⟨hC, hCInv⟩ := endpointCallWithCapsOnCore_stepCovers e
     (endpointId := endpointId) (caller := caller) (payload := payload)
-    (receiverSlotBase := receiverSlotBase)
     (executingCore := executingCore) hInv
   generalize endpointCallWithCapsOnCore endpointId caller payload
-    receiverSlotBase executingCore st = r at hC hCInv
+    executingCore st = r at hC hCInv
   obtain ⟨st1, res⟩ := r
   dsimp only at hC hCInv ⊢
   cases res with
@@ -956,12 +954,12 @@ theorem endpointCallCrossCoreDispatch_stepCovers (e : CoreId) {endpointId : SeLe
 
 theorem endpointCallCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId}
+    {executingCore : CoreId}
     {st : SystemState} (hInv : st.objects.invExt) :
     stepCovers e st (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
-      receiverSlotBase executingCore st).1 ∧
+      executingCore st).1 ∧
     (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
-      receiverSlotBase executingCore st).1.objects.invExt := by
+      executingCore st).1.objects.invExt := by
   unfold endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch_stepCovers e hInv
@@ -1668,11 +1666,10 @@ staging. -/
 theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
-    {msg : IpcMessage} {receiverCspaceRoot : SeLe4n.ObjId} {receiverSlotBase : SeLe4n.Slot}
+    {msg : IpcMessage}
     {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg receiverCspaceRoot
-      receiverSlotBase executingCore st = .ok (summary, st')) :
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg executingCore st = .ok (summary, st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
@@ -1691,11 +1688,10 @@ theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
   rename_i ret st1p hPop
   obtain ⟨hP, hPInv⟩ := replyRecvPopDonation_stepCovers e hRInv hPop
   obtain ⟨hV, hVInv⟩ := endpointReceiveDualWithCapsOnCore_stepCovers e (endpointId := epId)
-    (receiver := tid) (replyId := some rid) (receiverCspaceRoot := receiverCspaceRoot)
-    (receiverSlotBase := receiverSlotBase) (executingCore := executingCore) hPInv
+    (receiver := tid) (replyId := some rid)
+    (executingCore := executingCore) hPInv
   revert h hV hVInv
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) receiverCspaceRoot
-    receiverSlotBase executingCore st1p = r2
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore st1p = r2
   obtain ⟨st2, res2⟩ := r2
   cases res2 with
   | error _ => intro h; cases h

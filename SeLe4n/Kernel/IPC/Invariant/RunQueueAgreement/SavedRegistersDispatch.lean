@@ -630,17 +630,17 @@ theorem faultDeliverOnCoreChecked_savedRegsWrittenFree {ctx : LabelingContext}
     rw [hRes]
     dsimp only
     have h1 := endpointCallCrossCoreDispatch_savedRegsUnwritten tgt.endpoint tid
-      (.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c hInv
+      (.fault f fctx tgt.cap.badge) c hInv
     revert h1
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid (.fault f fctx tgt.cap.badge)
-      (SeLe4n.Slot.ofNat 0) c s = r
+      c s = r
     obtain ⟨s1, res⟩ := r
     cases res with
     | error _ => intro _; exact hSusp
     | ok x =>
       intro h1
       obtain ⟨w, i⟩ := stageWokenDelivery_savedRegsWrittenFree (e := e) (base := base)
-        x.1.installedCount h1.2 (hHead _)
+        x.1.capInfo h1.2 (hHead _)
       exact (h1.writtenFree.trans w).trans (.of_kept
         (recordPendingFault_savedRegsKeptExcept _ tid _ i) fun _ h => h.elim)
   · exact hSusp

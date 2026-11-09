@@ -466,7 +466,7 @@ impl SyscallArgs {
 /// side — so a half-bumped tree cannot build its own test lane, let
 /// alone pass it (plan §3.6).  The Lean side is a `decide` theorem
 /// (`syscallAbiVersion_pinned`), failing the kernel build itself.
-pub const SYSCALL_ABI_VERSION: u64 = 3;
+pub const SYSCALL_ABI_VERSION: u64 = 4;
 
 /// WS-RR RR4 (ABI v3): the first kernel-status label — `0xFFF00`, the top
 /// 256 labels of the 20-bit field.  Hand-duplicated from
@@ -577,7 +577,7 @@ pub enum SvcOutcome {
 
 /// WS-RA: the label-encoded error frame for a prefilter rejection —
 /// `x0 = 0`, `x1` = `MessageInfo {length 0, extraCaps 0, label
-/// ERROR_LABEL_BASE + disc}` = `(ERROR_LABEL_BASE + disc) << 9`, no message
+/// ERROR_LABEL_BASE + disc}` = `(ERROR_LABEL_BASE + disc) << 12`, no message
 /// registers.  Mirrors Lean's `Architecture.errorFrame` (ABI v3: the status
 /// range is the top of the label field, so label `0` means success,
 /// discriminant `0` is a real error, and a delivered message's label —
@@ -585,7 +585,7 @@ pub enum SvcOutcome {
 pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
     [
         0,
-        (ERROR_LABEL_BASE + (kernel_error_discriminant as u64)) << 9,
+        (ERROR_LABEL_BASE + (kernel_error_discriminant as u64)) << 12,
         0,
         0,
         0,
@@ -638,7 +638,7 @@ const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE > 56);
 /// was installed, not part of the verified return convention (the Lean model stages
 /// real frames only — `SyscallOutcome.mailboxFrame .blocks = .zero`).
 pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
-    [0, BLOCKED_RESUME_SENTINEL_LABEL << 9, 0, 0, 0, 0]
+    [0, BLOCKED_RESUME_SENTINEL_LABEL << 12, 0, 0, 0, 0]
 }
 
 /// AN9-F.2 / AN9-F.3 (restated by WS-RA): top-level SVC dispatcher.
@@ -1012,7 +1012,7 @@ mod tests {
         // NOT bleed into the length (the pre-fix 0x0FFF mask read label
         // bits 9-11 as length).
         let mut frame = zero_frame();
-        frame.gprs[1] = (0xCAFE_u64 << 9) | (0x3 << 7) | 0x04;
+        frame.gprs[1] = (0xCAFE_u64 << 12) | (0x3 << 7) | 0x04;
         let args = SyscallArgs::from_trap_frame(&frame);
         assert_eq!(args.message_length(), 4);
     }
@@ -1073,7 +1073,7 @@ mod tests {
     fn syscall_abi_version_matches_canonical_pin() {
         // The literal itself, pinned at runtime so a coordinated bump of
         // both mirrors without a protocol change still surfaces here.
-        assert_eq!(SYSCALL_ABI_VERSION, 3);
+        assert_eq!(SYSCALL_ABI_VERSION, 4);
         assert_eq!(ERROR_LABEL_BASE, 0xFFF00);
     }
 
@@ -1101,17 +1101,17 @@ mod tests {
         for disc in 0..=57u32 {
             let regs = error_frame_regs(disc);
             assert_eq!(
-                regs[1] >> 9,
+                regs[1] >> 12,
                 ERROR_LABEL_BASE + (disc as u64),
                 "label must be ERROR_LABEL_BASE + disc"
             );
-            assert_ne!(regs[1] >> 9, 0, "no error may alias the success label");
+            assert_ne!(regs[1] >> 12, 0, "no error may alias the success label");
             assert!(
-                regs[1] >> 9 >= ERROR_LABEL_BASE,
+                regs[1] >> 12 >= ERROR_LABEL_BASE,
                 "no error may fall into the delivery label range"
             );
             assert!(
-                regs[1] >> 9 <= BLOCKED_RESUME_SENTINEL_LABEL,
+                regs[1] >> 12 <= BLOCKED_RESUME_SENTINEL_LABEL,
                 "label must stay in-field"
             );
             assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
@@ -1128,7 +1128,7 @@ mod tests {
         // The four fault tags a handler receives are deliveries, not status:
         // the property v2 lacked.
         for tag in [1u64, 2, 3, 6] {
-            let resp = sele4n_abi::decode_response([0, tag << 9, 0, 0, 0, 0, 0])
+            let resp = sele4n_abi::decode_response([0, tag << 12, 0, 0, 0, 0, 0])
                 .expect("a fault tag label is a delivery");
             assert_eq!(resp.msg_info().label(), tag);
         }
@@ -1140,7 +1140,7 @@ mod tests {
     #[test]
     fn blocked_resume_sentinel_shape() {
         let regs = blocked_resume_sentinel_regs();
-        assert_eq!(regs[1] >> 9, BLOCKED_RESUME_SENTINEL_LABEL);
+        assert_eq!(regs[1] >> 12, BLOCKED_RESUME_SENTINEL_LABEL);
         assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
         assert_eq!([regs[0], regs[2], regs[3], regs[4], regs[5]], [0; 5]);
         // In-field: the hand-duplicated label equals the canonical

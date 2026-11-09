@@ -274,28 +274,27 @@ theorem endpointSendDualChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (s₁ s₂ : SystemState) (r₁ : CapTransferSummary) (s₁' : SystemState)
     (r₂ : CapTransferSummary) (s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hProjection : ∀ t r t', endpointSendDualWithCaps endpointId sender payload
-        receiverSlotBase t = .ok (r, t') →
+        t = .ok (r, t') →
         projectState ctx observer t' = projectState ctx observer t)
     (hStep₁ : endpointSendDualChecked ctx endpointId sender payload
-        receiverSlotBase s₁ = .ok (r₁, s₁'))
+        s₁ = .ok (r₁, s₁'))
     (hStep₂ : endpointSendDualChecked ctx endpointId sender payload
-        receiverSlotBase s₂ = .ok (r₂, s₂')) :
+        s₂ = .ok (r₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   -- WS-SM SM8.C: the gate the wrapper branched on carries both conjuncts; the
   -- rewrite below needs the override half as well as the lattice half.
   have hGate := enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender payload
-    receiverSlotBase s₁ r₁ s₁' hStep₁
+    s₁ r₁ s₁' hStep₁
   have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
   have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender payload
-    receiverSlotBase s₁ hFlow hOverride] at hStep₁
+    s₁ hFlow hOverride] at hStep₁
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender payload
-    receiverSlotBase s₂ hFlow hOverride] at hStep₂
+    s₂ hFlow hOverride] at hStep₂
   unfold lowEquivalent; rw [hProjection s₁ r₁ s₁' hStep₁, hProjection s₂ r₂ s₂' hStep₂]; exact hLow
 
 /-- WS-H8/H-07: If notificationSignalChecked succeeds, the resulting state
@@ -637,8 +636,8 @@ theorem writeDeliveredFrameToTcb_preserves_projection
 by the blanket above) or is the identity. -/
 theorem stageDeliveredMessage_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (tid : SeLe4n.ThreadId) (installedCaps : Nat) (hObjInv : st.objects.invExt) :
-    projectState ctx observer (Architecture.stageDeliveredMessage st tid installedCaps)
+    (tid : SeLe4n.ThreadId) (capInfo : Nat) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.stageDeliveredMessage st tid capInfo)
       = projectState ctx observer st := by
   unfold Architecture.stageDeliveredMessage
   cases hTcb : st.getTcb? tid with
@@ -658,15 +657,15 @@ above, so every unblocking arm's staging carries its preservation via one
 instance. -/
 theorem stageWokenDelivery_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat)
+    (woken? : Option SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) :
-    projectState ctx observer (Architecture.stageWokenDelivery st woken? installedCaps)
+    projectState ctx observer (Architecture.stageWokenDelivery st woken? capInfo)
       = projectState ctx observer st := by
   cases woken? with
   | none => rfl
   | some tid =>
       exact stageDeliveredMessage_preserves_projection ctx observer st tid
-        installedCaps hObjInv
+        capInfo hObjInv
 
 /-- WS-RA RA.B.5b: the completion stager (a woken plain sender's unit
 frame) is projection-invisible for every observer — its only write is

@@ -655,12 +655,11 @@ preservation). -/
 theorem endpointCallWithCaps_preserves_ipcInvariant
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller payload
-             receiverSlotBase st = .ok (summary, st')) :
+             st = .ok (summary, st')) :
     ipcInvariant st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller payload st with
@@ -682,13 +681,12 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
     | some r =>
       simp only [hReq] at hStep
       split at hStep
-      · rename_i recvRoot _
-        obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
+      · obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
         have hInvR : ipcInvariant stR := fun oid ntfn h => hInvMid oid ntfn (hO ▸ h)
-        rcases hOr with rfl | hU
+        rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
         · exact hInvR
-        · exact ipcUnwrapCaps_preserves_ipcInvariant _ recvRoot
-            receiverSlotBase _ stR _ summary hInvR (hO ▸ hObjInvMid) hU
+        · exact ipcUnwrapCaps_preserves_ipcInvariant _ _ _ _ stR _ summary hInvR
+            (hO ▸ hObjInvMid) hU
       · cases hStep
 
 -- ============================================================================

@@ -630,6 +630,53 @@ words the step never uses.  A code, so the entry builds no `Option`. -/
     | none => 0
   else 0
 
+/-- **The thread whose receive path a capability transfer reads** (seL4's
+`getReceiveSlots` on the receiver's IPC buffer), as a code (`tid + 1`, 0 for
+none): the caller itself on a receive or a reply-receive, and on a send or a
+call the head of the receive queue of the endpoint the invoked capability names
+(resolved as `rendezvousSenderCode` resolves it).  A thread the step then takes
+no capability for only has three words read that the step never uses. -/
+@[inline] def transferReceiverCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (capWord : UInt64) : Nat :=
+  if syscallId.toNat = SyscallId.receive.toNat ∨ syscallId.toNat = SyscallId.replyRecv.toNat then
+    tid.toNat + 1
+  else if syscallId.toNat = SyscallId.send.toNat ∨ syscallId.toNat = SyscallId.call.toNat then
+    match st.getTcb? tid with
+    | some tcb =>
+      match st.getCNode? tcb.cspaceRoot with
+      | some rootCn =>
+        resolveCapAddressKUnrolled tcb.cspaceRoot (SeLe4n.CPtr.ofWord capWord) rootCn.depth st
+          (fun _ => 0)
+          (fun cnode slot =>
+            match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+            | some cap =>
+              match cap.target with
+              | .object epId =>
+                match st.getEndpoint? epId with
+                | some ep =>
+                  match ep.receiveQ.head with
+                  | some r => r.toNat + 1
+                  | none => 0
+                | none => 0
+              | _ => 0
+            | none => 0)
+      | none => 0
+    | none => 0
+  else 0
+
+/-- **The receive-path words read from RAM** (`receiveSlot?` reads them): the
+receiver's `receive_cnode`, `receive_index` and `receive_depth`, three adjacent
+words of its IPC buffer, so one page (`ipcBufferWords_within_alignment`),
+captured into the core's buffer from pair `idx` as one run; the next free pair
+is answered.  A receiver whose buffer does not resolve has none read. -/
+@[inline] def captureReceivePath (st : SystemState) (rtcb : TCB) (idx : Nat) : BaseIO Nat :=
+  match Architecture.IpcBufferRead.ipcBufferWordPAddr? st rtcb
+      Architecture.IpcBufferRead.ipcBufferReceiveCNodeWord false with
+  | some pa => do
+    Platform.FFI.ffiCaptureUserWords idx.toUInt64 pa.toNat.toUInt64 3
+    pure (idx + 3)
+  | none => pure idx
+
 /-- **WS-ZA ZA5.2: the overflow words a receive reads from the sender it takes**
 (`rendezvousSenderCode`): that sender's slots, cut to the length in its saved
 message info.  The entry's capture reads exactly these (its second
@@ -678,7 +725,9 @@ for that frame (zeroes from the carve), never what the thread wrote.
 
 This reads each word the decode will read — the caller's slots
 (`IpcBufferRead.callerOverflowAddrs`) and, on a receive that takes a blocked
-sender, that sender's (`rendezvousSenderOverflowAddrs`) — from RAM into the
+sender, that sender's (`rendezvousSenderOverflowAddrs`) — and the receive-path
+words a capability transfer reads (`transferReceiverCode`,
+`captureReceivePath`) from RAM into the
 executing core's entry-word buffer, and answers how many pairs it read; the
 atomic step hands the buffer to the state before the decode
 (`IpcBufferRead.syncUserWords`) and the committed state drops it
@@ -701,15 +750,21 @@ word is built: the entry allocates nothing for its overflow words. -/
     | none => pure 0
     | some tcb =>
       let stop := Architecture.IpcBufferRead.overflowStop msgInfo
-      let n ← captureOverflowRuns st tcb stop stop 0 0
-      match rendezvousSenderCode st tid syscallId capWord with
+      let n0 ← captureOverflowRuns st tcb stop stop 0 0
+      let n ← match rendezvousSenderCode st tid syscallId capWord with
+        | 0 => pure n0
+        | k + 1 =>
+          match st.getTcb? ⟨k⟩ with
+          | some stcb =>
+            let sstop := Architecture.IpcBufferRead.overflowStop
+              (readRegWord stcb.registerContext SeLe4n.arm64DefaultLayout.msgInfoReg)
+            captureOverflowRuns st stcb sstop sstop 0 n0
+          | none => pure n0
+      match transferReceiverCode st tid syscallId capWord with
       | 0 => pure n
       | k + 1 =>
         match st.getTcb? ⟨k⟩ with
-        | some stcb =>
-          let sstop := Architecture.IpcBufferRead.overflowStop
-            (readRegWord stcb.registerContext SeLe4n.arm64DefaultLayout.msgInfoReg)
-          captureOverflowRuns st stcb sstop sstop 0 n
+        | some rtcb => captureReceivePath st rtcb n
         | none => pure n
 
 /-- **The context the syscall entry dispatches on, or the outcome it answers

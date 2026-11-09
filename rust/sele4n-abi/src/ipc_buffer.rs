@@ -12,6 +12,12 @@
 //! | 0–3    | Inline ARM64 registers x2–x5      |
 //! | 4–119  | IPC buffer `msg[0..116]`          |
 //!
+//! After the message words come `user_data`, `caps_or_badges` (where the
+//! kernel writes the badge of each capability a delivery unwrapped) and the
+//! receive path (`receive_cnode`, `receive_index`, `receive_depth`): the slot
+//! a receive installs a transferred capability into, seL4's
+//! `seL4_SetCapReceivePath`.
+//!
 //! # Memory Layout
 //!
 //! The buffer must reside in a page mapped into the thread's virtual
@@ -78,8 +84,18 @@ pub struct IpcBuffer {
     pub msg: [u64; OVERFLOW_SLOTS],
     /// User data word (application-defined, not used by kernel).
     pub user_data: u64,
-    /// Capability transfer badges/addresses.
+    /// Capability transfer badges: on a delivery, `caps_or_badges[i]` holds
+    /// the badge of extra capability `i` when the kernel unwrapped it (the
+    /// `MessageInfo`'s `caps_unwrapped` bit `i`).
     pub caps_or_badges: [u64; MAX_CAPS],
+    /// The CNode capability, in this thread's CSpace, that the receive slot
+    /// is addressed in (seL4's `receiveCNode`).
+    pub receive_cnode: u64,
+    /// The receive slot's address within that CNode (seL4's `receiveIndex`).
+    pub receive_index: u64,
+    /// How many bits of `receive_index` resolve the slot (seL4's
+    /// `receiveDepth`).
+    pub receive_depth: u64,
 }
 
 impl Default for IpcBuffer {
@@ -95,7 +111,22 @@ impl IpcBuffer {
             msg: [0; OVERFLOW_SLOTS],
             user_data: 0,
             caps_or_badges: [0; MAX_CAPS],
+            receive_cnode: 0,
+            receive_index: 0,
+            receive_depth: 0,
         }
+    }
+
+    /// Name the slot a receive installs a transferred capability into: the
+    /// slot `index` resolved `depth` bits deep in the CNode that `cnode`
+    /// names in this thread's CSpace (seL4's `seL4_SetCapReceivePath`).  A
+    /// path that does not resolve to an empty slot receives no capability;
+    /// the transfer stops there without a fault, as in seL4.
+    #[inline]
+    pub fn set_cap_receive_path(&mut self, cnode: u64, index: u64, depth: u64) {
+        self.receive_cnode = cnode;
+        self.receive_index = index;
+        self.receive_depth = depth;
     }
 
     /// Set a message register by absolute index (0..120).
@@ -177,8 +208,14 @@ impl IpcBuffer {
 // is a `VAddr` pointing to this buffer in the thread's virtual address space.
 // The kernel reads overflow message registers starting at offset 0.
 const _: () = {
-    // Total size: 116 overflow u64s + 1 user_data u64 + 3 caps u64s = 120 u64s = 960 bytes
-    assert!(core::mem::size_of::<IpcBuffer>() == 960);
+    // Total size: 116 overflow u64s + 1 user_data u64 + 3 caps u64s + the
+    // three receive-path u64s = 123 u64s = 984 bytes, inside the 1024-byte
+    // aligned buffer (`args::tcb::IPC_BUFFER_ALIGNMENT`).
+    assert!(core::mem::size_of::<IpcBuffer>() == 984);
+    assert!(core::mem::offset_of!(IpcBuffer, caps_or_badges) == 936);
+    assert!(core::mem::offset_of!(IpcBuffer, receive_cnode) == 960);
+    assert!(core::mem::offset_of!(IpcBuffer, receive_index) == 968);
+    assert!(core::mem::offset_of!(IpcBuffer, receive_depth) == 976);
     // Alignment: u64 = 8 bytes
     assert!(core::mem::align_of::<IpcBuffer>() == 8);
     // Field offset: msg starts at offset 0 (first field in repr(C))
@@ -197,6 +234,20 @@ mod tests {
         assert!(buf.msg.iter().all(|&v| v == 0));
         assert_eq!(buf.user_data, 0);
         assert_eq!(buf.caps_or_badges, [0; 3]);
+        assert_eq!(
+            (buf.receive_cnode, buf.receive_index, buf.receive_depth),
+            (0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn set_cap_receive_path_writes_the_three_words() {
+        let mut buf = IpcBuffer::new();
+        buf.set_cap_receive_path(7, 0x2a, 64);
+        assert_eq!(
+            (buf.receive_cnode, buf.receive_index, buf.receive_depth),
+            (7, 0x2a, 64)
+        );
     }
 
     // AK4-F (R-ABI-M04): `set_mr(0..3)` now returns `Err(InvalidArgument)`

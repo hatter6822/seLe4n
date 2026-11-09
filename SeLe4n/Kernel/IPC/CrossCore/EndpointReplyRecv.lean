@@ -449,7 +449,6 @@ the message as given, so every leg is the same transition on both answers. -/
 def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOutcome)
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : Concurrency.CoreId)
     : Kernel CapTransferSummary :=
   fun st =>
@@ -486,8 +485,7 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
         -- taken off its reply stack by the pop above — WS-RM) to the next `Call`
         -- caller atomically — faithful one-object reuse, formerly the separate
         -- `linkReceivedCaller nextThread (some rid)` dispatch step.
-        match endpointReceiveDualWithCapsOnCore epId tid (some rid) receiverCspaceRoot
-            receiverSlotBase executingCore st1p with
+        match endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore st1p with
         | (_, .error e) => .error e
         | (st2, .ok (nextThread, summary, _)) =>
             -- The return donation's chain walk is told the core THIS syscall
@@ -535,11 +533,9 @@ delivers `msg` and its return frame is staged (`endpointReplyRecvAnsweringOnCore
 at `none`).  Every in-place form of the arm is proven equal to this one. -/
 def endpointReplyRecvOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : Concurrency.CoreId)
     : Kernel CapTransferSummary :=
-  endpointReplyRecvAnsweringOnCore none epId tid rid prevCaller msg receiverCspaceRoot
-    receiverSlotBase executingCore
+  endpointReplyRecvAnsweringOnCore none epId tid rid prevCaller msg executingCore
 
 /-- **The `.replyRecv` arm's transition**: the composite at the answer the
 replied-to caller's own fault record selects on the pre-state
@@ -559,23 +555,21 @@ reply capability's MR0 stripped); the decode reads `msg.registers` as the reply'
 words, exactly as the `.reply` arm's decode reads its MR0 onward. -/
 def replyRecvTransferOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : Concurrency.CoreId) : Kernel CapTransferSummary :=
   fun st =>
     -- A faulted caller is handed the empty message, as `.reply`'s fault branch
     -- hands it (`faultReplyOnCore`): a fault reply's payload is registers.
     endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
       epId tid rid prevCaller
-      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg)
-      receiverCspaceRoot receiverSlotBase executingCore st
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) executingCore st
 
 /-- On a caller carrying no fault the arm's transition is the ordinary composite. -/
 theorem replyRecvTransferOnCore_of_no_fault (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
-    (root : SeLe4n.ObjId) (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
+    (c : Concurrency.CoreId) (st : SystemState)
     (h : threadHasPendingFault st prevCaller = false) :
-    replyRecvTransferOnCore epId tid rid prevCaller label msg root base c st =
-      endpointReplyRecvOnCore epId tid rid prevCaller msg root base c st := by
+    replyRecvTransferOnCore epId tid rid prevCaller label msg c st =
+      endpointReplyRecvOnCore epId tid rid prevCaller msg c st := by
   unfold replyRecvTransferOnCore
   rw [replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
   rfl
@@ -672,7 +666,6 @@ on any state a non-delegated `.replyRecv` reaches. -/
 def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyOutcome)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
   determineTargetCore st prevCaller ::
     (match endpointReplyOnCore receiver prevCaller msg executingCore st with
@@ -688,8 +681,7 @@ def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyO
          | .error _ => []
          | .ok (returnedSc?, st1p) =>
             endpointReceiveDualWriteSet st1p endpointId executingCore ++
-              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
-                  receiverCspaceRoot receiverSlotBase executingCore st1p with
+              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
                | (_, .error _) => []
                | (st2, .ok (nextThread, _, _)) =>
                   replyRecvPostReceiveDonationWriteSet receiver
@@ -712,21 +704,17 @@ def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyO
 write: `endpointReplyRecvAnsweringWriteSet` at `none`. -/
 def endpointReplyRecvWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
-  endpointReplyRecvAnsweringWriteSet none endpointId receiver replyId prevCaller msg
-    receiverCspaceRoot receiverSlotBase executingCore st
+  endpointReplyRecvAnsweringWriteSet none endpointId receiver replyId prevCaller msg executingCore st
 
 /-- The cores the `.replyRecv` arm's transition (`replyRecvTransferOnCore`) may
 write: the composite's at the answer the caller's fault record selects. -/
 def replyRecvTransferWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
   endpointReplyRecvAnsweringWriteSet (replyRecvCallerFaultAnswer? st prevCaller label msg)
     endpointId receiver replyId prevCaller
-    (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg)
-    receiverCspaceRoot receiverSlotBase executingCore st
+    (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) executingCore st
 
 -- ============================================================================
 -- WS-RR RR8.12 Cut C2 (`v0.35.162`): the `.replyRecv` arm's scheduler-domain footprint
@@ -815,7 +803,6 @@ A failed leg contributes nothing, because the body then commits nothing and ther
 is no migration to cover. -/
 def replyRecvHandoffReplenishCores (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
   match endpointReplyOnCore receiver prevCaller msg executingCore st with
   | (_, .error _) => []
@@ -825,8 +812,7 @@ def replyRecvHandoffReplenishCores (endpointId : SeLe4n.ObjId) (receiver : SeLe4
       | .ok (returnedSc?, st1p) =>
           replyDonationReturnReplenishCores st1 replyId prevCaller ++
             (receivePreReturnReplenishCores st1p endpointId receiver ++
-              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
-                  receiverCspaceRoot receiverSlotBase executingCore st1p with
+              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
                | (_, .error _) => []
                | (st2, .ok (nextThread, _, _)) =>
                   replyRecvPostReceiveReplenishCores receiver nextThread returnedSc? st2))
@@ -852,14 +838,12 @@ in both directions on that shape.  The run segment's coverage is
 `endpointReplyRecvOnCore_confinedToCores`, stated at the same list. -/
 def schedLockSet_endpointReplyRecvOnCore (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (msg : IpcMessage)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
-    (endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
-      receiverSlotBase executingCore st)
-    (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg
-      receiverCspaceRoot receiverSlotBase executingCore st)
+    (endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg executingCore st)
+    (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st)
 
 /-- The scheduler-domain footprint of the `.replyRecv` arm's transition
 (`replyRecvTransferOnCore`): the composite's write set and replenish cores at the
@@ -867,27 +851,23 @@ answer the caller's fault record selects and the message the reply leg then
 delivers.  On a caller carrying no fault it is `schedLockSet_endpointReplyRecvOnCore`. -/
 def schedLockSet_replyRecvTransferOnCore (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId) (st : SystemState) :
+    (label : Nat) (msg : IpcMessage)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
-    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg
-      receiverCspaceRoot receiverSlotBase executingCore st)
+    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg executingCore st)
     (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller
-      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg)
-      receiverCspaceRoot receiverSlotBase executingCore st)
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) executingCore st)
 
 /-- On a caller carrying no fault the arm's footprint is the composite's:
 nothing is decoded and the reply leg delivers the message as given. -/
 theorem schedLockSet_replyRecvTransferOnCore_of_no_fault (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId) (st : SystemState)
+    (label : Nat) (msg : IpcMessage)
+    (executingCore : Concurrency.CoreId) (st : SystemState)
     (h : threadHasPendingFault st prevCaller = false) :
-    schedLockSet_replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg
-        receiverCspaceRoot receiverSlotBase executingCore st =
-      schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
-        receiverCspaceRoot receiverSlotBase executingCore st := by
+    schedLockSet_replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg executingCore st =
+      schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg executingCore st := by
   unfold schedLockSet_replyRecvTransferOnCore replyRecvTransferWriteSet
   rw [replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
   rfl

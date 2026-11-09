@@ -476,14 +476,14 @@ theorem endpointSendDualOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
 
 /-- The capability transfer writes CNodes and the derivation tree alone. -/
 theorem receiveTransferCaps_savedRegsUnwritten
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {st st' : SystemState} {summary : CapTransferSummary}
-    (hInv : st.objects.invExt) (h : receiveTransferCaps req root base st = .ok (summary, st')) :
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {summary : CapTransferSummary}
+    (hInv : st.objects.invExt) (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
     savedRegsUnwritten st st' := by
   obtain ⟨stR, _, hO, -, -, hOr⟩ := receiveTransferCaps_frame h
   have h1 : savedRegsUnwritten st stR :=
     ⟨.of_objects_eq hO, by rw [hO]; exact hInv⟩
-  rcases hOr with rfl | hU
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
   · exact h1
   · exact h1.trans ⟨.of_map fun x =>
       TCB.map_proj_of_map_withoutLinks_eq TCB.registerContext
@@ -492,10 +492,10 @@ theorem receiveTransferCaps_savedRegsUnwritten
 
 /-- The send with capability transfer writes no saved register. -/
 theorem endpointSendDualWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (payload : SendPayload) (base : SeLe4n.Slot) (c : CoreId)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId)
     {st : SystemState} (hInv : st.objects.invExt) :
     savedRegsUnwritten st
-      (endpointSendDualWithCapsOnCore endpointId sender payload base c st).1 := by
+      (endpointSendDualWithCapsOnCore endpointId sender payload c st).1 := by
   have h0 := endpointSendDualOnCore_savedRegsUnwritten endpointId sender payload c hInv
   unfold endpointSendDualWithCapsOnCore
   generalize endpointSendDualOnCore endpointId sender payload c st = r at h0
@@ -512,12 +512,12 @@ theorem endpointSendDualWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4n.O
 /-- The live checked send writes no saved register. -/
 theorem endpointSendCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId) {st : SystemState} (hInv : st.objects.invExt) :
+    (c : CoreId) {st : SystemState} (hInv : st.objects.invExt) :
     savedRegsUnwritten st
-      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload base c st).1 := by
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload c st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   split
-  · exact endpointSendDualWithCapsOnCore_savedRegsUnwritten _ _ _ _ _ hInv
+  · exact endpointSendDualWithCapsOnCore_savedRegsUnwritten _ _ _ _ hInv
   · exact .refl hInv
 
 /-! ### The notifications -/
@@ -782,16 +782,16 @@ theorem offCoreFree_of_signalWaiter {e : CoreId} {st : SystemState} {nid : SeLe4
 send and the stash clear write no saved register, and the delivery's staging
 names the receive queue's head at the entry's start, which is blocked there. -/
 theorem sendArm_savedRegsWrittenFree {ctx : LabelingContext} {epId : SeLe4n.ObjId}
-    {tid : SeLe4n.ThreadId} {payload : SendPayload} {base : SeLe4n.Slot} {ec e : CoreId}
+    {tid : SeLe4n.ThreadId} {payload : SendPayload} {ec e : CoreId}
     {st s1 s2 : SystemState} {r : CapTransferSummary × Option (CoreId × Concurrency.SgiKind)}
     (n : Nat) (P : SyscallArmPremises st ec tid) (hRT : st.residentsHaveTcbs)
     (hBNR : st.blockedNotResident)
-    (hSend : endpointSendCrossCoreDispatchChecked ctx epId tid payload base ec st = (s1, .ok r))
+    (hSend : endpointSendCrossCoreDispatchChecked ctx epId tid payload ec st = (s1, .ok r))
     (hClr : clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) s1
       = .ok ((), s2)) :
     savedRegsWrittenFree e st st (Architecture.stageWokenDelivery s2
       ((st.getEndpoint? epId).bind (·.receiveQ.head)) n) := by
-  have h1 := endpointSendCrossCoreDispatchChecked_savedRegsUnwritten ctx epId tid payload base ec
+  have h1 := endpointSendCrossCoreDispatchChecked_savedRegsUnwritten ctx epId tid payload ec
     P.objInv
   rw [hSend] at h1
   have h2 := h1.trans (clearWokenReceiverStash_savedRegsUnwritten h1.2 hClr)

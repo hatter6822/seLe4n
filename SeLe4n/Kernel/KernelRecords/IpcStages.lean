@@ -89,43 +89,43 @@ namespace RecordsStage
 
 /-- **The checked send keeps the records**, its sender the running thread. -/
 theorem endpointSendCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId : SeLe4n.ObjId}
-    {sender : SeLe4n.ThreadId} {payload : SendPayload} {base : SeLe4n.Slot} {c : CoreId}
+    {sender : SeLe4n.ThreadId} {payload : SendPayload} {c : CoreId}
     {st : SystemState} (hR : ipcReachable st) (hC : CallerReady st sender) :
     RecordsStage st (_root_.SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked ctx endpointId
-      sender payload base c st).1 :=
+      sender payload c st).1 :=
   RecordsStage.of_step (RecordsStep.endpointSendCrossCoreDispatchChecked hR.objects_invExt
     hR.ipcInvariantFull.queueHeadBlockedConsistent hC.notParked) fun _ => by
     unfold _root_.SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked
     split
     · obtain ⟨tcb, hT, hRd⟩ := hC
-      exact endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable _ _ _ _ _
+      exact endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable _ _ _ _
         st hR tcb hT hRd
     · exact hR.replyWaitersConsistent
 
 /-- **The receive keeps the records**, its receiver the running thread. -/
 theorem endpointReceiveDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n.ThreadId}
-    {replyId : Option SeLe4n.ReplyId} {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : CoreId}
+    {replyId : Option SeLe4n.ReplyId} {c : CoreId}
     {st : SystemState} (hR : ipcReachable st) (hC : CallerReady st receiver) :
     RecordsStage st (_root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore endpointId receiver
-      replyId root base c st).1 :=
+      replyId c st).1 :=
   RecordsStage.of_step (RecordsStep.endpointReceiveDualWithCapsOnCore hR.objects_invExt
     hR.ipcInvariantFull.queueHeadBlockedConsistent hC.notParked) fun _ =>
     let ⟨tcb, hT, hRd⟩ := hC
-    endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable _ _ _ _ _ _
+    endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable _ _ _ _
       st hR tcb hT hRd
 
 /-- **The checked call keeps the records**, its caller the running thread. -/
 theorem endpointCallCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId : SeLe4n.ObjId}
-    {caller : SeLe4n.ThreadId} {payload : SendPayload} {base : SeLe4n.Slot} {c : CoreId}
+    {caller : SeLe4n.ThreadId} {payload : SendPayload} {c : CoreId}
     {st : SystemState} (hR : ipcReachable st) (hC : CallerReady st caller) :
     RecordsStage st (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked ctx endpointId
-      caller payload base c st).1 :=
+      caller payload c st).1 :=
   RecordsStage.of_step (RecordsStep.endpointCallCrossCoreDispatchChecked hR.objects_invExt
     hR.ipcInvariantFull.queueHeadBlockedConsistent) fun _ => by
     unfold _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked
     split
     · obtain ⟨tcb, hT, hRd⟩ := hC
-      exact endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reachable _ _ _ _ _
+      exact endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reachable _ _ _ _
         st hR tcb hT hRd
     · exact hR.replyWaitersConsistent
 

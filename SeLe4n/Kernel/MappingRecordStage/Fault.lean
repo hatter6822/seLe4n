@@ -47,10 +47,10 @@ theorem faultDeliverOnCore_mappingStage (st : SystemState) (tid : SeLe4n.ThreadI
   · exact sus
   · rename_i tgt _
     have s0 : MappingStage st (endpointCallCrossCoreDispatch tgt.endpoint tid
-        (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st).1 :=
+        (SendPayload.fault f fctx tgt.cap.badge) c st).1 :=
       endpointCallCrossCoreDispatch_mappingStage
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st = r at s0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge) c st = r at s0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus

@@ -717,7 +717,7 @@ scenarios:
     source: tests/OperationChainSuite.lean
     function: chain12IpcCapTransfer
     subsystem: IPC
-    description: "IPC cap transfer with Grant right: 2 caps installed in receiver CNode"
+    description: "IPC cap transfer with Grant right: the first cap installed into the one receive slot, the transfer then stops"
   SCN-IPC-CAP-TRANSFER-NO-GRANT:
     source: tests/OperationChainSuite.lean
     function: chain13IpcCapTransferNoGrant
@@ -727,12 +727,12 @@ scenarios:
     source: tests/NegativeStateSuite.lean
     function: runWSM3CapTransferNegativeChecks
     subsystem: Capability
-    description: "IPC cap transfer with full CNode: returns .noSlot, state unchanged"
+    description: "IPC cap transfer into an occupied or absent receive slot: the transfer stops, state unchanged"
   SCN-IPC-CAP-BADGE-COMBINED:
     source: tests/OperationChainSuite.lean
     function: chain14IpcBadgeAndCapTransfer
     subsystem: IPC
-    description: "IPC badge propagation and cap transfer combined: badge 0xCAFE + 2 caps"
+    description: "IPC badge 0xCAFE, an endpoint cap unwrapped to its badge, and a cap installed into the receive slot"
   RH-001:
     source: tests/RobinHoodSuite.lean
     function: rh001_emptyTable
@@ -803,11 +803,6 @@ scenarios:
     function: rhInt002_revokeTargetLocal
     subsystem: Capability
     description: "CNode.revokeTargetLocal with RHTable filter"
-  RH-INT-003:
-    source: tests/RobinHoodSuite.lean
-    function: rhInt003_findFirstEmptySlot
-    subsystem: Capability
-    description: "CNode.findFirstEmptySlot with RHTable-backed slots"
   RH-INT-004:
     source: tests/RobinHoodSuite.lean
     function: rhInt004_slotCountBounded

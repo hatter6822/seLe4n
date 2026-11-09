@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.4` (`lakefile.toml`) |
+| **Package version** | `0.37.5` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 605,394 across 602 Lean files |
 | **Test LoC** | 88,892 across 70 Lean test suites |
@@ -89,7 +89,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
 | **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning; the per-core run queue links through TCB fields as seL4's does, with the abstract queue kept as an erased ghost and proven to agree with the links on every reachable state (`runQueueRefined`) |
 | **Revocation** | Silent error swallowing | seL4's `cteRevoke` loop (`cspaceRevokeCdtFinalising`, `v0.36.111`): the source's first CDT child is deleted and finalised until it has none, each delete admitted by a check read before its writes, so a revoke never refuses after it has written (§8.10) |
-| **Syscall boundary** *(WS-J1-A/B/C/D completed; WS-V V2 complete)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, complete round-trip proof surface for all 3 decode components (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` with bitwise `Nat.testBit` extensionality, plus composite `decode_components_roundtrip`), determinism proof, and error exclusivity (J1-B) + `syscallEntry` register-sourced entry point with capability-gated dispatch to all 17 kernel operations of the V2 era (13 original + `notificationSignal`/`notificationWait`/`replyRecv` added in V2; the dispatch surface has since grown to all 34 `SyscallId` variants — see §8.10), soundness theorems (J1-C) + invariant preservation and NI coverage for decode/dispatch path with `registerDecodeConsistent` predicate and 2 new `NonInterferenceStep` constructors (J1-D); `MessageInfo` label field bounded to 20 bits (seL4 convention, V2-E/V2-H); cap transfer slot base configurable via `capRecvSlot` (V2-F/V2-G) |
+| **Syscall boundary** *(WS-J1-A/B/C/D completed; WS-V V2 complete)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, complete round-trip proof surface for all 3 decode components (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` with bitwise `Nat.testBit` extensionality, plus composite `decode_components_roundtrip`), determinism proof, and error exclusivity (J1-B) + `syscallEntry` register-sourced entry point with capability-gated dispatch to all 17 kernel operations of the V2 era (13 original + `notificationSignal`/`notificationWait`/`replyRecv` added in V2; the dispatch surface has since grown to all 34 `SyscallId` variants — see §8.10), soundness theorems (J1-C) + invariant preservation and NI coverage for decode/dispatch path with `registerDecodeConsistent` predicate and 2 new `NonInterferenceStep` constructors (J1-D); `MessageInfo` label field bounded to 20 bits (seL4 convention, V2-E/V2-H); cap transfer into the one receive slot the receiver's IPC buffer names (`receiveSlot?`, seL4's `getReceiveSlots`; the V2-F/V2-G `capRecvSlot` base is retired) |
 
 These are not abstract research extensions — they are design decisions that will be
 carried forward into the production kernel.
@@ -6617,22 +6617,18 @@ Every kernel object has a decidable well-formedness predicate:
   capabilities takes its own arm (`RegisterRoutedSyscall.transferring`,
   `dispatchTransferringCheckedR_eq`).  As in seL4, such a message's
   capabilities are looked up only at the rendezvous: one that blocks writes in
-  place.  One of at most four words that meets a receiver whose receive window
-  is closed (its CSpace root has no empty slot among the `maxExtraCaps` slots
-  the transfer scans from slot 0, `receiveWindowClosed`) writes the send or
-  call rendezvous in place, the transfer installing nothing
-  (`receiveTransferCaps_of_windowClosed`,
+  place.  One of at most four words that meets a receiver that can take no
+  capability (it has no IPC buffer the kernel may write, `receiveWindowClosed`)
+  writes the send or call rendezvous in place, the transfer transferring
+  nothing (`receiveTransferCaps_of_windowClosed`,
   `sendDispatchChecked_inPlace_windowClosed`,
   `callDispatchChecked_inPlace_windowClosed`), as seL4's `transferCaps` with
-  no receive slot; the receive that takes a blocked capability-carrying send of
-  at most four words into a closed window writes in place too
+  no receive buffer; the receive that takes a blocked capability-carrying send
+  of at most four words for such a receiver writes in place too
   (`receiveTakeCaps_delivered`), as does the receive that takes a blocked short
-  call (`receiveCallTake_delivered`).  The window is read in the pre-state,
-  which the rendezvous's writes agree with on every CNode and every thread's
-  CSpace root (`CapSpaceAgrees`).  Any other rendezvous transfer takes the
-  specification's (`endpointSendDualWithCapsOnCore`), refusing in the
-  pre-state when the receiver's CSpace root does not resolve, as the
-  specification's checked entry does; it allocates
+  call (`receiveCallTake_delivered`).  The receiver's side is read in the
+  pre-state (`receiverCapTarget?`).  Any other rendezvous transfer takes the
+  specification's (`endpointSendDualWithCapsOnCore`); it allocates
   (`docs/REGISTERED_DEBT.md` table C).  With the default layout the router hands the decoded arm
   nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
   whose registers lie out of bounds or which has no message register.
@@ -6736,6 +6732,8 @@ rendezvous.
 adding three parameters (`endpointRights`, `senderCspaceRoot`, `receiverSlotBase`)
 and changing the return type to `Kernel CapTransferSummary`. Both checked and
 unchecked `.send` paths now perform identical capability transfer semantics.
+Since `v0.37.5` the receive slot is named by the receiver's IPC buffer, so the
+`receiverSlotBase` parameter is gone from both paths.
 
 **Proof impact**: 8 theorems updated across Wrappers.lean, Soundness.lean, and
 Operations.lean (NI). The enforcement-NI bridge (`enforcementBridge_to_NonInterferenceStep`)
@@ -7521,6 +7519,25 @@ against the sender's declared count.
 
 **Source**: API.lean, inline comment AC3-D / API-01.
 
+**Capability transfer is seL4's `transferCaps`** (`v0.37.5`).  The receiver
+names one receive slot in its IPC buffer (words 120-122: `receive_cnode`,
+`receive_index`, `receive_depth`; `receiveSlot?`): `receive_cnode` looked up
+in its CSpace must name a CNode, in which `receive_index` resolves
+`receive_depth` bits deep (1-64) to an empty slot, else there is no slot.  A
+receiver with no IPC buffer the kernel may write takes no capability
+(`receiverCapTarget?`).  The sender's extra capabilities, resolved all or
+nothing (`resolveExtraCaps`, seL4's `lookupExtraCaps`) and cut at the first
+empty source slot, are processed in order (`ipcUnwrapCapsLoop`): one to the
+endpoint the message is sent on is unwrapped — its badge written to the
+receiver's `caps_or_badges` word at its index (`recordUnwrappedBadge`, seL4's
+`setExtraBadge`) and its bit set in `capsUnwrapped` — and any other is
+installed into the receive slot (`ipcTransferSingleCap`) when one is left,
+the slot then used up; a capability with no slot left, or whose install is
+refused, stops the transfer, with no fault.  The receiver's message info
+reports `extraCaps` (the count processed) and `capsUnwrapped`
+(`CapTransferSummary.capInfo`, `returnMessageInfo`).  The syscall entry reads
+the receive-path words from RAM (`captureReceivePath`).
+
 **No message holds a capability** (`v0.36.121`, WS-ZA ZA5.4 part 11).  An
 `IpcMessage` is registers and a badge: it has no capability field and no grant
 bit.  A blocked sender keeps its capability addresses and grant right in its
@@ -7595,45 +7612,36 @@ channel.
 The three IPC capability-transfer wrappers in
 `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` —
 `endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`, and
-`endpointCallWithCaps` — all read the dequeued peer's `cspaceRoot`
-via `lookupCspaceRoot` after the rendezvous. When that lookup
-returns `none` (the dequeued peer's TCB is missing or has been
-corrupted to a non-TCB object — a structural fault excluded on the
-normal IPC path by `intrusiveQueueWellFormed` + `tcbQueueLinkIntegrity`,
-the dual-queue sub-clauses of `dualQueueSystemInvariant` /
-`ipcInvariantFull`), the wrappers must fail closed identically;
-otherwise an attacker observing kernel-result shapes from two
-domains can use the disagreement as a covert channel via
-`KernelError`.
+`endpointCallWithCaps` — read the receiver's side of the transfer once,
+from the pre-state, through one function, `receiverCapTarget?`: the
+receiver's TCB and its receive slot when it has an IPC buffer the kernel
+may write, `none` otherwise.  All three hand that answer to the one
+transfer, `receiveTransferCaps`, so the three paths cannot disagree about
+a receiver: a receiver with no IPC buffer, or a dequeued peer whose TCB is
+missing (a structural fault excluded on the normal IPC path by
+`intrusiveQueueWellFormed` + `tcbQueueLinkIntegrity`), takes no
+capability on every path, as seL4's `doNormalTransfer` transfers none to a
+receiver without a buffer.  The bare rendezvous refuses a missing TCB
+before any transfer runs, so the error a domain observes is the bare
+operation's, identical across the three wrappers.
 
-AK1-I (I-M07) brought `endpointSendDualWithCaps` and
-`endpointReceiveDualWithCaps` to fail closed with
-`.error .invalidCapability` on this fault. WS-RC R1 (DEEP-IPC-03)
-extends the same fail-closed shape to `endpointCallWithCaps`,
-which previously returned `.ok ({ results := #[] }, st')` on the
-same fault. After WS-RC R1, all three wrappers return
-`.error .invalidCapability` on the missing-CSpace-root branch and
-the per-domain covert channel via `KernelError` is closed.
+Until `v0.37.5` the wrappers looked the receiver's CSpace root up after the
+rendezvous (`lookupCspaceRoot`) and failed closed with `.invalidCapability`
+when it was missing (AK1-I, I-M07; WS-RC R1, DEEP-IPC-03).  The receive slot
+is now the one the receiver's IPC buffer names (see *Capability transfer is
+seL4's `transferCaps`* above), so that lookup and its refusal are gone, and the
+symmetry holds by construction rather than by three matching arms.
 
-The two adjacent `| none =>` arms in each wrapper (for
-`ep.receiveQ.head = none` and `getEndpoint? = none`) intentionally
-remain `.ok` because they encode an unrelated invariant ("no
-receiver enqueued ≠ missing CSpace root"). All three wrappers
-preserve this distinction symmetrically.
-
-**Proof impact**: `endpointCallWithCaps_preserves_ipcInvariant`
-(`SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean`) was
-updated so the `lookupCspaceRoot = none` arm becomes vacuous via
-`simp [hLookup] at hStep`, matching the post-AK1-I send-path
-tactic. The full-invariant theorem
-`endpointCallWithCaps_preserves_ipcInvariantFull` in
-`Structural/DualQueueMembership.lean` forwards through unchanged.
+A send or call that asks to transfer with no receiver waiting stays
+`.error .invalidCapability` on the transfer's `recv? = none` arm, which the
+bare rendezvous makes unreachable (it blocks the sender instead); the two
+wrappers keep that arm symmetrically.
 
 **Test coverage**: `tests/InformationFlowSuite.lean` AK1-I
-regression extended for send/receive/call symmetry;
+regression (a non-CNode receive slot stops the transfer with no fault and
+no write; a missing receiver TCB has no target and its send errors);
 `tests/NegativeStateSuite.lean::runR1IpcCallPathSymmetryChecks`
-provides three runtime-observable checks (healthy state, faulty
-state must error, `lookupCspaceRoot` returns `none`).
+(healthy state, faulty state must error).
 
 ### 8.10.6a One TCB Field Writer (`modifyTcb`, audit IPC-5)
 
