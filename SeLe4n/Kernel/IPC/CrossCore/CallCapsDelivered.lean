@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.CapTransferDelivered
 import SeLe4n.Kernel.IPC.CrossCore.LongCallInPlace
+import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
 
 /-!
 # A capability-carrying call rendezvous, delivered in place
@@ -484,5 +485,26 @@ theorem ipcBufferReadsAgree_takeReady (st : SystemState) (endpointId : SeLe4n.Ob
     ((ipcBufferReadsAgree_wakeThread _ s core h2).trans
       ((ipcBufferReadsAgree_updateTcb _ s receiverReady hR h1).trans
         (ipcBufferReadsAgree_storePopHead st endpointId false s next hNo)))
+
+/-! ## The take of a blocked call, delivered -/
+
+/-- **The take of a blocked call that transfers capabilities, delivered**: the
+caller popped and blocked on the reply, the reply object linked, the receiver
+made ready, the transfer in place, the receiver's priority walk, then the
+receiver's frame with the transfer's report, its words read from the caller's
+saved registers `rf`, which the take leaves unwritten (the caller stays
+blocked).  The caller and the receiver enter as the words the transfer reads
+of them (`capTransferK`), read before the take. -/
+@[noinline] def performCallTakeCapsDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (core : Concurrency.CoreId) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+  let X := storeReceiveCallReady st endpointId s nextCode receiver rid
+  capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    finishCallCaps (capStepsInfo endpointId x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+      receiver core layout rf len badgeWord badged
 
 end SeLe4n.Kernel
