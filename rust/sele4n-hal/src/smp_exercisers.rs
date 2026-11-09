@@ -1522,6 +1522,11 @@ struct RoundTrip {
     /// The success frame's `x1` and, when known, its `x2` that the round trip
     /// must return; `None` checks only that the call succeeded.
     returns: Option<(u64, Option<u64>)>,
+    /// The extra-capability addresses a capability-carrying send or call
+    /// names, written unmeasured, before the call, into the `caps_or_badges`
+    /// words of the caller's IPC buffer at this address (seL4's
+    /// `seL4_SetCap`; the kernel reads them with `lookupExtraCaps`).
+    caps_or_badges: Option<(u64, [u64; 3])>,
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1698,6 +1703,7 @@ const fn kernel_step(name: &'static str, syscall: u64) -> RoundTrip {
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     }
 }
@@ -1903,6 +1909,7 @@ const fn signal(name: &'static str, badge: u64) -> RoundTrip {
         msg: [badge, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     }
 }
@@ -1924,6 +1931,7 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         msg: [0, 0, 0, 0],
         primed: Some(1),
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     RoundTrip {
@@ -1934,6 +1942,7 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
 ];
@@ -1957,9 +1966,28 @@ const fn partner_step(
         msg: [msg[0], msg[1], 0, 0],
         primed: None,
         blocks,
+        caps_or_badges: None,
         returns: None,
     }
 }
+
+/// `trip`, naming the extra-capability addresses `words` in the caller's IPC
+/// buffer at `buffer` (`RoundTrip::caps_or_badges`).
+#[cfg(feature = "hw_target")]
+const fn with_caps(trip: RoundTrip, buffer: u64, words: [u64; 3]) -> RoundTrip {
+    RoundTrip {
+        caps_or_badges: Some((buffer, words)),
+        ..trip
+    }
+}
+
+/// The index of the IPC buffer's `caps_or_badges[0]` word: seL4's
+/// `seL4_IPCBuffer` puts it after the `tag`, the 120 `msg` words and
+/// `userData` (`IpcBufferRead.ipcBufferCapsOrBadgesWord 0` past
+/// `ipcBufferOverflowBaseWord`; `sele4n_abi::IpcBuffer::caps_or_badges`,
+/// pinned by `caps_or_badges_word_is_the_abi_layout`).
+#[cfg(any(feature = "hw_target", test))]
+const CAPS_OR_BADGES_WORD: u64 = 122;
 
 /// The round trips that need a second thread (WS-ZA ZA4.1), each a sequence
 /// issued as whichever thread is current.  A step that blocks the current
@@ -2179,6 +2207,7 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
         msg,
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     }
 }
@@ -2225,6 +2254,7 @@ const fn consumed(name: &'static str, reading: Option<u64>) -> RoundTrip {
         msg: [0; 4],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: Some((CONSUMED_INFO_WORD, reading)),
     }
 }
@@ -2242,6 +2272,7 @@ const fn yield_to(name: &'static str) -> RoundTrip {
         msg: [0; 4],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: Some((CONSUMED_INFO_WORD, None)),
     }
 }
@@ -2261,6 +2292,7 @@ const fn configure(name: &'static str, msg: [u64; 4]) -> RoundTrip {
         msg,
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     }
 }
@@ -2278,6 +2310,7 @@ const fn service_register(name: &'static str, cptr: u64, msg: [u64; 4]) -> Round
         msg,
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     }
 }
@@ -2357,9 +2390,9 @@ const FRAME_VADDR: u64 = 1 << 39;
 #[cfg(feature = "hw_target")]
 const FRAME_COPY_VADDR: u64 = FRAME_VADDR + 0x1000;
 /// An IPC buffer in the frame's last 1024 bytes (`ipcBufferAlignment`, the
-/// buffer's size): its last overflow slot, 115, is the page's last word but one
-/// that the buffer's words reach, so a full-length message reads and writes the
-/// whole overflow region on the frame.
+/// buffer's size, seL4's 128-word `seL4_IPCBuffer`): its last word,
+/// `receiveDepth`, is the page's last, so a full-length message reads and
+/// writes the whole overflow region (`msg[4..120]`) on the frame.
 #[cfg(feature = "hw_target")]
 const TAIL_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x400;
 /// An address 512 bytes short of the frame's end: aligned to 512 but not to
@@ -2936,6 +2969,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            caps_or_badges: None,
             returns: None,
         },
         kernel_step("refill-wait-tick", TIMER_TICK_STEP),
@@ -2977,6 +3011,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         // long; a message-info word whose length no message has, refused;
         // one whose top bit is set, refused; and a yield one word long.
         RoundTrip {
+            caps_or_badges: None,
             returns: REFUSED_MESSAGE_INFO,
             msg_len: 4,
             ..service_register("service-register-short", ENDPOINT_CAP, SERVICE_INTERFACE)
@@ -3005,6 +3040,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            caps_or_badges: None,
             returns: None,
         },
         RoundTrip {
@@ -3017,11 +3053,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             )
         },
         RoundTrip {
+            caps_or_badges: None,
             returns: REFUSED_MESSAGE_INFO,
             msg_len: BAD_MESSAGE_LENGTH,
             ..signal("bad-message-info", 1)
         },
         RoundTrip {
+            caps_or_badges: None,
             returns: REFUSED_MESSAGE_INFO,
             msg_len: HIGH_MESSAGE_INFO,
             ..signal("high-message-info", 1)
@@ -3034,6 +3072,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            caps_or_badges: None,
             returns: None,
         },
         invocation(
@@ -3210,6 +3249,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         // all 116 of the sender's overflow words and writes the receiver's in
         // place; then the buffers put back.
         RoundTrip {
+            caps_or_badges: None,
             returns: Some((
                 (crate::svc_dispatch::ERROR_LABEL_BASE + ALIGNMENT_ERROR) << 12,
                 None,
@@ -3245,6 +3285,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            caps_or_badges: None,
             returns: None,
         },
         kernel_step("mask-ticks", MASK_TICKS_STEP),
@@ -3434,13 +3475,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-send-blocks",
-            SEND,
-            ENDPOINT_CAP,
-            ONE_EXTRA_CAP | 2,
-            [0x5a, 0],
-            true,
+        with_caps(
+            partner_step(
+                "caps-send-blocks",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 2,
+                [0x5a, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [0; 3],
         ),
         invocation(
             "caps-send-blocks-suspend-root",
@@ -3466,13 +3511,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-long-send-blocks",
-            SEND,
-            ENDPOINT_CAP,
-            ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
-            [0x5c, 0],
-            true,
+        with_caps(
+            partner_step(
+                "caps-long-send-blocks",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                [0x5c, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [0; 3],
         ),
         invocation(
             "caps-long-send-blocks-suspend-root",
@@ -3498,13 +3547,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-call-blocks",
-            CALL,
-            ENDPOINT_CAP,
-            ONE_EXTRA_CAP | 2,
-            [0x6c, 0],
-            true,
+        with_caps(
+            partner_step(
+                "caps-call-blocks",
+                CALL,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 2,
+                [0x6c, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [0; 3],
         ),
         invocation(
             "caps-call-blocks-suspend-root",
@@ -3530,13 +3583,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-long-call-blocks",
-            CALL,
-            ENDPOINT_CAP,
-            ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
-            [0x6e, 0],
-            true,
+        with_caps(
+            partner_step(
+                "caps-long-call-blocks",
+                CALL,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                [0x6e, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [0; 3],
         ),
         invocation(
             "caps-long-call-blocks-suspend-root",
@@ -3556,10 +3613,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        // A send carrying one capability to a waiting receiver whose receive window
-        // (its CSpace root's slots 0-2, all occupied in the shared CNode) is
-        // closed: the transfer installs nothing and the rendezvous writes in
-        // place, as seL4's `transferCaps` with no receive slot.
+        // A send carrying one capability (a notification, named in the
+        // sender's `caps_or_badges[0]`) to a waiting receiver whose IPC buffer
+        // names no receive slot (its `receive_depth` word is 0): seL4's
+        // `transferCaps` installs nothing, and the rendezvous writes in place.
         invocation(
             "caps-send-rendezvous-resume",
             TCB_RESUME,
@@ -3574,13 +3631,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [REPLY_CAP, 0],
             true,
         ),
-        partner_step(
-            "caps-send-rendezvous-to-receiver",
-            SEND,
-            ENDPOINT_CAP,
-            ONE_EXTRA_CAP | 1,
-            [0x74, NOTIFICATION_CAP],
-            false,
+        with_caps(
+            partner_step(
+                "caps-send-rendezvous-to-receiver",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x74, 0],
+                false,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
         ),
         kernel_step("caps-send-rendezvous-yield", YIELD),
         invocation(
@@ -3604,13 +3665,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [REPLY_CAP, 0],
             true,
         ),
-        partner_step(
-            "caps-three-send-rendezvous-to-receiver",
-            SEND,
-            ENDPOINT_CAP,
-            THREE_EXTRA_CAPS | 1,
-            [0x75, NOTIFICATION_CAP],
-            false,
+        with_caps(
+            partner_step(
+                "caps-three-send-rendezvous-to-receiver",
+                SEND,
+                ENDPOINT_CAP,
+                THREE_EXTRA_CAPS | 1,
+                [0x75, 0],
+                false,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
         ),
         kernel_step("caps-three-send-rendezvous-yield", YIELD),
         invocation(
@@ -3619,8 +3684,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        // A call carrying one capability to a waiting receiver whose receive window
-        // is closed, blocking the caller for the reply, the suspend answering it.
+        // A call carrying one capability to a waiting receiver whose buffer
+        // names no receive slot, blocking the caller for the reply, the
+        // suspend answering it.
         invocation(
             "caps-call-rendezvous-resume",
             TCB_RESUME,
@@ -3635,13 +3701,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [REPLY_CAP, 0],
             true,
         ),
-        partner_step(
-            "caps-call-rendezvous-to-receiver",
-            CALL,
-            ENDPOINT_CAP,
-            ONE_EXTRA_CAP | 1,
-            [0x76, NOTIFICATION_CAP],
-            true,
+        with_caps(
+            partner_step(
+                "caps-call-rendezvous-to-receiver",
+                CALL,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x76, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
         ),
         invocation(
             "caps-call-rendezvous-suspend",
@@ -3664,13 +3734,17 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [REPLY_CAP, 0],
             true,
         ),
-        partner_step(
-            "caps-three-call-rendezvous-to-receiver",
-            CALL,
-            ENDPOINT_CAP,
-            THREE_EXTRA_CAPS | 1,
-            [0x77, NOTIFICATION_CAP],
-            true,
+        with_caps(
+            partner_step(
+                "caps-three-call-rendezvous-to-receiver",
+                CALL,
+                ENDPOINT_CAP,
+                THREE_EXTRA_CAPS | 1,
+                [0x77, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
         ),
         invocation(
             "caps-three-call-rendezvous-suspend",
@@ -3679,15 +3753,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [0; 4],
         ),
         // A send carrying a capability that blocks with no receiver waiting,
-        // and the receive that takes it into a closed receive window.
+        // and the receive that takes it with no receive slot named.
         invocation("caps-take-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
-        partner_step(
-            "caps-take-send-blocks",
-            SEND,
-            ENDPOINT_CAP,
-            ONE_EXTRA_CAP | 1,
-            [0x78, NOTIFICATION_CAP],
-            true,
+        with_caps(
+            partner_step(
+                "caps-take-send-blocks",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x78, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
         ),
         partner_step(
             "caps-take-partner-takes",
@@ -5263,6 +5341,7 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         msg: [0; 4],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     RoundTrip {
@@ -5273,6 +5352,7 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         msg: [1, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     partner_step(
@@ -5319,6 +5399,7 @@ const DECLASSIFICATION_REFUSAL: RoundTrip = RoundTrip {
     msg: [0; 4],
     primed: None,
     blocks: false,
+    caps_or_badges: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
         None,
@@ -5344,6 +5425,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [1, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // The trail's status.
@@ -5355,6 +5437,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // The target object of the first visible entry, chunk 0.
@@ -5366,6 +5449,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [7, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // The first visible entry's authorization basis: its byte count.
@@ -5377,6 +5461,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [10, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Its second chunk: a chunk past the first.
@@ -5388,6 +5473,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [11, 0, 1, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // The refusal ledger's status.
@@ -5399,6 +5485,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [12, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Its counters.
@@ -5410,6 +5497,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [13, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Slot 0's refusal: its tags.
@@ -5421,6 +5509,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [14, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Its subject's chunk count.
@@ -5432,6 +5521,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [15, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Its subject domain's chunk count.
@@ -5443,6 +5533,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [16, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Its requested target's chunk count.
@@ -5454,6 +5545,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [17, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Its subject, chunk 0.
@@ -5465,6 +5557,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [18, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Its subject domain, chunk 0.
@@ -5476,6 +5569,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [19, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Its requested target, chunk 0.
@@ -5487,6 +5581,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [20, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Its refused receiver's chunk count (none: 0).
@@ -5498,6 +5593,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [25, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Whether the second visible entry names the first.
@@ -5509,6 +5605,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [27, 1, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // The same verdict over the pair named in full.
@@ -5520,6 +5617,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [28, 1, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     // Whether the first visible entry names the drained timestamp 0 of its run.
@@ -5531,6 +5629,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [29, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     RoundTrip {
@@ -5541,6 +5640,7 @@ const AUDIT_SCENARIO: [RoundTrip; 20] = [
         msg: [256, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     },
     invocation(
@@ -5748,6 +5848,7 @@ const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     msg: [5, 0, 0, 0],
     primed: None,
     blocks: false,
+    caps_or_badges: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + DECLASSIFICATION_DENIED_AT_RECEIVER) << 12,
         None,
@@ -5763,6 +5864,7 @@ const BOUND_REFUSAL_STATUS: RoundTrip = RoundTrip {
     msg: [12, 0, 0, 0],
     primed: None,
     blocks: false,
+    caps_or_badges: None,
     returns: None,
 };
 /// The slots emptied again, unmeasured: the bound line's handler cleared and
@@ -5910,6 +6012,7 @@ fn bound_declassified_signals(which: &str) -> bool {
         msg: [26, slot, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     };
     if heap_allocations_round_trip(&read, which) != Some(true) {
@@ -5985,6 +6088,7 @@ const YIELD_TO_LINK: RoundTrip = RoundTrip {
     msg: [0; 4],
     primed: None,
     blocks: false,
+    caps_or_badges: None,
     returns: None,
 };
 /// ...and its second: the partner, now current, blocks on the notification,
@@ -6525,6 +6629,7 @@ const HEAP_REFUSED_RETYPE: RoundTrip = RoundTrip {
     msg: HEAP_RETYPE_MSG,
     primed: None,
     blocks: false,
+    caps_or_badges: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + UNTYPED_REGION_EXHAUSTED) << 12,
         None,
@@ -6642,6 +6747,7 @@ const fn irq_handler_ack(name: &'static str, slot: u64) -> RoundTrip {
         msg: [0; 4],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     }
 }
@@ -6824,6 +6930,7 @@ fn interrupt_entries(which: &str) -> bool {
         msg: [0; 4],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: None,
     };
     let block = partner_step("irq-wait-blocks", WAIT, NOTIFICATION_CAP, 0, [0, 0], true);
@@ -7364,6 +7471,7 @@ fn fault_entries() -> Option<bool> {
         msg: [REPLY_CAP, 0, 0, 0],
         primed: None,
         blocks: false,
+        caps_or_badges: None,
         returns: Some((VM_FAULT_MESSAGE_INFO, None)),
     };
     let reply_fault = partner_step("reply-queued-fault", REPLY, REPLY_CAP, 0, [0, 0], false);
@@ -7933,6 +8041,30 @@ fn root_user_page(vaddr: u64) -> Option<u64> {
     Some(table)
 }
 
+/// Write `words` into the `caps_or_badges` words of the IPC buffer the root
+/// task's tables map at `buffer`, where a capability-carrying send names its
+/// extra capabilities (seL4's `seL4_SetCap`); `false` when the buffer's page
+/// has no translation to RAM past the kernel's extent.
+#[cfg(feature = "hw_target")]
+fn write_caps_or_badges(buffer: u64, words: [u64; 3]) -> bool {
+    let Some(page) = root_user_page(buffer & !0xFFF) else {
+        return false;
+    };
+    if page < crate::mmu::KERNEL_RESERVED_END || !page.is_multiple_of(4096) {
+        return false;
+    }
+    let base = page + (buffer & 0xFFF) + CAPS_OR_BADGES_WORD * 8;
+    for (i, word) in words.iter().enumerate() {
+        // SAFETY: `base` is inside the 1024-byte buffer the root task's
+        // tables map onto `page`, RAM past the kernel's extent under the
+        // identity map; no thread runs while the issuing core writes it; one
+        // aligned 64-bit store per word.
+        unsafe { core::ptr::write_volatile((base + 8 * i as u64) as *mut u64, *word) };
+    }
+    core::sync::atomic::fence(Ordering::SeqCst);
+    true
+}
+
 /// Wait, bounded by the command timeout, for `ready` to hold.
 #[cfg(feature = "hw_target")]
 fn wait_until(mut ready: impl FnMut() -> bool) -> bool {
@@ -8137,6 +8269,15 @@ fn heap_allocations_round_trip_resuming(
 ) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = trip.name;
+    if let Some((buffer, words)) = trip.caps_or_badges {
+        if !write_caps_or_badges(buffer, words) {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the IPC buffer at \
+                 {buffer:#x} has no translation"
+            );
+            return Some(false);
+        }
+    }
     let (outcome, before, after, resumed) = dispatch_round_trip(trip);
     if let (Dispatched::Blocked, Some(expected)) = (&outcome, resumes) {
         if !restarted_as(name, &resumed, expected) {
@@ -8256,6 +8397,15 @@ mod tests {
         round_lock_held_by_in, round_lock_release_in, round_lock_try_acquire_in, ROUND_LOCK_FREE,
     };
     use core::cell::Cell;
+
+    /// The harness's `caps_or_badges` word is the ABI's `IpcBuffer` field.
+    #[test]
+    fn caps_or_badges_word_is_the_abi_layout() {
+        assert_eq!(
+            CAPS_OR_BADGES_WORD as usize * 8,
+            core::mem::offset_of!(sele4n_abi::IpcBuffer, caps_or_badges)
+        );
+    }
 
     /// A clock that advances one tick per read.
     fn ticking() -> impl FnMut() -> u64 {

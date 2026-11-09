@@ -456,25 +456,25 @@ read as a failed receive, so no fault handler could be written against
 `sele4n-abi`.
 
 The fix keeps one syscall-agnostic decoder and separates the two by
-**range**: the top `errorLabelRangeSize` labels of the 20-bit field are
+**range**: the top `errorLabelRangeSize` labels of the 52-bit field are
 kernel status, everything below is a delivered message's own label.  Success
 is still `0`; error `d` is `errorLabelBase + d`; and a delivered label is
 always below `errorLabelBase` (`returnMessageInfo` clamps there, and every
 kernel-emitted label — the fault tags — sits far below it,
-`faultLabel_lt_errorLabelBase`).  The blocked-resume sentinel `0xFFFFF` is
+`faultLabel_lt_errorLabelBase`).  The blocked-resume sentinel `maxLabel` is
 the top of the range, naming discriminant `255`, which no `KernelError` has
 — so it still decodes as `UnknownKernelError`, and now for the *stated*
 reason rather than by happening to exceed the enumeration. -/
 def errorLabelRangeSize : Nat := 256
 
-/-- The first kernel-status label: `0xFFF00`.  Labels at or above it are
+/-- The first kernel-status label: `2^52 − 256`.  Labels at or above it are
 kernel status; labels below it are a delivered message's own. -/
 def errorLabelBase : Nat := MessageInfo.maxLabel + 1 - errorLabelRangeSize
 
 /-- The base, as a literal — pinned so a change to `maxLabel` or the range
 size cannot move it silently past the Rust mirror
 (`sele4n_types::ERROR_LABEL_BASE`). -/
-theorem errorLabelBase_eq : errorLabelBase = 0xFFF00 := by decide
+theorem errorLabelBase_eq : errorLabelBase = 0xFFFFFFFFFFF00 := by decide
 
 /-- The `MessageInfo` a delivered message returns in `x1`.  `IpcMessage`
 carries no `MessageInfo` (it is discarded at decode time), so the return
@@ -516,7 +516,7 @@ theorem returnFrame_message_window (msg : IpcMessage) (capInfo overflow : Nat) :
   Nat.le_trans (Nat.min_le_left _ _) (Nat.min_le_right _ _)
 
 /-- The synthesized word is well-formed for seL4's encoding:
-length ≤ 120, extraCaps ≤ 3, label ≤ 2^20 − 1, capsUnwrapped ≤ 7. -/
+length ≤ 120, extraCaps ≤ 3, label ≤ 2^52 − 1, capsUnwrapped ≤ 7. -/
 theorem returnMessageInfo_wellFormed (msg : IpcMessage) (capInfo overflow : Nat) :
     (returnMessageInfo msg capInfo overflow).wellFormed := by
   refine ⟨Nat.min_le_right _ _, ?_, ?_, ?_⟩
@@ -1461,7 +1461,7 @@ theorem errorLabel_zero_iff_success :
   · apply ofErrorLabel?_none_of_lt_base
     rw [errorLabelBase_eq]; decide
 
-/-- RA.A.6 — every status label fits the 20-bit `MessageInfo` label field:
+/-- RA.A.6 — every status label fits the 52-bit `MessageInfo` label field:
 the range is sized so `errorLabelBase + 255 = maxLabel`, and every
 discriminant is below `KernelError.kernelErrorEncodingBound`. -/
 theorem kernelErrorFitsLabel (e : KernelError) :
@@ -1469,7 +1469,7 @@ theorem kernelErrorFitsLabel (e : KernelError) :
   have h := KernelError.toDiscriminant_lt e
   rw [show KernelError.kernelErrorEncodingBound = 58 from rfl] at h
   unfold errorLabel
-  rw [errorLabelBase_eq, show MessageInfo.maxLabel = 0xFFFFF by decide]
+  rw [errorLabelBase_eq, show MessageInfo.maxLabel = 0xFFFFFFFFFFFFF by decide]
   omega
 
 /-- The status range is exactly the top of the field: the sentinel
@@ -1480,19 +1480,29 @@ theorem errorLabelBase_add_range_eq_maxLabel :
 
 /-- The load-bearing negative for RA.A.6: an over-wide `x1` word is not
 silently truncated — `MessageInfo.decode` fail-closes on any word whose
-label bits exceed `maxLabel` (bits ≥ 32 set), so a corrupted status
+label bits exceed `maxLabel` (bits ≥ 64 set), so a corrupted status
 register decodes as an explicit failure rather than a wrong error. -/
 theorem overWideLabel_rejected :
     MessageInfo.decode ((MessageInfo.maxLabel + 1) <<< 12) = none := by
   decide
+
+/-- **An error's `x1` word**: its status label in bits 12-63 and every other
+field `0`, shifted as a machine word.  The label is in the top of the 52-bit
+range, so the shifted value is past `2^63` and a `Nat` encoding of it would be a
+heap number; the word is `MessageInfo.encode`'s (`errorLabelWord_eq_encode`). -/
+@[inline] def errorLabelWord (e : KernelError) : UInt64 := (errorLabel e).toUInt64 <<< 12
+
+theorem errorLabelWord_eq_encode (e : KernelError) :
+    errorLabelWord e =
+      (MessageInfo.encode { length := 0, extraCaps := 0, label := errorLabel e }).toUInt64 := by
+  cases e <;> decide
 
 /-- The error frame the boundary returns on a failed syscall: `x0 = 0`,
 the status label in `x1`, no message registers.  Computed at the boundary,
 **never staged into the TCB** — which is what keeps the error path
 state-preserving (RA.B.4). -/
 def errorFrame (e : KernelError) : SyscallReturnFrame :=
-  { x1 := (MessageInfo.encode
-      { length := 0, extraCaps := 0, label := errorLabel e }).toUInt64 }
+  { x1 := errorLabelWord e }
 
 /-- An error frame's `x1` decodes back to the `MessageInfo` that names the
 error — the encode side is inside the decoder's fail-closed bounds.  Every
@@ -2045,10 +2055,15 @@ theorem bit63Encoding_not_injective_on_badges :
   `UnknownKernelError` and a v3 fault delivery as a spurious error, which is
   why this is a version bump and not a patch.
 * Version **4** — seL4's `seL4_MessageInfo_t` layout: `capsUnwrapped` in
-  bits 9-11 and the label from bit 12, and the IPC buffer's receive path
-  (`receiveCNode`, `receiveIndex`, `receiveDepth`) after its
-  `caps_or_badges` words.  A v3 decoder reads every v4 label shifted by
-  three bits, so this is a version bump.
+  bits 9-11 and the label from bit 12, and the IPC buffer is seL4's
+  `seL4_IPCBuffer`: a `tag` word first, so message register `i` is word
+  `1 + i`, then `userData`, the `caps_or_badges` words and the receive path
+  (`receiveCNode`, `receiveIndex`, `receiveDepth`), 128 words.  The label is
+  seL4's 52 bits (bits 12-63), so the kernel-status range is the top of that
+  field, and a send names its extra capabilities in its buffer's
+  `caps_or_badges` words (seL4's `lookupExtraCaps`), not in message
+  registers.  A v3 decoder reads every v4 label shifted by three bits and
+  every overflow word five words early, so this is a version bump.
 
 Mirrored as `SYSCALL_ABI_VERSION` in `rust/sele4n-types` at each flip, with
 each side's conformance suite pinning its own constant to the same literal —

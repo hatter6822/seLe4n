@@ -892,11 +892,24 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_lt[^\n
 # specification's is proven equal to.
 run_check "INVARIANT" rg -n '^theorem receiveTransferCaps_of_inert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def capTransferInert[^\n]*(\n([ \t][^\n]*)?)*capUnwrapsAt cap endpointId" SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSendCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid rf len" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointCallCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid rf len" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*receiverTransferInertW st epId tid sTcb mi.length" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSendCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid &&" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointCallCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid &&" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*receiverTransferInertW st epId tid sTcb then" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" rg -n '^theorem capTransferInert_sendCapRequest_of_W($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransferInPlace.lean
 run_check "INVARIANT" rg -n '^theorem capTransferInert_receiveCapRequest_of_W($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransferInPlace.lean
+# A sender names its extra capabilities in its IPC buffer's caps_or_badges
+# words (seL4's lookupExtraCaps), never in message registers.
+run_check "INVARIANT" bash -lc 'rg -U -n "def senderExtraCapAddr\?[^\n]*(\n([ \t][^\n]*)?)*ipcBufferCapsOrBadgesWord i" SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def senderFrameCapRequest[^\n]*(\n([ \t][^\n]*)?)*senderExtraCapAddrs st tcb decoded\.msgInfo\.extraCaps" SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def capTransferInertW[^\n]*(\n([ \t][^\n]*)?)*senderExtraCapAddr\? st stcb 0" SeLe4n/Kernel/IPC/CrossCore/InertCapTransferInPlace.lean'
+run_negative_check "INVARIANT" rg -n 'decodeExtraCapAddrs' SeLe4n
+# The IPC buffer is seL4's seL4_IPCBuffer: a tag word, then msg[0..120].
+run_check "INVARIANT" rg -n '^def ipcBufferOverflowBaseWord : Nat := 1 \+ 4$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcBufferSlotAddr[^\n]*\n[^\n]*ipcBufferOverflowBaseWord \+ idx" SeLe4n/Kernel/Architecture/IpcBufferRead.lean'
+# The label is seL4's 52 bits, and an error's word is shifted as a machine word.
+run_check "INVARIANT" rg -n '^def maxLabel : Nat := \(1 <<< 52\) - 1$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def errorLabelWord \(e : KernelError\) : UInt64 := \(errorLabel e\)\.toUInt64 <<< 12$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem errorLabelWord_eq_encode($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # NEGATIVE: the no-buffer predicate this generalises is retired.
 run_negative_check "INVARIANT" rg -n '^def receiveWindowClosed' SeLe4n/
 # The ceiling and the figures derived from it move together -- the point of
@@ -5347,7 +5360,11 @@ run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st exe
 run_check "INVARIANT" rg -n '^  let wordCount ← captureEntryWords execCore trapped\.syscallId trapped\.x0 msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      let post := Architecture\.IpcBufferRead\.clearUserWords r\.2\n      \(\(r\.1, Architecture\.restoreCommitKindOnCore post execCore,$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.ffiCaptureUserWords idx\.toUInt64 pa\.toNat\.toUInt64 len\.toUInt64\n        captureOverflowRuns st tcb stop fuel \(s \+ len\) \(idx \+ len\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^            captureOverflowRuns st stcb sstop sstop 0 n0$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^            let n2 ← captureOverflowRuns st stcb sstop sstop 0 n1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# Each sender's extra-capability addresses are read from RAM: the caller's
+# after its overflow, a receive's blocked sender's after its own.
+run_check "INVARIANT" rg -n '^      let n1 ← captureSenderCapAddrs st tcb msgInfo n0$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^            captureSenderCapAddrs st stcb sInfo n2$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem expandRuns_overflowRuns($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem overflowRuns_within_page($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n -U '^    if captured\.is_none\(\) \{\n        crate::gic::halt_all\(\);$' rust/sele4n-hal/src/ffi.rs
@@ -12261,12 +12278,12 @@ run_check "INVARIANT" rg -n '^def syscallAbiVersion : Nat := 4' SeLe4n/Kernel/Ar
 # delivered fault message's `seL4_Fault_tag` is never read as a kernel error.
 # The base is pinned as a literal on all three sides; the two negatives keep
 # the v2 offset encoding from returning on either side of the boundary.
-run_check "INVARIANT" rg -n '^theorem errorLabelBase_eq : errorLabelBase = 0xFFF00' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem errorLabelBase_eq : errorLabelBase = 0xFFFFFFFFFFF00' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem ofErrorLabel\?_none_of_lt_base' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem returnMessageInfo_label_lt_errorLabelBase($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem faultLabel_lt_errorLabelBase($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Fault.lean
 run_negative_check "INVARIANT" rg -n 'e\.toDiscriminant \+ 1' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n 'pub const ERROR_LABEL_BASE: u64 = \(1 << 20\) - 256' rust/sele4n-types/src/lib.rs
+run_check "INVARIANT" rg -n 'pub const ERROR_LABEL_BASE: u64 = \(1 << 52\) - 256' rust/sele4n-types/src/lib.rs
 run_negative_check "INVARIANT" rg -n 'kernel_error_discriminant as u64\) \+ 1\) << 9' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^def writeReturnFrameToTcb($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^def readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean

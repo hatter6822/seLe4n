@@ -57,8 +57,8 @@ private def encodeLittleEndian (v : UInt64) : Array UInt8 :=
 
 /-- Build a SystemState whose current thread has its msg registers (x2..x5)
     populated from the inline Rust encoding and whose IPC buffer is mapped
-    to a fresh page with the overflow words written at
-    `ipcBufferVA + mrIdx*8`. -/
+    to a fresh page with the overflow words written where seL4's
+    `seL4_IPCBuffer` holds them, `msg[4 + i]`. -/
 private def buildAbiState
     (syscallId : Nat) (msgLen : Nat)
     (inlineRegs : Array UInt64) (overflowRegs : Array UInt64)
@@ -75,7 +75,8 @@ private def buildAbiState
       let val := overflowRegs[i]!
       let bytes := encodeLittleEndian val
       for j in [:8] do
-        let addr := SeLe4n.PAddr.ofNat (ipcBufferPA.toNat + i * 8 + j)
+        let addr := SeLe4n.PAddr.ofNat (ipcBufferPA.toNat +
+          (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord + i) * 8 + j)
         let b := bytes[j]!
         mem := fun a => if a == addr then b else mem a
     -- Register file populated per ARM64 layout: x2..x5 = inline regs.

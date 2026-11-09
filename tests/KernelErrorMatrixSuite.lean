@@ -231,8 +231,9 @@ private def row_invalidMessageInfo : KernelErrorRejection :=
     scenarioDesc  := "Decoding a msgInfo word whose length field exceeds" ++
                      " maxMessageRegisters returns .invalidMessageInfo"
     runScenario   := fun _ =>
-      -- High length bits -> length overflow rejected by MessageInfo.decode
-      runUnit (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo (rv (1 <<< 60))) }
+      -- Length field 127 > maxMessageRegisters, rejected by MessageInfo.decode
+      -- (every bit above 12 is the 52-bit label, so only a field bound fails).
+      runUnit (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo (rv 0x7F)) }
 
 /-- Row: `decodeCapPtr` rejects values exceeding word64 with
 `.invalidCapPtr`. -/

@@ -93,7 +93,7 @@ open SeLe4n.Model
     operations, each small enough to be a scalar, so a word `≥ 2^63` builds no
     heap number (`decodeMsgInfoWord_eq`). -/
 @[inline] def decodeMsgInfoWord (w : UInt64) : Except KernelError MessageInfo :=
-  if (w &&& 0x7F) ≤ 120 && ((w >>> 7) &&& 3) ≤ 3 && (w >>> 12) ≤ 0xFFFFF then
+  if (w &&& 0x7F) ≤ 120 && ((w >>> 7) &&& 3) ≤ 3 && (w >>> 12) ≤ 0xFFFFFFFFFFFFF then
     .ok { length := (w &&& 0x7F).toNat, extraCaps := ((w >>> 7) &&& 3).toNat,
           label := (w >>> 12).toNat, capsUnwrapped := ((w >>> 9) &&& 7).toNat }
   else .error .invalidMessageInfo
@@ -109,7 +109,7 @@ theorem decodeMsgInfoWord_eq (w : UInt64) :
     simp [UInt64.toNat_and, UInt64.toNat_shiftRight]
   simp only [UInt64.le_iff_toNat_le, h1, h2, h3, h4]
   simp only [maxMessageRegisters, Model.maxExtraCaps, MessageInfo.maxLabel]
-  by_cases hc : ((w.toNat &&& 127 ≤ 120 ∧ w.toNat >>> 7 &&& 3 ≤ 3) ∧ w.toNat >>> 12 ≤ 1048575)
+  by_cases hc : ((w.toNat &&& 127 ≤ 120 ∧ w.toNat >>> 7 &&& 3 ≤ 3) ∧ w.toNat >>> 12 ≤ 4503599627370495)
   · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
     simp [hc]
   · simp only [Bool.and_eq_true, decide_eq_true_eq] at *

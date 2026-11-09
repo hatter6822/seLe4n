@@ -179,6 +179,47 @@ def blockedSenderMessage (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TC
     IpcMessage :=
   blockedSenderMessageOf tcb (blockedSenderDecode st sender tcb)
 
+/-- **The address of a sender's extra capability `i`** (seL4's
+`getExtraCPtr`): word `i` of its IPC buffer's `caps_or_badges`, read where the
+kernel may read the buffer; `none` where the buffer does not resolve. -/
+@[inline] def senderExtraCapAddr? (st : SystemState) (tcb : TCB) (i : Nat) : Option SeLe4n.CPtr :=
+  (Architecture.IpcBufferRead.ipcBufferWordPAddr? st tcb
+    (Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord i) false).map
+    fun pa => SeLe4n.CPtr.ofWord (Architecture.IpcBufferRead.userWordAt st.machine pa)
+
+/-- **The extra capability addresses a sender names** (seL4's
+`lookupExtraCaps` reading `getExtraCPtr`): the first `count` words of its IPC
+buffer's `caps_or_badges`.  A sender whose buffer the kernel may not read names
+none, and seL4 then transfers no capability; the words lie in one frame
+(`ipcBufferWords_within_alignment`), so a buffer resolves all of them or none. -/
+def senderExtraCapAddrs (st : SystemState) (tcb : TCB) (count : Nat) : Array SeLe4n.CPtr :=
+  match (List.range (min count maxExtraCaps)).mapM (senderExtraCapAddr? st tcb) with
+  | some addrs => addrs.toArray
+  | none => #[]
+
+/-- A frame that names no extra capability names no address. -/
+theorem senderExtraCapAddrs_zero (st : SystemState) (tcb : TCB) :
+    senderExtraCapAddrs st tcb 0 = #[] := by
+  unfold senderExtraCapAddrs
+  rw [Nat.zero_min]
+  rfl
+
+/-- The first address a sender names is its `caps_or_badges` word 0. -/
+theorem senderExtraCapAddrs_getElem?_zero {st : SystemState} {tcb : TCB} {count : Nat}
+    {a : SeLe4n.CPtr} (ha : (senderExtraCapAddrs st tcb count)[0]? = some a) :
+    senderExtraCapAddr? st tcb 0 = some a := by
+  unfold senderExtraCapAddrs at ha
+  cases hn : min count maxExtraCaps with
+  | zero => rw [hn] at ha; simp at ha
+  | succ n =>
+    rw [hn, List.range_succ_eq_map] at ha
+    cases h0 : senderExtraCapAddr? st tcb 0 with
+    | none => simp [List.mapM_cons, h0] at ha
+    | some b =>
+      cases hr : (List.map Nat.succ (List.range n)).mapM (senderExtraCapAddr? st tcb) with
+      | none => simp [List.mapM_cons, h0, hr] at ha
+      | some l => simp [List.mapM_cons, h0, hr] at ha; rw [ha]
+
 /-- WS-ZA ZA4.7: **the capabilities a sender's frame asks to transfer**, as the
 CSpace root, the addresses and the root's depth they resolve against -- or
 `none` when it transfers nothing: no grant right, a frame that does not decode,
@@ -192,7 +233,7 @@ def senderFrameCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : T
   match blockedSenderDecode st sender tcb with
   | .error _ => none
   | .ok decoded =>
-      let addrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded
+      let addrs := senderExtraCapAddrs st tcb decoded.msgInfo.extraCaps
       if addrs.isEmpty then none else
       match st.getCNode? tcb.cspaceRoot with
       | some rootCn => some (tcb.cspaceRoot, addrs, rootCn.depth)

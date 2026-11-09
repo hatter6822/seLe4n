@@ -677,6 +677,21 @@ is answered.  A receiver whose buffer does not resolve has none read. -/
     pure (idx + 3)
   | none => pure idx
 
+/-- **The extra-capability addresses read from RAM** (`senderExtraCapAddrs`
+reads them): a sender's three `caps_or_badges` words, adjacent in its IPC
+buffer, so one page, captured into the core's buffer from pair `idx` as one
+run when its message-info word `msgInfo` names an extra capability; the next
+free pair is answered.  A sender whose buffer does not resolve has none read. -/
+@[inline] def captureSenderCapAddrs (st : SystemState) (stcb : TCB) (msgInfo : UInt64)
+    (idx : Nat) : BaseIO Nat :=
+  if (msgInfo >>> 7) &&& 0x3 == 0 then pure idx else
+  match Architecture.IpcBufferRead.ipcBufferWordPAddr? st stcb
+      (Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0) false with
+  | some pa => do
+    Platform.FFI.ffiCaptureUserWords idx.toUInt64 pa.toNat.toUInt64 SeLe4n.Model.maxExtraCaps.toUInt64
+    pure (idx + SeLe4n.Model.maxExtraCaps)
+  | none => pure idx
+
 /-- **WS-ZA ZA5.2: the overflow words a receive reads from the sender it takes**
 (`rendezvousSenderCode`): that sender's slots, cut to the length in its saved
 message info.  The entry's capture reads exactly these (its second
@@ -725,9 +740,10 @@ for that frame (zeroes from the carve), never what the thread wrote.
 
 This reads each word the decode will read — the caller's slots
 (`IpcBufferRead.callerOverflowAddrs`) and, on a receive that takes a blocked
-sender, that sender's (`rendezvousSenderOverflowAddrs`) — and the receive-path
-words a capability transfer reads (`transferReceiverCode`,
-`captureReceivePath`) from RAM into the
+sender, that sender's (`rendezvousSenderOverflowAddrs`) — the extra-capability
+addresses of each (`captureSenderCapAddrs`), and the receive-path words a
+capability transfer reads (`transferReceiverCode`, `captureReceivePath`) from
+RAM into the
 executing core's entry-word buffer, and answers how many pairs it read; the
 atomic step hands the buffer to the state before the decode
 (`IpcBufferRead.syncUserWords`) and the committed state drops it
@@ -751,15 +767,17 @@ word is built: the entry allocates nothing for its overflow words. -/
     | some tcb =>
       let stop := Architecture.IpcBufferRead.overflowStop msgInfo
       let n0 ← captureOverflowRuns st tcb stop stop 0 0
+      let n1 ← captureSenderCapAddrs st tcb msgInfo n0
       let n ← match rendezvousSenderCode st tid syscallId capWord with
-        | 0 => pure n0
+        | 0 => pure n1
         | k + 1 =>
           match st.getTcb? ⟨k⟩ with
           | some stcb =>
-            let sstop := Architecture.IpcBufferRead.overflowStop
-              (readRegWord stcb.registerContext SeLe4n.arm64DefaultLayout.msgInfoReg)
-            captureOverflowRuns st stcb sstop sstop 0 n0
-          | none => pure n0
+            let sInfo := readRegWord stcb.registerContext SeLe4n.arm64DefaultLayout.msgInfoReg
+            let sstop := Architecture.IpcBufferRead.overflowStop sInfo
+            let n2 ← captureOverflowRuns st stcb sstop sstop 0 n1
+            captureSenderCapAddrs st stcb sInfo n2
+          | none => pure n1
       match transferReceiverCode st tid syscallId capWord with
       | 0 => pure n
       | k + 1 =>

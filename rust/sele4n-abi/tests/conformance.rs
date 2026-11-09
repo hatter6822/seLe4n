@@ -519,12 +519,12 @@ fn xval_019_service_register_ipc_buffer() {
 // ============================================================================
 
 /// Verify MessageInfo encode/decode roundtrip for all valid bound combinations.
-/// V2-H: Label values updated to fit 20-bit limit (max 0xFFFFF).
+/// Label values across seL4's 52-bit field, its widest included.
 #[test]
 fn message_info_exhaustive_bounds() {
     for len in [0u8, 1, 60, 119, 120] {
         for caps in [0u8, 1, 2, 3] {
-            for label in [0u64, 1, 0xFFFF, 0xFFFFF] {
+            for label in [0u64, 1, 0xFFFF, 0xFFFFF, (1 << 52) - 1] {
                 let mi = MessageInfo::new(len, caps, label).unwrap();
                 let decoded = MessageInfo::decode(mi.encode().unwrap()).unwrap();
                 assert_eq!(
@@ -663,14 +663,14 @@ fn message_info_label_boundary_roundtrip() {
     let encoded = mi_zero.encode().unwrap();
     assert_eq!(MessageInfo::decode(encoded).unwrap(), mi_zero);
 
-    // Boundary value: label = 2^20 - 1 (maximum valid)
+    // Boundary value: label = 2^52 - 1 (maximum valid)
     let mi_max = MessageInfo::new(0, 0, MAX_LABEL).unwrap();
     let encoded = mi_max.encode().unwrap();
     assert_eq!(MessageInfo::decode(encoded).unwrap(), mi_max);
 
-    // Boundary value: label = 2^20 (first invalid — new() must reject)
+    // Boundary value: label = 2^52 (first invalid — new() must reject)
     assert_eq!(
-        MessageInfo::new(0, 0, 1u64 << 20),
+        MessageInfo::new(0, 0, 1u64 << 52),
         Err(KernelError::InvalidMessageInfo)
     );
 
@@ -687,7 +687,7 @@ fn encode_syscall_rejects_oversized_label() {
     // U3-B: With private fields, invalid MessageInfo can no longer be constructed.
     // We verify the rejection happens at new() instead.
     assert_eq!(
-        MessageInfo::new(0, 0, 1u64 << 20),
+        MessageInfo::new(0, 0, 1u64 << 52),
         Err(KernelError::InvalidMessageInfo)
     );
 }
@@ -915,10 +915,10 @@ fn register_file_bounds() {
     assert_eq!(rf.set(7, 42), None);
 }
 
-/// U3-I: IpcBuffer layout matches expected size and alignment.
+/// U3-I: IpcBuffer is seL4's 128-word `seL4_IPCBuffer`, 8-byte aligned.
 #[test]
 fn ipc_buffer_layout() {
-    assert_eq!(core::mem::size_of::<IpcBuffer>(), 984);
+    assert_eq!(core::mem::size_of::<IpcBuffer>(), 1024);
     assert_eq!(core::mem::align_of::<IpcBuffer>(), 8);
 }
 
@@ -930,7 +930,8 @@ fn ipc_buffer_layout() {
 /// moved with the status channel.  x0 is a full-width VALUE now (any u64
 /// is a success value, never a truncation hazard); the register that must
 /// not silently truncate is x1, and `MessageInfo::decode` rejects any
-/// word with bits beyond the 20-bit label field.
+/// word whose length or extraCaps exceed their bounds; the label is the
+/// whole word above bit 12 (seL4's 52 bits), so no label bit is dropped.
 #[test]
 fn decode_response_u64_overflow() {
     use sele4n_abi::decode_response;
@@ -944,10 +945,13 @@ fn decode_response_u64_overflow() {
     let regs = [0, u64::MAX, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::InvalidMessageInfo));
 
-    // The first over-wide x1 word: one bit past the 20-bit label field
-    // (bit 32 of the raw word) — rejected, not truncated to label 0.
+    // The label is the whole word above bit 12 (seL4's 52 bits): bit 32 is
+    // a label bit, read as a delivered label, not truncated to label 0.
     let regs = [0, 1u64 << 32, 0, 0, 0, 0, 0];
-    assert_eq!(decode_response(regs), Err(KernelError::InvalidMessageInfo));
+    assert_eq!(
+        decode_response(regs).map(|r| r.msg_info().label()),
+        Ok(1u64 << 20)
+    );
 }
 
 /// AF6-A + WS-SM SM8.C.9: Unrecognized kernel error codes (≥55 after SM8.C.9
@@ -1213,7 +1217,7 @@ fn syscall_id_variant_count() {
 #[test]
 fn abi_constants_match_lean() {
     use sele4n_abi::message_info::{MAX_EXTRA_CAPS, MAX_LABEL, MAX_MSG_LENGTH};
-    assert_eq!(MAX_LABEL, 1_048_575, "MAX_LABEL must be 2^20 - 1");
+    assert_eq!(MAX_LABEL, (1 << 52) - 1, "MAX_LABEL must be 2^52 - 1");
     assert_eq!(MAX_MSG_LENGTH, 120, "MAX_MSG_LENGTH must be 120");
     assert_eq!(MAX_EXTRA_CAPS, 3, "MAX_EXTRA_CAPS must be 3");
 }
@@ -2106,7 +2110,7 @@ fn syscall_abi_version_pinned() {
 /// constant, so the three cannot drift apart silently.
 #[test]
 fn error_label_base_pinned() {
-    assert_eq!(sele4n_types::ERROR_LABEL_BASE, 0xFFF00);
+    assert_eq!(sele4n_types::ERROR_LABEL_BASE, 0xF_FFFF_FFFF_FF00);
     assert_eq!(
         sele4n_types::ERROR_LABEL_BASE + 255,
         sele4n_abi::message_info::MAX_LABEL

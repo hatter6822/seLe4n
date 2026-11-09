@@ -121,11 +121,9 @@ theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
       · rfl
       · rw [hT]
         simp only [sendPayloadCapRequest, senderFrameCapRequest, blockedSenderDecode, hD]
-        have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs
-            (longSendDecode st tid tcb.registerContext capAddr mi)).isEmpty = true := by
-          unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs longSendDecode
-          simp only [hX]
-          rfl
+        have hE : ∀ s t, (senderExtraCapAddrs s t
+            (longSendDecode st tid tcb.registerContext capAddr mi).msgInfo.extraCaps).isEmpty = true := by
+          intro s t; unfold longSendDecode; simp only [hX, senderExtraCapAddrs_zero]; rfl
         simp only [hE, ↓reduceIte]
         split <;> rfl
     · simp only [sendPayloadMessage, senderFrameDecode, hT, blockedSenderDecode, hD,
@@ -224,11 +222,9 @@ theorem routedLongCallerFrame (st : SystemState) (tid : SeLe4n.ThreadId)
       · rfl
       · rw [hT]
         simp only [sendPayloadCapRequest, senderFrameCapRequest, blockedSenderDecode, hD]
-        have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs
-            (longCallDecode st tid tcb.registerContext capAddr mi)).isEmpty = true := by
-          unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs longCallDecode
-          simp only [hX]
-          rfl
+        have hE : ∀ s t, (senderExtraCapAddrs s t
+            (longCallDecode st tid tcb.registerContext capAddr mi).msgInfo.extraCaps).isEmpty = true := by
+          intro s t; unfold longCallDecode; simp only [hX, senderExtraCapAddrs_zero]; rfl
         simp only [hE, ↓reduceIte]
         split <;> rfl
     · simp only [sendPayloadMessage, senderFrameDecode, hT, blockedSenderDecode, hD,
@@ -281,10 +277,8 @@ theorem blockedSender_of_routedLong (st : SystemState) (s : SeLe4n.ThreadId) (sT
       exact ⟨_, decodeSyscallArgsFromState_of_routedCallLong_ok st s _ capAddr mi hR hRead,
         hGt, hMax, hX, rfl, rfl⟩
   refine ⟨?_, ?_⟩
-  · have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs d).isEmpty = true := by
-      unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs
-      rw [hMi, hX]
-      rfl
+  · have hE : ∀ s t, (senderExtraCapAddrs s t d.msgInfo.extraCaps).isEmpty = true := by
+      intro s t; rw [hMi, hX, senderExtraCapAddrs_zero]; rfl
     unfold blockedSenderCapRequest senderFrameCapRequest
     rw [hD]
     simp only [hF, Bool.false_eq_true, ↓reduceIte, hE, ite_self]
@@ -499,10 +493,8 @@ theorem blockedSender_of_routedCall (st : SystemState) (s : SeLe4n.ThreadId) (sT
   obtain ⟨d, hDec, _, _, _, hMi, hX, hRegs⟩ :=
     decodeSyscallArgsFromState_of_routedCall st s _ _ 32 capAddr mi h
   refine ⟨?_, ?_⟩
-  · have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs d).isEmpty = true := by
-      unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs
-      rw [hMi, hX]
-      rfl
+  · have hE : ∀ s t, (senderExtraCapAddrs s t d.msgInfo.extraCaps).isEmpty = true := by
+      intro s t; rw [hMi, hX, senderExtraCapAddrs_zero]; rfl
     unfold blockedSenderCapRequest senderFrameCapRequest blockedSenderDecode
     rw [hDec]
     simp only [hF, Bool.false_eq_true, ↓reduceIte, hE, ite_self]

@@ -7656,8 +7656,8 @@ still fired.  Parking it properly is what makes each of them decided by the
 `schedContextBinding` alone, which is what each one claims to be about. -/
 private def ipcSenderTcb : TCB :=
   TCB.setIpcState
-    ((SeLe4n.Testing.tcbWithSenderFrame (mkTcb 1044 40 (some c0)) ipcMessage
-        #[SeLe4n.CPtr.ofNat 0]).setSendCap none true)
+    ((SeLe4n.Testing.tcbWithSenderFrame (mkTcb 1044 40 (some c0)) ipcMessage 1).setSendCap
+      none true)
     (.blockedOnCall lowEndpoint)
 
 private def ipcFootprintState : SystemState :=
@@ -7674,6 +7674,7 @@ private def ipcFootprintState : SystemState :=
     |> fun st => SeLe4n.Testing.withSenderFrame st lowCurrent ipcMessage
         #[SeLe4n.CPtr.ofNat 0]
     |> fun st => SeLe4n.Testing.withReceiveSlot st ipcReceiver ⟨1046⟩ 0
+    |> fun st => SeLe4n.Testing.withSenderCapAddrs st ipcSender #[SeLe4n.CPtr.ofNat 0]
 
 /-- **WS-OD OD3.6** — the SchedContext a rendezvous donates.  Only the sender's
 `schedContextBinding` is read (`endpointCallDonatedSc?`), so the fixture need
@@ -10552,10 +10553,12 @@ private def taintedEndpointState : SystemState :=
   match base.getTcb? taintedSender with
   | none => base
   | some stcb =>
-      { base with
-          objects := base.objects.insert taintedSender.toObjId
-            (.tcb ((SeLe4n.Testing.tcbWithSenderFrame stcb transferMessage
-              #[SeLe4n.CPtr.ofNat 0]).setSendCap none true)) }
+      SeLe4n.Testing.withSenderCapAddrs
+        { base with
+            objects := base.objects.insert taintedSender.toObjId
+              (.tcb ((SeLe4n.Testing.tcbWithSenderFrame stcb transferMessage 1).setSendCap
+                none true)) }
+        taintedSender #[SeLe4n.CPtr.ofNat 0]
 
 /-- PR #873 round 4: the BOUND-delivery ordering.  `boundDeliveryTarget?` checks
 only that the waiter list is empty and that the bound TCB is parked on an

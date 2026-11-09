@@ -65,8 +65,8 @@ fn dispatch_svc_routes_to_inner_dispatcher() {
     let result = dispatch_svc(SyscallId::Send.to_u32(), &args);
     assert_eq!(result, Ok(SvcOutcome::Frame(error_frame_regs(17))));
     // The frame's x1 word is the status label in MessageInfo position
-    // (ABI v3: the top of the label range, base 0xFFF00).
-    assert_eq!(error_frame_regs(17)[1], (0xFFF00u64 + 17) << 12);
+    // (the top of the 52-bit label range, base 2^52 - 256).
+    assert_eq!(error_frame_regs(17)[1], (0xF_FFFF_FFFF_FF00u64 + 17) << 12);
 }
 
 /// Moved from `svc_dispatch`'s unit tests at RR5.6 (see this file's header).

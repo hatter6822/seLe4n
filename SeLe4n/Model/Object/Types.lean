@@ -4871,10 +4871,10 @@ structure MessageInfo where
 
 namespace MessageInfo
 
-/-- V2-E (M-API-3): Maximum label value — 2^20 - 1 (20 bits), matching seL4's
-    `seL4_MessageInfo_t` label field width. The previous model allowed unbounded
-    labels (55 bits), which diverged from seL4's 20-bit limit. -/
-def maxLabel : Nat := (1 <<< 20) - 1
+/-- Maximum label value — 2^52 - 1 (52 bits): seL4's 64-bit
+    `seL4_MessageInfo_t` puts the label in bits 12-63, the whole word above
+    `capsUnwrapped`, so every label a register can hold is a label. -/
+def maxLabel : Nat := (1 <<< 52) - 1
 
 /-- The largest `capsUnwrapped` field: one bit for each of the `maxExtraCaps`
     extra capabilities (seL4's 3-bit field). -/
@@ -4886,7 +4886,7 @@ against its seL4 bound before returning a `MessageInfo`.
 Enforces:
 - `length ≤ maxMessageRegisters` (120 registers)
 - `extraCaps ≤ maxExtraCaps` (3 extra capabilities)
-- `label ≤ maxLabel` (20-bit label, 2^20 − 1)
+- `label ≤ maxLabel` (52-bit label, 2^52 − 1)
 
 Returns `none` on any bound violation, matching the behavior of the
 validating `decode` path. Prefer this over `MessageInfo.mk` anywhere the
@@ -4955,13 +4955,14 @@ theorem mkChecked_wellFormed {length extraCaps label : Nat} {mi : MessageInfo}
     - bits  0..6  : length (7 bits, max 120)
     - bits  7..8  : extraCaps (2 bits, max 3)
     - bits  9..11 : capsUnwrapped (3 bits)
-    - bits 12..31 : label (20 bits, max 2^20 - 1) -/
+    - bits 12..63 : label (52 bits, max 2^52 - 1) -/
 @[inline] def encode (mi : MessageInfo) : Nat :=
   mi.length ||| (mi.extraCaps <<< 7) ||| (mi.capsUnwrapped <<< 9) ||| (mi.label <<< 12)
 
 /-- Decode a raw word into MessageInfo fields by extracting bit fields.
     Returns `none` if the length or extraCaps fields exceed their bounds,
-    or if the label exceeds the 20-bit maximum (V2-E/M-API-3).  The
+    or if the label exceeds the 52-bit maximum (only a word past 64 bits
+    can).  The
     `capsUnwrapped` field is read as seL4 reads it; a send ignores it, since
     the transfer that delivers a message sets it. -/
 @[inline] def decode (w : Nat) : Option MessageInfo :=

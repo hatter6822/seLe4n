@@ -33,10 +33,12 @@ thread's VSpace and returns the `UInt64` stored at overflow slot `idx`.
   threads' state. See `ipcBufferReadMr_reads_only_caller_tcb` for the
   formal witness of this property.
 
-**Layout contract (matches `rust/sele4n-abi/src/ipc_buffer.rs`):**
-- `tcb.ipcBuffer` is the VAddr of the start of the overflow region.
-- Overflow slot `i` (0-indexed) occupies bytes `[i*8, i*8+8)` from that
-  base — i.e., MR[i+4] for the ARM64 4-inline-regs layout.
+**Layout contract (seL4's `seL4_IPCBuffer`; matches
+`rust/sele4n-abi/src/ipc_buffer.rs`):**
+- `tcb.ipcBuffer` is the VAddr of the buffer's first word, its `tag`.
+- Message register `i` is `msg[i]`, word `1 + i`; overflow slot `j`
+  (0-indexed, MR[j+4] for the ARM64 4-inline-regs layout) occupies bytes
+  `[(5+j)*8, (5+j)*8+8)` from that base (`ipcBufferOverflowBaseWord`).
 - A buffer the validator admits is aligned to `ipcBufferAlignment` (1024 B,
   the buffer's size), so all 116 overflow slots lie on the buffer's page
   (`maxOverflowSlots_le_firstPageSlots`).  The reads do not assume it:
@@ -78,13 +80,23 @@ inductive IpcBufferReadError where
     (matches `rust/sele4n-abi/src/ipc_buffer.rs:OVERFLOW_SLOTS`). -/
 def maxOverflowSlots : Nat := maxMessageRegisters - 4
 
-/-! The words of the IPC buffer past the message (seL4's `seL4_IPCBuffer`
-after `msg`; the Rust mirror is `sele4n_abi::ipc_buffer::IpcBuffer`): one
-`userData` word, the `caps_or_badges` words, then the receive path. -/
+/-! The IPC buffer is seL4's `seL4_IPCBuffer` (the Rust mirror is
+`sele4n_abi::ipc_buffer::IpcBuffer`), 128 words: the `tag` word, the 120
+`msg` words, one `userData` word, the three `caps_or_badges` words, then the
+receive path.  Message register `i` is `msg[i]`, word `1 + i`; the first four
+travel in registers, so the words the kernel reads and writes start at
+`msg[4]`, word `ipcBufferOverflowBaseWord`.  The indices below count from
+there: overflow slot `j` is message register `4 + j`. -/
 
-/-- Word `i` of `caps_or_badges`, where a delivery writes the badge of the
-`i`-th extra capability it unwrapped (seL4's `setExtraBadge`). -/
-def ipcBufferBadgeWord (i : Nat) : Nat := maxOverflowSlots + 1 + i
+/-- The buffer word overflow slot 0 (message register 4) is: past the `tag`
+word and the four `msg` words whose registers travel in x2–x5. -/
+def ipcBufferOverflowBaseWord : Nat := 1 + 4
+
+/-- Word `i` of `caps_or_badges`: on a send, the address of the sender's
+`i`-th extra capability (seL4's `getExtraCPtr`, read by `lookupExtraCaps`);
+on a delivery, where the kernel writes the badge of the `i`-th extra
+capability it unwrapped (seL4's `setExtraBadge`). -/
+def ipcBufferCapsOrBadgesWord (i : Nat) : Nat := maxOverflowSlots + 1 + i
 
 /-- The `receiveCNode` word: the CNode capability, in the receiver's CSpace,
 its receive slot is addressed in. -/
@@ -96,14 +108,17 @@ def ipcBufferReceiveIndexWord : Nat := ipcBufferReceiveCNodeWord + 1
 /-- The `receiveDepth` word: how many bits of the index resolve the slot. -/
 def ipcBufferReceiveDepthWord : Nat := ipcBufferReceiveCNodeWord + 2
 
-/-- The buffer's words: the message's overflow, `userData`, the badges and the
-receive path (984 bytes, inside the 1024-byte aligned buffer). -/
+/-- The buffer's words from the overflow on: the message's overflow,
+`userData`, the badges and the receive path. -/
 def ipcBufferWords : Nat := ipcBufferReceiveDepthWord + 1
 
 theorem ipcBufferWords_eq : ipcBufferWords = 123 := by decide
 
-/-- The buffer's words lie inside its alignment, so in one frame. -/
-theorem ipcBufferWords_within_alignment : ipcBufferWords * 8 ≤ ipcBufferAlignment := by decide
+/-- The whole buffer, from its `tag` word to `receiveDepth`, is seL4's
+128-word `seL4_IPCBuffer`: exactly the 1024-byte aligned buffer, so in one
+frame. -/
+theorem ipcBufferWords_within_alignment :
+    (ipcBufferOverflowBaseWord + ipcBufferWords) * 8 = ipcBufferAlignment := by decide
 
 -- ============================================================================
 -- AK4-A.1: Pure IPC-buffer word read helper
@@ -116,7 +131,7 @@ theorem ipcBufferWords_within_alignment : ipcBufferWords * 8 ≤ ipcBufferAlignm
     copies could drift apart, and a fill that cached a different page than the
     read walked would be a fill of an entry hardware never loaded. -/
 def ipcBufferSlotAddr (ipcBuffer : VAddr) (idx : Nat) : VAddr :=
-  VAddr.ofNat (ipcBuffer.toNat + idx * 8)
+  VAddr.ofNat (ipcBuffer.toNat + (ipcBufferOverflowBaseWord + idx) * 8)
 
 /-- The page through which overflow slot `idx` resolves.
 
@@ -164,7 +179,7 @@ recursion over the pairs' bytes, so no `Option`, list or closure is built. -/
 
     **Layout convention:** The thread's IPC buffer starts at VAddr
     `tcb.ipcBuffer`; overflow slot `i` (0-indexed) lives at byte offset
-    `i * 8`. The corresponding virtual address resolves through the
+    `(ipcBufferOverflowBaseWord + i) * 8`, seL4's `msg[4 + i]`. The corresponding virtual address resolves through the
     thread's VSpace to a physical address, from which `readUInt64`
     assembles an 8-byte little-endian word.
 
@@ -282,11 +297,16 @@ overflow region, `maxOverflowSlots` words (928 bytes), is shorter than a page,
 so every slot from this one on lies on the next page
 (`ipcBufferSlotPage_of_firstPageSlots_le`). -/
 @[inline] def firstPageSlots (buf : VAddr) : Nat :=
-  (SeLe4n.pageBytes - buf.toNat % SeLe4n.pageBytes + 7) / 8
+  (SeLe4n.pageBytes - (buf.toNat + ipcBufferOverflowBaseWord * 8) % SeLe4n.pageBytes + 7) / 8
 
 private theorem slotPage_eq_ofNat (buf : VAddr) (j : Nat) :
     ipcBufferSlotPage buf j =
-      VAddr.ofNat ((buf.toNat + j * 8) / SeLe4n.pageBytes * SeLe4n.pageBytes) := rfl
+      VAddr.ofNat ((buf.toNat + 40 + j * 8) / SeLe4n.pageBytes * SeLe4n.pageBytes) := by
+  unfold ipcBufferSlotPage ipcBufferSlotAddr VAddr.pageBase
+  have h : buf.toNat + (ipcBufferOverflowBaseWord + j) * 8 = buf.toNat + 40 + j * 8 := by
+    simp only [ipcBufferOverflowBaseWord]; omega
+  simp only [VAddr.toNat, VAddr.ofNat] at h ⊢
+  rw [h]
 
 /-- A slot before `firstPageSlots` is on slot 0's page… -/
 theorem ipcBufferSlotPage_of_lt_firstPageSlots {buf : VAddr} {j : Nat}
@@ -294,16 +314,16 @@ theorem ipcBufferSlotPage_of_lt_firstPageSlots {buf : VAddr} {j : Nat}
   rw [slotPage_eq_ofNat, slotPage_eq_ofNat]
   apply congrArg VAddr.ofNat
   unfold firstPageSlots at h
-  simp only [SeLe4n.pageBytes] at h ⊢
+  simp only [SeLe4n.pageBytes, ipcBufferOverflowBaseWord] at h ⊢
   omega
 
-/-- The buffer's words fit the buffer: the overflow slots, the user-data word
-and the three capability words (`rust/sele4n-abi/src/ipc_buffer.rs`'s
-`IpcBuffer`, 120 words) span at most `ipcBufferAlignment` bytes, so the
-validator's physical-end bound covers every word the kernel reads or writes
-there (`IpcBufferValidation.validateIpcBufferAddress`, step 7). -/
+/-- The buffer's words fit the buffer: from the `tag` word through the
+receive path (`rust/sele4n-abi/src/ipc_buffer.rs`'s `IpcBuffer`, 128 words)
+they span at most `ipcBufferAlignment` bytes, so the validator's physical-end
+bound covers every word the kernel reads or writes there
+(`IpcBufferValidation.validateIpcBufferAddress`, step 7). -/
 theorem ipcBufferWords_within_buffer :
-    (maxOverflowSlots + 1 + SeLe4n.Model.maxExtraCaps) * 8 ≤ SeLe4n.ipcBufferAlignment := by
+    (ipcBufferOverflowBaseWord + ipcBufferWords) * 8 ≤ SeLe4n.ipcBufferAlignment := by
   decide
 
 /-- A buffer aligned to `ipcBufferAlignment`, as the validator admits it, holds
@@ -315,7 +335,7 @@ theorem maxOverflowSlots_le_firstPageSlots {buf : VAddr}
     maxOverflowSlots ≤ firstPageSlots buf := by
   unfold firstPageSlots
   simp only [maxOverflowSlots, SeLe4n.Model.maxMessageRegisters, SeLe4n.ipcBufferAlignment,
-    SeLe4n.pageBytes] at h ⊢
+    SeLe4n.pageBytes, ipcBufferOverflowBaseWord] at h ⊢
   omega
 
 /-- …every slot from it to the last overflow slot is on the next… -/
@@ -326,7 +346,7 @@ theorem ipcBufferSlotPage_of_firstPageSlots_le {buf : VAddr} {j : Nat}
   rw [slotPage_eq_ofNat, slotPage_eq_ofNat]
   apply congrArg VAddr.ofNat
   unfold firstPageSlots at h ⊢
-  simp only [SeLe4n.pageBytes] at h ⊢
+  simp only [SeLe4n.pageBytes, ipcBufferOverflowBaseWord] at h ⊢
   omega
 
 /-- …and the two pages differ. -/
@@ -337,11 +357,11 @@ theorem ipcBufferSlotPage_firstPageSlots_ne (buf : VAddr) :
   have h := congrArg VAddr.toNat hEq
   simp only [VAddr.ofNat, VAddr.toNat] at h
   unfold firstPageSlots at h
-  simp only [SeLe4n.pageBytes, VAddr.toNat] at h
+  simp only [SeLe4n.pageBytes, VAddr.toNat, ipcBufferOverflowBaseWord] at h
   omega
 
 theorem firstPageSlots_pos (buf : VAddr) : 0 < firstPageSlots buf := by
-  unfold firstPageSlots; simp only [SeLe4n.pageBytes]; omega
+  unfold firstPageSlots; simp only [SeLe4n.pageBytes, ipcBufferOverflowBaseWord]; omega
 
 /-- The overflow slot read after slot 0 to show every overflow slot of `n`
 reads: the first slot of the next page when the slots cross into it, and slot

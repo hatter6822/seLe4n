@@ -592,7 +592,7 @@ never tripped either. -/
     (encodeFault f ctx).1.extraCaps = 0 := by cases f <;> rfl
 
 /-- WS-RR RR4.6: the encoded `MessageInfo` is well-formed — length, extraCaps
-and the 20-bit label all inside their seL4 bounds, so the word encodes and
+and the 52-bit label all inside their seL4 bounds, so the word encodes and
 decodes losslessly through `MessageInfo.encode`. -/
 theorem encodeFault_messageInfo_wellFormed (f : Fault) (ctx : FaultContext) :
     (encodeFault f ctx).1.wellFormed := by

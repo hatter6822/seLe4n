@@ -4,7 +4,7 @@ The specification's IPC capability transfer is restated as seL4's
 `transferCaps`, with the theorems that mentioned the old scan.
 
 - **One receive slot, named by the receiver** (`receiveSlot?`, seL4's
-  `getReceiveSlots`): the receiver's IPC buffer words 120-122
+  `getReceiveSlots`): the receiver's IPC buffer words 125-127
   (`receive_cnode`, `receive_index`, `receive_depth`, `seL4_SetCapReceivePath`)
   are read; `receive_cnode` looked up in the receiver's CSpace must name a
   CNode, in which `receive_index` resolves `receive_depth` bits deep (1-64) to
@@ -23,7 +23,7 @@ The specification's IPC capability transfer is restated as seL4's
   physical write of the receiver's buffer) and its bit set in the message's
   `capsUnwrapped`.
 - **The message info reports the count transferred**: `MessageInfo` gains
-  `capsUnwrapped` (bits 9-11; the label moves to bits 12-31, seL4's layout),
+  `capsUnwrapped` (bits 9-11; the label moves to bits 12-63, seL4's layout),
   `CapTransferResult` is `installed | unwrapped`, and the receiver's staged
   `extraCaps` / `capsUnwrapped` are `CapTransferSummary.capInfo`
   (`returnMessageInfo`).  The return ABI version is 4; the Rust
@@ -87,6 +87,36 @@ The specification's IPC capability transfer is restated as seL4's
   `receiveTakeCaps_delivered`).  The no-buffer predicate it generalises
   (`receiveWindowClosed` and its two lemmas) is removed, and
   `ClosedReceiveWindow.lean` is renamed `InertCapTransfer.lean`.
+- **The IPC buffer is seL4's `seL4_IPCBuffer`** (`ipcBufferOverflowBaseWord`):
+  the buffer starts with its `tag` word, message register `i` is `msg[i]`,
+  word `1 + i`, and the kernel reads and writes `msg[4..120]` from word 5;
+  then `userData`, the three `caps_or_badges` words (122-124) and the receive
+  path (125-127), 128 words, exactly the 1024-byte aligned buffer the
+  validator already admits (`ipcBufferWords_within_alignment`).  The Rust
+  `sele4n_abi::IpcBuffer` gains `tag` and holds all 120 `msg` words, so
+  `msg[i]` is register `i`.
+- **A sender names its extra capabilities in its IPC buffer**
+  (`senderExtraCapAddrs`, seL4's `lookupExtraCaps` reading `getExtraCPtr`):
+  the addresses are the first `extraCaps` words of the sender's
+  `caps_or_badges`, read where the kernel may read its buffer; a sender
+  without one names none.  The message-register decode of them
+  (`decodeExtraCapAddrs`, which read the registers after the body, so a
+  message longer than three words could carry no capability) is deleted.  The
+  in-place decision reads the same word (`senderExtraCapAddr?`), and the
+  syscall entry captures each sender's three words from RAM
+  (`captureSenderCapAddrs`); the HAL's entry-word buffer grows by two runs of
+  three (`EXTRA_CAP_WORDS`).  The test fixtures write the addresses into the
+  sender's buffer (`SeLe4n.Testing.withSenderCapAddrs`), and the exerciser's
+  capability-carrying steps write theirs before the call
+  (`RoundTrip::caps_or_badges`, unmeasured).
+- **The label is seL4's 52 bits** (`MessageInfo.maxLabel = 2^52 - 1`, bits
+  12-63): every label a word carries is a label, and the kernel-status range
+  is the top 256 of the field (`errorLabelBase = 2^52 - 256`).  An error's
+  `x1` is shifted as a machine word (`errorLabelWord`,
+  `errorLabelWord_eq_encode`), since the status label shifted into place is past
+  `2^63` and would be a heap number as a `Nat`.  The Rust `MAX_LABEL`,
+  `ERROR_LABEL_BASE` and the blocked-resume sentinel follow, and the shared
+  ABI layout table (`tests/fixtures/abi_layout.expected`) is regenerated.
 - **Fixed**: `docs/CLAIM_EVIDENCE_INDEX.md` cited two theorems that do not
   exist (`CapSpaceAgrees.storeSendRendezvous`, `.storeCallRendezvous`); the row
   now cites the frame lemmas the in-place transfers use.

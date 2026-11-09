@@ -1849,7 +1849,7 @@ specification's transfer (`endpointSendCapsGeneralR`). -/
             | some r =>
                 match st.getTcb? r with
                 | some rt =>
-                    if decide (len ≤ 4) && senderTransferInertW st epId rt tid rf len &&
+                    if decide (len ≤ 4) && senderTransferInertW st epId rt tid &&
                         endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                           (ctx.endpointLabelOf epId) &&
                         sendWakesInPlaceCode st epId r rt.queueNextCode then
@@ -1899,8 +1899,8 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
             have hMsg := routedTransferringMessage st tid rf capAddr mi sid hFrame hR hShort
             unfold endpointSendCapsGeneralR
             simp only [hTgt, hE, Option.bind_some, hH]
-            have hInert := capTransferInert_sendCapRequest_of_W st epId r rt tid rf cap.badge
-              (cap.rights.mem .grant) sid capAddr mi hFrame hT hR hShort hSI
+            have hInert := capTransferInert_sendCapRequest_of_W st epId r rt tid cap.badge
+              (cap.rights.mem .grant) hT hSI
             obtain ⟨s, hC, hD⟩ := sendDispatchChecked_inPlace_inert ctx st epId ep tid r rt
               _ _ executingCore (hMsg _ _ hS) hE hH hT hS hW hInert hFlow
             rw [hD]
@@ -1981,7 +1981,7 @@ the specification's transfer and refuses in the state it was handed
                 | some rt =>
                     match rt.pendingReceiveReply with
                     | some rid =>
-                        if decide (len ≤ 4) && senderTransferInertW st epId rt tid rf len &&
+                        if decide (len ≤ 4) && senderTransferInertW st epId rt tid &&
                             endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
                             callWakesInPlace st epId tid r rt rid then
@@ -2027,8 +2027,8 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
               obtain ⟨⟨⟨hShort, hSI⟩, hFlow⟩, hW⟩ := hG
               have hS := senderTransferInertW_isSome hSI
               have hMsg := routedTransferringMessage st tid rf capAddr mi sid hFrame hR hShort
-              have hInert := capTransferInert_sendCapRequest_of_W st epId r rt tid rf cap.badge
-                (cap.rights.mem .grant) sid capAddr mi hFrame hT hR hShort hSI
+              have hInert := capTransferInert_sendCapRequest_of_W st epId r rt tid cap.badge
+                (cap.rights.mem .grant) hT hSI
               obtain ⟨s, hC, sgi, hD⟩ := callDispatchChecked_inPlace_inert ctx st epId ep
                 tid r rt rid (.frame cap.badge (cap.rights.mem .grant)) _ executingCore
                 (hMsg cap.badge (cap.rights.mem .grant) hS)
@@ -2667,7 +2667,7 @@ other rendezvous goes through the specification
           | .transferring .send _ mi =>
             if decide (mi.length ≤ 4) && !sTcb.ipcFaultSend &&
                 receiveTakesInPlace st epId tid s sTcb &&
-                receiverTransferInertW st epId tid sTcb mi.length then
+                receiverTransferInertW st epId tid sTcb then
               let f := Architecture.regMessageFrameW SeLe4n.arm64DefaultLayout sTcb.registerContext
                 mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
               .ok ((), performReceiveDelivered st epId s sTcb.queueNextCode tid executingCore
@@ -2799,8 +2799,8 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
           · next hG =>
             simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
             obtain ⟨⟨⟨hLen, hF⟩, hG⟩, hRI⟩ := hG
-            have hInert := capTransferInert_receiveCapRequest_of_W st epId ep tid s sTcb .send
-              capAddr mi hEp hH hT hR hLen hRI
+            have hInert := capTransferInert_receiveCapRequest_of_W st epId ep tid s sTcb
+              hEp hH hT hRI
             obtain ⟨⟨summary, hC, h1⟩, h2, h3⟩ := receiveTakeCaps_delivered st epId ep tid
               (SeLe4n.ReplyId.ofOptCode replyCode) executingCore s sTcb
               capAddr mi ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp)

@@ -478,11 +478,18 @@ pub const OVERFLOW_SLOTS: usize = 116;
 /// buffer (`receive_cnode`, `receive_index`, `receive_depth`).
 pub const RECEIVE_PATH_WORDS: usize = 3;
 
+/// The extra-capability addresses a transfer reads from a sender's IPC buffer
+/// (its `caps_or_badges` words, seL4's `lookupExtraCaps`; Lean's
+/// `maxExtraCaps`).
+pub const EXTRA_CAP_WORDS: usize = 3;
+
 /// **WS-ZA ZA5.2**: the user words one kernel entry may read — the caller's
-/// overflow slots, on a receive that takes a blocked sender the sender's
-/// (`SyscallDispatchEntry.rendezvousSenderOverflowAddrs`), and the transfer's
+/// overflow slots and extra-capability addresses, on a receive that takes a
+/// blocked sender the sender's
+/// (`SyscallDispatchEntry.rendezvousSenderOverflowAddrs`,
+/// `SyscallDispatchEntry.captureSenderCapAddrs`), and the transfer's
 /// receiver's receive path (`SyscallDispatchEntry.captureReceivePath`).
-pub const ENTRY_WORD_PAIRS: usize = 2 * OVERFLOW_SLOTS + RECEIVE_PATH_WORDS;
+pub const ENTRY_WORD_PAIRS: usize = 2 * OVERFLOW_SLOTS + 2 * EXTRA_CAP_WORDS + RECEIVE_PATH_WORDS;
 
 const ENTRY_WORD_BYTES: usize = 16 * ENTRY_WORD_PAIRS;
 

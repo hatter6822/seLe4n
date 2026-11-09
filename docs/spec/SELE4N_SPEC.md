@@ -89,7 +89,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
 | **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning; the per-core run queue links through TCB fields as seL4's does, with the abstract queue kept as an erased ghost and proven to agree with the links on every reachable state (`runQueueRefined`) |
 | **Revocation** | Silent error swallowing | seL4's `cteRevoke` loop (`cspaceRevokeCdtFinalising`, `v0.36.111`): the source's first CDT child is deleted and finalised until it has none, each delete admitted by a check read before its writes, so a revoke never refuses after it has written (§8.10) |
-| **Syscall boundary** *(WS-J1-A/B/C/D completed; WS-V V2 complete)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, complete round-trip proof surface for all 3 decode components (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` with bitwise `Nat.testBit` extensionality, plus composite `decode_components_roundtrip`), determinism proof, and error exclusivity (J1-B) + `syscallEntry` register-sourced entry point with capability-gated dispatch to all 17 kernel operations of the V2 era (13 original + `notificationSignal`/`notificationWait`/`replyRecv` added in V2; the dispatch surface has since grown to all 34 `SyscallId` variants — see §8.10), soundness theorems (J1-C) + invariant preservation and NI coverage for decode/dispatch path with `registerDecodeConsistent` predicate and 2 new `NonInterferenceStep` constructors (J1-D); `MessageInfo` label field bounded to 20 bits (seL4 convention, V2-E/V2-H); cap transfer into the one receive slot the receiver's IPC buffer names (`receiveSlot?`, seL4's `getReceiveSlots`; the V2-F/V2-G `capRecvSlot` base is retired) |
+| **Syscall boundary** *(WS-J1-A/B/C/D completed; WS-V V2 complete)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, complete round-trip proof surface for all 3 decode components (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` with bitwise `Nat.testBit` extensionality, plus composite `decode_components_roundtrip`), determinism proof, and error exclusivity (J1-B) + `syscallEntry` register-sourced entry point with capability-gated dispatch to all 17 kernel operations of the V2 era (13 original + `notificationSignal`/`notificationWait`/`replyRecv` added in V2; the dispatch surface has since grown to all 34 `SyscallId` variants — see §8.10), soundness theorems (J1-C) + invariant preservation and NI coverage for decode/dispatch path with `registerDecodeConsistent` predicate and 2 new `NonInterferenceStep` constructors (J1-D); `MessageInfo` label field is seL4's 52 bits (bits 12-63); cap transfer into the one receive slot the receiver's IPC buffer names (`receiveSlot?`, seL4's `getReceiveSlots`; the V2-F/V2-G `capRecvSlot` base is retired) |
 
 These are not abstract research extensions — they are design decisions that will be
 carried forward into the production kernel.
@@ -3272,7 +3272,7 @@ handler.  RR4 replaces that path with seL4's fault IPC:
   or was already pending (`faultEntryDeliver_sgis_cover_diff`).
 - **The return ABI is version 3**: a delivered fault message's label is its
   `seL4_Fault_tag`, so the kernel status moved to the top of the label range
-  (`errorLabelBase = 0xFFF00`; `faultLabel_lt_errorLabelBase`,
+  (`errorLabelBase = 2^52 - 256`; `faultLabel_lt_errorLabelBase`,
   `ofErrorLabel?_none_of_lt_base`, `returnMessageInfo_label_lt_errorLabelBase`)
   and a handler's decoder reads a successful receive carrying the tag.
 - **What reaches hardware registers** is `MR0`-`MR3`: no receive path writes
@@ -7505,26 +7505,29 @@ destroyers (the revocation walk, the retype cleanup) still reach thread slots.
 Witness: `tests/NegativeStateSuite.lean`'s thread-slot invocation refusal
 checks (both space slots, both calls, the roots kept).
 
-### 8.10.4 IPC Extra Capability Resolution — Silent-Drop Semantics (AI6 / M-02)
+### 8.10.4 IPC Extra Capability Resolution — seL4's `lookupExtraCaps`
 
-`resolveExtraCaps` (API.lean) resolves sender-specified capability addresses
-to actual capabilities for IPC transfer. Capabilities that fail resolution
-(invalid CPtr, missing slot, empty slot) are **silently dropped** — the
-returned array contains only successfully resolved capabilities.
+A sender names its extra capabilities in its IPC buffer: the first
+`extraCaps` words of `caps_or_badges` (words 122-124, seL4's `getExtraCPtr`;
+`senderExtraCapAddrs` in `IPC/DualQueue/SenderMessage.lean`), read where the
+kernel may read the sender's buffer.  A sender without one names none.  No
+message register carries a capability address.
 
-**seL4 equivalence**: This matches the seL4 C kernel's `lookupExtraCaps`
-behavior, which silently discards unresolvable capabilities and returns
-only valid ones in the IPC buffer. The receiver observes fewer extra caps
-than the sender specified; the count is available via `MessageInfo.extraCaps`.
+`resolveExtraCaps` resolves the addresses in the sender's CSpace at the
+rendezvous, **all or nothing**, as seL4's `lookupExtraCaps`: if any address
+fails to resolve to a slot, the message carries no capabilities (seL4's
+`doNormalTransfer` clears the list on the lookup fault, raising none).  The
+capabilities are then the slots' contents in order, up to the first empty slot
+(`extraCapsFromSlots`), where seL4's transfer stops.  A sender without the
+grant right transfers nothing, and its addresses are not looked up.  The
+receiver learns how many were processed from its message info's `extraCaps`
+(`CapTransferSummary.capInfo`), never from the sender's declared count.
 
-**Security**: No information leak — failed resolutions produce no observable
-side effect. The receiver can detect drops by comparing the resolved count
-against the sender's declared count.
-
-**Source**: API.lean, inline comment AC3-D / API-01.
+**Security**: no information leak — a failed resolution produces no
+observable side effect beyond the count the receiver is told.
 
 **Capability transfer is seL4's `transferCaps`** (`v0.37.5`).  The receiver
-names one receive slot in its IPC buffer (words 120-122: `receive_cnode`,
+names one receive slot in its IPC buffer (words 125-127: `receive_cnode`,
 `receive_index`, `receive_depth`; `receiveSlot?`): `receive_cnode` looked up
 in its CSpace must name a CNode, in which `receive_index` resolves
 `receive_depth` bits deep (1-64) to an empty slot, else there is no slot.  A
@@ -7540,7 +7543,8 @@ the slot then used up; a capability with no slot left, or whose install is
 refused, stops the transfer, with no fault.  The receiver's message info
 reports `extraCaps` (the count processed) and `capsUnwrapped`
 (`CapTransferSummary.capInfo`, `returnMessageInfo`).  The syscall entry reads
-the receive-path words from RAM (`captureReceivePath`).
+the receive-path words and each sender's `caps_or_badges` words from RAM
+(`captureReceivePath`, `captureSenderCapAddrs`).
 
 **No message holds a capability** (`v0.36.121`, WS-ZA ZA5.4 part 11).  An
 `IpcMessage` is registers and a badge: it has no capability field and no grant
@@ -7583,10 +7587,14 @@ into the `msgRegs` array before per-syscall argument decode runs.
      `ipcBufferReadMr` from the caller's IPC buffer. The overflow results
      are appended to `msgRegs` and `overflowCount = length − 4`.
 
-**IPC-buffer layout:** The thread's IPC buffer starts at
-`tcb.ipcBuffer : VAddr`; overflow slot `i` (0-indexed) lives at byte
-offset `i * 8`. This mirrors `rust/sele4n-abi/src/ipc_buffer.rs`
-(`OVERFLOW_SLOTS = 116`, each slot is `u64`).
+**IPC-buffer layout:** the buffer is seL4's `seL4_IPCBuffer`, 128 words
+(1024 bytes) from `tcb.ipcBuffer : VAddr`: the `tag` word (0), the 120 `msg`
+words (message register `i` at word `1 + i`), `userData` (121),
+`caps_or_badges` (122-124) and the receive path (125-127).  The first four
+message registers travel in `x2`–`x5`, so overflow slot `i` (0-indexed,
+message register `4 + i`) lives at byte offset `(5 + i) * 8`
+(`ipcBufferOverflowBaseWord`).  This mirrors
+`rust/sele4n-abi/src/ipc_buffer.rs` (`IpcBuffer`, `msg[i]` is register `i`).
 
 **Failure modes — all collapse to `KernelError.invalidMessageInfo`**
 (matches seL4 behaviour: the caller sees a single error kind regardless of
@@ -10912,7 +10920,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
 8. top-level import hygiene: `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
-9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; production path `syscallEntry` -> `dispatchSyscall` -> `syscallInvoke` -> `dispatchWithCap` (S5-A: deprecated `api*` wrappers removed); 3 soundness theorems prove capability requirements; 34 `SyscallId` variants (V2 added `notificationSignal`=14, `notificationWait`=15, `replyRecv`=16; growth through WS-SM SM9's `declassifySignal`=33); `MessageInfo` label bounded to 20 bits (seL4 convention).
+9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; production path `syscallEntry` -> `dispatchSyscall` -> `syscallInvoke` -> `dispatchWithCap` (S5-A: deprecated `api*` wrappers removed); 3 soundness theorems prove capability requirements; 34 `SyscallId` variants (V2 added `notificationSignal`=14, `notificationWait`=15, `replyRecv`=16; growth through WS-SM SM9's `declassifySignal`=33); `MessageInfo` label is seL4's 52-bit field (bits 12-63).
 10. Hash-store equality for `VSpaceRoot` is order-independent (size + fold containment), `CNode` equality compares geometry and slot arrays (since `v0.36.102`), and the migrated state stores (`services`, `irqHandlers`, the derivation tree's child and parent maps until the slot links replaced them at `v0.36.106`; `cdtSlotNode` and `cdtNodeSlot` until the slot became the node at `v0.36.103`, `capabilityRefs` was among them until its retirement at `v0.35.78`) are backed by the verified Robin Hood table (`RHTable`, WS-Q2 — `CNode.slots` via `UniqueSlotMap` since WS-RC R4.A; no closure-chain metadata stores).
 
 ---

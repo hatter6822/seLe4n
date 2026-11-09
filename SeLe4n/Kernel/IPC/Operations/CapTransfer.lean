@@ -113,7 +113,7 @@ of the physical writes the step makes.  The word is in the receiver's buffer,
 which the transfer checked the kernel may write (`receiverHasBuffer`). -/
 def recordUnwrappedBadge (st : SystemState) (tcb : TCB) (i : Nat) (badge : SeLe4n.Badge) :
     SystemState :=
-  match ipcBufferWordPAddr? st tcb (ipcBufferBadgeWord i) true with
+  match ipcBufferWordPAddr? st tcb (ipcBufferCapsOrBadgesWord i) true with
   | some pa => Architecture.recordPhysicalWrites st [.storeUserWord pa badge.word]
   | none => st
 

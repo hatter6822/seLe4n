@@ -31,42 +31,42 @@ bit 28 label
 bit 29 label
 bit 30 label
 bit 31 label
-bit 32 reserved
-bit 33 reserved
-bit 34 reserved
-bit 35 reserved
-bit 36 reserved
-bit 37 reserved
-bit 38 reserved
-bit 39 reserved
-bit 40 reserved
-bit 41 reserved
-bit 42 reserved
-bit 43 reserved
-bit 44 reserved
-bit 45 reserved
-bit 46 reserved
-bit 47 reserved
-bit 48 reserved
-bit 49 reserved
-bit 50 reserved
-bit 51 reserved
-bit 52 reserved
-bit 53 reserved
-bit 54 reserved
-bit 55 reserved
-bit 56 reserved
-bit 57 reserved
-bit 58 reserved
-bit 59 reserved
-bit 60 reserved
-bit 61 reserved
-bit 62 reserved
-bit 63 reserved
+bit 32 label
+bit 33 label
+bit 34 label
+bit 35 label
+bit 36 label
+bit 37 label
+bit 38 label
+bit 39 label
+bit 40 label
+bit 41 label
+bit 42 label
+bit 43 label
+bit 44 label
+bit 45 label
+bit 46 label
+bit 47 label
+bit 48 label
+bit 49 label
+bit 50 label
+bit 51 label
+bit 52 label
+bit 53 label
+bit 54 label
+bit 55 label
+bit 56 label
+bit 57 label
+bit 58 label
+bit 59 label
+bit 60 label
+bit 61 label
+bit 62 label
+bit 63 label
 field length shift 0 width 7
 field extraCaps shift 7 width 2
 field capsUnwrapped shift 9 width 3
-field label shift 12 width 20
+field label shift 12 width 52
 register capPtr x0
 register msgInfo x1
 register msgReg0 x2
@@ -76,6 +76,6 @@ register msgReg3 x5
 register syscallNum x7
 maxMessageRegisters 120
 maxExtraCaps 3
-maxLabel 1048575
-errorLabelBase 1048320
+maxLabel 4503599627370495
+errorLabelBase 4503599627370240
 syscallAbiVersion 4

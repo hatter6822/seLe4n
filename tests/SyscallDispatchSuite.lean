@@ -196,9 +196,9 @@ private def sd002_errorLabelCarriage : IO Unit := do
   -- a delivered message's label — the four `seL4_Fault_tag` values a fault
   -- handler receives, in particular — is never read as an error.
   expect "sd002g_base_literal"
-    (Kernel.Architecture.errorLabelBase == 0xFFF00)
-    "errorLabelBase must be 0xFFF00 (the Rust mirrors pin the same literal)"
-  for tag in [0, 1, 2, 3, 6, 0xFFEFF] do
+    (Kernel.Architecture.errorLabelBase == 0xFFFFFFFFFFF00)
+    "errorLabelBase must be 2^52 - 256 (the Rust mirrors pin the same literal)"
+  for tag in [0, 1, 2, 3, 6, 0xFFFFF, 0xFFFFFFFFFFEFF] do
     expect s!"sd002h_delivery_label_{tag}_not_an_error"
       ((Kernel.Architecture.ofErrorLabel? tag).isNone)
       s!"label {tag} is below the status range and must decode as no error"
@@ -591,7 +591,8 @@ private def sd037_entryWordPairs : IO Unit := do
     "pairs past the entry's count must not be read"
   expect "sd037g_a_high_bit_message_info_asks_its_overflow"
     (overflowStop 7 == 3 && overflowStop 4 == 0 && overflowStop 121 == 0 &&
-      overflowStop ((7 : UInt64) ||| ((1 : UInt64) <<< 63)) == 0 &&
+      overflowStop ((7 : UInt64) ||| ((1 : UInt64) <<< 63)) == 3 &&
+      overflowStop ((0x7F : UInt64) ||| ((1 : UInt64) <<< 63)) == 0 &&
       overflowStop ((7 : UInt64) ||| ((5 : UInt64) <<< 12)) == 3)
     "the overflow count must follow the MessageInfo decode, label bits included"
 

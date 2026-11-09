@@ -1811,7 +1811,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
     | some t => pure t
     | none => throw <| IO.userError "chain14: receiver TCB not found"
   let badgeWordPa := SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddr? st2 rtcb
-    (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferBadgeWord 0) true
+    (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord 0) true
   expect "chain14: the unwrapped badge is written to caps_or_badges[0]"
     (match badgeWordPa with
      | some pa => (SeLe4n.Testing.pendingWrites st2).contains (.storeUserWord pa unwrapBadge.word)

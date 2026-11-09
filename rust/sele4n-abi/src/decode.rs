@@ -8,7 +8,7 @@
 //! * `x0` — the primary return value: a full-width badge, a queried word,
 //!   or `0` for `Unit`-returning syscalls.
 //! * `x1` — a `MessageInfo` whose **label** carries the kernel status in
-//!   the **top** of the 20-bit label range (ABI v3, WS-RR RR4): label `0`
+//!   the **top** of the 52-bit label range (ABI v3, WS-RR RR4): label `0`
 //!   = success, label `ERROR_LABEL_BASE + d` = `KernelError` discriminant
 //!   `d`, and every label *below* `ERROR_LABEL_BASE` is the delivered
 //!   message's own label — a fault handler's `seL4_Fault_tag`, for one.
@@ -63,7 +63,7 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
     let label = msg_info.label();
     if label >= ERROR_LABEL_BASE {
         // The top-range carriage: label `ERROR_LABEL_BASE + d` names
-        // discriminant `d`.  The label is ≤ 20 bits by
+        // discriminant `d`.  The label is ≤ 52 bits by
         // `MessageInfo::decode`, so `d` is at most 255 and the cast cannot
         // truncate one discriminant into another.
         let disc = (label - ERROR_LABEL_BASE) as u32;
@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(decode_response(regs), Err(KernelError::ObjectNotFound));
         // The literal, so a drift in the base is caught here and not only
         // by the cross-crate pin.
-        assert_eq!(error_x1(1), 0xFFF01 << 12);
+        assert_eq!(error_x1(1), 0xF_FFFF_FFFF_FF01 << 12);
     }
 
     #[test]
@@ -196,8 +196,9 @@ mod tests {
     #[test]
     fn decode_over_wide_x1_rejected() {
         // The fail-closed width check that replaced the retired
-        // `regs[0] > u32::MAX` guard (RA.C.7): label bits beyond the
-        // 20-bit field make x1 undecodable, never a silent truncation.
+        // `regs[0] > u32::MAX` guard (RA.C.7): a word whose fields exceed
+        // their bounds (here the length, 127) is undecodable, never a silent
+        // truncation.
         let regs = [0, u64::MAX, 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::InvalidMessageInfo));
     }
@@ -212,7 +213,7 @@ mod tests {
         // The top of the range — the blocked-resume sentinel's label,
         // discriminant 255 — is the same fail-closed answer.
         let regs = [0, error_x1(255), 0, 0, 0, 0, 0];
-        assert_eq!(error_x1(255) >> 12, (1 << 20) - 1);
+        assert_eq!(error_x1(255) >> 12, (1 << 52) - 1);
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
     }
 

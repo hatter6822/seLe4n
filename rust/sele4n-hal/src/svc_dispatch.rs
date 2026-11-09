@@ -436,7 +436,8 @@ impl SyscallArgs {
     /// `sele4n-abi/src/message_info.rs`, and this reader) — is
     ///   bits  [ 6: 0] = length      (≤ 120)
     ///   bits  [ 8: 7] = extraCaps   (≤ 3)
-    ///   bits  [28: 9] = label       (20 bits)
+    ///   bits  [11: 9] = capsUnwrapped
+    ///   bits  [63:12] = label       (52 bits)
     /// The previous reader here masked `0x0FFF` under a doc comment
     /// claiming a `length[11:0] / extraCaps[13:12] / label[63:14]` packing
     /// that nothing else in the tree used — so any request with a nonzero
@@ -468,13 +469,13 @@ impl SyscallArgs {
 /// (`syscallAbiVersion_pinned`), failing the kernel build itself.
 pub const SYSCALL_ABI_VERSION: u64 = 4;
 
-/// WS-RR RR4 (ABI v3): the first kernel-status label — `0xFFF00`, the top
-/// 256 labels of the 20-bit field.  Hand-duplicated from
+/// WS-RR RR4 (ABI v3): the first kernel-status label — `2^52 - 256`, the
+/// top 256 labels of seL4's 52-bit field.  Hand-duplicated from
 /// `sele4n-types::ERROR_LABEL_BASE` per this crate's zero-runtime-deps
 /// discipline; the cross-crate agreement is a `#[cfg(test)]` `const`
 /// assertion below (a drift fails test *compilation*), and Lean pins the
 /// same literal (`Architecture.errorLabelBase_eq`).
-pub const ERROR_LABEL_BASE: u64 = (1 << 20) - 256;
+pub const ERROR_LABEL_BASE: u64 = (1 << 52) - 256;
 
 /// WS-RA: number of return-frame mailbox slots — one per core.
 pub const RETURN_FRAME_CORES: usize = crate::smp::MAX_SECONDARY_CORES + 1;
@@ -594,7 +595,7 @@ pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
 }
 
 /// The `x1` label of the blocked-resume sentinel: the maximum value the
-/// 20-bit `MessageInfo` label field can carry (`sele4n-abi`'s
+/// 52-bit `MessageInfo` label field can carry (`sele4n-abi`'s
 /// `MAX_LABEL`, hand-duplicated here per this crate's zero-runtime-deps
 /// discipline; the cross-crate agreement is pinned under `#[cfg(test)]`).
 ///
@@ -608,7 +609,7 @@ pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
 /// `decode_response` reads it as that variant by construction: an error the
 /// verified kernel never emits, hence unambiguously "this is not a completed
 /// syscall's frame".
-pub const BLOCKED_RESUME_SENTINEL_LABEL: u64 = (1 << 20) - 1;
+pub const BLOCKED_RESUME_SENTINEL_LABEL: u64 = (1 << 52) - 1;
 
 // Compile-time: the sentinel is the top of the status range and names a
 // discriminant (255) beyond the kernel-emittable set `0..=56` (the test
@@ -1074,7 +1075,7 @@ mod tests {
         // The literal itself, pinned at runtime so a coordinated bump of
         // both mirrors without a protocol change still surfaces here.
         assert_eq!(SYSCALL_ABI_VERSION, 4);
-        assert_eq!(ERROR_LABEL_BASE, 0xFFF00);
+        assert_eq!(ERROR_LABEL_BASE, 0xF_FFFF_FFFF_FF00);
     }
 
     #[test]
