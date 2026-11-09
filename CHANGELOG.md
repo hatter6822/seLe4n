@@ -143,9 +143,8 @@ reporting none.
   (`senderFrameCapRequest_of_noExtraCaps`, `replyCapRequest_of_noCapsW`).  The
   specification-side shape is one predicate, `replyTransferInert`, carried by
   `replyTransferCaps_of_inert` and every in-place equality proof of `.reply`
-  and `.replyRecv`.  No live reply capability carries the grant right today
-  (`mintReplyCap` mints `.write` only), so the QEMU exerciser cannot reach the
-  case; `SmpCrossCoreReplySuite` pins the decision.
+  and `.replyRecv`.  `SmpCrossCoreReplySuite` pins the decision, and the QEMU
+  exerciser reaches it (below).
 - **In place only when nothing moves**: the four in-place `.replyRecv` arms
   (blocks, donated, unheld, long) are taken only when the reply leg's transfer
   moves nothing — no grant, no IPC buffer, or no receive slot
@@ -158,8 +157,32 @@ reporting none.
   receive leg's (the caller's own) and its reply leg's (the caller the reply
   capability in `MR0` answers, `replyRecvAnsweredCallerCode`).  The HAL's
   per-core entry-word buffer grows by three pairs (`ENTRY_WORD_PAIRS`).
+- **A reply capability carries seL4-MCS's `capReplyCanGrant`**: the
+  reply-capability mint gave `.write` alone, so no live reply capability could
+  grant and no reply or reply-receive transfer could run on a reachable state.
+  seL4 creates a Reply object's capability with the bit set
+  (`objecttype.c`, `createObject`: `cap_reply_cap_new(REPLY_REF(regionBase),
+  true)`), masks it on derivation (`maskCapRights`: `capReplyCanGrant &
+  capAllowGrant`) and passes it to `doReplyTransfer` as the grant
+  (`decodeInvocation` → `performInvocation_Reply`).  `mintReplyCap` now mints
+  `.write` and, exactly when the source capability carries it, `.grant`
+  (`replyCapRightsFrom`, `replyCapRightsFrom_mem_write`,
+  `replyCapRightsFrom_mem_grant`, `replyCapRightsFrom_subset`); its in-place
+  performer writes the same rights (`mintReplyCapPerformImpl`).  A carved
+  Reply's capability carries `.grant`, so its reply capability grants.
+- **Exerciser**: granting replies to a caller whose IPC buffer names a valid,
+  empty receive slot — a reply-receive and a reply with no extra capability,
+  each measured at the first call and the steady state — and a granting reply
+  that installs a notification capability in that slot, issued unmeasured (an
+  installing transfer is the registered capability-transfer row's general
+  path), followed by measured uses of the installed copy (a signal through it,
+  the wait that takes the badge, its delete).  A receive-path step
+  (`RECEIVE_PATH_STEP`, the IPC buffer's words 125 to 127, pinned to the ABI
+  by `receive_path_word_is_the_abi_layout`) opens and closes the path.
 - **Tests**: `SyscallReturnAbiSuite` 9j (install, no grant, no slot); the
-  lock-set, deadlock-freedom and WCRT suites pin the new ceiling.
+  lock-set, deadlock-freedom and WCRT suites pin the new ceiling;
+  `ModelIntegritySuite` and `SyscallDispatchSuite` SD-058 pin the reply
+  capability's rights from a grant-bearing and a grant-less source.
 - **Docs**: the "at HEAD" ceiling figures in the specification, GitBook chapter
   12 and `WORKSTREAM_CONTEXT.md` had been left at 24 / 13 µs / 4320 µs since
   WS-HP HP10.6; they now read 32 / 10 µs / 5760 µs.

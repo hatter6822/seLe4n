@@ -1340,12 +1340,14 @@ The five properties, none of them reachable without crossing the gate:
 1. **Grant is required and grant suffices.**  With `.grant` on the primary
    capability the mint commits; with `.read`/`.write` alone it is
    `.illegalAuthority` — the reply-cap authority regression the finding names.
-2. **The minted capability is the reply ABI's, at exactly `.write`.**  Every
+2. **The minted capability is the reply ABI's, carrying `.write`.**  Every
    reply gate (`syscallRequiredRight .reply`, `resolveRecvReplyId`,
-   `resolveReplyRecvReply`) builds its gate at `.write`, so a mint that widened
-   or narrowed those rights would hand back a handle no reply path accepts.
-   Checked as a *resolution*, not as a field read: the minted slot is put through
-   `syscallResolveCap` at the reply gate's own required right.
+   `resolveReplyRecvReply`) builds its gate at `.write`, so a mint that dropped
+   it would hand back a handle no reply path accepts.  Checked as a
+   *resolution*, not as a field read: the minted slot is put through
+   `syscallResolveCap` at the reply gate's own required right.  Its `.grant`
+   (seL4 MCS `capReplyCanGrant`) is the source's, masked: this source has none,
+   so the reply capability does not grant.
 3. **A source that is not a Reply is refused**, `.invalidCapability`, with
    nothing written at the destination.
 4. **A primary capability that is not an `.object` is refused** the same way, so
@@ -1413,6 +1415,13 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
          | .ok (cap, _) => decide (cap.target = .replyCap rid)
          | .error _ => false)
         "the destination must hold `.replyCap` for the source object's reply id"
+      -- The source object capability lacks `.grant`, which masks the reply
+      -- capability's grant (seL4 MCS `maskCapRights` on `capReplyCanGrant`).
+      expect "sd058_grantless_source_mints_a_non_granting_reply_cap"
+        (match SeLe4n.Kernel.cspaceLookupSlot dst stMinted with
+         | .ok (cap, _) => !cap.rights.mem .grant && cap.rights.mem .write
+         | .error _ => false)
+        "a source without grant must mint a reply cap without grant"
       -- 2. The minted handle resolves at the reply gate's own required right.
       -- A rights regression in the mint shows up here and nowhere in a field read.
       let replyGate : SyscallGate :=

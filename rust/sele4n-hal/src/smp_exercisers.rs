@@ -1522,14 +1522,15 @@ struct RoundTrip {
     /// The success frame's `x1` and, when known, its `x2` that the round trip
     /// must return; `None` checks only that the call succeeded.
     returns: Option<(u64, Option<u64>)>,
-    /// The extra-capability addresses a capability-carrying send or call
-    /// names, and the receive path after them, written unmeasured, before
-    /// the call, into the `caps_or_badges`, `receive_cnode`, `receive_index`
-    /// and `receive_depth` words of the IPC buffer at this address (seL4's
-    /// `seL4_SetCap` and `seL4_SetCapReceivePath`; the kernel reads them with
-    /// `lookupExtraCaps` and `getReceiveSlots`).  The two threads share the
-    /// buffer, so the receive path is the receiver's as well.
-    caps_or_badges: Option<(u64, [u64; 6])>,
+    /// The extra-capability addresses a capability-carrying send, call or
+    /// reply names, and, when given, the receive path after them, written
+    /// unmeasured, before the call, into the `caps_or_badges` and, for the
+    /// path, `receive_cnode`, `receive_index` and `receive_depth` words of the
+    /// IPC buffer at this address (seL4's `seL4_SetCap` and
+    /// `seL4_SetCapReceivePath`; the kernel reads them with `lookupExtraCaps`
+    /// and `getReceiveSlots`).  The two threads share the buffer, so the
+    /// receive path is the receiver's as well.
+    caps_or_badges: Option<(u64, [u64; 3], Option<[u64; 3]>)>,
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1659,6 +1660,42 @@ const UNMASK_TICKS_STEP: u64 = u64::MAX - 2;
 const HOLD_SECOND_CORE_STEP: u64 = u64::MAX - 3;
 #[cfg(feature = "hw_target")]
 const RELEASE_SECOND_CORE_STEP: u64 = u64::MAX - 4;
+/// The receive path of the IPC buffer at the step's `cptr` set, unmeasured
+/// and unprinted, to the step's first three message words (`receive_cnode`,
+/// `receive_index`, `receive_depth`; seL4's `seL4_SetCapReceivePath`), the
+/// slot the kernel's `getReceiveSlots` reads at a transfer to that buffer's
+/// thread.  A depth of 0 names no slot.
+#[cfg(feature = "hw_target")]
+const RECEIVE_PATH_STEP: u64 = u64::MAX - 5;
+
+/// The granting reply carrying one capability, measured: through the reply
+/// capability, granting, naming the notification capability in
+/// `caps_or_badges[0]`, to a caller whose receive path a [`RECEIVE_PATH_STEP`]
+/// set; the transfer installs it in place (`performReplyCapsDelivered`).
+#[cfg(feature = "hw_target")]
+const INSTALLING_REPLY: RoundTrip = with_caps_keeping_path(
+    partner_step(
+        "grant-reply-installs-cap",
+        REPLY,
+        REPLY_CAP,
+        ONE_EXTRA_CAP | 1,
+        [0x80, 0],
+        false,
+    ),
+    TAIL_IPC_BUFFER,
+    [NOTIFICATION_CAP, 0, 0],
+);
+
+/// The receive path step setting the IPC buffer at `buffer`'s receive path to
+/// `words` ([`RECEIVE_PATH_STEP`]).
+#[cfg(feature = "hw_target")]
+const fn receive_path(name: &'static str, buffer: u64, words: [u64; 3]) -> RoundTrip {
+    RoundTrip {
+        cptr: buffer,
+        msg: [words[0], words[1], words[2], 0],
+        ..kernel_step(name, RECEIVE_PATH_STEP)
+    }
+}
 
 /// Hold `core` in its agent handler ([`COMMAND_HOLD`]); the sequence to await
 /// at the release, once the core has entered the wait.
@@ -1993,10 +2030,18 @@ const fn with_caps_receiving(
     path: [u64; 3],
 ) -> RoundTrip {
     RoundTrip {
-        caps_or_badges: Some((
-            buffer,
-            [words[0], words[1], words[2], path[0], path[1], path[2]],
-        )),
+        caps_or_badges: Some((buffer, words, Some(path))),
+        ..trip
+    }
+}
+
+/// `trip`, naming the extra-capability addresses `words` in the IPC buffer at
+/// `buffer` and leaving the buffer's receive path as a [`RECEIVE_PATH_STEP`]
+/// set it.
+#[cfg(feature = "hw_target")]
+const fn with_caps_keeping_path(trip: RoundTrip, buffer: u64, words: [u64; 3]) -> RoundTrip {
+    RoundTrip {
+        caps_or_badges: Some((buffer, words, None)),
         ..trip
     }
 }
@@ -2004,7 +2049,7 @@ const fn with_caps_receiving(
 /// The receive path that names the root CNode's slot `slot`: the CNode's own
 /// capability, the slot's full-word address and the word's 64 bits.
 #[cfg(feature = "hw_target")]
-const fn receive_path(slot: u64) -> [u64; 3] {
+const fn receive_slot_path(slot: u64) -> [u64; 3] {
     [CNODE_CAP, cap_address(slot), 64]
 }
 
@@ -2015,6 +2060,13 @@ const fn receive_path(slot: u64) -> [u64; 3] {
 /// pinned by `caps_or_badges_word_is_the_abi_layout`).
 #[cfg(any(feature = "hw_target", test))]
 const CAPS_OR_BADGES_WORD: u64 = 122;
+
+/// The index of the IPC buffer's `receive_cnode` word, the first of the three
+/// receive-path words (`IpcBufferRead.ipcBufferReceiveCNodeWord`;
+/// `sele4n_abi::IpcBuffer::receive_cnode`, pinned by
+/// `receive_path_word_is_the_abi_layout`).
+#[cfg(any(feature = "hw_target", test))]
+const RECEIVE_PATH_WORD: u64 = 125;
 
 /// The round trips that need a second thread (WS-ZA ZA4.1), each a sequence
 /// issued as whichever thread is current.  A step that blocks the current
@@ -3821,7 +3873,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, 0, 0],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         kernel_step("caps-install-send-yield", YIELD),
         invocation(
@@ -3864,7 +3916,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [ENDPOINT_CAP, 0, 0],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         kernel_step("caps-unwrap-send-yield", YIELD),
         invocation(
@@ -3900,7 +3952,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, ENDPOINT_CAP, NOTIFICATION_CAP],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         kernel_step("caps-three-install-send-yield", YIELD),
         invocation(
@@ -3943,7 +3995,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, 0, 0],
-            receive_path(NOTIFICATION_SLOT),
+            receive_slot_path(NOTIFICATION_SLOT),
         ),
         kernel_step("caps-occupied-slot-send-yield", YIELD),
         invocation(
@@ -4019,7 +4071,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, 0, 0],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         kernel_step("caps-no-grant-send-yield", YIELD),
         invocation(
@@ -4062,7 +4114,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, 0, 0],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         invocation(
             "caps-install-call-suspend",
@@ -4102,7 +4154,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [ENDPOINT_CAP, 0, 0],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         invocation(
             "caps-unwrap-call-suspend",
@@ -4136,7 +4188,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, 0, 0],
-            receive_path(NOTIFICATION_SLOT),
+            receive_slot_path(NOTIFICATION_SLOT),
         ),
         invocation(
             "caps-occupied-slot-call-suspend",
@@ -4164,7 +4216,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, 0, 0],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         partner_step(
             "caps-install-take-partner-takes",
@@ -4205,7 +4257,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [ENDPOINT_CAP, 0, 0],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         partner_step(
             "caps-unwrap-take-partner-takes",
@@ -4242,7 +4294,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, 0, 0],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         partner_step(
             "caps-install-call-take-partner-takes",
@@ -4291,7 +4343,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ),
             TAIL_IPC_BUFFER,
             [ENDPOINT_CAP, 0, 0],
-            receive_path(TRANSFER_RECEIVE_SLOT),
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
         partner_step(
             "caps-unwrap-call-take-partner-takes",
@@ -4341,6 +4393,96 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         ),
         kernel_step("caps-take-partner-yield", YIELD),
         invocation("caps-take-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        // Granting replies (the reply capability minted from the reply
+        // object's grant-bearing capability carries seL4-MCS's
+        // `capReplyCanGrant`) to a caller whose IPC buffer names a valid,
+        // empty receive slot: a reply-receive and a reply carrying no
+        // capability, which install nothing and answer in place (seL4's
+        // `doReplyTransfer` with `grant` set and no extra capability), then
+        // a reply carrying one, which installs a copy of the notification
+        // capability in that slot ([`INSTALLING_REPLY`], measured); a signal through
+        // the installed copy shows it is there, the wait takes its badge, and
+        // the copy is deleted.  Both threads' buffers are the one at
+        // `TAIL_IPC_BUFFER`; its receive path is closed again last.
+        receive_path(
+            "grant-reply-receive-path",
+            TAIL_IPC_BUFFER,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        invocation("grant-reply-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "grant-reply-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "grant-reply-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x7b, 0],
+            true,
+        ),
+        partner_step(
+            "grant-reply-recv",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            2,
+            [REPLY_CAP, 0x7c],
+            true,
+        ),
+        partner_step(
+            "grant-reply-partner-calls-again",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x7d, 0],
+            true,
+        ),
+        partner_step("grant-reply", REPLY, REPLY_CAP, 1, [0x7e, 0], false),
+        partner_step(
+            "grant-reply-cap-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "grant-reply-cap-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x7f, 0],
+            true,
+        ),
+        INSTALLING_REPLY,
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("grant-reply-installed-signal", 1)
+        },
+        RoundTrip {
+            name: "grant-reply-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            caps_or_badges: None,
+            returns: None,
+        },
+        invocation(
+            "grant-reply-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        invocation("grant-reply-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        receive_path("grant-reply-receive-path-closed", TAIL_IPC_BUFFER, [0; 3]),
         configure(
             "tail-send-configure",
             [
@@ -7091,6 +7233,17 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                         masked = Some(crate::interrupts::disable_interrupts());
                         true
                     }
+                    RECEIVE_PATH_STEP => {
+                        let words = [step.msg[0], step.msg[1], step.msg[2]];
+                        let written = write_buffer_words(step.cptr, RECEIVE_PATH_WORD, words);
+                        if !written {
+                            crate::kprintln!(
+                                "[smp-test] FAIL: heap-allocations-per-syscall: {}: the receive path was not written",
+                                step.name
+                            );
+                        }
+                        written
+                    }
                     UNMASK_TICKS_STEP => {
                         if let Some(saved) = masked.take() {
                             crate::interrupts::restore_interrupts(saved);
@@ -8611,14 +8764,22 @@ fn root_user_page(vaddr: u64) -> Option<u64> {
 /// `seL4_SetCap` and `seL4_SetCapReceivePath`); `false` when the buffer's
 /// page has no translation to RAM past the kernel's extent.
 #[cfg(feature = "hw_target")]
-fn write_caps_or_badges(buffer: u64, words: [u64; 6]) -> bool {
+fn write_caps_or_badges(buffer: u64, words: [u64; 3]) -> bool {
+    write_buffer_words(buffer, CAPS_OR_BADGES_WORD, words)
+}
+
+/// Write `words` into the three words of the IPC buffer the root task's
+/// tables map at `buffer` from word `first` on: its `caps_or_badges`
+/// ([`write_caps_or_badges`]) or its receive path ([`RECEIVE_PATH_STEP`]).
+#[cfg(feature = "hw_target")]
+fn write_buffer_words(buffer: u64, first: u64, words: [u64; 3]) -> bool {
     let Some(page) = root_user_page(buffer & !0xFFF) else {
         return false;
     };
     if page < crate::mmu::KERNEL_RESERVED_END || !page.is_multiple_of(4096) {
         return false;
     }
-    let base = page + (buffer & 0xFFF) + CAPS_OR_BADGES_WORD * 8;
+    let base = page + (buffer & 0xFFF) + first * 8;
     for (i, word) in words.iter().enumerate() {
         // SAFETY: `base` and the five words after it are inside the
         // 1024-byte buffer the root task's tables map onto `page`, RAM past the kernel's extent under the
@@ -8834,8 +8995,12 @@ fn heap_allocations_round_trip_resuming(
 ) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = trip.name;
-    if let Some((buffer, words)) = trip.caps_or_badges {
-        if !write_caps_or_badges(buffer, words) {
+    if let Some((buffer, words, path)) = trip.caps_or_badges {
+        let path_written = match path {
+            Some(path) => write_buffer_words(buffer, RECEIVE_PATH_WORD, path),
+            None => true,
+        };
+        if !(write_caps_or_badges(buffer, words) && path_written) {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the IPC buffer at \
                  {buffer:#x} has no translation"
@@ -8978,6 +9143,15 @@ mod tests {
         assert_eq!(
             (CAPS_OR_BADGES_WORD as usize + 5) * 8,
             core::mem::offset_of!(sele4n_abi::IpcBuffer, receive_depth)
+        );
+    }
+
+    /// The harness's receive-path word is the ABI's `IpcBuffer` field.
+    #[test]
+    fn receive_path_word_is_the_abi_layout() {
+        assert_eq!(
+            RECEIVE_PATH_WORD as usize * 8,
+            core::mem::offset_of!(sele4n_abi::IpcBuffer, receive_cnode)
         );
     }
 
