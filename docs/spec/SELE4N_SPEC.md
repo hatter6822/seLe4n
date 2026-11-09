@@ -9694,7 +9694,9 @@ respect.
    into `replyRecvPopDonation` and `replyRecvPostReceiveDonation`, each with its
    own bundle theorem stated at the state its own step runs on.
 5. **The receive-leg hypotheses are stated at the post-pop state.**
-   `replyRecvPostPopState` is a total accessor over the pop, so the staged
+   `replyRecvReceiveLegState` (`replyRecvPostPopState` until `v0.37.6`, when
+   the reply leg's capability transfer joined the pop before the receive leg)
+   is a total accessor over the pop and the transfer, so the staged
    dispatch payoff's pack stays flat and pre-state-computable; stating them at
    the reply leg's own state is a claim about a state the receive leg no longer
    runs on.
