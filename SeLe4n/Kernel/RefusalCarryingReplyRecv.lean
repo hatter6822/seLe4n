@@ -790,7 +790,9 @@ reply: `replyRecvFaultArmR`, in place when the receive blocks), and for any
 other caller the in-place path when
 it may be taken (`replyRecvBlocksFast`, a reply of at most four words whose reply
 leg transfers no capability, `replyRecvReplyInertW`; `replyRecvDonatedArmR` on a
-donated reply), the specification's otherwise.  Every
+donated reply; `replyRecvCapsArmR` when the reply leg installs under the grant
+right, its transfer run in place between the reply's writes and the receive),
+the specification's otherwise.  Every
 in-place path delivers the reply as a message, which is the answer only for a
 caller carrying no fault, so the fault test runs first. -/
 @[inline] def replyRecvResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)

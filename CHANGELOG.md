@@ -1,3 +1,57 @@
+## v0.37.9 — an installing reply-receive runs in place
+
+A granting reply-receive whose reply leg installs a capability now runs in
+place in each shape that blocks in place: the plain one, the one on a donated
+reply object, the one answering a caller recording no server, and the plain
+one past four words.  Before, the `.replyRecv` arm took its in-place forms only
+when the reply leg transferred nothing, so an installing reply-receive ran the
+specification's general path under `RefusalCarrying.ofKernel`, which holds the
+pre-state and copies every table it writes, and allocated on the kernel heap.
+
+- **The transfer between the legs**: the arm writes the reply leg (and the
+  donation pop, on a donated reply object or to a caller recording no server),
+  then runs the transfer in place (`capTransferK`), then blocks the replier on
+  the endpoint, as seL4-MCS's `handleReplyRecv` runs `doReplyTransfer` and
+  then `receiveIPC`.  The transfer writes one CNode slot, its derivation links
+  and the source untyped's record, and leaves everything the receive leg and
+  the pop read where it was: `transferFrame` and
+  `receiveTransferCaps_reply_transferFrame` state that, and
+  `receiveGuard_of_transferFrame` carries the receive's guard across it
+  (`ReplyRecvCapsFrame.lean`).  The transfer's stores are checked in place on
+  the pre-state (`replyTransferStoresInPlace`).
+- **The performers**: `performReplyRecvBlockCapsDelivered`,
+  `performReplyRecvDonatedCapsDelivered`, `performReplyRecvUnheldCapsDelivered`
+  and `performReplyRecvBlockCapsDeliveredLong` (`ReplyRecvCapsDelivered.lean`),
+  each proven equal to the specification's composite
+  (`replyRecvOnCore_blocks_capsDelivered`, `replyRecvOnCore_donated_capsDelivered`,
+  `replyRecvOnCore_unheld_capsDelivered`, `replyRecvOnCore_blocks_capsDeliveredLong`).
+  The frame stages the caller with the transfer's capability count, computed
+  before the state is handed on.
+- **The arms**: `replyRecvCapsArmR` routes the short reply-receive to the three
+  performers (`replyRecvCapsArmR_eq`), and the long arm gains the blocking
+  branch.  `replyRecvCapsArmR_blocks_inPlace`, `…_donated_inPlace` and
+  `…_unheld_inPlace` state that when the arm's pre-state checks pass it runs
+  its performer, so the general path is reached only when a check read before
+  any write fails.  The long arm's equation now takes the overflow-read fact
+  and the replier's register file from the entry.
+- **Exercisers**: `grant-reply-recv-cap-installs-cap`,
+  `grant-long-reply-recv-cap-installs-cap`, `chain-server-reply-recv-installs-cap`
+  and `unheld-reply-recv-installs-cap`, each followed by a signal through the
+  installed copy, a wait and a delete, are pinned at 0 heap cells on the first
+  call and at steady state.
+- **Debt**: the table C row "A reply-receive whose reply leg installs a
+  capability runs the specification's general path, which allocates" is
+  removed.
+
+### Security
+
+No vulnerability was found.  The in-place arms are proven equal to the
+specification, so the grant check (the reply capability's grant right,
+seL4-MCS's `capReplyCanGrant`), the receive-slot lookup and the transfer's
+refusals are the specification's.  A server loop that hands capabilities back
+through `seL4_ReplyRecv` no longer allocates on the kernel heap at each call,
+so that path no longer depends on heap capacity at the moment a client calls.
+
 ## v0.37.8 — a long capability transfer, and an installing reply on a donated or unheld reply object, run in place
 
 A send, call or take of more than four words whose capability transfer

@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.8` (`lakefile.toml`) |
+| **Package version** | `0.37.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 611,301 across 611 Lean files |
 | **Test LoC** | 89,031 across 70 Lean test suites |
@@ -6668,10 +6668,20 @@ Every kernel object has a decidable well-formedness predicate:
   (`ipcBufferReadsAgree_replyDonationPopInPlace`,
   `ipcBufferReadsAgree_returnUnheldSchedContextInPlace`), and the transfer
   leaves the replier's overflow words where they were
-  (`ipcWordReadsAgree_receiveTransferCaps`).  A reply-receive whose reply leg
-  installs a capability still takes the specification's
-  (`replyRecvTransferOnCore`, guarded by `replyRecvReplyInertW`); it allocates
-  (`docs/REGISTERED_DEBT.md` table C).  With the default layout the router hands the decoded arm
+  (`ipcWordReadsAgree_receiveTransferCaps`).  A granting reply-receive whose
+  reply leg installs a capability writes in place too, in each shape that
+  blocks in place: the reply's writes (and the donation pop, on a donated
+  reply object or to a caller recording no server), then the transfer in
+  place, then the receive's block, with the receive leg's guard and the pop's
+  carried across the transfer (`receiveTransferCaps_reply_transferFrame`,
+  `receiveGuard_of_transferFrame`; `performReplyRecvBlockCapsDelivered`,
+  `performReplyRecvDonatedCapsDelivered`, `performReplyRecvUnheldCapsDelivered`
+  and, past four words, `performReplyRecvBlockCapsDeliveredLong`;
+  `ReplyRecvCapsFrame.lean`, `ReplyRecvCapsDelivered.lean`).  The arm runs
+  them when its pre-state checks pass (`replyRecvCapsArmR_blocks_inPlace`,
+  `replyRecvCapsArmR_donated_inPlace`, `replyRecvCapsArmR_unheld_inPlace`),
+  so its general path is reached only when a check read before any write
+  fails.  With the default layout the router hands the decoded arm
   nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
   whose registers lie out of bounds or which has no message register.
   An IPC buffer is found through its page (`validateIpcBufferAddress` looks
@@ -7633,11 +7643,17 @@ the transfer, on either answer and either grant right, is proven declared
 (`lockSet_endpointReplyRecvOnCore_covers_receiveLegSlot`).  These take
 `maxLockSetSize` to 32; the entry reads both receive paths from RAM
 (`replyRecvAnsweredCallerCode`), and the HAL's per-core entry-word buffer holds
-both.  The four in-place reply-receive arms are taken only when the reply leg's
+both.  The four inert in-place reply-receive arms are taken when the reply leg's
 transfer moves nothing (`replyRecvReplyInertW`, `replyRecvReplyTransfer_of_inert`):
 no grant right, a replier whose saved message info names no extra capability
 (`replyFrameNamesNoCapsW`, decided on the word), or a caller with no IPC buffer
-or no receive slot; otherwise the specification runs.
+or no receive slot.  A granting reply leg that installs takes the installing
+arms (`replyRecvCapsArmR`, and the long arm's blocking branch), which run the
+transfer in place between the reply's writes and the receive leg, each proven
+equal to the specification (`replyRecvOnCore_blocks_capsDelivered`,
+`replyRecvOnCore_donated_capsDelivered`, `replyRecvOnCore_unheld_capsDelivered`,
+`replyRecvOnCore_blocks_capsDeliveredLong`); any other reply-receive runs the
+specification.
 
 **No message holds a capability** (`v0.36.121`, WS-ZA ZA5.4 part 11).  An
 `IpcMessage` is registers and a badge: it has no capability field and no grant
