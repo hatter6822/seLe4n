@@ -456,19 +456,6 @@ this write finds it unshared and writes it in place rather than copying it. -/
     (w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
   X.mapTcbInPlace tid (withFrameWords w0 w1 w2 w3 w4 w5)
 
-/-- **The receive leg's take after the reply's transfer, delivered**: the
-sender popped, made ready and woken, the server made ready, its priority walk,
-then the caller's frame with the transfer's report, the sender's completion
-frame and the server's frame, its six words read from the sender's saved
-registers before any write.  The report comes first, so it is read before the
-state is handed over. -/
-@[inline] def replyRecvTakeTail (capInfo : Nat) (Y : SystemState) (c tid s : SeLe4n.ThreadId)
-    (epId : SeLe4n.ObjId) (nextCode : Nat) (core : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge) (w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
-  writeTakerFrame (replyRecvTakeLegs capInfo Y c tid s epId nextCode core layout rf len badge) tid
-    w0 w1 w2 w3 w4 w5
-
 theorem deliverReplyRecvCapsFrame_noResizeDue (capInfo : Nat) (Y : SystemState)
     (c : SeLe4n.ThreadId) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (len : Nat) (badge : Option SeLe4n.Badge) (hNo : Y.objects.noResizeDue) :
@@ -503,9 +490,9 @@ theorem stageWokenSendCompletion_noResizeDue (X : SystemState) (s? : Option SeLe
 as frames**: on `Y` with the caller holding the reply (`S2`), where the take
 runs in place for a sender blocked by a routed capability-free send, staging
 the caller with the report, the woken sender's completion and the server's
-message is `replyRecvTakeTail`, the server's six words read from the sender's
-saved registers. -/
-theorem replyRecvTakeTail_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
+message is the legs (`replyRecvTakeLegs`) and then the server's frame
+(`writeTakerFrame`), its six words read from the sender's saved registers. -/
+theorem replyRecvTakeFrame_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (sTcb : TCB) (core : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (capInfo : Nat) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
@@ -532,7 +519,8 @@ theorem replyRecvTakeTail_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
               (callReceiverTcb (blockedSenderMessage (storePopHead (Y.mapTcbInPlace c (holdMessage
                 { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }))
                 epId false s sTcb.queueNext) s sTcb))) tid core).1 c capInfo) (some s)) tid 0 =
-      replyRecvTakeTail capInfo Y c tid s epId sTcb.queueNextCode core layout rf len badge
+      writeTakerFrame
+        (replyRecvTakeLegs capInfo Y c tid s epId sTcb.queueNextCode core layout rf len badge) tid
         (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
           sTcb.ipcBadgeView).x0
         (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
@@ -599,7 +587,7 @@ theorem replyRecvTakeTail_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
   rw [wakeThread_msg c _ _ _ _ s core hNoU] at hW3r ⊢
   dsimp only at hW3r ⊢
   rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hCT] at hW3r
-  unfold replyRecvTakeTail writeTakerFrame replyRecvTakeLegs
+  unfold writeTakerFrame replyRecvTakeLegs
   dsimp only
   rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode]
   generalize (wakeThread ((storePopHead Y epId false s sTcb.queueNext).updateTcb s receiverReady) s
@@ -733,7 +721,7 @@ theorem replyRecvOnCore_take_delivered (st : SystemState) (epId : SeLe4n.ObjId)
   dsimp only
   rw [CapTransferSummary.capInfo_empty]
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hE1 hS1 hG1 ⊢
-  rw [replyRecvTakeTail_staged _ c tid s epId ep sTcb1 core layout rf len badge 0 capAddr mi
+  rw [replyRecvTakeFrame_staged _ c tid s epId ep sTcb1 core layout rf len badge 0 capAddr mi
     (storeReplyRendezvousReady_noResizeDue st c tid rid hNo) hNe hSC hSz4 hE1 hH hS1 hG1 hR1
     (by rw [hK.faultSend]; exact hF), hK.queueNext, hK.regs, hK.ipcBadgeView]
   rfl
@@ -885,7 +873,7 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
   dsimp only
   subst hMsg
   rw [CapTransferSummary.capInfo_empty]
-  rw [replyRecvTakeTail_staged Y1 c tid s epId ep sTcb2 core layout rf len badge sm.capInfo capAddr
+  rw [replyRecvTakeFrame_staged Y1 c tid s epId ep sTcb2 core layout rf len badge sm.capInfo capAddr
     mi hNoY hNe hSC hSz4 hE2 hH hS2o hG2 hR2 hF2, hK.queueNext, hK.regs, hK.ipcBadgeView]
   have hKl := capTransferK_eq_at X c.toObjId false stcb count ct
     (fun i Y => replyRecvTakeLegs i Y c tid s epId sTcb.queueNextCode core layout rf len badge)
@@ -895,6 +883,5 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
   rw [hX]
   dsimp only
   rw [hKl]
-  rfl
 
 end SeLe4n.Kernel
