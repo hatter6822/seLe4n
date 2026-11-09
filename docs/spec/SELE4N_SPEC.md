@@ -4169,7 +4169,7 @@ alongside the latent inventory (closing SMP-H3).
    them with no consumer (§8.12.12), so a sharper reachable bound cannot
    be rebuilt on either.
 
-   **At HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**.**
+   **At HEAD, the declared lock-set ceiling is **30**, the RPi5 tick admits **11 µs** per lock, and the uniform 60 µs envelope is **5400 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
    `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
    formula.  No gate checks prose copies of them, so a raise updates
@@ -7556,6 +7556,22 @@ The caller's receive slot CNode is declared for write in the reply's lock set
 (`replyInstallCNode?`).  The reply's in-place arms are taken only when the
 transfer moves nothing (`replyTransferInertW`); otherwise the specification
 runs.
+
+A reply-receive's reply leg runs the same transfer (since `v0.37.6`), as seL4's
+`handleReplyRecv` → `doReplyTransfer` does: after the donation pop and before
+the receive leg (`replyRecvReplyTransfer`, in `endpointReplyRecvAnsweringOnCore`),
+under the grant right of the reply capability in `MR0`, into the answered
+caller's receive slot, whose staged message info reports the count; a faulted
+caller takes none.  The receive leg then runs on the transfer's post-state
+(`replyRecvReceiveLegState`), and every scheduler footprint and write set that
+replays the arm replays the transfer.  The reply-receive's lock set declares the
+answered caller's receive slot CNode for write beside the receive leg's
+(`lockSet_endpointReplyRecvOnCore_covers_replyInstall`), which takes
+`maxLockSetSize` to 30; the entry reads both receive paths from RAM
+(`replyRecvAnsweredCallerCode`), and the HAL's per-core entry-word buffer holds
+both.  The four in-place reply-receive arms are taken only when the reply leg's
+transfer moves nothing (`replyRecvReplyInertW`, `replyRecvReplyTransfer_of_inert`);
+otherwise the specification runs.
 
 **No message holds a capability** (`v0.36.121`, WS-ZA ZA5.4 part 11).  An
 `IpcMessage` is registers and a badge: it has no capability field and no grant

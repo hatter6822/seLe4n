@@ -1,4 +1,56 @@
-## v0.37.6 — the reply-receive's reply transfers capabilities; capability transfers that install or unwrap run in place
+## v0.37.6 — the reply-receive's reply leg transfers capabilities, as seL4's `doReplyTransfer`
+
+`.replyRecv`'s reply leg now transfers capabilities as `.reply` has since
+`v0.37.5`: seL4's `handleReplyRecv` → `doReplyTransfer` → `doIPCTransfer` with
+no endpoint, gated on the reply capability's grant right.  Before, a server
+written the seL4-MCS way (`Recv` once, then `ReplyRecv` forever) could hand its
+callers capabilities only through `seL4_Reply`; the reply-receive's answer
+delivered the words and dropped the extra capabilities its IPC buffer named,
+reporting none.
+
+- **The transfer** (`replyRecvReplyTransfer`) runs after the donation pop and
+  before the receive leg, seL4's order: the replier's extra capabilities go
+  into the answered caller's receive slot, and the caller's staged message info
+  reports the count (`extraCaps`).  A faulted caller takes none, as
+  `handleFaultReply` transfers none.  The resolved reply capability's grant
+  right is threaded from the decode (`resolveReplyRecvReply`) through every
+  `.replyRecv` transition, write set and scheduler footprint
+  (`SyscallLockOperands.replyGrant`).
+- **The receive leg runs on the transfer's post-state**
+  (`replyRecvReceiveLegState`, replacing `replyRecvPostPopState`), and every
+  footprint that replays the arm (`replyRecvHandoffReplenishCores`,
+  `endpointReplyRecvAnsweringWriteSet`, `schedLockSet_endpointReplyRecvOnCore`)
+  replays the transfer.  The IPC bundle, records, run-queue, ready-kept,
+  saved-register, mapping-record, slot-confinement, reschedule-cover and
+  cross-core non-interference results over the arm are restated with the
+  transfer composed as a frame.
+- **Lock footprint**: the resolved `.replyRecv` footprint declares, for write,
+  the CNode the transfer installs into (`replyInstallCNode?`, the member `.reply`
+  declares; `lockSet_endpointReplyRecvOnCore_covers_replyInstall`,
+  `lockSetForSyscall_replyRecv_covers_replyInstall`), and the transfer writes no
+  other CNode (`replyRecvReplyTransfer_writes_destination`).  The parametric
+  bound is restated two below the ceiling (`lockSet_replyRecv_size_add_two_le`,
+  was `_size_lt`) and the widest resolved reply-receive reaches it:
+  **`maxLockSetSize` is 30** (was 29).  The resolved bounds move by one
+  (`lockSet_endpointReplyRecvOnCore_size_le_onEveryState` 24,
+  `…_size_le_sharp` 23).  The admissible RPi5 per-lock section stays 11 µs; the
+  uniform 60 µs envelope moves 5220 → 5400 µs.
+- **In place only when nothing moves**: the four in-place `.replyRecv` arms
+  (blocks, donated, unheld, long) are taken only when the reply leg's transfer
+  moves nothing — no grant, no IPC buffer, or no receive slot
+  (`replyRecvReplyInertW`, `replyRecvReplyInertW_spec`,
+  `replyRecvReplyTransfer_of_inert`); their equality proofs carry the guard.  A
+  reply-receive whose transfer installs runs the specification's path (the
+  `docs/REGISTERED_DEBT.md` table C row).
+- **Entry capture**: a reply-receive reads two receive paths from RAM, its
+  receive leg's (the caller's own) and its reply leg's (the caller the reply
+  capability in `MR0` answers, `replyRecvAnsweredCallerCode`).  The HAL's
+  per-core entry-word buffer grows by three pairs (`ENTRY_WORD_PAIRS`).
+- **Tests**: `SyscallReturnAbiSuite` 9j (install, no grant, no slot); the
+  lock-set, deadlock-freedom and WCRT suites pin the new ceiling.
+- **Docs**: the "at HEAD" ceiling figures in the specification, GitBook chapter
+  12 and `WORKSTREAM_CONTEXT.md` had been left at 24 / 13 µs / 4320 µs since
+  WS-HP HP10.6; they now read 30 / 11 µs / 5400 µs.
 
 ## v0.37.5 — capability transfer is seL4's `transferCaps`: one receive slot named by the receiver's IPC buffer, endpoint capabilities unwrapped
 

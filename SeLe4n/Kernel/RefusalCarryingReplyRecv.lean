@@ -422,7 +422,8 @@ theorem replyRecvUnheldBlocks_spec {st : SystemState} {epId : SeLe4n.ObjId}
   · simp only [receiveQueueTailCode, hEp]
 
 /-- WS-ZA ZA6.34: whether a reply-receive of at most four words answering a
-caller recording no server may block in place (`replyRecvUnheldBlocks`).  Out of
+caller recording no server may block in place (`replyRecvUnheldBlocks`), its
+reply leg transferring no capability (`replyRecvReplyInertW`).  Out of
 line, so the checks are one call and nothing they read is held across the
 writes. -/
 @[noinline] def replyRecvUnheldAdmits (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
@@ -449,7 +450,8 @@ caller's home read on the pre-state; the specification's otherwise. -/
     else replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st
 
 /-- WS-ZA ZA6.33: whether a donated reply-receive of at most four words may
-block in place (`replyRecvDonatedBlocks`).  Out of line, so the checks are one
+block in place (`replyRecvDonatedBlocks`), its reply leg transferring no
+capability (`replyRecvReplyInertW`).  Out of line, so the checks are one
 call and nothing they read is held across the writes. -/
 @[noinline] def replyRecvDonatedAdmits (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (grant : Bool) (layout : SeLe4n.SyscallRegisterLayout) (len : Nat)
@@ -576,8 +578,9 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
 caller carrying a fault answered through the specification's path (its fault
 reply: `replyRecvFaultArmR`, in place when the receive blocks), and for any
 other caller the in-place path when
-it may be taken (`replyRecvBlocksFast`, a reply of at most four words;
-`replyRecvDonatedArmR` on a donated reply), the specification's otherwise.  Every
+it may be taken (`replyRecvBlocksFast`, a reply of at most four words whose reply
+leg transfers no capability, `replyRecvReplyInertW`; `replyRecvDonatedArmR` on a
+donated reply), the specification's otherwise.  Every
 in-place path delivers the reply as a message, which is the answer only for a
 caller carrying no fault, so the fault test runs first. -/
 @[inline] def replyRecvResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
@@ -1077,7 +1080,8 @@ message read in the replier's registers and IPC buffer (`longReplyRecvRegs`). -/
 /-- The checked long reply-receive once its reply capability resolved to reply
 object `rid`, answering caller `c`: the reply leg's flow gate, then, for a
 caller carrying no fault when the reply-receive may block in place
-(`replyRecvBlocksFast`), the in-place delivery
+(`replyRecvBlocksFast`) and its reply leg transfers no capability
+(`replyRecvReplyInertW`), the in-place delivery
 (`performReplyRecvBlockDeliveredLong`); the specification's path otherwise. -/
 @[inline] def replyRecvLongResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
