@@ -4849,6 +4849,145 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             CNODE_CAP,
             [EMPTY_SLOT, 0, 0, 0],
         ),
+        // A granting reply-receive whose reply leg installs: the root task
+        // answers the partner's call naming the notification capability and
+        // blocks on the endpoint; the transfer runs in place between the
+        // reply's writes and the receive (seL4-MCS's `doReplyTransfer`, then
+        // `receiveIPC`; `performReplyRecvBlockCapsDelivered`).  The partner,
+        // answered, signals through the installed copy, the wait takes its
+        // badge, and the copy is deleted; its second call wakes the root task,
+        // which replies.  Then the same at the longest message, 120 words
+        // (`performReplyRecvBlockCapsDeliveredLong`).
+        partner_step(
+            "grant-reply-recv-cap-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "grant-reply-recv-cap-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x83, 0],
+            true,
+        ),
+        with_caps_keeping_path(
+            partner_step(
+                "grant-reply-recv-cap-installs-cap",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 2,
+                [REPLY_CAP, 0x84],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("grant-reply-recv-cap-installed-signal", 1)
+        },
+        RoundTrip {
+            name: "grant-reply-recv-cap-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            caps_or_badges: None,
+            returns: None,
+        },
+        invocation(
+            "grant-reply-recv-cap-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        partner_step(
+            "grant-reply-recv-cap-partner-calls-again",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x85, 0],
+            true,
+        ),
+        partner_step(
+            "grant-reply-recv-cap-root-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0x86, 0],
+            false,
+        ),
+        partner_step(
+            "grant-long-reply-recv-cap-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "grant-long-reply-recv-cap-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x87, 0],
+            true,
+        ),
+        with_caps_keeping_path(
+            partner_step(
+                "grant-long-reply-recv-cap-installs-cap",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                [REPLY_CAP, 0x88],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("grant-long-reply-recv-cap-installed-signal", 1)
+        },
+        RoundTrip {
+            name: "grant-long-reply-recv-cap-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            caps_or_badges: None,
+            returns: None,
+        },
+        invocation(
+            "grant-long-reply-recv-cap-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        partner_step(
+            "grant-long-reply-recv-cap-partner-calls-again",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x89, 0],
+            true,
+        ),
+        partner_step(
+            "grant-long-reply-recv-cap-root-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0x8a, 0],
+            false,
+        ),
         invocation("grant-reply-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         receive_path("grant-reply-receive-path-closed", TAIL_IPC_BUFFER, [0; 3]),
         configure(
@@ -5202,6 +5341,67 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [CHAIN_REPLY_CAP, 0x98],
             true,
         ),
+        // The same donated reply-receive whose reply leg installs: the server
+        // is given the root task's IPC buffer, the root task's buffer names
+        // the empty slot, and the root task calls the server again, lending
+        // it the context; the server's reply-receive, naming the notification
+        // capability, hands the context back down the stack in place,
+        // installs the capability in that slot and blocks the server
+        // (`performReplyRecvDonatedCapsDelivered`).  The root task signals
+        // through the copy, the wait takes its badge, and the copy is deleted.
+        invocation(
+            "chain-caps-server-ipc-buffer",
+            TCB_SET_IPC_BUFFER,
+            CHAIN_TCB_CAP,
+            [FRAME_VADDR, 0, 0, 0],
+        ),
+        receive_path(
+            "chain-caps-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        partner_step(
+            "chain-caps-root-calls-server",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x9a, 0],
+            true,
+        ),
+        with_caps_keeping_path(
+            partner_step(
+                "chain-server-reply-recv-installs-cap",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 2,
+                [CHAIN_REPLY_CAP, 0x9b],
+                true,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("chain-reply-recv-installed-signal", 1)
+        },
+        RoundTrip {
+            name: "chain-reply-recv-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            caps_or_badges: None,
+            returns: None,
+        },
+        invocation(
+            "chain-reply-recv-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path("chain-caps-receive-path-closed", FRAME_VADDR, [0; 3]),
         partner_step("chain-root-replies", REPLY, REPLY_CAP, 1, [0x77, 0], false),
         invocation("chain-suspend-server", TCB_SUSPEND, CHAIN_TCB_CAP, [0; 4]),
         // The root task's reply handed the context back and took it off its
@@ -5700,6 +5900,174 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         ),
         invocation(
             "orphan-recv-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        // The same orphaned caller answered by a reply-receive whose reply leg
+        // installs: the second orphan's set-up again, the partner's buffer
+        // naming the empty slot, then the root task's reply-receive through
+        // the carved reply's capability, naming the notification capability,
+        // hands the context to the partner in place, installs the capability
+        // in that slot and blocks the root task on the endpoint
+        // (`performReplyRecvUnheldCapsDelivered`).  The partner signals
+        // through the copy, the wait takes its badge, and the copy is
+        // deleted; its send wakes the root task, and it waits.
+        invocation(
+            "untyped-retype-unheld-recv-caps-server",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ),
+        invocation(
+            "unheld-recv-caps-server-set-space",
+            TCB_SET_SPACE,
+            CHAIN_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "unheld-recv-caps-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-unheld-recv-caps-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+        ),
+        invocation(
+            "unheld-recv-caps-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        invocation(
+            "unheld-recv-caps-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unheld-recv-caps-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unheld-recv-caps-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unheld-recv-caps-server-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [CHAIN_REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "unheld-recv-caps-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x9c, 0],
+            true,
+        ),
+        signal("unheld-recv-caps-server-wakes-root", 0x19),
+        partner_step(
+            "unheld-recv-caps-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unheld-recv-caps-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "unheld-recv-caps-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            partner_step(
+                "unheld-reply-recv-installs-cap",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 2,
+                [CHAIN_REPLY_CAP, 0x9d],
+                true,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("unheld-reply-recv-installed-signal", 1)
+        },
+        RoundTrip {
+            name: "unheld-reply-recv-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            caps_or_badges: None,
+            returns: None,
+        },
+        invocation(
+            "unheld-reply-recv-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path("unheld-recv-caps-receive-path-closed", FRAME_VADDR, [0; 3]),
+        partner_step(
+            "unheld-recv-caps-partner-wakes-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x9e, 0],
+            false,
+        ),
+        partner_step(
+            "unheld-recv-caps-partner-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unheld-recv-caps-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unheld-recv-caps-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unheld-recv-caps-reply-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],

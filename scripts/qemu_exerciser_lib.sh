@@ -572,6 +572,34 @@ for driver in drivers:
             "unheld-reply-installed-wait", "unheld-reply-installed-delete",
             "unheld-caps-suspend-partner", "unheld-caps-reply-cap-delete",
             "unheld-caps-reply-delete",
+            # Granting reply-receives whose reply leg installs: blocking, at the
+            # longest message, on a donated reply object and to a caller
+            # recording no server.
+            "grant-reply-recv-cap-root-receives", "grant-reply-recv-cap-partner-calls",
+            "grant-reply-recv-cap-installs-cap", "grant-reply-recv-cap-installed-signal",
+            "grant-reply-recv-cap-installed-wait", "grant-reply-recv-cap-installed-delete",
+            "grant-reply-recv-cap-partner-calls-again", "grant-reply-recv-cap-root-replies",
+            "grant-long-reply-recv-cap-root-receives",
+            "grant-long-reply-recv-cap-partner-calls", "grant-long-reply-recv-cap-installs-cap",
+            "grant-long-reply-recv-cap-installed-signal",
+            "grant-long-reply-recv-cap-installed-wait",
+            "grant-long-reply-recv-cap-installed-delete",
+            "grant-long-reply-recv-cap-partner-calls-again",
+            "grant-long-reply-recv-cap-root-replies", "chain-caps-server-ipc-buffer",
+            "chain-caps-root-calls-server", "chain-server-reply-recv-installs-cap",
+            "chain-reply-recv-installed-signal", "chain-reply-recv-installed-wait",
+            "chain-reply-recv-installed-delete", "untyped-retype-unheld-recv-caps-server",
+            "unheld-recv-caps-server-set-space", "unheld-recv-caps-server-set-priority",
+            "untyped-retype-unheld-recv-caps-reply", "unheld-recv-caps-reply-cap-mint",
+            "unheld-recv-caps-resume-server", "unheld-recv-caps-root-waits",
+            "unheld-recv-caps-server-resumes-partner", "unheld-recv-caps-server-receives",
+            "unheld-recv-caps-partner-calls", "unheld-recv-caps-server-wakes-root",
+            "unheld-recv-caps-server-waits", "unheld-recv-caps-server-delete",
+            "unheld-reply-recv-installs-cap", "unheld-reply-recv-installed-signal",
+            "unheld-reply-recv-installed-wait", "unheld-reply-recv-installed-delete",
+            "unheld-recv-caps-partner-wakes-root", "unheld-recv-caps-partner-waits",
+            "unheld-recv-caps-suspend-partner", "unheld-recv-caps-reply-cap-delete",
+            "unheld-recv-caps-reply-delete",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
