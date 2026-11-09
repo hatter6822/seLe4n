@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "backup/cap-transfer-inplace",
-      "commit_sha": "835bb88a4de0bd4d7f4db6c90434769e31180db5",
-      "tree_sha": "0fbd64b346911508c906ce33339ba8c453ff572e",
-      "committed_at_utc": "2026-11-09T12:08:53+00:00"
+      "branch": "backup/cap-install-inplace",
+      "commit_sha": "933079d136f8c581bbb6a38ac2809f5ce844152d",
+      "tree_sha": "545af1c13046f3576e7c6acd3ce7767f827ea338",
+      "committed_at_utc": "2026-11-09T13:53:37+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "21ef929e136baabc255e925efa3a3d6ee7d3260e45acd3be3f8aa450d7bcd044"
+    "source_digest": "ec73244cba6d9faa29a31a60767c09ee141841516e6f0cfc31e59c164b9999f0"
   },
   "summary": {
-    "module_count": 673,
-    "declaration_count": 35138
+    "module_count": 678,
+    "declaration_count": 35310
   },
   "readme_sync": {
     "version": "0.37.7",
     "lean_toolchain": "v4.28.0",
-    "production_files": 603,
-    "production_loc": 605906,
+    "production_files": 608,
+    "production_loc": 609085,
     "test_files": 70,
     "test_loc": 89031,
-    "proved_theorem_lemma_decls": 23247,
+    "proved_theorem_lemma_decls": 23376,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -21558,7 +21558,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.RegisterDecode",
       "path": "SeLe4n/Kernel/Architecture/RegisterDecode.lean",
-      "declaration_count": 68,
+      "declaration_count": 69,
       "declarations": [
         {
           "kind": "def",
@@ -22461,9 +22461,21 @@
         },
         {
           "kind": "theorem",
+          "name": "registerRoutedSyscall_default",
+          "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_default",
+          "line": 1105,
+          "called": [
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "registerRoutedSyscall_viaDecode",
           "full_name": "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_viaDecode",
-          "line": 1108,
+          "line": 1117,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord_readReg",
@@ -88944,6 +88956,661 @@
       "declarations": []
     },
     {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.CallCapsDelivered",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/CallCapsDelivered.lean",
+      "declaration_count": 36,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "TCB.sameOffLinks",
+          "full_name": "SeLe4n.Kernel.TCB.sameOffLinks",
+          "line": 36,
+          "called": [
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.withoutLinks"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "KeepsBindings",
+          "full_name": "SeLe4n.Kernel.KeepsBindings",
+          "line": 41,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.TCB.sameOffLinks",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.refl",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.refl",
+          "line": 46,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.sameSchedContextBindings",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.sameSchedContextBindings",
+          "line": 50,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB.schedContextBinding"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.mapValueAt",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.mapValueAt",
+          "line": 58,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?_mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_mapValueAt",
+            "SeLe4n.Kernel.TCB.sameOffLinks",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.RHTable_getElem?_eq_get?"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.setSlotLinkWords",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.setSlotLinkWords",
+          "line": 76,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.setSlotLinkWords_eq_modifyObject",
+            "SeLe4n.Model.KernelObject.setLinkWords",
+            "SeLe4n.Model.LinkField",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.modifyObject_eq_mapValueAt",
+            "SeLe4n.Model.SystemState.setSlotLinkWords",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.linkAddChild",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.linkAddChild",
+          "line": 86,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.KeepsBindings.setSlotLinkWords",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.linkAddChild"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.cdtAddChild",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.cdtAddChild",
+          "line": 92,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.KeepsBindings.linkAddChild",
+            "SeLe4n.Model.DerivationOp",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.cdtAddChild",
+            "SeLe4n.Model.SystemState.modifyCdt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.storeObject_cnode",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.storeObject_cnode",
+          "line": 96,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_of_get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.insert_eq_mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.ObjId",
+            "SeLe4n.RHTable_getElem?_eq_get?"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.storeCNodeWith",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.storeCNodeWith",
+          "line": 108,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.storeCNodeWith",
+            "SeLe4n.Model.SystemState.storeCNodeWith_cases",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.untypedSourceSetFull",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.untypedSourceSetFull",
+          "line": 114,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.untypedSourceSetFull_of",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.storeCNodeWith"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.ipcTransferSingleCap",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.ipcTransferSingleCap",
+          "line": 118,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.cspaceInsertSlot_ok_decompose",
+            "SeLe4n.Kernel.ipcTransferSingleCap_ok_cases",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.cdtAddChild",
+            "SeLe4n.Model.SystemState.getCNode?_eq_some_iff"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KeepsBindings.recordUnwrappedBadge",
+          "full_name": "SeLe4n.Kernel.KeepsBindings.recordUnwrappedBadge",
+          "line": 126,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.recordUnwrappedBadge_objects",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveTransferCaps_keepsBindings",
+          "full_name": "SeLe4n.Kernel.receiveTransferCaps_keepsBindings",
+          "line": 133,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop_rel",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Model.CapTransferSummary",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CarriesThreads",
+          "full_name": "SeLe4n.Kernel.CarriesThreads",
+          "line": 153,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.TCB.sameOffLinks",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.refl",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.refl",
+          "line": 158,
+          "called": [
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.mapValueAt",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.mapValueAt",
+          "line": 164,
+          "called": [
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?_mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_mapValueAt",
+            "SeLe4n.Kernel.TCB.sameOffLinks",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.RHTable_getElem?_eq_get?"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.setSlotLinkWords",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.setSlotLinkWords",
+          "line": 183,
+          "called": [
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.setSlotLinkWords_eq_modifyObject",
+            "SeLe4n.Model.LinkField",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.modifyObject_eq_mapValueAt",
+            "SeLe4n.Model.SystemState.setSlotLinkWords",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.linkAddChild",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.linkAddChild",
+          "line": 192,
+          "called": [
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.CarriesThreads.setSlotLinkWords",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.linkAddChild"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.cdtAddChild",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.cdtAddChild",
+          "line": 198,
+          "called": [
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.CarriesThreads.linkAddChild",
+            "SeLe4n.Model.DerivationOp",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.cdtAddChild",
+            "SeLe4n.Model.SystemState.modifyCdt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.storeObject_cnode",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.storeObject_cnode",
+          "line": 202,
+          "called": [
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_of_get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.insert_eq_mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.ObjId",
+            "SeLe4n.RHTable_getElem?_eq_get?"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.storeCNodeWith",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.storeCNodeWith",
+          "line": 214,
+          "called": [
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.storeCNodeWith",
+            "SeLe4n.Model.SystemState.storeCNodeWith_cases",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.untypedSourceSetFull",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.untypedSourceSetFull",
+          "line": 220,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.untypedSourceSetFull_of",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.storeCNodeWith"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.ipcTransferSingleCap",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.ipcTransferSingleCap",
+          "line": 224,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.cspaceInsertSlot_ok_decompose",
+            "SeLe4n.Kernel.ipcTransferSingleCap_ok_cases",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.cdtAddChild",
+            "SeLe4n.Model.SystemState.getCNode?_eq_some_iff"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CarriesThreads.recordUnwrappedBadge",
+          "full_name": "SeLe4n.Kernel.CarriesThreads.recordUnwrappedBadge",
+          "line": 232,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.recordUnwrappedBadge_objects",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveTransferCaps_carriesThreads",
+          "full_name": "SeLe4n.Kernel.receiveTransferCaps_carriesThreads",
+          "line": 239,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.CarriesThreads",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop_rel",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Model.CapTransferSummary",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "finishCallCaps",
+          "full_name": "SeLe4n.Kernel.finishCallCaps",
+          "line": 263,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
+            "SeLe4n.Kernel.deliverCapsFrame",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "performCallCapsDelivered",
+          "full_name": "SeLe4n.Kernel.performCallCapsDelivered",
+          "line": 275,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.capTransferK",
+            "SeLe4n.Kernel.finishCallCaps",
+            "SeLe4n.Kernel.storeCallRendezvousReady",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "callRendezvousCaps_eq_delivered",
+          "full_name": "SeLe4n.Kernel.callRendezvousCaps_eq_delivered",
+          "line": 291,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Badge.opt",
+            "SeLe4n.Kernel.Architecture.regMessageBody",
+            "SeLe4n.Kernel.Architecture.regMessageBody_size",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
+            "SeLe4n.Kernel.Architecture.stageWokenDelivery",
+            "SeLe4n.Kernel.Architecture.stageWokenDelivery_some",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LinkBlindWrite.withMessageSlots",
+            "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.capTransferK_eq",
+            "SeLe4n.Kernel.finishCallCaps",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_storeCallRendezvousReady",
+            "SeLe4n.Kernel.mapStepState",
+            "SeLe4n.Kernel.performCallCapsDelivered",
+            "SeLe4n.Kernel.propagatePipChainCrossCore_msg",
+            "SeLe4n.Kernel.propagatePipChainCrossCore_noResizeDue",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.receiveTransferCaps_mapTcbInPlace",
+            "SeLe4n.Kernel.receiveTransferCaps_noResizeDue",
+            "SeLe4n.Kernel.receiveTransferCaps_ok",
+            "SeLe4n.Kernel.returnFrameOfMessage_regMessageBody_caps",
+            "SeLe4n.Kernel.stageDeliveredMessage_holdMessage_caps",
+            "SeLe4n.Kernel.storeCallRendezvous",
+            "SeLe4n.Kernel.storeCallRendezvousReady",
+            "SeLe4n.Kernel.storeCallRendezvousReady_noResizeDue",
+            "SeLe4n.Kernel.storeCallRendezvous_eq_hold",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.optCode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "callDispatchChecked_inPlace_transfer",
+          "full_name": "SeLe4n.Kernel.callDispatchChecked_inPlace_transfer",
+          "line": 340,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.KeepsBindings.refl",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_of_findsInPlace",
+            "SeLe4n.Kernel.SendPayload",
+            "SeLe4n.Kernel.applyCallDonationOnCore",
+            "SeLe4n.Kernel.applyCallDonation_eq_ok_self_of_no_donation",
+            "SeLe4n.Kernel.callDonationSchedContext?_none_of_sameSchedContextBindings",
+            "SeLe4n.Kernel.callReceiverTcb",
+            "SeLe4n.Kernel.callRendezvous_inPlace",
+            "SeLe4n.Kernel.callWakesInPlace",
+            "SeLe4n.Kernel.callWakesInPlace_ne",
+            "SeLe4n.Kernel.endpointCallCrossCoreDispatch",
+            "SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked",
+            "SeLe4n.Kernel.endpointCallWithCapsOnCore",
+            "SeLe4n.Kernel.endpointFlowGate",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.receiveTransferCaps_keepsBindings",
+            "SeLe4n.Kernel.receiveTransferCaps_ok",
+            "SeLe4n.Kernel.receiverCapTarget?",
+            "SeLe4n.Kernel.sendCapRequest",
+            "SeLe4n.Kernel.sendPayloadMessage",
+            "SeLe4n.Kernel.sendWakesInPlace",
+            "SeLe4n.Kernel.storeCallRendezvous",
+            "SeLe4n.Kernel.storeCallRendezvousReady_noResizeDue",
+            "SeLe4n.Kernel.storeCallRendezvous_eq_hold",
+            "SeLe4n.Kernel.storePopHead",
+            "SeLe4n.Kernel.wakeThread",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.receiveQ",
+            "SeLe4n.Model.IntrusiveQueue",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
+            "SeLe4n.Model.SystemState.mapTcbInPlace_noResizeDue",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.pendingReceiveReply",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.ObjId",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toValid?_isSome_iff",
+            "SeLe4n.ThreadId.toValid?_some_val_eq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "finishTakeCaps",
+          "full_name": "SeLe4n.Kernel.finishTakeCaps",
+          "line": 414,
+          "called": [
+            "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
+            "SeLe4n.Kernel.regMessageInfoWordCaps",
+            "SeLe4n.Kernel.withFrameWords",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "performTakeCapsDelivered",
+          "full_name": "SeLe4n.Kernel.performTakeCapsDelivered",
+          "line": 426,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.capTransferK",
+            "SeLe4n.Kernel.finishTakeCaps",
+            "SeLe4n.Kernel.receiverReady",
+            "SeLe4n.Kernel.storePopHead",
+            "SeLe4n.Kernel.wakeThread",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.ObjId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.ofOptCode",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ready_of_keepsBindings_receiverReady",
+          "full_name": "SeLe4n.Kernel.ready_of_keepsBindings_receiverReady",
+          "line": 440,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.receiverReady",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.mapTcbInPlace_getTcb?_self",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.updateTcb_eq_mapTcbInPlace",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ipcState_setIpcState",
+            "SeLe4n.Model.TCB.withoutLinks",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "stageWokenSendCompletion_getTcb?_ne",
+          "full_name": "SeLe4n.Kernel.stageWokenSendCompletion_getTcb?_ne",
+          "line": 459,
+          "called": [
+            "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
+            "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_mapTcbInPlace",
+            "SeLe4n.Model.SystemState.updateTcb_eq_mapTcbInPlace",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferReadsAgree_takeReady",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree_takeReady",
+          "line": 474,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.ipcBufferReadsAgree",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_storePopHead",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_updateTcb",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_wakeThread",
+            "SeLe4n.Kernel.receiverReady",
+            "SeLe4n.Kernel.storePopHead",
+            "SeLe4n.Kernel.storePopHead_noResizeDue",
+            "SeLe4n.Kernel.updateTcb_noResizeDue",
+            "SeLe4n.Kernel.wakeThread",
+            "SeLe4n.Kernel.wakeThread_noResizeDue",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "performCallTakeCapsDelivered",
+          "full_name": "SeLe4n.Kernel.performCallTakeCapsDelivered",
+          "line": 498,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.capTransferK",
+            "SeLe4n.Kernel.finishCallCaps",
+            "SeLe4n.Kernel.storeReceiveCallReady",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.VAddr"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.IPC.CrossCore.Cancellation",
       "path": "SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean",
       "declaration_count": 244,
@@ -93603,6 +94270,1318 @@
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.replyObject",
             "SeLe4n.ThreadId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.CapTransferDelivered",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/CapTransferDelivered.lean",
+      "declaration_count": 25,
+      "declarations": [
+        {
+          "kind": "theorem",
+          "name": "bufferWordPAddrOf?",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree.bufferWordPAddrOf?",
+          "line": 40,
+          "called": [
+            "SeLe4n.Kernel.bufferWordPAddrOf?",
+            "SeLe4n.ObjId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "senderExtraCapAddr?",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree.senderExtraCapAddr?",
+          "line": 45,
+          "called": [
+            "SeLe4n.Kernel.ipcBufferWordPAddr?_eq_of",
+            "SeLe4n.Kernel.senderExtraCapAddr?",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "senderExtraCapAddrs",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree.senderExtraCapAddrs",
+          "line": 50,
+          "called": [
+            "SeLe4n.Kernel.senderExtraCapAddr?",
+            "SeLe4n.Kernel.senderExtraCapAddrs",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frameCapRequestOf",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree.frameCapRequestOf",
+          "line": 57,
+          "called": [
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiverHasBuffer",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree.receiverHasBuffer",
+          "line": 62,
+          "called": [
+            "SeLe4n.Kernel.ipcBufferWordPAddr?_eq_of",
+            "SeLe4n.Kernel.receiverHasBuffer",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiverBufferWord?",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree.receiverBufferWord?",
+          "line": 67,
+          "called": [
+            "SeLe4n.Kernel.ipcBufferWordPAddr?_eq_of",
+            "SeLe4n.Kernel.receiverBufferWord?",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receivePathSlot?",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree.receivePathSlot?",
+          "line": 72,
+          "called": [
+            "SeLe4n.Kernel.lookupSlotCap_congr_getCNode?",
+            "SeLe4n.Kernel.receivePathSlot?",
+            "SeLe4n.Kernel.resolveCapAddress_congr_getCNode?",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveSlot?",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree.receiveSlot?",
+          "line": 78,
+          "called": [
+            "SeLe4n.Kernel.receiveSlot?",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capTargetOf",
+          "full_name": "SeLe4n.Kernel.ipcBufferReadsAgree.capTargetOf",
+          "line": 82,
+          "called": [
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveTransferCaps_ok",
+          "full_name": "SeLe4n.Kernel.receiveTransferCaps_ok",
+          "line": 90,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop_ok",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.resolveExtraCaps",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "regMessageInfoWordCaps",
+          "full_name": "SeLe4n.Kernel.regMessageInfoWordCaps",
+          "line": 110,
+          "called": [
+            "SeLe4n.Kernel.Architecture.errorLabelBase",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.MessageInfo.encode",
+            "SeLe4n.Model.maxMessageRegisters",
+            "SeLe4n.SyscallRegisterLayout"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "regMessageFrameCapsW",
+          "full_name": "SeLe4n.Kernel.regMessageFrameCapsW",
+          "line": 118,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
+            "SeLe4n.Kernel.Architecture.badgeWordIf",
+            "SeLe4n.Kernel.Architecture.regMessageWord",
+            "SeLe4n.Kernel.regMessageInfoWordCaps",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "returnFrameOfMessage_regMessageBody_caps",
+          "full_name": "SeLe4n.Kernel.returnFrameOfMessage_regMessageBody_caps",
+          "line": 128,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Badge.opt",
+            "SeLe4n.Kernel.Architecture.badgeWordOrZero_opt",
+            "SeLe4n.Kernel.Architecture.regMessageBody",
+            "SeLe4n.Kernel.Architecture.regMessageBody_size",
+            "SeLe4n.Kernel.Architecture.regMessageBody_word",
+            "SeLe4n.Kernel.Architecture.returnFrameOfMessage",
+            "SeLe4n.Kernel.Architecture.returnMessageInfo",
+            "SeLe4n.Kernel.regMessageFrameCapsW",
+            "SeLe4n.Kernel.regMessageInfoWordCaps",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "stageDeliveredMessage_holdMessage_caps",
+          "full_name": "SeLe4n.Kernel.stageDeliveredMessage_holdMessage_caps",
+          "line": 143,
+          "called": [
+            "SeLe4n.Kernel.Architecture.recordPhysicalWrites_nil",
+            "SeLe4n.Kernel.Architecture.returnFrameOfMessage",
+            "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
+            "SeLe4n.Kernel.Architecture.writeDeliveredFrameToTcb",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.holdMessage",
+            "SeLe4n.Kernel.mapTcbInPlace_eq_self_of_getTcb?_none",
+            "SeLe4n.Kernel.messageOverflowWrites_of_size_le",
+            "SeLe4n.Kernel.writeDeliveredFrameIfReady",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_mapTcbInPlace",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.mapTcbInPlace_mapTcbInPlace",
+            "SeLe4n.Model.SystemState.updateTcb_eq_mapTcbInPlace",
+            "SeLe4n.Model.TCB.withMessageSlots_ipcState",
+            "SeLe4n.Model.TCB.withMessageSlots_pendingMessage",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "deliverCapsFrame",
+          "full_name": "SeLe4n.Kernel.deliverCapsFrame",
+          "line": 169,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Badge.opt",
+            "SeLe4n.Kernel.holdDeliveredBody",
+            "SeLe4n.Kernel.regMessageFrameCapsW",
+            "SeLe4n.Kernel.writeDeliveredFrameIfReady",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "performSendCapsDelivered",
+          "full_name": "SeLe4n.Kernel.performSendCapsDelivered",
+          "line": 179,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.capTransferK",
+            "SeLe4n.Kernel.deliverCapsFrame",
+            "SeLe4n.Kernel.storeSendRendezvousReady",
+            "SeLe4n.Kernel.wakeThread",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sendRendezvousCaps_eq_delivered",
+          "full_name": "SeLe4n.Kernel.sendRendezvousCaps_eq_delivered",
+          "line": 195,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Badge.opt",
+            "SeLe4n.Kernel.Architecture.regMessageBody",
+            "SeLe4n.Kernel.Architecture.regMessageBody_size",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
+            "SeLe4n.Kernel.Architecture.stageWokenDelivery",
+            "SeLe4n.Kernel.Architecture.stageWokenDelivery_some",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LinkBlindWrite.withMessageSlots",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.capTransferK_eq",
+            "SeLe4n.Kernel.clearMessageSlots",
+            "SeLe4n.Kernel.clearWokenReceiverStashPure",
+            "SeLe4n.Kernel.clearWokenReceiverStashPure_mapTcbInPlace",
+            "SeLe4n.Kernel.deliverCapsFrame",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.holdMessage",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_sendWoken",
+            "SeLe4n.Kernel.mapStepState",
+            "SeLe4n.Kernel.performSendCapsDelivered",
+            "SeLe4n.Kernel.receiveCompleteSlots",
+            "SeLe4n.Kernel.receiveCompleteTcb_eq_slots",
+            "SeLe4n.Kernel.receiveReadyTcb_eq_slots",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.receiveTransferCaps_mapTcbInPlace",
+            "SeLe4n.Kernel.receiveTransferCaps_noResizeDue",
+            "SeLe4n.Kernel.receiveTransferCaps_ok",
+            "SeLe4n.Kernel.returnFrameOfMessage_regMessageBody_caps",
+            "SeLe4n.Kernel.stageDeliveredMessage_holdMessage_caps",
+            "SeLe4n.Kernel.storeSendRendezvous",
+            "SeLe4n.Kernel.storeSendRendezvousReady",
+            "SeLe4n.Kernel.storeSendRendezvousWith",
+            "SeLe4n.Kernel.storeSendRendezvousWith_comp",
+            "SeLe4n.Kernel.storeSendRendezvousWith_noResizeDue",
+            "SeLe4n.Kernel.storeSendRendezvous_eq_with",
+            "SeLe4n.Kernel.wakeThread",
+            "SeLe4n.Kernel.wakeThread_msg",
+            "SeLe4n.Kernel.wakeThread_noResizeDue",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace_mapTcbInPlace",
+            "SeLe4n.Model.SystemState.mapTcbInPlace_noResizeDue",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.Model.TCB.withMessageSlots",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.ofOptCode_optCode",
+            "SeLe4n.ThreadId.optCode"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "routedExtraCaps",
+          "full_name": "SeLe4n.Kernel.routedExtraCaps",
+          "line": 254,
+          "called": [
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.arm64DefaultLayout",
+            "SeLe4n.readRegWord"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "routedExtraCaps_eq",
+          "full_name": "SeLe4n.Kernel.routedExtraCaps_eq",
+          "line": 257,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.routedLongTail_eq",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.routedShortTail_eq",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.unroutedSyscall_eq",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SyscallId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.arm64DefaultLayout",
+            "SeLe4n.readRegWord"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "routedLength",
+          "full_name": "SeLe4n.Kernel.routedLength",
+          "line": 291,
+          "called": [
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.arm64DefaultLayout",
+            "SeLe4n.readRegWord"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "routedLength_eq",
+          "full_name": "SeLe4n.Kernel.routedLength_eq",
+          "line": 294,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.routedLongTail_eq",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.routedShortTail_eq",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.unroutedSyscall_eq",
+            "SeLe4n.Kernel.routedLength",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SyscallId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.arm64DefaultLayout",
+            "SeLe4n.readRegWord"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frameCapRequestOf_zero",
+          "full_name": "SeLe4n.Kernel.frameCapRequestOf_zero",
+          "line": 325,
+          "called": [
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.senderExtraCapAddrs_zero",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "senderFrameCapRequest_routed",
+          "full_name": "SeLe4n.Kernel.senderFrameCapRequest_routed",
+          "line": 333,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedTransferring",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.blockedSenderDecode",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.frameCapRequestOf_zero",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Kernel.routedExtraCaps_eq",
+            "SeLe4n.Kernel.senderFrameCapRequest",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SyscallId",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ThreadId",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sendCapRequest_routed",
+          "full_name": "SeLe4n.Kernel.sendCapRequest_routed",
+          "line": 353,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Kernel.sendCapRequest",
+            "SeLe4n.Kernel.senderFrameCapRequest_routed",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SyscallId",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ThreadId",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiverCapTarget?_eq_capTargetOf",
+          "full_name": "SeLe4n.Kernel.receiverCapTarget?_eq_capTargetOf",
+          "line": 368,
+          "called": [
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.receiverCapTarget?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.CapTransferInPlace",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/CapTransferInPlace.lean",
+      "declaration_count": 55,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "bufferWordPAddrOf?",
+          "full_name": "SeLe4n.Kernel.bufferWordPAddrOf?",
+          "line": 49,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotAddr",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPage",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWords",
+            "SeLe4n.MachineState.addrInRange",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getVSpaceRoot?",
+            "SeLe4n.ObjId",
+            "SeLe4n.PAddr",
+            "SeLe4n.PAddr.ofNat",
+            "SeLe4n.VAddr",
+            "SeLe4n.VAddr.pageOffset"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferWordPAddr?_eq_of",
+          "full_name": "SeLe4n.Kernel.ipcBufferWordPAddr?_eq_of",
+          "line": 64,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddr?",
+            "SeLe4n.Kernel.bufferWordPAddrOf?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.vspaceRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bufferWordOf?",
+          "full_name": "SeLe4n.Kernel.bufferWordOf?",
+          "line": 69,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.userWordAt",
+            "SeLe4n.Kernel.bufferWordPAddrOf?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "hasBufferOf",
+          "full_name": "SeLe4n.Kernel.hasBufferOf",
+          "line": 74,
+          "called": [
+            "SeLe4n.Kernel.bufferWordPAddrOf?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "recordBadgeOf",
+          "full_name": "SeLe4n.Kernel.recordBadgeOf",
+          "line": 78,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord",
+            "SeLe4n.Kernel.Architecture.recordPhysicalWrites",
+            "SeLe4n.Kernel.bufferWordPAddrOf?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "recordUnwrappedBadge_eq_of",
+          "full_name": "SeLe4n.Kernel.recordUnwrappedBadge_eq_of",
+          "line": 84,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.recordBadgeOf",
+            "SeLe4n.Kernel.recordUnwrappedBadge",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.vspaceRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "senderCapAddrK",
+          "full_name": "SeLe4n.Kernel.senderCapAddrK",
+          "line": 89,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.CPtr.ofWord",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.userWordAt",
+            "SeLe4n.Kernel.bufferWordPAddrOf?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "senderCapAddrK_eq",
+          "full_name": "SeLe4n.Kernel.senderCapAddrK_eq",
+          "line": 95,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferCapsOrBadgesWord",
+            "SeLe4n.Kernel.ipcBufferWordPAddr?_eq_of",
+            "SeLe4n.Kernel.senderCapAddrK",
+            "SeLe4n.Kernel.senderExtraCapAddr?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.vspaceRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "extraCapRefK",
+          "full_name": "SeLe4n.Kernel.extraCapRefK",
+          "line": 108,
+          "called": [
+            "SeLe4n.Kernel.resolveCapAddressKUnrolled",
+            "SeLe4n.Kernel.senderCapAddrK",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "extraCapRefK_eq",
+          "full_name": "SeLe4n.Kernel.extraCapRefK_eq",
+          "line": 114,
+          "called": [
+            "SeLe4n.Kernel.extraCapRefK",
+            "SeLe4n.Kernel.resolveCapAddress",
+            "SeLe4n.Kernel.resolveCapAddressKUnrolled_eq",
+            "SeLe4n.Kernel.resolveCapAddressK_eq",
+            "SeLe4n.Kernel.senderCapAddrK_eq",
+            "SeLe4n.Kernel.senderExtraCapAddr?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "receivePathSlotK",
+          "full_name": "SeLe4n.Kernel.receivePathSlotK",
+          "line": 132,
+          "called": [
+            "SeLe4n.CPtr.ofWord",
+            "SeLe4n.Kernel.resolveCapAddressKUnrolled",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receivePathSlotK_eq",
+          "full_name": "SeLe4n.Kernel.receivePathSlotK_eq",
+          "line": 158,
+          "called": [
+            "SeLe4n.CPtr.ofWord",
+            "SeLe4n.Kernel.receiveDepthRefused_eq",
+            "SeLe4n.Kernel.receivePathSlot?",
+            "SeLe4n.Kernel.receivePathSlotK",
+            "SeLe4n.Kernel.resolveCapAddressKUnrolled_eq",
+            "SeLe4n.Kernel.resolveCapAddressK_eq",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "receiveSlotK",
+          "full_name": "SeLe4n.Kernel.receiveSlotK",
+          "line": 195,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReceiveCNodeWord",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReceiveDepthWord",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReceiveIndexWord",
+            "SeLe4n.Kernel.bufferWordOf?",
+            "SeLe4n.Kernel.receivePathSlotK",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveSlotK_eq",
+          "full_name": "SeLe4n.Kernel.receiveSlotK_eq",
+          "line": 203,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReceiveCNodeWord",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReceiveDepthWord",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReceiveIndexWord",
+            "SeLe4n.Kernel.bufferWordOf?",
+            "SeLe4n.Kernel.receivePathSlotK_eq",
+            "SeLe4n.Kernel.receiveSlot?",
+            "SeLe4n.Kernel.receiveSlotK",
+            "SeLe4n.Kernel.receiverBufferWord?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "transferInstallAdmitted",
+          "full_name": "SeLe4n.Kernel.transferInstallAdmitted",
+          "line": 223,
+          "called": [
+            "SeLe4n.Kernel.cspaceDstAdmitted",
+            "SeLe4n.Kernel.untypedDeriveRefused",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "transferInstallPerform",
+          "full_name": "SeLe4n.Kernel.transferInstallPerform",
+          "line": 232,
+          "called": [
+            "SeLe4n.Kernel.untypedSourceSetFull",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.cdtAddChild",
+            "SeLe4n.Model.SystemState.storeCNodeWith",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_eq_inPlace",
+          "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_eq_inPlace",
+          "line": 243,
+          "called": [
+            "SeLe4n.Kernel.cdtNodeIsRevocable",
+            "SeLe4n.Kernel.cspaceDstAdmitted",
+            "SeLe4n.Kernel.cspaceInsertSlot_of_admitted",
+            "SeLe4n.Kernel.cspaceInsertSlot_ok_decompose",
+            "SeLe4n.Kernel.ipcTransferSingleCap",
+            "SeLe4n.Kernel.ipcTransferSingleCap_ok_cases",
+            "SeLe4n.Kernel.transferInstallAdmitted",
+            "SeLe4n.Kernel.transferInstallPerform",
+            "SeLe4n.Kernel.untypedDeriveRefused",
+            "SeLe4n.Model.CNode.insertFields_eq_insert",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.Capability.withoutMapping",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.SystemState.lookupSlotCap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_of_admitted",
+          "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_of_admitted",
+          "line": 287,
+          "called": [
+            "SeLe4n.Kernel.ipcTransferSingleCap",
+            "SeLe4n.Kernel.ipcTransferSingleCap_eq_inPlace",
+            "SeLe4n.Kernel.transferInstallAdmitted",
+            "SeLe4n.Kernel.transferInstallPerform",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_of_refused",
+          "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_of_refused",
+          "line": 299,
+          "called": [
+            "SeLe4n.Kernel.ipcTransferSingleCap",
+            "SeLe4n.Kernel.ipcTransferSingleCap_eq_inPlace",
+            "SeLe4n.Kernel.transferInstallAdmitted",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pick3",
+          "full_name": "SeLe4n.Kernel.pick3",
+          "line": 313,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "capBadgeOrZero",
+          "full_name": "SeLe4n.Kernel.capBadgeOrZero",
+          "line": 320,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Badge.zero",
+            "SeLe4n.Model.Capability"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capBadgeOrZero_eq",
+          "full_name": "SeLe4n.Kernel.capBadgeOrZero_eq",
+          "line": 323,
+          "called": [
+            "SeLe4n.Badge.zero",
+            "SeLe4n.Kernel.capBadgeOrZero",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.Capability.badge"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "transferEndpoint?",
+          "full_name": "SeLe4n.Kernel.transferEndpoint?",
+          "line": 331,
+          "called": [
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capUnwrapsAt_transferEndpoint",
+          "full_name": "SeLe4n.Kernel.capUnwrapsAt_transferEndpoint",
+          "line": 334,
+          "called": [
+            "SeLe4n.Kernel.capUnwrapsAt",
+            "SeLe4n.Kernel.transferEndpoint?",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capStepsApply",
+          "full_name": "SeLe4n.Kernel.capStepsApply",
+          "line": 349,
+          "called": [
+            "SeLe4n.Kernel.capBadgeOrZero",
+            "SeLe4n.Kernel.capUnwrapsAt",
+            "SeLe4n.Kernel.pick3",
+            "SeLe4n.Kernel.recordBadgeOf",
+            "SeLe4n.Kernel.transferInstallAdmitted",
+            "SeLe4n.Kernel.transferInstallPerform",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capStepsInfo",
+          "full_name": "SeLe4n.Kernel.capStepsInfo",
+          "line": 369,
+          "called": [
+            "SeLe4n.Kernel.capUnwrapsAt",
+            "SeLe4n.Kernel.pick3",
+            "SeLe4n.Kernel.transferInstallAdmitted",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "transferCapAt",
+          "full_name": "SeLe4n.Kernel.transferCapAt",
+          "line": 385,
+          "called": [
+            "SeLe4n.Kernel.pick3",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.TransferCap",
+            "SeLe4n.Model.TransferCap.fromSlot",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capInfoCounts",
+          "full_name": "SeLe4n.Kernel.capInfoCounts",
+          "line": 391,
+          "called": [
+            "SeLe4n.Model.CapTransferResult",
+            "SeLe4n.Model.CapTransferSummary.capInfoStep"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "LedgerOnly",
+          "full_name": "SeLe4n.Kernel.LedgerOnly",
+          "line": 395,
+          "called": [
+            "SeLe4n.Kernel.Architecture.PhysicalWriteLedger",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "LedgerOnly.refl",
+          "full_name": "SeLe4n.Kernel.LedgerOnly.refl",
+          "line": 399,
+          "called": [
+            "SeLe4n.Kernel.LedgerOnly",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "LedgerOnly.badge",
+          "full_name": "SeLe4n.Kernel.LedgerOnly.badge",
+          "line": 402,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.LedgerOnly",
+            "SeLe4n.Kernel.recordUnwrappedBadge",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "transferInstallAdmitted_ledgerOnly",
+          "full_name": "SeLe4n.Kernel.transferInstallAdmitted_ledgerOnly",
+          "line": 410,
+          "called": [
+            "SeLe4n.Kernel.LedgerOnly",
+            "SeLe4n.Kernel.transferInstallAdmitted",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCapsLoop_eq_capSteps",
+          "full_name": "SeLe4n.Kernel.ipcUnwrapCapsLoop_eq_capSteps",
+          "line": 420,
+          "called": [
+            "SeLe4n.Badge.zero",
+            "SeLe4n.Kernel.LedgerOnly",
+            "SeLe4n.Kernel.capBadgeOrZero_eq",
+            "SeLe4n.Kernel.capInfoCounts",
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.capUnwrapsAt_transferEndpoint",
+            "SeLe4n.Kernel.ipcTransferSingleCap_of_admitted",
+            "SeLe4n.Kernel.ipcTransferSingleCap_of_refused",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop",
+            "SeLe4n.Kernel.pick3",
+            "SeLe4n.Kernel.transferCapAt",
+            "SeLe4n.Kernel.transferEndpoint?",
+            "SeLe4n.Kernel.transferInstallAdmitted",
+            "SeLe4n.Kernel.transferInstallAdmitted_ledgerOnly",
+            "SeLe4n.Model.CapTransferResult",
+            "SeLe4n.Model.CapTransferSummary",
+            "SeLe4n.Model.CapTransferSummary.capInfo",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.Capability.badge",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.Model.TransferCap",
+            "SeLe4n.Model.TransferCap.fromSlot",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "transferCapsReadK",
+          "full_name": "SeLe4n.Kernel.transferCapsReadK",
+          "line": 491,
+          "called": [
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "transferRefsK",
+          "full_name": "SeLe4n.Kernel.transferRefsK",
+          "line": 511,
+          "called": [
+            "SeLe4n.Kernel.extraCapRefK",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capTransferK",
+          "full_name": "SeLe4n.Kernel.capTransferK",
+          "line": 530,
+          "called": [
+            "SeLe4n.Kernel.hasBufferOf",
+            "SeLe4n.Kernel.receiveSlotK",
+            "SeLe4n.Kernel.transferCapsReadK",
+            "SeLe4n.Kernel.transferRefsK",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frameCapRequestOf",
+          "full_name": "SeLe4n.Kernel.frameCapRequestOf",
+          "line": 551,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.senderExtraCapAddrs",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capTargetOf",
+          "full_name": "SeLe4n.Kernel.capTargetOf",
+          "line": 561,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.receiveSlot?",
+            "SeLe4n.Kernel.receiverHasBuffer",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCaps_eq_run",
+          "full_name": "SeLe4n.Kernel.ipcUnwrapCaps_eq_run",
+          "line": 567,
+          "called": [
+            "SeLe4n.Kernel.LedgerOnly.refl",
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.ipcUnwrapCaps",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop_eq_capSteps",
+            "SeLe4n.Kernel.receiveSlot?",
+            "SeLe4n.Kernel.receiveSlotK",
+            "SeLe4n.Kernel.receiveSlotK_eq",
+            "SeLe4n.Kernel.transferCapAt",
+            "SeLe4n.Kernel.transferEndpoint?",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.Model.TransferCap",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "senderExtraCapAddrs_one",
+          "full_name": "SeLe4n.Kernel.senderExtraCapAddrs_one",
+          "line": 600,
+          "called": [
+            "SeLe4n.Kernel.senderExtraCapAddr?",
+            "SeLe4n.Kernel.senderExtraCapAddrs",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.maxExtraCaps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "senderExtraCapAddrs_two",
+          "full_name": "SeLe4n.Kernel.senderExtraCapAddrs_two",
+          "line": 610,
+          "called": [
+            "SeLe4n.Kernel.senderExtraCapAddr?",
+            "SeLe4n.Kernel.senderExtraCapAddrs",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.maxExtraCaps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "senderExtraCapAddrs_three",
+          "full_name": "SeLe4n.Kernel.senderExtraCapAddrs_three",
+          "line": 620,
+          "called": [
+            "SeLe4n.Kernel.senderExtraCapAddr?",
+            "SeLe4n.Kernel.senderExtraCapAddrs",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.maxExtraCaps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveTransferCaps_no_target",
+          "full_name": "SeLe4n.Kernel.receiveTransferCaps_no_target",
+          "line": 632,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveTransferCaps_some",
+          "full_name": "SeLe4n.Kernel.receiveTransferCaps_some",
+          "line": 642,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.ipcUnwrapCaps",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.resolveExtraCaps",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "abbrev",
+          "name": "capRunFinish",
+          "full_name": "SeLe4n.Kernel.capRunFinish",
+          "line": 652,
+          "called": [
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.receiveSlotK",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "abbrev",
+          "name": "capSpecFinish",
+          "full_name": "SeLe4n.Kernel.capSpecFinish",
+          "line": 664,
+          "called": [
+            "SeLe4n.Kernel.ipcUnwrapCaps",
+            "SeLe4n.Kernel.receiveSlot?",
+            "SeLe4n.Kernel.transferEndpoint?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TransferCap",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capRunFinish_zero",
+          "full_name": "SeLe4n.Kernel.capRunFinish_zero",
+          "line": 671,
+          "called": [
+            "SeLe4n.Kernel.capRunFinish",
+            "SeLe4n.Kernel.capSpecFinish",
+            "SeLe4n.Kernel.receiveSlotK_eq",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capRunFinish_eq",
+          "full_name": "SeLe4n.Kernel.capRunFinish_eq",
+          "line": 680,
+          "called": [
+            "SeLe4n.Kernel.capRunFinish",
+            "SeLe4n.Kernel.capSpecFinish",
+            "SeLe4n.Kernel.ipcUnwrapCaps_eq_run",
+            "SeLe4n.Kernel.transferCapAt",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TransferCap",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "transferCapsReadK_one",
+          "full_name": "SeLe4n.Kernel.transferCapsReadK_one",
+          "line": 698,
+          "called": [
+            "SeLe4n.Kernel.capRunFinish",
+            "SeLe4n.Kernel.capRunFinish_eq",
+            "SeLe4n.Kernel.capRunFinish_zero",
+            "SeLe4n.Kernel.capSpecFinish",
+            "SeLe4n.Kernel.extraCapsFromSlots",
+            "SeLe4n.Kernel.transferCapsReadK",
+            "SeLe4n.Model.SystemState.lookupSlotCap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "transferCapsReadK_two",
+          "full_name": "SeLe4n.Kernel.transferCapsReadK_two",
+          "line": 713,
+          "called": [
+            "SeLe4n.Kernel.capRunFinish",
+            "SeLe4n.Kernel.capRunFinish_eq",
+            "SeLe4n.Kernel.capRunFinish_zero",
+            "SeLe4n.Kernel.capSpecFinish",
+            "SeLe4n.Kernel.extraCapsFromSlots",
+            "SeLe4n.Kernel.transferCapsReadK",
+            "SeLe4n.Model.SystemState.lookupSlotCap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "transferCapsReadK_three",
+          "full_name": "SeLe4n.Kernel.transferCapsReadK_three",
+          "line": 736,
+          "called": [
+            "SeLe4n.Kernel.capRunFinish",
+            "SeLe4n.Kernel.capRunFinish_eq",
+            "SeLe4n.Kernel.capRunFinish_zero",
+            "SeLe4n.Kernel.capSpecFinish",
+            "SeLe4n.Kernel.extraCapsFromSlots",
+            "SeLe4n.Kernel.transferCapsReadK",
+            "SeLe4n.Model.SystemState.lookupSlotCap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resolveExtraCaps_list",
+          "full_name": "SeLe4n.Kernel.resolveExtraCaps_list",
+          "line": 770,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.extraCapsFromSlots",
+            "SeLe4n.Kernel.resolveCapAddress",
+            "SeLe4n.Kernel.resolveExtraCaps",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capSpecFinish_request",
+          "full_name": "SeLe4n.Kernel.capSpecFinish_request",
+          "line": 780,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.capSpecFinish",
+            "SeLe4n.Kernel.receiveSlot?",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.resolveExtraCaps",
+            "SeLe4n.Kernel.transferEndpoint?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capTransferK_eq_at",
+          "full_name": "SeLe4n.Kernel.capTransferK_eq_at",
+          "line": 802,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.capSpecFinish_request",
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.capTransferK",
+            "SeLe4n.Kernel.extraCapRefK_eq",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.hasBufferOf",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.receiveTransferCaps_no_target",
+            "SeLe4n.Kernel.receiverHasBuffer",
+            "SeLe4n.Kernel.resolveCapAddress",
+            "SeLe4n.Kernel.resolveExtraCaps_list",
+            "SeLe4n.Kernel.senderExtraCapAddr?",
+            "SeLe4n.Kernel.senderExtraCapAddrs_one",
+            "SeLe4n.Kernel.senderExtraCapAddrs_three",
+            "SeLe4n.Kernel.senderExtraCapAddrs_two",
+            "SeLe4n.Kernel.senderExtraCapAddrs_zero",
+            "SeLe4n.Kernel.transferCapsReadK_one",
+            "SeLe4n.Kernel.transferCapsReadK_three",
+            "SeLe4n.Kernel.transferCapsReadK_two",
+            "SeLe4n.Kernel.transferEndpoint?",
+            "SeLe4n.Kernel.transferRefsK",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capTransferK_eq",
+          "full_name": "SeLe4n.Kernel.capTransferK_eq",
+          "line": 902,
+          "called": [
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.capTransferK",
+            "SeLe4n.Kernel.capTransferK_eq_at",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.ObjId"
           ]
         }
       ]
@@ -102258,7 +104237,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace",
       "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean",
-      "declaration_count": 10,
+      "declaration_count": 11,
       "declarations": [
         {
           "kind": "def",
@@ -102435,10 +104414,55 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "receiveTake_dequeuedNoCall",
+          "full_name": "SeLe4n.Kernel.receiveTake_dequeuedNoCall",
+          "line": 231,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_of_findsInPlace",
+            "SeLe4n.Kernel.callReceiverTcb",
+            "SeLe4n.Kernel.determineTargetCore",
+            "SeLe4n.Kernel.enqueueRunnableOnCore",
+            "SeLe4n.Kernel.enqueueRunnableOnCore_agree_of_findsInPlace",
+            "SeLe4n.Kernel.lookupTcb",
+            "SeLe4n.Kernel.popHead_inPlace",
+            "SeLe4n.Kernel.receiveTakesInPlace",
+            "SeLe4n.Kernel.receiverReady",
+            "SeLe4n.Kernel.rendezvousDequeuedCall",
+            "SeLe4n.Kernel.rendezvousDequeuedCall_of_objectsAgreeOffRunLinks",
+            "SeLe4n.Kernel.sendWakesInPlace",
+            "SeLe4n.Kernel.storePopHead",
+            "SeLe4n.Kernel.storePopHead_noResizeDue",
+            "SeLe4n.Kernel.tcbOffQueue",
+            "SeLe4n.Kernel.updateTcb_findsInPlace",
+            "SeLe4n.Kernel.updateTcb_getTcb?_self_of_findsInPlace",
+            "SeLe4n.Kernel.updateTcb_noResizeDue",
+            "SeLe4n.Kernel.wakeThread",
+            "SeLe4n.Kernel.wakeThread_noResizeDue",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.IntrusiveQueue",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_mapTcbInPlace",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.updateTcb_eq_mapTcbInPlace",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState_setIpcState",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
           "kind": "def",
           "name": "performReceiveDelivered",
           "full_name": "SeLe4n.Kernel.performReceiveDelivered",
-          "line": 233,
+          "line": 279,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -102458,7 +104482,7 @@
           "kind": "theorem",
           "name": "receiveTake_delivered_of_message",
           "full_name": "SeLe4n.Kernel.receiveTake_delivered_of_message",
-          "line": 247,
+          "line": 293,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageBody",
             "SeLe4n.Kernel.Architecture.regMessageBody_size",
@@ -102534,7 +104558,7 @@
           "kind": "theorem",
           "name": "receiveTake_delivered",
           "full_name": "SeLe4n.Kernel.receiveTake_delivered",
-          "line": 372,
+          "line": 418,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -124881,6 +126905,180 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.ReplyCapsDelivered",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/ReplyCapsDelivered.lean",
+      "declaration_count": 5,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "performReplyCapsDelivered",
+          "full_name": "SeLe4n.Kernel.performReplyCapsDelivered",
+          "line": 40,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.capTransferK",
+            "SeLe4n.Kernel.deliverCapsFrame",
+            "SeLe4n.Kernel.storeReplyRendezvousReady",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyRendezvousCaps_eq_delivered",
+          "full_name": "SeLe4n.Kernel.replyRendezvousCaps_eq_delivered",
+          "line": 59,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Badge.opt",
+            "SeLe4n.Kernel.Architecture.regMessageBody",
+            "SeLe4n.Kernel.Architecture.regMessageBody_size",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
+            "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LinkBlindWrite.withMessageSlots",
+            "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.capTransferK_eq_at",
+            "SeLe4n.Kernel.deliverCapsFrame",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_propagatePipChainCrossCore",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_storeReplyRendezvousReady",
+            "SeLe4n.Kernel.mapStepState",
+            "SeLe4n.Kernel.performReplyCapsDelivered",
+            "SeLe4n.Kernel.propagatePipChainCrossCore_msg",
+            "SeLe4n.Kernel.propagatePipChainCrossCore_noResizeDue",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.receiveTransferCaps_mapTcbInPlace",
+            "SeLe4n.Kernel.receiveTransferCaps_noResizeDue",
+            "SeLe4n.Kernel.receiveTransferCaps_ok",
+            "SeLe4n.Kernel.returnFrameOfMessage_regMessageBody_caps",
+            "SeLe4n.Kernel.stageDeliveredMessage_holdMessage_caps",
+            "SeLe4n.Kernel.storeReplyRendezvous",
+            "SeLe4n.Kernel.storeReplyRendezvousReady",
+            "SeLe4n.Kernel.storeReplyRendezvousReady_noResizeDue",
+            "SeLe4n.Kernel.storeReplyRendezvous_eq_hold",
+            "SeLe4n.Kernel.transferEndpoint?",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "routedExtraCaps_eq_of_reply",
+          "full_name": "SeLe4n.Kernel.routedExtraCaps_eq_of_reply",
+          "line": 107,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.routedLongTail_eq",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.routedShortTail_eq",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.unroutedSyscall_eq",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.arm64DefaultLayout",
+            "SeLe4n.readRegWord"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyCapRequest_of_routedReply",
+          "full_name": "SeLe4n.Kernel.replyCapRequest_of_routedReply",
+          "line": 138,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReply",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_default",
+            "SeLe4n.Kernel.blockedSenderDecode",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.replyCapRequest",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Kernel.routedExtraCaps_eq_of_reply",
+            "SeLe4n.Kernel.senderFrameCapRequest",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyTransferChecked_caps_inPlace",
+          "full_name": "SeLe4n.Kernel.replyTransferChecked_caps_inPlace",
+          "line": 159,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Badge.opt",
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.Kernel.Architecture.regMessageBody",
+            "SeLe4n.Kernel.Architecture.regMessageBody_size",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked_flow_allowed",
+            "SeLe4n.Kernel.performReplyCapsDelivered",
+            "SeLe4n.Kernel.receiverCapTarget?",
+            "SeLe4n.Kernel.replyCapRequest_of_routedReply",
+            "SeLe4n.Kernel.replyDispatch_inPlace",
+            "SeLe4n.Kernel.replyRendezvousCaps_eq_delivered",
+            "SeLe4n.Kernel.replyTransferCaps",
+            "SeLe4n.Kernel.replyTransferOnCoreChecked",
+            "SeLe4n.Kernel.replyWakesInPlace",
+            "SeLe4n.Kernel.replyWakesInPlace_noResizeDue",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Kernel.securityFlowsTo",
+            "SeLe4n.Kernel.threadHasPendingFault",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.faultWords",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.pendingFault",
+            "SeLe4n.Model.TCB.pendingFault_eq_none_of_not_isFault",
+            "SeLe4n.Model.TCB.replyObject",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.Model.ThreadFaultWords.isFault",
+            "SeLe4n.Model.maxMessageRegisters",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegValue",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.IPC.CrossCore.ReplyWaitersCancellation",
       "path": "SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersCancellation.lean",
       "declaration_count": 19,
@@ -126997,6 +129195,710 @@
             "SeLe4n.Model.SystemState.getTcb?",
             "SeLe4n.Model.SystemState.updateTcb_scheduler",
             "SeLe4n.ValidThreadId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.TransferCommute",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/TransferCommute.lean",
+      "declaration_count": 43,
+      "declarations": [
+        {
+          "kind": "structure",
+          "name": "LinkBlindWrite",
+          "full_name": "SeLe4n.Kernel.LinkBlindWrite",
+          "line": 34,
+          "called": [
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.setSpaceLinkWords",
+            "SeLe4n.Model.TCB.spaceLinkNodeWord",
+            "SeLe4n.Model.TCB.spaceLinkSlotWord"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "LinkBlindWrite.withMessageSlots",
+          "full_name": "SeLe4n.Kernel.LinkBlindWrite.withMessageSlots",
+          "line": 40,
+          "called": [
+            "SeLe4n.Kernel.LinkBlindWrite",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.TCB.withMessageSlots",
+            "SeLe4n.RegisterFile"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objects_read_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.objects_read_mapTcbInPlace",
+          "line": 50,
+          "called": [
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.objects_mapTcbInPlace",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getCNode?_mapTcbInPlace_blind",
+          "full_name": "SeLe4n.Kernel.getCNode?_mapTcbInPlace_blind",
+          "line": 60,
+          "called": [
+            "SeLe4n.Kernel.objects_read_mapTcbInPlace",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupCNode_mapTcbInPlace_blind",
+          "full_name": "SeLe4n.Kernel.lookupCNode_mapTcbInPlace_blind",
+          "line": 65,
+          "called": [
+            "SeLe4n.Kernel.objects_read_mapTcbInPlace",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.lookupCNode",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupSlotCap_mapTcbInPlace_blind",
+          "full_name": "SeLe4n.Kernel.lookupSlotCap_mapTcbInPlace_blind",
+          "line": 70,
+          "called": [
+            "SeLe4n.Kernel.lookupCNode_mapTcbInPlace_blind",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
+            "SeLe4n.Model.SystemState.mapTcbInPlace"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getUntyped?_mapTcbInPlace_blind",
+          "full_name": "SeLe4n.Kernel.getUntyped?_mapTcbInPlace_blind",
+          "line": 75,
+          "called": [
+            "SeLe4n.Kernel.objects_read_mapTcbInPlace",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getUntyped?",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getVSpaceRoot?_mapTcbInPlace_blind",
+          "full_name": "SeLe4n.Kernel.getVSpaceRoot?_mapTcbInPlace_blind",
+          "line": 80,
+          "called": [
+            "SeLe4n.Kernel.objects_read_mapTcbInPlace",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getVSpaceRoot?",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "slotLinkNodeWord_mapTcbInPlace_blind",
+          "full_name": "SeLe4n.Kernel.slotLinkNodeWord_mapTcbInPlace_blind",
+          "line": 86,
+          "called": [
+            "SeLe4n.Kernel.objects_read_mapTcbInPlace",
+            "SeLe4n.Model.LinkField",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.slotLinkNodeWord",
+            "SeLe4n.Model.SystemState.slotLinkNodeWord_def",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "slotLinkSlotWord_mapTcbInPlace_blind",
+          "full_name": "SeLe4n.Kernel.slotLinkSlotWord_mapTcbInPlace_blind",
+          "line": 94,
+          "called": [
+            "SeLe4n.Kernel.objects_read_mapTcbInPlace",
+            "SeLe4n.Model.LinkField",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.slotLinkSlotWord",
+            "SeLe4n.Model.SystemState.slotLinkSlotWord_def",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "modifyObject_mapTcbInPlace_comm",
+          "full_name": "SeLe4n.Kernel.modifyObject_mapTcbInPlace_comm",
+          "line": 111,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.KernelObject.mapTcb",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.mapTcbInPlace_swap_objects",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.SystemState.modifyObject_eq_mapValueAt",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "recordPhysicalWrites_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.recordPhysicalWrites_mapTcbInPlace",
+          "line": 120,
+          "called": [
+            "SeLe4n.Kernel.Architecture.PhysicalWrite",
+            "SeLe4n.Kernel.Architecture.recordPhysicalWrites",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "modifyCdt_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.modifyCdt_mapTcbInPlace",
+          "line": 125,
+          "called": [
+            "SeLe4n.Model.CapDerivationTree",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.modifyCdt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setSlotLinkWords_eq_modifyObject",
+          "full_name": "SeLe4n.Kernel.setSlotLinkWords_eq_modifyObject",
+          "line": 133,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_congr",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_id",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_of_get?_none",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Model.KernelObject.setLinkWords",
+            "SeLe4n.Model.LinkField",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.SystemState.modifyObject_eq_mapValueAt",
+            "SeLe4n.Model.SystemState.setSlotLinkWords",
+            "SeLe4n.ObjId",
+            "SeLe4n.RHTable_getElem?_eq_get?",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setSlotLinkWords_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.setSlotLinkWords_mapTcbInPlace",
+          "line": 153,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.modifyObject_mapTcbInPlace_comm",
+            "SeLe4n.Kernel.setSlotLinkWords_eq_modifyObject",
+            "SeLe4n.Model.KernelObject.mapTcb",
+            "SeLe4n.Model.KernelObject.setLinkWords",
+            "SeLe4n.Model.LinkField",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.setSlotLinkWords",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setSlotLinkWords_noResizeDue",
+          "full_name": "SeLe4n.Kernel.setSlotLinkWords_noResizeDue",
+          "line": 166,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_mapValueAt",
+            "SeLe4n.Kernel.setSlotLinkWords_eq_modifyObject",
+            "SeLe4n.Model.LinkField",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.modifyObject_eq_mapValueAt",
+            "SeLe4n.Model.SystemState.setSlotLinkWords",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "linkAddChild_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.linkAddChild_mapTcbInPlace",
+          "line": 173,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.setSlotLinkWords_mapTcbInPlace",
+            "SeLe4n.Kernel.setSlotLinkWords_noResizeDue",
+            "SeLe4n.Kernel.slotLinkNodeWord_mapTcbInPlace_blind",
+            "SeLe4n.Kernel.slotLinkSlotWord_mapTcbInPlace_blind",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.linkAddChild",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.setSlotLinkWords",
+            "SeLe4n.Model.SystemState.slotLinkNodeWord",
+            "SeLe4n.Model.SystemState.slotLinkSlotWord",
+            "SeLe4n.ObjId.ofNat",
+            "SeLe4n.ObjId.toNat",
+            "SeLe4n.Slot.ofNat",
+            "SeLe4n.Slot.toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "linkAddChild_noResizeDue",
+          "full_name": "SeLe4n.Kernel.linkAddChild_noResizeDue",
+          "line": 201,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.setSlotLinkWords_noResizeDue",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.linkAddChild"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtAddChild_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.cdtAddChild_mapTcbInPlace",
+          "line": 207,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.linkAddChild_mapTcbInPlace",
+            "SeLe4n.Kernel.modifyCdt_mapTcbInPlace",
+            "SeLe4n.Model.DerivationOp",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.cdtAddChild",
+            "SeLe4n.Model.SystemState.mapTcbInPlace"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtAddChild_noResizeDue",
+          "full_name": "SeLe4n.Kernel.cdtAddChild_noResizeDue",
+          "line": 215,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.linkAddChild_noResizeDue",
+            "SeLe4n.Model.DerivationOp",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.cdtAddChild"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.insert_mapValueAt_comm",
+          "full_name": "SeLe4n.Kernel.RHTable.insert_mapValueAt_comm",
+          "line": 225,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable",
+            "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_of_get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?_mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.insert",
+            "SeLe4n.Kernel.RobinHood.RHTable.insert_eq_mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_comm",
+            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_mapValueAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_cnode_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.storeObject_cnode_mapTcbInPlace",
+          "line": 245,
+          "called": [
+            "SeLe4n.Kernel.RHTable.insert_mapValueAt_comm",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.objects_mapTcbInPlace",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.ObjId",
+            "SeLe4n.RHTable_getElem?_eq_get?"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_cnode_noResizeDue",
+          "full_name": "SeLe4n.Kernel.storeObject_cnode_noResizeDue",
+          "line": 261,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_of_get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?",
+            "SeLe4n.Kernel.RobinHood.RHTable.insert",
+            "SeLe4n.Kernel.RobinHood.RHTable.insert_eq_mapValueAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.ObjId",
+            "SeLe4n.RHTable_getElem?_eq_get?"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeLeavesIndexAndTypes_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.storeLeavesIndexAndTypes_mapTcbInPlace",
+          "line": 273,
+          "called": [
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.KernelObjectType",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.objects_mapTcbInPlace",
+            "SeLe4n.Model.storeLeavesIndexAndTypes",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCNodeWith_of_not_cnode",
+          "full_name": "SeLe4n.Kernel.storeCNodeWith_of_not_cnode",
+          "line": 283,
+          "called": [
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.storeCNodeWith",
+            "SeLe4n.Model.SystemState.storeCNodeWith_cases",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCNodeWith_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.storeCNodeWith_mapTcbInPlace",
+          "line": 290,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.modifyObject_mapTcbInPlace_comm",
+            "SeLe4n.Kernel.storeCNodeWith_of_not_cnode",
+            "SeLe4n.Kernel.storeLeavesIndexAndTypes_mapTcbInPlace",
+            "SeLe4n.Kernel.storeObject_cnode_mapTcbInPlace",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.KernelObject.mapTcb",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.objects_mapTcbInPlace",
+            "SeLe4n.Model.SystemState.storeCNodeWith",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeCNodeWith_noResizeDue",
+          "full_name": "SeLe4n.Kernel.storeCNodeWith_noResizeDue",
+          "line": 318,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.storeObject_cnode_noResizeDue",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.storeCNodeWith",
+            "SeLe4n.Model.SystemState.storeCNodeWith_cases",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mapStepState",
+          "full_name": "SeLe4n.Kernel.mapStepState",
+          "line": 329,
+          "called": [
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setCapFreeIndex_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.setCapFreeIndex_mapTcbInPlace",
+          "line": 338,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.setCapFreeIndex",
+            "SeLe4n.Kernel.storeCNodeWith_mapTcbInPlace",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "untypedSourceSetFull_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.untypedSourceSetFull_mapTcbInPlace",
+          "line": 343,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.getUntyped?_mapTcbInPlace_blind",
+            "SeLe4n.Kernel.setCapFreeIndex_mapTcbInPlace",
+            "SeLe4n.Kernel.untypedSourceSetFull",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "untypedSourceSetFull_noResizeDue",
+          "full_name": "SeLe4n.Kernel.untypedSourceSetFull_noResizeDue",
+          "line": 355,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.storeCNodeWith_noResizeDue",
+            "SeLe4n.Kernel.untypedSourceSetFull",
+            "SeLe4n.Kernel.untypedSourceSetFull_of",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.cspaceInsertSlot_mapTcbInPlace",
+          "line": 360,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.cspaceInsertSlot",
+            "SeLe4n.Kernel.getCNode?_mapTcbInPlace_blind",
+            "SeLe4n.Kernel.mapStepState",
+            "SeLe4n.Kernel.storeObject_cnode_mapTcbInPlace",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.SystemState.getCNode?_eq_some_iff",
+            "SeLe4n.Model.SystemState.mapTcbInPlace"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_noResizeDue",
+          "full_name": "SeLe4n.Kernel.cspaceInsertSlot_noResizeDue",
+          "line": 379,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.cspaceInsertSlot",
+            "SeLe4n.Kernel.cspaceInsertSlot_ok_decompose",
+            "SeLe4n.Kernel.storeObject_cnode_noResizeDue",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?_eq_some_iff"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "untypedDeriveRefused_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.untypedDeriveRefused_mapTcbInPlace",
+          "line": 387,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.getUntyped?_mapTcbInPlace_blind",
+            "SeLe4n.Kernel.hasCdtChildren",
+            "SeLe4n.Kernel.slotLinkNodeWord_mapTcbInPlace_blind",
+            "SeLe4n.Kernel.untypedDeriveRefused",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.linkHasChild",
+            "SeLe4n.Model.SystemState.mapTcbInPlace"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_mapTcbInPlace",
+          "line": 394,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.cdtAddChild_mapTcbInPlace",
+            "SeLe4n.Kernel.cdtAddChild_noResizeDue",
+            "SeLe4n.Kernel.cdtNodeIsRevocable",
+            "SeLe4n.Kernel.cspaceInsertSlot",
+            "SeLe4n.Kernel.cspaceInsertSlot_mapTcbInPlace",
+            "SeLe4n.Kernel.cspaceInsertSlot_noResizeDue",
+            "SeLe4n.Kernel.getCNode?_mapTcbInPlace_blind",
+            "SeLe4n.Kernel.ipcTransferSingleCap",
+            "SeLe4n.Kernel.lookupSlotCap_mapTcbInPlace_blind",
+            "SeLe4n.Kernel.mapStepState",
+            "SeLe4n.Kernel.untypedDeriveRefused_mapTcbInPlace",
+            "SeLe4n.Kernel.untypedSourceSetFull_mapTcbInPlace",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.Capability.withoutMapping",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.SystemState.lookupSlotCap",
+            "SeLe4n.Model.SystemState.mapTcbInPlace"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_noResizeDue",
+          "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_noResizeDue",
+          "line": 420,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.cdtAddChild_noResizeDue",
+            "SeLe4n.Kernel.cspaceInsertSlot_noResizeDue",
+            "SeLe4n.Kernel.ipcTransferSingleCap",
+            "SeLe4n.Kernel.ipcTransferSingleCap_ok_cases",
+            "SeLe4n.Kernel.untypedSourceSetFull_noResizeDue",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferWordPAddr?_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.ipcBufferWordPAddr?_mapTcbInPlace",
+          "line": 428,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferWordPAddr?",
+            "SeLe4n.Kernel.getVSpaceRoot?_mapTcbInPlace_blind",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "recordUnwrappedBadge_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.recordUnwrappedBadge_mapTcbInPlace",
+          "line": 437,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.ipcBufferWordPAddr?_mapTcbInPlace",
+            "SeLe4n.Kernel.recordUnwrappedBadge",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "recordUnwrappedBadge_noResizeDue",
+          "full_name": "SeLe4n.Kernel.recordUnwrappedBadge_noResizeDue",
+          "line": 445,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.recordUnwrappedBadge",
+            "SeLe4n.Kernel.recordUnwrappedBadge_objects",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCapsLoop_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.ipcUnwrapCapsLoop_mapTcbInPlace",
+          "line": 452,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.ipcTransferSingleCap",
+            "SeLe4n.Kernel.ipcTransferSingleCap_mapTcbInPlace",
+            "SeLe4n.Kernel.ipcTransferSingleCap_noResizeDue",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop",
+            "SeLe4n.Kernel.mapStepState",
+            "SeLe4n.Kernel.recordUnwrappedBadge_mapTcbInPlace",
+            "SeLe4n.Kernel.recordUnwrappedBadge_noResizeDue",
+            "SeLe4n.Model.CapTransferResult",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TransferCap",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCapsLoop_noResizeDue",
+          "full_name": "SeLe4n.Kernel.ipcUnwrapCapsLoop_noResizeDue",
+          "line": 482,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.ipcTransferSingleCap_noResizeDue",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop_rel",
+            "SeLe4n.Kernel.recordUnwrappedBadge_noResizeDue",
+            "SeLe4n.Model.CapTransferResult",
+            "SeLe4n.Model.CapTransferSummary",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TransferCap",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveTransferCaps_mapTcbInPlace",
+          "full_name": "SeLe4n.Kernel.receiveTransferCaps_mapTcbInPlace",
+          "line": 499,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.getCNode?_mapTcbInPlace_blind",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop_mapTcbInPlace",
+            "SeLe4n.Kernel.mapStepState",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.resolveExtraCaps_congr_getCNode?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveTransferCaps_noResizeDue",
+          "full_name": "SeLe4n.Kernel.receiveTransferCaps_noResizeDue",
+          "line": 517,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.ipcUnwrapCapsLoop_noResizeDue",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Model.CapTransferSummary",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId"
           ]
         }
       ]
@@ -309410,13 +312312,13 @@
     {
       "module": "SeLe4n.Kernel.RefusalCarryingEndpoint",
       "path": "SeLe4n/Kernel/RefusalCarryingEndpoint.lean",
-      "declaration_count": 107,
+      "declaration_count": 113,
       "declarations": [
         {
           "kind": "theorem",
           "name": "routedSenderFrame",
           "full_name": "SeLe4n.Kernel.routedSenderFrame",
-          "line": 46,
+          "line": 49,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -309437,7 +312339,7 @@
           "kind": "theorem",
           "name": "routedTransferringMessage",
           "full_name": "SeLe4n.Kernel.routedTransferringMessage",
-          "line": 74,
+          "line": 77,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedTransferring",
@@ -309460,7 +312362,7 @@
           "kind": "def",
           "name": "endpointSendCheckedArmGeneralR",
           "full_name": "SeLe4n.Kernel.endpointSendCheckedArmGeneralR",
-          "line": 99,
+          "line": 102,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -309478,7 +312380,7 @@
           "kind": "theorem",
           "name": "endpointSendCheckedArmGeneralR_eq",
           "full_name": "SeLe4n.Kernel.endpointSendCheckedArmGeneralR_eq",
-          "line": 117,
+          "line": 120,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -309503,7 +312405,7 @@
           "kind": "theorem",
           "name": "sendDispatchChecked_inPlace",
           "full_name": "SeLe4n.Kernel.sendDispatchChecked_inPlace",
-          "line": 147,
+          "line": 150,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -309538,7 +312440,7 @@
           "kind": "theorem",
           "name": "sendDispatchChecked_inPlace_inert",
           "full_name": "SeLe4n.Kernel.sendDispatchChecked_inPlace_inert",
-          "line": 178,
+          "line": 181,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -309579,9 +312481,46 @@
         },
         {
           "kind": "theorem",
+          "name": "sendDispatchChecked_inPlace_transfer",
+          "full_name": "SeLe4n.Kernel.sendDispatchChecked_inPlace_transfer",
+          "line": 218,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SendPayload",
+            "SeLe4n.Kernel.endpointFlowGate",
+            "SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked",
+            "SeLe4n.Kernel.endpointSendDualOnCoreImpl",
+            "SeLe4n.Kernel.endpointSendDualOnCore_eq_impl",
+            "SeLe4n.Kernel.endpointSendDualWithCapsOnCore",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.receiverCapTarget?",
+            "SeLe4n.Kernel.sendCapRequest",
+            "SeLe4n.Kernel.sendPayloadMessage",
+            "SeLe4n.Kernel.sendWakesInPlace",
+            "SeLe4n.Kernel.sendWakesInPlaceCode_eq",
+            "SeLe4n.Kernel.storeSendRendezvous",
+            "SeLe4n.Kernel.storeSendRendezvousCode_eq",
+            "SeLe4n.Kernel.wakeThread",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.receiveQ",
+            "SeLe4n.Model.IntrusiveQueue",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ofOptCode_queueNextCode",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "endpointCallWithCapsOnCore_inert",
           "full_name": "SeLe4n.Kernel.endpointCallWithCapsOnCore_inert",
-          "line": 214,
+          "line": 254,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -309605,7 +312544,7 @@
           "kind": "theorem",
           "name": "callDispatchChecked_inPlace_inert",
           "full_name": "SeLe4n.Kernel.callDispatchChecked_inPlace_inert",
-          "line": 233,
+          "line": 273,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -309655,7 +312594,7 @@
           "kind": "theorem",
           "name": "blockedSender_of_routedTransferring",
           "full_name": "SeLe4n.Kernel.blockedSender_of_routedTransferring",
-          "line": 282,
+          "line": 322,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedTransferring",
@@ -309666,6 +312605,7 @@
             "SeLe4n.Kernel.blockedSenderMessageOf",
             "SeLe4n.Kernel.senderFrameMessage",
             "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SyscallId",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.ipcBadgeView",
@@ -309677,7 +312617,7 @@
           "kind": "theorem",
           "name": "receiveTakeCaps_delivered",
           "full_name": "SeLe4n.Kernel.receiveTakeCaps_delivered",
-          "line": 304,
+          "line": 345,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -309725,9 +312665,220 @@
         },
         {
           "kind": "theorem",
+          "name": "rendezvousDequeuedCall_of_keepsBindings",
+          "full_name": "SeLe4n.Kernel.rendezvousDequeuedCall_of_keepsBindings",
+          "line": 397,
+          "called": [
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.lookupTcb",
+            "SeLe4n.Kernel.rendezvousDequeuedCall",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.withoutLinks",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.isReserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveTakeCapsTransfer_delivered",
+          "full_name": "SeLe4n.Kernel.receiveTakeCapsTransfer_delivered",
+          "line": 420,
+          "called": [
+            "SeLe4n.Badge.ofWord",
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.badgeWordIf",
+            "SeLe4n.Kernel.Architecture.regMessageBody_size",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
+            "SeLe4n.Kernel.Architecture.regMessageWord",
+            "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
+            "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.KeepsBindings",
+            "SeLe4n.Kernel.KeepsBindings.refl",
+            "SeLe4n.Kernel.LinkBlindWrite.withMessageSlots",
+            "SeLe4n.Kernel.RobinHood.RHTable",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_of_findsInPlace",
+            "SeLe4n.Kernel.applyReceiveRendezvousHandoff",
+            "SeLe4n.Kernel.applyReceiveRendezvousHandoff_of_no_call",
+            "SeLe4n.Kernel.blockedSenderCapRequest",
+            "SeLe4n.Kernel.blockedSenderMessage",
+            "SeLe4n.Kernel.blockedSender_of_routedTransferring",
+            "SeLe4n.Kernel.callReceiverTcb",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.capTransferK_eq",
+            "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore",
+            "SeLe4n.Kernel.finishTakeCaps",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.holdMessage",
+            "SeLe4n.Kernel.holdMessage_receiverReady",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_takeReady",
+            "SeLe4n.Kernel.mapTcbInPlace_eq_self_of_getTcb?_none",
+            "SeLe4n.Kernel.performTakeCapsDelivered",
+            "SeLe4n.Kernel.ready_of_keepsBindings_receiverReady",
+            "SeLe4n.Kernel.receiveCapRequest",
+            "SeLe4n.Kernel.receiveRendezvousSender?",
+            "SeLe4n.Kernel.receiveTake_delivered_of_message",
+            "SeLe4n.Kernel.receiveTake_dequeuedNoCall",
+            "SeLe4n.Kernel.receiveTakesInPlace",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.receiveTransferCaps_keepsBindings",
+            "SeLe4n.Kernel.receiveTransferCaps_mapTcbInPlace",
+            "SeLe4n.Kernel.receiveTransferCaps_noResizeDue",
+            "SeLe4n.Kernel.receiveTransferCaps_ok",
+            "SeLe4n.Kernel.receiverCapTarget?",
+            "SeLe4n.Kernel.receiverCapTarget?_eq_capTargetOf",
+            "SeLe4n.Kernel.receiverReady",
+            "SeLe4n.Kernel.regMessageFrameCapsW",
+            "SeLe4n.Kernel.rendezvousDequeuedCall_of_keepsBindings",
+            "SeLe4n.Kernel.returnFrameOfMessage_regMessageBody_caps",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Kernel.sendWakesInPlace",
+            "SeLe4n.Kernel.senderFrameCapRequest_routed",
+            "SeLe4n.Kernel.stageDeliveredMessage_holdMessage_caps",
+            "SeLe4n.Kernel.stageWokenSendCompletion_getTcb?_ne",
+            "SeLe4n.Kernel.stageWokenSendCompletion_msg",
+            "SeLe4n.Kernel.storePopHead",
+            "SeLe4n.Kernel.storePopHead_noResizeDue",
+            "SeLe4n.Kernel.updateTcb_noResizeDue",
+            "SeLe4n.Kernel.wakeThread",
+            "SeLe4n.Kernel.wakeThread_noResizeDue",
+            "SeLe4n.Kernel.writeDeliveredFrameIfReady",
+            "SeLe4n.Model.CapTransferSummary",
+            "SeLe4n.Model.CapTransferSummary.capInfo",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.IntrusiveQueue",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.mapTcbInPlace",
+            "SeLe4n.Model.SystemState.mapTcbInPlace_mapTcbInPlace",
+            "SeLe4n.Model.SystemState.mapTcbInPlace_noResizeDue",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.updateTcb_eq_mapTcbInPlace",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.ipcBadgeView_eq_opt",
+            "SeLe4n.Model.TCB.optCode_queueNext",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.ObjId",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.ofOptCode",
+            "SeLe4n.ThreadId.ofOptCode_optCode",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "receiveCallTakeCapsTransfer_delivered",
+          "full_name": "SeLe4n.Kernel.receiveCallTakeCapsTransfer_delivered",
+          "line": 576,
+          "called": [
+            "SeLe4n.Badge.ofWord",
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.regMessageBody_size",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
+            "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
+            "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
+            "SeLe4n.Kernel.Architecture.stageWokenSendCompletion_id_when_not_ready",
+            "SeLe4n.Kernel.CarriesThreads.refl",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.KeepsBindings.refl",
+            "SeLe4n.Kernel.LinkBlindWrite.withMessageSlots",
+            "SeLe4n.Kernel.RobinHood.RHTable",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
+            "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_of_findsInPlace",
+            "SeLe4n.Kernel.SchedContextBinding.scId?",
+            "SeLe4n.Kernel.applyReceiveRendezvousDonation_of_no_donation",
+            "SeLe4n.Kernel.applyReceiveRendezvousHandoff",
+            "SeLe4n.Kernel.applyReceiverPipHandoff",
+            "SeLe4n.Kernel.blockedSenderCapRequest",
+            "SeLe4n.Kernel.blockedSenderMessage",
+            "SeLe4n.Kernel.blockedSender_of_routedTransferring",
+            "SeLe4n.Kernel.callDonatesNothing",
+            "SeLe4n.Kernel.callDonationSchedContext?",
+            "SeLe4n.Kernel.callDonationSchedContext?_congr",
+            "SeLe4n.Kernel.callDonationSchedContext?_eq_bindings",
+            "SeLe4n.Kernel.callDonationSchedContext?_none_of_sameSchedContextBindings",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.capTransferK_eq",
+            "SeLe4n.Kernel.donationOfBindings",
+            "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore",
+            "SeLe4n.Kernel.finishCallCaps",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.holdMessage",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_storeReceiveCallReady",
+            "SeLe4n.Kernel.lookupTcb",
+            "SeLe4n.Kernel.performCallTakeCapsDelivered",
+            "SeLe4n.Kernel.propagatePipChainCrossCore_ipcStateCarried",
+            "SeLe4n.Kernel.propagatePipChainCrossCore_msg",
+            "SeLe4n.Kernel.propagatePipChainCrossCore_noResizeDue",
+            "SeLe4n.Kernel.receiveCallTakeState",
+            "SeLe4n.Kernel.receiveCallTakeState_eq_hold",
+            "SeLe4n.Kernel.receiveCallTake_inPlace",
+            "SeLe4n.Kernel.receiveCallTakesInPlace",
+            "SeLe4n.Kernel.receiveCapRequest",
+            "SeLe4n.Kernel.receiveRendezvousSender?",
+            "SeLe4n.Kernel.receiveTransferCaps",
+            "SeLe4n.Kernel.receiveTransferCaps_carriesThreads",
+            "SeLe4n.Kernel.receiveTransferCaps_keepsBindings",
+            "SeLe4n.Kernel.receiveTransferCaps_mapTcbInPlace",
+            "SeLe4n.Kernel.receiveTransferCaps_noResizeDue",
+            "SeLe4n.Kernel.receiveTransferCaps_ok",
+            "SeLe4n.Kernel.receiverCapTarget?",
+            "SeLe4n.Kernel.receiverCapTarget?_eq_capTargetOf",
+            "SeLe4n.Kernel.rendezvousDequeuedCall",
+            "SeLe4n.Kernel.returnFrameOfMessage_regMessageBody_caps",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Kernel.sendWakesInPlace",
+            "SeLe4n.Kernel.senderFrameCapRequest_routed",
+            "SeLe4n.Kernel.stageDeliveredMessage_holdMessage_caps",
+            "SeLe4n.Kernel.storePopHead",
+            "SeLe4n.Kernel.storeReceiveCallReady",
+            "SeLe4n.Kernel.storeReceiveCallReady_noResizeDue",
+            "SeLe4n.Model.CapTransferSummary",
+            "SeLe4n.Model.CapTransferSummary.capInfo",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.IntrusiveQueue",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.mapTcbInPlace_noResizeDue",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.ipcBadgeView_eq_opt",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.schedContextBinding",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.Model.TCB.withoutLinks",
+            "SeLe4n.ObjId",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toValid?_isSome_iff",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "sendRendezvous_eq_delivered",
           "full_name": "SeLe4n.Kernel.sendRendezvous_eq_delivered",
-          "line": 356,
+          "line": 705,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.opt",
@@ -309774,7 +312925,7 @@
           "kind": "theorem",
           "name": "sendRendezvous_eq_deliveredLong",
           "full_name": "SeLe4n.Kernel.sendRendezvous_eq_deliveredLong",
-          "line": 392,
+          "line": 741,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.opt",
@@ -309819,7 +312970,7 @@
           "kind": "def",
           "name": "sendBlocksFast",
           "full_name": "SeLe4n.Kernel.sendBlocksFast",
-          "line": 431,
+          "line": 780,
           "called": [
             "SeLe4n.Kernel.enqueueAdmits",
             "SeLe4n.Kernel.enqueuesInPlaceCode",
@@ -309833,7 +312984,7 @@
           "kind": "def",
           "name": "endpointSendCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointSendCheckedArmR",
-          "line": 450,
+          "line": 799,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -309858,7 +313009,7 @@
           "kind": "def",
           "name": "SendFrameRouted",
           "full_name": "SeLe4n.Kernel.SendFrameRouted",
-          "line": 489,
+          "line": 838,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -309874,7 +313025,7 @@
           "kind": "theorem",
           "name": "SendFrameRouted.capRequest",
           "full_name": "SeLe4n.Kernel.SendFrameRouted.capRequest",
-          "line": 497,
+          "line": 846,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.SendFrameRouted",
@@ -309892,7 +313043,7 @@
           "kind": "theorem",
           "name": "endpointSendCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointSendCheckedArmR_eq_general",
-          "line": 510,
+          "line": 859,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSendLong",
@@ -309940,7 +313091,7 @@
           "kind": "theorem",
           "name": "endpointSendCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointSendCheckedArmR_eq",
-          "line": 601,
+          "line": 950,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -309967,7 +313118,7 @@
           "kind": "def",
           "name": "sendTaintHeadCode",
           "full_name": "SeLe4n.Kernel.sendTaintHeadCode",
-          "line": 619,
+          "line": 968,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
@@ -309978,7 +313129,7 @@
           "kind": "def",
           "name": "sendTaintStep",
           "full_name": "SeLe4n.Kernel.sendTaintStep",
-          "line": 630,
+          "line": 979,
           "called": [
             "SeLe4n.Kernel.TaintWords",
             "SeLe4n.Kernel.joinTaintAt",
@@ -309991,7 +313142,7 @@
           "kind": "theorem",
           "name": "sendTaintStep_eq",
           "full_name": "SeLe4n.Kernel.sendTaintStep_eq",
-          "line": 638,
+          "line": 987,
           "called": [
             "SeLe4n.Kernel.TaintWords",
             "SeLe4n.Kernel.TaintWords.decode",
@@ -310026,7 +313177,7 @@
           "kind": "def",
           "name": "sendOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.sendOperandArmThenTaintR",
-          "line": 675,
+          "line": 1024,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310049,7 +313200,7 @@
           "kind": "theorem",
           "name": "sendOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.sendOperandArmThenTaintR_eq",
-          "line": 692,
+          "line": 1041,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -310090,7 +313241,7 @@
           "kind": "def",
           "name": "dispatchSendCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchSendCheckedR",
-          "line": 735,
+          "line": 1084,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -310108,7 +313259,7 @@
           "kind": "theorem",
           "name": "dispatchSendCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchSendCheckedR_eq",
-          "line": 741,
+          "line": 1090,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.AuditRing",
@@ -310136,7 +313287,7 @@
           "kind": "def",
           "name": "endpointCallCheckedArmGeneralR",
           "full_name": "SeLe4n.Kernel.endpointCallCheckedArmGeneralR",
-          "line": 767,
+          "line": 1116,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -310153,7 +313304,7 @@
           "kind": "theorem",
           "name": "endpointCallCheckedArmGeneralR_eq",
           "full_name": "SeLe4n.Kernel.endpointCallCheckedArmGeneralR_eq",
-          "line": 781,
+          "line": 1130,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310173,7 +313324,7 @@
           "kind": "def",
           "name": "endpointCallCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointCallCheckedArmR",
-          "line": 812,
+          "line": 1161,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310201,7 +313352,7 @@
           "kind": "theorem",
           "name": "endpointCallCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointCallCheckedArmR_eq_general",
-          "line": 859,
+          "line": 1208,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -310240,7 +313391,7 @@
           "kind": "theorem",
           "name": "endpointCallCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointCallCheckedArmR_eq",
-          "line": 942,
+          "line": 1291,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -310266,7 +313417,7 @@
           "kind": "def",
           "name": "callOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.callOperandArmThenTaintR",
-          "line": 958,
+          "line": 1307,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310289,7 +313440,7 @@
           "kind": "theorem",
           "name": "callOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.callOperandArmThenTaintR_eq",
-          "line": 975,
+          "line": 1324,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -310330,7 +313481,7 @@
           "kind": "def",
           "name": "dispatchCallCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchCallCheckedR",
-          "line": 1018,
+          "line": 1367,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -310348,7 +313499,7 @@
           "kind": "theorem",
           "name": "dispatchCallCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchCallCheckedR_eq",
-          "line": 1024,
+          "line": 1373,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -310376,7 +313527,7 @@
           "kind": "def",
           "name": "endpointCallLongCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointCallLongCheckedArmR",
-          "line": 1055,
+          "line": 1404,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310400,7 +313551,7 @@
           "kind": "theorem",
           "name": "endpointCallLongCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointCallLongCheckedArmR_eq_general",
-          "line": 1094,
+          "line": 1443,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -310445,7 +313596,7 @@
           "kind": "theorem",
           "name": "endpointCallLongCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointCallLongCheckedArmR_eq",
-          "line": 1176,
+          "line": 1525,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -310472,7 +313623,7 @@
           "kind": "def",
           "name": "callLongOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.callLongOperandArmThenTaintR",
-          "line": 1196,
+          "line": 1545,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310495,7 +313646,7 @@
           "kind": "theorem",
           "name": "callLongOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.callLongOperandArmThenTaintR_eq",
-          "line": 1213,
+          "line": 1562,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -310537,7 +313688,7 @@
           "kind": "def",
           "name": "dispatchCallLongCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchCallLongCheckedR",
-          "line": 1258,
+          "line": 1607,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -310555,7 +313706,7 @@
           "kind": "theorem",
           "name": "dispatchCallLongCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchCallLongCheckedR_eq",
-          "line": 1264,
+          "line": 1613,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -310584,7 +313735,7 @@
           "kind": "def",
           "name": "replyTaintCaller?",
           "full_name": "SeLe4n.Kernel.replyTaintCaller?",
-          "line": 1290,
+          "line": 1639,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
@@ -310596,7 +313747,7 @@
           "kind": "theorem",
           "name": "replyTaintStep_eq",
           "full_name": "SeLe4n.Kernel.replyTaintStep_eq",
-          "line": 1297,
+          "line": 1646,
           "called": [
             "SeLe4n.Kernel.TaintWords",
             "SeLe4n.Kernel.TaintWords.decode",
@@ -310629,7 +313780,7 @@
           "kind": "def",
           "name": "endpointReplyCheckedArmGeneralR",
           "full_name": "SeLe4n.Kernel.endpointReplyCheckedArmGeneralR",
-          "line": 1325,
+          "line": 1674,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -310650,7 +313801,7 @@
           "kind": "theorem",
           "name": "endpointReplyCheckedArmGeneralR_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyCheckedArmGeneralR_eq",
-          "line": 1343,
+          "line": 1692,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -310671,7 +313822,7 @@
           "kind": "def",
           "name": "endpointReplyCheckedArmRegsR",
           "full_name": "SeLe4n.Kernel.endpointReplyCheckedArmRegsR",
-          "line": 1369,
+          "line": 1718,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -310688,7 +313839,7 @@
           "kind": "def",
           "name": "replyDonatedAdmits",
           "full_name": "SeLe4n.Kernel.replyDonatedAdmits",
-          "line": 1385,
+          "line": 1734,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageLength",
             "SeLe4n.Kernel.LabelingContext",
@@ -310705,7 +313856,7 @@
           "kind": "def",
           "name": "endpointReplyDonatedArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyDonatedArmR",
-          "line": 1395,
+          "line": 1744,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310726,7 +313877,7 @@
           "kind": "def",
           "name": "replyUnheldAdmits",
           "full_name": "SeLe4n.Kernel.replyUnheldAdmits",
-          "line": 1415,
+          "line": 1764,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageLength",
             "SeLe4n.Kernel.LabelingContext",
@@ -310742,7 +313893,7 @@
           "kind": "def",
           "name": "endpointReplyUnheldArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyUnheldArmR",
-          "line": 1424,
+          "line": 1773,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310763,7 +313914,7 @@
           "kind": "def",
           "name": "replyDonatedFaultAdmits",
           "full_name": "SeLe4n.Kernel.replyDonatedFaultAdmits",
-          "line": 1437,
+          "line": 1786,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.replyPopsInPlace",
@@ -310778,7 +313929,7 @@
           "kind": "def",
           "name": "endpointReplyDonatedFaultArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyDonatedFaultArmR",
-          "line": 1446,
+          "line": 1795,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310799,7 +313950,7 @@
           "kind": "def",
           "name": "replyUnheldFaultAdmits",
           "full_name": "SeLe4n.Kernel.replyUnheldFaultAdmits",
-          "line": 1460,
+          "line": 1809,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.replyUnheldPopsInPlace",
@@ -310813,7 +313964,7 @@
           "kind": "def",
           "name": "endpointReplyUnheldFaultArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyUnheldFaultArmR",
-          "line": 1468,
+          "line": 1817,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310832,13 +313983,77 @@
         },
         {
           "kind": "def",
+          "name": "endpointReplyCapsArmR",
+          "full_name": "SeLe4n.Kernel.endpointReplyCapsArmR",
+          "line": 1835,
+          "called": [
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.endpointReplyCheckedArmRegsR",
+            "SeLe4n.Kernel.performReplyCapsDelivered",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.RefusalCarrying",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.VAddr",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyCapsArmR_eq",
+          "full_name": "SeLe4n.Kernel.endpointReplyCapsArmR_eq",
+          "line": 1859,
+          "called": [
+            "SeLe4n.Badge.opt",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
+            "SeLe4n.Kernel.Architecture.regMessageBody",
+            "SeLe4n.Kernel.Architecture.regMessageRegs",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.endpointReplyCapsArmR",
+            "SeLe4n.Kernel.endpointReplyCheckedArmGeneralR",
+            "SeLe4n.Kernel.replyAnsweredCaller?",
+            "SeLe4n.Kernel.replyTransferChecked_caps_inPlace",
+            "SeLe4n.Kernel.replyTransferInertW",
+            "SeLe4n.Kernel.replyWakesInPlace",
+            "SeLe4n.Kernel.securityFlowsTo",
+            "SeLe4n.Model.AccessRightSet.mem",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.cspaceRoot",
+            "SeLe4n.Model.TCB.faultWords",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.replyObject",
+            "SeLe4n.Model.TCB.vspaceRoot",
+            "SeLe4n.Model.ThreadFaultWords.isFault",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "endpointReplyCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyCheckedArmR",
-          "line": 1494,
+          "line": 1916,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageLength",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.endpointReplyCapsArmR",
             "SeLe4n.Kernel.endpointReplyCheckedArmRegsR",
             "SeLe4n.Kernel.endpointReplyDonatedArmR",
             "SeLe4n.Kernel.endpointReplyDonatedFaultArmR",
@@ -310863,16 +314078,16 @@
           "kind": "theorem",
           "name": "endpointReplyCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointReplyCheckedArmR_eq_general",
-          "line": 1568,
+          "line": 1991,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Kernel.Architecture.regMessageBody_size",
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.endpointReplyCapsArmR_eq",
             "SeLe4n.Kernel.endpointReplyCheckedArmGeneralR",
             "SeLe4n.Kernel.endpointReplyCheckedArmR",
-            "SeLe4n.Kernel.endpointReplyCheckedArmRegsR",
             "SeLe4n.Kernel.endpointReplyDonatedArmR",
             "SeLe4n.Kernel.endpointReplyDonatedFaultArmR",
             "SeLe4n.Kernel.endpointReplyUnheldArmR",
@@ -310904,7 +314119,7 @@
           "kind": "theorem",
           "name": "endpointReplyCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyCheckedArmR_eq",
-          "line": 1708,
+          "line": 2135,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -310927,7 +314142,7 @@
           "kind": "def",
           "name": "replyOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.replyOperandArmThenTaintR",
-          "line": 1724,
+          "line": 2151,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -310951,7 +314166,7 @@
           "kind": "theorem",
           "name": "replyOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.replyOperandArmThenTaintR_eq",
-          "line": 1743,
+          "line": 2170,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -310990,7 +314205,7 @@
           "kind": "def",
           "name": "dispatchReplyCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchReplyCheckedR",
-          "line": 1784,
+          "line": 2211,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -311008,7 +314223,7 @@
           "kind": "theorem",
           "name": "dispatchReplyCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchReplyCheckedR_eq",
-          "line": 1792,
+          "line": 2219,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -311031,7 +314246,7 @@
           "kind": "def",
           "name": "endpointSendCapsGeneralR",
           "full_name": "SeLe4n.Kernel.endpointSendCapsGeneralR",
-          "line": 1821,
+          "line": 2248,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -311049,7 +314264,7 @@
           "kind": "theorem",
           "name": "endpointSendCapsGeneralR_eq",
           "full_name": "SeLe4n.Kernel.endpointSendCapsGeneralR_eq",
-          "line": 1836,
+          "line": 2263,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -311070,15 +314285,17 @@
           "kind": "def",
           "name": "endpointSendCapsCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointSendCapsCheckedArmR",
-          "line": 1868,
+          "line": 2298,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.endpointFlowGate",
             "SeLe4n.Kernel.endpointSendCapsGeneralR",
+            "SeLe4n.Kernel.performSendCapsDelivered",
             "SeLe4n.Kernel.performSendDelivered",
             "SeLe4n.Kernel.recordSendCapWords",
             "SeLe4n.Kernel.removeRunnableOnCore",
+            "SeLe4n.Kernel.routedExtraCaps",
             "SeLe4n.Kernel.sendBlocksFast",
             "SeLe4n.Kernel.sendWakesInPlaceCode",
             "SeLe4n.Kernel.senderTransferInertW",
@@ -311095,31 +314312,43 @@
           "kind": "theorem",
           "name": "endpointSendCapsCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointSendCapsCheckedArmR_eq_general",
-          "line": 1899,
+          "line": 2339,
           "called": [
+            "SeLe4n.Badge.opt",
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.regMessageBody",
             "SeLe4n.Kernel.Architecture.regMessageLength",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
             "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_of_findsInPlace",
+            "SeLe4n.Kernel.capTargetOf",
             "SeLe4n.Kernel.capTransferInert_sendCapRequest_of_W",
             "SeLe4n.Kernel.endpointSendCapsCheckedArmR",
             "SeLe4n.Kernel.endpointSendCapsGeneralR",
             "SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked",
             "SeLe4n.Kernel.endpointSendDualWithCapsOnCore_no_caps",
             "SeLe4n.Kernel.enqueuesInPlaceCode_eq",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.receiveTransferCaps_ok",
+            "SeLe4n.Kernel.receiverCapTarget?_eq_capTargetOf",
             "SeLe4n.Kernel.recordSendCapWords_eq",
+            "SeLe4n.Kernel.routedExtraCaps",
             "SeLe4n.Kernel.routedTransferringMessage",
             "SeLe4n.Kernel.sendBlock_inPlace_eq",
             "SeLe4n.Kernel.sendBlocksFast",
             "SeLe4n.Kernel.sendCapRequest_of_no_receiver",
+            "SeLe4n.Kernel.sendCapRequest_routed",
             "SeLe4n.Kernel.sendDispatchChecked_inPlace_inert",
+            "SeLe4n.Kernel.sendDispatchChecked_inPlace_transfer",
+            "SeLe4n.Kernel.sendRendezvousCaps_eq_delivered",
             "SeLe4n.Kernel.sendRendezvous_eq_delivered",
             "SeLe4n.Kernel.sendWakesInPlace",
             "SeLe4n.Kernel.sendWakesInPlaceCode_eq",
             "SeLe4n.Kernel.senderTransferInertW_isSome",
+            "SeLe4n.Kernel.storeSendRendezvous",
+            "SeLe4n.Kernel.wakeThread",
             "SeLe4n.Model.AccessRightSet.mem",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Capability.badge",
@@ -311132,6 +314361,7 @@
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.ofOptCode_queueNextCode",
             "SeLe4n.Model.TCB.optCode_queueNext",
+            "SeLe4n.Model.TCB.queueNext",
             "SeLe4n.RegisterFile",
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.ofOptCode",
@@ -311142,7 +314372,7 @@
           "kind": "theorem",
           "name": "endpointSendCapsCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointSendCapsCheckedArmR_eq",
-          "line": 1974,
+          "line": 2442,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -311169,7 +314399,7 @@
           "kind": "def",
           "name": "endpointCallCapsCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointCallCapsCheckedArmR",
-          "line": 1998,
+          "line": 2466,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -311177,8 +314407,10 @@
             "SeLe4n.Kernel.callWakesInPlace",
             "SeLe4n.Kernel.endpointCallCheckedArmGeneralR",
             "SeLe4n.Kernel.endpointFlowGate",
+            "SeLe4n.Kernel.performCallCapsDelivered",
             "SeLe4n.Kernel.recordSendCapWords",
             "SeLe4n.Kernel.removeRunnableOnCore",
+            "SeLe4n.Kernel.routedExtraCaps",
             "SeLe4n.Kernel.sendBlocksFast",
             "SeLe4n.Kernel.senderTransferInertW",
             "SeLe4n.Kernel.storeCallBlock",
@@ -311194,15 +314426,23 @@
           "kind": "theorem",
           "name": "endpointCallCapsCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointCallCapsCheckedArmR_eq_general",
-          "line": 2033,
+          "line": 2511,
           "called": [
+            "SeLe4n.Badge.opt",
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.regMessageBody",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.callBlock_inPlace_eq",
             "SeLe4n.Kernel.callDispatchChecked_inPlace_inert",
+            "SeLe4n.Kernel.callDispatchChecked_inPlace_transfer",
+            "SeLe4n.Kernel.callRendezvousCaps_eq_delivered",
             "SeLe4n.Kernel.callRendezvousDelivered_eq",
+            "SeLe4n.Kernel.callWakesInPlace_ne",
+            "SeLe4n.Kernel.callWakesInPlace_noResizeDue",
+            "SeLe4n.Kernel.capTargetOf",
             "SeLe4n.Kernel.capTransferInert_sendCapRequest_of_W",
             "SeLe4n.Kernel.endpointCallCapsCheckedArmR",
             "SeLe4n.Kernel.endpointCallCheckedArmGeneralR",
@@ -311210,11 +314450,17 @@
             "SeLe4n.Kernel.endpointCallCrossCoreDispatch_no_receiver",
             "SeLe4n.Kernel.endpointCallWithCapsOnCore_no_caps",
             "SeLe4n.Kernel.enqueuesInPlaceCode_eq",
+            "SeLe4n.Kernel.frameCapRequestOf",
+            "SeLe4n.Kernel.receiveTransferCaps_ok",
+            "SeLe4n.Kernel.receiverCapTarget?_eq_capTargetOf",
             "SeLe4n.Kernel.recordSendCapWords_eq",
+            "SeLe4n.Kernel.routedExtraCaps",
             "SeLe4n.Kernel.routedTransferringMessage",
             "SeLe4n.Kernel.sendBlocksFast",
             "SeLe4n.Kernel.sendCapRequest_of_no_receiver",
+            "SeLe4n.Kernel.sendCapRequest_routed",
             "SeLe4n.Kernel.senderTransferInertW_isSome",
+            "SeLe4n.Kernel.storeCallRendezvous",
             "SeLe4n.Model.AccessRightSet.mem",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Capability.badge",
@@ -311225,6 +314471,9 @@
             "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
             "SeLe4n.Model.SystemState.getTcb?",
             "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.optCode_queueNext",
+            "SeLe4n.Model.TCB.queueNext",
             "SeLe4n.RegisterFile",
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.ofOptCode",
@@ -311235,7 +314484,7 @@
           "kind": "theorem",
           "name": "endpointCallCapsCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointCallCapsCheckedArmR_eq",
-          "line": 2107,
+          "line": 2620,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -311262,7 +314511,7 @@
           "kind": "def",
           "name": "transferringCheckedArmR",
           "full_name": "SeLe4n.Kernel.transferringCheckedArmR",
-          "line": 2122,
+          "line": 2635,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -311279,7 +314528,7 @@
           "kind": "theorem",
           "name": "transferringCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.transferringCheckedArmR_eq",
-          "line": 2130,
+          "line": 2643,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -311306,7 +314555,7 @@
           "kind": "def",
           "name": "transferringOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.transferringOperandArmThenTaintR",
-          "line": 2150,
+          "line": 2663,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -311329,7 +314578,7 @@
           "kind": "theorem",
           "name": "transferringOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.transferringOperandArmThenTaintR_eq",
-          "line": 2167,
+          "line": 2680,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -311371,7 +314620,7 @@
           "kind": "def",
           "name": "dispatchTransferringCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchTransferringCheckedR",
-          "line": 2208,
+          "line": 2721,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -311389,7 +314638,7 @@
           "kind": "theorem",
           "name": "dispatchTransferringCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchTransferringCheckedR_eq",
-          "line": 2214,
+          "line": 2727,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -311418,7 +314667,7 @@
           "kind": "def",
           "name": "longReplyRegs",
           "full_name": "SeLe4n.Kernel.longReplyRegs",
-          "line": 2239,
+          "line": 2752,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.overflowRegsFrom",
@@ -311433,7 +314682,7 @@
           "kind": "def",
           "name": "endpointReplyLongGeneralR",
           "full_name": "SeLe4n.Kernel.endpointReplyLongGeneralR",
-          "line": 2245,
+          "line": 2758,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -311449,7 +314698,7 @@
           "kind": "def",
           "name": "endpointReplyLongCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyLongCheckedArmR",
-          "line": 2261,
+          "line": 2774,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -311470,7 +314719,7 @@
           "kind": "theorem",
           "name": "endpointReplyLongCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointReplyLongCheckedArmR_eq_general",
-          "line": 2295,
+          "line": 2808,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReplyLong",
@@ -311505,7 +314754,7 @@
           "kind": "theorem",
           "name": "endpointReplyLongCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyLongCheckedArmR_eq",
-          "line": 2359,
+          "line": 2872,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -311532,7 +314781,7 @@
           "kind": "def",
           "name": "replyLongOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.replyLongOperandArmThenTaintR",
-          "line": 2380,
+          "line": 2893,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -311555,7 +314804,7 @@
           "kind": "theorem",
           "name": "replyLongOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.replyLongOperandArmThenTaintR_eq",
-          "line": 2397,
+          "line": 2910,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -311596,7 +314845,7 @@
           "kind": "def",
           "name": "dispatchReplyLongCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchReplyLongCheckedR",
-          "line": 2435,
+          "line": 2948,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -311613,7 +314862,7 @@
           "kind": "theorem",
           "name": "dispatchReplyLongCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchReplyLongCheckedR_eq",
-          "line": 2442,
+          "line": 2955,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
@@ -311641,7 +314890,7 @@
           "kind": "def",
           "name": "receiveQueueTailCode",
           "full_name": "SeLe4n.Kernel.receiveQueueTailCode",
-          "line": 2464,
+          "line": 2977,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getEndpoint?",
@@ -311652,7 +314901,7 @@
           "kind": "def",
           "name": "receiveBlocksFast",
           "full_name": "SeLe4n.Kernel.receiveBlocksFast",
-          "line": 2472,
+          "line": 2985,
           "called": [
             "SeLe4n.Kernel.receiveBlockAdmits",
             "SeLe4n.Kernel.receiveBlocksInPlaceCode",
@@ -311667,7 +314916,7 @@
           "kind": "def",
           "name": "callerCspaceRoot",
           "full_name": "SeLe4n.Kernel.callerCspaceRoot",
-          "line": 2484,
+          "line": 2997,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
@@ -311680,7 +314929,7 @@
           "kind": "def",
           "name": "callerCspaceDepth",
           "full_name": "SeLe4n.Kernel.callerCspaceDepth",
-          "line": 2490,
+          "line": 3003,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
@@ -311692,7 +314941,7 @@
           "kind": "def",
           "name": "resolveRecvReplyIdR",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyIdR",
-          "line": 2501,
+          "line": 3014,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.SyscallGate",
@@ -311712,7 +314961,7 @@
           "kind": "theorem",
           "name": "resolveRecvReplyIdR_eq",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyIdR_eq",
-          "line": 2522,
+          "line": 3035,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeRecvArgs",
@@ -311731,7 +314980,7 @@
           "kind": "def",
           "name": "recvReplyCapK",
           "full_name": "SeLe4n.Kernel.recvReplyCapK",
-          "line": 2546,
+          "line": 3059,
           "called": [
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
             "SeLe4n.Model.Capability",
@@ -311746,7 +314995,7 @@
           "kind": "def",
           "name": "resolveRecvReplyK",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyK",
-          "line": 2567,
+          "line": 3080,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.callerCspaceDepth",
@@ -311763,7 +315012,7 @@
           "kind": "theorem",
           "name": "resolveRecvReplyK_eq",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyK_eq",
-          "line": 2576,
+          "line": 3089,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.callerCspaceDepth",
@@ -311790,7 +315039,7 @@
           "kind": "def",
           "name": "endpointReceiveRendezvousR",
           "full_name": "SeLe4n.Kernel.endpointReceiveRendezvousR",
-          "line": 2614,
+          "line": 3127,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
@@ -311807,23 +315056,28 @@
           "kind": "def",
           "name": "endpointReceiveTakeR",
           "full_name": "SeLe4n.Kernel.endpointReceiveTakeR",
-          "line": 2638,
+          "line": 3151,
           "called": [
             "SeLe4n.Badge.ofWord",
-            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.Kernel.Architecture.badgeWordIf",
             "SeLe4n.Kernel.Architecture.regMessageFrameW",
             "SeLe4n.Kernel.Architecture.regMessageWord",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveRendezvousR",
             "SeLe4n.Kernel.overflowWordsRead",
+            "SeLe4n.Kernel.performCallTakeCapsDelivered",
             "SeLe4n.Kernel.performFaultReceiveDelivered",
             "SeLe4n.Kernel.performReceiveCallDelivered",
             "SeLe4n.Kernel.performReceiveCallDeliveredLong",
             "SeLe4n.Kernel.performReceiveDelivered",
             "SeLe4n.Kernel.performReceiveDeliveredLong",
+            "SeLe4n.Kernel.performTakeCapsDelivered",
             "SeLe4n.Kernel.receiveCallTakesInPlace",
             "SeLe4n.Kernel.receiveTakesInPlace",
             "SeLe4n.Kernel.receiverTransferInertW",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Kernel.routedLength",
             "SeLe4n.Model.RefusalCarrying",
             "SeLe4n.ObjId",
             "SeLe4n.ReplyId.ofOptCode",
@@ -311835,11 +315089,12 @@
           "kind": "theorem",
           "name": "endpointReceiveTakeR_eq",
           "full_name": "SeLe4n.Kernel.endpointReceiveTakeR_eq",
-          "line": 2712,
+          "line": 3259,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedCallLong",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSendLong",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall_default",
             "SeLe4n.Kernel.Architecture.regMessageFrameW_eq",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.capTransferInert_receiveCapRequest_of_W",
@@ -311847,11 +315102,14 @@
             "SeLe4n.Kernel.endpointReceiveTakeR",
             "SeLe4n.Kernel.overflowWordsRead_spec",
             "SeLe4n.Kernel.receiveCallLongTake_delivered",
+            "SeLe4n.Kernel.receiveCallTakeCapsTransfer_delivered",
             "SeLe4n.Kernel.receiveCallTake_delivered",
             "SeLe4n.Kernel.receiveFaultTake_delivered",
+            "SeLe4n.Kernel.receiveTakeCapsTransfer_delivered",
             "SeLe4n.Kernel.receiveTakeCaps_delivered",
             "SeLe4n.Kernel.receiveTakeLong_delivered",
             "SeLe4n.Kernel.receiveTake_delivered",
+            "SeLe4n.Kernel.routedLength_eq",
             "SeLe4n.Model.CapTransferSummary.capInfo_empty",
             "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -311871,7 +315129,7 @@
           "kind": "def",
           "name": "endpointReceiveResolvedR",
           "full_name": "SeLe4n.Kernel.endpointReceiveResolvedR",
-          "line": 2853,
+          "line": 3434,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveTakeR",
@@ -311888,7 +315146,7 @@
           "kind": "def",
           "name": "endpointReceiveCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointReceiveCheckedArmR",
-          "line": 2866,
+          "line": 3447,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -311905,7 +315163,7 @@
           "kind": "theorem",
           "name": "endpointReceiveCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointReceiveCheckedArmR_eq",
-          "line": 2879,
+          "line": 3460,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
@@ -311955,7 +315213,7 @@
           "kind": "def",
           "name": "receiveTaintSourceCode",
           "full_name": "SeLe4n.Kernel.receiveTaintSourceCode",
-          "line": 2962,
+          "line": 3543,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
@@ -311966,7 +315224,7 @@
           "kind": "def",
           "name": "threadObjOfCode",
           "full_name": "SeLe4n.Kernel.threadObjOfCode",
-          "line": 2973,
+          "line": 3554,
           "called": [
             "SeLe4n.ObjId",
             "SeLe4n.ThreadId",
@@ -311977,7 +315235,7 @@
           "kind": "def",
           "name": "receiveTaintStep",
           "full_name": "SeLe4n.Kernel.receiveTaintStep",
-          "line": 2979,
+          "line": 3560,
           "called": [
             "SeLe4n.Kernel.TaintWords",
             "SeLe4n.Kernel.joinTaintAt",
@@ -311990,7 +315248,7 @@
           "kind": "theorem",
           "name": "receiveTaintStep_eq",
           "full_name": "SeLe4n.Kernel.receiveTaintStep_eq",
-          "line": 2985,
+          "line": 3566,
           "called": [
             "SeLe4n.Kernel.TaintWords",
             "SeLe4n.Kernel.TaintWords.decode",
@@ -312026,7 +315284,7 @@
           "kind": "def",
           "name": "receiveOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.receiveOperandArmThenTaintR",
-          "line": 3026,
+          "line": 3607,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -312048,7 +315306,7 @@
           "kind": "theorem",
           "name": "receiveOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.receiveOperandArmThenTaintR_eq",
-          "line": 3042,
+          "line": 3623,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -312088,7 +315346,7 @@
           "kind": "def",
           "name": "dispatchReceiveCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchReceiveCheckedR",
-          "line": 3084,
+          "line": 3665,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -312104,7 +315362,7 @@
           "kind": "theorem",
           "name": "dispatchReceiveCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchReceiveCheckedR_eq",
-          "line": 3090,
+          "line": 3671,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofNat_toNat",
@@ -488276,7 +491534,7 @@
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate",
-          "line": 1383,
+          "line": 1388,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
           ]
@@ -488285,7 +491543,7 @@
           "kind": "def",
           "name": "nonExecutedTransitions",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitions",
-          "line": 1426,
+          "line": 1431,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPlain",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate"
@@ -488295,21 +491553,21 @@
           "kind": "def",
           "name": "standsBesideLive",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.standsBesideLive",
-          "line": 1452,
+          "line": 1457,
           "called": []
         },
         {
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.reconciliationViolations",
-          "line": 1476,
+          "line": 1481,
           "called": []
         },
         {
           "kind": "def",
           "name": "pinSides",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides",
-          "line": 1509,
+          "line": 1514,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -488318,7 +491576,7 @@
           "kind": "def",
           "name": "pinRelatesPrograms",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms",
-          "line": 1541,
+          "line": 1546,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides"
           ]
@@ -488327,7 +491585,7 @@
           "kind": "def",
           "name": "pinViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinViolations",
-          "line": 1554,
+          "line": 1559,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms"
           ]
@@ -488336,7 +491594,7 @@
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
-          "line": 1594,
+          "line": 1599,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -488346,7 +491604,7 @@
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessReflexiveOverBoth",
-          "line": 1602,
+          "line": 1607,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -488356,7 +491614,7 @@
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
-          "line": 1609,
+          "line": 1614,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -488366,7 +491624,7 @@
           "kind": "def",
           "name": "pinCheckWitnesses",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnesses",
-          "line": 1614,
+          "line": 1619,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
@@ -488377,7 +491635,7 @@
           "kind": "def",
           "name": "pinCheckWitnessViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnessViolations",
-          "line": 1626,
+          "line": 1631,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.carrierFixpointRefusalViolations",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.committingExports",
