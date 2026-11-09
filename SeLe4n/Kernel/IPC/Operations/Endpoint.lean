@@ -7566,7 +7566,7 @@ The origin member is live only at the bottom of a stack, and at the bottom there
 no frame below the head to re-head and no outer caller to validate.  This is the
 same shape HP3.1 used for the splice's member — declared ceiling `+1`, reachable
 bounds unmoved — and it is what
-`lockSet_endpointReplyRecvOnCore_size_le_twentyone` consumes. -/
+`lockSet_endpointReplyRecvOnCore_size_le_sharp` consumes. -/
 theorem replyStackBelowHead?_of_originRecipient (st : SystemState)
     {scId : SeLe4n.SchedContextId} {o : SeLe4n.ThreadId}
     (h : donationOriginRecipient? st scId = some o) :

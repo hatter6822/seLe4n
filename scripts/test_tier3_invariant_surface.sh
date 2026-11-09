@@ -874,9 +874,21 @@ run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_queueNe
 # not through a second reading of the endpoint.
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveSideQueueStructureNeighbor\? st endpointId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveSideQueueStructureNeighbor\? st endpointObjId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# The receive slot's CNode, which a receive's capability install writes, is a
+# write member of both receive footprints (seL4's getReceiveSlots names a slot
+# in any CNode the receiver's CSpace reaches).
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveInstallCNode\? st endpointId receiver" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveInstallCNode\? st endpointObjId replier" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_receiveSlot($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_receiveSlot($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The parametric receive and reply-receive footprints sit strictly below the
+# ceiling, which is what leaves room for the receive slot's CNode the resolved
+# footprints add (`lockSet_endpoint{Receive,ReplyRecv}OnCore_size_le`).
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReceive_size_lt[^\n]*(\n([ \t][^\n]*)?)*< maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_lt[^\n]*(\n([ \t][^\n]*)?)*< maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
 # The ceiling and the figures derived from it move together -- the point of
 # stating them as theorems rather than paragraphs.
-run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 28' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 29' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 11" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # NEGATIVE: the superseded figure must not come back.  Mutating by deleting the
 # theorem would be caught by the positive; this keeps it at the old number.
@@ -2173,7 +2185,7 @@ run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(donation, no caps\) size 
 # OD3.5: the ceiling, and the figure derived from it.  `maxLockSetSize` is the
 # WCRT headline's first factor, so a cut that widens a footprint pays here —
 # visibly, as a theorem rather than a paragraph.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 28$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 29$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 # WS-RM (`v0.35.6`) NEGATIVE: the superseded ceiling must not come back.  The
 # positive above would be satisfied by a *deleted* constant only if the whole
 # definition went, which the build catches; this keeps it at the old value, which
@@ -2184,6 +2196,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 23$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 # WS-ZA ZA4.7: and the ceiling this cut supersedes.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 27$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 28$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 11 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 
@@ -10637,7 +10650,7 @@ run_check "INVARIANT" rg -n 'a caps-installing .\.receive. declares the state-le
 # WS-OD OD3.7: the label names the CONSTANT, not the numeral it holds -- this
 # anchor pinned `= 11` and went stale the moment the ceiling moved, which is the
 # same defect the `_size_le_maxLockSetSize` negative below refuses in Lean.
-run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = maxLockSetSize \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'with the receive slot.s CNode it is maxLockSetSize \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
 # WS-RR RR7.12: the declared footprint is ACQUIRED at the live syscall seam.
 # Before this row exactly one live export bracketed (the raw cross-core
 # suspend seam, retired at WS-ZA ZA6.10), so "per-object reader-writer fine locks"
@@ -17729,7 +17742,7 @@ run_negative_check "INVARIANT" rg -n 'lockSet_replyRecv_size_le_twentytwo_of_own
 # does not, so no state carries both groups.  WS-RM (`v0.35.6`) moved that
 # figure 18 -> 19, because the frame the removal's splice writes is a member the
 # *definition* can produce alongside either group.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentytwo_of_no_preReturn_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentytwo_of_no_sender_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # WS-RM (`v0.35.6`): and the *reachable* figure is unmoved at eighteen.  It used to
@@ -17746,7 +17759,7 @@ run_negative_check "INVARIANT" rg -n '^def replyStackHeadIsAnsweredReply' SeLe4n
 run_negative_check "INVARIANT" rg -n '^theorem replyStackHead\?_none_of_answeredFrameAbove' SeLe4n/
 # ...and what carries the exclusion instead is pinned positively.
 run_check "INVARIANT" rg -n '^theorem answeredReplyFrameAbove\?_none_of_headContext' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twentyone($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_sharp($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_frameAbove_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_head_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # **WS-HP HP10.6**: and the three branches on which the redirect IS live, each
@@ -17771,7 +17784,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_nineteen_of_no_s
 # NEGATIVE: and the UNCONDITIONAL one must not acquire them -- a nineteen stated
 # under the same hypotheses would be the conditional bound wearing the
 # unconditional one's name, and every anchor above would still match.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo[^\n]*(\n([ \t][^\n]*)?)*donationChainWellFormed" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState[^\n]*(\n([ \t][^\n]*)?)*donationChainWellFormed" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # The mechanism: a key already present costs nothing, which is what lets a
 # RESOLVED footprint be sharper than the parametric bound it is measured by.
 run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_containsKey($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
@@ -17782,12 +17795,12 @@ run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_not_containsKey($|[ 
 # figure would make the parametric footprint unbounded.  Token-preserving: it
 # keeps the theorem and changes only the number it concludes.  WS-HP HP6.2: the
 # seventeen bound's twin went with the theorem.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCore_size_le_twentyone[^\n]*(\n([ \t][^\n]*)?)*≤ maxLockSetSize" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCore_size_le_sharp[^\n]*(\n([ \t][^\n]*)?)*≤ maxLockSetSize" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # WS-HP HP6.2 (`v0.35.44`): and the eighteen bound takes NO hypothesis.  Under the
 # head-driven trigger a frame that heads a context has no frame above and none
 # below, so the exclusion the two coherence facts used to buy is structural.
 # NEGATIVE, token-preserving: it keeps the theorem and re-adds a hypothesis.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReplyRecvOnCore_size_le_twentyone[^\n]*(\n([ \t][^\n]*)?)*donationChainWellFormed" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReplyRecvOnCore_size_le_sharp[^\n]*(\n([ \t][^\n]*)?)*donationChainWellFormed" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # WS-HP HP6.2: both reply footprints resolve their donation members through the
 # POP's own trigger.  WS-HP HP7 (`v0.35.46`) then **deleted** the binding-driven
 # resolver `endpointReplyServerDonation?` outright, so a footprint cannot name it
@@ -17823,7 +17836,7 @@ run_negative_check "INVARIANT" rg -n 'lockSet_endpointReplyOnCore_covers_headDri
 # The runtime witness executes the merge, and pins that the sharpening is ONE
 # member: the recorded server merges only on a non-delegated reply, which is a
 # case split rather than an invariant.
-run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares one under the ceiling' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares one under the widest shape' tests/DeadlockFreedomSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the merge sharpening is one member, not two' tests/DeadlockFreedomSuite.lean
 # PR #894 review: and the mutual exclusion is exercised at both reachable widths,
 # with the negative that neither reaches the ceiling -- a witness asserting only
@@ -18275,7 +18288,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlockin
 # `.replyRecv` figure is the one that absorbs the new member (19 -> 20); the two
 # reachable ones stay at 18 and 17, because a frame with something above it is
 # not a stack head and so heads no context to pop.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_size_le_eighteen($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 # WS-ZA ZA4.6: every footprint whose operation links or unlinks a reply waiter

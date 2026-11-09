@@ -1666,6 +1666,17 @@ that will need it. -/
   rw [receivePreReturn?_of_sender st endpointObjId receiver sender h]
   rfl
 
+/-- **The CNode a receive's capability install writes**: the receive slot's
+CNode, read from the pre-state through the expression the transfer itself reads
+(`receiverCapSlot?`, the slot the receiver's IPC buffer names, seL4's
+`getReceiveSlots`), when the dequeued sender asks to transfer capabilities
+(`receiveInstallsCaps`).  The slot may lie in any CNode the receiver's CSpace
+reaches, so it is declared on its own rather than as the receiver's root. -/
+def receiveInstallCNode? (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : Option SeLe4n.ObjId :=
+  if receiveInstallsCaps st endpointId then (receiverCapSlot? st receiver).map (·.cnode)
+  else none
+
 /-- WS-SM SM6.C.5: the concrete lock-set a cross-core `endpointReplyRecvOnCore` on
 state `st` acquires — `lockSet_replyRecv` with the new sender (the receive-leg
 rendezvous head), the returned SchedContext, and its original owner all
@@ -1737,7 +1748,9 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
   let belowHead := match answeredFrameHeadContextId? st target with
     | none => (none, none)
     | some scId => replyStackBelowHead? st scId
-  lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender?
+  -- The receive slot's CNode, which the receive leg's install writes
+  -- (`receiveInstallCNode?`, the replier's IPC buffer's receive path).
+  lockSetExtendOpt (lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender?
     (answeredFrameHeadContextId? st target)
     ((answeredFrameHeadContext? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
@@ -1793,7 +1806,8 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- leg reads when it looks that sender's extra capabilities up at the
     -- rendezvous -- resolved by the same `receiveCapRequest` the transition
     -- branches on.
-    ((receiveCapRequest st endpointObjId).map (·.1))
+    ((receiveCapRequest st endpointObjId).map (·.1)))
+    ((receiveInstallCNode? st endpointObjId replier).map (fun r => (cnodeLock r, AccessMode.write)))
 
 
 /-- **WS-RR RR7.11: the concrete lock-set a cross-core `.receive` acquires.**
@@ -1824,7 +1838,10 @@ second resolution beside the dispatcher's. -/
 def lockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (replyId : Option SeLe4n.ReplyId := none) : LockSet :=
-  lockSet_endpointReceive receiver cnodeRootObjId endpointId
+  -- The CNode of the receiver's receive slot, which the install writes
+  -- (`receiveInstallCNode?`): the slot the receiver's IPC buffer names, in any
+  -- CNode its CSpace reaches, not necessarily its root.
+  lockSetExtendOpt (lockSet_endpointReceive receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId)
     replyId
     (receiveInstallsCaps st endpointId)
@@ -1850,7 +1867,33 @@ def lockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- **WS-ZA ZA4.7**: and the dequeued sender's CSpace root, read when its extra
     -- capabilities are looked up at the rendezvous (seL4 `lookupExtraCaps`),
     -- through the same `receiveCapRequest` the transition branches on.
-    ((receiveCapRequest st endpointId).map (·.1))
+    ((receiveCapRequest st endpointId).map (·.1)))
+    ((receiveInstallCNode? st endpointId receiver).map (fun r => (cnodeLock r, AccessMode.write)))
+
+/-- The install's CNode is declared at write. -/
+theorem lockSet_endpointReceiveOnCore_covers_receiveSlot (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (replyId : Option SeLe4n.ReplyId) (dst : CSpaceAddr)
+    (hCaps : receiveInstallsCaps st endpointId = true)
+    (hSlot : receiverCapSlot? st receiver = some dst) :
+    (cnodeLock dst.cnode, AccessMode.write)
+      ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
+  unfold lockSet_endpointReceiveOnCore receiveInstallCNode?
+  rw [hCaps, if_pos rfl, hSlot]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- The replyRecv receive leg's install CNode is declared at write. -/
+theorem lockSet_endpointReplyRecvOnCore_covers_receiveSlot (st : SystemState)
+    (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) (dst : CSpaceAddr)
+    (hCaps : receiveInstallsCaps st endpointObjId = true)
+    (hSlot : receiverCapSlot? st replier = some dst) :
+    (cnodeLock dst.cnode, AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+          endpointObjId).pairs := by
+  unfold lockSet_endpointReplyRecvOnCore receiveInstallCNode?
+  rw [hCaps, if_pos rfl, hSlot]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 -- ============================================================================
 -- §3  Path reduction lemmas (full characterisation of each control path)
@@ -2179,7 +2222,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour
   -- re-links, and the origin a bottom-of-stack pop redirects to.
   -- WS-ZA ZA4.6: and the three reply-waiter members above those; WS-ZA ZA4.7:
   -- and the sender's CSpace root above all of them.
-  iterate 7 apply mem_write_lockSetExtendOpt
+  iterate 8 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-ZA ZA4.6**: the answered caller's reply-waiter predecessor and
@@ -2214,11 +2257,11 @@ theorem lockSet_endpointReplyRecvOnCore_covers_replyWaiters
         cnodeRootObjId target endpointObjId).pairs) := by
   refine ⟨fun t h => ?_, fun t h => ?_, fun t h => ?_⟩ <;>
     unfold lockSet_endpointReplyRecvOnCore <;> rw [h]
-  · exact lockSet_replyRecv_replyWaiterPrev_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_replyWaiterPrev_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _
-  · exact lockSet_replyRecv_replyWaiterNext_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_replyWaiterNext_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _
-  · exact lockSet_replyRecv_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-ZA ZA4.7**: the resolved `.replyRecv` footprint holds the CSpace root
@@ -2234,7 +2277,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_senderCapLookup
         endpointObjId).containsKey (cnodeLock req.1) = true := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hReq]
-  exact lockSet_replyRecv_senderRoot_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact containsKey_lockSetExtendOpt_of_containsKey _ _ _ <| lockSet_replyRecv_senderRoot_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     _ _ _ _
 
 /-- WS-SM SM6.C.5: the **state-resolved** replyRecv lock-set is hierarchically
@@ -2245,8 +2288,12 @@ theorem lockSet_endpointReplyRecvOnCore_correct
     ∀ p ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv := by
   unfold lockSet_endpointReplyRecvOnCore
-  exact lockSet_consistent_replyRecv replier cnodeRootObjId target endpointObjId
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  refine lockSet_consistent_extendOpt _ _ _ (lockSet_consistent_replyRecv replier cnodeRootObjId
+    target endpointObjId _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
+  intro pp h
+  simp only [Option.map_eq_some_iff] at h
+  obtain ⟨r, -, rfl⟩ := h
+  simp [cnodeLock, permittedKinds]
 
 -- ============================================================================
 -- §6  SM6.C.4 / SM6.C.6 — Reply payload delivery + reply-state lifecycle
@@ -2664,7 +2711,7 @@ theorem lockSet_endpointReceiveOnCore_covers_cdt
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
   rw [hCaps]
-  exact lockSet_endpointReceive_stateLevel_write_mem receiver cnodeRootObjId endpointId
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_stateLevel_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId
     (receiveRendezvousDonatedSc? st endpointId receiver)
     (receiveSideQueueStructureNeighbor? st endpointId)
@@ -2679,7 +2726,7 @@ theorem lockSet_endpointReceiveOnCore_covers_capsDestination
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
   rw [hCaps]
-  exact lockSet_endpointReceive_capsInstall_write_mem receiver cnodeRootObjId endpointId
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_capsInstall_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId
     (receiveRendezvousDonatedSc? st endpointId receiver)
     (receiveSideQueueStructureNeighbor? st endpointId)
@@ -2705,7 +2752,8 @@ theorem lockSet_endpointReceiveOnCore_covers_queueNeighbour
   rw [hq]
   -- WS-ZA ZA4.6: the receiver's old reply-waiter head, and (WS-ZA ZA4.7) the
   -- sender's CSpace root outside it.
-  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ ?_))
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-ZA ZA4.7**: the resolved `.receive` footprint holds the CSpace root of
@@ -2721,7 +2769,7 @@ theorem lockSet_endpointReceiveOnCore_covers_senderCapLookup
         replyId).containsKey (cnodeLock req.1) = true := by
   unfold lockSet_endpointReceiveOnCore
   rw [hReq]
-  exact lockSet_endpointReceive_senderRoot_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact containsKey_lockSetExtendOpt_of_containsKey _ _ _ <| lockSet_endpointReceive_senderRoot_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-ZA ZA4.6**: on the arm that dequeues a caller, the receiver's old
 reply-waiter head -- the thread `linkReplyWaiter sender receiver` relinks -- is a
@@ -2735,7 +2783,7 @@ theorem lockSet_endpointReceiveOnCore_covers_replyWaiterOldHead
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
   rw [hHead]
-  exact lockSet_endpointReceive_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD OD3.6: the resolved `.receive` footprint covers the rendezvous
 donation.**
@@ -2755,7 +2803,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donatedSc
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
   rw [hSc]
-  exact lockSet_endpointReceive_donated_sc_write_mem receiver cnodeRootObjId endpointId
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_donated_sc_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId (receiveInstallsCaps st endpointId) scId
     (receiveSideQueueStructureNeighbor? st endpointId)
     _ _ _ _ _ _ _ _
@@ -2772,7 +2820,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donationIndex
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
   rw [hSc]
-  exact lockSet_endpointReceive_donation_stateLevel_write_mem receiver cnodeRootObjId endpointId
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_donation_stateLevel_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId (receiveInstallsCaps st endpointId) scId
     (receiveSideQueueStructureNeighbor? st endpointId)
     _ _ _ _ _ _ _ _
@@ -2788,7 +2836,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_cdt
           endpointObjId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hCaps]
-  exact lockSet_replyRecv_stateLevel_write_mem replier cnodeRootObjId target endpointObjId
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_stateLevel_write_mem replier cnodeRootObjId target endpointObjId
     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: the old head the rendezvous donation's push rewrites
@@ -2805,7 +2853,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donationOldHead
   rw [hSc]
   have h2 : Option.bind (some scId) (replyStackHead? st) = some oldHead := hOld
   rw [h2]
-  exact lockSet_endpointReceive_donationOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_donationOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: the pre-receive return's writes -- the context the
 blocking receiver hands back, the previous owner's TCB, the head cleared and
@@ -2834,18 +2882,19 @@ theorem lockSet_endpointReceiveOnCore_covers_preReturn
   rw [hRet]
   simp only [Option.map_some]
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · exact lockSet_endpointReceive_preReturn_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-  · exact lockSet_endpointReceive_preReturn_owner_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_preReturn_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_preReturn_owner_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   · intro head hHead
     rw [hHead]
-    exact lockSet_endpointReceive_preReturn_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_preReturn_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   · intro below hBelow
     rw [hBelow]
-    exact lockSet_endpointReceive_preReturn_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_preReturn_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   · unfold lockSet_endpointReceive
     simp only [Option.isSome_some, Bool.or_true, if_true]
     exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)))
+      (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+        (LockSet.mem_insertOrMerge_write_self _ _))))
 
 /-- **WS-HP HP6.2 (`v0.35.44`): the donation pop's SchedContext and the TCB it
 unbinds are declared writes of the resolved `.reply` footprint — with no
@@ -2906,11 +2955,11 @@ theorem lockSet_endpointReplyRecvOnCore_covers_donationPop
   unfold lockSet_endpointReplyRecvOnCore
   rw [hCtx]
   refine ⟨?_, fun holder hHead => ?_⟩
-  · exact lockSet_replyRecv_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _
   · rw [hHead]
     simp only [Option.map_some]
-    exact lockSet_replyRecv_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: the reply-stack pop's two Reply writes -- the head it
@@ -2958,7 +3007,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_redonationOldHead
   rw [hSc]
   have h2 : Option.bind (some scId) (replyStackHead? st) = some oldHead := hOld
   rw [h2]
-  exact lockSet_replyRecv_redonationOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_redonationOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
@@ -2985,11 +3034,11 @@ theorem lockSet_endpointReplyRecvOnCore_covers_pop
   · intro head hHead
     have h2 : Option.bind (some scId) (replyStackHead? st) = some head := hHead
     rw [h2]
-    exact lockSet_replyRecv_donatedHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_donatedHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _
   · intro below hBelow
     rw [hBelow]
-    exact lockSet_replyRecv_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _
 
 /-- **WS-RM (`v0.35.6`)**: the frame the reply leg's splice rewrites is a declared
@@ -3026,7 +3075,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove
            endpointObjId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hAbove]
-  exact lockSet_replyRecv_frameAbove_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_frameAbove_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     _ _ _ _ _ _ _ _
 
 /-- **WS-HP HP3.3**: and the frame the removal re-links *below* the cut is a
@@ -3070,7 +3119,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameBelow
            endpointObjId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hBelow]
-  exact lockSet_replyRecv_frameBelow_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_frameBelow_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     _ _ _ _ _ _ _ _
 
 /-- **WS-HP HP10.6: the origin a bottom-of-stack pop redirects the reservation to
@@ -3121,7 +3170,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_originRecipient
   unfold lockSet_endpointReplyRecvOnCore
   rw [hCtx]
   simp only [Option.bind_some, hOrigin]
-  exact lockSet_replyRecv_originRecipient_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_originRecipient_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
@@ -3166,17 +3215,17 @@ theorem lockSet_endpointReplyRecvOnCore_covers_preReturn
   rw [hRet]
   simp only [Option.map_some]
   refine ⟨?_, ?_, ?_, ?_⟩
-  · exact lockSet_replyRecv_preReturn_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_preReturn_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _
-  · exact lockSet_replyRecv_preReturn_owner_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_preReturn_owner_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _
   · intro head hHead
     rw [hHead]
-    exact lockSet_replyRecv_preReturn_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_preReturn_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _
   · intro below hBelow
     rw [hBelow]
-    exact lockSet_replyRecv_preReturn_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_replyRecv_preReturn_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _ _
 
 /- **WS-OD OD4.7**: the reply **write** member of the `.call` footprint now lives
@@ -3434,7 +3483,7 @@ theorem applyReplyDonationOnCoreLockSet_size_le_maxLockSetSize
   have hSeg := schedFootprintOfCores_length_le (runCores := [descheduleCore])
     (replenishCores := replenishCores)
   have hN : Concurrency.numCores = 4 := rfl
-  have hM : Concurrency.maxLockSetSize = 28 := rfl
+  have hM : Concurrency.maxLockSetSize = 29 := rfl
   unfold applyReplyDonationOnCoreLockSet
   omega
 

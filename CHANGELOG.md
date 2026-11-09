@@ -51,8 +51,30 @@ The specification's IPC capability transfer is restated as seL4's
   now sits at bit 12), and the reader-hygiene baseline is re-anchored for the
   removed `lookupCspaceRoot` readers and their three cascade tests.
 
+- **The receive slot's CNode is in the receive footprints**
+  (`receiveInstallCNode?`): a receive or reply-receive whose rendezvous
+  installs a capability writes the slot its buffer names, which may lie in
+  any CNode its CSpace reaches, so `lockSet_endpointReceiveOnCore` and
+  `lockSet_endpointReplyRecvOnCore` declare that CNode for write beside the
+  receiver's root (`lockSet_endpoint{Receive,ReplyRecv}OnCore_covers_receiveSlot`).
+  The parametric receive and reply-receive footprints are stated strictly
+  below the ceiling (`lockSet_endpointReceive_size_lt`,
+  `lockSet_replyRecv_size_lt`), and the widest resolved `.replyRecv` reaches
+  it: `maxLockSetSize` is **29** (was 28).  The admissible per-lock critical
+  section on the RPi5 tick is unchanged at `1000 / (29 · 3) = 11` µs, and the
+  uniform 60 µs envelope moves 5040 → 5220 µs.  The two resolved
+  reply-receive bounds that carried their figure in their name are renamed to
+  what they state: `lockSet_endpointReplyRecvOnCore_size_le_onEveryState`
+  (any state, ≤ 23) and `lockSet_endpointReplyRecvOnCore_size_le_sharp`
+  (the reachable shapes, ≤ 22).
+
 ### Security
 
+- A receive's capability install was declared in no lock footprint: the
+  CNode holding the receive slot was written under a footprint that named
+  only the receiver's root.  Under the global kernel-entry lock this was not
+  reachable as a race, but the footprint is the contract the deadlock and
+  WCRT results are proved over, so it is now declared.
 - A capability transfer no longer installs into slots the receiver never
   offered: the old scan wrote into the first empty of slots 0-2 of the
   receiver's CSpace root, so any sender holding a grant capability could fill

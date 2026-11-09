@@ -69885,8 +69885,8 @@
         },
         {
           "kind": "theorem",
-          "name": "lockSet_endpointReplyRecvOnCore_size_le_twentytwo",
-          "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_size_le_twentytwo",
+          "name": "lockSet_endpointReplyRecvOnCore_size_le_onEveryState",
+          "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_size_le_onEveryState",
           "line": 199,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead",
@@ -69910,8 +69910,8 @@
         },
         {
           "kind": "theorem",
-          "name": "lockSet_endpointReplyRecvOnCore_size_le_twentyone",
-          "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_size_le_twentyone",
+          "name": "lockSet_endpointReplyRecvOnCore_size_le_sharp",
+          "full_name": "SeLe4n.Kernel.lockSet_endpointReplyRecvOnCore_size_le_sharp",
           "line": 302,
           "called": [
             "SeLe4n.Kernel.Concurrency.lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_frameAbove_of_no_belowHead",

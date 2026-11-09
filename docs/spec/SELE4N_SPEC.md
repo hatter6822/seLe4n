@@ -4150,7 +4150,7 @@ alongside the latent inventory (closing SMP-H3).
    re-derived.*  The re-donation members are live exactly when the
    endpoint has a queued sender and the invoker's pre-receive return
    exactly when it does not, so **no reachable state carries both
-   groups**: `lockSet_endpointReplyRecvOnCore_size_le_twentyone` bounds
+   groups**: `lockSet_endpointReplyRecvOnCore_size_le_sharp` bounds
    every state at eighteen with no hypothesis at all.  Twenty-one is
    what the *definition* can produce over all argument values, which is
    what `boundedWait_under_2pl` and the WCRT surface must consume.

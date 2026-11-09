@@ -942,10 +942,10 @@ first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrow
 per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
 25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen, 15 µs at twenty-one and
 twenty-two, 14 µs at twenty-three, 13 µs at twenty-four, 12 µs at
-twenty-seven and 11 µs at twenty-eight (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
+twenty-seven and 11 µs at twenty-eight and twenty-nine (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **28**, the RPi5 tick admits **11 µs** per lock, and the uniform 60 µs envelope is **5040 µs**.
+At the value above, the declared lock-set ceiling is **29**, the RPi5 tick admits **11 µs** per lock, and the uniform 60 µs envelope is **5220 µs**.
 The figure is *derived* from this constant and must be
 read off that theorem rather than from this paragraph: at twenty-two the tick
 admits `22 · 3 · 15 = 990 µs ≤ 1000`, and quoting a superseded per-lock cost
@@ -1048,7 +1048,7 @@ caller — are `some` only when it **is**.  (That exclusion needed a *stated*
 coherence fact until WS-HP HP6.2 repointed the footprints onto the pop's own
 trigger, under which a frame heading a context provably has no frame above it
 (`answeredReplyFrameAbove?_none_of_headContext`), so
-`lockSet_endpointReplyRecvOnCore_size_le_twentyone` states it with no hypothesis at
+`lockSet_endpointReplyRecvOnCore_size_le_sharp` states it with no hypothesis at
 all; HP7 then deleted the fact, which by then had no consumer.)  So a
 reachable footprint trades three members for one and the reachable figures do not
 move; twenty-two is the union over argument values no state realises together.
@@ -1070,7 +1070,7 @@ transition goes live only after the proofs that cover it.  It is resolved
 `answeredReplyFrameAbove?` first), so a frame with nothing above it declares no
 below-member with no invariant at all, and the two reachable `.replyRecv` figures
 are unmoved at eighteen and seventeen; what absorbs it is the unconditional
-`lockSet_endpointReplyRecvOnCore_size_le_twentytwo`.  This raise *does* cost the
+`lockSet_endpointReplyRecvOnCore_size_le_onEveryState`.  This raise *does* cost the
 admissible section: `1000 / (23 · 3) = 14` µs, and the uniform 60 µs envelope
 moves 3960 → 4140 µs.
 
@@ -1102,7 +1102,16 @@ that sender's CSpace, an object no member covered.  The member is live only on a
 rendezvous (`receiveCapRequest` is `none` with no sender queued), so the reachable
 rendezvous figures move by one and the blocking ones not at all; the admissible
 section becomes `1000 / (28 · 3) = 11` µs, and the uniform 60 µs envelope moves
-4860 → 5040 µs. -/
-def maxLockSetSize : Nat := 28
+4860 → 5040 µs.
+
+**The receive slot takes it to twenty-nine** (`v0.37.5`), for the CNode a
+receive's capability install writes: the receive slot is the one the receiver's
+IPC buffer names (seL4's `getReceiveSlots`), which may lie in any CNode its
+CSpace reaches, so the receive and reply-receive footprints declare it beside
+the receiver's root (`receiveInstallCNode?`).  The member is live only on a
+rendezvous that installs, so the widest `.replyRecv` footprint grows by one; the
+admissible section is `1000 / (29 · 3) = 11` µs, and the uniform 60 µs envelope
+moves 5040 → 5220 µs. -/
+def maxLockSetSize : Nat := 29
 
 end SeLe4n.Kernel.Concurrency
