@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.7` (`lakefile.toml`) |
+| **Package version** | `0.37.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 609,085 across 608 Lean files |
 | **Test LoC** | 89,031 across 70 Lean test suites |
@@ -6649,12 +6649,28 @@ Every kernel object has a decidable well-formedness predicate:
   caller is woken and the server's priority chain walked, then the same loop
   runs on no endpoint, so nothing unwraps (`capTransferK_eq_at`), from the
   replier's request read off its own saved frame
-  (`replyCapRequest_of_routedReply`).  Any other transfer (a capability-carrying
-  message of more than four words, a reply that installs and is longer than
-  four words or answers a caller on a donated reply object or one recording no
-  server, or a reply-receive that installs a capability) takes the
-  specification's (`endpointSendDualWithCapsOnCore`, `replyTransferCaps`); it
-  allocates
+  (`replyCapRequest_of_routedReply`).  Since `v0.37.8` the same holds at any
+  length and for every reply shape: a capability-carrying send, call or take
+  of more than four words runs the transfer in place and then the long frame,
+  which copies the overflow words from the sender's IPC buffer into the
+  receiver's (`performSendCapsDeliveredLong`, `performCallCapsDeliveredLong`,
+  `performTakeCapsDeliveredLong`, `performCallTakeCapsDeliveredLong`); a
+  granting reply on a donated reply object hands the loaned context back down
+  its stack in place before the transfer (`performReplyDonatedCapsDelivered`,
+  `replyTransferChecked_donatedCaps_inPlace`), and one to a caller recording no
+  server returns the context no thread holds in place before it
+  (`performReplyUnheldCapsDelivered`,
+  `replyTransferChecked_unheldCaps_inPlace`); a reply of more than four words
+  does each of these with the long frame (`performReplyCapsDeliveredLong`,
+  `performReplyDonatedCapsDeliveredLong`, `performReplyUnheldCapsDeliveredLong`,
+  `ReplyCapsLongDelivered.lean`).  These writes leave every buffer address,
+  VSpace root and CNode the transfer reads where they were
+  (`ipcBufferReadsAgree_replyDonationPopInPlace`,
+  `ipcBufferReadsAgree_returnUnheldSchedContextInPlace`), and the transfer
+  leaves the replier's overflow words where they were
+  (`ipcWordReadsAgree_receiveTransferCaps`).  A reply-receive whose reply leg
+  installs a capability still takes the specification's
+  (`replyRecvTransferOnCore`, guarded by `replyRecvReplyInertW`); it allocates
   (`docs/REGISTERED_DEBT.md` table C).  With the default layout the router hands the decoded arm
   nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
   whose registers lie out of bounds or which has no message register.
