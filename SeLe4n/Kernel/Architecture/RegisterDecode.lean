@@ -1099,6 +1099,15 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
     registerRoutedSyscallOf layout regs
   else .viaDecode
 
+/-- On the default layout every register the router reads is in bounds, so the
+router is its body (`registerRoutedSyscallOf`): an arm matching on the body
+reads no bounds check. -/
+theorem registerRoutedSyscall_default (rf : RegisterFile) :
+    registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+      registerRoutedSyscallOf SeLe4n.arm64DefaultLayout rf := by
+  unfold registerRoutedSyscall
+  rw [if_pos ⟨by decide, by decide, by decide, by simp [SeLe4n.arm64DefaultLayout]⟩]
+
 /-- **The router hands the decode nothing**, for the default layout: every
 register file is routed to an arm of its own or refused as the decode refuses
 it -- a send or a call transferring capabilities included (`.transferring`)

@@ -3090,8 +3090,8 @@ other rendezvous goes through the specification
               else endpointReceiveRendezvousR epId tid replyCode executingCore st
             | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
           else
-          match Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
-              sTcb.registerContext 32 with
+          match Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
+              sTcb.registerContext with
           | .send _ mi =>
             if !sTcb.ipcFaultSend && receiveTakesInPlace st epId tid s sTcb then
               let f := Architecture.regMessageFrameW SeLe4n.arm64DefaultLayout sTcb.registerContext
@@ -3181,6 +3181,7 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
       endpointReceiveRendezvousR epId tid replyCode executingCore := by
   funext st
   unfold endpointReceiveTakeR
+  simp only [← Architecture.RegisterDecode.registerRoutedSyscall_default]
   split
   · next ep hEp =>
     split
