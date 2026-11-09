@@ -18,6 +18,10 @@ import SeLe4n.Kernel.RoutedArms.ReplyRecv
 import SeLe4n.Kernel.RoutedArms.Invocation
 import SeLe4n.Kernel.RoutedArms.OverflowOne
 import SeLe4n.Kernel.RoutedArms.SendLong
+import SeLe4n.Kernel.RoutedArms.CallLong
+import SeLe4n.Kernel.RoutedArms.ReplyLong
+import SeLe4n.Kernel.RoutedArms.ReplyRecvLong
+import SeLe4n.Kernel.RoutedArms.Transferring
 import SeLe4n.Kernel.RoutedArms.Audited
 import SeLe4n.Kernel.RoutedArms.Overflowed
 import SeLe4n.Kernel.RoutedArms.Decoded
@@ -90,6 +94,20 @@ continuations are compiled once. -/
       | .sendLong capAddr msgInfo =>
         finish .send capAddr.word
           (sendLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
+      | .callLong capAddr msgInfo =>
+        finish .call capAddr.word
+          (callLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length st)
+      | .replyLong capAddr msgInfo =>
+        finish .reply capAddr.word
+          (replyLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length msgInfo.extraCaps
+            msgInfo.label st)
+      | .replyRecvLong capAddr msgInfo =>
+        finish .replyRecv capAddr.word
+          (replyRecvLongRoutedArm ctx executingCore tid capAddr.word msgInfo.length
+            msgInfo.extraCaps msgInfo.label st)
+      | .transferring sid capAddr msgInfo =>
+        finish sid capAddr.word
+          (transferringRoutedArm ctx executingCore tid sid capAddr.word msgInfo.length st)
       | .audited sid capAddr =>
         finish sid capAddr.word (auditedRoutedArm ctx executingCore tid sid capAddr.word st)
       | .overflowed sid capAddr len =>
@@ -163,6 +181,24 @@ compiled form `syscallEntryCheckedK` runs as. -/
       simp only [sendLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
         entryReportOutcome_general]
       rfl
+    | callLong capAddr msgInfo =>
+      simp only [callLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_general]
+      rfl
+    | replyLong capAddr msgInfo =>
+      simp only [replyLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_general]
+      rfl
+    | replyRecvLong capAddr msgInfo =>
+      simp only [replyRecvLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_general]
+      rfl
+    | transferring sid capAddr msgInfo =>
+      by_cases hS : msgInfo.length ≤ 4
+      · simp only [transferringRoutedArm, hO, hS, ↓reduceIte, entryReportOutcome_operand]; rfl
+      · simp only [transferringRoutedArm, hO, hS, ↓reduceIte,
+          ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_general]
+        rfl
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl
     | overflowed sid capAddr len =>

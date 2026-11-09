@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.3` (`lakefile.toml`) |
+| **Package version** | `0.37.4` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 600,648 across 593 Lean files |
-| **Test LoC** | 88,884 across 70 Lean test suites |
-| **Proved declarations** | 23,103 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 605,394 across 602 Lean files |
+| **Test LoC** | 88,892 across 70 Lean test suites |
+| **Proved declarations** | 23,216 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4767,24 +4767,32 @@ reading the context's bound thread directly.  The per-context thread index
 The IPC buffer has specific alignment requirements bridging the Lean model to
 ARM64 hardware:
 
-- **Lean model**: IPC buffer alignment is enforced at 512 bytes
-  (`ipcBufferAlignment = 512`, defined in `Prelude.lean` and consumed by
-  `Architecture/IpcBufferValidation.lean`). `setIPCBufferOp` validates the
-  address via a 7-step pipeline including alignment check, page
-  membership, and VSpace lookup.
+- **Lean model**: IPC buffer alignment is enforced at 1024 bytes, the
+  buffer's size (`ipcBufferAlignment = 1024`, defined in `Prelude.lean` and
+  consumed by `Architecture/IpcBufferValidation.lean`), as seL4's 64-bit
+  `seL4_IPCBufferSizeBits = 10` requires.  `setIPCBufferOp` validates the
+  address via a 7-step pipeline: alignment, canonical address, VSpace root,
+  the mapping of the buffer's page, write permission, and the physical end
+  of the whole buffer (`[pa, pa + 1024)`) within the platform's physical
+  address width.
 - **Rust ABI**: The `IpcBuffer` structure (`sele4n-abi/src/ipc_buffer.rs`) is
-  960 bytes, `#[repr(C)]`, with 8-byte natural alignment. The 512-byte model
-  alignment exceeds the ABI's 8-byte requirement.
-- **Hardware justification**: 512-byte alignment provides 8 × 64-byte cache
-  lines on Cortex-A76, ensuring the IPC buffer does not straddle cache line
-  boundaries in a way that would cause false sharing or require additional
-  cache maintenance. This is a **performance optimization**, not an
-  architectural requirement — the hardware would function correctly with
-  any 8-byte aligned buffer.
-- **Page safety**: The `ipcBuffer_within_page` theorem (AE4-J) proves that
-  a 512-byte-aligned IPC buffer of 960 bytes never crosses a 4 KiB page
-  boundary (512 + 960 = 1472 < 4096). This guarantees a single TLB entry
-  covers the entire buffer, avoiding mid-transfer page faults.
+  960 bytes (116 overflow words, the user-data word and three capability
+  words), `#[repr(C)]`, with 8-byte natural alignment.  It fits the
+  1024-byte buffer (`IpcBufferRead.ipcBufferWords_within_buffer`), and
+  `IPC_BUFFER_ALIGNMENT = 1024` refuses an unaligned address before the call.
+- **Page safety**: The `ipcBuffer_within_page` theorem proves that a
+  1024-byte-aligned buffer of 1024 bytes never crosses a 4 KiB page (the last
+  aligned offset is 3072, and 3072 + 1024 = 4096), so the buffer lies in one
+  frame, as seL4 requires.  Every overflow slot of a validated buffer resolves
+  through slot 0's page (`IpcBufferRead.maxOverflowSlots_le_firstPageSlots`).
+  The overflow reads and writes do not assume it: each slot is translated at
+  its own page, checked for write permission when written and for the
+  physical range when performed (`IpcBufferRead.ipcBufferSlotPAddr?`), so a
+  buffer address no validator checked reads and writes only pages its own
+  VSpace maps.  Before `v0.37.4` the alignment was 512 bytes, which admitted a
+  buffer 512 bytes short of a page's end whose slots from 64 on lay on the
+  next page; those slots were translated and checked one by one, so no access
+  escaped the thread's mappings, but the buffer did not lie in one frame.
 
 ### 8.6 Memory Zeroing on Creation (`v0.36.125`)
 Every object is made by the untyped carve (`.untypedRetype`, syscall 36,
@@ -6599,13 +6607,38 @@ Every kernel object has a decidable well-formedness predicate:
   pages are read and filled in place (`ipcBufferOverflowReadable`,
   `tlbFillIpcBufferInOnCore_eq`), so no long form takes the decoded arm for
   its page.  The router and the compiled decode read the message-info
-  register as its word (`decodeMsgInfoWord_readReg`).  The forms the decoded
-  arm still serves are derived from the router
-  (`registerRoutedSyscall_viaDecode`): a send or a call that transfers
-  capabilities, and a call, reply or reply-receive of more than four words.
+  register as its word (`decodeMsgInfoWord_readReg`).  Since `v0.37.4` a
+  call, reply or reply-receive of more than four words copies its overflow
+  words into the receiver's buffer in place, seL4's `copyMRs`
+  (`RegisterRoutedSyscall.callLong`, `.replyLong`, `.replyRecvLong`;
+  `dispatchCallLongCheckedR_eq`, `dispatchReplyLongCheckedR_eq`,
+  `dispatchReplyRecvLongCheckedR_eq`), a call or a long call that blocks with
+  no receiver waiting writes in place, and a send or a call that transfers
+  capabilities takes its own arm (`RegisterRoutedSyscall.transferring`,
+  `dispatchTransferringCheckedR_eq`).  As in seL4, such a message's
+  capabilities are looked up only at the rendezvous: one that blocks writes in
+  place.  One of at most four words that meets a receiver whose receive window
+  is closed (its CSpace root has no empty slot among the `maxExtraCaps` slots
+  the transfer scans from slot 0, `receiveWindowClosed`) writes the send or
+  call rendezvous in place, the transfer installing nothing
+  (`receiveTransferCaps_of_windowClosed`,
+  `sendDispatchChecked_inPlace_windowClosed`,
+  `callDispatchChecked_inPlace_windowClosed`), as seL4's `transferCaps` with
+  no receive slot; the receive that takes a blocked capability-carrying send of
+  at most four words into a closed window writes in place too
+  (`receiveTakeCaps_delivered`), as does the receive that takes a blocked short
+  call (`receiveCallTake_delivered`).  The window is read in the pre-state,
+  which the rendezvous's writes agree with on every CNode and every thread's
+  CSpace root (`CapSpaceAgrees`).  Any other rendezvous transfer takes the
+  specification's (`endpointSendDualWithCapsOnCore`), refusing in the
+  pre-state when the receiver's CSpace root does not resolve, as the
+  specification's checked entry does; it allocates
+  (`docs/REGISTERED_DEBT.md` table C).  With the default layout the router hands the decoded arm
+  nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
+  whose registers lie out of bounds or which has no message register.
   An IPC buffer is found through its page (`validateIpcBufferAddress` looks
-  up `addr.pageBase`), so any 512-byte-aligned buffer in a mapped, writable
-  page is accepted.
+  up `addr.pageBase`), so any 1024-byte-aligned buffer in a mapped, writable
+  page is accepted, and it lies in that one page.
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write

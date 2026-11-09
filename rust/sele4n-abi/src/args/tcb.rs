@@ -12,8 +12,10 @@ use sele4n_types::{KernelError, KernelResult};
 /// Re-uses `sched_context::MAX_PRIORITY` (same value) — defined here for local clarity.
 const MAX_PRIORITY: u64 = 255;
 
-/// IPC buffer alignment in bytes (2^9 = 512, matching seL4 `seL4_IPCBufferSizeBits = 9`).
-pub const IPC_BUFFER_ALIGNMENT: u64 = 512;
+/// IPC buffer alignment in bytes, which is also the buffer's size (2^10 = 1024,
+/// matching seL4's 64-bit `seL4_IPCBufferSizeBits = 10`): a buffer aligned to its
+/// size lies in one 4 KiB frame.
+pub const IPC_BUFFER_ALIGNMENT: u64 = 1024;
 
 /// Arguments for `tcbSuspend` (syscall 20).
 /// Capability-only: no additional arguments — target thread identified by capability.
@@ -124,7 +126,7 @@ impl SetIPCBufferArgs {
     }
 
     /// Decode from message registers. Requires 1 register.
-    /// Validates alignment to `IPC_BUFFER_ALIGNMENT` (512 bytes).
+    /// Validates alignment to `IPC_BUFFER_ALIGNMENT` (1024 bytes).
     ///
     /// Uses the bitwise-AND form `(addr & MASK) != 0` rather than
     /// `addr % ALIGN != 0` so the check is lint-clean on the project's
@@ -133,7 +135,7 @@ impl SetIPCBufferArgs {
     /// `#[allow(clippy::manual_is_multiple_of)]` workaround — and
     /// without the paired `#[allow(unknown_lints)]` that would
     /// otherwise be required to keep the inner allow lint-clean on
-    /// 1.82.  `IPC_BUFFER_ALIGNMENT = 512` is a power of 2, so the
+    /// 1.82.  `IPC_BUFFER_ALIGNMENT = 1024` is a power of 2, so the
     /// two forms are mathematically equivalent.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() {
@@ -331,14 +333,14 @@ mod tests {
 
     #[test]
     fn set_ipc_buffer_roundtrip() {
-        let args = SetIPCBufferArgs { buffer_addr: 512 };
+        let args = SetIPCBufferArgs { buffer_addr: 1024 };
         assert_eq!(SetIPCBufferArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
     fn set_ipc_buffer_aligned() {
-        let args = SetIPCBufferArgs::decode(&[1024]).unwrap();
-        assert_eq!(args.buffer_addr, 1024);
+        let args = SetIPCBufferArgs::decode(&[2048]).unwrap();
+        assert_eq!(args.buffer_addr, 2048);
     }
 
     #[test]
@@ -347,11 +349,16 @@ mod tests {
             SetIPCBufferArgs::decode(&[513]),
             Err(KernelError::AlignmentError)
         );
+        // 512-aligned but not 1024-aligned: the buffer could cross a page.
+        assert_eq!(
+            SetIPCBufferArgs::decode(&[0x1E00]),
+            Err(KernelError::AlignmentError)
+        );
     }
 
     #[test]
     fn set_ipc_buffer_zero() {
-        // Zero is aligned (0 % 512 == 0)
+        // Zero is aligned (0 % 1024 == 0)
         let args = SetIPCBufferArgs::decode(&[0]).unwrap();
         assert_eq!(args.buffer_addr, 0);
     }

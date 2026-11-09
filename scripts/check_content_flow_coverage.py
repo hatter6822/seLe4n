@@ -242,6 +242,14 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.receiveOperandArmThenTaintR",
     "SeLe4n.Kernel.replyOperandArmThenTaintR",
     "SeLe4n.Kernel.replyRecvOperandArmThenTaintR",
+    # The long call's, reply's and reply-receive's and the capability-carrying
+    # send's and call's arm-then-apply steps (`callLongOperandArmThenTaintR_eq`,
+    # `replyLongOperandArmThenTaintR_eq`, `replyRecvLongOperandArmThenTaintR_eq`,
+    # `transferringOperandArmThenTaintR_eq`).
+    "SeLe4n.Kernel.callLongOperandArmThenTaintR",
+    "SeLe4n.Kernel.replyLongOperandArmThenTaintR",
+    "SeLe4n.Kernel.replyRecvLongOperandArmThenTaintR",
+    "SeLe4n.Kernel.transferringOperandArmThenTaintR",
     # PR #873 round 16: the builder's provenance seed.  The one-writer rule
     # governs the **propagation** surface -- within a running system only
     # `applySyscallTaint` moves provenance -- and a builder-phase constructor is

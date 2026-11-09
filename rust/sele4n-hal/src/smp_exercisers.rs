@@ -2356,13 +2356,29 @@ const FRAME_VADDR: u64 = 1 << 39;
 /// destroys the copy and so unmaps it.
 #[cfg(feature = "hw_target")]
 const FRAME_COPY_VADDR: u64 = FRAME_VADDR + 0x1000;
-/// An IPC buffer 512 bytes short of the frame's end (`ipcBufferAlignment`),
-/// so its overflow slots from 64 on lie on the next page.
+/// An IPC buffer in the frame's last 1024 bytes (`ipcBufferAlignment`, the
+/// buffer's size): its last overflow slot, 115, is the page's last word but one
+/// that the buffer's words reach, so a full-length message reads and writes the
+/// whole overflow region on the frame.
 #[cfg(feature = "hw_target")]
-const CROSSING_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x200;
-/// A message whose last overflow word, slot 64, is the first on the next page.
+const TAIL_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x400;
+/// An address 512 bytes short of the frame's end: aligned to 512 but not to
+/// 1024, so a buffer there would cross the page.  The validator refuses it.
 #[cfg(feature = "hw_target")]
-const CROSSING_MESSAGE_LENGTH: u64 = 4 + 64 + 1;
+const HALF_ALIGNED_IPC_BUFFER: u64 = FRAME_VADDR + 0x1000 - 0x200;
+/// A full-length message: four words in registers, 116 in overflow slots.
+#[cfg(feature = "hw_target")]
+const TAIL_MESSAGE_LENGTH: u64 = 120;
+/// A message-info word's one extra capability (seL4's `extraCaps`, bits 7..8).
+#[cfg(feature = "hw_target")]
+const ONE_EXTRA_CAP: u64 = 1 << 7;
+/// Three capabilities, the most a message carries (`seL4_MsgMaxExtraCaps`).
+#[cfg(feature = "hw_target")]
+const THREE_EXTRA_CAPS: u64 = 3 << 7;
+/// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
+/// `AlignmentError`), and the refusal frame's `x1` that carries it.
+#[cfg(feature = "hw_target")]
+const ALIGNMENT_ERROR: u64 = 43;
 /// Read, write, user and cacheable (`PagePermissions.ofNat`).
 #[cfg(feature = "hw_target")]
 const FRAME_PERMS: u64 = 0b11011;
@@ -3185,56 +3201,506 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [0; 4],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
-        // Long forms whose overflow words cross the IPC buffer's page: the
-        // frame's copy mapped at the next page, both threads' buffers set
-        // 512 bytes short of the frame's end, so overflow slots 0 to 63 lie on
-        // the frame and slot 64 on, the message's last, on the next page.  A
-        // signal and a wait of that length (routed as overflowed, each walk
-        // two pages, the wait taking the badge the signal left), and the long
-        // send to a waiting receiver, which reads the sender's
-        // words across both pages and writes the receiver's in place; then
-        // the buffers, the mapping and the copy put back.
+        // An IPC buffer the validator refuses: aligned to 512 but not to the
+        // buffer's 1024-byte size, so it would cross the frame's end (seL4
+        // requires the buffer to lie in one frame).  Then full-length forms
+        // with both threads' buffers in the frame's last 1024 bytes: a signal
+        // and a wait (routed as overflowed, the wait taking the badge the
+        // signal left), and the long send to a waiting receiver, which reads
+        // all 116 of the sender's overflow words and writes the receiver's in
+        // place; then the buffers put back.
+        RoundTrip {
+            returns: Some((
+                (crate::svc_dispatch::ERROR_LABEL_BASE + ALIGNMENT_ERROR) << 9,
+                None,
+            )),
+            ..invocation(
+                "half-aligned-ipc-buffer",
+                TCB_SET_IPC_BUFFER,
+                ROOT_TCB_CAP,
+                [HALF_ALIGNED_IPC_BUFFER, 0, 0, 0],
+            )
+        },
         invocation(
-            "crossing-frame-copy",
-            CSPACE_COPY,
-            CNODE_CAP,
-            [FRAME_SLOT, MOVE_SLOT, 0, 0],
-        ),
-        invocation(
-            "crossing-map-copy",
-            VSPACE_MAP,
-            VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
-        ),
-        invocation(
-            "crossing-root-ipc-buffer",
+            "tail-root-ipc-buffer",
             TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
-            [CROSSING_IPC_BUFFER, 0, 0, 0],
+            [TAIL_IPC_BUFFER, 0, 0, 0],
         ),
         invocation(
-            "crossing-partner-ipc-buffer",
+            "tail-partner-ipc-buffer",
             TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
-            [CROSSING_IPC_BUFFER, 0, 0, 0],
+            [TAIL_IPC_BUFFER, 0, 0, 0],
         ),
         RoundTrip {
-            msg_len: CROSSING_MESSAGE_LENGTH,
-            ..signal("signal-crossing-page", 1)
+            msg_len: TAIL_MESSAGE_LENGTH,
+            ..signal("signal-tail-buffer", 1)
         },
         RoundTrip {
-            name: "wait-crossing-page",
+            name: "wait-tail-buffer",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
-            msg_len: CROSSING_MESSAGE_LENGTH,
+            msg_len: TAIL_MESSAGE_LENGTH,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
             returns: None,
         },
         kernel_step("mask-ticks", MASK_TICKS_STEP),
+        // The long call to a waiting receiver, which copies all 116 of the
+        // caller's overflow words into the receiver's buffer in place and
+        // blocks the caller for the reply, the suspend answering it; then the
+        // long call that blocks with no receiver waiting (seL4 leaves its
+        // words in its registers and buffer), the receive that copies them
+        // and the full-length reply that answers it, copying the partner's
+        // overflow words into the caller's buffer in place.
+        invocation("tail-call-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "tail-call-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "tail-call-to-receiver",
+            CALL,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [0x66, 0x67],
+            true,
+        ),
+        invocation("tail-call-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        invocation(
+            "tail-call-resume-again",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "tail-call-blocks",
+            CALL,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [0x68, 0x69],
+            true,
+        ),
+        partner_step(
+            "tail-call-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        partner_step(
+            "tail-call-partner-replies",
+            REPLY,
+            REPLY_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [0x77, 0x78],
+            false,
+        ),
+        kernel_step("tail-call-partner-yield", YIELD),
+        invocation(
+            "tail-call-suspend-again",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // The short call that blocks with no receiver waiting, and the receive
+        // that takes it, staging the caller's message and reply object in
+        // place beside the long-call take above.
+        invocation(
+            "short-call-take-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "short-call-blocks",
+            CALL,
+            ENDPOINT_CAP,
+            2,
+            [0x71, 0x72],
+            true,
+        ),
+        partner_step(
+            "short-call-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        partner_step(
+            "short-call-partner-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0x73, 0],
+            false,
+        ),
+        kernel_step("short-call-partner-yield", YIELD),
+        invocation(
+            "short-call-take-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // The long send that blocks with no receiver waiting, and the receive
+        // that takes it, copying the sender's overflow words into its own
+        // buffer in place.
+        invocation(
+            "tail-send-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "tail-send-blocks",
+            SEND,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [0x58, 0x59],
+            true,
+        ),
+        partner_step(
+            "tail-send-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+        kernel_step("tail-send-blocks-partner-yield", YIELD),
+        invocation(
+            "tail-send-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // The long call answered by a full-length reply-receive that then blocks
+        // on the endpoint with no sender waiting, copying the partner's
+        // overflow words, from its slot 1 on, into the caller's buffer in
+        // place (the reply-receive's MR0 names the reply capability).
+        invocation(
+            "tail-reply-recv-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "tail-reply-recv-call",
+            CALL,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [0x6a, 0x6b],
+            true,
+        ),
+        partner_step(
+            "tail-reply-recv-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        partner_step(
+            "tail-reply-recv-blocks",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [REPLY_CAP, 0x7a],
+            true,
+        ),
+        invocation(
+            "tail-reply-recv-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A send and a call carrying one capability, each within the inline
+        // words and at full length, that block with no receiver waiting: seL4
+        // looks a message's capabilities up only at the rendezvous, so the
+        // blocked sender holds its request and nothing is transferred.  The
+        // partner then suspends the root task, which cancels its send, and
+        // restarts it before suspending itself.
+        invocation(
+            "caps-send-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-send-blocks",
+            SEND,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 2,
+            [0x5a, 0],
+            true,
+        ),
+        invocation(
+            "caps-send-blocks-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-send-blocks-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-send-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-send-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-long-send-blocks",
+            SEND,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+            [0x5c, 0],
+            true,
+        ),
+        invocation(
+            "caps-long-send-blocks-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-send-blocks-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-send-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-call-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-call-blocks",
+            CALL,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 2,
+            [0x6c, 0],
+            true,
+        ),
+        invocation(
+            "caps-call-blocks-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-call-blocks-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-call-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-call-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-long-call-blocks",
+            CALL,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+            [0x6e, 0],
+            true,
+        ),
+        invocation(
+            "caps-long-call-blocks-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-call-blocks-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-long-call-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A send carrying one capability to a waiting receiver whose receive window
+        // (its CSpace root's slots 0-2, all occupied in the shared CNode) is
+        // closed: the transfer installs nothing and the rendezvous writes in
+        // place, as seL4's `transferCaps` with no receive slot.
+        invocation(
+            "caps-send-rendezvous-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-send-rendezvous-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "caps-send-rendezvous-to-receiver",
+            SEND,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 1,
+            [0x74, NOTIFICATION_CAP],
+            false,
+        ),
+        kernel_step("caps-send-rendezvous-yield", YIELD),
+        invocation(
+            "caps-send-rendezvous-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // The same with three capabilities, the most a message carries.
+        invocation(
+            "caps-three-send-rendezvous-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-three-send-rendezvous-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "caps-three-send-rendezvous-to-receiver",
+            SEND,
+            ENDPOINT_CAP,
+            THREE_EXTRA_CAPS | 1,
+            [0x75, NOTIFICATION_CAP],
+            false,
+        ),
+        kernel_step("caps-three-send-rendezvous-yield", YIELD),
+        invocation(
+            "caps-three-send-rendezvous-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A call carrying one capability to a waiting receiver whose receive window
+        // is closed, blocking the caller for the reply, the suspend answering it.
+        invocation(
+            "caps-call-rendezvous-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-call-rendezvous-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "caps-call-rendezvous-to-receiver",
+            CALL,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 1,
+            [0x76, NOTIFICATION_CAP],
+            true,
+        ),
+        invocation(
+            "caps-call-rendezvous-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // The same with three capabilities.
+        invocation(
+            "caps-three-call-rendezvous-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-three-call-rendezvous-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "caps-three-call-rendezvous-to-receiver",
+            CALL,
+            ENDPOINT_CAP,
+            THREE_EXTRA_CAPS | 1,
+            [0x77, NOTIFICATION_CAP],
+            true,
+        ),
+        invocation(
+            "caps-three-call-rendezvous-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A send carrying a capability that blocks with no receiver waiting,
+        // and the receive that takes it into a closed receive window.
+        invocation("caps-take-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "caps-take-send-blocks",
+            SEND,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 1,
+            [0x78, NOTIFICATION_CAP],
+            true,
+        ),
+        partner_step(
+            "caps-take-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+        kernel_step("caps-take-partner-yield", YIELD),
+        invocation("caps-take-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         configure(
-            "crossing-send-configure",
+            "tail-send-configure",
             [
                 SCHED_CONTEXT_CAP,
                 REFILL_BUDGET,
@@ -3243,19 +3709,19 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             ],
         ),
         invocation(
-            "crossing-send-bind-partner",
+            "tail-send-bind-partner",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
             [PARTNER_TCB_CAP, 0, 0, 0],
         ),
         invocation(
-            "crossing-send-resume-partner",
+            "tail-send-resume-partner",
             TCB_RESUME,
             PARTNER_TCB_CAP,
             [0; 4],
         ),
         partner_step(
-            "crossing-send-root-receives",
+            "tail-send-root-receives",
             RECEIVE,
             ENDPOINT_CAP,
             0,
@@ -3263,50 +3729,33 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             true,
         ),
         partner_step(
-            "crossing-send-to-receiver",
+            "tail-send-to-receiver",
             SEND,
             ENDPOINT_CAP,
-            CROSSING_MESSAGE_LENGTH,
+            TAIL_MESSAGE_LENGTH,
             [0x55, 0x56],
             false,
         ),
-        kernel_step("crossing-send-partner-yield", YIELD),
+        kernel_step("tail-send-partner-yield", YIELD),
+        invocation("tail-send-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         invocation(
-            "crossing-send-suspend",
-            TCB_SUSPEND,
-            PARTNER_TCB_CAP,
-            [0; 4],
-        ),
-        invocation(
-            "crossing-send-unbind",
+            "tail-send-unbind",
             SCHED_CONTEXT_UNBIND,
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         invocation(
-            "crossing-root-ipc-buffer-back",
+            "tail-root-ipc-buffer-back",
             TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
             [FRAME_VADDR, 0, 0, 0],
         ),
         invocation(
-            "crossing-partner-ipc-buffer-back",
+            "tail-partner-ipc-buffer-back",
             TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
             [FRAME_VADDR, 0, 0, 0],
-        ),
-        invocation(
-            "crossing-unmap-copy",
-            VSPACE_UNMAP,
-            VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
-        ),
-        invocation(
-            "crossing-copy-delete",
-            CSPACE_DELETE,
-            CNODE_CAP,
-            [MOVE_SLOT, 0, 0, 0],
         ),
         // The same with the partner holding the image's scheduling context, so its
         // call donates the context to the root task: the suspend's reply arm takes

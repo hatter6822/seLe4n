@@ -15,7 +15,9 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDonatedInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyUnheldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ClosedReceiveWindow
 import SeLe4n.Kernel.IPC.CrossCore.LongSendInPlace
+import SeLe4n.Kernel.IPC.CrossCore.LongReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace
 
 /-!
@@ -66,108 +68,28 @@ theorem routedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
       fun badge grant _ => (sendFrame_of_routed st tid tcb hT capAddr mi hR tid.toObjId badge
         grant).1⟩
 
-/-- WS-ZA ZA6.35: the decode a long send's frame reads to: the inline words
-and then its overflow slots' words, as `.send`. -/
-def longSendDecode (st : SystemState) (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile)
-    (capAddr : SeLe4n.CPtr) (mi : MessageInfo) : SyscallDecodeResult :=
-  { capAddr, msgInfo := mi, syscallId := .send,
-    msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
-      (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
-    inlineCount := 4, overflowCount := mi.length - 4 }
-
-@[simp] theorem longSendDecode_overflowCount (st : SystemState) (tid : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) :
-    (longSendDecode st tid rf capAddr mi).overflowCount = mi.length - 4 := rfl
-
-/-- WS-ZA ZA6.35: **a routed long send whose overflow slots all read decodes**
-to the inline words and then those slots' words, as `.send`, with no
-capabilities (`longSendDecode`). -/
-theorem decodeSyscallArgsFromState_of_routedSendLong_ok (st : SystemState)
-    (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
-    (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
-      .ok (longSendDecode st tid rf capAddr mi) := by
-  obtain ⟨_, _, _, hDec⟩ :=
-    decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
-  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  have hM := mapM_readOverflowWord st tid (mi.length - 4) 0
-    (fun j _ h2 => hRead j (by omega))
-  rw [hDec]
-  unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
-    bind, Except.bind, pure, Except.pure, longSendDecode]
-  rfl
-
-/-- …and one with an overflow slot that does not read is refused as the decode
-refuses it. -/
-theorem decodeSyscallArgsFromState_of_routedSendLong_error (st : SystemState)
-    (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
-    (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
-    (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
-      .error .invalidMessageInfo := by
-  obtain ⟨hGt, _, _, hDec⟩ :=
-    decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
-  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  rw [hSz] at hGt
-  rw [hDec]
-  unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range',
-    mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
-    bind, Except.bind]
-
-/-- **A frame that routes as a long send**, read for the sender `tid` whose
-saved registers `rf` are and whose overflow slots all read: it asks to
-transfer no capability, and a present sender's message is its inline words
-and then the words its IPC buffer holds (`longSendMessage`). -/
-theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+/-- **The message a routed capability-carrying frame of at most four words
+sends**: its inline words, as a capability-free send's
+(`decodeSyscallArgsFromState_of_routedTransferring`). -/
+theorem routedTransferringMessage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
-    (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
-          longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
-  obtain ⟨hGt, hMax, hX, -⟩ :=
-    decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
-  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
-  rw [hSz] at hGt
-  have hD := decodeSyscallArgsFromState_of_routedSendLong_ok st tid rf capAddr mi hR hRead
-  cases hT : st.getTcb? tid with
-  | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
-    unfold sendCapRequest
-    split
-    · rfl
-    · rw [hT]
-  | some tcb =>
-    have hRf := hFrame tcb hT
-    subst hRf
-    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
-    · unfold sendCapRequest
-      split
-      · rfl
-      · rw [hT]
-        simp only [sendPayloadCapRequest, senderFrameCapRequest, blockedSenderDecode, hD]
-        have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs
-            (longSendDecode st tid tcb.registerContext capAddr mi)).isEmpty = true := by
-          unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs longSendDecode
-          simp only [hX]
-          rfl
-        simp only [hE, ↓reduceIte]
-        split <;> rfl
-    · simp only [sendPayloadMessage, senderFrameDecode, hT, blockedSenderDecode, hD,
-        senderFrameMessage, extractMessageRegisters, longSendMessage, longSendDecode]
-      congr 1
-      apply Array.extract_eq_self_of_le
-      simp only [Array.size_append, Architecture.regMessageRegs, Array.size_map, hSz,
-        List.size_toArray, overflowRegsFrom_length]
-      omega
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi)
+    (hLen : mi.length ≤ 4) :
+    ∀ badge grant, (st.getTcb? tid).isSome = true →
+      sendPayloadMessage st tid (.frame badge grant) =
+        { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf mi.length,
+          badge := badge } := by
+  intro badge grant hS
+  obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp hS
+  have hRf := hFrame tcb hT
+  subst hRf
+  obtain ⟨-, -, -, hShort, -⟩ :=
+    Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedTransferring st tid _ _ 32
+      sid capAddr mi hR
+  have hDec : blockedSenderDecode st tid tcb = _ := hShort hLen
+  simp only [sendPayloadMessage, senderFrameDecode, hT, hDec, senderFrameMessage]
+  rfl
 
 /-- The checked send arm (`dispatchWithCapChecked`'s `.send` case) through the
 specification's send, refusing in the state it was handed
@@ -247,6 +169,223 @@ theorem sendDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   simp only [sendWakesInPlaceCode_eq, storeSendRendezvousCode_eq, TCB.ofOptCode_queueNextCode,
     hE, hH, hSTcb, hT, hW, hM, ↓reduceIte]
   rfl
+
+/-- **A checked send to a waiting receiver whose receive window is closed, in
+place**: the capabilities the sender asks to transfer find no empty slot in the
+receiver's CSpace (`receiveWindowClosed`), so the transfer installs none and
+writes nothing (`receiveTransferCaps_of_windowClosed`); the send is the
+in-place rendezvous and the receiver's wake, as one that transfers nothing. -/
+theorem sendDispatchChecked_inPlace_windowClosed (ctx : LabelingContext) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender r : SeLe4n.ThreadId) (rt : TCB)
+    (payload : SendPayload) (msg : IpcMessage) (executingCore : Concurrency.CoreId)
+    (hM : sendPayloadMessage st sender payload = msg)
+    (hE : st.getEndpoint? endpointId = some ep) (hH : ep.receiveQ.head = some r)
+    (hT : st.getTcb? r = some rt) (hS : (st.getTcb? sender).isSome = true)
+    (hW : sendWakesInPlace st endpointId r rt.queueNext = true)
+    (hWin : receiveWindowClosed st r = true)
+    (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+      (ctx.endpointLabelOf endpointId) = true) :
+    ∃ s : CapTransferSummary, s.installedCount = 0 ∧
+    endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
+        (SeLe4n.Slot.ofNat 0) executingCore st =
+      ((wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r executingCore).1,
+        .ok (s, (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r
+            executingCore).2)) := by
+  obtain ⟨sTcb, hSTcb⟩ := Option.isSome_iff_exists.mp hS
+  have hNo : st.objects.noResizeDue := by
+    simp only [sendWakesInPlace, Bool.and_eq_true] at hW
+    exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2
+  have hAg : CapSpaceAgrees st
+      (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r executingCore).1 :=
+    (CapSpaceAgrees.storeSendRendezvous st endpointId r rt.queueNext msg hNo).trans
+      (CapSpaceAgrees.wakeThread _ r executingCore
+        (by rw [storeSendRendezvous_eq_with]
+            exact storeSendRendezvousWith_noResizeDue st endpointId r rt.queueNext _ hNo))
+  unfold receiveWindowClosed cspaceWindowClosed at hWin
+  simp only [hT] at hWin
+  cases hCn : st.getCNode? rt.cspaceRoot with
+  | none => simp only [hCn] at hWin; cases hWin
+  | some cn =>
+  simp only [hCn, Option.isNone_iff_eq_none] at hWin
+  unfold endpointSendCrossCoreDispatchChecked
+  rw [if_pos hFlow]
+  unfold endpointSendDualWithCapsOnCore
+  rw [endpointSendDualOnCore_eq_impl]
+  unfold endpointSendDualOnCoreImpl
+  simp only [sendWakesInPlaceCode_eq, storeSendRendezvousCode_eq, TCB.ofOptCode_queueNextCode,
+    hE, hH, hSTcb, hT, hW, hM, ↓reduceIte, Option.bind_some]
+  split
+  · exact ⟨_, rfl, rfl⟩
+  · have hR : lookupCspaceRoot
+        (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r executingCore).1 r =
+        some rt.cspaceRoot := by
+      rw [hAg.cspaceRoot r]; simp only [lookupCspaceRoot, hT, Option.map_some]
+    obtain ⟨s, hX, hC⟩ := receiveTransferCaps_of_windowClosed
+      (sendCapRequest st endpointId sender payload) rt.cspaceRoot cn _
+      ((hAg.getCNode? _).trans hCn) hWin
+    simp only [hR, hX]
+    exact ⟨s, hC, rfl⟩
+
+/-- **A call's transfer into a closed receive window is the identity**: once
+the call rendezvous returns a state agreeing with the pre-state on every CSpace,
+the WithCaps call returns that state, installing nothing. -/
+theorem endpointCallWithCapsOnCore_windowClosed (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (payload : SendPayload) (core : Concurrency.CoreId)
+    (st st' : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (hCall : endpointCallOnCore endpointId caller payload core st = (st', .ok sgi))
+    (hRecv : (st.getEndpoint? endpointId).bind (·.receiveQ.head) = some r)
+    (hAg : CapSpaceAgrees st st') (hWin : receiveWindowClosed st r = true) :
+    ∃ s : CapTransferSummary, s.installedCount = 0 ∧
+      endpointCallWithCapsOnCore endpointId caller payload (SeLe4n.Slot.ofNat 0) core st =
+        (st', .ok (s, sgi)) := by
+  unfold receiveWindowClosed cspaceWindowClosed at hWin
+  cases hT : st.getTcb? r with
+  | none => simp only [hT] at hWin; cases hWin
+  | some rt =>
+  simp only [hT] at hWin
+  cases hCn : st.getCNode? rt.cspaceRoot with
+  | none => simp only [hCn] at hWin; cases hWin
+  | some cn =>
+  simp only [hCn, Option.isNone_iff_eq_none] at hWin
+  unfold endpointCallWithCapsOnCore
+  simp only [hCall, hRecv]
+  split
+  · exact ⟨_, rfl, rfl⟩
+  · have hR : lookupCspaceRoot st' r = some rt.cspaceRoot := by
+      rw [hAg.cspaceRoot r]; simp only [lookupCspaceRoot, hT, Option.map_some]
+    obtain ⟨s, hX, hC⟩ := receiveTransferCaps_of_windowClosed
+      (sendCapRequest st endpointId caller payload) rt.cspaceRoot cn _
+      ((hAg.getCNode? _).trans hCn) hWin
+    simp only [hR, hX]
+    exact ⟨s, hC, rfl⟩
+
+/-- **The checked call dispatch to a receiver whose receive window is closed,
+in place**: as `callDispatchChecked_inPlace`, the capabilities the caller asks
+to transfer installing nothing. -/
+theorem callDispatchChecked_inPlace_windowClosed (ctx : LabelingContext) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
+    (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage)
+    (core : Concurrency.CoreId)
+    (hM : sendPayloadMessage st caller payload = msg)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
+    (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
+    (hG : callWakesInPlace st endpointId caller r rt rid = true)
+    (hWin : receiveWindowClosed st r = true)
+    (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
+      (ctx.endpointLabelOf endpointId) = true) :
+    ∃ s : CapTransferSummary, s.installedCount = 0 ∧ ∃ sgi,
+      endpointCallCrossCoreDispatchChecked ctx endpointId caller payload (SeLe4n.Slot.ofNat 0)
+        core st = (performCallRendezvous st endpointId caller r rt.queueNext rid msg core,
+          .ok (s, sgi)) := by
+  have hG' := hG
+  simp only [callWakesInPlace, sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG'
+  have hCRes : caller.isReserved = false := hG'.1.1.1.1.1.1.1.1.2
+  have hRRes : r.isReserved = false := hG'.1.1.1.1.1.1.1.1.1.1.1.1.1.1
+  have hNo : st.objects.noResizeDue :=
+    RobinHood.RHTable.noResizeDue_of_findsInPlace hG'.1.1.1.1.1.1.1.1.1.1.1.1.2
+  have hEp : st.getEndpoint? endpointId = some ep :=
+    (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
+  obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg core hM
+    hE hH hT hRid hG
+  obtain ⟨s, hC, hW⟩ := endpointCallWithCapsOnCore_windowClosed endpointId caller r payload core st
+    _ _ hEq (by simp only [hEp, Option.bind_some, hH])
+    (CapSpaceAgrees.storeCallRendezvous st endpointId caller r rt.queueNext rid msg core hNo) hWin
+  obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff caller).mpr hCRes)
+  obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff r).mpr hRRes)
+  have hcv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv
+  have hrv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hrv
+  refine ⟨s, hC, (wakeThread ((storePopHead st endpointId true r rt.queueNext).updateTcb r
+    (callReceiverTcb msg)) r core).2, ?_⟩
+  unfold endpointCallCrossCoreDispatchChecked
+  rw [if_pos hFlow]
+  unfold endpointCallCrossCoreDispatch
+  rw [hW]
+  simp only [hEp, hH, hcv, hrv]
+  unfold applyCallDonationOnCore
+  rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]
+  simp only [hcv', hrv', hDon]
+  rfl
+
+/-- **What a sender blocked by a routed capability-carrying send of at most
+four words sends**: the inline words of its saved registers, under its badge
+(`decodeSyscallArgsFromState_of_routedTransferring`). -/
+theorem blockedSender_of_routedTransferring (st : SystemState) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (h : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+      .transferring .send capAddr mi)
+    (hLen : mi.length ≤ 4) (hF : sTcb.ipcFaultSend = false) :
+    blockedSenderMessage st s sTcb =
+      { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
+          sTcb.registerContext mi.length,
+        badge := sTcb.ipcBadgeView } := by
+  obtain ⟨-, -, -, hShort, -⟩ :=
+    Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedTransferring st s _ _ 32
+      .send capAddr mi h
+  unfold blockedSenderMessage blockedSenderMessageOf blockedSenderDecode
+  rw [hShort hLen]
+  simp only [hF, Bool.false_eq_true, ↓reduceIte, senderFrameMessage]
+  rfl
+
+/-- **The take of a blocked capability-carrying send by a receiver whose
+receive window is closed, in place**: as `receiveTake_delivered`, the
+capabilities the sender asks to transfer finding no empty slot in the
+receiver's CSpace, so the WithCaps receive installs none and writes nothing
+(`receiveTransferCaps_of_windowClosed`). -/
+theorem receiveTakeCaps_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (root : SeLe4n.ObjId) (core : Concurrency.CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveTakesInPlace st endpointId receiver s sTcb = true)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+      .transferring .send capAddr mi)
+    (hLen : mi.length ≤ 4) (hF : sTcb.ipcFaultSend = false)
+    (hWin : cspaceWindowClosed st root = true) :
+    let P := storePopHead st endpointId false s sTcb.queueNext
+    let W := wakeThread (P.updateTcb s receiverReady) s core
+    let S4 := W.1.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb))
+    let f := Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext
+      mi.length sTcb.ipcBadgeView
+    (∃ summary : CapTransferSummary, summary.installedCount = 0 ∧
+      endpointReceiveDualWithCapsOnCore endpointId receiver replyId root (SeLe4n.Slot.ofNat 0)
+        core st = (S4, .ok (s, summary, W.2))) ∧
+      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))
+          receiver 0 =
+        performReceiveDelivered st endpointId s sTcb.queueNextCode receiver core
+          f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := by
+  intro P W S4 f
+  obtain ⟨hTake, h2, h3⟩ := receiveTake_delivered_of_message st endpointId ep receiver replyId
+    core s sTcb mi hE hH hT hG
+    (fun X => blockedSender_of_routedTransferring X s sTcb capAddr mi hR hLen hF)
+  refine ⟨?_, h2, h3⟩
+  have hG' := hG
+  simp only [receiveTakesInPlace, sendWakesInPlace, Bool.and_eq_true] at hG'
+  have hNo : st.objects.noResizeDue :=
+    RobinHood.RHTable.noResizeDue_of_findsInPlace hG'.1.1.1.1.1.1.1.1.1.1.2
+  obtain ⟨hAgP, hNoP⟩ := CapSpaceAgrees.storePopHead st endpointId false s sTcb.queueNext hNo
+  have hNo1 := updateTcb_noResizeDue P s receiverReady hNoP
+  have hAg : CapSpaceAgrees st S4 :=
+    hAgP.trans ((CapSpaceAgrees.updateTcb P s receiverReady (fun _ => rfl) hNoP).trans
+      ((CapSpaceAgrees.wakeThread _ s core hNo1).trans
+        (CapSpaceAgrees.updateTcb _ receiver _ (fun _ => rfl)
+          (wakeThread_noResizeDue _ _ _ hNo1))))
+  unfold cspaceWindowClosed at hWin
+  cases hCn : st.getCNode? root with
+  | none => simp only [hCn] at hWin; cases hWin
+  | some cn =>
+  simp only [hCn, Option.isNone_iff_eq_none] at hWin
+  have hSnd : receiveRendezvousSender? st endpointId = some s := by
+    simp only [receiveRendezvousSender?, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE,
+      Option.bind_some, hH]
+  obtain ⟨summary, hX, hC⟩ := receiveTransferCaps_of_windowClosed
+    (receiveCapRequest st endpointId) root cn S4 ((hAg.getCNode? _).trans hCn) hWin
+  refine ⟨summary, hC, ?_⟩
+  unfold endpointReceiveDualWithCapsOnCore
+  rw [hTake]
+  simp only [hSnd, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
+  erw [hX]
 
 /-- WS-ZA ZA4.7: **the staged send rendezvous is the delivered one** for a
 message of at most four words read in the sender's registers. -/
@@ -707,7 +846,9 @@ passive server, every check of the rendezvous and of the donation passing first
 (`callDonatesInPlace`), writes its donation and the replenishment migration
 between the two home cores in place too (`performCallDonating`,
 `callDispatchChecked_donating_inPlace`; the homes are read here, before the
-first write); any other call takes the general arm. -/
+first write); a call with no receiver waiting whose checks all pass blocks in
+place, its words left in its registers (`callBlock_inPlace_eq`), as the send's
+does; any other call takes the general arm. -/
 @[inline] def endpointCallCheckedArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
@@ -741,7 +882,14 @@ first write); any other call takes the general arm. -/
                         else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                 | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
-            | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+            | none =>
+                if sendBlocksFast st epId tid ep.sendTailCode &&
+                    endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                      (ctx.endpointLabelOf epId) then
+                  .ok ((), recordSendCapWords (removeRunnableOnCore
+                    (storeCallBlock st epId tid ep.sendTailCode) tid executingCore) tid
+                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
         | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
     | _ => .error (.invalidCapability, st)
 
@@ -795,7 +943,33 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
               · rfl
           · rfl
         · rfl
-      · rfl
+      · next hH =>
+        split
+        · next hG =>
+          simp only [Bool.and_eq_true] at hG
+          obtain ⟨hB, hFlow⟩ := hG
+          unfold sendBlocksFast at hB
+          split at hB
+          · next t hT =>
+            simp only [Bool.and_eq_true] at hB
+            obtain ⟨hA, hIP⟩ := hB
+            rw [enqueuesInPlaceCode_eq,
+              show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl] at hIP
+            have hNoRecv : (match st.getEndpoint? epId with
+                | some ep => ep.receiveQ.head | none => none) = none := by
+              rw [hE]; exact hH
+            unfold endpointCallCheckedArmGeneralR
+            simp only [hTgt, hE, Option.bind_some, hH]
+            unfold endpointCallCrossCoreDispatchChecked
+            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ _ hNoRecv,
+              endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ (hReq epId _ _),
+              callBlock_inPlace_eq _ _ _ _ _ ep t
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP,
+              recordSendCapWords_eq]
+            rfl
+          · cases hB
+        · rfl
     · rfl
   · next hTgt =>
     unfold endpointCallCheckedArmGeneralR
@@ -907,6 +1081,251 @@ theorem dispatchCallCheckedR_eq (ctx : LabelingContext)
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAudit.length
     st ref rf capAddr mi hCall hSlot hFrame hR hRef
+    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
+  simp only [hCall] at hArm ⊢
+  exact hArm
+
+/-! ### The long call -/
+
+/-- The checked call arm for a caller whose saved registers `rf` hold a message
+of `len` words, more than four, and no capability addresses, refusing in the
+state it was handed (`endpointCallLongCheckedArmR_eq`).  A rendezvous whose
+checks all pass before any write (`callWakesInPlace`) wakes the receiver
+without the message, then writes the inline words into its saved registers and
+copies the rest from the caller's IPC buffer into the receiver's, word by word
+(`performCallDeliveredLong`, `stageWokenDelivery_performCallRendezvous_long`),
+as seL4's `copyMRs` does; any other call takes the general arm. -/
+@[inline] def endpointCallLongCheckedArmR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .object epId =>
+        match st.getEndpoint? epId with
+        | some ep =>
+            match ep.receiveQ.head with
+            | some r =>
+                match st.getTcb? r with
+                | some rt =>
+                    match rt.pendingReceiveReply with
+                    | some rid =>
+                        if (st.getTcb? tid).isSome &&
+                            endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                              (ctx.endpointLabelOf epId) &&
+                            callWakesInPlace st epId tid r rt rid then
+                          .ok ((), performCallDeliveredLong st epId tid r rt.queueNextCode rid
+                            layout rf len cap.badgeWord cap.badged executingCore)
+                        else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+                    | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+                | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+            | none =>
+                if sendBlocksFast st epId tid ep.sendTailCode &&
+                    endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                      (ctx.endpointLabelOf epId) then
+                  .ok ((), recordSendCapWords (removeRunnableOnCore
+                    (storeCallBlock st epId tid ep.sendTailCode) tid executingCore) tid
+                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+        | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+    | _ => .error (.invalidCapability, st)
+
+/-- The long call arm is the general one for a caller whose saved registers
+`rf` route as a capability-free long call whose overflow slots all read: the
+words it writes in place are the words the specification's call reads from
+that frame (`routedLongCallerFrame`). -/
+theorem endpointCallLongCheckedArmR_eq_general (ctx : LabelingContext)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (st : SystemState)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
+    endpointCallLongCheckedArmR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore cap
+        st =
+      endpointCallCheckedArmGeneralR ctx tid executingCore cap st := by
+  obtain ⟨hGt, -, -, -⟩ :=
+    Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32
+      capAddr mi hR
+  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+  rw [hSz] at hGt
+  have hL : ¬ mi.length ≤ 4 := by omega
+  obtain ⟨hReq, hMsg⟩ := routedLongCallerFrame st tid rf capAddr mi hFrame hR hRead
+  unfold endpointCallLongCheckedArmR
+  split
+  · next epId hTgt =>
+    split
+    · next ep hE =>
+      split
+      · next r hH =>
+        split
+        · next rt hT =>
+          split
+          · next rid hRid =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true] at hG
+              obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
+              obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace ctx st epId ep tid r rt rid
+                (.frame cap.badge (cap.rights.mem .grant)) _ (SeLe4n.Slot.ofNat 0) executingCore
+                (hMsg cap.badge (cap.rights.mem .grant) hS) (hReq epId _ _)
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+              simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
+              rw [← TCB.optCode_queueNext]
+              rw [← stageWokenDelivery_performCallRendezvous_long st epId tid r rt.queueNext rid
+                SeLe4n.arm64DefaultLayout rf mi.length cap.badgeWord cap.badged executingCore
+                (callWakesInPlace_noResizeDue hW) (callWakesInPlace_ne hW) hSz (by omega)]
+              rfl
+            · rfl
+          · rfl
+        · rfl
+      · next hH =>
+        split
+        · next hG =>
+          simp only [Bool.and_eq_true] at hG
+          obtain ⟨hB, hFlow⟩ := hG
+          unfold sendBlocksFast at hB
+          split at hB
+          · next t hT =>
+            simp only [Bool.and_eq_true] at hB
+            obtain ⟨hA, hIP⟩ := hB
+            rw [enqueuesInPlaceCode_eq,
+              show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl] at hIP
+            have hNoRecv : (match st.getEndpoint? epId with
+                | some ep => ep.receiveQ.head | none => none) = none := by
+              rw [hE]; exact hH
+            unfold endpointCallCheckedArmGeneralR
+            simp only [hTgt, hE, Option.bind_some, hH]
+            unfold endpointCallCrossCoreDispatchChecked
+            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ _ hNoRecv,
+              endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ (hReq epId _ _),
+              callBlock_inPlace_eq _ _ _ _ _ ep t
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP,
+              recordSendCapWords_eq]
+            rfl
+          · cases hB
+        · rfl
+    · rfl
+  · next hTgt =>
+    unfold endpointCallCheckedArmGeneralR
+    split
+    · next epId h => exact absurd h (hTgt epId)
+    · rfl
+
+/-- The long call arm is the specification's. -/
+theorem endpointCallLongCheckedArmR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (st : SystemState)
+    (hCall : decoded.syscallId = .call)
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
+    endpointCallLongCheckedArmR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore cap
+        st =
+      RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
+        st := by
+  rw [endpointCallLongCheckedArmR_eq_general ctx rf capAddr mi tid executingCore cap st hFrame hR
+      hRead,
+    endpointCallCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap hCall hSlot]
+
+/-- The long call's slot check, gate, arm and taint step on the capability its
+operand resolved to (`endpointCallLongCheckedArmR`); a call moves content as a send does (`sendTaintStep`).
+Every refusal carries the state it was handed (`callLongOperandArmThenTaintR_eq`). -/
+@[inline] def callLongOperandArmThenTaintR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
+    (operand : Option Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match operand with
+    | none => .error (.invalidCapability, st)
+    | some cap =>
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if cap.hasRight requiredRight then
+          let headCode := sendTaintHeadCode st cap
+          withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
+          match endpointCallLongCheckedArmR ctx layout rf len tid executingCore cap st with
+          | .error refusal => .error refusal
+          | .ok ((), stPost) => .ok ((), sendTaintStep headCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+        else .error (.illegalAuthority, st)
+
+theorem callLongOperandArmThenTaintR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (preEpoch : Nat) (preLength : Nat)
+    (st : SystemState) (ref : CSpaceAddr)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hCall : decoded.syscallId = .call)
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w)
+    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
+    callLongOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore
+        gate.requiredRight
+        (SystemState.lookupSlotCap st ref) st =
+      RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
+        (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+    hCall, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
+    syscallLookupCap, syscallResolveCap, hRef]
+  simp only [sendTaintStep_eq st tid decoded (.inr hCall) (wT := st.taintWordsAt tid.toObjId)
+    (hT := decode_taintWordsAt st _), hOperand]
+  generalize SystemState.lookupSlotCap st ref = operand
+  rcases operand with _ | cap
+  · rfl
+  · simp only [callLongOperandArmThenTaintR]
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+    · simp only [hIdle, ↓reduceIte]
+    · by_cases hRight : cap.hasRight gate.requiredRight = true
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+          TaintWords.mk_fields]
+        rw [endpointCallLongCheckedArmR_eq ctx decoded tid executingCore gate cap rf capAddr mi st
+          hCall hSlot hFrame hR hRead]
+        simp only [RefusalCarrying.ofKernel]
+        rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
+          _ | ⟨⟨⟩, stPost⟩ <;> rfl
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+
+/-- The long call's dispatch for a caller whose saved registers and IPC buffer
+hold its message and no capability addresses: `dispatchOperandCheckedR` with the call's arm
+(`dispatchCallLongCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchCallLongCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore
+    (callLongOperandArmThenTaintR ctx layout rf len tid executingCore (syscallRequiredRight .call))
+
+theorem dispatchCallLongCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hCall : decoded.syscallId = .call)
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
+    dispatchCallLongCheckedR ctx decoded.capAddr SeLe4n.arm64DefaultLayout rf mi.length tid
+        executingCore st =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
+  apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hCall]; decide) st
+  intro tcb rootCn ref hTcb hRoot hRef
+  have hArm := callLongOperandArmThenTaintR_eq ctx decoded tid executingCore
+    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    st.declassificationAuditEpoch st.declassificationAudit.length
+    st ref rf capAddr mi hCall hSlot hFrame hR hRead hRef
     (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hCall] at hArm ⊢
   exact hArm
@@ -1409,6 +1828,651 @@ theorem dispatchReplyCheckedR_eq (ctx : LabelingContext)
   simp only [hReply] at hArm ⊢
   exact hArm
 
+/-! ### The capability-carrying send and call -/
+
+/-- The checked send arm for a sender whose frame asks to transfer
+capabilities, through the specification's send.  Every refusal carries the
+state the arm was handed, as the specification's refusal does: a send whose
+receiver holds no CSpace root is refused after the rendezvous's writes
+(`endpointSendDualWithCapsOnCore`'s fail-closed `.invalidCapability`), and the
+whole send is rolled back (`endpointSendCapsGeneralR_eq`). -/
+def endpointSendCapsGeneralR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .object epId =>
+        let woken? := (st.getEndpoint? epId).bind (·.receiveQ.head)
+        match endpointSendCrossCoreDispatchChecked ctx epId tid
+            (.frame cap.badge (cap.rights.mem .grant)) (SeLe4n.Slot.ofNat 0)
+            executingCore st with
+        | (st', .ok (summary, _)) =>
+            .ok ((), Architecture.stageWokenDelivery (clearWokenReceiverStashPure woken? st')
+              woken? summary.installedCount)
+        | (_, .error e) => .error (e, st)
+    | _ => .error (.invalidCapability, st)
+
+theorem endpointSendCapsGeneralR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (hSend : decoded.syscallId = .send)
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0) :
+    endpointSendCapsGeneralR ctx tid executingCore cap =
+      RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap) := by
+  funext st
+  simp only [endpointSendCapsGeneralR, RefusalCarrying.ofKernel, dispatchWithCapChecked,
+    dispatchCapabilityOnly, hSend, hSlot]
+  cases cap.target with
+  | object epId =>
+    simp only []
+    rcases endpointSendCrossCoreDispatchChecked ctx epId tid
+        (.frame cap.badge (cap.rights.mem .grant)) (SeLe4n.Slot.ofNat 0) executingCore st with
+      ⟨st', _ | ⟨summary, sgi⟩⟩
+    · rfl
+    · simp only [clearWokenReceiverStash_eq_pure]
+  | _ => rfl
+
+/-- The checked send arm for a sender whose frame asks to transfer
+capabilities, refusing in the state it was handed
+(`endpointSendCapsCheckedArmR_eq`).  With no receiver waiting a send resolves
+no capability (seL4's `sendIPC` blocks the sender with its message and
+capability addresses where they are; the receive that takes it resolves
+them), so one whose checks all pass blocks in place
+(`sendBlock_inPlace_eq`).  One of at most four words that meets a receiver
+whose receive window is closed (`receiveWindowClosed`: no empty slot to
+install in, so the transfer installs none and writes nothing, as seL4's
+`transferCaps` with no receive slot) writes the rendezvous in place
+(`sendDispatchChecked_inPlace_windowClosed`); any other resolves the
+capabilities in its CSpace and installs them in the receiver's through the
+specification's transfer (`endpointSendCapsGeneralR`). -/
+@[inline] def endpointSendCapsCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
+    (len : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .object epId =>
+        match st.getEndpoint? epId with
+        | some ep =>
+            match ep.receiveQ.head with
+            | some r =>
+                match st.getTcb? r with
+                | some rt =>
+                    if decide (len ≤ 4) && (st.getTcb? tid).isSome &&
+                        endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                          (ctx.endpointLabelOf epId) &&
+                        sendWakesInPlaceCode st epId r rt.queueNextCode &&
+                        receiveWindowClosed st r then
+                      .ok ((), performSendDelivered st epId r rt.queueNextCode
+                        SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged executingCore)
+                    else endpointSendCapsGeneralR ctx tid executingCore cap st
+                | none => endpointSendCapsGeneralR ctx tid executingCore cap st
+            | none =>
+                if sendBlocksFast st epId tid ep.sendTailCode &&
+                    endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                      (ctx.endpointLabelOf epId) then
+                  .ok ((), recordSendCapWords (removeRunnableOnCore
+                    (storeSendBlock st epId tid ep.sendTailCode) tid executingCore) tid
+                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                else endpointSendCapsGeneralR ctx tid executingCore cap st
+        | none => endpointSendCapsGeneralR ctx tid executingCore cap st
+    | _ => .error (.invalidCapability, st)
+
+theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (st : SystemState)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi) :
+    endpointSendCapsCheckedArmR ctx rf mi.length tid executingCore cap st =
+      endpointSendCapsGeneralR ctx tid executingCore cap st := by
+  unfold endpointSendCapsCheckedArmR
+  split
+  · next epId hTgt =>
+    split
+    · next ep hE =>
+      split
+      · next r hH =>
+        split
+        · next rt hT =>
+          split
+          · next hG =>
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
+            obtain ⟨⟨⟨⟨hShort, hS⟩, hFlow⟩, hW⟩, hWin⟩ := hG
+            rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
+            have hNo : st.objects.noResizeDue := by
+              simp only [sendWakesInPlace, Bool.and_eq_true] at hW
+              exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2
+            have hSz : Architecture.regMessageLength SeLe4n.arm64DefaultLayout mi.length ≤ 4 := by
+              unfold Architecture.regMessageLength; omega
+            have hMsg := routedTransferringMessage st tid rf capAddr mi sid hFrame hR hShort
+            unfold endpointSendCapsGeneralR
+            simp only [hTgt, hE, Option.bind_some, hH]
+            obtain ⟨s, hC, hD⟩ := sendDispatchChecked_inPlace_windowClosed ctx st epId ep tid r rt
+              _ _ executingCore (hMsg _ _ hS) hE hH hT hS hW hWin hFlow
+            rw [hD]
+            simp only [hC]
+            rw [← TCB.optCode_queueNext,
+              ← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
+            rfl
+          · rfl
+        · rfl
+      · next hH =>
+        split
+        · next hG =>
+          simp only [Bool.and_eq_true] at hG
+          obtain ⟨hB, hFlow⟩ := hG
+          unfold sendBlocksFast at hB
+          split at hB
+          · next t hT =>
+            simp only [Bool.and_eq_true] at hB
+            obtain ⟨hA, hIP⟩ := hB
+            rw [enqueuesInPlaceCode_eq,
+              show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl] at hIP
+            have hReq := sendCapRequest_of_no_receiver st epId tid
+              (.frame cap.badge (cap.rights.mem .grant)) (by simp only [hE, Option.bind_some, hH])
+            unfold endpointSendCapsGeneralR
+            simp only [hTgt, hE, Option.bind_some, hH]
+            unfold endpointSendCrossCoreDispatchChecked
+            rw [if_pos hFlow,
+              endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ _ hReq,
+              sendBlock_inPlace_eq _ _ _ _ _ ep t
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP,
+              recordSendCapWords_eq]
+            rfl
+          · cases hB
+        · rfl
+    · rfl
+  · next hTgt =>
+    unfold endpointSendCapsGeneralR
+    split
+    · next epId h => exact absurd h (hTgt epId)
+    · rfl
+
+theorem endpointSendCapsCheckedArmR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (st : SystemState) (hSend : decoded.syscallId = .send)
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi) :
+    endpointSendCapsCheckedArmR ctx rf mi.length tid executingCore cap st =
+      RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
+        st := by
+  rw [endpointSendCapsCheckedArmR_eq_general ctx rf capAddr mi sid tid executingCore cap st
+      hFrame hR,
+    endpointSendCapsGeneralR_eq ctx decoded tid executingCore gate cap hSend hSlot]
+
+/-- The checked call arm for a caller whose frame asks to transfer
+capabilities, refusing in the state it was handed
+(`endpointCallCapsCheckedArmR_eq`): one with no receiver waiting whose checks
+all pass blocks in place, resolving nothing (`callBlock_inPlace_eq`); one of
+at most four words that meets a receiver whose receive window is closed writes
+the call rendezvous in place, the transfer installing nothing
+(`callDispatchChecked_inPlace_windowClosed`); any other takes the general
+arm, which resolves and installs the capabilities at the rendezvous through
+the specification's transfer and refuses in the state it was handed
+(`endpointCallCheckedArmGeneralR`). -/
+@[inline] def endpointCallCapsCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
+    (len : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .object epId =>
+        match st.getEndpoint? epId with
+        | some ep =>
+            match ep.receiveQ.head with
+            | some r =>
+                match st.getTcb? r with
+                | some rt =>
+                    match rt.pendingReceiveReply with
+                    | some rid =>
+                        if decide (len ≤ 4) && (st.getTcb? tid).isSome &&
+                            endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                              (ctx.endpointLabelOf epId) &&
+                            callWakesInPlace st epId tid r rt rid &&
+                            receiveWindowClosed st r then
+                          .ok ((), callRendezvousDelivered st epId tid r rt.queueNextCode rid
+                            SeLe4n.arm64DefaultLayout rf len cap.badgeWord cap.badged
+                            executingCore)
+                        else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+                    | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+                | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+            | none =>
+                if sendBlocksFast st epId tid ep.sendTailCode &&
+                    endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                      (ctx.endpointLabelOf epId) then
+                  .ok ((), recordSendCapWords (removeRunnableOnCore
+                    (storeCallBlock st epId tid ep.sendTailCode) tid executingCore) tid
+                    cap.badgeWord cap.badged (cap.rights.mem .grant))
+                else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+        | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+    | _ => .error (.invalidCapability, st)
+
+theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (st : SystemState)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi) :
+    endpointCallCapsCheckedArmR ctx rf mi.length tid executingCore cap st =
+      endpointCallCheckedArmGeneralR ctx tid executingCore cap st := by
+  unfold endpointCallCapsCheckedArmR
+  split
+  · next epId hTgt =>
+    split
+    · next ep hE =>
+      split
+      · next r hH =>
+        split
+        · next rt hT =>
+          split
+          · next rid hRid =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
+              obtain ⟨⟨⟨⟨hShort, hS⟩, hFlow⟩, hW⟩, hWin⟩ := hG
+              have hMsg := routedTransferringMessage st tid rf capAddr mi sid hFrame hR hShort
+              obtain ⟨s, hC, sgi, hD⟩ := callDispatchChecked_inPlace_windowClosed ctx st epId ep
+                tid r rt rid (.frame cap.badge (cap.rights.mem .grant)) _ executingCore
+                (hMsg cap.badge (cap.rights.mem .grant) hS)
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hWin hFlow
+              rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
+              simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD, hC]
+              rfl
+            · rfl
+          · rfl
+        · rfl
+      · next hH =>
+        split
+        · next hG =>
+          simp only [Bool.and_eq_true] at hG
+          obtain ⟨hB, hFlow⟩ := hG
+          unfold sendBlocksFast at hB
+          split at hB
+          · next t hT =>
+            simp only [Bool.and_eq_true] at hB
+            obtain ⟨hA, hIP⟩ := hB
+            rw [enqueuesInPlaceCode_eq,
+              show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl] at hIP
+            have hNoRecv : (match st.getEndpoint? epId with
+                | some ep => ep.receiveQ.head | none => none) = none := by
+              rw [hE]; exact hH
+            have hReq := sendCapRequest_of_no_receiver st epId tid
+              (.frame cap.badge (cap.rights.mem .grant)) (by simp only [hE, Option.bind_some, hH])
+            unfold endpointCallCheckedArmGeneralR
+            simp only [hTgt, hE, Option.bind_some, hH]
+            unfold endpointCallCrossCoreDispatchChecked
+            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ _ hNoRecv,
+              endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ hReq,
+              callBlock_inPlace_eq _ _ _ _ _ ep t
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP,
+              recordSendCapWords_eq]
+            rfl
+          · cases hB
+        · rfl
+    · rfl
+  · next hTgt =>
+    unfold endpointCallCheckedArmGeneralR
+    split
+    · next epId h => exact absurd h (hTgt epId)
+    · rfl
+
+theorem endpointCallCapsCheckedArmR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (st : SystemState) (hCall : decoded.syscallId = .call)
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi) :
+    endpointCallCapsCheckedArmR ctx rf mi.length tid executingCore cap st =
+      RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
+        st := by
+  rw [endpointCallCapsCheckedArmR_eq_general ctx rf capAddr mi sid tid executingCore cap st
+      hFrame hR,
+    endpointCallCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap hCall hSlot]
+
+/-- The arm of a send or a call that transfers capabilities. -/
+@[inline] def transferringCheckedArmR (ctx : LabelingContext) (sid : SyscallId)
+    (rf : SeLe4n.RegisterFile) (len : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  match sid with
+  | .call => endpointCallCapsCheckedArmR ctx rf len tid executingCore cap
+  | _ => endpointSendCapsCheckedArmR ctx rf len tid executingCore cap
+
+theorem transferringCheckedArmR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (sid : SyscallId) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (st : SystemState) (hSid : decoded.syscallId = sid) (hSC : sid = .send ∨ sid = .call)
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi) :
+    transferringCheckedArmR ctx sid rf mi.length tid executingCore cap st =
+      RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
+        st := by
+  rcases hSC with rfl | rfl
+  · exact endpointSendCapsCheckedArmR_eq ctx decoded tid executingCore gate cap st hSid hSlot
+      rf capAddr mi _ hFrame hR
+  · exact endpointCallCapsCheckedArmR_eq ctx decoded tid executingCore gate cap st hSid hSlot
+      rf capAddr mi _ hFrame hR
+
+/-- The capability-carrying send's or call's slot check, gate, arm and taint
+step on the capability its operand resolved to; it moves content as a send
+does (`sendTaintStep`).  Every refusal carries the state it was handed
+(`transferringOperandArmThenTaintR_eq`). -/
+@[inline] def transferringOperandArmThenTaintR (ctx : LabelingContext) (sid : SyscallId)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
+    (operand : Option Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match operand with
+    | none => .error (.invalidCapability, st)
+    | some cap =>
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if cap.hasRight requiredRight then
+          let headCode := sendTaintHeadCode st cap
+          withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
+          match transferringCheckedArmR ctx sid rf len tid executingCore cap st with
+          | .error refusal => .error refusal
+          | .ok ((), stPost) =>
+              .ok ((), sendTaintStep headCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+        else .error (.illegalAuthority, st)
+
+theorem transferringOperandArmThenTaintR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (sid : SyscallId) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (preEpoch : Nat) (preLength : Nat)
+    (st : SystemState) (ref : CSpaceAddr)
+    (hSid : decoded.syscallId = sid) (hSC : sid = .send ∨ sid = .call)
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
+    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi) :
+    transferringOperandArmThenTaintR ctx sid rf mi.length tid executingCore gate.requiredRight
+        (SystemState.lookupSlotCap st ref) st =
+      RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
+        (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
+  have hTk : syscallChecksTargetFirst decoded.syscallId = false := by
+    rcases hSC with rfl | rfl <;> rw [hSid] <;> rfl
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+    hTk, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
+    syscallLookupCap, syscallResolveCap, hRef]
+  simp only [sendTaintStep_eq st tid decoded (by rcases hSC with rfl | rfl <;> simp [hSid])
+    (wT := st.taintWordsAt tid.toObjId) (hT := decode_taintWordsAt st _), hOperand]
+  generalize SystemState.lookupSlotCap st ref = operand
+  rcases operand with _ | cap
+  · rfl
+  · simp only [transferringOperandArmThenTaintR]
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+    · simp only [hIdle, ↓reduceIte]
+    · by_cases hRight : cap.hasRight gate.requiredRight = true
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+          TaintWords.mk_fields]
+        rw [transferringCheckedArmR_eq ctx decoded sid tid executingCore gate cap st hSid hSC
+          hSlot rf capAddr mi hFrame hR]
+        simp only [RefusalCarrying.ofKernel]
+        rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
+          _ | ⟨⟨⟩, stPost⟩ <;> rfl
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+
+/-- The capability-carrying send's or call's operand dispatch
+(`dispatchTransferringCheckedR_eq`).  A specification: the compiled entry runs
+the arm out of line. -/
+noncomputable def dispatchTransferringCheckedR (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (len : Nat) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore
+    (transferringOperandArmThenTaintR ctx sid rf len tid executingCore (syscallRequiredRight sid))
+
+theorem dispatchTransferringCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (sid : SyscallId) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hSid : decoded.syscallId = sid) (hSC : sid = .send ∨ sid = .call)
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .transferring sid capAddr mi) :
+    dispatchTransferringCheckedR ctx sid decoded.capAddr rf mi.length tid executingCore st =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
+  subst hSid
+  apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _
+    (by rcases hSC with h | h <;> rw [h] <;> decide) st
+  intro tcb rootCn ref hTcb hRoot hRef
+  exact transferringOperandArmThenTaintR_eq ctx decoded _ tid executingCore
+    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    st.declassificationAuditEpoch st.declassificationAudit.length
+    st ref rfl hSC hSlot hRef
+    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef) rf capAddr mi
+    hFrame hR
+
+/-! ### The long reply -/
+
+/-- The words a long reply's general arm reads: the inline words in `rf`, then
+the replier's overflow slots in `st` (`longMessageDecode`'s). -/
+@[inline] def longReplyRegs (st : SystemState) (tid : SeLe4n.ThreadId)
+    (rf : SeLe4n.RegisterFile) (len : Nat) : Array SeLe4n.RegValue :=
+  Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
+    (overflowRegsFrom st tid 0 (len - 4)).toArray
+
+/-- The long reply's general arm, its words read where it runs. -/
+@[inline] def endpointReplyLongGeneralR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
+    (len extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (cap : Capability) : RefusalCarrying Unit :=
+  fun st => endpointReplyCheckedArmGeneralR ctx
+    { length := len, extraCaps := extraCaps, label := label } (longReplyRegs st tid rf len) tid
+    executingCore cap st
+
+/-- The checked reply arm for a reply of `len` words, more than four, refusing
+in the state it was handed (`endpointReplyLongCheckedArmR_eq`).  A reply to an
+unfaulted caller blocked on it whose checks all pass before any write
+(`replyWakesInPlace`) wakes the caller without the message, runs the server's
+priority walk, then writes the inline words into the caller's saved registers
+and copies the rest from the replier's IPC buffer into the caller's, word by
+word (`performReplyDeliveredLong`, `performReplyRendezvous_eq_deliveredLong`),
+as seL4's `doReplyTransfer` does; any other reply takes the general arm. -/
+@[inline] def endpointReplyLongCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
+    (len extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (cap : Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .replyCap rid0 =>
+        match st.getReply? rid0 with
+        | some rp0 =>
+            match rp0.caller with
+            | some c =>
+                match st.getTcb? c with
+                | some ct =>
+                    match ct.ipcState with
+                    | .blockedOnReply _ (some server) =>
+                        match ct.replyObject with
+                        | some rid =>
+                            if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
+                                !server.isReserved && !ct.faultWords.isFault &&
+                                replyWakesInPlace st c ct rid then
+                              .ok ((), performReplyDeliveredLong st c server rid rf len tid
+                                cap.badgeWord cap.badged executingCore)
+                            else endpointReplyLongGeneralR ctx rf len extraCaps label tid
+                              executingCore cap st
+                        | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid
+                            executingCore cap st
+                    | _ => endpointReplyLongGeneralR ctx rf len extraCaps label tid
+                        executingCore cap st
+                | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid
+                    executingCore cap st
+            | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid executingCore cap st
+        | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid executingCore cap st
+    | _ => .error (.invalidCapability, st)
+
+theorem endpointReplyLongCheckedArmR_eq_general (ctx : LabelingContext)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (st : SystemState)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi) :
+    endpointReplyLongCheckedArmR ctx rf mi.length mi.extraCaps mi.label tid executingCore cap st =
+      endpointReplyLongGeneralR ctx rf mi.length mi.extraCaps mi.label tid executingCore cap st := by
+  obtain ⟨hGt, hMax, -⟩ :=
+    Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReplyLong st tid _ rf 32
+      capAddr mi hR
+  have hSz4 : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+  rw [hSz4] at hGt
+  unfold endpointReplyLongCheckedArmR
+  split
+  · next rid0 hTgt =>
+    split
+    · next rp0 hR0 =>
+      split
+      · next c hC =>
+        split
+        · next ct hT =>
+          split
+          · next ep server hIpc =>
+            split
+            · next rid hRO =>
+              split
+              · next hG =>
+                simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+                obtain ⟨⟨⟨hFlow, hSRes⟩, hNoF⟩, hW⟩ := hG
+                have hAns : replyAnsweredCaller? st rid0 = some c := by
+                  rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                simp only [endpointReplyLongGeneralR, endpointReplyCheckedArmGeneralR, hTgt, hAns,
+                  hFlow, ↓reduceIte]
+                rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid
+                  { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
+                  (longReplyRegs st tid rf mi.length) _ executingCore
+                  (by simp only [extractMessageRegisters, Array.size_extract]; omega)
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hNoF hFlow]
+                have hMsg := longMessageDecode_message .reply st tid rf capAddr mi cap.badge
+                  (by omega) hMax
+                simp only [longMessageDecode] at hMsg
+                simp only [longReplyRegs]
+                rw [hMsg]
+                exact congrArg (fun x => Except.ok ((), x))
+                  (performReplyRendezvous_eq_deliveredLong st c server rid rf mi.length tid
+                    cap.badgeWord cap.badged executingCore (replyWakesInPlace_noResizeDue hW)
+                    (by omega)).symm
+              · rfl
+            · rfl
+          · rfl
+        · rfl
+      · rfl
+    · rfl
+  · next hTgt =>
+    unfold endpointReplyLongGeneralR endpointReplyCheckedArmGeneralR
+    split
+    · next rid h => exact absurd h (hTgt rid)
+    · rfl
+
+/-- The long reply arm is the specification's. -/
+theorem endpointReplyLongCheckedArmR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (st : SystemState)
+    (hReply : decoded.syscallId = .reply)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr decoded.msgInfo)
+    (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs) :
+    endpointReplyLongCheckedArmR ctx rf decoded.msgInfo.length decoded.msgInfo.extraCaps
+        decoded.msgInfo.label tid executingCore cap st =
+      RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
+        st := by
+  rw [endpointReplyLongCheckedArmR_eq_general ctx rf capAddr decoded.msgInfo tid executingCore cap
+    st hR]
+  unfold endpointReplyLongGeneralR
+  rw [hRegs]
+  exact congrFun (endpointReplyCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap hReply) st
+
+/-- The long reply's slot check, gate, arm and taint step on the capability its
+operand resolved to (`endpointReplyLongCheckedArmR`); its content reaches the
+answered caller (`replyTaintCaller?`) as the short reply's does.  Every refusal
+carries the state it was handed (`replyLongOperandArmThenTaintR_eq`). -/
+@[inline] def replyLongOperandArmThenTaintR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
+    (len extraCaps label : Nat) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
+    (operand : Option Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match operand with
+    | none => .error (.invalidCapability, st)
+    | some cap =>
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if cap.hasRight requiredRight then
+          let callerCode := ThreadId.optCode (replyTaintCaller? st cap)
+          withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
+          match endpointReplyLongCheckedArmR ctx rf len extraCaps label tid executingCore cap st with
+          | .error refusal => .error refusal
+          | .ok ((), stPost) => .ok ((), sendTaintStep callerCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+        else .error (.illegalAuthority, st)
+
+theorem replyLongOperandArmThenTaintR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (preEpoch : Nat) (preLength : Nat)
+    (st : SystemState) (ref : CSpaceAddr)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr)
+    (hReply : decoded.syscallId = .reply)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr decoded.msgInfo)
+    (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs)
+    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
+    (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
+    replyLongOperandArmThenTaintR ctx rf decoded.msgInfo.length decoded.msgInfo.extraCaps
+        decoded.msgInfo.label tid executingCore
+        gate.requiredRight (SystemState.lookupSlotCap st ref) st =
+      RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
+        (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+    hReply, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
+    syscallLookupCap, syscallResolveCap, hRef]
+  simp only [replyTaintStep_eq st tid decoded hReply (wT := st.taintWordsAt tid.toObjId)
+    (hT := decode_taintWordsAt st _), hOperand]
+  generalize SystemState.lookupSlotCap st ref = operand
+  rcases operand with _ | cap
+  · rfl
+  · simp only [replyLongOperandArmThenTaintR]
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+    · simp only [hIdle, ↓reduceIte]
+    · by_cases hRight : cap.hasRight gate.requiredRight = true
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+          TaintWords.mk_fields]
+        rw [endpointReplyLongCheckedArmR_eq ctx decoded tid executingCore gate cap rf capAddr st
+          hReply hR hRegs]
+        simp only [RefusalCarrying.ofKernel]
+        rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
+          _ | ⟨⟨⟩, stPost⟩ <;> rfl
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+
+/-- The long reply's operand dispatch. -/
+noncomputable def dispatchReplyLongCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+    (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore
+    (replyLongOperandArmThenTaintR ctx rf len extraCaps label tid executingCore
+      (syscallRequiredRight .reply))
+
+theorem dispatchReplyLongCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hReply : decoded.syscallId = .reply)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr decoded.msgInfo)
+    (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs) :
+    dispatchReplyLongCheckedR ctx decoded.capAddr rf decoded.msgInfo.length
+        decoded.msgInfo.extraCaps decoded.msgInfo.label tid executingCore st =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
+  apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hReply]; decide) st
+  intro tcb rootCn ref hTcb hRoot hRef
+  have hArm := replyLongOperandArmThenTaintR_eq ctx decoded tid executingCore
+    { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+      capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+    st.declassificationAuditEpoch st.declassificationAudit.length
+    st ref rf capAddr hReply hR hRegs hRef
+    (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
+  simp only [hReply] at hArm ⊢
+  exact hArm
+
 /-- WS-ZA ZA4.7: the tail of an endpoint's receive queue, as its code
 (`SeLe4n.ThreadId.optCode`): read without building an `Option`. -/
 @[inline] def receiveQueueTailCode (st : SystemState) (endpointId : SeLe4n.ObjId) : Nat :=
@@ -1615,6 +2679,45 @@ other rendezvous goes through the specification
               .ok ((), performReceiveDelivered st epId s sTcb.queueNextCode tid executingCore
                 f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
             else endpointReceiveRendezvousR epId tid replyCode executingCore st
+          | .sendLong _ mi =>
+            if !sTcb.ipcFaultSend && receiveTakesInPlace st epId tid s sTcb &&
+                overflowWordsRead st s sTcb (mi.length - 4) then
+              let rf := sTcb.registerContext
+              .ok ((), performReceiveDeliveredLong st epId s sTcb.queueNextCode tid executingCore
+                mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
+                (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 0)
+                (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 1)
+                (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 2)
+                (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 3))
+            else endpointReceiveRendezvousR epId tid replyCode executingCore st
+          | .callLong _ mi =>
+            match SeLe4n.ReplyId.ofOptCode replyCode with
+            | some rid =>
+              if !sTcb.ipcFaultSend && receiveCallTakesInPlace st epId tid s sTcb rid &&
+                  overflowWordsRead st s sTcb (mi.length - 4) then
+                .ok ((), performReceiveCallDeliveredLong st epId s sTcb.queueNextCode tid rid
+                  executingCore sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
+                  sTcb.ipcBadged)
+              else endpointReceiveRendezvousR epId tid replyCode executingCore st
+            | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
+          | .call _ mi =>
+            match SeLe4n.ReplyId.ofOptCode replyCode with
+            | some rid =>
+              if !sTcb.ipcFaultSend && receiveCallTakesInPlace st epId tid s sTcb rid then
+                .ok ((), performReceiveCallDelivered st epId s sTcb.queueNextCode tid rid
+                  executingCore sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
+                  sTcb.ipcBadged)
+              else endpointReceiveRendezvousR epId tid replyCode executingCore st
+            | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
+          | .transferring .send _ mi =>
+            if decide (mi.length ≤ 4) && !sTcb.ipcFaultSend &&
+                receiveTakesInPlace st epId tid s sTcb &&
+                cspaceWindowClosed st (callerCspaceRoot st tid) then
+              let f := Architecture.regMessageFrameW SeLe4n.arm64DefaultLayout sTcb.registerContext
+                mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
+              .ok ((), performReceiveDelivered st epId s sTcb.queueNextCode tid executingCore
+                f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
+            else endpointReceiveRendezvousR epId tid replyCode executingCore st
           | _ => endpointReceiveRendezvousR epId tid replyCode executingCore st
         | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
       | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
@@ -1671,6 +2774,83 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
             rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
             unfold endpointReceiveRendezvousR
             simp only [hEp, Option.bind_some, hH, h1, h2, CapTransferSummary.installedCount_empty]
+            rw [h3]
+          · rfl
+        · next capAddr mi hR =>
+          split
+          · next hG =>
+            simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+            obtain ⟨⟨hF, hG⟩, hOk⟩ := hG
+            have hTs : st.getTcb? s = some sTcb := hT
+            obtain ⟨-, hMax, -, -⟩ :=
+              decodeSyscallArgsFromState_of_routedSendLong st s _ _ 32 capAddr mi hR
+            have hn : mi.length - 4 ≤ Architecture.IpcBufferRead.maxOverflowSlots := by
+              have h116 : Architecture.IpcBufferRead.maxOverflowSlots = 116 := rfl
+              have h120 : maxMessageRegisters = 120 := rfl
+              rw [h116]; rw [h120] at hMax; omega
+            obtain ⟨h1, h2, h3⟩ := receiveTakeLong_delivered st epId ep tid
+              (SeLe4n.ReplyId.ofOptCode replyCode) (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0)
+              executingCore s sTcb capAddr mi ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp)
+              hH ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hR
+              (overflowWordsRead_spec hTs hn hOk) hF
+            unfold endpointReceiveRendezvousR
+            simp only [hEp, Option.bind_some, hH, h1, h2, CapTransferSummary.installedCount_empty]
+            rw [h3]
+          · rfl
+        · next capAddr mi hR =>
+          split
+          · next rid hRid =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+              obtain ⟨⟨hF, hG⟩, hOk⟩ := hG
+              have hTs : st.getTcb? s = some sTcb := hT
+              obtain ⟨-, hMax, -, -⟩ :=
+                decodeSyscallArgsFromState_of_routedCallLong st s _ _ 32 capAddr mi hR
+              have hn : mi.length - 4 ≤ Architecture.IpcBufferRead.maxOverflowSlots := by
+                have h116 : Architecture.IpcBufferRead.maxOverflowSlots = 116 := rfl
+                have h120 : maxMessageRegisters = 120 := rfl
+                rw [h116]; rw [h120] at hMax; omega
+              obtain ⟨h1, h2, h3⟩ := receiveCallLongTake_delivered st epId ep tid rid
+                (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore s sTcb capAddr mi
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hF hR
+                (overflowWordsRead_spec hTs hn hOk)
+              unfold endpointReceiveRendezvousR
+              simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
+                CapTransferSummary.installedCount_empty]
+              rw [h3]
+            · rfl
+          · rfl
+        · next capAddr mi hR =>
+          split
+          · next rid hRid =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+              obtain ⟨hF, hG⟩ := hG
+              obtain ⟨h1, h2, h3⟩ := receiveCallTake_delivered st epId ep tid rid
+                (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore s sTcb capAddr mi
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hF hR
+              unfold endpointReceiveRendezvousR
+              simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
+                CapTransferSummary.installedCount_empty]
+              rw [h3]
+            · rfl
+          · rfl
+        · next capAddr mi hR =>
+          split
+          · next hG =>
+            simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
+            obtain ⟨⟨⟨hLen, hF⟩, hG⟩, hWin⟩ := hG
+            obtain ⟨⟨summary, hC, h1⟩, h2, h3⟩ := receiveTakeCaps_delivered st epId ep tid
+              (SeLe4n.ReplyId.ofOptCode replyCode) (callerCspaceRoot st tid) executingCore s sTcb
+              capAddr mi ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp)
+              hH ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hR hLen hF hWin
+            rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
+            unfold endpointReceiveRendezvousR
+            simp only [hEp, Option.bind_some, hH, h1, h2, hC]
             rw [h3]
           · rfl
         all_goals rfl

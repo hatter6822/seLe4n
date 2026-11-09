@@ -1,3 +1,144 @@
+## v0.37.4 — the IPC buffer lies in one frame; long call, reply and reply-receive and capability-carrying send and call routed in place
+
+The decode-path follow-up's IPC stage.
+
+- **The IPC buffer is aligned to its size, 1024 bytes** (`ipcBufferAlignment`,
+  `rust/sele4n-abi/src/args/tcb.rs`'s `IPC_BUFFER_ALIGNMENT`), as seL4's
+  64-bit `seL4_IPCBufferSizeBits = 10` requires, so a buffer the validator
+  admits lies in one frame (`ipcBuffer_within_page`): its 120 words fit the
+  1024 bytes (`ipcBufferWords_within_buffer`) and every overflow slot resolves
+  through slot 0's page (`maxOverflowSlots_le_firstPageSlots`).  The
+  validator's physical-end bound (`[pa, pa + 1024)`) now covers the whole
+  buffer.  The alignment was 512 bytes, the 32-bit value, which admitted a
+  buffer 512 bytes short of a page's end whose overflow slots from 64 on lay on
+  the next page.  The overflow reads and writes still translate each slot at
+  its own page, so a state built without the validator reads and writes only
+  what its thread maps.
+- **Scenarios**: `half-aligned-ipc-buffer` (a buffer 512 bytes short of the
+  frame's end, refused with `alignmentError`), and the full-length (120-word)
+  `signal-tail-buffer`, `wait-tail-buffer` and long send to a waiting receiver
+  `tail-send-to-receiver` with both buffers in the frame's last 1024 bytes,
+  with their setup and teardown steps.  They replace the page-crossing
+  scenarios, whose buffers the validator now refuses.
+- **Fixture**: the trace's `SetIPCBufferArgs` round trip encodes 1024
+  (`[XVAL-005]`), since 512 is no longer an aligned buffer address.
+- **A call of more than four words** (`RegisterRoutedSyscall.callLong`,
+  `dispatchCallLongCheckedR_eq`, `SeLe4n/Kernel/RoutedArms/CallLong.lean`)
+  copies its overflow words from the caller's IPC buffer into a waiting
+  receiver's in place, as seL4's `copyMRs` does, and blocks the caller for the
+  reply; one that finds no receiver blocks in place, its words left in its
+  registers and buffer, and the receive that takes it copies them in place.
+- **A reply of more than four words** (`.replyLong`,
+  `dispatchReplyLongCheckedR_eq`) copies the replier's overflow words into the
+  caller's buffer in place.
+- **A reply-receive of more than four words** (`.replyRecvLong`,
+  `dispatchReplyRecvLongCheckedR_eq`,
+  `SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvInPlace.lean`): its MR0 names the
+  reply capability, so the reply carries the words from slot 1 on; one that
+  answers an unfaulted caller and then blocks with no sender waiting writes in
+  place (`replyRecvOnCore_blocks_deliveredLong`).
+- **A call within the inline words that blocks** with no receiver waiting now
+  writes in place (`endpointCallCheckedArmR`), as the long call's does.
+- **A send or a call that transfers capabilities** takes its own arm
+  (`.transferring`, `dispatchTransferringCheckedR_eq`,
+  `SeLe4n/Kernel/RoutedArms/Transferring.lean`), within the inline words or
+  past them.  As in seL4, the capabilities are looked up only at the
+  rendezvous: one that blocks writes in place.  One of at most four words that
+  meets a waiting receiver whose receive window is closed -- its CSpace root
+  has no empty slot among the `maxExtraCaps` slots the specification's
+  transfer scans from slot 0 (`receiveWindowClosed`) -- writes the send or
+  call rendezvous in place (`sendDispatchChecked_inPlace_windowClosed`,
+  `callDispatchChecked_inPlace_windowClosed`): the transfer then installs
+  nothing and is the identity on the state
+  (`receiveTransferCaps_of_windowClosed`), as seL4's `transferCaps` with no
+  receive slot transfers none.  The receive that takes a blocked
+  capability-carrying send of at most four words into a closed window writes
+  in place too (`receiveTakeCaps_delivered`).  The window is read in the
+  pre-state: the rendezvous's writes agree with it on every CNode and every
+  thread's CSpace root (`CapSpaceAgrees`,
+  `SeLe4n/Kernel/IPC/CrossCore/ClosedReceiveWindow.lean`), proven without
+  table invariants.  A transfer into an open window still runs the
+  specification's transfer, registered in `docs/REGISTERED_DEBT.md` table C.
+- **The receive that takes a blocked short call** writes in place
+  (`performReceiveCallDelivered`, `receiveCallTake_delivered`), beside the
+  long call's take.
+- **The decoded arm is unreachable from the ABI** with the default layout
+  (`registerRoutedSyscall_viaDecode`, now `≠ .viaDecode`).  It stays for a
+  layout whose registers lie out of bounds or which has no message register.
+- `longReplyDecode` is renamed `longMessageDecode`: the capability-carrying
+  forms decode through it too.
+- **Scenarios**: the long call to a waiting receiver and blocking
+  (`tail-call-*`), the long send blocking and taken (`tail-send-blocks`,
+  `tail-send-partner-takes`), the long reply-receive answering a long call and
+  blocking (`tail-reply-recv-*`), and capability-carrying sends and calls that
+  block, inline and at full length (`caps-send-blocks`,
+  `caps-long-send-blocks`, `caps-call-blocks`, `caps-long-call-blocks`, each
+  cancelled by suspending the root task), the short call's take
+  (`short-call-*`), sends and calls carrying one and three capabilities to a
+  waiting receiver whose window is closed (`caps-send-rendezvous-*`,
+  `caps-three-send-rendezvous-*`, `caps-call-rendezvous-*`,
+  `caps-three-call-rendezvous-*`), and the receive taking a blocked
+  capability-carrying send (`caps-take-*`), with their setup and teardown
+  steps.
+
+### Security
+
+- **Any thread could still make the decoded arm copy the kernel's tables,
+  with a long call, reply or reply-receive, or a capability-carrying send or
+  call.**  Severity: Medium.
+  - *Where:* `decodedRoutedArm` (`SeLe4n/Kernel/RoutedArms/Decoded.lean`),
+    whose `RefusalCarrying.ofKernel (syscallEntryChecked …)` holds the
+    pre-state for a refusal.  `v0.37.3` registered these forms as not yet
+    fixed.
+  - *What it cost:* a transient proportional to the tables the dispatch
+    wrote, inside the entry lock.
+  - *How it could be used:* any thread with an endpoint capability; with the
+    heap filled near its reserve one such call halts the system
+    (`heap_halt`): a local denial of service.
+  - *Fix:* each form takes a routed arm proven equal to the specification;
+    the router hands the decoded arm nothing (`registerRoutedSyscall_viaDecode`).
+  - *Not yet fixed:* a capability transfer into an open receive window, a
+    capability-carrying rendezvous of more than four words, and the take of a
+    blocked capability-carrying call still run the specification's general
+    path (`docs/REGISTERED_DEBT.md` table C).
+  - *Proofs:* `syscallEntryCheckedK_eq_routed` (`@[csimp]`),
+    `dispatchCallLongCheckedR_eq`, `dispatchReplyLongCheckedR_eq`,
+    `dispatchReplyRecvLongCheckedR_eq`, `dispatchTransferringCheckedR_eq`,
+    `registerRoutedSyscall_viaDecode`.  The specification is unchanged.
+  - *Evidence:* the scenarios above read 0 at first call and in steady state.
+- **The receive that took a blocked short call, and a capability-carrying
+  rendezvous, copied the kernel's tables.**  Severity: Medium.
+  - *Where:* `endpointReceiveTakeR` had no arm for a blocked short call, and
+    `endpointSendCapsCheckedArmR` / `endpointCallCapsCheckedArmR` sent every
+    rendezvous, and `endpointReceiveTakeR` every capability-carrying sender,
+    to the specification's general path under `RefusalCarrying.ofKernel`,
+    which holds the pre-state for a refusal.
+  - *What it cost:* measured before the fix as a copy of the object table's
+    slot array (an 8192-byte cell at the exerciser's table size) and of the
+    receiver's CNode (a 2072-byte cell), growing with both; the short call's
+    take read 54 cells.
+  - *How it could be used:* any thread with an endpoint capability, as the
+    decoded arm's above: a local denial of service.
+  - *Fix:* the short call's take writes in place (`receiveCallTake_delivered`);
+    a rendezvous of at most four words into a closed receive window, and the
+    take of a blocked capability-carrying send into one, write in place,
+    the transfer installing nothing (`receiveTransferCaps_of_windowClosed`,
+    `CapSpaceAgrees`).  Each is proven equal to the specification.
+  - *Not yet fixed:* a transfer into an open window (an install), a long
+    capability-carrying rendezvous, and the take of a blocked
+    capability-carrying call (`docs/REGISTERED_DEBT.md` table C).  A thread
+    can still reach the copy by receiving into a CSpace with a free slot
+    among slots 0-2.
+  - *Evidence:* `short-call-partner-takes`, `caps-send-rendezvous-to-receiver`,
+    `caps-three-send-rendezvous-to-receiver`,
+    `caps-call-rendezvous-to-receiver`,
+    `caps-three-call-rendezvous-to-receiver` and `caps-take-partner-takes`
+    read 0 at first call and in steady state.
+- **The IPC buffer's alignment admitted a buffer that crossed its page**
+  (the alignment bullet above).  Severity: Low: a model and documentation gap,
+  not a reachable fault, since each overflow slot is translated at its own
+  page, so a thread reads and writes only what it maps.
+
 ## v0.37.3 — the decoded arm's long, short-argument, refused and page-crossing forms routed in place
 
 The heap-allocation audit's decode-path follow-up.  The routed entry's decoded

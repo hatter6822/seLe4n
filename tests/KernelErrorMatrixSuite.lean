@@ -173,7 +173,7 @@ private def row_alignmentError_ipcBuffer : KernelErrorRejection :=
   { syscall       := "validateIpcBufferAddress"
     expectedError := .alignmentError
     scenarioTag   := "AN11A.2.alignmentError.ipcBuffer"
-    scenarioDesc  := "IPC buffer address must be 512-byte aligned" ++
+    scenarioDesc  := "IPC buffer address must be 1024-byte aligned" ++
                      " (ipcBufferAlignment); a one-byte-offset address" ++
                      " is rejected before any state mutation"
     runScenario   := fun _ =>
@@ -192,11 +192,11 @@ private def row_objectNotFound_ipcBuffer_missing_tcb : KernelErrorRejection :=
                      " collapses absent and wrong-variant into the same" ++
                      " variant)"
     runScenario   := fun _ =>
-      -- 0x200 is aligned (multiple of 512); canonical (within 48-bit VA);
+      -- 0x400 is aligned (multiple of 1024); canonical (within 48-bit VA);
       -- no TCB exists at id 1 in default state.
       SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress
         (default : SystemState) (ThreadId.ofNat 1)
-        (SeLe4n.VAddr.ofNat 0x200) }
+        (SeLe4n.VAddr.ofNat 0x400) }
 
 /-- Row: `decodeCSpaceMintArgs` rejects rights > 0x1F with
 `.invalidArgument`. -/
@@ -404,12 +404,12 @@ private def row_alignmentError_security : KernelErrorRejection :=
     expectedError := .alignmentError
     scenarioTag   := "AN11A.3.alignmentError.security_critical"
     scenarioDesc  := "Security-critical: misaligned IPC buffer (address" ++
-                     " 256, half the 512-byte alignment) rejected before" ++
+                     " 512, half the 1024-byte alignment) rejected before" ++
                      " any state mutation"
     runScenario   := fun _ =>
       SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress
         (default : SystemState) (ThreadId.ofNat 0)
-        (SeLe4n.VAddr.ofNat 256) }
+        (SeLe4n.VAddr.ofNat 512) }
 
 /-- Row: `cspaceInsertSlot` rejects writing to an already-occupied slot
 with `.targetSlotOccupied`. -/
@@ -763,7 +763,7 @@ private def row_invalidArgument_ipcBuffer_missing_vspaceRoot : KernelErrorReject
         objects := (default : SystemState).objects.insert tid.toObjId
           (.tcb tcb) }
       SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress
-        st tid (SeLe4n.VAddr.ofNat 0x200) }
+        st tid (SeLe4n.VAddr.ofNat 0x400) }
 
 /- Note on `applyMachineConfigChecked`: this validator rejects malformed
 `MachineConfig` with an `Except String _` (rather than a `KernelError`),
@@ -818,7 +818,7 @@ private def row_translationFault_ipcBuffer_no_write : KernelErrorRejection :=
     runScenario   := fun _ =>
       let tid : ThreadId := ThreadId.ofNat 800
       let vsRootId : ObjId := ObjId.ofNat 801
-      let vaddr : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x200
+      let vaddr : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x400
       -- Read-only mapping (no write permission)
       let perms : PagePermissions :=
         { read := true, write := false, execute := false, user := true,

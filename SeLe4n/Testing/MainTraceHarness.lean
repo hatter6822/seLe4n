@@ -3034,7 +3034,7 @@ private def runRustXvalVectors : IO Unit := do
 
   -- RUST-XVAL: SetIPCBufferArgs encode/decode roundtrip (D3)
   let ibArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs :=
-    { bufferAddr := (SeLe4n.VAddr.ofNat 512) }   -- 512 is aligned to ipcBufferAlignment (512)
+    { bufferAddr := (SeLe4n.VAddr.ofNat 1024) }   -- 1024 is aligned to ipcBufferAlignment (1024)
   let ibEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs ibArgs
   let ibStub : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 0, extraCaps := 0, label := 0 },

@@ -802,6 +802,25 @@ inductive RegisterRoutedSyscall where
       the first words are the inline message registers and the rest the
       overflow slots of the sender's IPC buffer, as the decode reads them. -/
   | sendLong (capAddr : CPtr) (msgInfo : MessageInfo)
+  /-- A call with no capabilities to transfer whose message runs past the
+      layout's message registers: its operand address and its message info;
+      the first words are the inline message registers and the rest the
+      overflow slots of the caller's IPC buffer, as the decode reads them. -/
+  | callLong (capAddr : CPtr) (msgInfo : MessageInfo)
+  /-- A reply whose message runs past the layout's message registers: its
+      operand address and its message info; the first words are the inline
+      message registers and the rest the overflow slots of the replier's IPC
+      buffer, as the decode reads them. -/
+  | replyLong (capAddr : CPtr) (msgInfo : MessageInfo)
+  /-- A reply-receive whose reply message runs past the layout's message
+      registers: its operand address and its message info, the words read as
+      `replyLong`'s are. -/
+  | replyRecvLong (capAddr : CPtr) (msgInfo : MessageInfo)
+  /-- A send or a call (`sid`) that transfers capabilities, of any length:
+      its operand address and its message info.  Its message is read as the
+      send's or the call's is; the capabilities are looked up at the
+      rendezvous. -/
+  | transferring (sid : SyscallId) (capAddr : CPtr) (msgInfo : MessageInfo)
   /-- WS-ZA ZA5.13: a declassification or an audit call (`routedAudited`) with
       no overflow words: the syscall and its operand address; its arguments
       are the layout's message registers. -/
@@ -1033,12 +1052,12 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
         .wait capAddr
       else if (readReg regs layout.syscallNumReg).val = SyscallId.yield.toNat then
         .yield
-      else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat ∧
-          msgInfo.extraCaps = 0 then
-        .send capAddr msgInfo
-      else if (readReg regs layout.syscallNumReg).val = SyscallId.call.toNat ∧
-          msgInfo.extraCaps = 0 then
-        .call capAddr msgInfo
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat then
+        if msgInfo.extraCaps = 0 then .send capAddr msgInfo
+        else .transferring .send capAddr msgInfo
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.call.toNat then
+        if msgInfo.extraCaps = 0 then .call capAddr msgInfo
+        else .transferring .call capAddr msgInfo
       else if (readReg regs layout.syscallNumReg).val = SyscallId.reply.toNat then
         .reply capAddr msgInfo
       else if (readReg regs layout.syscallNumReg).val = SyscallId.receive.toNat then
@@ -1049,9 +1068,16 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
         .replyRecv capAddr msgInfo
       else
         routedShortTail capAddr (readReg regs layout.syscallNumReg).val
-    else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat ∧
-        msgInfo.extraCaps = 0 then
-      .sendLong capAddr msgInfo
+    else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat then
+      if msgInfo.extraCaps = 0 then .sendLong capAddr msgInfo
+      else .transferring .send capAddr msgInfo
+    else if (readReg regs layout.syscallNumReg).val = SyscallId.call.toNat then
+      if msgInfo.extraCaps = 0 then .callLong capAddr msgInfo
+      else .transferring .call capAddr msgInfo
+    else if (readReg regs layout.syscallNumReg).val = SyscallId.reply.toNat then
+      .replyLong capAddr msgInfo
+    else if (readReg regs layout.syscallNumReg).val = SyscallId.replyRecv.toNat then
+      .replyRecvLong capAddr msgInfo
     else
       routedLongTail capAddr msgInfo.length layout.msgRegs.size
         (readReg regs layout.syscallNumReg).val
@@ -1069,19 +1095,15 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
     registerRoutedSyscallOf layout regs
   else .viaDecode
 
-/-- **What the router hands the decode**, for the default layout: the
-registers name a message info the decode reads and a syscall it knows, and
-the call is a send or a call that transfers capabilities, or a call, a reply
-or a reply-receive of more than the inline words.  Every other register file
-is routed to an arm of its own or refused as the decode refuses it, so these
-are the only forms the entry's decoded arm (`.viaDecode`) still serves. -/
-theorem registerRoutedSyscall_viaDecode (rf : RegisterFile)
-    (h : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .viaDecode) :
-    ∃ mi sid, decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi ∧
-      SyscallId.ofNat? (readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = some sid ∧
-      (((sid = .send ∨ sid = .call) ∧ mi.extraCaps ≠ 0) ∨
-        (SeLe4n.arm64DefaultLayout.msgRegs.size < mi.length ∧
-          (sid = .call ∨ sid = .reply ∨ sid = .replyRecv))) := by
+/-- **The router hands the decode nothing**, for the default layout: every
+register file is routed to an arm of its own or refused as the decode refuses
+it -- a send or a call transferring capabilities included (`.transferring`)
+-- so the entry's decoded arm (`.viaDecode`) is unreachable from the ABI.  It
+stays for a layout whose registers lie out of bounds or which has no message
+register. -/
+theorem registerRoutedSyscall_viaDecode (rf : RegisterFile) :
+    registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 ≠ .viaDecode := by
+  intro h
   unfold registerRoutedSyscall at h
   split at h
   case isFalse hB =>
@@ -1095,22 +1117,18 @@ theorem registerRoutedSyscall_viaDecode (rf : RegisterFile)
   generalize hN : (readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = n at h
   cases hS : SyscallId.ofNat? n with
   | none =>
-    exfalso
     have hNe : ∀ s : SyscallId, n ≠ s.toNat := by
       intro s hs; subst hs; rw [SyscallId.ofNat_toNat] at hS; cases hS
-    simp only [hNe, false_and, if_false, routedShortTail, routedLongTail, hS] at h
+    simp only [hNe, if_false, routedShortTail, routedLongTail, hS] at h
     split at h <;> cases h
   | some sid =>
   have hn := SyscallId.toNat_ofNat hS
   subst hn
-  refine ⟨mi, sid, rfl, rfl, ?_⟩
   cases sid <;> simp only [routedShortTail, routedLongTail, SyscallId.ofNat_toNat] at h <;>
-    simp (config := { decide := true }) at h ⊢ <;>
+    simp (config := { decide := true }) at h <;>
     (repeat' split at h) <;>
     first
       | (cases h; done)
       | (simp_all; done)
-      | (by_cases hL : mi.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size
-         · exact .inl (h hL)
-         · exact .inr (by omega))
+      | omega
 end SeLe4n.Kernel.Architecture.RegisterDecode
