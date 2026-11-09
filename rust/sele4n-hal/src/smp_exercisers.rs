@@ -1522,11 +1522,15 @@ struct RoundTrip {
     /// The success frame's `x1` and, when known, its `x2` that the round trip
     /// must return; `None` checks only that the call succeeded.
     returns: Option<(u64, Option<u64>)>,
-    /// The extra-capability addresses a capability-carrying send or call
-    /// names, written unmeasured, before the call, into the `caps_or_badges`
-    /// words of the caller's IPC buffer at this address (seL4's
-    /// `seL4_SetCap`; the kernel reads them with `lookupExtraCaps`).
-    caps_or_badges: Option<(u64, [u64; 3])>,
+    /// The extra-capability addresses a capability-carrying send, call or
+    /// reply names, and, when given, the receive path after them, written
+    /// unmeasured, before the call, into the `caps_or_badges` and, for the
+    /// path, `receive_cnode`, `receive_index` and `receive_depth` words of the
+    /// IPC buffer at this address (seL4's `seL4_SetCap` and
+    /// `seL4_SetCapReceivePath`; the kernel reads them with `lookupExtraCaps`
+    /// and `getReceiveSlots`).  The two threads share the buffer, so the
+    /// receive path is the receiver's as well.
+    caps_or_badges: Option<(u64, [u64; 3], Option<[u64; 3]>)>,
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1664,19 +1668,12 @@ const RELEASE_SECOND_CORE_STEP: u64 = u64::MAX - 4;
 #[cfg(feature = "hw_target")]
 const RECEIVE_PATH_STEP: u64 = u64::MAX - 5;
 
-/// The granting reply carrying one capability ([`INSTALLING_REPLY`]), issued
-/// unmeasured and unprinted: a transfer that installs runs the specification's
-/// general path, which copies the tables it writes (the "capability transfer
-/// that installs or unwraps" row of `docs/REGISTERED_DEBT.md`), so it has no
-/// reading to pin until the in-place transfer that row names lands.  The steps
-/// after it, which use the installed capability, are measured.
+/// The granting reply carrying one capability, measured: through the reply
+/// capability, granting, naming the notification capability in
+/// `caps_or_badges[0]`, to a caller whose receive path a [`RECEIVE_PATH_STEP`]
+/// set; the transfer installs it in place (`performReplyCapsDelivered`).
 #[cfg(feature = "hw_target")]
-const INSTALLING_REPLY_STEP: u64 = u64::MAX - 6;
-
-/// The reply [`INSTALLING_REPLY_STEP`] issues: through the reply capability,
-/// granting, naming the notification capability in `caps_or_badges[0]`.
-#[cfg(feature = "hw_target")]
-const INSTALLING_REPLY: RoundTrip = with_caps(
+const INSTALLING_REPLY: RoundTrip = with_caps_keeping_path(
     partner_step(
         "grant-reply-installs-cap",
         REPLY,
@@ -2015,13 +2012,45 @@ const fn partner_step(
 }
 
 /// `trip`, naming the extra-capability addresses `words` in the caller's IPC
-/// buffer at `buffer` (`RoundTrip::caps_or_badges`).
+/// buffer at `buffer` (`RoundTrip::caps_or_badges`), and no receive slot
+/// (a `receive_depth` of 0).
 #[cfg(feature = "hw_target")]
 const fn with_caps(trip: RoundTrip, buffer: u64, words: [u64; 3]) -> RoundTrip {
+    with_caps_receiving(trip, buffer, words, [0; 3])
+}
+
+/// `trip`, naming the extra-capability addresses `words` and the receive path
+/// `path` (`receive_cnode`, `receive_index`, `receive_depth`) in the IPC
+/// buffer at `buffer`.
+#[cfg(feature = "hw_target")]
+const fn with_caps_receiving(
+    trip: RoundTrip,
+    buffer: u64,
+    words: [u64; 3],
+    path: [u64; 3],
+) -> RoundTrip {
     RoundTrip {
-        caps_or_badges: Some((buffer, words)),
+        caps_or_badges: Some((buffer, words, Some(path))),
         ..trip
     }
+}
+
+/// `trip`, naming the extra-capability addresses `words` in the IPC buffer at
+/// `buffer` and leaving the buffer's receive path as a [`RECEIVE_PATH_STEP`]
+/// set it.
+#[cfg(feature = "hw_target")]
+const fn with_caps_keeping_path(trip: RoundTrip, buffer: u64, words: [u64; 3]) -> RoundTrip {
+    RoundTrip {
+        caps_or_badges: Some((buffer, words, None)),
+        ..trip
+    }
+}
+
+/// The receive path that names the root CNode's slot `slot`: the CNode's own
+/// capability, the slot's full-word address and the word's 64 bits.
+#[cfg(feature = "hw_target")]
+const fn receive_slot_path(slot: u64) -> [u64; 3] {
+    [CNODE_CAP, cap_address(slot), 64]
 }
 
 /// The index of the IPC buffer's `caps_or_badges[0]` word: seL4's
@@ -2459,6 +2488,19 @@ const ONE_EXTRA_CAP: u64 = 1 << 7;
 /// Three capabilities, the most a message carries (`seL4_MsgMaxExtraCaps`).
 #[cfg(feature = "hw_target")]
 const THREE_EXTRA_CAPS: u64 = 3 << 7;
+/// The root CNode slot a capability transfer's receive path names, free while
+/// the transfer scenarios run.
+#[cfg(feature = "hw_target")]
+const TRANSFER_RECEIVE_SLOT: u64 = 27;
+/// The root CNode slot an endpoint capability without the grant right is
+/// minted into for the no-grant transfer scenario, free while it runs.
+#[cfg(feature = "hw_target")]
+const NO_GRANT_ENDPOINT_SLOT: u64 = 21;
+#[cfg(feature = "hw_target")]
+const NO_GRANT_ENDPOINT_CAP: u64 = cap_address(NO_GRANT_ENDPOINT_SLOT);
+/// Read and write without grant, as a mint's rights word.
+#[cfg(feature = "hw_target")]
+const READ_WRITE_RIGHTS: u64 = 0x3;
 /// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
 /// `AlignmentError`), and the refusal frame's `x1` that carries it.
 #[cfg(feature = "hw_target")]
@@ -3802,6 +3844,530 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
+        // A send carrying a notification capability to a waiting receiver
+        // whose IPC buffer names an empty slot of its CSpace: seL4's
+        // `transferCaps` derives the capability and installs it there, a CDT
+        // child of the sender's slot.  The installed copy is deleted after.
+        invocation(
+            "caps-install-send-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-install-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-install-send-to-receiver",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x79, 0],
+                false,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        kernel_step("caps-install-send-yield", YIELD),
+        invocation(
+            "caps-install-send-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-install-send-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [TRANSFER_RECEIVE_SLOT, 0, 0, 0],
+        ),
+        // A send carrying the capability of the endpoint it is sent on:
+        // seL4 unwraps it, delivering its badge in the receiver's
+        // `caps_or_badges[0]` word, and installs nothing.
+        invocation(
+            "caps-unwrap-send-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-unwrap-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-unwrap-send-to-receiver",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x7b, 0],
+                false,
+            ),
+            TAIL_IPC_BUFFER,
+            [ENDPOINT_CAP, 0, 0],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        kernel_step("caps-unwrap-send-yield", YIELD),
+        invocation(
+            "caps-unwrap-send-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // Three capabilities: the first installed, the second unwrapped, and
+        // the third stopping the transfer, the receive slot used up.
+        invocation(
+            "caps-three-install-send-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-three-install-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-three-install-send-to-receiver",
+                SEND,
+                ENDPOINT_CAP,
+                THREE_EXTRA_CAPS | 1,
+                [0x7c, 0],
+                false,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, ENDPOINT_CAP, NOTIFICATION_CAP],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        kernel_step("caps-three-install-send-yield", YIELD),
+        invocation(
+            "caps-three-install-send-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-three-install-send-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [TRANSFER_RECEIVE_SLOT, 0, 0, 0],
+        ),
+        // A receive path naming an occupied slot names no receive slot, and
+        // one whose CNode word names an endpoint names none either: the
+        // transfer installs nothing, with no fault.
+        invocation(
+            "caps-occupied-slot-send-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-occupied-slot-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-occupied-slot-send-to-receiver",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x7d, 0],
+                false,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+            receive_slot_path(NOTIFICATION_SLOT),
+        ),
+        kernel_step("caps-occupied-slot-send-yield", YIELD),
+        invocation(
+            "caps-occupied-slot-send-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-invalid-path-send-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-invalid-path-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-invalid-path-send-to-receiver",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x7e, 0],
+                false,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+            [ENDPOINT_CAP, cap_address(TRANSFER_RECEIVE_SLOT), 64],
+        ),
+        kernel_step("caps-invalid-path-send-yield", YIELD),
+        invocation(
+            "caps-invalid-path-send-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A send through an endpoint capability without the grant right: seL4
+        // transfers no capability, whatever the message names.
+        invocation(
+            "caps-no-grant-send-mint",
+            CSPACE_MINT,
+            CNODE_CAP,
+            [ENDPOINT_SLOT, NO_GRANT_ENDPOINT_SLOT, READ_WRITE_RIGHTS, 0],
+        ),
+        invocation(
+            "caps-no-grant-send-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-no-grant-send-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-no-grant-send-to-receiver",
+                SEND,
+                NO_GRANT_ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x7f, 0],
+                false,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        kernel_step("caps-no-grant-send-yield", YIELD),
+        invocation(
+            "caps-no-grant-send-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-no-grant-send-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [NO_GRANT_ENDPOINT_SLOT, 0, 0, 0],
+        ),
+        // A call carrying a notification capability to a waiting receiver
+        // whose buffer names an empty slot: installed there, the caller
+        // blocked for the reply the suspend answers; the copy deleted after.
+        invocation(
+            "caps-install-call-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-install-call-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-install-call-to-receiver",
+                CALL,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x81, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        invocation(
+            "caps-install-call-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-install-call-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [TRANSFER_RECEIVE_SLOT, 0, 0, 0],
+        ),
+        // A call carrying the capability of the endpoint it is made on: unwrapped.
+        invocation(
+            "caps-unwrap-call-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-unwrap-call-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-unwrap-call-to-receiver",
+                CALL,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x82, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [ENDPOINT_CAP, 0, 0],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        invocation(
+            "caps-unwrap-call-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A call whose receiver's receive path names an occupied slot.
+        invocation(
+            "caps-occupied-slot-call-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-occupied-slot-call-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-occupied-slot-call-to-receiver",
+                CALL,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x83, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+            receive_slot_path(NOTIFICATION_SLOT),
+        ),
+        invocation(
+            "caps-occupied-slot-call-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A send carrying a notification capability that blocks, and the
+        // receive that takes it, its buffer naming an empty slot: the take
+        // installs the capability there; the copy deleted after.
+        invocation(
+            "caps-install-take-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-install-take-send-blocks",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x84, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        partner_step(
+            "caps-install-take-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+        kernel_step("caps-install-take-partner-yield", YIELD),
+        invocation(
+            "caps-install-take-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-install-take-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [TRANSFER_RECEIVE_SLOT, 0, 0, 0],
+        ),
+        // The same carrying the endpoint's own capability: unwrapped.
+        invocation(
+            "caps-unwrap-take-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-unwrap-take-send-blocks",
+                SEND,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x85, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [ENDPOINT_CAP, 0, 0],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        partner_step(
+            "caps-unwrap-take-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+        kernel_step("caps-unwrap-take-partner-yield", YIELD),
+        invocation(
+            "caps-unwrap-take-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A call carrying a notification capability that blocks with no receiver
+        // waiting, and the receive that takes it, installing the capability in the
+        // receive slot its buffer names.
+        invocation(
+            "caps-install-call-take-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-install-call-take-blocks",
+                CALL,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x86, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [NOTIFICATION_CAP, 0, 0],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        partner_step(
+            "caps-install-call-take-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        partner_step(
+            "caps-install-call-take-partner-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0x88, 0],
+            false,
+        ),
+        kernel_step("caps-install-call-take-partner-yield", YIELD),
+        invocation(
+            "caps-install-call-take-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "caps-install-call-take-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [TRANSFER_RECEIVE_SLOT, 0, 0, 0],
+        ),
+        // The same carrying the endpoint's own capability: unwrapped.
+        invocation(
+            "caps-unwrap-call-take-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_caps_receiving(
+            partner_step(
+                "caps-unwrap-call-take-blocks",
+                CALL,
+                ENDPOINT_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x87, 0],
+                true,
+            ),
+            TAIL_IPC_BUFFER,
+            [ENDPOINT_CAP, 0, 0],
+            receive_slot_path(TRANSFER_RECEIVE_SLOT),
+        ),
+        partner_step(
+            "caps-unwrap-call-take-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        partner_step(
+            "caps-unwrap-call-take-partner-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0x88, 0],
+            false,
+        ),
+        kernel_step("caps-unwrap-call-take-partner-yield", YIELD),
+        invocation(
+            "caps-unwrap-call-take-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
         // A send carrying a capability that blocks with no receiver waiting,
         // and the receive that takes it with no receive slot named.
         invocation("caps-take-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
@@ -3834,7 +4400,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         // capability, which install nothing and answer in place (seL4's
         // `doReplyTransfer` with `grant` set and no extra capability), then
         // a reply carrying one, which installs a copy of the notification
-        // capability in that slot ([`INSTALLING_REPLY_STEP`]); a signal through
+        // capability in that slot ([`INSTALLING_REPLY`], measured); a signal through
         // the installed copy shows it is there, the wait takes its badge, and
         // the copy is deleted.  Both threads' buffers are the one at
         // `TAIL_IPC_BUFFER`; its receive path is closed again last.
@@ -3893,7 +4459,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             [0x7f, 0],
             true,
         ),
-        kernel_step("grant-reply-installs-cap", INSTALLING_REPLY_STEP),
+        INSTALLING_REPLY,
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
             ..signal("grant-reply-installed-signal", 1)
@@ -6667,12 +7233,6 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                         masked = Some(crate::interrupts::disable_interrupts());
                         true
                     }
-                    INSTALLING_REPLY_STEP => {
-                        let (buffer, words) =
-                            INSTALLING_REPLY.caps_or_badges.unwrap_or((0, [0; 3]));
-                        write_caps_or_badges(buffer, words)
-                            && unmeasured(&INSTALLING_REPLY, "the installing reply failed")
-                    }
                     RECEIVE_PATH_STEP => {
                         let words = [step.msg[0], step.msg[1], step.msg[2]];
                         let written = write_buffer_words(step.cptr, RECEIVE_PATH_WORD, words);
@@ -8198,10 +8758,11 @@ fn root_user_page(vaddr: u64) -> Option<u64> {
     Some(table)
 }
 
-/// Write `words` into the `caps_or_badges` words of the IPC buffer the root
-/// task's tables map at `buffer`, where a capability-carrying send names its
-/// extra capabilities (seL4's `seL4_SetCap`); `false` when the buffer's page
-/// has no translation to RAM past the kernel's extent.
+/// Write `words` into the `caps_or_badges` and receive-path words of the IPC
+/// buffer the root task's tables map at `buffer`, where a capability-carrying
+/// send names its extra capabilities and a receiver its receive slot (seL4's
+/// `seL4_SetCap` and `seL4_SetCapReceivePath`); `false` when the buffer's
+/// page has no translation to RAM past the kernel's extent.
 #[cfg(feature = "hw_target")]
 fn write_caps_or_badges(buffer: u64, words: [u64; 3]) -> bool {
     write_buffer_words(buffer, CAPS_OR_BADGES_WORD, words)
@@ -8220,8 +8781,8 @@ fn write_buffer_words(buffer: u64, first: u64, words: [u64; 3]) -> bool {
     }
     let base = page + (buffer & 0xFFF) + first * 8;
     for (i, word) in words.iter().enumerate() {
-        // SAFETY: `base` is inside the 1024-byte buffer the root task's
-        // tables map onto `page`, RAM past the kernel's extent under the
+        // SAFETY: `base` and the five words after it are inside the
+        // 1024-byte buffer the root task's tables map onto `page`, RAM past the kernel's extent under the
         // identity map; no thread runs while the issuing core writes it; one
         // aligned 64-bit store per word.
         unsafe { core::ptr::write_volatile((base + 8 * i as u64) as *mut u64, *word) };
@@ -8434,8 +8995,12 @@ fn heap_allocations_round_trip_resuming(
 ) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = trip.name;
-    if let Some((buffer, words)) = trip.caps_or_badges {
-        if !write_caps_or_badges(buffer, words) {
+    if let Some((buffer, words, path)) = trip.caps_or_badges {
+        let path_written = match path {
+            Some(path) => write_buffer_words(buffer, RECEIVE_PATH_WORD, path),
+            None => true,
+        };
+        if !(write_caps_or_badges(buffer, words) && path_written) {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the IPC buffer at \
                  {buffer:#x} has no translation"
@@ -8563,12 +9128,21 @@ mod tests {
     };
     use core::cell::Cell;
 
-    /// The harness's `caps_or_badges` word is the ABI's `IpcBuffer` field.
+    /// The harness's `caps_or_badges` word is the ABI's `IpcBuffer` field,
+    /// and the receive path's three words follow its three.
     #[test]
     fn caps_or_badges_word_is_the_abi_layout() {
         assert_eq!(
             CAPS_OR_BADGES_WORD as usize * 8,
             core::mem::offset_of!(sele4n_abi::IpcBuffer, caps_or_badges)
+        );
+        assert_eq!(
+            (CAPS_OR_BADGES_WORD as usize + 3) * 8,
+            core::mem::offset_of!(sele4n_abi::IpcBuffer, receive_cnode)
+        );
+        assert_eq!(
+            (CAPS_OR_BADGES_WORD as usize + 5) * 8,
+            core::mem::offset_of!(sele4n_abi::IpcBuffer, receive_depth)
         );
     }
 
