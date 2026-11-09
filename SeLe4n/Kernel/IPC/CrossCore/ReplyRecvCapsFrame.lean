@@ -233,16 +233,16 @@ theorem transferFrame_storeCNodeWith (s : SystemState) (id : SeLe4n.ObjId) (f : 
 /-- The leaves a transfer's CNode stores ask for, as one test: each of `dcn`
 and `scn` is no CNode or a CNode stored where it lies. -/
 @[inline] def cnodeStoreInPlace (s : SystemState) (id : SeLe4n.ObjId) : Bool :=
-  match s.objects[id]? with
-  | some (.cnode _) => storeLeavesIndexAndTypes s id .cnode
-  | _ => true
+  match s.getCNode? id with
+  | some _ => storeLeavesIndexAndTypes s id .cnode
+  | none => true
 
 theorem cnodeStoreInPlace_imp {s : SystemState} {id : SeLe4n.ObjId}
     (h : cnodeStoreInPlace s id = true) :
     (∃ cn, s.objects[id]? = some (.cnode cn)) → storeLeavesIndexAndTypes s id .cnode = true := by
   rintro ⟨cn, hc⟩
-  unfold cnodeStoreInPlace at h
-  rw [hc] at h
+  unfold cnodeStoreInPlace SystemState.getCNode? at h
+  simp only [hc] at h
   exact h
 
 /-- The CNode-store test, read through `transferView`: a CNode is the leaves
@@ -251,7 +251,7 @@ theorem cnodeStoreInPlace_eq (s : SystemState) (id : SeLe4n.ObjId) :
     cnodeStoreInPlace s id =
       (((s.objects[id]?).map transferView).map Option.isSome).elim true
         (fun b => b || storeLeavesIndexAndTypes s id .cnode) := by
-  unfold cnodeStoreInPlace
+  unfold cnodeStoreInPlace SystemState.getCNode?
   cases s.objects[id]? with
   | none => rfl
   | some o => cases o <;> simp [transferView]
@@ -459,12 +459,13 @@ theorem cnodeStoreInPlace_eq_getCNode? (s : SystemState) (id : SeLe4n.ObjId) :
     cnodeStoreInPlace s id = (match s.getCNode? id with
       | some _ => s.objectIndexSet.table.holds id () && s.lifecycle.objectTypes.holds id .cnode
       | none => true) := by
-  unfold cnodeStoreInPlace SystemState.getCNode? storeLeavesIndexAndTypes
-  cases h : s.objects[id]? with
+  unfold cnodeStoreInPlace storeLeavesIndexAndTypes
+  cases h : s.getCNode? id with
   | none => rfl
-  | some o =>
-    cases o <;> simp only []
-    simp only [Bool.and_true]
+  | some cn =>
+    have hO : s.objects[id]? = some (.cnode cn) := by
+      unfold SystemState.getCNode? at h; split at h <;> simp_all
+    simp only [hO, Bool.and_true]
     rfl
 
 /-- The CNode-store test is the same on states agreeing on CNodes, the index and the lifecycle. -/
