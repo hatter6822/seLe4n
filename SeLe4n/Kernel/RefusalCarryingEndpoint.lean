@@ -436,8 +436,13 @@ theorem receiveTakeCapsTransfer_delivered (st : SystemState) (endpointId : SeLe4
       Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion st'' (some s))
           receiver summary.capInfo =
         performTakeCapsDelivered st endpointId s sTcb.queueNextCode receiver core
-          SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-          (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot sTcb.ipcBuffer
+          SeLe4n.arm64DefaultLayout mi.length
+          (Architecture.badgeWordIf (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 0)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 1)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 2)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3)
+          sTcb.vspaceRoot sTcb.ipcBuffer
           sTcb.cspaceRoot (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
           rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot := by
   intro P W S4
@@ -517,20 +522,46 @@ theorem receiveTakeCapsTransfer_delivered (st : SystemState) (endpointId : SeLe4
             have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
             omega),
       hMsg, TCB.ipcBadgeView_eq_opt, returnFrameOfMessage_regMessageBody_caps]
+    have hKY : KeepsBindings (W.1.updateTcb receiver receiverReady) Y1 :=
+      receiveTransferCaps_keepsBindings _ _ _ (KeepsBindings.refl _ hNoY) hTY
+    have hFrame : ∀ g, writeDeliveredFrameIfReady
+        (Architecture.stageWokenSendCompletion Y1 (some s))
+        receiver (regMessageFrameCapsW SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
+          (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged summary.capInfo) g =
+        finishTakeCaps summary.capInfo Y1 s receiver SeLe4n.arm64DefaultLayout mi.length
+          (Architecture.badgeWordIf (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 0)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 1)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 2)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3) := by
+      intro g
+      unfold writeDeliveredFrameIfReady finishTakeCaps
+      rw [stageWokenSendCompletion_getTcb?_ne _ s receiver hRS hNo1]
+      cases hZ : Y1.getTcb? receiver with
+      | none =>
+        exact (mapTcbInPlace_eq_self_of_getTcb?_none _ _ _
+          (by rw [stageWokenSendCompletion_getTcb?_ne _ s receiver hRS hNo1, hZ])).symm
+      | some t =>
+        simp only [ready_of_keepsBindings_receiverReady hNoW hKY hZ, ↓reduceIte]
+        rfl
+    rw [hFrame]
     unfold performTakeCapsDelivered
     have hK := capTransferK_eq
       ((wakeThread ((storePopHead st endpointId false s
         (ThreadId.ofOptCode sTcb.queueNextCode)).updateTcb s receiverReady) s core).1.updateTcb
           receiver receiverReady)
       endpointId sTcb (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0) rt
-      (fun i Y => finishTakeCaps i Y s receiver SeLe4n.arm64DefaultLayout sTcb.registerContext
-        mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged)
+      (fun i Y => finishTakeCaps i Y s receiver SeLe4n.arm64DefaultLayout mi.length
+          (Architecture.badgeWordIf (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 0)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 1)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 2)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3))
     simp only at hK
     rw [hK]
     rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode, hA.frameCapRequestOf,
       hA.capTargetOf]
     rw [hTY]
-    rfl
 
 /-- WS-ZA ZA4.7: **the staged send rendezvous is the delivered one** for a
 message of at most four words read in the sender's registers. -/
@@ -2974,10 +3005,15 @@ other rendezvous goes through the specification
               else
                 match st.getTcb? tid with
                 | some rt =>
+                  let rf := sTcb.registerContext
                   .ok ((), performTakeCapsDelivered st epId s sTcb.queueNextCode tid executingCore
-                    SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-                    (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot
-                    sTcb.ipcBuffer sTcb.cspaceRoot
+                    SeLe4n.arm64DefaultLayout mi.length
+                    (Architecture.badgeWordIf (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged)
+                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 0)
+                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 1)
+                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 2)
+                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 3)
+                    sTcb.vspaceRoot sTcb.ipcBuffer sTcb.cspaceRoot
                     (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
                     rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
                 | none => endpointReceiveRendezvousR epId tid replyCode executingCore st

@@ -147,6 +147,112 @@ theorem receiveTransferCaps_keepsBindings
           (fun s i b B h => h.recordUnwrappedBadge rtcb i b) _ _ _ _ _ _ _
           (fun _ _ _ _ _ _ hT B h => h.ipcTransferSingleCap _ _ _ hT) h B hK
 
+/-- The states after `B` that hold every thread of `B`, up to its space-slot
+link words, with no resize due: `KeepsBindings` read forward. -/
+def CarriesThreads (B s : SystemState) : Prop :=
+  s.objects.noResizeDue ∧ ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    B.objects[tid.toObjId]? = some (.tcb tcb) →
+    ∃ tcb', s.objects[tid.toObjId]? = some (.tcb tcb') ∧ TCB.sameOffLinks tcb tcb'
+
+theorem CarriesThreads.refl (B : SystemState) (h : B.objects.noResizeDue) :
+    CarriesThreads B B :=
+  ⟨h, fun _ t h => ⟨t, h, rfl⟩⟩
+
+/-- A write of one present key that keeps a thread there a thread up to its
+link words carries every thread. -/
+theorem CarriesThreads.mapValueAt {B s : SystemState} (h : CarriesThreads B s) (k : SeLe4n.ObjId)
+    (F : KernelObject → KernelObject)
+    (hF : ∀ t, s.objects[k]? = some (.tcb t) → ∃ t', F (.tcb t) = .tcb t' ∧ TCB.sameOffLinks t t') :
+    CarriesThreads B { s with objects := s.objects.mapValueAt k F } := by
+  refine ⟨(RHTable.noResizeDue_mapValueAt _ _ _).mpr h.1, ?_⟩
+  intro tid tcb hB
+  obtain ⟨t1, h1, e1⟩ := h.2 tid tcb hB
+  simp only [RHTable_getElem?_eq_get?, RHTable.get?_mapValueAt]
+  have hg : s.objects.get? tid.toObjId = some (.tcb t1) := by
+    simpa only [RHTable_getElem?_eq_get?] using h1
+  split
+  · next hk =>
+    have hk' : k = tid.toObjId := beq_iff_eq.mp hk
+    subst hk'
+    obtain ⟨t2, hF2, e2⟩ := hF t1 h1
+    refine ⟨t2, by rw [hg]; simp only [Option.map_some, hF2], ?_⟩
+    exact e2.trans e1
+  · exact ⟨t1, hg, e1⟩
+
+theorem CarriesThreads.setSlotLinkWords {B s : SystemState} (h : CarriesThreads B s)
+    (o : SeLe4n.ObjId) (sl : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
+    CarriesThreads B (s.setSlotLinkWords o sl f c w) := by
+  rw [setSlotLinkWords_eq_modifyObject _ _ _ _ _ _ h.1,
+    SystemState.modifyObject_eq_mapValueAt _ _ _ h.1]
+  refine h.mapValueAt o _ ?_
+  intro t _
+  exact ⟨_, rfl, rfl⟩
+
+theorem CarriesThreads.linkAddChild {B s : SystemState} (h : CarriesThreads B s) (p c : SlotRef) :
+    CarriesThreads B (s.linkAddChild p c) := by
+  unfold SystemState.linkAddChild
+  dsimp only
+  split <;> (repeat apply CarriesThreads.setSlotLinkWords) <;> exact h
+
+theorem CarriesThreads.cdtAddChild {B s : SystemState} (h : CarriesThreads B s) (p c : SlotRef)
+    (op : DerivationOp) : CarriesThreads B (s.cdtAddChild p c op) :=
+  CarriesThreads.linkAddChild (s := s.modifyCdt _) h p c
+
+theorem CarriesThreads.storeObject_cnode {B s s' : SystemState} (h : CarriesThreads B s)
+    (k : SeLe4n.ObjId) (cn0 cn : CNode) (hk : s.objects[k]? = some (.cnode cn0))
+    (hS : storeObject k (.cnode cn) s = .ok ((), s')) : CarriesThreads B s' := by
+  have hg : s.objects.get? k = some (.cnode cn0) := by
+    simpa only [RHTable_getElem?_eq_get?] using hk
+  unfold storeObject at hS
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+  rw [← hS]
+  have := h.mapValueAt k (fun _ => .cnode cn) (fun _ ht => by rw [hk] at ht; cases ht)
+  rw [RHTable.insert_eq_mapValueAt _ (RHTable.findsInPlace_of_get? h.1 hg)]
+  exact this
+
+theorem CarriesThreads.storeCNodeWith {B s : SystemState} (h : CarriesThreads B s)
+    (k : SeLe4n.ObjId) (f : CNode → CNode) : CarriesThreads B (s.storeCNodeWith k f) := by
+  rcases SystemState.storeCNodeWith_cases s k f with ⟨cn, hk, hS⟩ | e
+  · exact h.storeObject_cnode k cn (f cn) hk hS
+  · rw [e]; exact h
+
+theorem CarriesThreads.untypedSourceSetFull {B s : SystemState} (h : CarriesThreads B s)
+    (src : CSpaceAddr) (cap : Capability) : CarriesThreads B (untypedSourceSetFull s src cap) :=
+  untypedSourceSetFull_of (P := CarriesThreads B) h (fun _ => h.storeCNodeWith _ _)
+
+theorem CarriesThreads.ipcTransferSingleCap {B s s' : SystemState} (h : CarriesThreads B s)
+    (cap : Capability) (src : SlotRef) (dst : CSpaceAddr)
+    (hT : ipcTransferSingleCap cap src dst s = .ok ((), s')) : CarriesThreads B s' := by
+  obtain ⟨_, s2, -, -, -, hIns, rfl⟩ := ipcTransferSingleCap_ok_cases hT
+  obtain ⟨cn, hC, -, -, hS⟩ := cspaceInsertSlot_ok_decompose _ _ _ _ hIns
+  exact ((h.storeObject_cnode _ cn _ ((SystemState.getCNode?_eq_some_iff _ _ _).mp hC)
+    hS).cdtAddChild _ _ _).untypedSourceSetFull _ _
+
+theorem CarriesThreads.recordUnwrappedBadge {B s : SystemState} (h : CarriesThreads B s)
+    (rtcb : TCB) (i : Nat) (b : SeLe4n.Badge) :
+    CarriesThreads B (recordUnwrappedBadge s rtcb i b) := by
+  have hO := recordUnwrappedBadge_objects s rtcb i b
+  exact ⟨hO ▸ h.1, fun tid t ht => by rw [hO]; exact h.2 tid t ht⟩
+
+/-- **The transfer carries every thread**, with no resize due. -/
+theorem receiveTransferCaps_carriesThreads
+    (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (endpointId : Option SeLe4n.ObjId) (target? : Option (TCB × Option CSpaceAddr))
+    {B Z Z' : SystemState} {r : CapTransferSummary} (hK : CarriesThreads B Z)
+    (h : receiveTransferCaps req endpointId target? Z = .ok (r, Z')) : CarriesThreads B Z' := by
+  unfold receiveTransferCaps at h
+  rcases req with _ | ⟨root, addrs, depth⟩
+  · cases h; exact hK
+  · simp only [] at h
+    split at h
+    · cases h; exact hK
+    · rcases target? with _ | ⟨rtcb, slot?⟩
+      · cases h; exact hK
+      · exact ipcUnwrapCapsLoop_rel (fun a b => ∀ B, CarriesThreads B b → CarriesThreads B a)
+          (fun _ _ h => h) (fun _ _ _ h1 h2 B h => h1 B (h2 B h)) _ _ rtcb
+          (fun s i b B h => h.recordUnwrappedBadge rtcb i b) _ _ _ _ _ _ _
+          (fun _ _ _ _ _ _ hT B h => h.ipcTransferSingleCap _ _ _ hT) h B hK
+
 /-! ## The call, delivered -/
 
 /-- **A call's last writes, with the transfer's report**: the receiver's
@@ -301,23 +407,24 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
 
 /-- **A take's last writes, with the transfer's report**: the woken sender's
 completion frame on the state the transfer left, then the receiver's frame
-carrying the report. -/
+carrying the report.  The message words enter as words, read from the sender's
+registers before the take: the completion rewrites those registers, so a
+register file still held here would be copied. -/
 @[noinline] def finishTakeCaps (capInfo : Nat) (Y : SystemState) (s receiver : SeLe4n.ThreadId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) : SystemState :=
-  deliverCapsFrame capInfo (Architecture.stageWokenSendCompletion Y (some s)) receiver layout rf
-    len badgeWord badged
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (w0 w2 w3 w4 w5 : UInt64) :
+    SystemState :=
+  (Architecture.stageWokenSendCompletion Y (some s)).mapTcbInPlace receiver
+    (withFrameWords w0 (regMessageInfoWordCaps layout len capInfo) w2 w3 w4 w5)
 
 /-- **The take of a blocked send that transfers capabilities, delivered**: the
 sender popped, made ready and woken, the receiver made ready, the transfer in
 place, the sender's completion frame, then the receiver's frame with the
-transfer's report, its words read from the sender's saved registers `rf`.  The
-sender and the receiver enter as the words the transfer reads of them
-(`capTransferK`), read before the take. -/
+transfer's report, its words `w0`, `w2`..`w5` read from the sender's saved
+registers before the take.  The sender and the receiver enter as the words the
+transfer reads of them (`capTransferK`), read before the take. -/
 @[noinline] def performTakeCapsDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId) (core : Concurrency.CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (w0 w2 w3 w4 w5 : UInt64)
     (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
     (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
   let X := (wakeThread ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
@@ -325,7 +432,41 @@ sender and the receiver enter as the words the transfer reads of them
   capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
     finishTakeCaps (capStepsInfo endpointId x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
       (capStepsApply endpointId rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
-      s receiver layout rf len badgeWord badged
+      s receiver layout len w0 w2 w3 w4 w5
+
+/-- A thread made ready before a run that keeps every thread's binding is
+still ready after it. -/
+theorem ready_of_keepsBindings_receiverReady {W Y : SystemState} {r : SeLe4n.ThreadId}
+    (hNoW : W.objects.noResizeDue) (hK : KeepsBindings (W.updateTcb r receiverReady) Y)
+    {t : TCB} (h : Y.getTcb? r = some t) : t.ipcState = .ready := by
+  obtain ⟨t0, h0, e0⟩ := hK.2 r t ((SystemState.getTcb?_eq_some_iff _ _ _).mp h)
+  have h0' := (SystemState.getTcb?_eq_some_iff _ _ _).mpr h0
+  rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoW,
+    SystemState.mapTcbInPlace_getTcb?_self] at h0'
+  have hI : t.ipcState = t0.ipcState := by
+    have h' := congrArg TCB.ipcState (show t.withoutLinks = t0.withoutLinks from e0)
+    exact h'
+  cases hW : W.getTcb? r with
+  | none => rw [hW] at h0'; cases h0'
+  | some w =>
+    rw [hW] at h0'
+    simp only [Option.map_some, Option.some.injEq] at h0'
+    rw [hI, ← h0']
+    simp only [receiverReady, TCB.ipcState_setIpcState]
+
+/-- The woken sender's completion frame reads every other thread where it was. -/
+theorem stageWokenSendCompletion_getTcb?_ne (Y : SystemState) (s r : SeLe4n.ThreadId)
+    (hNe : s ≠ r) (hNo : Y.objects.noResizeDue) :
+    (Architecture.stageWokenSendCompletion Y (some s)).getTcb? r = Y.getTcb? r := by
+  unfold Architecture.stageWokenSendCompletion
+  dsimp only
+  split
+  · split
+    · unfold Architecture.writeReturnFrameToTcb
+      rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo, SystemState.getTcb?_mapTcbInPlace,
+        if_neg hNe]
+    · rfl
+  · rfl
 
 /-- The take's state before its transfer reads every buffer and CNode where the
 receive found it. -/
