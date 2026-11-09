@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/replyrecv-install-inplace",
-      "commit_sha": "e75054c2c69b40c2317172d3f98b53ba7cecb2b3",
-      "tree_sha": "bd57e530cc290eb72d62f958f316ffae806bb306",
-      "committed_at_utc": "2026-11-09T18:00:51+00:00"
+      "commit_sha": "1ded91f2ab7acf53c544f7819a14229f07d1ee85",
+      "tree_sha": "c7258c59df0d611d2e2fe0d18f74570e08f02bf2",
+      "committed_at_utc": "2026-11-09T18:31:40+00:00"
     }
   },
   "source_sync": {
