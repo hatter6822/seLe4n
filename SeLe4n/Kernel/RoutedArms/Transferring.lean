@@ -36,7 +36,8 @@ filled first as the long send's. -/
   | some (.tcb tcb) =>
     if length ≤ 4 then
       dispatchOperandCheckedK (SeLe4n.CPtr.ofWord capWord) tid executingCore
-        (transferringOperandArmThenTaintR ctx sid tid executingCore (syscallRequiredRight sid))
+        (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid executingCore
+          (syscallRequiredRight sid))
         st entryReportGeneral entryReportResolved entryReportLookup
     else
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
@@ -48,13 +49,13 @@ filled first as the long send's. -/
             (fun _ => entryReportGeneral (
               if SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid (length - 4) then
                 dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
-                  (transferringOperandArmThenTaintR ctx sid tid executingCore
-                    (syscallRequiredRight sid)) st
+                  (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid
+                    executingCore (syscallRequiredRight sid)) st
               else
                 let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
                 match dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
-                    (transferringOperandArmThenTaintR ctx sid tid executingCore
-                      (syscallRequiredRight sid))
+                    (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid
+                      executingCore (syscallRequiredRight sid))
                     (SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore st executingCore tid
                         (length - 4)) with
                 | .error (e, stF) =>

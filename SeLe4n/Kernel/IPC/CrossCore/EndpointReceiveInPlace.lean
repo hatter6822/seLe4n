@@ -243,29 +243,27 @@ written into the receiver's saved registers.  No message is built. -/
     receiver (withFrameWords w0 w1 w2 w3 w4 w5)
 
 /-- **The receive's take, delivered, is the specification's**: under
-`receiveTakesInPlace`, a sender blocked by a routed capability-free send and
-not delivering a fault, the WithCaps receive installs nothing and takes the
-in-place writes, the rendezvous hands off no donation, and staging the woken
-sender's completion and the receiver's message writes
-`performReceiveDelivered`'s state, the frame's words read from the sender's
-saved registers. -/
-theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
-    (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+`receiveTakesInPlace`, a blocked sender whose message is the inline words of its
+saved registers (`hMsgs`), the receive takes the in-place writes, the
+rendezvous hands off no donation, and staging the woken sender's completion and
+the receiver's message writes `performReceiveDelivered`'s state, the frame's
+words read from the sender's saved registers. -/
+theorem receiveTake_delivered_of_message (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
     (hG : receiveTakesInPlace st endpointId receiver s sTcb = true)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
-      sTcb.registerContext 32 = .send capAddr mi)
-    (hF : sTcb.ipcFaultSend = false) :
+    (hMsgs : ∀ X : SystemState, blockedSenderMessage X s sTcb =
+      { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
+          sTcb.registerContext mi.length,
+        badge := sTcb.ipcBadgeView }) :
     let P := storePopHead st endpointId false s sTcb.queueNext
     let W := wakeThread (P.updateTcb s receiverReady) s core
     let S4 := W.1.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb))
     let f := Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext
       mi.length sTcb.ipcBadgeView
-    endpointReceiveDualWithCapsOnCore endpointId receiver replyId root slot core st =
-        (S4, .ok (s, { results := #[] }, W.2)) ∧
+    endpointReceiveDualOnCore endpointId receiver replyId core st = (S4, .ok (s, W.2)) ∧
       applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
       Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))
           receiver 0 =
@@ -294,7 +292,7 @@ theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep
   have hFH1 := (hFr.keepsFinds s.toObjId).trans hFH
   have hO1r := (hFr.other _ hNeER hNeSR hNxR).trans hRo
   have hNoP : P.objects.noResizeDue := storePopHead_noResizeDue _ _ _ _ _ hNo
-  obtain ⟨_, hMsg⟩ := blockedSender_of_routedSend P s sTcb capAddr mi hR hF
+  have hMsg := hMsgs P
   have hRS' : s ≠ receiver := fun h => hRS h.symm
   have hT2s : (P.updateTcb s receiverReady).getTcb? s = some (receiverReady (tcbOffQueue sTcb)) :=
     updateTcb_getTcb?_self_of_findsInPlace receiverReady hFr.head_tcb hFH1
@@ -307,19 +305,7 @@ theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep
   obtain ⟨rt3, hO3r, _⟩ := hA3.get_tcb hO2r
   have hW3r : W.1.getTcb? receiver = some rt3 := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO3r
   refine ⟨?_, ?_, ?_⟩
-  · -- the WithCaps receive installs nothing
-    have hSnd : receiveRendezvousSender? st endpointId = some s := by
-      simp only [receiveRendezvousSender?, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE,
-        Option.bind_some, hH]
-    have hReq : receiveCapRequest st endpointId = none := by
-      unfold receiveCapRequest
-      rw [hSnd]
-      simp only [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT]
-      exact (blockedSender_of_routedSend st s sTcb capAddr mi hR hF).1
-    unfold endpointReceiveDualWithCapsOnCore
-    rw [hTake]
-    simp only [hSnd, hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
-    rfl
+  · exact hTake
   · -- the dequeued sender was no caller: no donation
     apply applyReceiveRendezvousHandoff_of_no_call
     have hL : lookupTcb S4 s = lookupTcb W.1 s := by
@@ -384,4 +370,46 @@ theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep
     simp only [receiverReady, TCB.ipcState_setIpcState, ↓reduceIte]
     rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode]
 
+/-- The take of a sender blocked by a routed capability-free send, not
+delivering a fault: as `receiveTake_delivered_of_message`, the WithCaps receive
+installing nothing. -/
+theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveTakesInPlace st endpointId receiver s sTcb = true)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+      sTcb.registerContext 32 = .send capAddr mi)
+    (hF : sTcb.ipcFaultSend = false) :
+    let P := storePopHead st endpointId false s sTcb.queueNext
+    let W := wakeThread (P.updateTcb s receiverReady) s core
+    let S4 := W.1.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb))
+    let f := Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext
+      mi.length sTcb.ipcBadgeView
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId root slot core st =
+        (S4, .ok (s, { results := #[] }, W.2)) ∧
+      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))
+          receiver 0 =
+        performReceiveDelivered st endpointId s sTcb.queueNextCode receiver core
+          f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := by
+  intro P W S4 f
+  obtain ⟨hTake, h2, h3⟩ := receiveTake_delivered_of_message st endpointId ep receiver replyId
+    core s sTcb mi hE hH hT hG
+    (fun X => (blockedSender_of_routedSend X s sTcb capAddr mi hR hF).2)
+  refine ⟨?_, h2, h3⟩
+  have hSnd : receiveRendezvousSender? st endpointId = some s := by
+    simp only [receiveRendezvousSender?, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE,
+      Option.bind_some, hH]
+  have hReq : receiveCapRequest st endpointId = none := by
+    unfold receiveCapRequest
+    rw [hSnd]
+    simp only [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT]
+    exact (blockedSender_of_routedSend st s sTcb capAddr mi hR hF).1
+  unfold endpointReceiveDualWithCapsOnCore
+  rw [hTake]
+  simp only [hSnd, hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
+  rfl
 end SeLe4n.Kernel

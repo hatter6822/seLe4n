@@ -2372,6 +2372,9 @@ const TAIL_MESSAGE_LENGTH: u64 = 120;
 /// A message-info word's one extra capability (seL4's `extraCaps`, bits 7..8).
 #[cfg(feature = "hw_target")]
 const ONE_EXTRA_CAP: u64 = 1 << 7;
+/// Three capabilities, the most a message carries (`seL4_MsgMaxExtraCaps`).
+#[cfg(feature = "hw_target")]
+const THREE_EXTRA_CAPS: u64 = 3 << 7;
 /// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
 /// `AlignmentError`), and the refusal frame's `x1` that carries it.
 #[cfg(feature = "hw_target")]
@@ -3553,6 +3556,149 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
+        // A send carrying one capability to a waiting receiver whose receive window
+        // (its CSpace root's slots 0-2, all occupied in the shared CNode) is
+        // closed: the transfer installs nothing and the rendezvous writes in
+        // place, as seL4's `transferCaps` with no receive slot.
+        invocation(
+            "caps-send-rendezvous-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-send-rendezvous-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "caps-send-rendezvous-to-receiver",
+            SEND,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 1,
+            [0x74, NOTIFICATION_CAP],
+            false,
+        ),
+        kernel_step("caps-send-rendezvous-yield", YIELD),
+        invocation(
+            "caps-send-rendezvous-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // The same with three capabilities, the most a message carries.
+        invocation(
+            "caps-three-send-rendezvous-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-three-send-rendezvous-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "caps-three-send-rendezvous-to-receiver",
+            SEND,
+            ENDPOINT_CAP,
+            THREE_EXTRA_CAPS | 1,
+            [0x75, NOTIFICATION_CAP],
+            false,
+        ),
+        kernel_step("caps-three-send-rendezvous-yield", YIELD),
+        invocation(
+            "caps-three-send-rendezvous-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A call carrying one capability to a waiting receiver whose receive window
+        // is closed, blocking the caller for the reply, the suspend answering it.
+        invocation(
+            "caps-call-rendezvous-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-call-rendezvous-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "caps-call-rendezvous-to-receiver",
+            CALL,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 1,
+            [0x76, NOTIFICATION_CAP],
+            true,
+        ),
+        invocation(
+            "caps-call-rendezvous-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // The same with three capabilities.
+        invocation(
+            "caps-three-call-rendezvous-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "caps-three-call-rendezvous-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "caps-three-call-rendezvous-to-receiver",
+            CALL,
+            ENDPOINT_CAP,
+            THREE_EXTRA_CAPS | 1,
+            [0x77, NOTIFICATION_CAP],
+            true,
+        ),
+        invocation(
+            "caps-three-call-rendezvous-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // A send carrying a capability that blocks with no receiver waiting,
+        // and the receive that takes it into a closed receive window.
+        invocation("caps-take-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step(
+            "caps-take-send-blocks",
+            SEND,
+            ENDPOINT_CAP,
+            ONE_EXTRA_CAP | 1,
+            [0x78, NOTIFICATION_CAP],
+            true,
+        ),
+        partner_step(
+            "caps-take-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+        kernel_step("caps-take-partner-yield", YIELD),
+        invocation("caps-take-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         configure(
             "tail-send-configure",
             [

@@ -467,6 +467,19 @@ for driver in drivers:
             "caps-call-blocks-suspend", "caps-long-call-blocks-resume",
             "caps-long-call-blocks", "caps-long-call-blocks-suspend-root",
             "caps-long-call-blocks-resume-root", "caps-long-call-blocks-suspend",
+            # Capability-carrying rendezvous into a closed receive window.
+            "caps-send-rendezvous-resume", "caps-send-rendezvous-root-receives",
+            "caps-send-rendezvous-to-receiver", "caps-send-rendezvous-yield",
+            "caps-send-rendezvous-suspend", "caps-three-send-rendezvous-resume",
+            "caps-three-send-rendezvous-root-receives",
+            "caps-three-send-rendezvous-to-receiver", "caps-three-send-rendezvous-yield",
+            "caps-three-send-rendezvous-suspend", "caps-call-rendezvous-resume",
+            "caps-call-rendezvous-root-receives", "caps-call-rendezvous-to-receiver",
+            "caps-call-rendezvous-suspend", "caps-three-call-rendezvous-resume",
+            "caps-three-call-rendezvous-root-receives",
+            "caps-three-call-rendezvous-to-receiver", "caps-three-call-rendezvous-suspend",
+            "caps-take-resume", "caps-take-send-blocks", "caps-take-partner-takes",
+            "caps-take-partner-yield", "caps-take-suspend",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
