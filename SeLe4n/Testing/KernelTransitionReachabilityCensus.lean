@@ -1250,6 +1250,11 @@ def nonExecutedTransitionsPlain : List Name :=
   -- to it wherever the table references are recorded
   -- (`lookupServiceByRecordedRegistration_eq_lookupServiceByCap`).
   , `SeLe4n.Kernel.lookupServiceByCap
+  -- A step's result with a thread write applied to its state: the statement
+  -- of `receiveTransferCaps_mapTcbInPlace`, through which the in-place
+  -- capability transfers are proven equal to the specification's; no seam
+  -- runs it.
+  , `SeLe4n.Kernel.mapStepState
   , `SeLe4n.Kernel.Architecture.tlbFlushByASID
   , `SeLe4n.Kernel.Architecture.tlbFlushByASIDWithShootdown
   , `SeLe4n.Kernel.notificationSignal
