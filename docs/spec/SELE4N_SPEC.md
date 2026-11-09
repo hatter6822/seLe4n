@@ -6617,10 +6617,23 @@ Every kernel object has a decidable well-formedness predicate:
   capabilities takes its own arm (`RegisterRoutedSyscall.transferring`,
   `dispatchTransferringCheckedR_eq`).  As in seL4, such a message's
   capabilities are looked up only at the rendezvous: one that blocks writes in
-  place, and one that meets a receiver takes the specification's transfer
-  (`endpointSendDualWithCapsOnCore`), refusing in the pre-state when the
-  receiver's CSpace root does not resolve, as the specification's checked
-  entry does.  With the default layout the router hands the decoded arm
+  place.  One of at most four words that meets a receiver whose receive window
+  is closed (its CSpace root has no empty slot among the `maxExtraCaps` slots
+  the transfer scans from slot 0, `receiveWindowClosed`) writes the send or
+  call rendezvous in place, the transfer installing nothing
+  (`receiveTransferCaps_of_windowClosed`,
+  `sendDispatchChecked_inPlace_windowClosed`,
+  `callDispatchChecked_inPlace_windowClosed`), as seL4's `transferCaps` with
+  no receive slot; the receive that takes a blocked capability-carrying send of
+  at most four words into a closed window writes in place too
+  (`receiveTakeCaps_delivered`), as does the receive that takes a blocked short
+  call (`receiveCallTake_delivered`).  The window is read in the pre-state,
+  which the rendezvous's writes agree with on every CNode and every thread's
+  CSpace root (`CapSpaceAgrees`).  Any other rendezvous transfer takes the
+  specification's (`endpointSendDualWithCapsOnCore`), refusing in the
+  pre-state when the receiver's CSpace root does not resolve, as the
+  specification's checked entry does; it allocates
+  (`docs/REGISTERED_DEBT.md` table C).  With the default layout the router hands the decoded arm
   nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
   whose registers lie out of bounds or which has no message register.
   An IPC buffer is found through its page (`validateIpcBufferAddress` looks

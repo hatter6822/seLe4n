@@ -43,11 +43,25 @@ The decode-path follow-up's IPC stage.
   (`.transferring`, `dispatchTransferringCheckedR_eq`,
   `SeLe4n/Kernel/RoutedArms/Transferring.lean`), within the inline words or
   past them.  As in seL4, the capabilities are looked up only at the
-  rendezvous: one that blocks writes in place, and one that meets a receiver
-  runs the specification's transfer (`endpointSendDualWithCapsOnCore`),
-  refusing in the pre-state when the receiver's CSpace root does not resolve,
-  as the specification's checked entry does.  That transfer still allocates;
-  it is registered in `docs/REGISTERED_DEBT.md` table C.
+  rendezvous: one that blocks writes in place.  One of at most four words that
+  meets a waiting receiver whose receive window is closed -- its CSpace root
+  has no empty slot among the `maxExtraCaps` slots the specification's
+  transfer scans from slot 0 (`receiveWindowClosed`) -- writes the send or
+  call rendezvous in place (`sendDispatchChecked_inPlace_windowClosed`,
+  `callDispatchChecked_inPlace_windowClosed`): the transfer then installs
+  nothing and is the identity on the state
+  (`receiveTransferCaps_of_windowClosed`), as seL4's `transferCaps` with no
+  receive slot transfers none.  The receive that takes a blocked
+  capability-carrying send of at most four words into a closed window writes
+  in place too (`receiveTakeCaps_delivered`).  The window is read in the
+  pre-state: the rendezvous's writes agree with it on every CNode and every
+  thread's CSpace root (`CapSpaceAgrees`,
+  `SeLe4n/Kernel/IPC/CrossCore/ClosedReceiveWindow.lean`), proven without
+  table invariants.  A transfer into an open window still runs the
+  specification's transfer, registered in `docs/REGISTERED_DEBT.md` table C.
+- **The receive that takes a blocked short call** writes in place
+  (`performReceiveCallDelivered`, `receiveCallTake_delivered`), beside the
+  long call's take.
 - **The decoded arm is unreachable from the ABI** with the default layout
   (`registerRoutedSyscall_viaDecode`, now `≠ .viaDecode`).  It stays for a
   layout whose registers lie out of bounds or which has no message register.
@@ -59,7 +73,13 @@ The decode-path follow-up's IPC stage.
   blocking (`tail-reply-recv-*`), and capability-carrying sends and calls that
   block, inline and at full length (`caps-send-blocks`,
   `caps-long-send-blocks`, `caps-call-blocks`, `caps-long-call-blocks`, each
-  cancelled by suspending the root task), with their setup and teardown steps.
+  cancelled by suspending the root task), the short call's take
+  (`short-call-*`), sends and calls carrying one and three capabilities to a
+  waiting receiver whose window is closed (`caps-send-rendezvous-*`,
+  `caps-three-send-rendezvous-*`, `caps-call-rendezvous-*`,
+  `caps-three-call-rendezvous-*`), and the receive taking a blocked
+  capability-carrying send (`caps-take-*`), with their setup and teardown
+  steps.
 
 ### Security
 
@@ -77,14 +97,43 @@ The decode-path follow-up's IPC stage.
     (`heap_halt`): a local denial of service.
   - *Fix:* each form takes a routed arm proven equal to the specification;
     the router hands the decoded arm nothing (`registerRoutedSyscall_viaDecode`).
-  - *Not yet fixed:* a capability transfer at the rendezvous, and the receive
-    that takes a blocked short call, still run the specification's general
-    path, which allocates (`docs/REGISTERED_DEBT.md` table C).
+  - *Not yet fixed:* a capability transfer into an open receive window, a
+    capability-carrying rendezvous of more than four words, and the take of a
+    blocked capability-carrying call still run the specification's general
+    path (`docs/REGISTERED_DEBT.md` table C).
   - *Proofs:* `syscallEntryCheckedK_eq_routed` (`@[csimp]`),
     `dispatchCallLongCheckedR_eq`, `dispatchReplyLongCheckedR_eq`,
     `dispatchReplyRecvLongCheckedR_eq`, `dispatchTransferringCheckedR_eq`,
     `registerRoutedSyscall_viaDecode`.  The specification is unchanged.
   - *Evidence:* the scenarios above read 0 at first call and in steady state.
+- **The receive that took a blocked short call, and a capability-carrying
+  rendezvous, copied the kernel's tables.**  Severity: Medium.
+  - *Where:* `endpointReceiveTakeR` had no arm for a blocked short call, and
+    `endpointSendCapsCheckedArmR` / `endpointCallCapsCheckedArmR` sent every
+    rendezvous, and `endpointReceiveTakeR` every capability-carrying sender,
+    to the specification's general path under `RefusalCarrying.ofKernel`,
+    which holds the pre-state for a refusal.
+  - *What it cost:* measured before the fix as a copy of the object table's
+    slot array (an 8192-byte cell at the exerciser's table size) and of the
+    receiver's CNode (a 2072-byte cell), growing with both; the short call's
+    take read 54 cells.
+  - *How it could be used:* any thread with an endpoint capability, as the
+    decoded arm's above: a local denial of service.
+  - *Fix:* the short call's take writes in place (`receiveCallTake_delivered`);
+    a rendezvous of at most four words into a closed receive window, and the
+    take of a blocked capability-carrying send into one, write in place,
+    the transfer installing nothing (`receiveTransferCaps_of_windowClosed`,
+    `CapSpaceAgrees`).  Each is proven equal to the specification.
+  - *Not yet fixed:* a transfer into an open window (an install), a long
+    capability-carrying rendezvous, and the take of a blocked
+    capability-carrying call (`docs/REGISTERED_DEBT.md` table C).  A thread
+    can still reach the copy by receiving into a CSpace with a free slot
+    among slots 0-2.
+  - *Evidence:* `short-call-partner-takes`, `caps-send-rendezvous-to-receiver`,
+    `caps-three-send-rendezvous-to-receiver`,
+    `caps-call-rendezvous-to-receiver`,
+    `caps-three-call-rendezvous-to-receiver` and `caps-take-partner-takes`
+    read 0 at first call and in steady state.
 - **The IPC buffer's alignment admitted a buffer that crossed its page**
   (the alignment bullet above).  Severity: Low: a model and documentation gap,
   not a reachable fault, since each overflow slot is translated at its own
