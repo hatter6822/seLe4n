@@ -2351,10 +2351,12 @@ faulted caller under the same checks answers its fault in place
 donated reply or to a caller recording no server does
 (`endpointReplyDonatedFaultArmR`, `endpointReplyUnheldFaultArmR`), the answer the
 `.replyRecv` arm shares (`performFaultAnswer`).  An unfaulted caller is
-answered in place only when the reply transfers no capability
+answered by the message alone when the reply transfers no capability
 (`replyTransferInertW`: the reply capability lacks the grant right, or the
 caller has no IPC buffer or names no receive slot); any other reply takes the
-general arm, which runs seL4's `doReplyTransfer` capability transfer. -/
+in-place arm that runs seL4's `doReplyTransfer` capability transfer after the
+reply's writes (`endpointReplyCapsArmR`, `endpointReplyDonatedCapsArmR`,
+`endpointReplyUnheldCapsArmR`). -/
 @[inline] def endpointReplyCheckedArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId)
@@ -2746,7 +2748,8 @@ four words writes the rendezvous in place, resolves the capabilities in its
 CSpace and installs or unwraps them in the receiver's in place, and writes the
 frame with the transfer's report (`performSendCapsDelivered`, the
 specification's transfer by `sendRendezvousCaps_eq_delivered`).  A longer one
-runs the specification's transfer (`endpointSendCapsGeneralR`). -/
+does the same and then copies the overflow words from the sender's IPC buffer
+into the receiver's (`performSendCapsDeliveredLong`). -/
 @[inline] def endpointSendCapsCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
     (len : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
     RefusalCarrying Unit :=
@@ -2959,10 +2962,12 @@ capabilities, refusing in the state it was handed
 all pass blocks in place, resolving nothing (`callBlock_inPlace_eq`); one of
 at most four words whose transfer transfers nothing (`senderTransferInertW`)
 writes the call rendezvous in place, the transfer installing nothing
-(`callDispatchChecked_inPlace_inert`); any other takes the general
-arm, which resolves and installs the capabilities at the rendezvous through
-the specification's transfer and refuses in the state it was handed
-(`endpointCallCheckedArmGeneralR`). -/
+(`callDispatchChecked_inPlace_inert`); any other writes the call rendezvous in
+place, then resolves and installs or unwraps the capabilities in place and
+writes the frame, of at most four words or longer
+(`performCallCapsDelivered`, `performCallCapsDeliveredLong`).  The general arm
+(`endpointCallCheckedArmGeneralR`) is taken only when a check fails before any
+write. -/
 @[inline] def endpointCallCapsCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
     (len : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
     RefusalCarrying Unit :=
