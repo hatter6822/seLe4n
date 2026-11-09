@@ -881,11 +881,28 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveInstallCNode\? st endpointObjId replier" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_receiveSlot($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_receiveSlot($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The reply-receive's reply leg runs `doReplyTransfer`, so its footprint declares
+# the CNode that transfer installs into (the answered caller's receive slot),
+# proven a write member and proven the only CNode the transfer writes.
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*replyInstallCNode\? st replier target" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_replyInstall($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The reply-receive's receive leg reads its receive slot on the reply leg's
+# post-state, so the footprint also declares the slot's CNode as resolved after
+# an installing reply transfer, and a slot read after the transfer, on either
+# answer and either grant right, is proven declared.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyTransferInstalledState[^\n]*(\n([ \t][^\n]*)?)*replyTransferCaps st replier target true st with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def receiveInstallCNodeAfterReply\?[^\n]*(\n([ \t][^\n]*)?)*receiverCapSlot\? \(replyTransferInstalledState st replier target\) replier" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveInstallCNodeAfterReply\? st endpointObjId replier target" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_receiveSlotAfterReply($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferCaps_receiverCapSlot_cases($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_receiveLegSlot($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_replyInstall($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvReplyTransfer_writes_destination($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
 # The parametric receive and reply-receive footprints sit strictly below the
 # ceiling, which is what leaves room for the receive slot's CNode the resolved
 # footprints add (`lockSet_endpoint{Receive,ReplyRecv}OnCore_size_le`).
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReceive_size_lt[^\n]*(\n([ \t][^\n]*)?)*< maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_lt[^\n]*(\n([ \t][^\n]*)?)*< maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_replyRecv_size_add_four_le[^\n]*(\n([ \t][^\n]*)?)*\.size \+ 4\n *≤ maxLockSetSize := by" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
 # A short capability-carrying rendezvous whose transfer transfers nothing is
 # written in place: the transfer is the identity on any state reading every
 # CNode alike, and each arm decides it with the in-place decision the
@@ -899,7 +916,26 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyTransferCaps[^\n]*(\n([ \t][
 run_check "INVARIANT" rg -n '^theorem replyTransferCaps_of_inert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyTransferOnCore [^\n]*(\n([ \t][^\n]*)?)*replyTransferCaps st replier callerTid grant" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*replyInstallCNode\? st replier target" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*replyTransferInertW st ct \(cap\.rights\.mem \.grant\)" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+# The reply transfer's install adds a CDT edge, so both reply footprints declare
+# the CDT's lock whenever the transfer can install, and a transfer that changes
+# the CDT is proven to run under it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyInstallCdtLock\?[^\n]*(\n([ \t][^\n]*)?)*\(replyInstallCNode\? st replier target\)\.map \(fun _ => \(stateLevelLock, AccessMode\.write\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*\(replyInstallCdtLock\? st replier target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(replyInstallCdtLock\? st replier target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem replyTransferCaps_of_noInstall($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_replyTransferCdt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_reply_covers_replyInstallCdt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_replyInstallCdt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*replyTransferInertW st tid ct \(cap\.rights\.mem \.grant\)" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+# A word-only reply (no extra capability) is inert whatever receive path the
+# answered caller names: the in-place decision tests the replier's saved
+# message-info word, proven to make the specification's request `none`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyTransferInertW[^\n]*(\n([ \t][^\n]*)?)*!grant \|\| replyFrameNamesNoCapsW st replier \|\|" SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def frameNamesNoExtraCapsW[^\n]*(\n([ \t][^\n]*)?)*readRegWord tcb\.registerContext SeLe4n\.arm64DefaultLayout\.msgInfoReg >>> 7\)" SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean'
+run_check "INVARIANT" rg -n '^theorem senderFrameCapRequest_of_noExtraCaps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean
+run_check "INVARIANT" rg -n '^theorem replyCapRequest_of_noCapsW($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvReplyInertW[^\n]*(\n([ \t][^\n]*)?)*\| some ct => replyTransferInertW st tid ct grant" SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def capUnwrapsAt[^\n]*(\n([ \t][^\n]*)?)*\| \.object id, some ep => id == ep" SeLe4n/Kernel/IPC/Operations/CapTransfer.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def capTransferInert[^\n]*(\n([ \t][^\n]*)?)*capUnwrapsAt cap endpointId" SeLe4n/Kernel/IPC/CrossCore/InertCapTransfer.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSendCapsCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*senderTransferInertW st epId rt tid &&" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
@@ -924,8 +960,8 @@ run_check "INVARIANT" rg -n '^theorem errorLabelWord_eq_encode($|[ ({:\[\]])' Se
 run_negative_check "INVARIANT" rg -n '^def receiveWindowClosed' SeLe4n/
 # The ceiling and the figures derived from it move together -- the point of
 # stating them as theorems rather than paragraphs.
-run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 29' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 11" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 32' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 10" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # NEGATIVE: the superseded figure must not come back.  Mutating by deleting the
 # theorem would be caught by the positive; this keeps it at the old number.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 20" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
@@ -934,6 +970,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSec
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 14" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # WS-ZA ZA4.7: and the figure this cut supersedes.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 12" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+# The reply install's CDT lock: and the figure it supersedes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 11" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # WS-OD OD3.11: `.send` and `.call` declare the one TCB their queue *structure*
 # change writes.  A rendezvous pops the receive queue, relinking the popped
 # receiver's successor into the head; a block enqueues on the send queue,
@@ -2221,7 +2259,7 @@ run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(donation, no caps\) size 
 # OD3.5: the ceiling, and the figure derived from it.  `maxLockSetSize` is the
 # WCRT headline's first factor, so a cut that widens a footprint pays here —
 # visibly, as a theorem rather than a paragraph.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 29$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 32$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 # WS-RM (`v0.35.6`) NEGATIVE: the superseded ceiling must not come back.  The
 # positive above would be satisfied by a *deleted* constant only if the whole
 # definition went, which the build catches; this keeps it at the old value, which
@@ -2233,7 +2271,11 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 
 # WS-ZA ZA4.7: and the ceiling this cut supersedes.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 27$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 28$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 11 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+# The reply install's CDT lock: and the ceiling it supersedes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 30$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+# The receive slot read after the reply transfer: and the ceiling it supersedes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 31$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 10 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 
 # The projection result got STRONGER: every field the return writes is stripped,
@@ -4115,6 +4157,15 @@ run_check "INVARIANT" rg -n '^theorem cspaceCopy_preserves_liveMappingsRecorded(
 run_check "INVARIANT" rg -n '^theorem cspaceMintWithCdt_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem cspaceMove_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem mintReplyCapWithCdt_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
+# A reply capability carries seL4-MCS's `capReplyCanGrant`: the mint gives
+# `.write` and the source's `.grant` (`replyCapRightsFrom`), in the
+# specification's mint, its admitted-writes capability and its compiled form.
+run_check "INVARIANT" rg -n '^theorem replyCapRightsFrom_mem_grant($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem replyCapRightsFrom_mem_write($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem replyCapRightsFrom_subset($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -U -n 'target := \.replyCap rid\n *rights := replyCapRightsFrom parent\.rights' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'rights := replyCapRightsFrom parentRights \}' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'insertFields dst\.slot t \(replyCapRightsFrom parent\.rights\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
@@ -4397,8 +4448,8 @@ run_check "INVARIANT" rg -n '^theorem replyTransferChecked_donated_inPlace($|[ (
 run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextInPlace_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
 run_check "INVARIANT" rg -n '^theorem popDonationSettled_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvDonatedInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvDonatedInPlace.lean
-run_check "INVARIANT" rg -n -U '      else replyRecvDonatedArmR epId tid c rid badge layout rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    if replyRecvDonatedAdmits epId tid c rid layout len st then\n      \.ok \(\(\), performReplyRecvDonatedDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '      else replyRecvDonatedArmR epId tid c rid badge grant layout rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvDonatedAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvDonatedDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then\n      \.ok \(\(\), performReplyDonatedDelivered st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Kernel\.returnDonatedSchedContextInPlace,$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem consumed_eq_impl' SeLe4n/Model/Object/Reply.lean
@@ -4410,7 +4461,7 @@ run_check "INVARIANT" rg -n '^theorem replyOnCore_eq_storeLeg($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n '^theorem unheldPopsInPlace_transport($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyUnheldPopsInPlace_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyTransferChecked_unheld_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
-run_check "INVARIANT" rg -n -U '                    \| \.blockedOnReply _ none =>\n                        match ct\.replyObject with\n                        \| some rid =>\n                            if ct\.faultWords\.isFault then\n                              endpointReplyUnheldFaultArmR ctx layout rf len extraCaps label tid\n                                executingCore cap c rid ct\.faultKind ct\.faultIp ct\.faultSp\n                                ct\.faultLr ct\.faultX0 ct\.faultX1 ct\.faultX2 ct\.faultX3 ct\.faultX4\n                                ct\.faultX5 ct\.faultX6 ct\.faultX7 st\n                            else if replyTransferInertW st ct \(cap\.rights\.mem \.grant\) then\n                              endpointReplyUnheldArmR ' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '                    \| \.blockedOnReply _ none =>\n                        match ct\.replyObject with\n                        \| some rid =>\n                            if ct\.faultWords\.isFault then\n                              endpointReplyUnheldFaultArmR ctx layout rf len extraCaps label tid\n                                executingCore cap c rid ct\.faultKind ct\.faultIp ct\.faultSp\n                                ct\.faultLr ct\.faultX0 ct\.faultX1 ct\.faultX2 ct\.faultX3 ct\.faultX4\n                                ct\.faultX5 ct\.faultX6 ct\.faultX7 st\n                            else if replyTransferInertW st tid ct \(cap\.rights\.mem \.grant\) then\n                              endpointReplyUnheldArmR ' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '    if replyUnheldAdmits ctx layout len tid c rid cFault st then\n      \.ok \(\(\), performReplyUnheldDelivered st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Kernel\.storeReplyLeg,$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 # ...and a reply-receive answering such a caller blocks the replier in place:
@@ -4420,8 +4471,8 @@ run_check "INVARIANT" rg -n '^theorem returnUnheldSchedContextInPlace_popFrame($
 run_check "INVARIANT" rg -n '^theorem popUnheldSettled_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
-run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvUnheldArmR epId tid c rid badge layout rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    if replyRecvUnheldAdmits epId tid c rid layout len st then\n      \.ok \(\(\), performReplyRecvUnheldDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvUnheldArmR epId tid c rid badge grant layout rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvUnheldAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvUnheldDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # ...and a final delete of an orphaned caller's head reply asks the unheld pop's
 # commit test through the in-place gate first, so the admission resolves no
 # outer caller as an `Except` where the gate passes.
@@ -5367,7 +5418,12 @@ run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st exe
 # ZA5.2: into the core's entry-word buffer, run by run as the proven runs are
 # planned, a receive's blocked sender's slots too, and the committed state
 # drops the buffer.
-run_check "INVARIANT" rg -n '^  let wordCount ← captureEntryWords execCore trapped\.syscallId trapped\.x0 msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^  let wordCount ← captureEntryWords execCore trapped\.syscallId trapped\.x0 msgInfo trapped\.x2$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# A reply-receive reads two receive paths: its receive leg's (the caller's own)
+# and its reply leg's (the caller the reply capability in MR0 answers).
+run_check "INVARIANT" rg -n '^@\[inline\] def replyRecvAnsweredCallerCode ' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '      match replyRecvAnsweredCallerCode st tid syscallId replyWord with\n      \| 0 => pure n3\n      \| k \+ 1 =>\n        match st\.getTcb\? ⟨k⟩ with\n        \| some rtcb => captureReceivePath st rtcb n3' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '9j: a granting reply-receive installs its extra cap into the caller.s receive slot' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n -U '^      let post := Architecture\.IpcBufferRead\.clearUserWords r\.2\n      \(\(r\.1, Architecture\.restoreCommitKindOnCore post execCore,$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.ffiCaptureUserWords idx\.toUInt64 pa\.toNat\.toUInt64 len\.toUInt64\n        captureOverflowRuns st tcb stop fuel \(s \+ len\) \(idx \+ len\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^            let n2 ← captureOverflowRuns st stcb sstop sstop 0 n1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
@@ -10690,7 +10746,7 @@ run_check "INVARIANT" rg -n 'a caps-installing .\.receive. declares the state-le
 # WS-OD OD3.7: the label names the CONSTANT, not the numeral it holds -- this
 # anchor pinned `= 11` and went stale the moment the ceiling moved, which is the
 # same defect the `_size_le_maxLockSetSize` negative below refuses in Lean.
-run_check "INVARIANT" rg -n 'with the receive slot.s CNode it is maxLockSetSize \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'with the reply install.s CDT lock it is within the bound' tests/DeadlockFreedomSuite.lean
 # WS-RR RR7.12: the declared footprint is ACQUIRED at the live syscall seam.
 # Before this row exactly one live export bracketed (the raw cross-core
 # suspend seam, retired at WS-ZA ZA6.10), so "per-object reader-writer fine locks"
@@ -12847,7 +12903,7 @@ run_check "INVARIANT" rg -n '^def schedLockSet_endpointReplyRecvOnCore \(' SeLe4
 # (`endpointReplyRecvOnCore_confinedToCores` is stated at it), the replenish segment
 # `replyRecvHandoffReplenishCores`.  Mutation: keep `schedFootprintOfCores` and
 # resolve either segment a second way inside the body.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg executingCore st\)\n *\(replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg grant executingCore st\)\n *\(replyRecvHandoffReplenishCores none endpointId receiver replyId prevCaller msg grant\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # The segment mirrors the spine: the pop's pair at the reply leg's post-state
 # (`st1`), the block-path pair at the pop's post-state (`st1p`), the re-donation
 # pair at the receive leg's post-state (`st2`).  Pinned with each state NAMED, so a
@@ -18216,7 +18272,7 @@ run_check "INVARIANT" rg -n '^theorem replyRecvPostReceiveDonation_preserves_ipc
 # The dispatch payoff's receive-leg hypotheses are stated at the POST-POP state.
 # Stating them at the reply leg's own is the pre-WS-RM shape and is a claim about
 # a state the receive leg no longer runs on.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hCleanupStack1 : cleanupDonationStackValid[^\n]*(\n([ \t][^\n]*)?)*replyRecvPostPopState" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hCleanupStack1 : cleanupDonationStackValid[^\n]*(\n([ \t][^\n]*)?)*replyRecvReceiveLegState" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
 
 # (6) `Reply.isFree` is the one spelling of "this Reply may be linked or
 # retyped", and it reads BOTH links -- which is why the pop has to precede the

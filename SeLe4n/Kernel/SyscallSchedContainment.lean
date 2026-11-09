@@ -350,33 +350,42 @@ the tail writing no replenish queue at all. -/
 theorem schedLockSet_endpointReplyRecvOnCore_coversWrites
     {answer : Option Architecture.FaultReplyOutcome} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
+    (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedFootprintOfCores
-      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg executingCore st)
-      (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st)) = some S)
-    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg executingCore st = .ok (summary, st')) :
+      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant
+        executingCore st)
+      (replyRecvHandoffReplenishCores answer endpointId receiver replyId prevCaller msg grant
+        executingCore st)) = some S)
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
+      grant executingCore st = .ok (summary, st')) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_confined S
-    (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg executingCore st)
-    (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg executingCore st) st st' (LockSet.ofList?_pairs hS)
-    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg executingCore st st' summary hObjInv hStep)
-    (fun d hd => endpointReplyRecvOnCore_replenishQueueOnCore_ne endpointId receiver replyId prevCaller msg executingCore st st' summary d hObjInv hd hStep)
+    (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant
+      executingCore st)
+    (replyRecvHandoffReplenishCores answer endpointId receiver replyId prevCaller msg grant
+      executingCore st) st st' (LockSet.ofList?_pairs hS)
+    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg grant
+      executingCore st st' summary hObjInv hStep)
+    (fun d hd => endpointReplyRecvOnCore_replenishQueueOnCore_ne endpointId receiver replyId
+      prevCaller msg grant executingCore st st' summary d hObjInv hd hStep)
 
 /-- The `.replyRecv` arm's transition is covered by its declared footprint: the
 composite at the answer the caller's fault record selects, so a faulted caller's
 restart or abandon lands on the cores `replyRecvAnswerCores` names. -/
 theorem schedLockSet_replyRecvTransferOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState)
     (summary : CapTransferSummary) (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_replyRecvTransferOnCore endpointId receiver replyId
-      prevCaller label msg executingCore st) = some S)
-    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg executingCore st = .ok (summary, st')) :
+      prevCaller label msg grant executingCore st) = some S)
+    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant
+      executingCore st = .ok (summary, st')) :
     footprintCoversWrites S st st' :=
-  schedLockSet_endpointReplyRecvOnCore_coversWrites endpointId receiver replyId prevCaller _ executingCore st st' summary S hObjInv hS hStep
+  schedLockSet_endpointReplyRecvOnCore_coversWrites endpointId receiver replyId prevCaller _ grant
+    executingCore st st' summary S hObjInv hS hStep
 
 /-- **Cut C6f (`v0.35.179`) / WS-LS LS2.3**: the live `.receive` ARM's coverage —
 the leg composed with the **whole hand-off**.

@@ -892,13 +892,13 @@ only: the staging of its delivered message, or the fault outcome (a restart fram
 into the faulted thread, an abandon that writes no register). -/
 theorem replyRecvAnswerCaller_savedRegsKeptExcept
     (answer : Option Architecture.FaultReplyOutcome) (st : SystemState)
-    (prevCaller : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    savedRegsKeptExcept (· = prevCaller) st (replyRecvAnswerCaller answer st prevCaller) ∧
-      (replyRecvAnswerCaller answer st prevCaller).objects.invExt := by
+    (prevCaller : SeLe4n.ThreadId) (capInfo : Nat) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept (· = prevCaller) st (replyRecvAnswerCaller answer st prevCaller capInfo) ∧
+      (replyRecvAnswerCaller answer st prevCaller capInfo).objects.invExt := by
   cases answer with
-  | none => exact stageDeliveredMessage_savedRegsKeptExcept st prevCaller 0 hInv
+  | none => exact stageDeliveredMessage_savedRegsKeptExcept st prevCaller capInfo hInv
   | some outcome =>
-    refine ⟨?_, replyRecvAnswerCaller_preserves_objects_invExt _ st prevCaller hInv⟩
+    refine ⟨?_, replyRecvAnswerCaller_preserves_objects_invExt _ st prevCaller _ hInv⟩
     show savedRegsKeptExcept (· = prevCaller) st (faultReplyApplyOnCore st prevCaller outcome)
     unfold faultReplyApplyOnCore
     split
@@ -910,16 +910,16 @@ theorem replyRecvAnswerCaller_savedRegsKeptExcept
 /-- WS-ZA ZA6.26: **the reply-and-receive writes only the answered caller and
 the woken sender**: its legs write no saved register; the reply's staging names
 the caller the reply leg found blocked on its reply, and the send's completion
-names the send queue's head after the reply leg and the donation pop, which
-write no endpoint, so the head the entry began from, blocked there. -/
+names the send queue's head after the reply leg, the donation pop and the reply
+leg's capability transfer, which write no endpoint, so the head the entry began from, blocked there. -/
 theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
-    {msg : IpcMessage} {ec e : CoreId}
+    {msg : IpcMessage} {grant : Bool} {ec e : CoreId}
     {st st' : SystemState} {summary : CapTransferSummary}
     {answer : Option Architecture.FaultReplyOutcome}
     (hD : st.currentDequeuedUnique) (hQ : queueHeadBlockedConsistent st)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident) (hInv : st.objects.invExt)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg ec st
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st
       = .ok (summary, st')) :
     savedRegsWrittenFree e st st st' ∧ st'.objects.invExt := by
   unfold endpointReplyRecvAnsweringOnCore at h
@@ -937,9 +937,18 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
   try dsimp only at h
   split at h
   · cases h
-  rename_i ret st1p hPop
-  have h1 := h0.trans (replyRecvPopDonation_savedRegsUnwritten h0.2 hPop)
-  have hB1 := (replyRecvPopDonation_frame h0.2 hPop).1
+  rename_i ret st1q hPop
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [hX] at h
+  try dsimp only at h
+  have hXU := hX
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hXU
+  have h1q := h0.trans (replyRecvPopDonation_savedRegsUnwritten h0.2 hPop)
+  have h1 := h1q.trans (receiveTransferCaps_savedRegsUnwritten h1q.2 hXU)
+  have hB1 : ∀ (o : SeLe4n.ObjId) (ep : Endpoint), st1p.objects[o]? = some (.endpoint ep) →
+      st1.objects[o]? = some (.endpoint ep) := fun o ep hx =>
+    (replyRecvPopDonation_frame h0.2 hPop).1 o ep
+      ((receiveTransferCaps_ipcFrame h1q.2 hXU).1 o ep hx)
   have h2v := endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid (some rid)
     ec h1.2
   revert h h2v
@@ -959,7 +968,7 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
   have h3 := h2.trans (replyRecvPostReceiveDonation_savedRegsUnwritten h2.2 hPost)
   have h4 := h3.trans (applyReceiveLegPipHandoff_savedRegsUnwritten st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) ec h3.2)
-  obtain ⟨k5, i5⟩ := replyRecvAnswerCaller_savedRegsKeptExcept answer _ prevCaller h4.2
+  obtain ⟨k5, i5⟩ := replyRecvAnswerCaller_savedRegsKeptExcept answer _ prevCaller _ h4.2
   obtain ⟨w6, i6⟩ := stageWokenSendCompletion_savedRegsWrittenFree (e := e) (base := st)
     (w := (st1p.getEndpoint? epId).bind (·.sendQ.head)) i5 fun _ ht =>
       offCoreFree_of_sendHead hD hQ hRT hBNR

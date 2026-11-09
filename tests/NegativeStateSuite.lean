@@ -1748,7 +1748,7 @@ private def runAuditCoverageChecks : IO Unit := do
   -- Now execute replyRecv: receiver replies to caller and waits on endpoint
   let (_, stReplyRecv) ← expectOkSt "replyRecv success"
     (SeLe4n.Kernel.endpointReplyRecvOnCore endpointId (SeLe4n.ThreadId.ofNat 8) rrReplyId
-      (SeLe4n.ThreadId.ofNat 7) .empty bootCoreId stCallSetup2)
+      (SeLe4n.ThreadId.ofNat 7) .empty false bootCoreId stCallSetup2)
   -- Verify caller is unblocked (ready)
   match (stReplyRecv.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
   | some (KernelObject.tcb unblocked) =>

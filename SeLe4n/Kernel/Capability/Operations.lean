@@ -2004,6 +2004,38 @@ theorem cspaceMintWithCdt_ok_decompose {src dst : CSpaceAddr} {rights : AccessRi
         exact ⟨parent, st1, rfl, rfl, hU, h.symm⟩
       · rw [hU] at h; cases h
 
+/-- **The rights a reply capability minted from `parentRights` carries**: `.write`
+(the single-use reply authority every reply gate asks) and `.grant` exactly when the
+parent carries it.  seL4 MCS: retyping a Reply object yields
+`cap_reply_cap_new(REPLY_REF(..), true)` (`capReplyCanGrant` set,
+`objecttype.c` `createObject`), a derived copy keeps it only under a grant-bearing
+mask (`maskCapRights`: `capReplyCanGrant & capAllowGrant`), and a reply invocation
+hands that bit to `doReplyTransfer` as its grant.  Here the retyped object is held
+as an `.object` capability, so its rights are the mask the reply capability is cut
+by: a grant-bearing parent mints a granting reply capability, any other a
+non-granting one. -/
+@[inline] def replyCapRightsFrom (parentRights : AccessRightSet) : AccessRightSet :=
+  if parentRights.mem .grant then AccessRightSet.ofList [.write, .grant]
+  else AccessRightSet.ofList [.write]
+
+/-- Every reply capability's rights carry `.write`. -/
+theorem replyCapRightsFrom_mem_write (r : AccessRightSet) :
+    (replyCapRightsFrom r).mem .write = true := by
+  unfold replyCapRightsFrom; split <;> decide
+
+/-- A minted reply capability grants exactly when its parent does. -/
+theorem replyCapRightsFrom_mem_grant (r : AccessRightSet) :
+    (replyCapRightsFrom r).mem .grant = r.mem .grant := by
+  unfold replyCapRightsFrom; split
+  · next h => rw [h]; decide
+  · next h => simp only [Bool.not_eq_true] at h; rw [h]; decide
+
+/-- A minted reply capability's rights attenuate its parent's `.grant`: it holds no
+right but `.write` and, where the parent has it, `.grant`. -/
+theorem replyCapRightsFrom_subset (r : AccessRightSet) :
+    (replyCapRightsFrom r).subset (AccessRightSet.ofList [.write, .grant]) = true := by
+  unfold replyCapRightsFrom; split <;> decide
+
 /-- WS-SM SM6.D (PR #822 review, Phase H): **mint a reply capability** from an
 `.object` capability that targets a `.reply` object.  The in-place retype retypes
 an ObjId in place, so after retyping Untyped → Reply the holder's authority is still an
@@ -2029,20 +2061,15 @@ def mintReplyCap (src dst : CSpaceAddr) : Kernel Unit :=
             let rid := SeLe4n.ReplyId.ofObjId target
             match st'.getReply? rid with
             | some _ =>
-                -- WS-SM SM6.D (#1 residual, PR #827 review): the minted reply cap
-                -- conveys **single-use reply authority**, which the live lookup paths
-                -- model as the `.write` right: `syscallRequiredRight .reply = .write`,
-                -- and both `resolveRecvReplyId` / `resolveReplyRecvReply` build the
-                -- reply-cap gate with `requiredRight := .write`.  A rights-less cap
-                -- would fail `.illegalAuthority` before `extractReplyId` ever inspects
-                -- `cap.target`, leaving a freshly minted reply cap unusable for
-                -- `reply` / `receive_with_reply` / `replyRecv`.  We mint exactly
-                -- `.write` (least authority sufficient for every reply gate; no
-                -- reply-cap consumer requires `.read`), matching the `.write`-bearing
-                -- reply caps the model/conformance suites construct.
+                -- The minted reply cap conveys single-use reply authority, which the
+                -- live lookup paths model as the `.write` right
+                -- (`syscallRequiredRight .reply = .write`; `resolveRecvReplyId` /
+                -- `resolveReplyRecvReply` gate on `.write`), and the reply's grant
+                -- (seL4 MCS `capReplyCanGrant`) as `.grant`, kept only where the
+                -- parent carries it (`replyCapRightsFrom`).
                 let child : Capability :=
                   { target := .replyCap rid
-                    rights := AccessRightSet.ofList [.write] }
+                    rights := replyCapRightsFrom parent.rights }
                 cspaceInsertSlot dst child st'
             | none => .error .invalidCapability
         | _ => .error .invalidCapability
@@ -2209,8 +2236,8 @@ theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRig
     rfl
 
 /-- WS-ZA ZA5.3: the reply capability a reply-capability mint writes. -/
-@[inline] def mintedReplyCap (rid : SeLe4n.ReplyId) : Capability :=
-  { target := .replyCap rid, rights := AccessRightSet.ofList [.write] }
+@[inline] def mintedReplyCap (rid : SeLe4n.ReplyId) (parentRights : AccessRightSet) : Capability :=
+  { target := .replyCap rid, rights := replyCapRightsFrom parentRights }
 
 /-- WS-ZA ZA5.3: **`mintReplyCapWithCdt`'s checks**: the source names an object
 that is a reply object, and the destination is admitted
@@ -2230,7 +2257,7 @@ def mintReplyCapPerform (src dst : CSpaceAddr) (st : SystemState) : SystemState 
   | some parent =>
       match parent.target with
       | .object target =>
-          cspaceInstallPerform src dst (mintedReplyCap (SeLe4n.ReplyId.ofObjId target)) .mint st
+          cspaceInstallPerform src dst (mintedReplyCap (SeLe4n.ReplyId.ofObjId target) parent.rights) .mint st
       | _ => st
   | none => st
 
@@ -2274,7 +2301,7 @@ store, so the store is not held across its write. -/
       | .object target =>
           let t := replyCapTargetIn st (SeLe4n.ReplyId.ofObjId target)
           (st.storeCNodeWith dst.cnode
-              (·.insertFields dst.slot t (AccessRightSet.ofList [.write]) SeLe4n.Badge.zero false 0)).cdtAddChild
+              (·.insertFields dst.slot t (replyCapRightsFrom parent.rights) SeLe4n.Badge.zero false 0)).cdtAddChild
             src dst .mint
       | _ => st
   | none => st

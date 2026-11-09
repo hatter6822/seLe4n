@@ -844,7 +844,7 @@ platform rather than with the lock.
 > members for one.  `tests/LockSetSuite.lean` exhibits the redirecting shape at
 > seventeen, one *narrower* than the popping shape measured at the same operands.
 >
-> At HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**. See
+> At HEAD, the declared lock-set ceiling is **32**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5760 µs**. See
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
 > canonical statement.
 

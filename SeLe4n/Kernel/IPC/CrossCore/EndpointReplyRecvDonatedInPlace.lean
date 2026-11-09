@@ -730,7 +730,7 @@ reply's writes, the pop and its settle, the receive's block, the server taken
 off its core, its priority walk and the caller's staged message. -/
 theorem replyRecvAnsweringOnCore_donated_inPlace
     (answer : Option Architecture.FaultReplyOutcome) (st : SystemState) (epId : SeLe4n.ObjId)
-    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
     (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
     (hSz : ¬ msg.registers.size > maxMessageRegisters)
@@ -744,14 +744,16 @@ theorem replyRecvAnsweringOnCore_donated_inPlace
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
-    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
-    endpointReplyRecvAnsweringOnCore answer epId tid rid c msg core st =
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : answer = none →
+      replyTransferInert st tid ct grant = true) :
+    endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
       .ok ({ results := #[] }, replyRecvAnswerCaller answer
         (PriorityInheritance.propagatePipChainCrossCore
           (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock
             (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
               ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) epId tid
-            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1 c) ∧
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1 c 0) ∧
       ∃ x, (removeRunnableOnCore (storeReceiveBlock
             (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
               ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) epId tid
@@ -770,6 +772,7 @@ theorem replyRecvAnsweringOnCore_donated_inPlace
     epId ep rt scId sc (determineTargetCore st c) hNo hT hFC hRp hN hScO hHead hBelow
     (fun e => hNe e.symm) hE hR hA hEnq hStash hRec
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
   have hRecS : recordedReplyServer? st c = some tid := by
     simp only [recordedReplyServer?, hTc, hIpc]
   rw [← storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hPop
@@ -793,12 +796,12 @@ theorem replyRecvAnsweringOnCore_donated_inPlace
     simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
   refine ⟨?_, tb, hTb, hBk⟩
   unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_some, hEq, hPop, hRecv, hEp1, Option.bind_some, hS]
+  simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hS]
   simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff,
     Architecture.stageWokenSendCompletion_none]
 
 theorem replyRecvOnCore_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
-    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
     (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
     (hSz : ¬ msg.registers.size > maxMessageRegisters)
@@ -812,8 +815,9 @@ theorem replyRecvOnCore_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
-    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
-    endpointReplyRecvOnCore epId tid rid c msg core st =
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : replyTransferInert st tid ct grant = true) :
+    endpointReplyRecvOnCore epId tid rid c msg grant core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
           (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock
@@ -825,8 +829,8 @@ theorem replyRecvOnCore_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
               ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
         x.ipcState = .blockedOnReceive epId :=
-  replyRecvAnsweringOnCore_donated_inPlace none st epId tid c rid msg core ct ep0 rt ep rp hSz hT hIpc hRO hSRes hG hE hS hR hA hEnq
-    hRp hStash hRec
+  replyRecvAnsweringOnCore_donated_inPlace none st epId tid c rid msg grant core ct ep0 rt ep rp hSz hT hIpc hRO hSRes hG hE hS hR hA hEnq
+    hRp hStash hRec (fun _ => hInert)
 
 end DonatedReplyRecv
 
@@ -863,7 +867,7 @@ arm's result is the caller's frame written into its saved registers on top of
 `storeReplyRecvDonatedReady`; the server, blocked on the endpoint, stages
 nothing. -/
 theorem replyRecvOnCore_donated_delivered (st : SystemState) (epId : SeLe4n.ObjId)
-    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
     (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
     (hSz : ¬ msg.registers.size > maxMessageRegisters) (hSz4 : msg.registers.size ≤ 4)
@@ -877,8 +881,9 @@ theorem replyRecvOnCore_donated_delivered (st : SystemState) (epId : SeLe4n.ObjI
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
-    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
-    (match endpointReplyRecvOnCore epId tid rid c msg core st with
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : replyTransferInert st tid ct grant = true) :
+    (match endpointReplyRecvOnCore epId tid rid c msg grant core st with
       | .ok (summary, st') =>
           (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
             Except KernelError (Unit × SystemState))
@@ -894,8 +899,8 @@ theorem replyRecvOnCore_donated_delivered (st : SystemState) (epId : SeLe4n.ObjI
     hSRes hG
   have hNe : tid ≠ c := fun e => hNe' e.symm
   have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
-  obtain ⟨hEq, x, hX, hB⟩ := replyRecvOnCore_donated_inPlace st epId tid c rid msg core
-    ct ep0 rt ep rp hSz hT hIpc hRO hSRes hG hE hS hR hA hEnq hRp hStash hRec
+  obtain ⟨hEq, x, hX, hB⟩ := replyRecvOnCore_donated_inPlace st epId tid c rid msg grant core
+    ct ep0 rt ep rp hSz hT hIpc hRO hSRes hG hE hS hR hA hEnq hRp hStash hRec hInert
   rw [hEq]
   simp only [CapTransferSummary.capInfo_empty]
   revert hX

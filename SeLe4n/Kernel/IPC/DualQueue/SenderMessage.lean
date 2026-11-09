@@ -239,6 +239,81 @@ def senderFrameCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : T
       | some rootCn => some (tcb.cspaceRoot, addrs, rootCn.depth)
       | none => none
 
+
+/-- A message-info word that decodes carries the extra-capability count its
+bits 7..8 hold. -/
+theorem decodeMsgInfoWord_extraCaps {w : UInt64} {mi : MessageInfo}
+    (h : Architecture.RegisterDecode.decodeMsgInfoWord w = .ok mi) :
+    mi.extraCaps = ((w >>> 7) &&& 3).toNat := by
+  unfold Architecture.RegisterDecode.decodeMsgInfoWord at h
+  split at h
+  · cases h; rfl
+  · cases h
+
+/-- A register decode that succeeds took its message info from the layout's
+message-info register. -/
+theorem decodeSyscallArgs_msgInfo {layout : SeLe4n.SyscallRegisterLayout}
+    {regs : SeLe4n.RegisterFile} {n : Nat} {d : SyscallDecodeResult}
+    (h : Architecture.RegisterDecode.decodeSyscallArgs layout regs n = .ok d) :
+    Architecture.RegisterDecode.decodeMsgInfo (SeLe4n.readReg regs layout.msgInfoReg)
+      = .ok d.msgInfo := by
+  unfold Architecture.RegisterDecode.decodeSyscallArgs at h
+  cases hM : Architecture.RegisterDecode.decodeMsgInfo (SeLe4n.readReg regs layout.msgInfoReg) with
+  | error e =>
+    simp only [hM, bind, Except.bind, pure, Except.pure] at h
+    repeat (first | (split at h <;> try cases h))
+  | ok mi =>
+    simp only [hM, bind, Except.bind, pure, Except.pure] at h
+    repeat (first | (split at h <;> try cases h))
+    all_goals rfl
+
+/-- And so does the state-aware decode, whose overflow merge keeps the base
+decode's message info. -/
+theorem decodeSyscallArgsFromState_msgInfo {st : SystemState} {tid : SeLe4n.ThreadId}
+    {layout : SeLe4n.SyscallRegisterLayout} {regs : SeLe4n.RegisterFile}
+    {n : Nat} {d : SyscallDecodeResult}
+    (h : Architecture.RegisterDecode.decodeSyscallArgsFromState st tid layout regs n = .ok d) :
+    Architecture.RegisterDecode.decodeMsgInfo (SeLe4n.readReg regs layout.msgInfoReg)
+      = .ok d.msgInfo := by
+  unfold Architecture.RegisterDecode.decodeSyscallArgsFromState at h
+  cases hB : Architecture.RegisterDecode.decodeSyscallArgs layout regs n with
+  | error e => simp only [hB, bind, Except.bind] at h; cases h
+  | ok base =>
+    have hb := decodeSyscallArgs_msgInfo hB
+    simp only [hB, bind, Except.bind, pure, Except.pure] at h
+    split at h
+    · cases h; exact hb
+    · split at h
+      · cases h
+      · cases h; exact hb
+
+/-- **A saved frame names no extra capability, decided on its message-info
+word** (seL4's `seL4_MessageInfo_get_extraCaps`, bits 7..8 of the word the
+entry saved): a scalar test on one register, with nothing built. -/
+@[inline] def frameNamesNoExtraCapsW (tcb : TCB) : Bool :=
+  ((SeLe4n.readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.msgInfoReg >>> 7)
+    &&& 3) == 0
+
+/-- **A frame that names no extra capability asks to transfer none**, whatever
+the grant right: a frame that decodes carries the word's count, zero, and so
+names no address (`senderExtraCapAddrs_zero`); one that does not decode asks
+for nothing either. -/
+theorem senderFrameCapRequest_of_noExtraCaps {st : SystemState} {sender : SeLe4n.ThreadId}
+    {tcb : TCB} (grant : Bool) (h : frameNamesNoExtraCapsW tcb = true) :
+    senderFrameCapRequest st sender tcb grant = none := by
+  unfold senderFrameCapRequest
+  cases grant
+  · rfl
+  simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+  cases hD : blockedSenderDecode st sender tcb with
+  | error _ => rfl
+  | ok d =>
+    have hM := decodeSyscallArgsFromState_msgInfo hD
+    rw [← Architecture.RegisterDecode.decodeMsgInfoWord_readReg] at hM
+    have hE := decodeMsgInfoWord_extraCaps hM
+    unfold frameNamesNoExtraCapsW at h
+    rw [beq_iff_eq.mp h] at hE
+    simp only [hE, UInt64.toNat_zero, senderExtraCapAddrs_zero, Array.isEmpty_empty, ↓reduceIte]
 /-- WS-ZA ZA4.7: **the capabilities a blocked sender asks to transfer**, as the
 CSpace root, the addresses and the root's depth they resolve against -- or
 `none` when it transfers nothing: a fault message, a sender without the grant

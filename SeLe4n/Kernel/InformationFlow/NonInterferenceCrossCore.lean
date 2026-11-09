@@ -116,16 +116,16 @@ rendezvousing sender, the recorded server or any chain member. -/
 theorem endpointReplyRecvOnCore_crossCoreNonInterference (ctx : LabelingContext)
     {answer : Option Architecture.FaultReplyOutcome}
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg executingCore st
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg grant executingCore st
       = .ok (summary, st'))
-    (hne : c ∉ endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg executingCore st)
+    (hne : c ∉ endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant executingCore st)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg executingCore st st' summary hObjInv hStep)
+    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg grant executingCore st st' summary hObjInv hStep)
     hShared
 
 /-- The `.replyRecv` arm's transition at the answer its caller's fault record
@@ -134,14 +134,14 @@ selects: a faulted caller's restart or abandon lands on the cores
 theorem replyRecvTransferOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
-    (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
-    (hObjInv : st.objects.invExt)
-    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg executingCore st = .ok (summary, st'))
-    (hne : c ∉ replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg executingCore st)
+    (grant : Bool) (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
+    (c : CoreId) (hObjInv : st.objects.invExt)
+    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant executingCore st = .ok (summary, st'))
+    (hne : c ∉ replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant executingCore st)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   endpointReplyRecvOnCore_crossCoreNonInterference ctx observer endpointId receiver replyId
-    prevCaller _ executingCore st st' summary c hObjInv hStep
+    prevCaller _ grant executingCore st st' summary c hObjInv hStep
     hne hShared
 
 /-- SM8.B.2 (**the live `.tcbSuspend` non-interference**): the syscall arm the

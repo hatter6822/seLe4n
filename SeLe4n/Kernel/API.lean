@@ -618,7 +618,7 @@ outstanding caller** (authority now flows from *holding* the reply cap, exactly 
 the `.reply` arm — no raw-thread bypass). -/
 def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (st : SystemState) :
-    Except KernelError (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge) :=
+    Except KernelError (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge × Bool) :=
   -- PR #822 review: require MR0 explicitly present (`msgInfo.length ≥ 1`) before
   -- reading the reply CPtr — the ARM64 register decoder always materializes x2..x5,
   -- so a length-0 `ReplyRecv` must not resolve/consume a stale (x2) reply cap.
@@ -647,7 +647,7 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
               -- authority), not the endpoint receive cap's, so the previous
               -- caller receives the badge associated with the reply cap (as in
               -- the `.reply` arm) when the two differ.
-              | some prevCaller => .ok (rid, prevCaller, rcap.badge)
+              | some prevCaller => .ok (rid, prevCaller, rcap.badge, rcap.rights.mem .grant)
               | none => .error .replyCapInvalid
 
 -- ============================================================================
@@ -659,8 +659,8 @@ an answered caller for — the resolver's own last check, read back out so the
 scheduler footprint's `replyAnsweredCaller?` read is the arm's. -/
 theorem resolveReplyRecvReply_answered (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (st : SystemState) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge)
-    (h : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, badge)) :
+    (badge : Option SeLe4n.Badge) (grant : Bool)
+    (h : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, badge, grant)) :
     replyAnsweredCaller? st rid = some prevCaller := by
   unfold resolveReplyRecvReply at h
   split at h
@@ -4522,7 +4522,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       fun st =>
         match resolveReplyRecvReply gate decoded st with
         | .error e => .error e
-        | .ok (rid, prevCaller, replyBadge) =>
+        | .ok (rid, prevCaller, replyBadge, replyGrant) =>
             -- WS-SM SM6.D (PR #822 review): MR0 carries the reply CPtr (a control
             -- register), so the reply *payload* delivered to the previous caller is
             -- MR1.. — strip the leading control register before building the reply.
@@ -4540,7 +4540,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             -- answers it — restart or abandon, fault record cleared
             -- (`replyRecvTransferOnCore`, seL4's `doReplyTransfer` fault branch).
             match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
-            executingCore st with
+            replyGrant executingCore st with
             -- PR #873 round 7: the receive leg inside `endpointReplyRecvOnCore` now runs
             -- the **WithCaps** per-core receive, so a capability-bearing sender
             -- that parked before this `.replyRecv` delivers its capabilities
@@ -5034,7 +5034,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         else
           match resolveReplyRecvReply gate decoded st with
           | .error e => .error e
-          | .ok (rid, prevCaller, replyBadge) =>
+          | .ok (rid, prevCaller, replyBadge, replyGrant) =>
               -- WS-SM SM6.D (PR #822 review): strip the leading reply-CPtr control
               -- register (MR0); the reply payload is MR1.. (mirrors the unchecked arm).
               -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
@@ -5047,7 +5047,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 -- twin of the unchecked arm's staging; the receive leg's own
                 -- flow gate governs the consumed message).
                 match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
-                executingCore st with
+                replyGrant executingCore st with
                 -- PR #873 round 7: the checked twin of the unchecked arm's
                 -- WithCaps receive leg — the endpoint→receiver flow is gated
                 -- above, so the *unchecked* per-core WithCaps receive inside
@@ -5935,7 +5935,8 @@ theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
     (hCap : cap.target = .object epId)
     (st : SystemState)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
-    (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge))
+    (replyGrant : Bool)
+    (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge, replyGrant))
     (hFlowReply : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
     (hFlowRecv : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     -- WS-SM SM8.C: the receive leg also consults this endpoint's configured
@@ -6947,16 +6948,16 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
+    (replyGrant : Bool)
     (st stB : SystemState) (msg : IpcMessage) (tcb : TCB) (summary : CapTransferSummary)
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
-    (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge))
+    (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge, replyGrant))
     (hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
             (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           badge := replyBadge }
-
-        executingCore st = .ok (summary, stB))
+        replyGrant executingCore st = .ok (summary, stB))
     (hTcb : stB.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)

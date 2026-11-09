@@ -614,7 +614,7 @@ private def runReplyRecvLoopChecks : IO Unit := do
     -- capability's object (`replyB`, linked to A) and re-links that SAME object
     -- to the next caller — seL4-MCS one-object reuse.
     match endpointReplyRecvOnCore epAB serverB replyB clientA replyMsgB
-        c1 st3 with
+        false c1 st3 with
     | .error _ => assertBool "replyRecv succeeded" false
     | .ok (summary, st4) =>
       assertBool "replyRecv installs no capabilities from a capability-free Call"
@@ -676,7 +676,7 @@ private def runErrorPathChecks : IO Unit := do
   -- carries no state, so the caller keeps its pre-state).
   assertBool "replyRecv with a failed reply leg fails closed"
     (match endpointReplyRecvOnCore epAB serverB replyB clientA replyMsgB
-        c1 stFourCore with
+        false c1 stFourCore with
      | .error .replyCapInvalid => true | _ => false)
   -- No-stash rendezvous: a server that supplied NO reply object cannot answer a Call.
   match okPair (endpointReceiveDualOnCore epAB serverB none c1 stFourCore) with
@@ -3040,7 +3040,7 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
            | .error _ => false)
       -- **PAYOFF**: the whole arm, in the live order, end to end.
       match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty
-          c1 stQueued with
+          false c1 stQueued with
       | .error e =>
         assertBool s!"PAYOFF: the `ReplyRecv` loop must complete (got {reprStr e})" false
       | .ok (_, stLoop) =>
@@ -4116,7 +4116,7 @@ private def runReplyRecvHolderDescheduleChecks : IO Unit := do
           = some (SchedContextBinding.bound orphanS1Sc)))
   -- (ii) The live arm, end to end.
   match endpointReplyRecvOnCore orphanEp orphanDelegate orphanReply orphanClient IpcMessage.empty
-      c0 st with
+      false c0 st with
   | .error e => assertBool s!"the live `.replyRecv` must succeed (got {reprStr e})" false
   | .ok (_, stOut) =>
       -- The pop unbound the holder...
@@ -4144,7 +4144,7 @@ private def runReplyRecvHolderDescheduleChecks : IO Unit := do
   assertBool "CONTROL setup: here the recorded server IS the holder"
     (decide (recordedServerDescheduleTarget stAgree orphanClient orphanDelegate = orphanHolder))
   match endpointReplyRecvOnCore orphanEp orphanDelegate orphanReply orphanClient IpcMessage.empty
-      c0 stAgree with
+      false c0 stAgree with
   | .error e => assertBool s!"the control `.replyRecv` must succeed (got {reprStr e})" false
   | .ok (_, stOut) =>
       assertBool "CONTROL: the holder is descheduled here too -- the fix is the identity"
@@ -4475,10 +4475,10 @@ private def runReplyRecvFootprintChecks : IO Unit := do
       (replyFrameHeadHolder? stQ donReply == some (scClient, donServer))
     assertBool "(a) setup: the affinity invariant holds before the ReplyRecv"
       (replenishAffinityConsistentB stQ)
-    let seg := replyRecvHandoffReplenishCores donEp donServer donReply donClient IpcMessage.empty
-      c1 stQ
+    let seg := replyRecvHandoffReplenishCores none donEp donServer donReply donClient IpcMessage.empty
+      false c1 stQ
     let fp := schedLockSet_endpointReplyRecvOnCore donEp donServer donReply donClient
-      IpcMessage.empty c1 stQ
+      IpcMessage.empty false c1 stQ
     -- The segment mirrors the spine: the pop's pair (server's home, client's home),
     -- nothing for the rendezvousing receive leg, the re-donation's pair (second
     -- client's home, server's home).
@@ -4491,7 +4491,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
       (hasRunQueueWrite fp c0)
     -- The live arm, end to end: both migrations happen, between exactly those cores.
     match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty
-        c1 stQ with
+        false c1 stQ with
     | .error e => assertBool s!"(a) the live `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
       assertBool "(a) PAYOFF: the pop migrated the first context back to the client's home (1 -> 0)"
@@ -4543,10 +4543,10 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     assertBool "(b) setup: the second client's Call is queued, bound, its replenishment on core 2"
       (ipcStateIs stQ fpClient2 (.blockedOnCall donEp)
         && replenishCountFor stQ c2 fpClient2Sc == 1)
-    let seg := replyRecvHandoffReplenishCores donEp donServer donReply donClient IpcMessage.empty
-      c1 stQ
+    let seg := replyRecvHandoffReplenishCores none donEp donServer donReply donClient IpcMessage.empty
+      false c1 stQ
     let fp := schedLockSet_endpointReplyRecvOnCore donEp donServer donReply donClient
-      IpcMessage.empty c1 stQ
+      IpcMessage.empty false c1 stQ
     assertBool "(b) PAYOFF: the segment is EMPTY" (decide (seg = []))
     assertBool "(b) PAYOFF: the footprint names NO replenish-queue write lock"
       (replenishMemberCount fp == 0)
@@ -4554,7 +4554,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     -- is the exactness frame at its strongest -- and the shape that makes the
     -- measurement decisive, since (a) leaves only one core outside.
     match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty
-        c1 stQ with
+        false c1 stQ with
     | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
       assertBool "(b) C6e: with an empty segment the arm leaves EVERY core's replenish queue alone"
@@ -4586,7 +4586,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     -- The live arm: no replenishment moves on any core (the exactness licence,
     -- measured), and no context is handed over (the divergence, measured).
     match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty
-        c1 stQ with
+        false c1 stQ with
     | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
       assertBool "(b) PAYOFF: the live `.replyRecv` moves NO replenishment on any core"
@@ -4621,17 +4621,17 @@ private def runReplyRecvFootprintChecks : IO Unit := do
       (receiveRendezvousSender? stD donEp == none)
     assertBool "(c) setup: the delegate's own guard resolves its loan"
       (decide (preReceiveDonation? stD fpDelegate = some (fpClientXSc, fpClientX)))
-    let seg := replyRecvHandoffReplenishCores donEp fpDelegate donReply donClient IpcMessage.empty
-      c3 stD
+    let seg := replyRecvHandoffReplenishCores none donEp fpDelegate donReply donClient IpcMessage.empty
+      false c3 stD
     let fp := schedLockSet_endpointReplyRecvOnCore donEp fpDelegate donReply donClient
-      IpcMessage.empty c3 stD
+      IpcMessage.empty false c3 stD
     assertBool "(c) the segment is the pop's pair, then the block-path return's pair: [1, 0, 3, 2]"
       (decide (seg = [c1, c0, c3, c2]))
     assertBool "(c) the footprint names replenish-queue write locks on all four cores"
       (hasReplenishWrite fp c0 && hasReplenishWrite fp c1 && hasReplenishWrite fp c2
         && hasReplenishWrite fp c3 && replenishMemberCount fp == 4)
     match endpointReplyRecvOnCore donEp fpDelegate donReply donClient IpcMessage.empty
-        c3 stD with
+        false c3 stD with
     | .error e => assertBool s!"(c) the delegated `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
       assertBool "(c) PAYOFF: the pop migrated the first context back to its client's home (1 -> 0)"

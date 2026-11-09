@@ -12,6 +12,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecv
+import SeLe4n.Kernel.IPC.CrossCore.InertCapTransfer
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -544,7 +545,7 @@ private def runReplyRecvChecks : IO Unit := do
     (decide (replyAnsweredCaller? stReplyRecv replyId709 = some clientLocalTid))
   -- The reply leg of the live replyRecv wakes the recorded caller; the receive
   -- leg then blocks the server on the (empty) endpoint, stashing the same Reply.
-  match endpointReplyRecvOnCore epId serverTid replyId709 clientLocalTid replyMsg bootCoreId stReplyRecv with
+  match endpointReplyRecvOnCore epId serverTid replyId709 clientLocalTid replyMsg false bootCoreId stReplyRecv with
   | .error _ => assertBool "replyRecv succeeds (reply leg + receive leg)" false
   | .ok (summary, st') =>
     -- One Reply object, consumed by the reply leg and re-stashed by the receive
@@ -922,6 +923,42 @@ private def runDispatchChecks : IO Unit := do
   assertBool "donation-chain PIP reversion emits at most `fuel` (=8) cross-core SGIs"
     (decide ((PriorityInheritance.propagatePipChainCrossCore stBase serverTid bootCoreId 8).2.length ≤ 8))
 
+/-- The server with its saved message-info word set to `word` (`x1`, the word
+the entry spilled into its TCB). -/
+private def stWithReplierInfo (word : UInt64) : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject serverTid.toObjId
+        (.tcb { mkTcb 601 50 none .ready with
+                registerContext := { ({} : SeLe4n.RegisterFile) with x1 := word } })
+    |>.withObject clientLocalTid.toObjId
+        (.tcb (mkTcb 602 30 none (.blockedOnReply epId (some serverTid))))
+    |>.withRunnable [serverTid]
+    |>.build)
+
+/-- **A word-only reply is inert whatever the caller's receive path**: the
+in-place decision reads the replier's saved message-info word, and a word whose
+extra-capability count is zero admits the in-place path on the count alone,
+under the grant right, before any receive path is consulted -- and the
+specification's request agrees (`replyCapRequest_of_noCapsW`). -/
+private def runWordOnlyReplyChecks : IO Unit := do
+  IO.println "--- word-only reply: the extra-capability count decides inertness ---"
+  -- length 2, no extra capability.
+  let st0 := stWithReplierInfo 2
+  let ct : TCB := mkTcb 602 30 none (.blockedOnReply epId (some serverTid))
+  assertBool "a frame naming no extra capability is read as such"
+    (replyFrameNamesNoCapsW st0 serverTid)
+  assertBool "…and the specification's request under the grant right is none"
+    ((replyCapRequest st0 serverTid true).isNone)
+  assertBool "…so a granting reply decides inert in place on the count alone"
+    (replyTransferInertW st0 serverTid ct true)
+  -- length 2, one extra capability (bits 7..8 = 1).
+  let st1 := stWithReplierInfo (((1 : UInt64) <<< 7) ||| 2)
+  assertBool "NEGATIVE: a frame naming one extra capability is not read as naming none"
+    (!replyFrameNamesNoCapsW st1 serverTid)
+  assertBool "NEGATIVE: …and without the grant right the reply is still inert"
+    (replyTransferInertW st1 serverTid ct false)
+
 def runSmpCrossCoreReplyChecks : IO Unit := do
   IO.println "WS-SM SM6.C — Cross-core reply suite"
   IO.println "===================================="
@@ -936,6 +973,7 @@ def runSmpCrossCoreReplyChecks : IO Unit := do
   runUnheldOrphanChecks
   runUnheldOrphanSeverChecks
   runDispatchChecks
+  runWordOnlyReplyChecks
   IO.println "===================================="
   IO.println "All SM6.C cross-core reply checks PASS."
 

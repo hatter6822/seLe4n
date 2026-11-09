@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.5` (`lakefile.toml`) |
+| **Package version** | `0.37.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 604,818 across 603 Lean files |
-| **Test LoC** | 88,865 across 70 Lean test suites |
-| **Proved declarations** | 23,215 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 605,906 across 603 Lean files |
+| **Test LoC** | 89,031 across 70 Lean test suites |
+| **Proved declarations** | 23,247 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4169,7 +4169,7 @@ alongside the latent inventory (closing SMP-H3).
    them with no consumer (§8.12.12), so a sharper reachable bound cannot
    be rebuilt on either.
 
-   **At HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**.**
+   **At HEAD, the declared lock-set ceiling is **32**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5760 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
    `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
    formula.  No gate checks prose copies of them, so a raise updates
@@ -7553,9 +7553,53 @@ and only when the reply capability carries the grant right (otherwise the
 replier names none).  They go into the caller's receive slot, and the caller's
 staged message info reports the count.  A faulted caller takes no transfer.
 The caller's receive slot CNode is declared for write in the reply's lock set
-(`replyInstallCNode?`).  The reply's in-place arms are taken only when the
-transfer moves nothing (`replyTransferInertW`); otherwise the specification
+(`replyInstallCNode?`), and so is the CDT the install adds its edge to
+(`stateLevelLock`, `replyInstallCdtLock?`); a transfer that changes the CDT is
+proven to run under it (`lockSet_endpointReplyOnCore_covers_replyTransferCdt`).  The reply's in-place arms are taken only when the
+transfer moves nothing (`replyTransferInertW`): no grant right, a replier
+whose saved message info names no extra capability, or a caller with no IPC
+buffer or no receive slot, so an ordinary word-only reply stays in place
+whatever receive path its caller configured; otherwise the specification
 runs.
+
+The grant right a reply capability carries is seL4-MCS's `capReplyCanGrant`
+(since `v0.37.6`).  seL4 creates a Reply object's capability with the bit set
+(`createObject`'s `cap_reply_cap_new(…, true)`), a derived copy keeps it only
+under a grant-bearing mask (`maskCapRights`), and a reply invocation hands it
+to `doReplyTransfer` as its grant.  Here the retyped Reply is held as an
+`.object` capability, and the reply-capability mint cuts the reply capability
+from it: `.write`, the right every reply gate asks, and `.grant` exactly when
+the source carries it (`replyCapRightsFrom`, `replyCapRightsFrom_mem_grant`).
+A carved Reply's capability carries `.grant` (`kernelObjectRights`), so its
+reply capability grants unless the holder masks the grant away, by minting
+from a grant-less copy or by a `cspaceMint` that drops it.
+
+A reply-receive's reply leg runs the same transfer (since `v0.37.6`), as seL4's
+`handleReplyRecv` → `doReplyTransfer` does: after the donation pop and before
+the receive leg (`replyRecvReplyTransfer`, in `endpointReplyRecvAnsweringOnCore`),
+under the grant right of the reply capability in `MR0`, into the answered
+caller's receive slot, whose staged message info reports the count; a faulted
+caller takes none.  The receive leg then runs on the transfer's post-state
+(`replyRecvReceiveLegState`), and every scheduler footprint and write set that
+replays the arm replays the transfer.  The reply-receive's lock set declares the
+answered caller's receive slot CNode for write beside the receive leg's
+(`lockSet_endpointReplyRecvOnCore_covers_replyInstall`), and the CDT lock that
+install takes (`lockSet_endpointReplyRecvOnCore_covers_replyTransferCdt`).
+The receive leg reads its receive slot on the reply leg's post-state, as seL4's
+`receiveIPC` calls `getReceiveSlots` after `doReplyTransfer`, so a reply that
+installs a CNode capability into a slot the replier's receive path crosses (the
+two threads sharing a CSpace) changes the CNode that path reaches; the lock set
+declares the slot's CNode as resolved before and after an installing transfer
+(`receiveInstallCNode?`, `receiveInstallCNodeAfterReply?`), and a slot read after
+the transfer, on either answer and either grant right, is proven declared
+(`lockSet_endpointReplyRecvOnCore_covers_receiveLegSlot`).  These take
+`maxLockSetSize` to 32; the entry reads both receive paths from RAM
+(`replyRecvAnsweredCallerCode`), and the HAL's per-core entry-word buffer holds
+both.  The four in-place reply-receive arms are taken only when the reply leg's
+transfer moves nothing (`replyRecvReplyInertW`, `replyRecvReplyTransfer_of_inert`):
+no grant right, a replier whose saved message info names no extra capability
+(`replyFrameNamesNoCapsW`, decided on the word), or a caller with no IPC buffer
+or no receive slot; otherwise the specification runs.
 
 **No message holds a capability** (`v0.36.121`, WS-ZA ZA5.4 part 11).  An
 `IpcMessage` is registers and a badge: it has no capability field and no grant
@@ -9678,7 +9722,9 @@ respect.
    into `replyRecvPopDonation` and `replyRecvPostReceiveDonation`, each with its
    own bundle theorem stated at the state its own step runs on.
 5. **The receive-leg hypotheses are stated at the post-pop state.**
-   `replyRecvPostPopState` is a total accessor over the pop, so the staged
+   `replyRecvReceiveLegState` (`replyRecvPostPopState` until `v0.37.6`, when
+   the reply leg's capability transfer joined the pop before the receive leg)
+   is a total accessor over the pop and the transfer, so the staged
    dispatch payoff's pack stays flat and pre-state-computable; stating them at
    the reply leg's own state is a claim about a state the receive leg no longer
    runs on.

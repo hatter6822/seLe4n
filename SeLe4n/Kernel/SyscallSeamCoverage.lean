@@ -675,11 +675,12 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     rename_i epId
     split at hOps
     · exact absurd hOps (by simp)
-    · rename_i rid prev replyBadge hRRR
+    · rename_i rid prev replyBadge replyGrant hRRR
       injection hOps with hOps
       subst hOps
       simp only [schedLockSetForSyscall, Option.bind_some] at hSched
-      rw [resolveReplyRecvReply_answered gate decoded st rid prev replyBadge hRRR] at hSched
+      rw [resolveReplyRecvReply_answered gate decoded st rid prev replyBadge replyGrant hRRR]
+        at hSched
       simp only [Option.bind_some] at hSched
       rw [hT] at hDisp
       simp only at hDisp
@@ -695,7 +696,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
             subst hGateEq
             refine footprintCoversWrites_trans S ?_ (footprintCoversWrites_of_scheduler_eq S hTable
               (Architecture.stageDeliveredMessage_scheduler_eq _ _ _))
-            exact schedLockSet_replyRecvTransferOnCore_coversWrites epId tid rid prev _ _
+            exact schedLockSet_replyRecvTransferOnCore_coversWrites epId tid rid prev _ _ _
               e st st₁ summary S hObjInv hSched hStep
           · exact absurd hDisp (by simp)
         · exact absurd hDisp (by simp)

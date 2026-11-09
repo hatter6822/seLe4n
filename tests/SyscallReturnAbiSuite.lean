@@ -562,6 +562,30 @@ private def replyRecvDeliveryScenario :
     replyCapPtr.toUInt64 31 32 replyPendingState
   pure (out1, stagedFrame st1 callerTid)
 
+/-- 9j: a reply-receive's reply leg transfers capabilities as seL4's
+`doReplyTransfer` (gated on the reply capability's grant right, into the
+answered caller's receive slot), after the donation pop and before the receive
+leg.  The server replies `[31, 32]` (MR0 is the reply capability) with ONE extra
+capability (`payloadCapPtr`, named in its IPC buffer's `caps_or_badges[0]`)
+through the reply cap in `cn`; the caller's buffer names slot 0 of its CNode as
+its receive slot when `withSlot`; the receive leg then blocks (empty endpoint).
+Returns (the server's outcome, the caller's staged frame, receive slot 0
+occupied?). -/
+private def replyRecvCapsScenario (cn : SeLe4n.Model.CNode) (withSlot : Bool) :
+    Except KernelError (Kernel.Architecture.SyscallOutcome ×
+      Kernel.Architecture.SyscallReturnFrame × Bool) := do
+  let st0 := replyPendingStateOf cn
+  let st0 := if withSlot then SeLe4n.Testing.withReceiveSlot st0 callerTid ⟨0x7701⟩ 0 else st0
+  let st0 := SeLe4n.Testing.withSenderCapAddrs st0 peerTid #[SeLe4n.CPtr.ofNat payloadCapPtr]
+  let msgInfoRaw : UInt64 := (3 + (1 <<< 7) : Nat).toUInt64
+  let (out1, st1) ← dispatchFromAbiOn core1
+    SyscallId.replyRecv.toNat msgInfoRaw epCapPtr.toUInt64
+    replyCapPtr.toUInt64 31 32 st0
+  let slot0Occupied := match st1.objects[callerCn]? with
+    | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
+    | _ => false
+  pure (out1, stagedFrame st1 callerTid, slot0Occupied)
+
 /-- 9f: `.serviceQuery` — the `.word` shape end to end (the one value
 shape the blocked orderings do not exercise): a service registered on the
 endpoint, resolved through the endpoint capability, its `ServiceId` staged
@@ -984,6 +1008,29 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
   | .ok (frame, slot0) => do
       assertBool "9i control: a caller whose buffer names no receive slot takes nothing" (!slot0)
       assertBool "9i control: ...and the staged x1 reports no extra cap" (frame.x1 == 2)
+  -- 9j — a reply-receive's reply leg transfers capabilities too (seL4's
+  -- `doReplyTransfer` from `handleReplyRecv`), before its receive leg blocks
+  match replyRecvCapsScenario sharedCn true with
+  | .error e => assertBool s!"9j dispatches (got .error {reprStr e})" false
+  | .ok (out1, frame, slot0) => do
+      assertBool "9j: a granting reply-receive installs its extra cap into the caller's receive slot"
+        slot0
+      assertBool "9j: the caller's staged x1 reports it (length 2, extraCaps 1)"
+        (frame.x1 == (2 + (1 <<< 7) : Nat).toUInt64)
+      assertBool "9j: the reply's words still deliver (x2 = 31, x3 = 32)"
+        (frame.x2 == 31 && frame.x3 == 32)
+      assertBool "9j: the server's receive leg still blocks (empty endpoint)"
+        (out1 == .blocks)
+  match replyRecvCapsScenario (sharedCnOf replyCapabilityNoGrant) true with
+  | .error e => assertBool s!"9j no-grant dispatches (got .error {reprStr e})" false
+  | .ok (_, frame, slot0) => do
+      assertBool "9j control: a reply cap without grant transfers nothing" (!slot0)
+      assertBool "9j control: ...and the staged x1 reports no extra cap" (frame.x1 == 2)
+  match replyRecvCapsScenario sharedCn false with
+  | .error e => assertBool s!"9j no-slot dispatches (got .error {reprStr e})" false
+  | .ok (_, frame, slot0) => do
+      assertBool "9j control: a caller whose buffer names no receive slot takes nothing" (!slot0)
+      assertBool "9j control: ...and the staged x1 reports no extra cap" (frame.x1 == 2)
 
 -- ============================================================================
 -- §10  WS-SM SM9.A.10 — the audit reads return their computed word, end to end

@@ -180,6 +180,11 @@ structure SyscallLockOperands where
   /-- **Cut C4**: the register payload a `.reply` carries, read by
   `decodeFaultReply` beside `replyMessageInfo`. -/
   replyRegisters : Option (Array SeLe4n.RegValue) := none
+  /-- The grant right of the reply capability a `.replyRecv` answers through
+  (seL4's `capReplyCanGrant`), which gates the reply leg's capability transfer;
+  the arm's scheduler footprint replays that transfer, because its receive leg
+  runs on the transfer's post-state. -/
+  replyGrant : Option Bool := none
   /-- **Cut C4**: the core `.tcbSetAffinity` pins its target to, which is itself
   an `Option` — `none` unpins — so this field is doubly optional and the two
   layers mean different things: the outer says whether the caller supplied the
@@ -512,7 +517,7 @@ theorem lockSetForSyscall_replyRecv_delegated_covers_server
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnRoot prevCaller endpointId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hServer]
-  exact mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_donation_server_tcb_write_mem ..)
+  exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_donation_server_tcb_write_mem ..))))
 
 /-- **WS-OD OD3.5**: a **delegated** `.replyRecv` — one whose reply capability
 answers a caller whose recorded server is some *other* thread — now declares a
@@ -884,12 +889,30 @@ theorem lockSetForSyscall_reply_covers_writes
       (cnodeLock r, AccessMode.write) ∈ S.pairs) := by
   rw [lockSetForSyscall_reply_eq ops st caller rid answered hTcb hRid hAns] at hDecl
   cases hDecl
-  refine ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReply_target_tcb_write_mem ..), ?_,
+  refine ⟨mem_write_lockSetExtendOpt _ _ _ <| mem_write_lockSetExtendOpt _ _ _
+      (lockSet_endpointReply_target_tcb_write_mem ..), ?_,
     fun r hR => lockSet_endpointReplyOnCore_covers_replyInstall st ops.caller caller.cspaceRoot
       answered r hR⟩
   intro linked hLinked
   simp only [lockSet_endpointReplyOnCore, hLinked]
-  exact mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReply_reply_write_mem ..)
+  exact mem_write_lockSetExtendOpt _ _ _ <| mem_write_lockSetExtendOpt _ _ _
+    (lockSet_endpointReply_reply_write_mem ..)
+
+/-- And the CDT lock the reply's capability install takes
+(`replyInstallCdtLock?`): `stateLevelLock` for write whenever the transfer can
+install. -/
+theorem lockSetForSyscall_reply_covers_replyInstallCdt
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (rid : ReplyId) (answered : ThreadId) (S : LockSet)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hRid : ops.targetReply = some rid)
+    (hAns : replyAnsweredCaller? st rid = some answered)
+    (hDecl : lockSetForSyscall .reply ops st = some S) :
+    (replyInstallCNode? st ops.caller answered).isSome = true →
+      (stateLevelLock, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_reply_eq ops st caller rid answered hTcb hRid hAns] at hDecl
+  cases hDecl
+  exact lockSet_endpointReplyOnCore_covers_replyInstallCdt st ops.caller caller.cspaceRoot answered
 
 /-- **WS-RR RR7.11**: at resolved operands, `.replyRecv` declares the fused
 footprint.
@@ -925,9 +948,47 @@ theorem lockSetForSyscall_replyRecv_covers_writes
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_caller_tcb_write_mem ..),
-         mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_target_tcb_write_mem ..),
-         mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_endpoint_write_mem ..)⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_caller_tcb_write_mem ..)))),
+         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_target_tcb_write_mem ..)))),
+         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_endpoint_write_mem ..))))⟩
+
+/-- And its reply leg's capability transfer: the answered caller's receive
+slot's CNode (`replyInstallCNode?`, the member `.reply` declares for the same
+`doReplyTransfer`). -/
+theorem lockSetForSyscall_replyRecv_covers_replyInstall
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (rid : ReplyId) (prevCaller : ThreadId) (S : LockSet)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hRid : ops.targetReply = some rid)
+    (hAns : replyAnsweredCaller? st rid = some prevCaller)
+    (hDecl : lockSetForSyscall .replyRecv ops st = some S) :
+    ∀ r, replyInstallCNode? st ops.caller prevCaller = some r →
+      (cnodeLock r, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
+    hTcb hEp hRid hAns] at hDecl
+  cases hDecl
+  exact fun r hR => lockSet_endpointReplyRecvOnCore_covers_replyInstall st ops.caller
+    caller.cspaceRoot prevCaller endpointId r hR
+
+/-- And the CDT lock its reply leg's capability install takes
+(`replyInstallCdtLock?`, the member `.reply` declares for the same
+`doReplyTransfer`). -/
+theorem lockSetForSyscall_replyRecv_covers_replyInstallCdt
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (rid : ReplyId) (prevCaller : ThreadId) (S : LockSet)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hRid : ops.targetReply = some rid)
+    (hAns : replyAnsweredCaller? st rid = some prevCaller)
+    (hDecl : lockSetForSyscall .replyRecv ops st = some S) :
+    (replyInstallCNode? st ops.caller prevCaller).isSome = true →
+      (stateLevelLock, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
+    hTcb hEp hRid hAns] at hDecl
+  cases hDecl
+  exact lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt st ops.caller
+    caller.cspaceRoot prevCaller endpointId
 
 /-- **WS-RR RR7.11**: and its receive leg's capability install, which writes the
 same CDT structure a send's does. -/
@@ -948,7 +1009,7 @@ theorem lockSetForSyscall_replyRecv_covers_capsWrites
   refine ⟨?_, lockSet_endpointReplyRecvOnCore_covers_cdt _ _ _ _ _ hCaps⟩
   unfold lockSet_endpointReplyRecvOnCore
   rw [hCaps]
-  exact mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_capsInstall_write_mem ..)
+  exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_capsInstall_write_mem ..))))
 
 /-- **WS-OD OD3.13**: and the receive leg's queue-structure neighbour.
 
@@ -999,8 +1060,8 @@ theorem lockSetForSyscall_replyRecv_covers_redonation
   cases hDecl
   unfold lockSet_endpointReplyRecvOnCore
   rw [hNew]
-  exact ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonated_sc_write_mem ..),
-         mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonation_stateLevel_write_mem ..)⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonated_sc_write_mem ..)))),
+         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonation_stateLevel_write_mem ..))))⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.notificationSignal` declares the
 bound-delivery-aware signal footprint. -/
@@ -1232,7 +1293,7 @@ theorem lockSetForSyscall_ofThreadTarget_undeclared
       | simp [lockSetForSyscall, SyscallLockOperands.ofThreadTarget]
 
 /-- **WS-RR RR8.12 Cut C4b**: the object domain ignores the scheduler domain's
-five operands.
+six operands.
 
 `SyscallLockOperands` is ONE record for one syscall's operands, read by
 `lockSetForSyscall` here and by `schedLockSetForSyscall`
@@ -1240,20 +1301,21 @@ five operands.
 one decode for both domains rather than two, and what
 `declaredSchedulerLockSetForAbiEntry_shares_decode` states of the seam.  The cost of
 one record is that a field added for one domain could silently move the other's
-answer; this says it cannot, so `abiEntryLockOperands` supplying the five below
+answer; this says it cannot, so `abiEntryLockOperands` supplying the six below
 left every object-domain footprint exactly where Cut C4 found it.
 
-Stated as a congruence over all five at once, so a sixth field added without
+Stated as a congruence over all six at once (the sixth, `replyGrant`, the
+`.replyRecv` reply capability's grant right), so a seventh field added without
 extending it is a field nothing has checked. -/
 theorem lockSetForSyscall_ignores_sched_operands (sid : SyscallId)
     (ops : SyscallLockOperands) (st : SystemState)
     (msg : Option IpcMessage)
     (mi : Option MessageInfo) (regs : Option (Array SeLe4n.RegValue))
-    (aff : Option (Option CoreId)) (slot : Option SeLe4n.Slot) :
+    (aff : Option (Option CoreId)) (slot : Option SeLe4n.Slot) (grant : Option Bool) :
     lockSetForSyscall sid
         { ops with message := msg,
                    replyMessageInfo := mi, replyRegisters := regs, affinity := aff,
-                   targetSlot := slot } st
+                   targetSlot := slot, replyGrant := grant } st
       = lockSetForSyscall sid ops st := by
   cases sid <;> rfl
 

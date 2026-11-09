@@ -1130,16 +1130,20 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
 /-- And with one member more -- the CNode the reply's capability transfer
 installs into, which the state-resolved reply footprint adds
 (`lockSet_endpointReplyOnCore`).  `15 + 1 = 16`. -/
-theorem lockSet_endpointReply_extendOpt_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+theorem lockSet_endpointReply_extendOpt_extendOpt_size_le (a : ThreadId) (b : ObjId)
+    (c : ThreadId)
     (d : Option SchedContextId) (e : Option ThreadId) (f : Option ReplyId)
     (g : Option ReplyId) (h : Option ThreadId) (i : Option ReplyId) (j : Option ReplyId)
     (k : Option ReplyId) (l : Option ThreadId) (m n : Option ThreadId)
-    (o : Option (LockKey × AccessMode)) :
-    (lockSetExtendOpt (lockSet_endpointReply a b c d e f g h i j k l m n) o).size
+    (o o' : Option (LockKey × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSet_endpointReply a b c d e f g h i j k l m n) o)
+        o').size
       ≤ maxLockSetSize := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
   unfold lockSet_endpointReply maxLockSetSize
-  exact Nat.le_trans (Nat.add_le_add_right (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) 1)
+  exact Nat.le_trans (Nat.add_le_add_right
+    (Nat.add_le_add_right (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) 1) 1)
     (by size_bound)
 
 -- WS-RR RR7.11: and over the state-level member the capability install needs.
@@ -1417,7 +1421,7 @@ theorem lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_frameAbove_of_no_b
 -- **WS-HP HP10.6**'s origin member to `4 + 20 = 24` — which is the footprint the
 -- constant is measured against now, and the reason it stands at 24 (see its
 -- docstring).
-theorem lockSet_replyRecv_size_lt (a : ThreadId) (b : ObjId) (c : ThreadId)
+theorem lockSet_replyRecv_size_add_four_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId)
     (l : Option ReplyId) (m : Option ThreadId) (n : Option ThreadId)
@@ -1439,12 +1443,16 @@ theorem lockSet_replyRecv_size_lt (a : ThreadId) (b : ObjId) (c : ThreadId)
     -- extra capabilities are looked up at the rendezvous -- `4 + 24 = 28`, the
     -- footprint `maxLockSetSize` now stands at.
     (bb : Option ObjId) :
-    (lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb).size
-      < maxLockSetSize := by
-  -- One below the ceiling: the resolved footprint declares the receive slot's
-  -- CNode beside it (`lockSet_endpointReplyRecvOnCore`).
-  unfold lockSet_replyRecv maxLockSetSize
-  refine Nat.lt_of_le_sub_one (by decide) ?_
+    (lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb).size + 4
+      ≤ maxLockSetSize := by
+  -- Four below the ceiling: the resolved footprint declares, beside it, the
+  -- receive slot's CNode the receive leg installs into, read before and after
+  -- the reply leg's capability transfer, the answered caller's receive slot's
+  -- CNode the reply leg installs into, and the CDT lock that install takes
+  -- (`lockSet_endpointReplyRecvOnCore`).
+  unfold maxLockSetSize
+  refine Nat.add_le_of_le_sub (by decide) ?_
+  unfold lockSet_replyRecv
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
   refine Nat.le_trans (Nat.add_le_add_right
@@ -1468,7 +1476,8 @@ theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (v : Option ReplyId) (w : Option ReplyId) (x : Option ThreadId)
     (y z aa : Option ThreadId) (bb : Option ObjId) :
     (lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb).size ≤ maxLockSetSize :=
-  Nat.le_of_lt (lockSet_replyRecv_size_lt a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb)
+  Nat.le_trans (Nat.le_add_right _ 4)
+    (lockSet_replyRecv_size_add_four_le a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb)
 
 -- WS-SM SM9.C.8: stated over **all six** arguments, including the SM6.B
 -- bound-delivery optionals.  Before this cut the theorem fixed those two at

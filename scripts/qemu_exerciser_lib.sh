@@ -480,6 +480,12 @@ for driver in drivers:
             "caps-three-call-rendezvous-to-receiver", "caps-three-call-rendezvous-suspend",
             "caps-take-resume", "caps-take-send-blocks", "caps-take-partner-takes",
             "caps-take-partner-yield", "caps-take-suspend",
+            # Granting replies to a caller whose buffer names an empty receive slot.
+            "grant-reply-resume", "grant-reply-root-receives", "grant-reply-partner-calls",
+            "grant-reply-recv", "grant-reply-partner-calls-again", "grant-reply",
+            "grant-reply-cap-root-receives", "grant-reply-cap-partner-calls",
+            "grant-reply-installed-signal", "grant-reply-installed-wait",
+            "grant-reply-installed-delete", "grant-reply-suspend",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

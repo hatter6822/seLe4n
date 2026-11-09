@@ -282,7 +282,7 @@ private def runWcrtScenarios : IO Unit := do
   -- 1 ms tick does NOT admit 28 locks; what it admits is
   -- `admissibleCriticalSection`, and that is the figure worth pinning.
   assertBool s!"RPi5 1 ms tick admits {admissibleCriticalSection rpi5TickBudgetMicros} µs per lock at the declared ceiling"
-    (decide (admissibleCriticalSection rpi5TickBudgetMicros = 11))
+    (decide (admissibleCriticalSection rpi5TickBudgetMicros = 10))
   assertBool "RPi5 1 ms tick refuses 60 µs sections at the declared ceiling"
     (decide (¬ (maxLockSetSize * (3 * 60) ≤ rpi5TickBudgetMicros)))
 

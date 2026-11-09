@@ -487,9 +487,13 @@ pub const EXTRA_CAP_WORDS: usize = 3;
 /// overflow slots and extra-capability addresses, on a receive that takes a
 /// blocked sender the sender's
 /// (`SyscallDispatchEntry.rendezvousSenderOverflowAddrs`,
-/// `SyscallDispatchEntry.captureSenderCapAddrs`), and the transfer's
-/// receiver's receive path (`SyscallDispatchEntry.captureReceivePath`).
-pub const ENTRY_WORD_PAIRS: usize = 2 * OVERFLOW_SLOTS + 2 * EXTRA_CAP_WORDS + RECEIVE_PATH_WORDS;
+/// `SyscallDispatchEntry.captureSenderCapAddrs`), and the transfers'
+/// receivers' receive paths (`SyscallDispatchEntry.captureReceivePath`): two on
+/// a reply-receive, whose reply leg transfers into the caller it answers
+/// (`SyscallDispatchEntry.replyRecvAnsweredCallerCode`) and whose receive leg
+/// transfers into the caller itself.
+pub const ENTRY_WORD_PAIRS: usize =
+    2 * OVERFLOW_SLOTS + 2 * EXTRA_CAP_WORDS + 2 * RECEIVE_PATH_WORDS;
 
 const ENTRY_WORD_BYTES: usize = 16 * ENTRY_WORD_PAIRS;
 

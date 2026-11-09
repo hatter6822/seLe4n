@@ -272,7 +272,7 @@ theorem mintReplyCap_preserves_capabilityBundleOffCoverage
           | some r =>
               have hInsert : cspaceInsertSlot dst
                   { target := .replyCap (SeLe4n.ReplyId.ofObjId target),
-                    rights := AccessRightSet.ofList [.write] } st
+                    rights := replyCapRightsFrom parent.rights } st
                   = .ok ((), st') := by simpa [hSrc, hTgt, hRep] using hStep
               exact cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st' dst _ hInv.offCoverage
                 (fun rid h => by

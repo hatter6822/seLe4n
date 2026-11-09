@@ -483,14 +483,15 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       | .replyRecv, .object epId =>
           match resolveReplyRecvReply gate decoded s with
           | .error _ => none
-          | .ok (rid, _, replyBadge) =>
+          | .ok (rid, _, replyBadge, replyGrant) =>
               let full :=
                 Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo
               some { caller := tid, targetObject := some epId, targetReply := some rid,
                      message := some
                        { registers := full.extract 1 full.size,
                          badge := replyBadge },
-                     replyMessageInfo := some decoded.msgInfo }
+                     replyMessageInfo := some decoded.msgInfo,
+                     replyGrant := some replyGrant }
       -- **Cut C4b**: the eight arms the OBJECT domain declares nothing for and
       -- the scheduler domain does.  Each names its target the way its own live
       -- dispatch arm names it — the capability's object read as a thread for the

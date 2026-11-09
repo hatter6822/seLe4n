@@ -190,9 +190,10 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
           (replyAnsweredCaller? st rid).bind fun prevCaller =>
             ops.message.bind fun msg =>
               ops.replyMessageInfo.bind fun mi =>
-                LockSet.ofList?
-                  (schedLockSet_replyRecvTransferOnCore epId ops.caller rid prevCaller
-                    mi.label msg executingCore st)
+                ops.replyGrant.bind fun grant =>
+                  LockSet.ofList?
+                    (schedLockSet_replyRecvTransferOnCore epId ops.caller rid prevCaller
+                      mi.label msg grant executingCore st)
   -- **WS-ZA ZA5.4 part 23**: a delete that destroys the last capability to an
   -- endpoint or a notification wakes its cancelled waiters on their own cores,
   -- one that destroys the last capability to a thread or a scheduling context
@@ -450,14 +451,15 @@ theorem schedLockSetForSyscall_reply_isSome_iff
           simp [hA, LockSet.ofList?, schedLockSet_replyTransferOnCore,
             schedFootprintOfCores_keys_nodup]
 
-/-- `.replyRecv` needs both targets, the answered caller, the message and the
-`MessageInfo` whose label a faulted caller's answer decodes. -/
+/-- `.replyRecv` needs both targets, the answered caller, the message, the
+`MessageInfo` whose label a faulted caller's answer decodes and the reply
+capability's grant right, which gates the reply leg's capability transfer. -/
 theorem schedLockSetForSyscall_replyRecv_isSome_iff
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .replyRecv ops executingCore st).isSome
       ↔ ops.targetObject.isSome ∧
         (∃ rid, ops.targetReply = some rid ∧ (replyAnsweredCaller? st rid).isSome) ∧
-        ops.message.isSome ∧ ops.replyMessageInfo.isSome := by
+        ops.message.isSome ∧ ops.replyMessageInfo.isSome ∧ ops.replyGrant.isSome := by
   unfold schedLockSetForSyscall
   cases ops.targetObject with
   | none => simp
@@ -466,7 +468,7 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
       | none => simp
       | some rid =>
           cases hA : replyAnsweredCaller? st rid <;>
-            cases ops.message <;> cases ops.replyMessageInfo <;>
+            cases ops.message <;> cases ops.replyMessageInfo <;> cases ops.replyGrant <;>
                 simp [hA, LockSet.ofList?, schedLockSet_replyRecvTransferOnCore,
                   schedFootprintOfCores_keys_nodup]
 

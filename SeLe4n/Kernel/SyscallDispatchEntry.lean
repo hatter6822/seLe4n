@@ -685,6 +685,37 @@ capability for only has three words read that the step never uses. -/
     | none => 0
   else 0
 
+/-- **The second thread whose receive path a reply-receive's transfers read**:
+on a reply-receive, the caller the reply capability in `MR0` (`x2`,
+`decodeReplyRecvArgs`'s `replyCPtr`) answers (`replyAnsweredCaller?`, the
+receiver of the reply leg's `doReplyTransfer` capability transfer), as a code
+(`tid + 1`, 0 for none), resolved as `transferReceiverCode` resolves a reply's.
+The reply-receive's other receive path, its receive leg's, is the caller's own
+(`transferReceiverCode`).  A thread the step then takes no capability for only
+has three words read that the step never uses. -/
+@[inline] def replyRecvAnsweredCallerCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (replyWord : UInt64) : Nat :=
+  if syscallId.toNat = SyscallId.replyRecv.toNat then
+    match st.getTcb? tid with
+    | some tcb =>
+      match st.getCNode? tcb.cspaceRoot with
+      | some rootCn =>
+        resolveCapAddressKUnrolled tcb.cspaceRoot (SeLe4n.CPtr.ofWord replyWord) rootCn.depth st
+          (fun _ => 0)
+          (fun cnode slot =>
+            match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+            | some cap =>
+              match cap.target with
+              | .replyCap rid =>
+                match replyAnsweredCaller? st rid with
+                | some c => c.toNat + 1
+                | none => 0
+              | _ => 0
+            | none => 0)
+      | none => 0
+    | none => 0
+  else 0
+
 /-- **The receive-path words read from RAM** (`receiveSlot?` reads them): the
 receiver's `receive_cnode`, `receive_index` and `receive_depth`, three adjacent
 words of its IPC buffer, so one page (`ipcBufferWords_within_alignment`),
@@ -763,7 +794,9 @@ This reads each word the decode will read — the caller's slots
 (`IpcBufferRead.callerOverflowAddrs`) and, on a receive that takes a blocked
 sender, that sender's (`rendezvousSenderOverflowAddrs`) — the extra-capability
 addresses of each (`captureSenderCapAddrs`), and the receive-path words a
-capability transfer reads (`transferReceiverCode`, `captureReceivePath`) from
+capability transfer reads (`transferReceiverCode`, `captureReceivePath`; on a
+reply-receive also the answered caller's, `replyRecvAnsweredCallerCode`, whose
+reply leg transfers into it; `replyWord` is the reply-receive's `MR0`) from
 RAM into the
 executing core's entry-word buffer, and answers how many pairs it read; the
 atomic step hands the buffer to the state before the decode
@@ -778,7 +811,7 @@ overflow reads nothing.
 (`captureOverflowRuns`), so no address list, run list, batch array or cell per
 word is built: the entry allocates nothing for its overflow words. -/
 @[inline] def captureEntryWords (execCore : CoreId) (syscallId : UInt32)
-    (capWord msgInfo : UInt64) : BaseIO Nat := do
+    (capWord msgInfo replyWord : UInt64) : BaseIO Nat := do
   let st ← Platform.FFI.getKernelState
   match st.scheduler.currentOnCore execCore with
   | none => pure 0
@@ -799,12 +832,20 @@ word is built: the entry allocates nothing for its overflow words. -/
             let n2 ← captureOverflowRuns st stcb sstop sstop 0 n1
             captureSenderCapAddrs st stcb sInfo n2
           | none => pure n1
-      match transferReceiverCode st tid syscallId capWord with
-      | 0 => pure n
+      let n3 ← match transferReceiverCode st tid syscallId capWord with
+        | 0 => pure n
+        | k + 1 =>
+          match st.getTcb? ⟨k⟩ with
+          | some rtcb => captureReceivePath st rtcb n
+          | none => pure n
+      -- A reply-receive's reply leg transfers into the caller it answers: that
+      -- caller's receive path, the entry's second.
+      match replyRecvAnsweredCallerCode st tid syscallId replyWord with
+      | 0 => pure n3
       | k + 1 =>
         match st.getTcb? ⟨k⟩ with
-        | some rtcb => captureReceivePath st rtcb n
-        | none => pure n
+        | some rtcb => captureReceivePath st rtcb n3
+        | none => pure n3
 
 /-- **The context the syscall entry dispatches on, or the outcome it answers
 without one.**  An `SVC` handler always publishes its frame before it
@@ -937,7 +978,7 @@ def syscallDispatchCrossCoreEntry : BaseIO UInt64 := do
   -- into this core's entry-word buffer and handed to the model in the atomic
   -- step, so the decode reads what the thread wrote; the committed state drops
   -- the buffer (WS-ZA ZA5.2).
-  let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo
+  let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x2
   let wordBytes ← Platform.FFI.ffiEntryWordBuffer
   -- The kernel heap's free bytes, read as a word before the atomic step and
   -- written into the state right after the words (`withKernelHeapFreeBytes`),
@@ -1041,7 +1082,7 @@ theorem syscallDispatchCrossCoreEntry_def :
           | .ok trapped => pure trapped
           | .error tag => return tag
         let msgInfo := trapped.x1
-        let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo
+        let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x2
         let wordBytes ← Platform.FFI.ffiEntryWordBuffer
         let heapFree ← Platform.FFI.ffiKernelHeapFreeBytes
         let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext,
