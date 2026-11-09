@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/cap-transfer-inplace",
-      "commit_sha": "bb73fd226693d49ecad4cee0c8b0817d84182628",
-      "tree_sha": "e61c9c523e4c52747c6aa76fcc6c7703b806360a",
-      "committed_at_utc": "2026-11-09T11:32:31+00:00"
+      "commit_sha": "835bb88a4de0bd4d7f4db6c90434769e31180db5",
+      "tree_sha": "0fbd64b346911508c906ce33339ba8c453ff572e",
+      "committed_at_utc": "2026-11-09T12:08:53+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "cba10b68e98a2f37432be6e3ed372f0c1033ba08be8be0a77f2024548384d5c7"
+    "source_digest": "21ef929e136baabc255e925efa3a3d6ee7d3260e45acd3be3f8aa450d7bcd044"
   },
   "summary": {
     "module_count": 673,
-    "declaration_count": 35134
+    "declaration_count": 35138
   },
   "readme_sync": {
     "version": "0.37.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 603,
-    "production_loc": 605879,
+    "production_loc": 605906,
     "test_files": 70,
-    "test_loc": 89001,
-    "proved_theorem_lemma_decls": 23244,
+    "test_loc": 89031,
+    "proved_theorem_lemma_decls": 23247,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -48583,7 +48583,7 @@
             "SeLe4n.Kernel.cspaceLookupSlot",
             "SeLe4n.Kernel.cspaceLookupSlot_preserves_state",
             "SeLe4n.Kernel.mintReplyCap",
-            "SeLe4n.Model.AccessRightSet.ofList",
+            "SeLe4n.Kernel.replyCapRightsFrom",
             "SeLe4n.Model.CapTarget",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getReply?",
@@ -52067,7 +52067,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Operations",
       "path": "SeLe4n/Kernel/Capability/Operations.lean",
-      "declaration_count": 202,
+      "declaration_count": 206,
       "declarations": [
         {
           "kind": "abbrev",
@@ -53868,14 +53868,59 @@
         },
         {
           "kind": "def",
+          "name": "replyCapRightsFrom",
+          "full_name": "SeLe4n.Kernel.replyCapRightsFrom",
+          "line": 2017,
+          "called": [
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.AccessRightSet.mem",
+            "SeLe4n.Model.AccessRightSet.ofList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyCapRightsFrom_mem_write",
+          "full_name": "SeLe4n.Kernel.replyCapRightsFrom_mem_write",
+          "line": 2022,
+          "called": [
+            "SeLe4n.Kernel.replyCapRightsFrom",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.AccessRightSet.mem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyCapRightsFrom_mem_grant",
+          "full_name": "SeLe4n.Kernel.replyCapRightsFrom_mem_grant",
+          "line": 2027,
+          "called": [
+            "SeLe4n.Kernel.replyCapRightsFrom",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.AccessRightSet.mem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyCapRightsFrom_subset",
+          "full_name": "SeLe4n.Kernel.replyCapRightsFrom_subset",
+          "line": 2035,
+          "called": [
+            "SeLe4n.Kernel.replyCapRightsFrom",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.AccessRightSet.ofList",
+            "SeLe4n.Model.AccessRightSet.subset"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "mintReplyCap",
           "full_name": "SeLe4n.Kernel.mintReplyCap",
-          "line": 2022,
+          "line": 2054,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceInsertSlot",
             "SeLe4n.Kernel.cspaceLookupSlot",
-            "SeLe4n.Model.AccessRightSet.ofList",
+            "SeLe4n.Kernel.replyCapRightsFrom",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Kernel",
             "SeLe4n.ReplyId.ofObjId"
@@ -53885,7 +53930,7 @@
           "kind": "def",
           "name": "mintReplyCapWithCdt",
           "full_name": "SeLe4n.Kernel.mintReplyCapWithCdt",
-          "line": 2054,
+          "line": 2081,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.mintReplyCap",
@@ -53896,7 +53941,7 @@
           "kind": "def",
           "name": "cspaceDstAdmitted",
           "full_name": "SeLe4n.Kernel.cspaceDstAdmitted",
-          "line": 2063,
+          "line": 2090,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.SystemState",
@@ -53907,7 +53952,7 @@
           "kind": "def",
           "name": "cnodeInvoked",
           "full_name": "SeLe4n.Kernel.cnodeInvoked",
-          "line": 2074,
+          "line": 2101,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getCNode?",
@@ -53918,7 +53963,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_dstAdmitted",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_dstAdmitted",
-          "line": 2078,
+          "line": 2105,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cnodeInvoked",
@@ -53931,7 +53976,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_lookupSlotCap",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_lookupSlotCap",
-          "line": 2087,
+          "line": 2114,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cnodeInvoked",
@@ -53945,7 +53990,7 @@
           "kind": "def",
           "name": "cspaceDstRefusal",
           "full_name": "SeLe4n.Kernel.cspaceDstRefusal",
-          "line": 2097,
+          "line": 2124,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.KernelError",
@@ -53957,7 +54002,7 @@
           "kind": "theorem",
           "name": "cspaceDstRefusal_eq_ok_iff",
           "full_name": "SeLe4n.Kernel.cspaceDstRefusal_eq_ok_iff",
-          "line": 2107,
+          "line": 2134,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceDstAdmitted",
@@ -53970,7 +54015,7 @@
           "kind": "theorem",
           "name": "cspaceInsertSlot_of_admitted",
           "full_name": "SeLe4n.Kernel.cspaceInsertSlot_of_admitted",
-          "line": 2118,
+          "line": 2145,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceDstAdmitted",
@@ -53987,7 +54032,7 @@
           "kind": "def",
           "name": "cspaceInstallPerform",
           "full_name": "SeLe4n.Kernel.cspaceInstallPerform",
-          "line": 2134,
+          "line": 2161,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.Capability",
@@ -54001,7 +54046,7 @@
           "kind": "def",
           "name": "mintedCap",
           "full_name": "SeLe4n.Kernel.mintedCap",
-          "line": 2140,
+          "line": 2167,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Model.AccessRightSet",
@@ -54014,7 +54059,7 @@
           "kind": "def",
           "name": "cspaceMintAdmitted",
           "full_name": "SeLe4n.Kernel.cspaceMintAdmitted",
-          "line": 2148,
+          "line": 2175,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -54031,7 +54076,7 @@
           "kind": "def",
           "name": "cspaceMintPerform",
           "full_name": "SeLe4n.Kernel.cspaceMintPerform",
-          "line": 2157,
+          "line": 2184,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -54047,7 +54092,7 @@
           "kind": "def",
           "name": "cspaceMintPerformWords",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformWords",
-          "line": 2168,
+          "line": 2195,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -54063,7 +54108,7 @@
           "kind": "def",
           "name": "cspaceMintPerformImpl",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformImpl",
-          "line": 2180,
+          "line": 2207,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.ofOption",
@@ -54077,7 +54122,7 @@
           "kind": "theorem",
           "name": "cspaceMintPerform_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceMintPerform_eq_impl",
-          "line": 2184,
+          "line": 2211,
           "called": [
             "SeLe4n.Kernel.cspaceInstallPerform",
             "SeLe4n.Kernel.cspaceMintPerform",
@@ -54090,7 +54135,7 @@
           "kind": "theorem",
           "name": "cspaceMintWithCdt_of_admitted",
           "full_name": "SeLe4n.Kernel.cspaceMintWithCdt_of_admitted",
-          "line": 2190,
+          "line": 2217,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -54116,9 +54161,10 @@
           "kind": "def",
           "name": "mintedReplyCap",
           "full_name": "SeLe4n.Kernel.mintedReplyCap",
-          "line": 2212,
+          "line": 2239,
           "called": [
-            "SeLe4n.Model.AccessRightSet.ofList",
+            "SeLe4n.Kernel.replyCapRightsFrom",
+            "SeLe4n.Model.AccessRightSet",
             "SeLe4n.Model.Capability",
             "SeLe4n.ReplyId"
           ]
@@ -54127,7 +54173,7 @@
           "kind": "def",
           "name": "mintReplyCapAdmitted",
           "full_name": "SeLe4n.Kernel.mintReplyCapAdmitted",
-          "line": 2218,
+          "line": 2245,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceDstAdmitted",
@@ -54141,7 +54187,7 @@
           "kind": "def",
           "name": "mintReplyCapPerform",
           "full_name": "SeLe4n.Kernel.mintReplyCapPerform",
-          "line": 2228,
+          "line": 2255,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceInstallPerform",
@@ -54155,7 +54201,7 @@
           "kind": "def",
           "name": "replyCapTargetBuilt",
           "full_name": "SeLe4n.Kernel.replyCapTargetBuilt",
-          "line": 2239,
+          "line": 2266,
           "called": [
             "SeLe4n.Model.CapTarget",
             "SeLe4n.ReplyId"
@@ -54165,7 +54211,7 @@
           "kind": "def",
           "name": "replyCapTargetIn",
           "full_name": "SeLe4n.Kernel.replyCapTargetIn",
-          "line": 2247,
+          "line": 2274,
           "called": [
             "SeLe4n.Kernel.replyCapTargetBuilt",
             "SeLe4n.Model.CapTarget",
@@ -54178,7 +54224,7 @@
           "kind": "theorem",
           "name": "replyCapTargetIn_eq",
           "full_name": "SeLe4n.Kernel.replyCapTargetIn_eq",
-          "line": 2252,
+          "line": 2279,
           "called": [
             "SeLe4n.Kernel.replyCapTargetBuilt",
             "SeLe4n.Kernel.replyCapTargetIn",
@@ -54190,12 +54236,12 @@
           "kind": "def",
           "name": "mintReplyCapPerformImpl",
           "full_name": "SeLe4n.Kernel.mintReplyCapPerformImpl",
-          "line": 2270,
+          "line": 2297,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.replyCapRightsFrom",
             "SeLe4n.Kernel.replyCapTargetIn",
-            "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.cdtAddChild",
             "SeLe4n.Model.SystemState.lookupSlotCap",
@@ -54207,7 +54253,7 @@
           "kind": "theorem",
           "name": "mintReplyCapPerform_eq_impl",
           "full_name": "SeLe4n.Kernel.mintReplyCapPerform_eq_impl",
-          "line": 2282,
+          "line": 2309,
           "called": [
             "SeLe4n.Kernel.cspaceInstallPerform",
             "SeLe4n.Kernel.mintReplyCapPerform",
@@ -54220,7 +54266,7 @@
           "kind": "theorem",
           "name": "mintReplyCapWithCdt_of_admitted",
           "full_name": "SeLe4n.Kernel.mintReplyCapWithCdt_of_admitted",
-          "line": 2288,
+          "line": 2315,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceInsertSlot_of_admitted",
@@ -54237,7 +54283,7 @@
           "kind": "def",
           "name": "cspaceCopyAdmitted",
           "full_name": "SeLe4n.Kernel.cspaceCopyAdmitted",
-          "line": 2311,
+          "line": 2338,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceDstAdmitted",
@@ -54250,7 +54296,7 @@
           "kind": "def",
           "name": "cspaceCopyPerform",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerform",
-          "line": 2319,
+          "line": 2346,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceInstallPerform",
@@ -54263,7 +54309,7 @@
           "kind": "def",
           "name": "cspaceCopyPerformImpl",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerformImpl",
-          "line": 2328,
+          "line": 2355,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.untypedSourceSetFull",
@@ -54277,7 +54323,7 @@
           "kind": "theorem",
           "name": "cspaceCopyPerform_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerform_eq_impl",
-          "line": 2337,
+          "line": 2364,
           "called": [
             "SeLe4n.Kernel.cspaceCopyPerform",
             "SeLe4n.Kernel.cspaceCopyPerformImpl",
@@ -54289,7 +54335,7 @@
           "kind": "theorem",
           "name": "cspaceCopyPerform_scheduler",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerform_scheduler",
-          "line": 2343,
+          "line": 2370,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceCopyPerform",
@@ -54304,7 +54350,7 @@
           "kind": "theorem",
           "name": "cspaceCopyPerform_machine",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerform_machine",
-          "line": 2352,
+          "line": 2379,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceCopyPerform",
@@ -54319,7 +54365,7 @@
           "kind": "theorem",
           "name": "cspaceCopy_of_admitted",
           "full_name": "SeLe4n.Kernel.cspaceCopy_of_admitted",
-          "line": 2361,
+          "line": 2388,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceCopy",
@@ -54337,7 +54383,7 @@
           "kind": "def",
           "name": "cspaceMoveAdmitted",
           "full_name": "SeLe4n.Kernel.cspaceMoveAdmitted",
-          "line": 2381,
+          "line": 2408,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace",
@@ -54350,7 +54396,7 @@
           "kind": "def",
           "name": "cspaceMovePerform",
           "full_name": "SeLe4n.Kernel.cspaceMovePerform",
-          "line": 2392,
+          "line": 2419,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.SystemState",
@@ -54363,7 +54409,7 @@
           "kind": "theorem",
           "name": "cspaceMove_of_admitted",
           "full_name": "SeLe4n.Kernel.cspaceMove_of_admitted",
-          "line": 2400,
+          "line": 2427,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
@@ -54393,7 +54439,7 @@
           "kind": "def",
           "name": "cspaceMintAdmittedAt",
           "full_name": "SeLe4n.Kernel.cspaceMintAdmittedAt",
-          "line": 2464,
+          "line": 2491,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.cspaceMintAdmitted",
@@ -54407,7 +54453,7 @@
           "kind": "def",
           "name": "cspaceMintAdmittedAtImpl",
           "full_name": "SeLe4n.Kernel.cspaceMintAdmittedAtImpl",
-          "line": 2472,
+          "line": 2499,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.cspaceMintAdmitted",
@@ -54421,7 +54467,7 @@
           "kind": "theorem",
           "name": "cspaceMintAdmittedAt_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceMintAdmittedAt_eq_impl",
-          "line": 2476,
+          "line": 2503,
           "called": [
             "SeLe4n.Kernel.cspaceMintAdmittedAt",
             "SeLe4n.Kernel.cspaceMintAdmittedAtImpl"
@@ -54431,7 +54477,7 @@
           "kind": "def",
           "name": "cspaceMintPerformAt",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformAt",
-          "line": 2482,
+          "line": 2509,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.cspaceMintPerform",
@@ -54445,7 +54491,7 @@
           "kind": "def",
           "name": "cspaceMintPerformAtImpl",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformAtImpl",
-          "line": 2490,
+          "line": 2517,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.cspaceMintPerformWords",
@@ -54459,7 +54505,7 @@
           "kind": "theorem",
           "name": "cspaceMintPerformAt_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceMintPerformAt_eq_impl",
-          "line": 2494,
+          "line": 2521,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.eq_zero_of_val_eq_zero",
@@ -54475,7 +54521,7 @@
           "kind": "def",
           "name": "mintReplyCapAdmittedAt",
           "full_name": "SeLe4n.Kernel.mintReplyCapAdmittedAt",
-          "line": 2507,
+          "line": 2534,
           "called": [
             "SeLe4n.Kernel.mintReplyCapAdmitted",
             "SeLe4n.Model.SystemState",
@@ -54487,7 +54533,7 @@
           "kind": "def",
           "name": "mintReplyCapPerformAt",
           "full_name": "SeLe4n.Kernel.mintReplyCapPerformAt",
-          "line": 2512,
+          "line": 2539,
           "called": [
             "SeLe4n.Kernel.mintReplyCapPerform",
             "SeLe4n.Model.SystemState",
@@ -54499,7 +54545,7 @@
           "kind": "def",
           "name": "cspaceCopyAdmittedAt",
           "full_name": "SeLe4n.Kernel.cspaceCopyAdmittedAt",
-          "line": 2517,
+          "line": 2544,
           "called": [
             "SeLe4n.Kernel.cspaceCopyAdmitted",
             "SeLe4n.Model.SystemState",
@@ -54511,7 +54557,7 @@
           "kind": "def",
           "name": "cspaceCopyPerformAt",
           "full_name": "SeLe4n.Kernel.cspaceCopyPerformAt",
-          "line": 2522,
+          "line": 2549,
           "called": [
             "SeLe4n.Kernel.cspaceCopyPerform",
             "SeLe4n.Model.SystemState",
@@ -54523,7 +54569,7 @@
           "kind": "def",
           "name": "cspaceMoveAdmittedAt",
           "full_name": "SeLe4n.Kernel.cspaceMoveAdmittedAt",
-          "line": 2527,
+          "line": 2554,
           "called": [
             "SeLe4n.Kernel.cspaceMoveAdmitted",
             "SeLe4n.Model.SystemState",
@@ -54535,7 +54581,7 @@
           "kind": "def",
           "name": "cspaceMovePerformAt",
           "full_name": "SeLe4n.Kernel.cspaceMovePerformAt",
-          "line": 2532,
+          "line": 2559,
           "called": [
             "SeLe4n.Kernel.cspaceMovePerform",
             "SeLe4n.Model.SystemState",
@@ -54547,7 +54593,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_mintAdmitted",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_mintAdmitted",
-          "line": 2539,
+          "line": 2566,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -54562,7 +54608,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_copyAdmitted",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_copyAdmitted",
-          "line": 2545,
+          "line": 2572,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cnodeInvoked",
@@ -54575,7 +54621,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_moveAdmitted",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_moveAdmitted",
-          "line": 2550,
+          "line": 2577,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cnodeInvoked",
@@ -54588,7 +54634,7 @@
           "kind": "theorem",
           "name": "cnodeInvoked_of_mintReplyCapAdmitted",
           "full_name": "SeLe4n.Kernel.cnodeInvoked_of_mintReplyCapAdmitted",
-          "line": 2556,
+          "line": 2583,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cnodeInvoked",
@@ -54601,7 +54647,7 @@
           "kind": "def",
           "name": "capabilityMappedPage",
           "full_name": "SeLe4n.Kernel.capabilityMappedPage",
-          "line": 2577,
+          "line": 2604,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Capability.mapping",
@@ -54614,7 +54660,7 @@
           "kind": "def",
           "name": "slotMappedPages",
           "full_name": "SeLe4n.Kernel.slotMappedPages",
-          "line": 2586,
+          "line": 2613,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.capabilityMappedPage",
@@ -54627,7 +54673,7 @@
           "kind": "def",
           "name": "cspaceRecordFrameMapping",
           "full_name": "SeLe4n.Kernel.cspaceRecordFrameMapping",
-          "line": 2597,
+          "line": 2624,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.FrameMapping",
@@ -54639,7 +54685,7 @@
           "kind": "def",
           "name": "cspaceRecordFrameMappingImpl",
           "full_name": "SeLe4n.Kernel.cspaceRecordFrameMappingImpl",
-          "line": 2609,
+          "line": 2636,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.FrameMapping",
@@ -54650,7 +54696,7 @@
           "kind": "theorem",
           "name": "cspaceRecordFrameMapping_eq_impl",
           "full_name": "SeLe4n.Kernel.cspaceRecordFrameMapping_eq_impl",
-          "line": 2619,
+          "line": 2646,
           "called": [
             "SeLe4n.Kernel.cspaceRecordFrameMapping",
             "SeLe4n.Kernel.cspaceRecordFrameMappingImpl",
@@ -54668,7 +54714,7 @@
           "kind": "theorem",
           "name": "cspaceRecordFrameMapping_ok_decompose",
           "full_name": "SeLe4n.Kernel.cspaceRecordFrameMapping_ok_decompose",
-          "line": 2639,
+          "line": 2666,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceRecordFrameMapping",
@@ -54685,7 +54731,7 @@
           "kind": "theorem",
           "name": "setCapFreeIndex_preserves_dstAdmitted",
           "full_name": "SeLe4n.Kernel.setCapFreeIndex_preserves_dstAdmitted",
-          "line": 2659,
+          "line": 2686,
           "called": [
             "SeLe4n.Kernel.CNode.lookup_setFreeIndex_none",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -54705,7 +54751,7 @@
           "kind": "def",
           "name": "cdtNodeIsRevocable",
           "full_name": "SeLe4n.Kernel.cdtNodeIsRevocable",
-          "line": 2698,
+          "line": 2725,
           "called": [
             "SeLe4n.Model.SlotRef",
             "SeLe4n.Model.SystemState",
@@ -54716,7 +54762,7 @@
           "kind": "theorem",
           "name": "cspaceRevoke_ok_implies_slot_occupied",
           "full_name": "SeLe4n.Kernel.cspaceRevoke_ok_implies_slot_occupied",
-          "line": 2707,
+          "line": 2734,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceLookupSlot",
@@ -54730,7 +54776,7 @@
           "kind": "def",
           "name": "ipcTransferSingleCap",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap",
-          "line": 2750,
+          "line": 2777,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cdtNodeIsRevocable",
@@ -54747,7 +54793,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_ok_cases",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_ok_cases",
-          "line": 2768,
+          "line": 2795,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cdtNodeIsRevocable",
@@ -54767,7 +54813,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_dst_stays_cnode",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_dst_stays_cnode",
-          "line": 2798,
+          "line": 2825,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -54787,7 +54833,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_ok_implies_revocable_source",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_ok_implies_revocable_source",
-          "line": 2822,
+          "line": 2849,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cdtNodeIsRevocable",
@@ -54802,7 +54848,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_scheduler",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_scheduler",
-          "line": 2829,
+          "line": 2856,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceInsertSlot_preserves_scheduler",
@@ -54819,7 +54865,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_machine",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_machine",
-          "line": 2841,
+          "line": 2868,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceInsertSlot_preserves_machine",
@@ -54836,7 +54882,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_ne",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_objects_ne",
-          "line": 2852,
+          "line": 2879,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -54859,7 +54905,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_objects_invExt",
-          "line": 2866,
+          "line": 2893,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -54877,7 +54923,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_ok_implies_cnode_at_dst",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_ok_implies_cnode_at_dst",
-          "line": 2876,
+          "line": 2903,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.ipcTransferSingleCap",
@@ -54892,7 +54938,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_nonCNode",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_nonCNode",
-          "line": 2888,
+          "line": 2915,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -54909,7 +54955,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ntfn_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_ntfn_objects",
-          "line": 2906,
+          "line": 2933,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -54926,7 +54972,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ep_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_ep_objects",
-          "line": 2915,
+          "line": 2942,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -54943,7 +54989,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_schedContext_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_schedContext_objects",
-          "line": 2924,
+          "line": 2951,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -54960,7 +55006,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_reply_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_reply_objects",
-          "line": 2933,
+          "line": 2960,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Reply",
@@ -54977,7 +55023,7 @@
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_tcb_objects",
           "full_name": "SeLe4n.Kernel.ipcTransferSingleCap_preserves_tcb_objects",
-          "line": 2945,
+          "line": 2972,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -507512,7 +507558,7 @@
           "kind": "def",
           "name": "replyCallerLinkage_holds_at_call_rendezvous_boundary",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.replyCallerLinkage_holds_at_call_rendezvous_boundary",
-          "line": 826,
+          "line": 844,
           "called": [
             "SeLe4n.Kernel.endpointCall",
             "SeLe4n.Kernel.endpointReceiveDual",
@@ -507538,7 +507584,7 @@
           "kind": "def",
           "name": "direct_reply_consumes_caller_link_single_use",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.direct_reply_consumes_caller_link_single_use",
-          "line": 867,
+          "line": 885,
           "called": [
             "SeLe4n.Kernel.endpointCall",
             "SeLe4n.Kernel.endpointReceiveDual",
@@ -507566,7 +507612,7 @@
           "kind": "def",
           "name": "call_without_reply_object_fails_closed_no_unanswerable_block",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.call_without_reply_object_fails_closed_no_unanswerable_block",
-          "line": 909,
+          "line": 927,
           "called": [
             "SeLe4n.Kernel.endpointCall",
             "SeLe4n.Kernel.endpointReceiveDual",
@@ -507590,7 +507636,7 @@
           "kind": "def",
           "name": "replyCapPointsToValidReply_distinguishes_backed_and_dangling",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.replyCapPointsToValidReply_distinguishes_backed_and_dangling",
-          "line": 942,
+          "line": 960,
           "called": [
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.CNode.ofSlots",
@@ -507612,12 +507658,13 @@
           "kind": "def",
           "name": "reply_cap_end_to_end_carve_mint_link",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.reply_cap_end_to_end_carve_mint_link",
-          "line": 980,
+          "line": 998,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.cspaceLookupSlot",
             "SeLe4n.Kernel.mintReplyCap",
             "SeLe4n.Kernel.untypedRetypeObject",
+            "SeLe4n.Model.AccessRightSet.mem",
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.CNode.ofSlots",
             "SeLe4n.Model.Capability",
@@ -507647,7 +507694,7 @@
           "kind": "def",
           "name": "minimalTcb",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.minimalTcb",
-          "line": 1039,
+          "line": 1060,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.spaceCellsOf",
@@ -507660,7 +507707,7 @@
           "kind": "def",
           "name": "minimalSchedContext",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.minimalSchedContext",
-          "line": 1047,
+          "line": 1068,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.SchedContextId"
@@ -507671,7 +507718,7 @@
           "kind": "def",
           "name": "getTcb_discriminates_variants",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.getTcb_discriminates_variants",
-          "line": 1057,
+          "line": 1078,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -507687,7 +507734,7 @@
           "kind": "def",
           "name": "getSchedContext_discriminates_variants",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.getSchedContext_discriminates_variants",
-          "line": 1069,
+          "line": 1090,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -507703,7 +507750,7 @@
           "kind": "def",
           "name": "getEndpoint_discriminates_variants",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.getEndpoint_discriminates_variants",
-          "line": 1081,
+          "line": 1102,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.Endpoint",
@@ -507720,7 +507767,7 @@
           "kind": "def",
           "name": "getNotification_discriminates_variants",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.getNotification_discriminates_variants",
-          "line": 1094,
+          "line": 1115,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.Notification",
@@ -507735,7 +507782,7 @@
           "kind": "def",
           "name": "getUntyped_discriminates_variants",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.getUntyped_discriminates_variants",
-          "line": 1105,
+          "line": 1126,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -507752,7 +507799,7 @@
           "kind": "def",
           "name": "getTcb_none_when_absent",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.getTcb_none_when_absent",
-          "line": 1116,
+          "line": 1137,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -507764,7 +507811,7 @@
           "kind": "def",
           "name": "getTcb_roundtrip",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.getTcb_roundtrip",
-          "line": 1123,
+          "line": 1144,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -507779,7 +507826,7 @@
           "kind": "def",
           "name": "getSchedContext_roundtrip",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.getSchedContext_roundtrip",
-          "line": 1138,
+          "line": 1159,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -507794,7 +507841,7 @@
           "kind": "def",
           "name": "storeObjectKindChecked_fresh_allocation_succeeds",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.storeObjectKindChecked_fresh_allocation_succeeds",
-          "line": 1161,
+          "line": 1182,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -507808,7 +507855,7 @@
           "kind": "def",
           "name": "storeObjectKindChecked_samekind_overwrite_succeeds",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.storeObjectKindChecked_samekind_overwrite_succeeds",
-          "line": 1172,
+          "line": 1193,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -507823,7 +507870,7 @@
           "kind": "def",
           "name": "storeObjectKindChecked_tcb_to_schedContext_rejected",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.storeObjectKindChecked_tcb_to_schedContext_rejected",
-          "line": 1191,
+          "line": 1212,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -507838,7 +507885,7 @@
           "kind": "def",
           "name": "storeObjectKindChecked_schedContext_to_tcb_rejected",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.storeObjectKindChecked_schedContext_to_tcb_rejected",
-          "line": 1207,
+          "line": 1228,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -507853,7 +507900,7 @@
           "kind": "def",
           "name": "storeObjectKindChecked_rejection_preserves_state",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.storeObjectKindChecked_rejection_preserves_state",
-          "line": 1223,
+          "line": 1244,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -507869,7 +507916,7 @@
           "kind": "def",
           "name": "lifecycleObjectTypeLockstep_default",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.lifecycleObjectTypeLockstep_default",
-          "line": 1248,
+          "line": 1269,
           "called": [
             "SeLe4n.Model.LifecycleMetadata",
             "SeLe4n.Model.SystemState",
@@ -507881,7 +507928,7 @@
           "kind": "def",
           "name": "storeObject_updates_objects_and_objectTypes_in_lockstep",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.storeObject_updates_objects_and_objectTypes_in_lockstep",
-          "line": 1258,
+          "line": 1279,
           "called": [
             "SeLe4n.Model.LifecycleMetadata",
             "SeLe4n.Model.SystemState",
@@ -507895,7 +507942,7 @@
           "kind": "def",
           "name": "crossSubsystemInvariant_default_has_lockstep",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.crossSubsystemInvariant_default_has_lockstep",
-          "line": 1279,
+          "line": 1300,
           "called": [
             "SeLe4n.Kernel.crossSubsystemInvariant_to_lifecycleObjectTypeLockstep",
             "SeLe4n.Kernel.default_crossSubsystemInvariant",
@@ -507910,7 +507957,7 @@
           "kind": "def",
           "name": "blockingAcyclic_projection_reindex_ok",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.blockingAcyclic_projection_reindex_ok",
-          "line": 1300,
+          "line": 1321,
           "called": [
             "SeLe4n.Kernel.crossSubsystemInvariant_to_blockingAcyclic",
             "SeLe4n.Kernel.default_crossSubsystemInvariant",
@@ -507922,7 +507969,7 @@
           "kind": "def",
           "name": "checkCrossSubsystemInvariant_covers_all_predicates",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.checkCrossSubsystemInvariant_covers_all_predicates",
-          "line": 1314,
+          "line": 1335,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Testing.ModelIntegritySuite.expect",
@@ -507933,7 +507980,7 @@
           "kind": "def",
           "name": "checkCrossSubsystemInvariant_detects_lockstep_violation",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.checkCrossSubsystemInvariant_detects_lockstep_violation",
-          "line": 1335,
+          "line": 1356,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHSet.insert",
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
@@ -507949,7 +507996,7 @@
           "kind": "def",
           "name": "storeObject_preserves_lockstep_under_crossSubsystemInvariant",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.storeObject_preserves_lockstep_under_crossSubsystemInvariant",
-          "line": 1362,
+          "line": 1383,
           "called": [
             "SeLe4n.Model.LifecycleMetadata",
             "SeLe4n.Model.SystemState",
@@ -507963,7 +508010,7 @@
           "kind": "def",
           "name": "storeObjectKindChecked_rejection_preserves_lockstep",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.storeObjectKindChecked_rejection_preserves_lockstep",
-          "line": 1383,
+          "line": 1404,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.LifecycleMetadata",
@@ -507979,7 +508026,7 @@
           "kind": "def",
           "name": "integration_validThreadId_rejects_sentinel",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.integration_validThreadId_rejects_sentinel",
-          "line": 1417,
+          "line": 1438,
           "called": [
             "SeLe4n.Testing.ModelIntegritySuite.expect",
             "SeLe4n.ThreadId",
@@ -507991,7 +508038,7 @@
           "kind": "def",
           "name": "integration_validSchedContextId_rejects_sentinel",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.integration_validSchedContextId_rejects_sentinel",
-          "line": 1422,
+          "line": 1443,
           "called": [
             "SeLe4n.SchedContextId",
             "SeLe4n.SchedContextId.sentinel",
@@ -508003,7 +508050,7 @@
           "kind": "def",
           "name": "integration_validThreadId_roundtrip",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.integration_validThreadId_roundtrip",
-          "line": 1428,
+          "line": 1449,
           "called": [
             "SeLe4n.Testing.ModelIntegritySuite.expect",
             "SeLe4n.ThreadId",
@@ -508015,7 +508062,7 @@
           "kind": "def",
           "name": "integration_null_cap_cross_kind_sentinel_rejected",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.integration_null_cap_cross_kind_sentinel_rejected",
-          "line": 1441,
+          "line": 1462,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.Capability",
@@ -508035,7 +508082,7 @@
           "kind": "def",
           "name": "requireNotNull_complement_on_null_and_nonnull",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.requireNotNull_complement_on_null_and_nonnull",
-          "line": 1462,
+          "line": 1483,
           "called": [
             "SeLe4n.Model.AccessRightSet.empty",
             "SeLe4n.Model.Capability",
@@ -508049,7 +508096,7 @@
           "kind": "def",
           "name": "vspaceRoot_noPhysicalFrameCollision_empty",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.vspaceRoot_noPhysicalFrameCollision_empty",
-          "line": 1475,
+          "line": 1496,
           "called": [
             "SeLe4n.Model.VSpaceRoot.noPhysicalFrameCollision_empty",
             "SeLe4n.Testing.ModelIntegritySuite.expect"
@@ -508059,7 +508106,7 @@
           "kind": "def",
           "name": "pagePermissions_toNat_ofNat_roundtrip",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.pagePermissions_toNat_ofNat_roundtrip",
-          "line": 1484,
+          "line": 1505,
           "called": [
             "SeLe4n.Model.PagePermissions.ofNat",
             "SeLe4n.Model.PagePermissions.toNat",
@@ -508070,7 +508117,7 @@
           "kind": "def",
           "name": "ak8a_01_default_satisfies_untypedRegionsDisjoint",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ak8a_01_default_satisfies_untypedRegionsDisjoint",
-          "line": 1500,
+          "line": 1521,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Testing.ModelIntegritySuite.expect"
@@ -508080,7 +508127,7 @@
           "kind": "def",
           "name": "ak8a_02_disjoint_untypeds_satisfy_predicate",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ak8a_02_disjoint_untypeds_satisfy_predicate",
-          "line": 1510,
+          "line": 1531,
           "called": [
             "SeLe4n.Model.UntypedObject",
             "SeLe4n.PAddr",
@@ -508092,7 +508139,7 @@
           "kind": "def",
           "name": "ak8a_03_overlapping_untypeds_violate_predicate",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ak8a_03_overlapping_untypeds_violate_predicate",
-          "line": 1531,
+          "line": 1552,
           "called": [
             "SeLe4n.Model.UntypedObject",
             "SeLe4n.PAddr",
@@ -508104,7 +508151,7 @@
           "kind": "def",
           "name": "ak8a_04_parent_child_containment_allowed",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ak8a_04_parent_child_containment_allowed",
-          "line": 1552,
+          "line": 1573,
           "called": [
             "SeLe4n.Model.UntypedObject",
             "SeLe4n.ObjId",
@@ -508117,7 +508164,7 @@
           "kind": "def",
           "name": "ak8a_05_allocate_children_extends",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ak8a_05_allocate_children_extends",
-          "line": 1579,
+          "line": 1600,
           "called": [
             "SeLe4n.Model.UntypedChild",
             "SeLe4n.Model.UntypedObject",
@@ -508130,7 +508177,7 @@
           "kind": "def",
           "name": "ak8a_06_allocate_preserves_region",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ak8a_06_allocate_preserves_region",
-          "line": 1598,
+          "line": 1619,
           "called": [
             "SeLe4n.Model.UntypedObject",
             "SeLe4n.Model.UntypedObject.allocate",
@@ -508142,7 +508189,7 @@
           "kind": "def",
           "name": "ak8a_07_empty_config_disjoint",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ak8a_07_empty_config_disjoint",
-          "line": 1614,
+          "line": 1635,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Testing.ModelIntegritySuite.expect"
@@ -508152,7 +508199,7 @@
           "kind": "def",
           "name": "an2f3_01_empty_wellFormed",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an2f3_01_empty_wellFormed",
-          "line": 1626,
+          "line": 1647,
           "called": [
             "SeLe4n.Model.UntypedObjectValid",
             "SeLe4n.Model.UntypedObjectValid.empty",
@@ -508165,7 +508212,7 @@
           "kind": "def",
           "name": "an2f3_02_coercion_roundtrip",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an2f3_02_coercion_roundtrip",
-          "line": 1639,
+          "line": 1660,
           "called": [
             "SeLe4n.Model.UntypedObject",
             "SeLe4n.Model.UntypedObjectValid",
@@ -508179,7 +508226,7 @@
           "kind": "def",
           "name": "donation_primitives_reachable_via_operations_hub",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.donation_primitives_reachable_via_operations_hub",
-          "line": 1686,
+          "line": 1707,
           "called": [
             "SeLe4n.Kernel.applyCallDonation",
             "SeLe4n.Kernel.applyCallDonation_machine_eq",
@@ -508199,7 +508246,7 @@
           "kind": "def",
           "name": "ipc_invariant_full_tuple_struct_bridge_signatures",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ipc_invariant_full_tuple_struct_bridge_signatures",
-          "line": 1732,
+          "line": 1753,
           "called": [
             "SeLe4n.Kernel.IpcInvariantFull",
             "SeLe4n.Kernel.IpcInvariantFull.toTuple",
@@ -508214,7 +508261,7 @@
           "kind": "def",
           "name": "ipc_invariant_full_named_projection_signatures",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ipc_invariant_full_named_projection_signatures",
-          "line": 1756,
+          "line": 1777,
           "called": [
             "SeLe4n.Kernel.allPendingMessagesBounded",
             "SeLe4n.Kernel.badgeWellFormed",
@@ -508255,7 +508302,7 @@
           "kind": "def",
           "name": "ipc_invariant_full_dot_notation_dispatch",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.ipc_invariant_full_dot_notation_dispatch",
-          "line": 1804,
+          "line": 1825,
           "called": [
             "SeLe4n.Kernel.IpcInvariantFull",
             "SeLe4n.Kernel.donationOwnerValid",
@@ -508271,7 +508318,7 @@
           "kind": "def",
           "name": "an6f_cxm01_collectQueueMembers_structural_signatures",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an6f_cxm01_collectQueueMembers_structural_signatures",
-          "line": 1831,
+          "line": 1852,
           "called": [
             "SeLe4n.Kernel.collectQueueMembers_head_is_start",
             "SeLe4n.Kernel.collectQueueMembers_some_start_nonEmpty_result",
@@ -508282,28 +508329,28 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 1841,
+          "line": 1862,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 1851,
+          "line": 1872,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 1861,
+          "line": 1882,
           "called": []
         },
         {
           "kind": "def",
           "name": "bootFromPlatform_smp_witness_reachable",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.bootFromPlatform_smp_witness_reachable",
-          "line": 1880,
+          "line": 1901,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.allCores",
@@ -508325,7 +508372,7 @@
           "kind": "def",
           "name": "an6f_cxm04_interruptsEnabled_bundle_inhabited",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an6f_cxm04_interruptsEnabled_bundle_inhabited",
-          "line": 1969,
+          "line": 1990,
           "called": [
             "SeLe4n.Kernel.Architecture.archInvariant_interruptsEnabled_all_eight_bundle",
             "SeLe4n.Kernel.saveOutgoingContext",
@@ -508338,7 +508385,7 @@
           "kind": "def",
           "name": "an6f_cxm05_crossSubsystemInvariant_positive",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an6f_cxm05_crossSubsystemInvariant_positive",
-          "line": 2010,
+          "line": 2031,
           "called": [
             "SeLe4n.Kernel.crossSubsystemInvariant",
             "SeLe4n.Kernel.crossSubsystemInvariant_composition_gap_documented",
@@ -508358,7 +508405,7 @@
           "kind": "def",
           "name": "an6c1_untypedObject_parent_field_default",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an6c1_untypedObject_parent_field_default",
-          "line": 2034,
+          "line": 2055,
           "called": [
             "SeLe4n.Model.UntypedObject",
             "SeLe4n.ObjId.ofNat",
@@ -508370,7 +508417,7 @@
           "kind": "def",
           "name": "an6c3_untypedAncestorChain_bounded",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an6c3_untypedAncestorChain_bounded",
-          "line": 2050,
+          "line": 2071,
           "called": [
             "SeLe4n.Kernel.maxRetypeDepth",
             "SeLe4n.Kernel.untypedAncestorChain",
@@ -508384,7 +508431,7 @@
           "kind": "def",
           "name": "an6c3_untypedAncestorChain_walks_synthetic_chain",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an6c3_untypedAncestorChain_walks_synthetic_chain",
-          "line": 2074,
+          "line": 2095,
           "called": [
             "SeLe4n.Kernel.untypedAncestorChain",
             "SeLe4n.Kernel.untypedAncestorChain_bounded",
@@ -508402,7 +508449,7 @@
           "kind": "def",
           "name": "carved_child_untyped_region_at_parent_free_index",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.carved_child_untyped_region_at_parent_free_index",
-          "line": 2123,
+          "line": 2144,
           "called": [
             "SeLe4n.Kernel.Architecture.retypeFromUntyped_carve_preserves_untypedRegionsDisjoint",
             "SeLe4n.Kernel.CarveRequest",
@@ -508417,7 +508464,7 @@
           "kind": "def",
           "name": "an6c4_untypedAncestorRegionsDisjoint_default",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an6c4_untypedAncestorRegionsDisjoint_default",
-          "line": 2142,
+          "line": 2163,
           "called": [
             "SeLe4n.Kernel.default_untypedAncestorRegionsDisjoint",
             "SeLe4n.Kernel.untypedAncestorChain",
@@ -508432,7 +508479,7 @@
           "kind": "def",
           "name": "an6b_architecture_assumptions_index_total",
           "full_name": "SeLe4n.Testing.ModelIntegritySuite.an6b_architecture_assumptions_index_total",
-          "line": 2169,
+          "line": 2190,
           "called": [
             "SeLe4n.Kernel.Architecture.archAssumptionConsumer",
             "SeLe4n.Kernel.Architecture.archAssumptionConsumer_distinct",
@@ -508445,7 +508492,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 2198,
+          "line": 2219,
           "called": [
             "SeLe4n.Testing.ModelIntegritySuite.addrInRange_device_region_rejected",
             "SeLe4n.Testing.ModelIntegritySuite.addrInRange_empty_map_rejects",
@@ -548586,7 +548633,7 @@
           "kind": "def",
           "name": "sd058_mintReplyCapThroughTheSyscallGate",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd058_mintReplyCapThroughTheSyscallGate",
-          "line": 1357,
+          "line": 1359,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.CPtr.ofNat",
@@ -548598,6 +548645,7 @@
             "SeLe4n.Kernel.syscallLookupCap",
             "SeLe4n.Kernel.syscallRequiredRight",
             "SeLe4n.Model.AccessRight",
+            "SeLe4n.Model.AccessRightSet.mem",
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.CNode.ofList",
             "SeLe4n.Model.Capability",
@@ -548624,7 +548672,7 @@
           "kind": "def",
           "name": "sd059_cspaceRevokeThroughTheSyscallGate",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd059_cspaceRevokeThroughTheSyscallGate",
-          "line": 1498,
+          "line": 1507,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.CPtr.ofNat",
@@ -548658,7 +548706,7 @@
           "kind": "def",
           "name": "sd060_schedContextBind_requires_tcb_capability",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd060_schedContextBind_requires_tcb_capability",
-          "line": 1644,
+          "line": 1653,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextBindArgs",
@@ -548692,7 +548740,7 @@
           "kind": "def",
           "name": "sd063_schedContextConfigure_requires_sched_control",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd063_schedContextConfigure_requires_sched_control",
-          "line": 1733,
+          "line": 1742,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Budget",
@@ -548733,7 +548781,7 @@
           "kind": "def",
           "name": "sd061_every_kind_is_carved",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd061_every_kind_is_carved",
-          "line": 1825,
+          "line": 1834,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -548771,7 +548819,7 @@
           "kind": "def",
           "name": "sd062_carve_checks_authority_before_child",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd062_carve_checks_authority_before_child",
-          "line": 1900,
+          "line": 1909,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -548804,7 +548852,7 @@
           "kind": "def",
           "name": "sd051_receiveLinkCaller",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd051_receiveLinkCaller",
-          "line": 1955,
+          "line": 1964,
           "called": [
             "SeLe4n.Kernel.endpointCall",
             "SeLe4n.Kernel.endpointReceiveDual",
@@ -548829,7 +548877,7 @@
           "kind": "def",
           "name": "sd052_endpointReplyRecvOnCore",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd052_endpointReplyRecvOnCore",
-          "line": 2008,
+          "line": 2017,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -548861,7 +548909,7 @@
           "kind": "def",
           "name": "sd052b_replyRecv_donation_switch",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd052b_replyRecv_donation_switch",
-          "line": 2048,
+          "line": 2057,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -548900,7 +548948,7 @@
           "kind": "def",
           "name": "sd052c_replyRecv_delegated_returns_recorded_server_donation",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd052c_replyRecv_delegated_returns_recorded_server_donation",
-          "line": 2122,
+          "line": 2131,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -548937,7 +548985,7 @@
           "kind": "def",
           "name": "sd053_serverFirstLink",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd053_serverFirstLink",
-          "line": 2183,
+          "line": 2192,
           "called": [
             "SeLe4n.Kernel.clearWokenReceiverStash",
             "SeLe4n.Kernel.endpointCall",
@@ -548967,7 +549015,7 @@
           "kind": "def",
           "name": "sd053g_bound_notification_wake_clears_stash",
           "full_name": "SeLe4n.Testing.SyscallDispatchSuite.sd053g_bound_notification_wake_clears_stash",
-          "line": 2312,
+          "line": 2321,
           "called": [
             "SeLe4n.Kernel.boundDeliveryTarget?",
             "SeLe4n.Kernel.clearWokenReceiverStash",
@@ -548994,7 +549042,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 2355,
+          "line": 2364,
           "called": [
             "SeLe4n.Testing.SyscallDispatchSuite.dispatcherRefusesCallerNotCurrentOnCore",
             "SeLe4n.Testing.SyscallDispatchSuite.sd001_kernelErrorDiscriminants",
