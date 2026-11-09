@@ -1052,7 +1052,6 @@ bundle itself, not a hypothesis about the delivered message. -/
 theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
@@ -1080,8 +1079,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
         tcb.ipcState = .ready)
 :
     ipcInvariantFull
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1 := by
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 := by
   have hBare := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
     executingCore st hInv hObjInv hStackValid hAllBudgetsNone hFreshReceiver
     hRecvTailFresh hReplyIdValid hReceiverNotRecv hReceiverReady
@@ -1106,10 +1104,9 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
         · rename_i summary stFinal hT
           obtain ⟨stR, caps, hO, hS, hCaps, hOr⟩ := receiveTransferCaps_frame hT
           have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_eq hO hBare
-          rcases hOr with rfl | hU
+          rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
           · exact hR
-          · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ receiverCspaceRoot
-              receiverSlotBase _ stR _ _ hR (hO ▸ hBareInv)
+          · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ _ _ _ stR _ _ hR (hO ▸ hBareInv)
               (fun i c hc b hb => hCaps hBare.badgeWellFormed.2 i c hc b hb) hU
 
 open SeLe4n.Model.SystemState in
@@ -1118,7 +1115,6 @@ arm, mirroring `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCor
 theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
@@ -1146,11 +1142,9 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
         tcb.ipcState = .ready)
     (c : CoreId) :
     ipcInvariantFull_perCore
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1 c :=
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
-    (endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull endpointId receiver replyId
-      receiverCspaceRoot receiverSlotBase executingCore st (ipcInvariantFull_of_smp hInv)
+    (endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull endpointId receiver replyId executingCore st (ipcInvariantFull_of_smp hInv)
       hObjInv hStackValid hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
       hReceiverNotRecv hReceiverReady)
 

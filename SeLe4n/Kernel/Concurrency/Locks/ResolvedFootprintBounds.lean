@@ -95,7 +95,7 @@ theorem lockSet_endpointReplyOnCore_size_le (st : SystemState)
     (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).size
       ≤ maxLockSetSize := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_endpointReply_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointReply_extendOpt_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- The `replyRecv` resolved footprint — the widest IPC footprint the kernel
 declares.  **Twenty-one** members over all argument values on the widest path: a
@@ -107,14 +107,16 @@ the **invoking** receiver's own pre-receive return touches.
 
 Twenty-one is what the *definition* can produce; no reachable state carries the
 last five and the re-donation members at once, which
-`lockSet_endpointReplyRecvOnCore_size_le_twentyone` states.  (The ceiling has since
-grown to `maxLockSetSize`'s twenty-eight; its docstring carries the history.) -/
+`lockSet_endpointReplyRecvOnCore_size_le_sharp` states.  (The ceiling has since
+grown to `maxLockSetSize`'s twenty-nine; its docstring carries the history.) -/
 theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ maxLockSetSize :=
-  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      ≤ maxLockSetSize := by
+  unfold lockSet_endpointReplyRecvOnCore
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  exact Nat.succ_le_of_lt (lockSet_replyRecv_size_lt ..)
 
 /-- WS-OD OD1.5: `none` extends nothing. -/
 private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
@@ -196,12 +198,13 @@ dequeued sender's CSpace root, which the receive leg reads when it looks the
 sender's extra capabilities up, is live exactly on a rendezvous
 (`receiveCapRequest_of_no_queued_sender`), so that branch's figure moves 21 → 22
 and the blocking branch's does not; twenty-two still bounds both. -/
-theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo (st : SystemState)
+theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 22 := by
+      ≤ 23 := by
   unfold lockSet_endpointReplyRecvOnCore
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   -- **WS-HP HP10.6**: split on the pop's trigger first, so the origin member and
   -- the two below-head members are decided by one answer.  A frame that heads no
   -- context contributes neither; one that does contributes the origin exactly when
@@ -299,12 +302,13 @@ branches only, and each of them already has two members it provably lacks — th
 below-head pair where no context heads a stack or the redirect fires, the splice's
 pair where one does (`lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin`)
 — so the new member fits under the same figure. -/
-theorem lockSet_endpointReplyRecvOnCore_size_le_twentyone (st : SystemState)
+theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 21 := by
+      ≤ 22 := by
   unfold lockSet_endpointReplyRecvOnCore
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   cases hHead : answeredFrameHeadContextId? st target with
   | none =>
       -- The pop contributes nothing -- no context, no head, no below-head pair
@@ -421,8 +425,10 @@ theorem lockSet_endpointReceiveOnCore_size_le (st : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId) :
     (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).size
-      ≤ maxLockSetSize :=
-  lockSet_endpointReceive_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      ≤ maxLockSetSize := by
+  unfold lockSet_endpointReceiveOnCore
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  exact Nat.succ_le_of_lt (lockSet_endpointReceive_size_lt ..)
 
 -- ============================================================================
 -- §2  The notification footprints

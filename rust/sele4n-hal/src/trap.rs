@@ -1482,7 +1482,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // `KernelError` discriminant in `x0`, wrapped as
             // `DispatchError::Kernel(disc)`.  Both were retired: the
             // legacy export is gone (see `kernel_entry.rs`'s own note),
-            // and WS-RA's `SYSCALL_ABI_VERSION = 3` puts the status in
+            // and WS-RA's ABI (version 3 on) puts the status in
             // the **`x1` MessageInfo label** at `errorLabelBase + d`,
             // with `x0` carrying the badge or primary result at full
             // width.  The scalar export return is the *outcome tag*
@@ -2642,7 +2642,7 @@ mod tests {
         assert_eq!(frame.x0(), 0);
         assert_eq!(
             frame.x1(),
-            (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(error_code::VM_FAULT)) << 9
+            (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(error_code::VM_FAULT)) << 12
         );
         assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
         // FAR is preserved in the frame (not mutated by the handler).
@@ -2917,7 +2917,7 @@ mod tests {
             );
             assert_eq!(
                 frame.x1(),
-                (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(disc)) << 9,
+                (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(disc)) << 12,
                 "EC 0x{raw_ec:02x}: x1 must carry the status label"
             );
             assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);

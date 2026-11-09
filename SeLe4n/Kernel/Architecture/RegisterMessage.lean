@@ -139,8 +139,9 @@ line, as `regMessageWord`. -/
 @[noinline] def regMessageInfoWord (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) :
     UInt64 :=
   (({ length := min (min (regMessageLength layout len) 4) maxMessageRegisters
-      extraCaps := min 0 Model.maxExtraCaps
-      label := min 0 (errorLabelBase - 1) } : MessageInfo).encode).toUInt64
+      extraCaps := 0 % 4
+      label := min 0 (errorLabelBase - 1)
+      capsUnwrapped := 0 / 4 % 8 } : MessageInfo).encode).toUInt64
 
 /-- The frame a register-routed message of at most four words delivers:
 `returnFrameOfMessage` of its body (`returnFrameOfMessage_regMessageBody`), each
@@ -209,8 +210,9 @@ line, as `regMessageInfoWord`. -/
 @[noinline] def regReplyRecvInfoWord (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) :
     UInt64 :=
   (({ length := min (min (regMessageLength layout len - 1) 4) maxMessageRegisters
-      extraCaps := min 0 Model.maxExtraCaps
-      label := min 0 (errorLabelBase - 1) } : MessageInfo).encode).toUInt64
+      extraCaps := 0 % 4
+      label := min 0 (errorLabelBase - 1)
+      capsUnwrapped := 0 / 4 % 8 } : MessageInfo).encode).toUInt64
 
 /-- The frame a reply-receive of at most four delivered words writes:
 `returnFrameOfMessage` of its body (`returnFrameOfMessage_regReplyRecvBody`),

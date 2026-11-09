@@ -368,10 +368,10 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   let stMultiEndpoint : SystemState :=
     st1.withObjectStored demoEndpoint (.endpoint {})
         |>.withObjectStored ⟨31⟩ (.endpoint {})
-  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default stMultiEndpoint with
+  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) stMultiEndpoint with
   | .error err => IO.println s!"[SST-033] multi-endpoint send A error: {reprStr err}"
   | .ok (_, stEp1) =>
-      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext ⟨31⟩ ⟨12⟩ (.frame none false) default stEp1 with
+      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext ⟨31⟩ ⟨12⟩ (.frame none false) stEp1 with
       | .error err => IO.println s!"[SST-034] multi-endpoint send B error: {reprStr err}"
       | .ok (_, stEp2) =>
           match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none stEp2 with
@@ -403,12 +403,12 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
           match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st3 with
               | .error err => IO.println s!"[LEP-022] endpoint await-receive error: {reprStr err}"
               | .ok (_, st6) =>
-                  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default st6 with
+                  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) st6 with
                   | .error err => IO.println s!"[LEP-023] endpoint handshake send error: {reprStr err}"
                   | .ok (_, st7) =>
                       IO.println "[LEP-024] handshake send matched waiting receiver"
                       -- Sender blocks (no receiver waiting), then receiver dequeues
-                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default st7 with
+                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) st7 with
                       | .error err => IO.println s!"[LEP-025] endpoint send #1 error: {reprStr err}"
                       | .ok (_, st8) =>
                           IO.println "[LEP-026] queued sender on endpoint"
@@ -437,7 +437,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
   -- T7-B: Post-mutation invariant check after IPC handshake chain
   match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st1 with
   | .ok (_, stIpcMut1) =>
-    match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default stIpcMut1 with
+    match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) stIpcMut1 with
     | .ok (_, stIpcMut2) => checkInvariants counter "post-ipc-handshake-chain-mutated" stIpcMut2
     | .error _ => pure ()
   | .error _ => pure ()
@@ -772,12 +772,12 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   -- H12d-01: a send's words come from the sender's frame (WS-ZA ZA4.7), so the
   -- register bound lives in the message-info decode: a word declaring 121
   -- registers does not decode.
-  let oversizedRegsInfo : Nat := (MessageInfo.mk 121 0 0).encode
+  let oversizedRegsInfo : Nat := (MessageInfo.mk 121 0 0 0).encode
   IO.println s!"[IMB-001] H12d oversized registers rejected: {(MessageInfo.decode oversizedRegsInfo).isNone}"
 
   -- H12d-02: and the word's two-bit extra-caps field names at most three
   -- capabilities, whatever a word asking for four decodes to.
-  let oversizedCapsInfo : Nat := (MessageInfo.mk 0 4 0).encode
+  let oversizedCapsInfo : Nat := (MessageInfo.mk 0 4 0 0).encode
   let capsBounded : Bool := match MessageInfo.decode oversizedCapsInfo with
     | some mi => decide (mi.extraCaps ≤ maxExtraCaps)
     | none => true
@@ -3026,11 +3026,12 @@ private def runRustXvalVectors : IO Unit := do
   -- RUST-XVAL: MessageInfo bit layout verification
   let miLen := MessageInfo.encode { length := 42, extraCaps := 0, label := 0 }
   let miCaps := MessageInfo.encode { length := 0, extraCaps := 3, label := 0 }
+  let miUnwrapped := MessageInfo.encode { length := 0, extraCaps := 0, label := 0, capsUnwrapped := 7 }
   let miLabel := MessageInfo.encode { length := 0, extraCaps := 0, label := 5 }
-  if miLen == 42 && miCaps == 3 * 128 && miLabel == 5 * 512 then
-    IO.println s!"[XVAL-004] MessageInfo bit layout ok: len={miLen} caps={miCaps} label={miLabel}"
+  if miLen == 42 && miCaps == 3 * 128 && miUnwrapped == 7 * 512 && miLabel == 5 * 4096 then
+    IO.println s!"[XVAL-004] MessageInfo bit layout ok: len={miLen} caps={miCaps} unwrapped={miUnwrapped} label={miLabel}"
   else
-    throw <| IO.userError s!"[XVAL-004] MessageInfo bit layout MISMATCH: len={miLen} caps={miCaps} label={miLabel}"
+    throw <| IO.userError s!"[XVAL-004] MessageInfo bit layout MISMATCH: len={miLen} caps={miCaps} unwrapped={miUnwrapped} label={miLabel}"
 
   -- RUST-XVAL: SetIPCBufferArgs encode/decode roundtrip (D3)
   let ibArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs :=

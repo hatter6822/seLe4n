@@ -84,56 +84,38 @@ theorem untypedSourceSetFull (st : SystemState) (src : CSpaceAddr) (cap : Capabi
     · exact refl hInv
   · exact refl hInv
 
-theorem ipcTransferSingleCap {cap : Capability} {srcNode : SlotRef}
-    {receiverRoot : SeLe4n.ObjId} {slotBase : SeLe4n.Slot} {scanLimit : Nat}
-    {st st' : SystemState} {result : CapTransferResult} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
-      = .ok (result, st')) : RecordsFrame st st' := by
-  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨slot, st2, -, -, -, hIns, -, rfl⟩⟩ := ipcTransferSingleCap_ok_cases h
+theorem ipcTransferSingleCap {cap : Capability} {srcNode : SlotRef} {dst : CSpaceAddr}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.ipcTransferSingleCap cap srcNode dst st = .ok ((), st')) :
+    RecordsFrame st st' := by
+  obtain ⟨_, st2, -, -, -, hIns, rfl⟩ := ipcTransferSingleCap_ok_cases h
+  have F1 := cspaceInsertSlot hInv hIns
+  have F2 := F1.trans (cdtAddChild st2 srcNode dst .ipcTransfer F1.invExt)
+  exact F2.trans (untypedSourceSetFull _ srcNode cap F2.invExt)
+
+/-- A badge written to the receiver's buffer goes to the physical-write ledger. -/
+theorem recordUnwrappedBadge (st : SystemState) (tcb : TCB) (i : Nat) (b : SeLe4n.Badge)
+    (hInv : st.objects.invExt) :
+    RecordsFrame st (_root_.SeLe4n.Kernel.recordUnwrappedBadge st tcb i b) := by
+  unfold _root_.SeLe4n.Kernel.recordUnwrappedBadge
+  split
+  · exact ⟨fun _ => rfl, rfl, hInv, rfl⟩
   · exact refl hInv
-  · have F1 := cspaceInsertSlot hInv hIns
-    have F2 := F1.trans (cdtAddChild st2 srcNode { cnode := receiverRoot, slot := slot }
-      .ipcTransfer F1.invExt)
-    exact F2.trans (untypedSourceSetFull _ srcNode cap F2.invExt)
 
-theorem ipcUnwrapCapsLoop {caps : Array TransferCap} {receiverRoot : SeLe4n.ObjId}
-    {idx : Nat} {nextBase : SeLe4n.Slot} {accResults : Array CapTransferResult} {fuel : Nat}
-    {st st' : SystemState} {summary : CapTransferSummary} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-      = .ok (summary, st')) : RecordsFrame st st' := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [_root_.SeLe4n.Kernel.ipcUnwrapCapsLoop] at h
-    obtain ⟨_, rfl⟩ := h; exact refl hInv
-  | succ n ih =>
-    simp only [_root_.SeLe4n.Kernel.ipcUnwrapCapsLoop] at h
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at h; obtain ⟨_, rfl⟩ := h; exact refl hInv
-    | some tc =>
-      simp [hCap] at h
-      cases hT : _root_.SeLe4n.Kernel.ipcTransferSingleCap tc.cap tc.srcSlot receiverRoot nextBase
-          maxExtraCaps st with
-      | error e => simp [hT] at h; obtain ⟨_, rfl⟩ := h; exact refl hInv
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have F1 := ipcTransferSingleCap hInv hT
-        simp [hT] at h
-        cases result <;> exact F1.trans (ih F1.invExt h)
-
-theorem ipcUnwrapCaps {caps : Array TransferCap} {receiverRoot : SeLe4n.ObjId}
-    {slotBase : SeLe4n.Slot} {grantRight : Bool} {st st' : SystemState}
+theorem ipcUnwrapCaps {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId} {rtcb : TCB}
+    {slot? : Option CSpaceAddr} {st st' : SystemState}
     {summary : CapTransferSummary} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-      = .ok (summary, st')) : RecordsFrame st st' := by
-  unfold _root_.SeLe4n.Kernel.ipcUnwrapCaps at h
-  split at h
-  · simp at h; obtain ⟨_, rfl⟩ := h; exact refl hInv
-  · exact ipcUnwrapCapsLoop hInv h
+    (h : _root_.SeLe4n.Kernel.ipcUnwrapCaps caps endpointId rtcb slot? st
+      = .ok (summary, st')) : RecordsFrame st st' :=
+  ipcUnwrapCaps_rel (fun a b => b.objects.invExt → RecordsFrame b a) (fun _ h => refl h)
+    (fun _ _ _ h1 h2 hA => let F := h2 hA; F.trans (h1 F.invExt))
+    (fun s i b hA => recordUnwrappedBadge s rtcb i b hA)
+    (fun _ _ _ _ _ _ hT hA => ipcTransferSingleCap hA hT) h hInv
 
 theorem receiveTransferCaps {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)}
-    {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {st st' : SystemState}
-    {summary : CapTransferSummary} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.receiveTransferCaps req root base st = .ok (summary, st')) :
+    {endpointId : Option SeLe4n.ObjId} {target? : Option (TCB × Option CSpaceAddr)}
+    {st st' : SystemState} {summary : CapTransferSummary} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
     RecordsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.receiveTransferCaps at h
   split at h
@@ -141,7 +123,9 @@ theorem receiveTransferCaps {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × 
   · dsimp only at h
     split at h
     · cases h; exact refl hInv
-    · exact ipcUnwrapCaps hInv h
+    · split at h
+      · cases h; exact refl hInv
+      · exact ipcUnwrapCaps hInv h
 
 end RecordsFrame
 

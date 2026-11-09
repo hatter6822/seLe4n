@@ -304,7 +304,7 @@ theorem replyDispatch_inPlace (st : SystemState) (replier c server : SeLe4n.Thre
 `performReplyRendezvous`'s state. -/
 theorem replyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (replier c server : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
-    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool)
     (core : Concurrency.CoreId)
     (hSz : ¬ msg.registers.size > maxMessageRegisters)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
@@ -313,8 +313,9 @@ theorem replyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (hSRes : server.isReserved = false)
     (hG : replyWakesInPlace st c ct rid = true)
     (hNoF : ct.faultWords.isFault = false)
+    (hX : (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
-    replyTransferOnCoreChecked ctx replier c mi regs msg core st =
+    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
       .ok ((), performReplyRendezvous st c server rid msg core) := by
   have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
@@ -326,6 +327,8 @@ theorem replyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [hD]
+  simp only [replyTransferCaps_of_inert st replier c grant ct hTc hX,
+    CapTransferSummary.capInfo_empty]
   rfl
 
 /-- **The in-place reply keeps the donation chain.**  Its reply object heads no

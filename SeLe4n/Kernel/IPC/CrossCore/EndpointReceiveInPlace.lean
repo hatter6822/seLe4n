@@ -148,13 +148,11 @@ theorem blockedSender_of_routedSend (st : SystemState) (s : SeLe4n.ThreadId) (sT
         { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
             sTcb.registerContext mi.length,
           badge := sTcb.ipcBadgeView } := by
-  obtain ⟨d, hDec, _, _, _, hMi, hX, _, hRegs⟩ :=
+  obtain ⟨d, hDec, _, _, _, hMi, hX, hRegs⟩ :=
     Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSend st s _ _ 32 capAddr mi h
   refine ⟨?_, ?_⟩
-  · have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs d).isEmpty = true := by
-      unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs
-      rw [hMi, hX]
-      rfl
+  · have hE : ∀ s t, (senderExtraCapAddrs s t d.msgInfo.extraCaps).isEmpty = true := by
+      intro s t; rw [hMi, hX, senderExtraCapAddrs_zero]; rfl
     unfold blockedSenderCapRequest senderFrameCapRequest blockedSenderDecode
     rw [hDec]
     simp only [hF, Bool.false_eq_true, ↓reduceIte, hE, ite_self]
@@ -186,11 +184,11 @@ theorem sendFrame_of_routed (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
       d.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map
         (SeLe4n.readReg tcb.registerContext) := by
     rcases h with h | h
-    · obtain ⟨d, hDec, _, _, _, hMi, hX, _, hRegs⟩ :=
+    · obtain ⟨d, hDec, _, _, _, hMi, hX, hRegs⟩ :=
         Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSend st s _ _ 32
           capAddr mi h
       exact ⟨d, hDec, hMi, hX, hRegs⟩
-    · obtain ⟨d, hDec, _, _, _, hMi, hX, _, hRegs⟩ :=
+    · obtain ⟨d, hDec, _, _, _, hMi, hX, hRegs⟩ :=
         Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedCall st s _ _ 32
           capAddr mi h
       exact ⟨d, hDec, hMi, hX, hRegs⟩
@@ -202,10 +200,8 @@ theorem sendFrame_of_routed (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
     · rfl
     · rw [hT]
       simp only [sendPayloadCapRequest, senderFrameCapRequest, hDec]
-      have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs d).isEmpty = true := by
-        unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs
-        rw [hMi, hX]
-        rfl
+      have hE : ∀ s t, (senderExtraCapAddrs s t d.msgInfo.extraCaps).isEmpty = true := by
+        intro s t; rw [hMi, hX, senderExtraCapAddrs_zero]; rfl
       simp only [hE, ↓reduceIte]
       split <;> rfl
 
@@ -374,8 +370,7 @@ theorem receiveTake_delivered_of_message (st : SystemState) (endpointId : SeLe4n
 delivering a fault: as `receiveTake_delivered_of_message`, the WithCaps receive
 installing nothing. -/
 theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
@@ -388,7 +383,7 @@ theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep
     let S4 := W.1.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb))
     let f := Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext
       mi.length sTcb.ipcBadgeView
-    endpointReceiveDualWithCapsOnCore endpointId receiver replyId root slot core st =
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, W.2)) ∧
       applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
       Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))

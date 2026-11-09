@@ -89,53 +89,53 @@ namespace RecordsStage
 
 /-- **The checked send keeps the records**, its sender the running thread. -/
 theorem endpointSendCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId : SeLe4n.ObjId}
-    {sender : SeLe4n.ThreadId} {payload : SendPayload} {base : SeLe4n.Slot} {c : CoreId}
+    {sender : SeLe4n.ThreadId} {payload : SendPayload} {c : CoreId}
     {st : SystemState} (hR : ipcReachable st) (hC : CallerReady st sender) :
     RecordsStage st (_root_.SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked ctx endpointId
-      sender payload base c st).1 :=
+      sender payload c st).1 :=
   RecordsStage.of_step (RecordsStep.endpointSendCrossCoreDispatchChecked hR.objects_invExt
     hR.ipcInvariantFull.queueHeadBlockedConsistent hC.notParked) fun _ => by
     unfold _root_.SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked
     split
     · obtain ⟨tcb, hT, hRd⟩ := hC
-      exact endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable _ _ _ _ _
+      exact endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable _ _ _ _
         st hR tcb hT hRd
     · exact hR.replyWaitersConsistent
 
 /-- **The receive keeps the records**, its receiver the running thread. -/
 theorem endpointReceiveDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n.ThreadId}
-    {replyId : Option SeLe4n.ReplyId} {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : CoreId}
+    {replyId : Option SeLe4n.ReplyId} {c : CoreId}
     {st : SystemState} (hR : ipcReachable st) (hC : CallerReady st receiver) :
     RecordsStage st (_root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore endpointId receiver
-      replyId root base c st).1 :=
+      replyId c st).1 :=
   RecordsStage.of_step (RecordsStep.endpointReceiveDualWithCapsOnCore hR.objects_invExt
     hR.ipcInvariantFull.queueHeadBlockedConsistent hC.notParked) fun _ =>
     let ⟨tcb, hT, hRd⟩ := hC
-    endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable _ _ _ _ _ _
+    endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable _ _ _ _
       st hR tcb hT hRd
 
 /-- **The checked call keeps the records**, its caller the running thread. -/
 theorem endpointCallCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId : SeLe4n.ObjId}
-    {caller : SeLe4n.ThreadId} {payload : SendPayload} {base : SeLe4n.Slot} {c : CoreId}
+    {caller : SeLe4n.ThreadId} {payload : SendPayload} {c : CoreId}
     {st : SystemState} (hR : ipcReachable st) (hC : CallerReady st caller) :
     RecordsStage st (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked ctx endpointId
-      caller payload base c st).1 :=
+      caller payload c st).1 :=
   RecordsStage.of_step (RecordsStep.endpointCallCrossCoreDispatchChecked hR.objects_invExt
     hR.ipcInvariantFull.queueHeadBlockedConsistent) fun _ => by
     unfold _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked
     split
     · obtain ⟨tcb, hT, hRd⟩ := hC
-      exact endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reachable _ _ _ _ _
+      exact endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reachable _ _ _ _
         st hR tcb hT hRd
     · exact hR.replyWaitersConsistent
 
 /-- **The checked reply keeps the records**: the fault reply, or the reply and
 the delivered frame. -/
 theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : SeLe4n.ThreadId}
-    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {c : CoreId}
-    {st st' : SystemState}
-    (h : _root_.SeLe4n.Kernel.replyTransferOnCoreChecked ctx replier callerTid mi regs msg c st
-      = .ok ((), st')) : RecordsStage st st' := fun hK =>
+    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st st' : SystemState}
+    (h : _root_.SeLe4n.Kernel.replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c
+      st = .ok ((), st')) : RecordsStage st st' := fun hK =>
   have hI := KernelRecords.objects_invExt hK
   RecordsStage.of_step (RecordsStep.replyTransferOnCoreChecked hI h) (fun hC => by
     unfold _root_.SeLe4n.Kernel.replyTransferOnCoreChecked at h
@@ -164,8 +164,17 @@ theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : 
       cases res with
       | error _ => intro h; cases h
       | ok _ =>
-        intro h hW; cases h
-        exact hW.1.of_views (stageDeliveredMessage_replyViews_eq _ _ _ hW.2)) hK
+        intro h hW
+        simp only [] at h
+        cases hU : _root_.SeLe4n.Kernel.replyTransferCaps st replier callerTid grant s with
+        | error _ => rw [hU] at h; cases h
+        | ok p =>
+          obtain ⟨summary, sX⟩ := p
+          rw [hU] at h
+          cases h
+          have hX := receiveTransferCaps_objects_invExt hW.2 hU
+          exact (hW.1.of_views (receiveTransferCaps_replyViews_eq hW.2 hU)).of_views
+            (stageDeliveredMessage_replyViews_eq _ _ _ hX)) hK
 
 /-- **The bound signal keeps the records**: the interrupt's delivery. -/
 theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c : CoreId}

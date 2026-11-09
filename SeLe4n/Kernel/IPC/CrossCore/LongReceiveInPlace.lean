@@ -121,11 +121,9 @@ theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
       · rfl
       · rw [hT]
         simp only [sendPayloadCapRequest, senderFrameCapRequest, blockedSenderDecode, hD]
-        have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs
-            (longSendDecode st tid tcb.registerContext capAddr mi)).isEmpty = true := by
-          unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs longSendDecode
-          simp only [hX]
-          rfl
+        have hE : ∀ s t, (senderExtraCapAddrs s t
+            (longSendDecode st tid tcb.registerContext capAddr mi).msgInfo.extraCaps).isEmpty = true := by
+          intro s t; unfold longSendDecode; simp only [hX, senderExtraCapAddrs_zero]; rfl
         simp only [hE, ↓reduceIte]
         split <;> rfl
     · simp only [sendPayloadMessage, senderFrameDecode, hT, blockedSenderDecode, hD,
@@ -224,11 +222,9 @@ theorem routedLongCallerFrame (st : SystemState) (tid : SeLe4n.ThreadId)
       · rfl
       · rw [hT]
         simp only [sendPayloadCapRequest, senderFrameCapRequest, blockedSenderDecode, hD]
-        have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs
-            (longCallDecode st tid tcb.registerContext capAddr mi)).isEmpty = true := by
-          unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs longCallDecode
-          simp only [hX]
-          rfl
+        have hE : ∀ s t, (senderExtraCapAddrs s t
+            (longCallDecode st tid tcb.registerContext capAddr mi).msgInfo.extraCaps).isEmpty = true := by
+          intro s t; unfold longCallDecode; simp only [hX, senderExtraCapAddrs_zero]; rfl
         simp only [hE, ↓reduceIte]
         split <;> rfl
     · simp only [sendPayloadMessage, senderFrameDecode, hT, blockedSenderDecode, hD,
@@ -281,10 +277,8 @@ theorem blockedSender_of_routedLong (st : SystemState) (s : SeLe4n.ThreadId) (sT
       exact ⟨_, decodeSyscallArgsFromState_of_routedCallLong_ok st s _ capAddr mi hR hRead,
         hGt, hMax, hX, rfl, rfl⟩
   refine ⟨?_, ?_⟩
-  · have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs d).isEmpty = true := by
-      unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs
-      rw [hMi, hX]
-      rfl
+  · have hE : ∀ s t, (senderExtraCapAddrs s t d.msgInfo.extraCaps).isEmpty = true := by
+      intro s t; rw [hMi, hX, senderExtraCapAddrs_zero]; rfl
     unfold blockedSenderCapRequest senderFrameCapRequest
     rw [hD]
     simp only [hF, Bool.false_eq_true, ↓reduceIte, hE, ite_self]
@@ -379,8 +373,7 @@ rendezvous hands off no SchedContext and runs the receiver's priority walk, the
 caller left blocked on the reply is owed no completion frame, and staging the
 receiver's message writes `performReceiveCallDeliveredLong`'s state. -/
 theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (root : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
@@ -390,7 +383,7 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
       .callLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st s j = .ok w) :
-    endpointReceiveDualWithCapsOnCore endpointId receiver (some rid) root slot core st =
+    endpointReceiveDualWithCapsOnCore endpointId receiver (some rid) core st =
         (receiveCallTakeState st endpointId s sTcb receiver rid,
           .ok (s, { results := #[] }, none)) ∧
       applyReceiveRendezvousHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
@@ -497,13 +490,11 @@ theorem blockedSender_of_routedCall (st : SystemState) (s : SeLe4n.ThreadId) (sT
         { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
             sTcb.registerContext mi.length,
           badge := sTcb.ipcBadgeView } := by
-  obtain ⟨d, hDec, _, _, _, hMi, hX, _, hRegs⟩ :=
+  obtain ⟨d, hDec, _, _, _, hMi, hX, hRegs⟩ :=
     decodeSyscallArgsFromState_of_routedCall st s _ _ 32 capAddr mi h
   refine ⟨?_, ?_⟩
-  · have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs d).isEmpty = true := by
-      unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs
-      rw [hMi, hX]
-      rfl
+  · have hE : ∀ s t, (senderExtraCapAddrs s t d.msgInfo.extraCaps).isEmpty = true := by
+      intro s t; rw [hMi, hX, senderExtraCapAddrs_zero]; rfl
     unfold blockedSenderCapRequest senderFrameCapRequest blockedSenderDecode
     rw [hDec]
     simp only [hF, Bool.false_eq_true, ↓reduceIte, hE, ite_self]
@@ -537,8 +528,7 @@ WithCaps receive installs nothing and commits the take, the rendezvous hands
 off no SchedContext and runs the receiver's priority walk, and staging the
 receiver's message writes `performReceiveCallDelivered`'s state. -/
 theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (root : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
@@ -546,7 +536,7 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (hF : sTcb.ipcFaultSend = false)
     (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .call capAddr mi) :
-    endpointReceiveDualWithCapsOnCore endpointId receiver (some rid) root slot core st =
+    endpointReceiveDualWithCapsOnCore endpointId receiver (some rid) core st =
         (receiveCallTakeState st endpointId s sTcb receiver rid,
           .ok (s, { results := #[] }, none)) ∧
       applyReceiveRendezvousHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
@@ -704,8 +694,7 @@ in-place writes, the rendezvous hands off no donation, and staging the woken
 sender's completion and the receiver's message writes
 `performReceiveDeliveredLong`'s state. -/
 theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
@@ -718,7 +707,7 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     let P := storePopHead st endpointId false s sTcb.queueNext
     let W := wakeThread (P.updateTcb s receiverReady) s core
     let S4 := W.1.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb))
-    endpointReceiveDualWithCapsOnCore endpointId receiver replyId root slot core st =
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, W.2)) ∧
       applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
       Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))

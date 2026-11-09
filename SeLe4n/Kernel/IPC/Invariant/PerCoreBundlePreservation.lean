@@ -318,7 +318,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
 -- The live `.send` dispatch routes through `endpointSendDualWithCaps` (and
 -- the capability-carrying receive/call variants exist on the same footing),
 -- so the per-core bundle layer must cover the WithCaps compositions too:
--- base transition + `lookupCspaceRoot` + `ipcUnwrapCaps`. The per-core
+-- base transition + `receiverCapTarget?` + `ipcUnwrapCaps`. The per-core
 -- bundle theorems ride the single-core WithCaps whole-bundle theorems
 -- through the SM6.D.1 bridges.
 
@@ -329,7 +329,6 @@ view of the IPC invariant bundle. -/
 theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
@@ -354,12 +353,12 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
     (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDualWithCaps endpointId sender payload
-             receiverSlotBase st = .ok (summary, st'))
+             st = .ok (summary, st'))
     (c : CoreId) :
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointSendDualWithCaps_preserves_ipcInvariantFull endpointId sender payload
-      receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
+      st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
       hAllBudgetsNone hFreshSender hSendTailFresh
       hSenderNotRecv
       (fun tcb hRaw => hSenderNotReply tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
@@ -372,7 +371,6 @@ preserves every core's view of the IPC invariant bundle. -/
 theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
@@ -397,12 +395,11 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         tcb.ipcState = .ready)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
-             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st'))
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId st = .ok ((senderId, summary), st'))
     (c : CoreId) :
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
-    (endpointReceiveDualWithCaps_preserves_ipcInvariantFull endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
+    (endpointReceiveDualWithCaps_preserves_ipcInvariantFull endpointId receiver replyId st st' senderId summary
       (ipcInvariantFull_of_smp hInv) hObjInv hStackValid hAllBudgetsNone
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
@@ -414,7 +411,6 @@ every core's view of the IPC invariant bundle. -/
 theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
@@ -441,12 +437,12 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
     (hCallerReady : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         tcb.ipcState = .ready)
     (hStep : endpointCallWithCaps endpointId caller payload
-             receiverSlotBase st = .ok (summary, st'))
+             st = .ok (summary, st'))
     (c : CoreId) :
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointCallWithCaps_preserves_ipcInvariantFull endpointId caller payload
-      receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
+      st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
       hAllBudgetsNone hFreshCaller hSendTailFresh
       hCallerNotRecv
       (fun tcb hRaw => hCallerNotReply tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))

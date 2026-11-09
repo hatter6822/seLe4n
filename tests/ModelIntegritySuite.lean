@@ -158,15 +158,15 @@ def messageInfo_mkChecked_rejects_oversize_extraCaps : IO Unit := do
   expect "mkChecked rejects extraCaps>3"
     ((MessageInfo.mkChecked 0 4 0).isNone)
 
-/-- mkChecked rejects label > maxLabel (2^20-1). -/
+/-- mkChecked rejects label > maxLabel (2^52-1). -/
 def messageInfo_mkChecked_rejects_oversize_label : IO Unit := do
-  expect "mkChecked rejects label>2^20-1"
-    ((MessageInfo.mkChecked 0 0 (1 <<< 20)).isNone)
+  expect "mkChecked rejects label>2^52-1"
+    ((MessageInfo.mkChecked 0 0 (1 <<< 52)).isNone)
 
 /-- Boundary — maxLabel exactly is accepted. -/
 def messageInfo_mkChecked_accepts_maxLabel_boundary : IO Unit := do
   expect "mkChecked boundary maxLabel"
-    ((MessageInfo.mkChecked 0 0 ((1 <<< 20) - 1)).isSome)
+    ((MessageInfo.mkChecked 0 0 ((1 <<< 52) - 1)).isSome)
 
 /-- `wellFormed` reflects accepted fields. -/
 def messageInfo_wellFormed_sound : IO Unit := do

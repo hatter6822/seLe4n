@@ -1671,7 +1671,7 @@ private def runReplySeamChecks : IO Unit := do
         (!threadHasPendingFault afterFault handler)
       assertBool "control: on such a thread the seam answers exactly as the pre-RR4 reply did"
         (errorOf (replyTransferOnCore handler handler restartInfo restartRegs
-            IpcMessage.empty c1 afterFault) ==
+            IpcMessage.empty true c1 afterFault) ==
           errorOf
             (match endpointReplyCrossCoreDispatch handler handler IpcMessage.empty c1
                 afterFault with
@@ -1767,7 +1767,7 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
         | (_, .error e) => assertBool s!"the second server's receive must succeed (got {repr e})" false
         | (stS, .ok _) =>
           match endpointCallCrossCoreDispatch epServer faulter (.frame none false)
-              (SeLe4n.Slot.ofNat 0) c0 stS with
+              c0 stS with
           | (_, .error e) => assertBool s!"the faulter's Call must succeed (got {repr e})" false
           | (stC, .ok _) =>
             assertBool "the second server's reply object names the faulter"

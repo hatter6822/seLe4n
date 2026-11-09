@@ -794,26 +794,26 @@ theorem stageWokenDeliveryTwice_runQueueStage (x : SystemState) (w p : Option Se
 
 theorem endpointSendCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : Concurrency.CoreId)
+    (c : Concurrency.CoreId)
     (st : SystemState) (P : SyscallArmPremises st c sender) :
     SystemState.RunQueueEntryStage st
-      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload base c st).1 := by
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload c st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   repeat' split
   all_goals first
     | exact (RunQueueStage.refl _).entry
-    | exact endpointSendDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
+    | exact endpointSendDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ P.endpointHeads
         P.current P.notIdle
 
 theorem endpointCallCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : Concurrency.CoreId)
+    (c : Concurrency.CoreId)
     (st : SystemState) (P : SyscallArmPremises st c caller) :
     SystemState.RunQueueEntryStage st
-      (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload base c st).1 := by
+      (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload c st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
-  · exact endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
+  · exact endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ P.endpointHeads
       P.current P.notIdle P.objInv P.refined P.currentActive
   · exact (RunQueueStage.refl _).entry
 
@@ -919,7 +919,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     rename_i hSend
     exact clearStashStage_runQueueEntryStage
       ((runQueueStage_of_pair_eq
-        (endpointSendCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ _ P) hSend))
+        (endpointSendCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ P) hSend))
       (fun x => stageWokenDelivery_runQueueStage x _ _) h
   case none.receive.object epId =>
     repeat' split at h
@@ -927,7 +927,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     rename_i summ _ hRecv _ stDon hHand
     cases h
     have E := runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ _ P.endpointHeads
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ P.endpointHeads
         P.current P.notIdle P.currentActive) hRecv
     obtain ⟨_, hR2⟩ := E.1.links P.objInv P.refined
     exact E.trans
@@ -940,7 +940,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     · rename_i hCall
       cases h
       exact ((runQueueStage_of_pair_eq
-        (endpointCallCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ _ P) hCall)).trans
+        (endpointCallCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ P) hCall)).trans
         (stageWokenDelivery_runQueueStage _ _ _).entry
     · cases h
   case none.reply.replyCap rid =>
@@ -1135,7 +1135,7 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     rename_i hSend
     exact clearStashStage_runQueueEntryStage
       ((runQueueStage_of_pair_eq
-        (endpointSendDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
+        (endpointSendDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ P.endpointHeads
           P.current P.notIdle) hSend))
       (fun x => stageWokenDelivery_runQueueStage x _ _) h
   case none.receive.object epId =>
@@ -1144,7 +1144,7 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     rename_i summ _ hRecv _ stDon hHand
     cases h
     have E := runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ _ P.endpointHeads
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ P.endpointHeads
         P.current P.notIdle P.currentActive) hRecv
     obtain ⟨_, hR2⟩ := E.1.links P.objInv P.refined
     exact E.trans
@@ -1157,7 +1157,7 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     · rename_i hCall
       cases h
       exact ((runQueueStage_of_pair_eq
-        (endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
+        (endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ P.endpointHeads
           P.current P.notIdle P.objInv P.refined P.currentActive) hCall)).trans
         (stageWokenDelivery_runQueueStage _ _ _).entry
     · cases h

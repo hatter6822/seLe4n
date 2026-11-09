@@ -132,7 +132,7 @@ pub mod host_capture {
 /// under that crate's zero-runtime-deps discipline, pinned against
 /// `sele4n_types` by a `const` assertion); there is no such reason here.
 ///
-/// `const`, so the label's fit in the 20-bit field is checked when this file
+/// `const`, so the label's fit in the 52-bit field is checked when this file
 /// compiles rather than when a host test happens to run.
 #[cfg(not(target_arch = "aarch64"))]
 const MOCK_ERROR_FRAME_X1: u64 = {
@@ -197,8 +197,8 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 /// decodes the response. This is the primary entry point for all
 /// high-level wrappers in `sele4n-sys`.
 ///
-/// V2-H: Returns `InvalidMessageInfo` if the MessageInfo label exceeds
-/// the 20-bit encoding limit (detected during encode).
+/// Returns `InvalidMessageInfo` if the MessageInfo label exceeds seL4's
+/// 52-bit field (detected during encode).
 #[inline]
 #[allow(unsafe_code)]
 pub fn invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse> {
@@ -236,7 +236,7 @@ mod tests {
         assert_eq!(invoke_syscall(req), Err(KernelError::InvalidSyscallNumber));
     }
 
-    /// The mock's `x1` carries the status in the **top** of the 20-bit label
+    /// The mock's `x1` carries the status in the **top** of the 52-bit label
     /// range (ABI v3), and `x0` and the message registers are zero — the shape
     /// `Architecture.errorFrame` publishes.  Read back through
     /// `MessageInfo::decode`, so this pins the label *value* independently of
@@ -264,7 +264,7 @@ mod tests {
         );
     }
 
-    /// A label at the very top of the range still fits the 20-bit field, so
+    /// A label at the very top of the range still fits the 52-bit field, so
     /// the `const` construction of the mock frame cannot be one discriminant
     /// away from overflowing it unnoticed.
     #[test]

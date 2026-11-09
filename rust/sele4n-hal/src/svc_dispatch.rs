@@ -436,7 +436,8 @@ impl SyscallArgs {
     /// `sele4n-abi/src/message_info.rs`, and this reader) — is
     ///   bits  [ 6: 0] = length      (≤ 120)
     ///   bits  [ 8: 7] = extraCaps   (≤ 3)
-    ///   bits  [28: 9] = label       (20 bits)
+    ///   bits  [11: 9] = capsUnwrapped
+    ///   bits  [63:12] = label       (52 bits)
     /// The previous reader here masked `0x0FFF` under a doc comment
     /// claiming a `length[11:0] / extraCaps[13:12] / label[63:14]` packing
     /// that nothing else in the tree used — so any request with a nonzero
@@ -466,15 +467,15 @@ impl SyscallArgs {
 /// side — so a half-bumped tree cannot build its own test lane, let
 /// alone pass it (plan §3.6).  The Lean side is a `decide` theorem
 /// (`syscallAbiVersion_pinned`), failing the kernel build itself.
-pub const SYSCALL_ABI_VERSION: u64 = 3;
+pub const SYSCALL_ABI_VERSION: u64 = 4;
 
-/// WS-RR RR4 (ABI v3): the first kernel-status label — `0xFFF00`, the top
-/// 256 labels of the 20-bit field.  Hand-duplicated from
+/// WS-RR RR4 (ABI v3): the first kernel-status label — `2^52 - 256`, the
+/// top 256 labels of seL4's 52-bit field.  Hand-duplicated from
 /// `sele4n-types::ERROR_LABEL_BASE` per this crate's zero-runtime-deps
 /// discipline; the cross-crate agreement is a `#[cfg(test)]` `const`
 /// assertion below (a drift fails test *compilation*), and Lean pins the
 /// same literal (`Architecture.errorLabelBase_eq`).
-pub const ERROR_LABEL_BASE: u64 = (1 << 20) - 256;
+pub const ERROR_LABEL_BASE: u64 = (1 << 52) - 256;
 
 /// WS-RA: number of return-frame mailbox slots — one per core.
 pub const RETURN_FRAME_CORES: usize = crate::smp::MAX_SECONDARY_CORES + 1;
@@ -577,7 +578,7 @@ pub enum SvcOutcome {
 
 /// WS-RA: the label-encoded error frame for a prefilter rejection —
 /// `x0 = 0`, `x1` = `MessageInfo {length 0, extraCaps 0, label
-/// ERROR_LABEL_BASE + disc}` = `(ERROR_LABEL_BASE + disc) << 9`, no message
+/// ERROR_LABEL_BASE + disc}` = `(ERROR_LABEL_BASE + disc) << 12`, no message
 /// registers.  Mirrors Lean's `Architecture.errorFrame` (ABI v3: the status
 /// range is the top of the label field, so label `0` means success,
 /// discriminant `0` is a real error, and a delivered message's label —
@@ -585,7 +586,7 @@ pub enum SvcOutcome {
 pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
     [
         0,
-        (ERROR_LABEL_BASE + (kernel_error_discriminant as u64)) << 9,
+        (ERROR_LABEL_BASE + (kernel_error_discriminant as u64)) << 12,
         0,
         0,
         0,
@@ -594,7 +595,7 @@ pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
 }
 
 /// The `x1` label of the blocked-resume sentinel: the maximum value the
-/// 20-bit `MessageInfo` label field can carry (`sele4n-abi`'s
+/// 52-bit `MessageInfo` label field can carry (`sele4n-abi`'s
 /// `MAX_LABEL`, hand-duplicated here per this crate's zero-runtime-deps
 /// discipline; the cross-crate agreement is pinned under `#[cfg(test)]`).
 ///
@@ -608,7 +609,7 @@ pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
 /// `decode_response` reads it as that variant by construction: an error the
 /// verified kernel never emits, hence unambiguously "this is not a completed
 /// syscall's frame".
-pub const BLOCKED_RESUME_SENTINEL_LABEL: u64 = (1 << 20) - 1;
+pub const BLOCKED_RESUME_SENTINEL_LABEL: u64 = (1 << 52) - 1;
 
 // Compile-time: the sentinel is the top of the status range and names a
 // discriminant (255) beyond the kernel-emittable set `0..=56` (the test
@@ -638,7 +639,7 @@ const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE > 56);
 /// was installed, not part of the verified return convention (the Lean model stages
 /// real frames only — `SyscallOutcome.mailboxFrame .blocks = .zero`).
 pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
-    [0, BLOCKED_RESUME_SENTINEL_LABEL << 9, 0, 0, 0, 0]
+    [0, BLOCKED_RESUME_SENTINEL_LABEL << 12, 0, 0, 0, 0]
 }
 
 /// AN9-F.2 / AN9-F.3 (restated by WS-RA): top-level SVC dispatcher.
@@ -1012,7 +1013,7 @@ mod tests {
         // NOT bleed into the length (the pre-fix 0x0FFF mask read label
         // bits 9-11 as length).
         let mut frame = zero_frame();
-        frame.gprs[1] = (0xCAFE_u64 << 9) | (0x3 << 7) | 0x04;
+        frame.gprs[1] = (0xCAFE_u64 << 12) | (0x3 << 7) | 0x04;
         let args = SyscallArgs::from_trap_frame(&frame);
         assert_eq!(args.message_length(), 4);
     }
@@ -1073,8 +1074,8 @@ mod tests {
     fn syscall_abi_version_matches_canonical_pin() {
         // The literal itself, pinned at runtime so a coordinated bump of
         // both mirrors without a protocol change still surfaces here.
-        assert_eq!(SYSCALL_ABI_VERSION, 3);
-        assert_eq!(ERROR_LABEL_BASE, 0xFFF00);
+        assert_eq!(SYSCALL_ABI_VERSION, 4);
+        assert_eq!(ERROR_LABEL_BASE, 0xF_FFFF_FFFF_FF00);
     }
 
     #[test]
@@ -1101,17 +1102,17 @@ mod tests {
         for disc in 0..=57u32 {
             let regs = error_frame_regs(disc);
             assert_eq!(
-                regs[1] >> 9,
+                regs[1] >> 12,
                 ERROR_LABEL_BASE + (disc as u64),
                 "label must be ERROR_LABEL_BASE + disc"
             );
-            assert_ne!(regs[1] >> 9, 0, "no error may alias the success label");
+            assert_ne!(regs[1] >> 12, 0, "no error may alias the success label");
             assert!(
-                regs[1] >> 9 >= ERROR_LABEL_BASE,
+                regs[1] >> 12 >= ERROR_LABEL_BASE,
                 "no error may fall into the delivery label range"
             );
             assert!(
-                regs[1] >> 9 <= BLOCKED_RESUME_SENTINEL_LABEL,
+                regs[1] >> 12 <= BLOCKED_RESUME_SENTINEL_LABEL,
                 "label must stay in-field"
             );
             assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
@@ -1128,7 +1129,7 @@ mod tests {
         // The four fault tags a handler receives are deliveries, not status:
         // the property v2 lacked.
         for tag in [1u64, 2, 3, 6] {
-            let resp = sele4n_abi::decode_response([0, tag << 9, 0, 0, 0, 0, 0])
+            let resp = sele4n_abi::decode_response([0, tag << 12, 0, 0, 0, 0, 0])
                 .expect("a fault tag label is a delivery");
             assert_eq!(resp.msg_info().label(), tag);
         }
@@ -1140,7 +1141,7 @@ mod tests {
     #[test]
     fn blocked_resume_sentinel_shape() {
         let regs = blocked_resume_sentinel_regs();
-        assert_eq!(regs[1] >> 9, BLOCKED_RESUME_SENTINEL_LABEL);
+        assert_eq!(regs[1] >> 12, BLOCKED_RESUME_SENTINEL_LABEL);
         assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
         assert_eq!([regs[0], regs[2], regs[3], regs[4], regs[5]], [0; 5]);
         // In-field: the hand-duplicated label equals the canonical

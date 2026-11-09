@@ -7,10 +7,17 @@
 //!
 //! # Register Mapping
 //!
-//! | Index  | Location                          |
-//! |--------|-----------------------------------|
-//! | 0–3    | Inline ARM64 registers x2–x5      |
-//! | 4–119  | IPC buffer `msg[0..116]`          |
+//! | Index  | Location                                        |
+//! |--------|-------------------------------------------------|
+//! | 0–3    | Inline ARM64 registers x2–x5 (`msg[0..4]` unused) |
+//! | 4–119  | IPC buffer `msg[4..120]`                        |
+//!
+//! The layout is seL4's `seL4_IPCBuffer`, 128 words (1024 bytes): the `tag`
+//! word, the 120 `msg` words, then `user_data`, `caps_or_badges` (where the
+//! kernel writes the badge of each capability a delivery unwrapped) and the
+//! receive path (`receive_cnode`, `receive_index`, `receive_depth`): the slot
+//! a receive installs a transferred capability into, seL4's
+//! `seL4_SetCapReceivePath`.
 //!
 //! # Memory Layout
 //!
@@ -54,17 +61,17 @@ pub const MAX_CAPS: usize = 3;
 
 /// IPC buffer for messages exceeding 4 inline registers.
 ///
-/// Mirrors seL4's `seL4_IPCBuffer` structure. All message registers
-/// (0..120) are logically part of the IPC message; the first 4 are
-/// passed in ARM64 registers for speed, while registers 4–119 are
-/// read/written from this buffer.
+/// seL4's `seL4_IPCBuffer` structure, word for word. All message registers
+/// (0..120) are logically part of the IPC message and `msg[i]` is register
+/// `i`; the first 4 are passed in ARM64 registers for speed, while registers
+/// 4–119 are read/written from this buffer.
 ///
 /// # Example
 ///
 /// ```
 /// use sele4n_abi::ipc_buffer::IpcBuffer;
 /// let mut buf = IpcBuffer::new();
-/// // Write overflow register 4 (index 0 in buffer).
+/// // Write message register 4 (`msg[4]`).
 /// buf.set_mr(4, 0xDEAD).unwrap();
 /// assert_eq!(buf.get_mr(4).unwrap(), 0xDEAD);
 /// // Inline registers 0–3 are carried via `SyscallRequest.msg_regs`,
@@ -73,13 +80,26 @@ pub const MAX_CAPS: usize = 3;
 #[repr(C)]
 #[derive(Clone)]
 pub struct IpcBuffer {
-    /// Overflow message registers.
-    /// `msg[i]` holds message register `i + 4`.
-    pub msg: [u64; OVERFLOW_SLOTS],
+    /// The message tag word (seL4's `tag`). The kernel reads the message
+    /// info from x1, not from here.
+    pub tag: u64,
+    /// Message registers: `msg[i]` holds message register `i`. Registers
+    /// 0–3 travel in x2–x5, so the kernel reads and writes `msg[4..120]`.
+    pub msg: [u64; MAX_MSG_REGS],
     /// User data word (application-defined, not used by kernel).
     pub user_data: u64,
-    /// Capability transfer badges/addresses.
+    /// Capability transfer badges: on a delivery, `caps_or_badges[i]` holds
+    /// the badge of extra capability `i` when the kernel unwrapped it (the
+    /// `MessageInfo`'s `caps_unwrapped` bit `i`).
     pub caps_or_badges: [u64; MAX_CAPS],
+    /// The CNode capability, in this thread's CSpace, that the receive slot
+    /// is addressed in (seL4's `receiveCNode`).
+    pub receive_cnode: u64,
+    /// The receive slot's address within that CNode (seL4's `receiveIndex`).
+    pub receive_index: u64,
+    /// How many bits of `receive_index` resolve the slot (seL4's
+    /// `receiveDepth`).
+    pub receive_depth: u64,
 }
 
 impl Default for IpcBuffer {
@@ -92,10 +112,26 @@ impl IpcBuffer {
     /// Create a zeroed IPC buffer.
     pub const fn new() -> Self {
         Self {
-            msg: [0; OVERFLOW_SLOTS],
+            tag: 0,
+            msg: [0; MAX_MSG_REGS],
             user_data: 0,
             caps_or_badges: [0; MAX_CAPS],
+            receive_cnode: 0,
+            receive_index: 0,
+            receive_depth: 0,
         }
+    }
+
+    /// Name the slot a receive installs a transferred capability into: the
+    /// slot `index` resolved `depth` bits deep in the CNode that `cnode`
+    /// names in this thread's CSpace (seL4's `seL4_SetCapReceivePath`).  A
+    /// path that does not resolve to an empty slot receives no capability;
+    /// the transfer stops there without a fault, as in seL4.
+    #[inline]
+    pub fn set_cap_receive_path(&mut self, cnode: u64, index: u64, depth: u64) {
+        self.receive_cnode = cnode;
+        self.receive_index = index;
+        self.receive_depth = depth;
     }
 
     /// Set a message register by absolute index (0..120).
@@ -118,7 +154,7 @@ impl IpcBuffer {
         if index < INLINE_REGS {
             Err(KernelError::InvalidArgument)
         } else if index < MAX_MSG_REGS {
-            self.msg[index - INLINE_REGS] = value;
+            self.msg[index] = value;
             Ok(())
         } else {
             Err(KernelError::IpcMessageTooLarge)
@@ -136,7 +172,7 @@ impl IpcBuffer {
         if index < INLINE_REGS {
             Ok(())
         } else if index < MAX_MSG_REGS {
-            self.msg[index - INLINE_REGS] = value;
+            self.msg[index] = value;
             Ok(())
         } else {
             Err(KernelError::IpcMessageTooLarge)
@@ -155,15 +191,15 @@ impl IpcBuffer {
         if index < INLINE_REGS {
             Err(KernelError::InvalidArgument)
         } else if index < MAX_MSG_REGS {
-            Ok(self.msg[index - INLINE_REGS])
+            Ok(self.msg[index])
         } else {
             Err(KernelError::IpcMessageTooLarge)
         }
     }
 
-    /// Clear all overflow message registers to zero.
+    /// Clear all message registers to zero.
     pub fn clear_msg(&mut self) {
-        self.msg = [0; OVERFLOW_SLOTS];
+        self.msg = [0; MAX_MSG_REGS];
     }
 }
 
@@ -174,17 +210,22 @@ impl IpcBuffer {
 // to struct reordering or field type changes), compilation will fail.
 //
 // Lean correspondence: `SeLe4n/Model/Object/Types.lean` — `TCB.ipcBuffer`
-// is a `VAddr` pointing to this buffer in the thread's virtual address space.
-// The kernel reads overflow message registers starting at offset 0.
+// is a `VAddr` pointing to this buffer's `tag` word in the thread's virtual
+// address space; `IpcBufferRead.ipcBufferOverflowBaseWord` places message
+// register 4 at word 5.
 const _: () = {
-    // Total size: 116 overflow u64s + 1 user_data u64 + 3 caps u64s = 120 u64s = 960 bytes
-    assert!(core::mem::size_of::<IpcBuffer>() == 960);
-    // Alignment: u64 = 8 bytes
+    // Total size: seL4's `seL4_IPCBuffer`, 1 tag + 120 msg + 1 user_data +
+    // 3 caps_or_badges + 3 receive-path u64s = 128 u64s = 1024 bytes, the
+    // aligned buffer (`args::tcb::IPC_BUFFER_ALIGNMENT`).
+    assert!(core::mem::size_of::<IpcBuffer>() == 1024);
+    assert!(core::mem::offset_of!(IpcBuffer, tag) == 0);
+    assert!(core::mem::offset_of!(IpcBuffer, msg) == 8);
+    assert!(core::mem::offset_of!(IpcBuffer, user_data) == 968);
+    assert!(core::mem::offset_of!(IpcBuffer, caps_or_badges) == 976);
+    assert!(core::mem::offset_of!(IpcBuffer, receive_cnode) == 1000);
+    assert!(core::mem::offset_of!(IpcBuffer, receive_index) == 1008);
+    assert!(core::mem::offset_of!(IpcBuffer, receive_depth) == 1016);
     assert!(core::mem::align_of::<IpcBuffer>() == 8);
-    // Field offset: msg starts at offset 0 (first field in repr(C))
-    // Field offset: user_data at 116 * 8 = 928
-    // Field offset: caps_or_badges at 928 + 8 = 936
-    // Verify total: 116 * 8 + 8 + 3 * 8 = 928 + 8 + 24 = 960 ✓
 };
 
 #[cfg(test)]
@@ -194,9 +235,24 @@ mod tests {
     #[test]
     fn new_is_zeroed() {
         let buf = IpcBuffer::new();
+        assert_eq!(buf.tag, 0);
         assert!(buf.msg.iter().all(|&v| v == 0));
         assert_eq!(buf.user_data, 0);
         assert_eq!(buf.caps_or_badges, [0; 3]);
+        assert_eq!(
+            (buf.receive_cnode, buf.receive_index, buf.receive_depth),
+            (0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn set_cap_receive_path_writes_the_three_words() {
+        let mut buf = IpcBuffer::new();
+        buf.set_cap_receive_path(7, 0x2a, 64);
+        assert_eq!(
+            (buf.receive_cnode, buf.receive_index, buf.receive_depth),
+            (7, 0x2a, 64)
+        );
     }
 
     // AK4-F (R-ABI-M04): `set_mr(0..3)` now returns `Err(InvalidArgument)`

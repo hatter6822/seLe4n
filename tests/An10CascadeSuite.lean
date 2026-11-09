@@ -306,33 +306,6 @@ def an10_d_typed_helper_equivalence : IO Bool := do
 -- to diverge only on a corner case — is caught here.
 -- ============================================================================
 
-/-- AN10-D.3 — `lookupCspaceRoot` (post-migration via `Option.map`)
-preserves the pre-migration semantics on a populated TCB. -/
-def an10_d_lookupCspaceRoot_populated : IO Bool := do
-  let tid : ThreadId := ThreadId.ofNat 50
-  let cspaceRoot : ObjId := ObjId.ofNat 999
-  let tcb : TCB :=
-    ((mkTcb 50).withCSpaceRoot cspaceRoot)
-  let st : SystemState := { (default : SystemState) with
-    objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
-  return lookupCspaceRoot st tid == some cspaceRoot
-
-/-- AN10-D.4 — `lookupCspaceRoot` returns `none` on the empty state
-(no TCB to read from). -/
-def an10_d_lookupCspaceRoot_empty : IO Bool := do
-  let tid : ThreadId := ThreadId.ofNat 50
-  let st : SystemState := default
-  return lookupCspaceRoot st tid == none
-
-/-- AN10-D.5 — `lookupCspaceRoot` returns `none` when the ObjId at the
-given TID resolves to a non-TCB variant (kind discrimination). -/
-def an10_d_lookupCspaceRoot_wrong_kind : IO Bool := do
-  let tid : ThreadId := ThreadId.ofNat 50
-  let st : SystemState := { (default : SystemState) with
-    objects := (default : SystemState).objects.insert tid.toObjId
-      (.endpoint mkEmptyEndpoint) }
-  return lookupCspaceRoot st tid == none
-
 /-- AN10-D.6 — `getCurrentPriority` returns the **thread's own** priority for a
 bound TCB.
 
@@ -810,9 +783,6 @@ def runAll : IO Bool := do
     ("an10_c_storeObjectKindChecked_accepts_same_variant", an10_c_storeObjectKindChecked_accepts_same_variant),
     ("an10_d_dispatch_validators_reachable", an10_d_dispatch_validators_reachable),
     ("an10_d_typed_helper_equivalence", an10_d_typed_helper_equivalence),
-    ("an10_d_lookupCspaceRoot_populated", an10_d_lookupCspaceRoot_populated),
-    ("an10_d_lookupCspaceRoot_empty", an10_d_lookupCspaceRoot_empty),
-    ("an10_d_lookupCspaceRoot_wrong_kind", an10_d_lookupCspaceRoot_wrong_kind),
     ("an10_d_getCurrentPriority_bound", an10_d_getCurrentPriority_bound),
     ("an10_d_getCurrentPriority_unbound", an10_d_getCurrentPriority_unbound),
     ("an10_d_getCurrentPriority_bound_missing", an10_d_getCurrentPriority_bound_missing),

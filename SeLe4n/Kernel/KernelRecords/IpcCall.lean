@@ -105,10 +105,10 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
   · split <;> exact refl hInv
 
 theorem endpointCallWithCapsOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}
-    {payload : SendPayload} {receiverSlotBase : SeLe4n.Slot} {c : CoreId} {st : SystemState}
+    {payload : SendPayload} {c : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st) :
     RecordsStep st (_root_.SeLe4n.Kernel.endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase c st).1 := by
+      c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointCallWithCapsOnCore
   have S := endpointCallOnCore (endpointId := endpointId) (caller := caller) (payload := payload)
     (c := c) hInv hQ
@@ -125,15 +125,15 @@ theorem endpointCallWithCapsOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.
       | (rename_i hU; exact S.trans (of_frame (RecordsFrame.receiveTransferCaps S.invExt hU)))
 
 theorem endpointCallCrossCoreDispatch {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}
-    {payload : SendPayload} {receiverSlotBase : SeLe4n.Slot} {c : CoreId} {st : SystemState}
+    {payload : SendPayload} {c : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st) :
     RecordsStep st (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase c st).1 := by
+      c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch
   have S := endpointCallWithCapsOnCore (endpointId := endpointId) (caller := caller)
-    (payload := payload) (receiverSlotBase := receiverSlotBase) (c := c) hInv hQ
+    (payload := payload) (c := c) hInv hQ
   generalize _root_.SeLe4n.Kernel.endpointCallWithCapsOnCore endpointId caller payload
-    receiverSlotBase c st = r at S
+    c st = r at S
   obtain ⟨st1, res⟩ := r
   dsimp only at S ⊢
   cases res with
@@ -149,10 +149,10 @@ theorem endpointCallCrossCoreDispatch {endpointId : SeLe4n.ObjId} {caller : SeLe
          exact S.trans (of_frame (F.trans (RecordsFrame.propagatePipChainCrossCore _ _ _ _ F.invExt))))
 
 theorem endpointCallCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId : SeLe4n.ObjId}
-    {caller : SeLe4n.ThreadId} {payload : SendPayload} {receiverSlotBase : SeLe4n.Slot}
+    {caller : SeLe4n.ThreadId} {payload : SendPayload}
     {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st) :
     RecordsStep st (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked ctx endpointId caller
-      payload receiverSlotBase c st).1 := by
+      payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch hInv hQ

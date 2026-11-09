@@ -175,13 +175,13 @@ theorem faultDeliverOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
   | ok tgt =>
       simp only
       cases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st with
+          (SendPayload.fault f ctx tgt.cap.badge) executingCore st with
       | mk stC resC =>
           have hC := endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp
-            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st hObjInv
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) executingCore st hObjInv
             (endpointReceiveHeadsNotCurrent_at hHeads tgt.endpoint) h
           have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt
-            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st hObjInv
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) executingCore st hObjInv
           rw [hCall] at hC hCObj
           simp only at hC hCObj
           cases resC with
@@ -192,7 +192,7 @@ theorem faultDeliverOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
               have hStage : schedulerInvariantBase_smp
                   (Architecture.stageWokenDelivery stC
                     ((st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head))
-                    summary.installedCount) :=
+                    summary.capInfo) :=
                 schedulerInvariantBase_smp_of_kindPreserving hC
                   (Architecture.stageWokenDelivery_scheduler_eq stC _ _)
                   (Architecture.stageWokenDelivery_kindPreservingWrite stC _ _ hCObj)
@@ -231,12 +231,12 @@ theorem faultDeliverOnCore_preserves_capabilityInvariantBundle (st : SystemState
   | ok tgt =>
       simp only
       cases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st with
+          (SendPayload.fault f ctx tgt.cap.badge) executingCore st with
       | mk stC resC =>
           have hC := endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps
-            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st (sendCapRequest_fault _ _ _ _ _ _) h
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) executingCore st (sendCapRequest_fault _ _ _ _ _ _) h
           have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt
-            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st hObjInv
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) executingCore st hObjInv
           rw [hCall] at hC hCObj
           simp only at hC hCObj
           cases resC with
@@ -246,11 +246,11 @@ theorem faultDeliverOnCore_preserves_capabilityInvariantBundle (st : SystemState
               simp only
               have hStageObj := stageWokenDelivery_preserves_objects_invExt stC
                 ((st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head))
-                summary.installedCount hCObj
+                summary.capInfo hCObj
               have hStage : capabilityInvariantBundle
                   (Architecture.stageWokenDelivery stC
                     ((st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head))
-                    summary.installedCount) :=
+                    summary.capInfo) :=
                 capabilityInvariantBundle_of_kindPreserving hC
                   (Architecture.stageWokenDelivery_cdt_eq stC _ _)
                   hStageObj

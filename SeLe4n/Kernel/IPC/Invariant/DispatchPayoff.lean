@@ -152,7 +152,6 @@ it runs. -/
 theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
     {answer : Option Architecture.FaultReplyOutcome} (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (ec : CoreId) (st stOut : SystemState) (summary : CapTransferSummary)
     (hReach : ipcReachable st)
     (hNoEdge1 : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
@@ -203,8 +202,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
     (hReturnStage : ∀ (nextThread : SeLe4n.ThreadId)
         (summary2 : CapTransferSummary) (sgi2 : Option (CoreId × Concurrency.SgiKind))
         (st2 : SystemState),
-      endpointReceiveDualWithCapsOnCore epId tid (some rid) receiverCspaceRoot
-          receiverSlotBase ec
+      endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
           (replyRecvPostPopState rid prevCaller
             (endpointReplyOnCore tid prevCaller msg ec st).1)
         = (st2, .ok (nextThread, summary2, sgi2)) →
@@ -217,8 +215,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
             (endpointReplyOnCore tid prevCaller msg ec st).1)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
-    (hStep : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
-      receiverCspaceRoot receiverSlotBase ec st = .ok (summary, stOut)) :
+    (hStep : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg ec st = .ok (summary, stOut)) :
     ipcInvariantFull stOut ∧ stOut.objects.invExt := by
   unfold endpointReplyRecvAnsweringOnCore at hStep
   dsimp only [] at hStep
@@ -262,7 +259,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
             have hTail1 := recvTailCrossQueueFresh st1p epId
               hInv1p.dualQueueSystemInvariant hInv1p.endpointQueueTailBlockedConsistent
             have hInv2 := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
-              epId tid (some rid) receiverCspaceRoot receiverSlotBase ec st1p
+              epId tid (some rid) ec st1p
               hInv1p hObjInv1p hCleanupStack1 hBudgets1 hFresh1 hTail1
               (fun r hr => by obtain rfl := Option.some.inj hr; exact hReplyIdValid1)
               (fun tcb hTcb => by
@@ -273,8 +270,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
                 rw [hT1] at hTcb
                 obtain rfl := Option.some.inj hTcb
                 exact hReadyR)
-            cases hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid)
-                receiverCspaceRoot receiverSlotBase ec st1p with
+            cases hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) ec st1p with
             | mk st2 res2 =>
                 rw [hRecv] at hStep hInv2
                 cases res2 with
@@ -336,12 +332,10 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
   mintBadgeValid : ∀ args, decoded.syscallId = .cspaceMint →
     decodeCSpaceMintArgs decoded = .ok args → args.badge.valid
   sendStage : ∀ epId, decoded.syscallId = .send → cap.target = .object epId →
-    ∀ st1 res, endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant))
-      decoded.capRecvSlot executingCore st = (st1, res) →
+    ∀ st1 res, endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st = (st1, res) →
     st1.objects.invExt
   callStage : ∀ epId, decoded.syscallId = .call → cap.target = .object epId →
-    ∀ st1 res, endpointCallCrossCoreDispatch epId tid (.frame cap.badge (cap.rights.mem .grant))
-      decoded.capRecvSlot executingCore st = (st1, res) →
+    ∀ st1 res, endpointCallCrossCoreDispatch epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st = (st1, res) →
     st1.objects.invExt
   callNotSelfRendezvous : ∀ epId, decoded.syscallId = .call → cap.target = .object epId →
     ∀ ep receiverTid, st.getEndpoint? epId = some ep →
@@ -355,8 +349,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- unless the receiver holds a `.donated` binding whose context heads a stack.
     cleanupDonationStackValid st tid ∧
     (∀ rid, replyIdOpt = some rid → replyIdEstablishFresh st rid) ∧
-    (∀ st1 res, endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
-        decoded.capRecvSlot executingCore st = (st1, res) →
+    (∀ st1 res, endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st = (st1, res) →
       st1.objects.invExt) ∧
     -- **WS-OD OD3.6**: the arm's rendezvous donation makes the receiver hold a
     -- `.donated` binding, and `donationOwnerValid` demands that a donation's
@@ -366,8 +359,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- reply leg: over the receive stage's committed state, which is a
     -- pre-state-computable expression, so the pack stays pre-state.
     (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-      (endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
-          decoded.capRecvSlot executingCore st).1.getTcb? s = some sTcb →
+      (endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st).1.getTcb? s = some sTcb →
       sTcb.schedContextBinding ≠ .donated sc0 tid)
   replyStage : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
     decoded.syscallId = .reply → cap.target = .replyCap rid →
@@ -479,8 +471,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         executingCore st).1) rid ∧
     (∀ (nextThread : SeLe4n.ThreadId) (summary2 : CapTransferSummary)
         (sgi2 : Option (CoreId × Concurrency.SgiKind)) (st2 : SystemState),
-      endpointReceiveDualWithCapsOnCore epId tid (some rid) gate.cspaceRoot
-          decoded.capRecvSlot executingCore
+      endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
           (replyRecvPostPopState rid prevCaller
             (endpointReplyOnCore tid prevCaller
               (replyRecvArmLegMessage decoded st prevCaller replyBadge)
@@ -552,6 +543,23 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       unheldReplyHeadBoundByNone (endpointReplyOnCore tid callerTid IpcMessage.empty
           executingCore st).1 hid)
 
+/-- **A capability transfer preserves the IPC invariant bundle**: the
+resolution writes nothing, and the transfer of what it resolved is
+`ipcUnwrapCaps_preserves_ipcInvariantFull`, the resolved capabilities' badges
+being valid because the badges at rest are. -/
+theorem receiveTransferCaps_preserves_ipcInvariantFull
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
+    {summary : CapTransferSummary} (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨stR, caps, hO, -, hCaps, hOr⟩ := receiveTransferCaps_frame h
+  have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_eq hO hInv
+  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
+  · exact hR
+  · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ _ _ _ stR _ _ hR (hO ▸ hObjInv)
+      (fun i c hc b hb => hCaps hInv.badgeWellFormed.2 i c hc b hb) hU
+
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall `dispatchWithCap`
 routes preserves `ipcInvariantFull`.  The capability-only tier delegates to
 RR3.23's payoff; the IPC arms compose the per-transition bundles with the
@@ -590,7 +598,6 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
             hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
           have hSendInv := endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
             epId tid (.frame cap.badge (cap.rights.mem .grant))
-            decoded.capRecvSlot
             executingCore st
             hInv hObjInv hBudgets hFreshR hTailR
             (fun tcb hTcb => by
@@ -607,7 +614,6 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               exact hBoundC)
           cases hSend : endpointSendDualWithCapsOnCore epId tid
               (.frame cap.badge (cap.rights.mem .grant))
-              decoded.capRecvSlot
               executingCore st with
           | mk st1 res1 =>
               rw [hSend] at hStep hSendInv
@@ -662,7 +668,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               have hTailR := recvTailCrossQueueFresh st epId
                 hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
               have hRecvInv := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
-                epId tid replyIdOpt gate.cspaceRoot decoded.capRecvSlot
+                epId tid replyIdOpt
                 executingCore st hInv hObjInv hCleanupStack hBudgets
                 hFresh hTailR hRidFresh
                 (fun tcb hTcb => by
@@ -674,7 +680,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   obtain rfl := Option.some.inj hTcb
                   exact hReadyC)
               cases hRecv : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt
-                  gate.cspaceRoot decoded.capRecvSlot executingCore st with
+                  executingCore st with
               | mk st1 res1 =>
                   rw [hRecv] at hStep hRecvInv
                   cases res1 with
@@ -736,7 +742,6 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           have hNeR := hPack.callNotSelfRendezvous epId hSy hTgt
           have hCallInv := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
             epId tid (.frame cap.badge (cap.rights.mem .grant))
-            decoded.capRecvSlot
             executingCore st
             hInv hObjInv hBudgets hFreshR hTailR
             (fun tcb hTcb => by
@@ -754,7 +759,6 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
             hNeR
           cases hCall : endpointCallCrossCoreDispatch epId tid
               (.frame cap.badge (cap.rights.mem .grant))
-              decoded.capRecvSlot
               executingCore st with
           | mk st1 res1 =>
               rw [hCall] at hStep hCallInv
@@ -795,7 +799,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   -- instead of threading a post-state hypothesis.
                   by_cases hF : threadHasPendingFault st callerTid = true
                   · rw [replyTransferOnCore_of_fault tid callerTid decoded.msgInfo
-                      decoded.msgRegs _ _ st hF] at hStep
+                      decoded.msgRegs _ _ _ st hF] at hStep
                     obtain ⟨hFDon, hFHolderDon, hFStack, hFOrigin, hFUnheld⟩ :=
                       hPack.replyFaultStage rid reply callerTid hSy hTgt hR hCaller hF
                     have hFaultInv := faultReplyOnCore_preserves_ipcInvariantFull tid
@@ -819,7 +823,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                     -- On an unfaulted caller the seam is the pre-RR4 body verbatim,
                     -- so the rest of this branch is unchanged.
                     rw [replyTransferOnCore_of_no_fault tid callerTid decoded.msgInfo
-                      decoded.msgRegs _ _ st hF] at hStep
+                      decoded.msgRegs _ _ _ st hF] at hStep
                     have hReplyInv := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
                       tid callerTid
                       { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, badge := cap.badge }
@@ -834,12 +838,22 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                         cases res1 with
                         | error e => simp only [] at hStep; cases hStep
                         | ok u1 =>
-                            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                            simp only [] at hStep
                             have hObjInv1 : st1.objects.invExt :=
                               hReplyInvExt st1 _ hReply
-                            rw [← hStep]
-                            exact stageDeliveredMessage_preserves_ipcInvariantFull st1
-                              callerTid 0 hObjInv1 hReplyInv
+                            cases hX : replyTransferCaps st tid callerTid
+                                (cap.rights.mem .grant) st1 with
+                            | error e => rw [hX] at hStep; cases hStep
+                            | ok p =>
+                              obtain ⟨summary, stX⟩ := p
+                              rw [hX] at hStep
+                              simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                              rw [← hStep]
+                              exact stageDeliveredMessage_preserves_ipcInvariantFull stX
+                                callerTid summary.capInfo
+                                (receiveTransferCaps_objects_invExt hObjInv1 hX)
+                                (receiveTransferCaps_preserves_ipcInvariantFull hReplyInv
+                                  hObjInv1 hX)
         all_goals try cases hStep
       case cspaceMint =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1010,14 +1024,14 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                 hPack.replyRecvStage rid prevCaller replyBadge epId hSy hTgt hRR
               cases hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
                   { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size, badge := replyBadge }
-                  gate.cspaceRoot decoded.capRecvSlot executingCore st with
+                  executingCore st with
               | error e => simp only [hBody] at hStep; cases hStep
               | ok pairB =>
                   obtain ⟨summary, stB⟩ := pairB
                   simp only [hBody] at hStep
                   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                   obtain ⟨hInvB, hObjInvB⟩ := endpointReplyRecvOnCore_preserves_ipcInvariantFull
-                    epId tid rid prevCaller _ gate.cspaceRoot decoded.capRecvSlot
+                    epId tid rid prevCaller _
                     executingCore st stB summary
                     hPack.reachable hNoEdge1 hHolderDon1 hStackValid1
                     hOriginCoh1 hUnheldB1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1 hRetStage
@@ -1164,8 +1178,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object epId =>
           cases hDisp : endpointSendCrossCoreDispatchChecked ctx epId tid
-              (.frame cap.badge (cap.rights.mem .grant))
-              decoded.capRecvSlot executingCore st with
+              (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
           | mk st1 res1 =>
               rw [hDisp] at hStep
               unfold endpointSendCrossCoreDispatchChecked at hDisp
@@ -1197,8 +1210,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object epId =>
           cases hDisp : endpointCallCrossCoreDispatchChecked ctx epId tid
-              (.frame cap.badge (cap.rights.mem .grant))
-              decoded.capRecvSlot executingCore st with
+              (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
           | mk st1 res1 =>
               rw [hDisp] at hStep
               unfold endpointCallCrossCoreDispatchChecked at hDisp
@@ -1236,7 +1248,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     -- WS-RR RR4.14: the reply seam collapses checked → unchecked
                     -- on *both* branches under the arm's own flow guard.
                     rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid
-                          callerTid decoded.msgInfo decoded.msgRegs _
+                          callerTid decoded.msgInfo decoded.msgRegs _ _
                           executingCore st hFlow] at hStep
                     have hU : dispatchWithCap decoded tid executingCore gate cap st
                         = .ok ((), st') := by

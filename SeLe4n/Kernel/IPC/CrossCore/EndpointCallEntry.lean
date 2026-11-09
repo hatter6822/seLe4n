@@ -56,12 +56,12 @@ syscall-ABI decode and capability/flow validation — PR #820 review #4). -/
 def endpointCallCrossCoreEntry
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) :
+    :
     BaseIO (Except KernelError CapTransferSummary) := do
   let executingCore ← Concurrency.currentCoreId
   let result ← Platform.FFI.modifyGetKernelState (fun st =>
     let (st', res) := endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st
+      executingCore st
     match res with
     -- Fail-closed atomicity: on any dispatch error commit the *original* `st`,
     -- discarding the partial post-state `st'` (a mid-rendezvous failure — e.g. a
@@ -87,14 +87,14 @@ def endpointCallCrossCoreEntry
 core, atomically commit the dispatch, then fire the surfaced SGI. -/
 theorem endpointCallCrossCoreEntry_def
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) :
+    :
     endpointCallCrossCoreEntry endpointId caller payload
-        receiverSlotBase
+
       = (do
           let executingCore ← Concurrency.currentCoreId
           let result ← Platform.FFI.modifyGetKernelState (fun st =>
             let (st', res) := endpointCallCrossCoreDispatch endpointId caller payload
-              receiverSlotBase executingCore st
+              executingCore st
             match res with
             | .error e => ((Except.error e, (none : Option (CoreId × SgiKind))), st)
             | .ok (summary, sgi) => ((Except.ok summary, sgi), st'))

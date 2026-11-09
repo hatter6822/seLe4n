@@ -791,6 +791,7 @@ theorem replyTransferChecked_donated_inPlace (ctx : LabelingContext) (st : Syste
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : CoreId) (msg : IpcMessage)
+    (grant : Bool)
     (hMsg : msg =
       { registers := Architecture.regMessageBody layout rf len, badge := SeLe4n.Badge.opt badgeWord badged })
     (hSz : ¬ Architecture.regMessageLength layout len > maxMessageRegisters)
@@ -801,8 +802,9 @@ theorem replyTransferChecked_donated_inPlace (ctx : LabelingContext) (st : Syste
     (hSRes : server.isReserved = false)
     (hG : replyPopsInPlace st c ct.scBindingScCode server rid = true)
     (hNoF : ct.faultWords.isFault = false)
+    (hX : (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
-    replyTransferOnCoreChecked ctx replier c mi regs msg core st =
+    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
       .ok ((), performReplyDonatedDelivered st c server rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) layout rf len badgeWord badged core) := by
   replace hMsg := hMsg.symm
@@ -830,7 +832,8 @@ theorem replyTransferChecked_donated_inPlace (ctx : LabelingContext) (st : Syste
   have hNoP := replyDonationPopInPlace_noResizeDue _ c server scId (determineTargetCore st c) hNoS
   unfold replyTransferOnCoreChecked
   rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
-  simp only [Bool.false_eq_true, ↓reduceIte]
+  simp only [Bool.false_eq_true, ↓reduceIte,
+    replyTransferCaps_of_inert st replier c grant ct hTc hX, CapTransferSummary.capInfo_empty]
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hsv, hAns, hcv]

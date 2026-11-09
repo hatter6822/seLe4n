@@ -3292,8 +3292,7 @@ building the frame or its outcome, so a refused syscall allocates neither
 (`errorOutcomeWords_eq`). -/
 @[inline] def errorOutcomeWords (ke : KernelError) :
     UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 :=
-  (0, 0, (MessageInfo.encode
-      { length := 0, extraCaps := 0, label := Architecture.errorLabel ke }).toUInt64, 0, 0, 0, 0)
+  (0, 0, Architecture.errorLabelWord ke, 0, 0, 0, 0)
 
 theorem errorOutcomeWords_eq (ke : KernelError) :
     errorOutcomeWords ke = (Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words :=

@@ -37,7 +37,6 @@ runtime-observable surface:
 | Sub-task | What this suite verifies                                            |
 | -------- | ------------------------------------------------------------------- |
 | AK8-E    | `getCurrentPriorityChecked` ok / `.objectNotFound` paths            |
-| AK8-F    | `findFirstEmptySlotChecked` cap on slot scan                        |
 | AK8-G    | `frozenStoreTcbChecked`/Endpoint/Notification reject cross-variant |
 | AK8-H    | `frozenSchedContextUnbind` transactional (TCB lookup before SC mut) |
 | AK8-I    | a frozen CNode is its slot array; a phantom key never enters        |
@@ -130,33 +129,6 @@ def test_AK8_E_bound_missing_sc_is_objectNotFound : IO Bool := do
           (default : SystemState) tcb with
   | .ok _ => return false
   | .error e => return e == KernelError.objectNotFound
-
--- ============================================================================
--- AK8-F (C-M07) — findFirstEmptySlotChecked
--- ============================================================================
-
-/-- AK8-F success: a CNode with one occupied slot returns the next
-unoccupied index, bounded by `2^radixWidth`. -/
-def test_AK8_F_returns_first_free_slot : IO Bool := do
-  let occupied : Capability :=
-    { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty, }
-  let cn : CNode :=
-    CNode.ofList 16 0 0 4 [(SeLe4n.Slot.ofNat 0, occupied)]
-  -- limit=10 is intentionally larger than 2^4-0 = 16; the checker should
-  -- still bound the scan to the radix window.
-  match cn.findFirstEmptySlotChecked (SeLe4n.Slot.ofNat 0) 100 with
-  | some s => return s.toNat == 1 && s.toNat < 2^cn.radixWidth
-  | none => return false
-
-/-- AK8-F failure: a `base` ≥ 2^radixWidth produces `none` (no slot in
-range). -/
-def test_AK8_F_rejects_base_over_radix : IO Bool := do
-  let cn : CNode :=
-    (SeLe4n.Model.CNode.ofSlots 16 0 0 2 SeLe4n.UniqueSlotMap.empty)
-  -- 2^2 = 4; base = 8 is out of range and must reject.
-  match cn.findFirstEmptySlotChecked (SeLe4n.Slot.ofNat 8) 100 with
-  | none => return true
-  | some _ => return false
 
 -- ============================================================================
 -- AK8-G (DS-M01) — frozenStore*Checked variants reject cross-variant
@@ -382,10 +354,6 @@ def ak8Tests : List (String × IO Bool) :=
        test_checkedPriority_bound_reads_thread_field)
   , ("AK8-E.3 bound TCB with missing SC -> .objectNotFound",
        test_AK8_E_bound_missing_sc_is_objectNotFound)
-  , ("AK8-F.1 returns next free slot within radix",
-       test_AK8_F_returns_first_free_slot)
-  , ("AK8-F.2 base ≥ 2^radixWidth -> none",
-       test_AK8_F_rejects_base_over_radix)
   , ("AK8-G.1 storeTcbChecked same-kind succeeds",
        test_AK8_G_storeTcbChecked_same_kind_ok)
   , ("AK8-G.2 storeTcbChecked cross-variant rejected",

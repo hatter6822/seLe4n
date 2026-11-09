@@ -40,15 +40,15 @@ open SeLe4n.Kernel.PriorityInheritance
 receiver's CNode and the CDT, never a run queue and never a register bank, so it
 contributes nothing to the cross-core `.call`'s write set. -/
 theorem ipcUnwrapCaps_confinedToCores (caps : Array TransferCap)
-    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (endpointId : Option SeLe4n.ObjId) (rtcb : TCB) (slot? : Option CSpaceAddr)
     (st st' : SystemState) (summary : CapTransferSummary)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st
              = .ok (summary, st')) :
     observableSlotsConfinedToCores st st' [] :=
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-    (ipcUnwrapCaps_preserves_scheduler caps receiverRoot slotBase grantRight
+    (ipcUnwrapCaps_preserves_scheduler caps endpointId rtcb slot?
       st st' summary hStep)
-    (ipcUnwrapCaps_preserves_machine caps receiverRoot slotBase grantRight
+    (ipcUnwrapCaps_preserves_machine caps endpointId rtcb slot?
       st st' summary hStep)
 
 -- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `endpointCallWithCapsOnCore_scheduler_eq`
@@ -60,10 +60,9 @@ theorem ipcUnwrapCaps_confinedToCores (caps : Array TransferCap)
 /-- SM8.B.2: and the register banks, by the same case analysis. -/
 theorem endpointCallWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     (endpointCallWithCapsOnCore endpointId caller payload
-        receiverSlotBase executingCore st).1.machine
+        executingCore st).1.machine
       = (endpointCallOnCore endpointId caller payload executingCore st).1.machine := by
   unfold endpointCallWithCapsOnCore
   cases hCall : endpointCallOnCore endpointId caller payload executingCore st with
@@ -87,19 +86,18 @@ tree: confinement reads only `scheduler` and the register banks, and on both of
 those the WithCaps post-state *is* the bare call's. -/
 theorem endpointCallWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
       (endpointCallWithCapsOnCore endpointId caller payload
-        receiverSlotBase executingCore st).1
+        executingCore st).1
       (endpointCallWriteSet st endpointId executingCore) := by
   have h := observableSlotsConfinedToCores_trans
     (endpointCallOnCore_confinedToCores endpointId caller payload executingCore st hObjInv)
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
       (endpointCallWithCapsOnCore_scheduler_eq endpointId caller payload
-        receiverSlotBase executingCore st)
+        executingCore st)
       (endpointCallWithCapsOnCore_machine_eq endpointId caller payload
-        receiverSlotBase executingCore st))
+        executingCore st))
   simpa using h
 
 -- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `endpointCallDispatchChainWriteSet` and
@@ -121,15 +119,14 @@ post-donation state — `endpointCallLive_confinedToCores` instantiated at the
 receiver `ep.receiveQ.head` and the state `applyCallDonation` returns. -/
 theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
       (endpointCallCrossCoreDispatch endpointId caller payload
-        receiverSlotBase executingCore st).1
+        executingCore st).1
       (endpointCallDispatchWriteSet endpointId caller payload
-        receiverSlotBase executingCore st) := by
+        executingCore st) := by
   have hCaps := endpointCallWithCapsOnCore_confinedToCores endpointId caller payload
-    receiverSlotBase executingCore st hObjInv
+    executingCore st hObjInv
   -- A core outside the union is outside the endpoint-call leg, which is what
   -- every arm short of the full rendezvous needs.
   have hWiden : ∀ (stPost : SystemState) (extra : List CoreId),
@@ -142,7 +139,7 @@ theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId
   unfold endpointCallCrossCoreDispatch endpointCallDispatchWriteSet
     endpointCallDispatchChainWriteSet
   cases hWith : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st with
+      executingCore st with
   | mk stWith res =>
     rw [hWith] at hCaps
     cases res with
@@ -182,7 +179,6 @@ chain start is the resolved receiver and the chain state is the post-donation
 state, the two things the second review round said were being supplied by hand. -/
 theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st stWith stDon : SystemState) (receiverTid : SeLe4n.ThreadId)
     (callerV receiverV : SeLe4n.ValidThreadId) (summary : CapTransferSummary)
     (sgi : Option (CoreId × Concurrency.SgiKind))
@@ -190,13 +186,13 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
               | some ep => ep.receiveQ.head
               | none => none) = some receiverTid)
     (hWith : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+      executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hDon : applyCallDonationOnCore stWith callerV receiverV
       (determineTargetCore st caller) (determineTargetCore st receiverTid) = .ok stDon) :
     endpointCallDispatchWriteSet endpointId caller payload
-        receiverSlotBase executingCore st
+        executingCore st
       = endpointCallLiveWriteSet st endpointId executingCore stDon receiverTid := by
   unfold endpointCallDispatchWriteSet endpointCallDispatchChainWriteSet endpointCallLiveWriteSet
   cases hEp : st.getEndpoint? endpointId with
@@ -485,14 +481,14 @@ the transition cannot disagree about which caller is faulted; the unfaulted arm
 composes the dispatch with the delivered-message staging, which writes a
 register *context* and no per-core slot. -/
 theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId)
-    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : replyTransferOnCore replier callerTid mi regs msg executingCore st
+    (hStep : replyTransferOnCore replier callerTid mi regs msg grant executingCore st
       = .ok ((), st')) :
     observableSlotsConfinedToCores st st'
       (replyTransferWriteSet replier callerTid mi regs msg executingCore st) := by
   by_cases hF : threadHasPendingFault st callerTid = true
-  · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg executingCore st hF]
+  · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg grant executingCore st hF]
       at hStep
     rw [replyTransferWriteSet_of_fault replier callerTid mi regs msg executingCore st hF]
     have hFR := faultReplyOnCore_confinedToCores replier callerTid mi regs executingCore st
@@ -509,7 +505,7 @@ theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId
         exact hFR
   · have hNF : threadHasPendingFault st callerTid = false := by
       simpa using hF
-    rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg executingCore st hNF]
+    rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg grant executingCore st hNF]
       at hStep
     rw [replyTransferWriteSet_of_no_fault replier callerTid mi regs msg executingCore st hNF]
     have hDispatch := endpointReplyCrossCoreDispatch_confinedToCores replier callerTid msg
@@ -521,14 +517,25 @@ theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId
       | error e => simp only [] at hStep; exact absurd hStep (by simp)
       | ok sgi? =>
         simp only [] at hStep
-        have hEq : Architecture.stageDeliveredMessage stDisp callerTid 0 = st' :=
-          congrArg Prod.snd (Except.ok.inj hStep)
-        subst hEq
-        exact observableSlotsConfinedToCores_mono (fun _ hm => by simpa using hm)
-          (observableSlotsConfinedToCores_trans hDispatch
+        cases hU : replyTransferCaps st replier callerTid grant stDisp with
+        | error e => rw [hU] at hStep; exact absurd hStep (by simp)
+        | ok p =>
+          obtain ⟨summary, stX⟩ := p
+          rw [hU] at hStep
+          have hEq : Architecture.stageDeliveredMessage stX callerTid summary.capInfo = st' :=
+            congrArg Prod.snd (Except.ok.inj hStep)
+          subst hEq
+          have hX := observableSlotsConfinedToCores_trans hDispatch
             (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-              (Architecture.stageDeliveredMessage_scheduler_eq stDisp callerTid 0)
-              (Architecture.stageDeliveredMessage_machine_eq stDisp callerTid 0)))
+              (receiveTransferCaps_scheduler_eq hU) (receiveTransferCaps_preserves_machine hU))
+          have hX' := observableSlotsConfinedToCores_mono
+            (cs' := endpointReplyDispatchWriteSet replier callerTid msg executingCore st)
+            (fun _ hm => by simpa using hm) hX
+          exact observableSlotsConfinedToCores_mono (fun _ hm => by simpa using hm)
+            (observableSlotsConfinedToCores_trans hX'
+              (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                (Architecture.stageDeliveredMessage_scheduler_eq stX callerTid _)
+                (Architecture.stageDeliveredMessage_machine_eq stX callerTid _)))
 
 -- ============================================================================
 -- §5d The live `.replyRecv` arm itself
@@ -768,10 +775,8 @@ theorem observableSlotsConfinedToCores_of_framed_suffix {st stMid st' : SystemSt
 analysis. -/
 theorem endpointReceiveDualWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
-    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1.machine
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1.machine
       = (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.machine := by
   unfold endpointReceiveDualWithCapsOnCore
   cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
@@ -793,20 +798,16 @@ two forms declare the same per-core footprint and every pin taken against the
 bare set still describes the live leg. -/
 theorem endpointReceiveDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1
       (endpointReceiveDualWriteSet st endpointId executingCore) := by
   have h := observableSlotsConfinedToCores_trans
     (endpointReceiveDualOnCore_confinedToCores endpointId receiver replyId executingCore st
       hObjInv)
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-      (endpointReceiveDualWithCapsOnCore_scheduler_eq endpointId receiver replyId
-        receiverCspaceRoot receiverSlotBase executingCore st)
-      (endpointReceiveDualWithCapsOnCore_machine_eq endpointId receiver replyId
-        receiverCspaceRoot receiverSlotBase executingCore st))
+      (endpointReceiveDualWithCapsOnCore_scheduler_eq endpointId receiver replyId executingCore st)
+      (endpointReceiveDualWithCapsOnCore_machine_eq endpointId receiver replyId executingCore st))
   simpa using h
 
 -- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `endpointReplyRecvWriteSet` moved out of this module,
@@ -842,15 +843,13 @@ theorem rather than assumed, exactly as in §4a. -/
 theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
     {answer : Option Architecture.FaultReplyOutcome}
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (msg : IpcMessage)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg receiverCspaceRoot
-        receiverSlotBase executingCore st
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg executingCore st
       = .ok (summary, st')) :
     observableSlotsConfinedToCores st st'
-      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg
-        receiverCspaceRoot receiverSlotBase executingCore st) := by
+      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg executingCore st) := by
   have hReply := endpointReplyOnCore_confinedToCores receiver prevCaller msg executingCore st
     hObjInv
   have hInv1 : (endpointReplyOnCore receiver prevCaller msg executingCore st).1.objects.invExt :=
@@ -877,9 +876,8 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
           replyRecvPopDonation_preserves_objects_invExt
             replyId prevCaller st1 st1p returnedSc? hInv1 hPop
         have hRecv := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver
-          (some replyId) receiverCspaceRoot receiverSlotBase executingCore st1p hInv1p
-        cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
-            receiverCspaceRoot receiverSlotBase executingCore st1p with
+          (some replyId) executingCore st1p hInv1p
+        cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
         | mk st2 res2 =>
           rw [hRcv] at hRecv hStep
           cases res2 with
@@ -1672,10 +1670,9 @@ arm either *is* the bare send's post-state or is that state after an
 `ipcUnwrapCaps`, which preserves the scheduler. -/
 theorem endpointSendDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     (endpointSendDualWithCapsOnCore endpointId sender payload
-        receiverSlotBase executingCore st).1.scheduler
+        executingCore st).1.scheduler
       = (endpointSendDualOnCore endpointId sender payload executingCore st).1.scheduler := by
   unfold endpointSendDualWithCapsOnCore
   cases hSend : endpointSendDualOnCore endpointId sender payload executingCore st with
@@ -1692,10 +1689,9 @@ theorem endpointSendDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
 /-- SM8.B.2: and the register banks, by the same case analysis. -/
 theorem endpointSendDualWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     (endpointSendDualWithCapsOnCore endpointId sender payload
-        receiverSlotBase executingCore st).1.machine
+        executingCore st).1.machine
       = (endpointSendDualOnCore endpointId sender payload executingCore st).1.machine := by
   unfold endpointSendDualWithCapsOnCore
   cases hSend : endpointSendDualOnCore endpointId sender payload executingCore st with
@@ -1715,19 +1711,18 @@ the bare send's write set. The extra leg is `ipcUnwrapCaps`, which writes no cor
 at all, so the two forms declare the same per-core footprint. -/
 theorem endpointSendDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
       (endpointSendDualWithCapsOnCore endpointId sender payload
-        receiverSlotBase executingCore st).1
+        executingCore st).1
       (endpointSendWriteSet st endpointId executingCore) := by
   have h := observableSlotsConfinedToCores_trans
     (endpointSendDualOnCore_confinedToCores endpointId sender payload executingCore st hObjInv)
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
       (endpointSendDualWithCapsOnCore_scheduler_eq endpointId sender payload
-        receiverSlotBase executingCore st)
+        executingCore st)
       (endpointSendDualWithCapsOnCore_machine_eq endpointId sender payload
-        receiverSlotBase executingCore st))
+        executingCore st))
   simpa using h
 
 /-- SM8.B.2 (**the live checked `.send` bound**): the flow-checked cross-core send
@@ -1736,16 +1731,16 @@ is confined to the same set. Its three gates — two bounds checks and the
 past them it *is* the unchecked form. -/
 theorem endpointSendCrossCoreDispatchChecked_confinedToCores (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
       (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-        receiverSlotBase executingCore st).1
+        executingCore st).1
       (endpointSendWriteSet st endpointId executingCore) := by
   unfold endpointSendCrossCoreDispatchChecked
   split
   · exact endpointSendDualWithCapsOnCore_confinedToCores endpointId sender payload
-      receiverSlotBase executingCore st hObjInv
+      executingCore st hObjInv
   · exact observableSlotsConfinedToCores_of_eq _ rfl
 
 end SeLe4n.Kernel

@@ -592,6 +592,7 @@ theorem replyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : System
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : CoreId) (msg : IpcMessage)
+    (grant : Bool)
     (hMsg : msg =
       { registers := Architecture.regMessageBody layout rf len, badge := SeLe4n.Badge.opt badgeWord badged })
     (hSz : ¬ Architecture.regMessageLength layout len > maxMessageRegisters)
@@ -601,8 +602,9 @@ theorem replyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : System
     (hRO : ct.replyObject = some rid)
     (hG : replyUnheldPopsInPlace st c rid = true)
     (hNoF : ct.faultWords.isFault = false)
+    (hX : (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
-    replyTransferOnCoreChecked ctx replier c mi regs msg core st =
+    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
       .ok ((), performReplyUnheldDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) layout rf len badgeWord badged) := by
   replace hMsg := hMsg.symm
@@ -629,7 +631,8 @@ theorem replyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : System
   have hNoQ := settleReturnedContext_noResizeDue _ (determineTargetCore st c) scId hNoP
   unfold replyTransferOnCoreChecked
   rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
-  simp only [Bool.false_eq_true, ↓reduceIte]
+  simp only [Bool.false_eq_true, ↓reduceIte,
+    replyTransferCaps_of_inert st replier c grant ct hTc hX, CapTransferSummary.capInfo_empty]
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hAns, hcv, SystemState.unlinkReplyWaiterOpt]

@@ -170,11 +170,11 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
 
 /-- The send with capability transfer. -/
 theorem endpointSendDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {sender : SeLe4n.ThreadId}
-    {payload : SendPayload} {receiverSlotBase : SeLe4n.Slot} {c : CoreId} {st : SystemState}
+    {payload : SendPayload} {c : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
     (hSnd : NotParkedAt st sender) :
     RecordsStep st (_root_.SeLe4n.Kernel.endpointSendDualWithCapsOnCore endpointId sender payload
-      receiverSlotBase c st).1 := by
+      c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointSendDualWithCapsOnCore
   have S := endpointSendDualOnCore (endpointId := endpointId) (payload := payload) (c := c)
     hInv hQ hSnd
@@ -192,11 +192,11 @@ theorem endpointSendDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {sender : SeL
 
 /-- The live checked send. -/
 theorem endpointSendCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId : SeLe4n.ObjId}
-    {sender : SeLe4n.ThreadId} {payload : SendPayload} {receiverSlotBase : SeLe4n.Slot}
+    {sender : SeLe4n.ThreadId} {payload : SendPayload}
     {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
     (hSnd : NotParkedAt st sender) :
     RecordsStep st (_root_.SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked ctx endpointId sender
-      payload receiverSlotBase c st).1 := by
+      payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked
   split
   · exact endpointSendDualWithCapsOnCore hInv hQ hSnd
@@ -204,11 +204,11 @@ theorem endpointSendCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId
 
 /-- The receive with capability transfer. -/
 theorem endpointReceiveDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n.ThreadId}
-    {replyId : Option SeLe4n.ReplyId} {receiverCspaceRoot : SeLe4n.ObjId}
-    {receiverSlotBase : SeLe4n.Slot} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
+    {replyId : Option SeLe4n.ReplyId}
+    {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
     (hQ : queueHeadBlockedConsistent st) (hRcv : NotParkedAt st receiver) :
     RecordsStep st (_root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore endpointId receiver
-      replyId receiverCspaceRoot receiverSlotBase c st).1 := by
+      replyId c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore
   have S := endpointReceiveDualOnCore (endpointId := endpointId) (replyId := replyId) (c := c)
     hInv hQ hRcv

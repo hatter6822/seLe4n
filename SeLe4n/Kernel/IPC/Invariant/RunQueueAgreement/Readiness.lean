@@ -173,11 +173,11 @@ theorem endpointSendDualOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
 
 theorem endpointSendDualWithCapsOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (c : CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some sender)
     (hNI : isIdleThreadId sender = false) :
     readyKeptStage (· = sender) st
-      (endpointSendDualWithCapsOnCore endpointId sender payload base c st).1 := by
+      (endpointSendDualWithCapsOnCore endpointId sender payload c st).1 := by
   have s0 := (endpointSendDualOnCore_runQueueEntryStage endpointId sender payload c st hHeads
     hCur hNI).1
   have r0 := endpointSendDualOnCore_readyKeptStage endpointId sender payload c st hHeads hCur hNI
@@ -276,12 +276,12 @@ theorem endpointReceiveDualOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
   · split <;> exact .refl _
 
 theorem endpointReceiveDualWithCapsOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId)
-    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (c : CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some receiver)
     (hNI : isIdleThreadId receiver = false) (hAct : st.activeAt receiver) :
     readyKeptStage (· = receiver) st
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId root base c st).1 := by
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId c st).1 := by
   have s0 := (endpointReceiveDualOnCore_runQueueEntryStage endpointId receiver replyId c st
     hHeads hCur hNI hAct).1
   have r0 := endpointReceiveDualOnCore_readyKeptStage endpointId receiver replyId c st

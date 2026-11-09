@@ -410,10 +410,10 @@ theorem faultReplyOnCore {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
 reply, any other through the checked reply leg from a state where it carries no
 fault record. -/
 theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : SeLe4n.ThreadId}
-    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {c : CoreId}
-    {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.replyTransferOnCoreChecked ctx replier callerTid mi regs msg c st
-      = .ok ((), st')) : RecordsStep st st' := by
+    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c
+      st = .ok ((), st')) : RecordsStep st st' := by
   unfold _root_.SeLe4n.Kernel.replyTransferOnCoreChecked at h
   split at h
   · have S := faultReplyOnCore (replier := replier) (faulted := callerTid) (mi := mi)
@@ -436,9 +436,16 @@ theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : 
     cases res with
     | error _ => cases h
     | ok _ =>
-      cases h
+      simp only [] at h
       have S := A.2 hN
-      exact S.trans (of_frame (RecordsFrame.stageDeliveredMessage _ _ _ S.invExt))
+      cases hX : _root_.SeLe4n.Kernel.replyTransferCaps st replier callerTid grant st1 with
+      | error _ => rw [hX] at h; cases h
+      | ok p =>
+        obtain ⟨summary, stX⟩ := p
+        rw [hX] at h
+        cases h
+        have SX := S.trans (of_frame (RecordsFrame.receiveTransferCaps S.invExt hX))
+        exact SX.trans (of_frame (RecordsFrame.stageDeliveredMessage _ _ _ SX.invExt))
 
 end RecordsStep
 

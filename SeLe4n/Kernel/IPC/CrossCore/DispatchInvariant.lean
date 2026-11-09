@@ -215,7 +215,7 @@ already makes valid -- as on the `.send` side
 (`endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull`). -/
 theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -243,7 +243,7 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
     (hCallerNotReply : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
     ipcInvariantFull (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   have hBare := endpointCallOnCore_preserves_ipcInvariantFull endpointId caller
     payload executingCore st _
     hInv hObjInv hFreshCaller hSendTailFresh rfl hAllBudgetsNone
@@ -270,9 +270,9 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
         | (rename_i hT
            obtain ⟨stR, caps, hO, hS, hCaps, hOr⟩ := receiveTransferCaps_frame hT
            have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_eq hO hBare
-           rcases hOr with rfl | hU
+           rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
            · exact hR
-           · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ _ receiverSlotBase _ stR _ _ hR
+           · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ _ _ _ stR _ _ hR
                (hO ▸ hBareInv) (fun i c hc b hb => hCaps hBare.badgeWellFormed.2 i c hc b hb) hU)
 
 -- **WS-RR RR8.16 (relocated)**: `endpointCallWithCapsOnCore_preserves_objects_invExt`
@@ -291,11 +291,11 @@ every thread agrees off its slot links and the two rendezvous facts §3 establis
 it. -/
 theorem endpointCallWithCapsOnCore_getTcb?_ipcState_eq
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (t : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1.getTcb? t = some tcb) :
+      executingCore st).1.getTcb? t = some tcb) :
     ∃ tcb₀, SystemState.getTcb? (endpointCallOnCore endpointId caller
       payload executingCore st).1
       t = some tcb₀ ∧ tcb.withoutLinks = tcb₀.withoutLinks := by
@@ -326,10 +326,10 @@ through a successful `endpointCallOnCore`, and every failing arm propagates the
 error. -/
 theorem endpointCallWithCapsOnCore_ok_implies_call_ok
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
     (hOk : (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).2 = .ok (summary, sgi)) :
+      executingCore st).2 = .ok (summary, sgi)) :
     ∃ sgi', (endpointCallOnCore endpointId caller
       payload executingCore st).2
       = .ok sgi' := by
@@ -357,7 +357,7 @@ witness; a caller cannot be the receiver it rendezvouses with, and the dispatch'
 own `queueHeadBlockedConsistent` reading is where a caller discharges it. -/
 theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -383,23 +383,23 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
     (hNe : ∀ ep receiverTid, st.getEndpoint? endpointId = some ep →
       ep.receiveQ.head = some receiverTid → caller ≠ receiverTid) :
     ipcInvariantFull (endpointCallCrossCoreDispatch endpointId caller payload
-      receiverSlotBase executingCore st).1 := by
+      executingCore st).1 := by
   have hWithCaps : ipcInvariantFull (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1 :=
+      executingCore st).1 :=
     endpointCallWithCapsOnCore_preserves_ipcInvariantFull endpointId caller payload
-      receiverSlotBase executingCore st hInv hObjInv hAllBudgetsNone
+      executingCore st hInv hObjInv hAllBudgetsNone
       hFreshCaller hSendTailFresh hCallerNotRecv
       hCallerReady hCallerNotReply
   have hWithCapsInv : (endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st).1.objects.invExt :=
+      executingCore st).1.objects.invExt :=
     endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
-      receiverSlotBase executingCore st hObjInv
+      executingCore st hObjInv
   -- The rendezvous facts, transported through the capability transfer.
   have hIpcFrame := endpointCallWithCapsOnCore_getTcb?_ipcState_eq endpointId caller payload
-    receiverSlotBase executingCore st hObjInv
+    executingCore st hObjInv
   unfold endpointCallCrossCoreDispatch
   cases hWc : endpointCallWithCapsOnCore endpointId caller payload
-      receiverSlotBase executingCore st with
+      executingCore st with
   | mk stWc res =>
     rw [hWc] at hWithCaps hWithCapsInv hIpcFrame
     cases res with
@@ -427,7 +427,7 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                   payload
                   executingCore st).2 = .ok sgi' :=
                 endpointCallWithCapsOnCore_ok_implies_call_ok endpointId caller payload
-                  receiverSlotBase executingCore st summary sgi
+                  executingCore st summary sgi
                   (by rw [hWc])
               obtain ⟨sgi', hCallOk⟩ := hCallOk
               obtain ⟨hCallerBlk, hRecvReady⟩ :=

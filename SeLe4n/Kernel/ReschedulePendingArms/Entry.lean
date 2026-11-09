@@ -110,9 +110,9 @@ theorem faultDeliverOnCore_stepCovers (e : CoreId) {st : SystemState} {tid : SeL
     dsimp only
     have hC := endpointCallCrossCoreDispatch_stepCovers e (endpointId := tgt.endpoint) (caller := tid)
       (payload := SendPayload.fault f ctx tgt.cap.badge)
-      (receiverSlotBase := SeLe4n.Slot.ofNat 0) (executingCore := c) hInv
+      (executingCore := c) hInv
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge)
-      (SeLe4n.Slot.ofNat 0) c st = r at hC ⊢
+      c st = r at hC ⊢
     obtain ⟨st1, res⟩ := r
     obtain ⟨hC, hCInv⟩ := hC
     cases res with
@@ -121,7 +121,7 @@ theorem faultDeliverOnCore_stepCovers (e : CoreId) {st : SystemState} {tid : SeL
       obtain ⟨summary, sgi?⟩ := p
       dsimp only
       have hS := stageWokenDelivery_keyFrame st1 ((st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head))
-        summary.installedCount hCInv
+        summary.capInfo hCInv
       have hR := recordPendingFault_keyFrame _ tid { fault := f, context := ctx } hS.2.2
       exact ⟨stepCovers_trans (stepCovers_trans hC hS.stepCovers) hR.stepCovers, hR.2.2⟩
 

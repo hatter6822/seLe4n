@@ -1485,7 +1485,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
     have hS1 := stageWokenSendCompletion_keyFrame stDon
       ((st.getEndpoint? epId).bind (·.sendQ.head)) hDInv
-    have hS2 := stageDeliveredMessage_keyFrame _ tid summ.installedCount hS1.2.2
+    have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hS1.2.2
     exact stepCoversInv_trans (stepCovers_trans (stepCovers_trans hV hD) hS1.stepCovers)
       hS2.stepCoversInv
   case none.call.object epId =>

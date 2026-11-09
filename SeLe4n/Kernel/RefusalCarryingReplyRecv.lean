@@ -98,9 +98,9 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
               { registers := full.extract 1 full.size, badge := replyBadge }
             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
               match replyRecvTransferOnCore epId tid rid prevCaller mi.label msg
-                  (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore st with
+                  executingCore st with
               | .ok (summary, st') =>
-                  .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
+                  .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
               | .error e => .error (e, st)
             else .error (.replyCapInvalid, st)
     | _ => .error (.invalidCapability, st)
@@ -112,8 +112,7 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
     (hRR : decoded.syscallId = .replyRecv)
     (hCaller : gate.callerId = tid)
     (hRoot : gate.cspaceRoot = callerCspaceRoot st tid)
-    (hDepth : gate.capDepth = callerCspaceDepth st tid)
-    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0) :
+    (hDepth : gate.capDepth = callerCspaceDepth st tid) :
     endpointReplyRecvCheckedArmGeneralR ctx decoded.msgInfo decoded.msgRegs tid executingCore cap
         st =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
@@ -130,10 +129,10 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
       | error e => rfl
       | ok r =>
         obtain ⟨rid, prevCaller, replyBadge⟩ := r
-        simp only [← hRoot, hSlot]
+        simp only [← hRoot]
         split
         · rcases replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label _
-            gate.cspaceRoot (SeLe4n.Slot.ofNat 0) executingCore st with _ | ⟨summary, st'⟩ <;> rfl
+            executingCore st with _ | ⟨summary, st'⟩ <;> rfl
         · rfl
   | _ => rfl
 
@@ -313,9 +312,9 @@ here. -/
   fun st =>
     match replyRecvTransferOnCore epId tid rid c label
         { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }
-        (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore st with
+        executingCore st with
     | .ok (summary, st') =>
-        .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
+        .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
     | .error e => .error (e, st)
 
 /-- WS-ZA ZA6.34: **a reply-receive answering a caller recording no server that
@@ -512,9 +511,9 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         rw [hT] at hTc0'; cases hTc0'; rfl
       unfold replyRecvRendezvousR
       rw [replyRecvTransferOnCore_fault_blocks_inPlace st epId tid c rid label layout rf len badge
-        _ _ executingCore ct ep0 rt ep rp tf hPF hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree
+        executingCore ct ep0 rt ep rp tf hPF hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree
         hStash hRecR]
-      simp only [CapTransferSummary.installedCount_empty]
+      simp only [CapTransferSummary.capInfo_empty]
       rw [hTail, performReplyRecvFaultAnswer_staged st epId tid c rid executingCore _ _ _ _ _ _ _
         _ _ _ _ _ _ layout rf len ct ep0 rt ep rp hT hIpc hW hNe hE hR hA hEnq hRp hFree hStash
         hRecR]
@@ -527,11 +526,11 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         have hTail : receiveQueueTailCode st epId = ep.recvTailCode := by
           simp only [receiveQueueTailCode, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE]
         obtain ⟨hEq, hStg⟩ := replyRecvTransferOnCore_fault_donated_inPlace st epId tid c rid label
-          layout rf len badge (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore ct ep0
+          layout rf len badge executingCore ct ep0
           rt ep rp tf hPF hT hIpc hRO hSRes hP hE hS hR hA hEnq hRp hStash hRecR
         unfold replyRecvRendezvousR
         rw [hEq]
-        simp only [CapTransferSummary.installedCount_empty]
+        simp only [CapTransferSummary.capInfo_empty]
         rw [hTail, hStg]
       · split
         · next hB =>
@@ -540,11 +539,11 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
           obtain rfl : ct = ct0 := by
             rw [hT] at hTc0'; cases hTc0'; rfl
           obtain ⟨hEq, hStg⟩ := replyRecvTransferOnCore_fault_unheld_inPlace st epId tid c rid label
-            layout rf len badge (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore ct ep0
+            layout rf len badge executingCore ct ep0
             rt ep rp tf hPF hT hIpc hRO hU hNe hE hS hR hA hEnq hRp hStash hRecR
           unfold replyRecvRendezvousR
           rw [hEq]
-          simp only [CapTransferSummary.installedCount_empty]
+          simp only [CapTransferSummary.capInfo_empty]
           rw [hTail, hStg]
         · rfl
   · rfl
@@ -656,17 +655,17 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                 rw [Architecture.regReplyRecvBody_size]; exact hSz
               have h := replyRecvOnCore_blocks_delivered st epId tid c rid
                 { registers := Architecture.regReplyRecvBody layout rf len,
-                  badge := badge } (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore
+                  badge := badge } executingCore
                 ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
                 hRO hW hNe hE hS hR hA hEnq hRp hFree hStash hRecR
               rw [Architecture.returnFrameOfMessage_regReplyRecvBody,
-                replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
+                replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ ct ep0 rt ep rp
                   (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hW hNe hE hS hR
                   hA hEnq hRp hFree hStash hRecR] at h
-              simp only [CapTransferSummary.installedCount_empty] at h
-              rw [hTail, replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
+              simp only [CapTransferSummary.capInfo_empty] at h
+              rw [hTail, replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ ct ep0 rt ep rp
                   ?_ hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree hStash hRecR]
-              · simp only [CapTransferSummary.installedCount_empty]
+              · simp only [CapTransferSummary.capInfo_empty]
                 have h2 := congrArg Prod.snd (Except.ok.inj h)
                 dsimp only at h2
                 rw [h2]
@@ -687,17 +686,17 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                   rw [Architecture.regReplyRecvBody_size]; exact hSz
                 have h := replyRecvOnCore_donated_delivered st epId tid c rid
                   { registers := Architecture.regReplyRecvBody layout rf len,
-                    badge := badge } (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore
+                    badge := badge } executingCore
                   ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
                   hRO hSRes hP hE hS hR hA hEnq hRp hStash hRecR
                 rw [Architecture.returnFrameOfMessage_regReplyRecvBody,
-                  (replyRecvOnCore_donated_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
+                  (replyRecvOnCore_donated_inPlace st epId tid c rid _ _ ct ep0 rt ep rp
                     (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hSRes hP hE hS hR
                     hA hEnq hRp hStash hRecR).1] at h
-                simp only [CapTransferSummary.installedCount_empty] at h
-                rw [hTail, (replyRecvOnCore_donated_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
+                simp only [CapTransferSummary.capInfo_empty] at h
+                rw [hTail, (replyRecvOnCore_donated_inPlace st epId tid c rid _ _ ct ep0 rt ep rp
                     ?_ hT hIpc hRO hSRes hP hE hS hR hA hEnq hRp hStash hRecR).1]
-                · simp only [CapTransferSummary.installedCount_empty]
+                · simp only [CapTransferSummary.capInfo_empty]
                   have h2 := congrArg Prod.snd (Except.ok.inj h)
                   dsimp only at h2
                   rw [h2]
@@ -716,17 +715,17 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                     rw [Architecture.regReplyRecvBody_size]; exact hSz
                   have h := replyRecvOnCore_unheld_delivered st epId tid c rid
                     { registers := Architecture.regReplyRecvBody layout rf len,
-                      badge := badge } (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore
+                      badge := badge } executingCore
                     ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
                     hRO hU hNe hE hS hR hA hEnq hRp hStash hRecR
                   rw [Architecture.returnFrameOfMessage_regReplyRecvBody,
-                    (replyRecvOnCore_unheld_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
+                    (replyRecvOnCore_unheld_inPlace st epId tid c rid _ _ ct ep0 rt ep rp
                       (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hU hNe hE hS hR
                       hA hEnq hRp hStash hRecR).1] at h
-                  simp only [CapTransferSummary.installedCount_empty] at h
-                  rw [hTail, (replyRecvOnCore_unheld_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
+                  simp only [CapTransferSummary.capInfo_empty] at h
+                  rw [hTail, (replyRecvOnCore_unheld_inPlace st epId tid c rid _ _ ct ep0 rt ep rp
                       ?_ hT hIpc hRO hU hNe hE hS hR hA hEnq hRp hStash hRecR).1]
-                  · simp only [CapTransferSummary.installedCount_empty]
+                  · simp only [CapTransferSummary.capInfo_empty]
                     have h2 := congrArg Prod.snd (Except.ok.inj h)
                     dsimp only at h2
                     rw [h2]
@@ -751,8 +750,7 @@ theorem endpointReplyRecvCheckedArmR_eq (ctx : LabelingContext)
     (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs)
     (hCaller : gate.callerId = tid)
     (hRoot : gate.cspaceRoot = callerCspaceRoot st tid)
-    (hDepth : gate.capDepth = callerCspaceDepth st tid)
-    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0) :
+    (hDepth : gate.capDepth = callerCspaceDepth st tid) :
     endpointReplyRecvCheckedArmR ctx layout rf decoded.msgInfo.length decoded.msgInfo.extraCaps
         decoded.msgInfo.label tid executingCore cap st =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
@@ -761,7 +759,7 @@ theorem endpointReplyRecvCheckedArmR_eq (ctx : LabelingContext)
   unfold endpointReplyRecvCheckedArmRegsR
   rw [hRegs]
   exact endpointReplyRecvCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap st hRR
-    hCaller hRoot hDepth hSlot
+    hCaller hRoot hDepth
 
 /-- The caller a reply-receive's reply leg reaches, read from the pre-state
 before the arm, as its code (`SeLe4n.ThreadId.optCode`): the caller recorded
@@ -965,7 +963,6 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (hRR : decoded.syscallId = .replyRecv)
     (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs)
-    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
     (hRoot : st.getObject? tcb.cspaceRoot = some (.cnode rootCn))
     (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
@@ -998,7 +995,7 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
           cap layout rf st hRR hRegs rfl (by simp only [callerCspaceRoot, hTcb])
-          (by simp only [callerCspaceDepth, hTcb, hRoot]) hSlot]
+          (by simp only [callerCspaceDepth, hTcb, hRoot])]
         simp only [RefusalCarrying.ofKernel, hRR]
         rcases dispatchWithCapChecked ctx decoded tid executingCore
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -1024,8 +1021,7 @@ theorem dispatchReplyRecvCheckedR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (hRR : decoded.syscallId = .replyRecv)
-    (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs)
-    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0) :
+    (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs) :
     dispatchReplyRecvCheckedR ctx decoded.capAddr layout rf decoded.msgInfo.length
         decoded.msgInfo.extraCaps decoded.msgInfo.label tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
@@ -1033,7 +1029,7 @@ theorem dispatchReplyRecvCheckedR_eq (ctx : LabelingContext)
   intro st tcb rootCn ref hTcb hRoot hRef
   have hArm := replyRecvOperandArmThenTaintR_eq ctx decoded tid executingCore
     st.declassificationAuditEpoch st.declassificationAudit.length
-    st tcb rootCn ref layout rf hRR hRegs hSlot hTcb hRoot hRef
+    st tcb rootCn ref layout rf hRR hRegs hTcb hRoot hRef
   simp only [hRR] at hArm ⊢
   exact hArm
 
@@ -1047,9 +1043,9 @@ message read in the replier's registers and IPC buffer (`longReplyRecvRegs`). -/
   fun st =>
     match replyRecvTransferOnCore epId tid rid c label
         { registers := longReplyRecvRegs rf st tid len, badge := badge }
-        (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore st with
+        executingCore st with
     | .ok (summary, st') =>
-        .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
+        .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
     | .error e => .error (e, st)
 
 /-- The checked long reply-receive once its reply capability resolved to reply
@@ -1150,9 +1146,9 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
             obtain ⟨ct, ep0, rt, ep, rp, hT, hIpc, hRO, hW, hNe, hE, hS, hR, hA, hEnq, hRp,
               hFree, hStash, hRecR, hTail⟩ := replyRecvBlocksFast_spec hF
             rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault),
-              replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp ?_ hT hIpc
+              replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ ct ep0 rt ep rp ?_ hT hIpc
                 hRO hW hNe hE hS hR hA hEnq hRp hFree hStash hRecR]
-            · simp only [CapTransferSummary.installedCount_empty]
+            · simp only [CapTransferSummary.capInfo_empty]
               rw [hTail, replyRecvOnCore_blocks_deliveredLong st epId tid c rid rf mi.length badge
                 executingCore ct ep0 rt ep rp (by omega) hT hIpc hW hNe hE hR hA hEnq hRp hFree
                 hStash hRecR]
@@ -1173,8 +1169,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq (ctx : LabelingContext)
     (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs)
     (hCaller : gate.callerId = tid)
     (hRoot : gate.cspaceRoot = callerCspaceRoot st tid)
-    (hDepth : gate.capDepth = callerCspaceDepth st tid)
-    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0) :
+    (hDepth : gate.capDepth = callerCspaceDepth st tid) :
     endpointReplyRecvLongCheckedArmR ctx rf decoded.msgInfo.length decoded.msgInfo.extraCaps
         decoded.msgInfo.label tid executingCore cap st =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap)
@@ -1184,7 +1179,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq (ctx : LabelingContext)
   unfold endpointReplyRecvLongGeneralR
   rw [hRegs]
   exact endpointReplyRecvCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap st hRR
-    hCaller hRoot hDepth hSlot
+    hCaller hRoot hDepth
 
 /-- The long reply-receive's slot check, gate, arm and taint step on the
 capability its operand resolved to (`endpointReplyRecvLongCheckedArmR`), its
@@ -1223,7 +1218,6 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
       .replyRecvLong capAddr decoded.msgInfo)
     (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs)
-    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
     (hRoot : st.getObject? tcb.cspaceRoot = some (.cnode rootCn))
     (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
@@ -1256,7 +1250,7 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
           cap rf capAddr st hRR hR hRegs rfl (by simp only [callerCspaceRoot, hTcb])
-          (by simp only [callerCspaceDepth, hTcb, hRoot]) hSlot]
+          (by simp only [callerCspaceDepth, hTcb, hRoot])]
         simp only [RefusalCarrying.ofKernel, hRR]
         rcases dispatchWithCapChecked ctx decoded tid executingCore
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -1279,8 +1273,7 @@ theorem dispatchReplyRecvLongCheckedR_eq (ctx : LabelingContext)
     (hRR : decoded.syscallId = .replyRecv)
     (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
       .replyRecvLong capAddr decoded.msgInfo)
-    (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs)
-    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0) :
+    (hRegs : longReplyRegs st tid rf decoded.msgInfo.length = decoded.msgRegs) :
     dispatchReplyRecvLongCheckedR ctx decoded.capAddr rf decoded.msgInfo.length
         decoded.msgInfo.extraCaps decoded.msgInfo.label tid executingCore st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
@@ -1288,7 +1281,7 @@ theorem dispatchReplyRecvLongCheckedR_eq (ctx : LabelingContext)
   intro tcb rootCn ref hTcb hRoot hRef
   have hArm := replyRecvLongOperandArmThenTaintR_eq ctx decoded tid executingCore
     st.declassificationAuditEpoch st.declassificationAudit.length
-    st tcb rootCn ref rf capAddr hRR hR hRegs hSlot hTcb hRoot hRef
+    st tcb rootCn ref rf capAddr hRR hR hRegs hTcb hRoot hRef
   simp only [hRR] at hArm ⊢
   exact hArm
 

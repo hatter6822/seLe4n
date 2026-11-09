@@ -208,34 +208,29 @@ theorem untypedSourceSetFull_slotTarget {st : SystemState} {a : CSpaceAddr} {cn 
 /-- **A transfer keeps every occupied slot's target**: it installs into an
 empty slot, records an edge, and may set its source full. -/
 theorem ipcTransferSingleCap_slotTarget {st st' : SystemState} {cap : Capability}
-    {srcNode : SlotRef} {receiverRoot : SeLe4n.ObjId} {slotBase : SeLe4n.Slot} {scanLimit : Nat}
-    {result : CapTransferResult} (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
-             = .ok (result, st')) (r : SlotRef) {d : Capability} (h : st.slotCapAt r = some d) :
+    {srcNode : SlotRef} {dst : CSpaceAddr} (hObjInv : st.objects.invExt)
+    (hStep : ipcTransferSingleCap cap srcNode dst st = .ok ((), st')) (r : SlotRef)
+    {d : Capability} (h : st.slotCapAt r = some d) :
     ∃ d', st'.slotCapAt r = some d' ∧ d'.target = d.target := by
-  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨emptySlot, st2, -, hSrc, -, hIns, -, rfl⟩⟩ :=
-    ipcTransferSingleCap_ok_cases hStep
-  · exact ⟨d, h, rfl⟩
-  · obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
-      (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
-    obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .ipcTransfer hObjInv hLc hIns
-    have hInv2 := cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hObjInv hIns
-    have hA := SystemState.cdtAddChild_agreeObjects hInv2 srcNode
-      { cnode := receiverRoot, slot := emptySlot } .ipcTransfer
-    refine untypedSourceSetFull_slotTarget cap hA.2 hOS hLS r ?_
-    rw [hA.1.slotCapAt r]
-    have hrd : r ≠ { cnode := receiverRoot, slot := emptySlot } := by
-      rintro rfl
-      obtain ⟨cn0, hGet, -, hE, -⟩ := cspaceInsertSlot_ok_decompose _ _ _ _ hIns
-      rw [SystemState.slotCapAt_eq_bind] at h
-      have hG := (SystemState.getCNode?_eq_some_iff st receiverRoot cn0).mp hGet
-      simp [hG, KernelObject.slotCap, hE] at h
-    exact (cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hrd).trans h
+  obtain ⟨_, st2, -, hSrc, -, hIns, rfl⟩ := ipcTransferSingleCap_ok_cases hStep
+  obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
+    (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
+  obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .ipcTransfer hObjInv hLc hIns
+  have hInv2 := cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hObjInv hIns
+  have hA := SystemState.cdtAddChild_agreeObjects hInv2 srcNode dst .ipcTransfer
+  refine untypedSourceSetFull_slotTarget cap hA.2 hOS hLS r ?_
+  rw [hA.1.slotCapAt r]
+  have hrd : r ≠ dst := by
+    rintro rfl
+    obtain ⟨cn0, hGet, -, hE, -⟩ := cspaceInsertSlot_ok_decompose _ _ _ _ hIns
+    rw [SystemState.slotCapAt_eq_bind] at h
+    have hG := (SystemState.getCNode?_eq_some_iff st r.cnode cn0).mp hGet
+    simp [hG, KernelObject.slotCap, hE] at h
+  exact (cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hrd).trans h
 
 /-- M-D01: IPC single-cap transfer preserves the capability invariant bundle.
 
-The proof decomposes into the `.noSlot` case (state unchanged, trivial) and
-the `.installed` case, which chains:
+An install that succeeds chains:
 1. `cspaceInsertSlot_preserves_capabilityBundleOffCoverage` — slot insertion
 2. `addEdge` with `.ipcTransfer` — CDT edge addition (objects unchanged)
 3. `untypedSourceSetFull_preserves_capabilityInvariantBundle` — an untyped
@@ -247,185 +242,95 @@ The tree stays complete and acyclic as for `cspaceCopy`: the source still holds
 its capability (`cdtNodeIsRevocable`) and the edge reaches the slot the insert
 found empty (`cdt_addEdge_after_insert`). -/
 theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (cap : Capability) (srcNode : SlotRef)
-    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (scanLimit : Nat)
-    (result : CapTransferResult)
+    (st st' : SystemState) (cap : Capability) (srcNode : SlotRef) (dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
     (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
     (hSrcCap : ∃ c, st.slotCapAt srcNode = some c ∧ cap.target = c.target)
-    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
-             = .ok (result, st')) :
+    (hStep : ipcTransferSingleCap cap srcNode dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨emptySlot, st2, -, hSrc, hRef, hIns, -, rfl⟩⟩ :=
-    ipcTransferSingleCap_ok_cases hStep
+  obtain ⟨_, st2, -, hSrc, hRef, hIns, rfl⟩ := ipcTransferSingleCap_ok_cases hStep
+  have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
+  obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
+    (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
+  obtain ⟨c0, hc0, hT0⟩ := hSrcCap
+  rw [Option.some.inj (hc0.symm.trans (SystemState.slotCapAt_of_lookupSlotCap hLc))] at hT0
+  have hBundleSt2 := cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st2
+    dst cap.withoutMapping hInv.offCoverage hCapBacked hIns
+  have hCdt := cdt_addEdge_after_insert st st2 srcNode dst cap.withoutMapping .ipcTransfer
+    hInv.2.1 hInv.2.2.1 hObjInv
+    (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns hInv.linksAgree
+  have hShape := treeShape_addEdge_after_copy st st2 srcNode dst cap.withoutMapping .ipcTransfer
+    hInv.treeShape hInv.2.1 hObjInv hInv.linksAgree hLc
+    ((Capability.withMapping_target cap none).trans hT0) hT0 hRef hIns
+  rcases hBundleSt2 with ⟨⟨_, _, _, hDepth2, hObjInv2, hRCPV2⟩, -, -⟩
+  have hIX := hObjInv2
+  have hObjFinal : ∀ cdt' : CapDerivationTree,
+      ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
+  have hMid := capabilityBundleOffSource_of_linkReach ?_
+    (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX hCdt.2.2 hShape
+  · -- `cdtNodeIsRevocable`: the source holds a capability, and still does after
+    -- the install and the edge, so setting it full restores the bundle.
+    obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .ipcTransfer hObjInv hLc hIns
+    exact untypedSourceSetFull_preserves_capabilityInvariantBundle _ srcNode cnS cap hMid hOS hLS
+      hT0
+  · exact ⟨cspaceLookupSound_holds _,
+      hCdt.1, hCdt.2.1,
+      cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
+      (hObjFinal _) ▸ hObjInv2,
+      replyCapPointsToValidReply_of_objects_eq (hObjFinal _) hRCPV2⟩
+
+/-- A badge written to the receiver's buffer keeps the bundle: it goes to the
+physical-write ledger, which the bundle does not read. -/
+theorem recordUnwrappedBadge_preserves_capabilityInvariantBundle (st : SystemState)
+    (tcb : TCB) (i : Nat) (b : SeLe4n.Badge) (hInv : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (recordUnwrappedBadge st tcb i b) := by
+  unfold recordUnwrappedBadge
+  split
   · exact hInv
-  · have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
-    obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
-      (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
-    obtain ⟨c0, hc0, hT0⟩ := hSrcCap
-    rw [Option.some.inj (hc0.symm.trans (SystemState.slotCapAt_of_lookupSlotCap hLc))] at hT0
-    have hBundleSt2 := cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st2
-      { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv.offCoverage hCapBacked hIns
-    have hCdt := cdt_addEdge_after_insert st st2 srcNode
-      { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
-      hInv.2.1 hInv.2.2.1 hObjInv
-      (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns hInv.linksAgree
-    have hShape := treeShape_addEdge_after_copy st st2 srcNode
-      { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
-      hInv.treeShape hInv.2.1 hObjInv hInv.linksAgree hLc
-      ((Capability.withMapping_target cap none).trans hT0) hT0 hRef hIns
-    rcases hBundleSt2 with ⟨⟨_, _, _, hDepth2, hObjInv2, hRCPV2⟩, -, -⟩
-    have hIX := hObjInv2
-    have hObjFinal : ∀ cdt' : CapDerivationTree,
-        ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
-    have hMid := capabilityBundleOffSource_of_linkReach ?_
-      (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX hCdt.2.2 hShape
-    · -- `cdtNodeIsRevocable`: the source holds a capability, and still does after
-      -- the install and the edge, so setting it full restores the bundle.
-      obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .ipcTransfer hObjInv hLc hIns
-      exact untypedSourceSetFull_preserves_capabilityInvariantBundle _ srcNode cnS cap hMid hOS hLS
-        hT0
-    · exact ⟨cspaceLookupSound_holds _,
-        hCdt.1, hCdt.2.1,
-        cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
-        (hObjFinal _) ▸ hObjInv2,
-        replyCapPointsToValidReply_of_objects_eq (hObjFinal _) hRCPV2⟩
+  · exact hInv
 
-/-- V3-E / M3-D3b: `ipcUnwrapCapsLoop` preserves `capabilityInvariantBundle`
-through fuel-indexed induction. Each iteration delegates to
-`ipcTransferSingleCap_preserves_capabilityInvariantBundle`, threading
-`hCapBacked` (reply-cap backing) through the recursive structure; each step
-keeps the tree sound from its own pre-state. -/
-theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hInv : capabilityInvariantBundle st)
-    (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
-        capabilityInvariantBundle stI →
-        ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
-        ∃ c, st.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase
-             accResults fuel st = .ok (summary, st')) :
-    capabilityInvariantBundle st' := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep
-    exact hInv
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none =>
-      simp [hCap] at hStep
-      obtain ⟨_, rfl⟩ := hStep
-      exact hInv
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep
-        exact hInv
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
-          st stNext tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps result
-          hInv
-          (hCapBacked st tc.cap hInv) (hNames idx tc hCap)
-          hTransfer
-        have hNamesNext : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
-            ∃ c, stNext.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target := by
-          intro i tc' hi
-          obtain ⟨c, hc, hT⟩ := hNames i tc' hi
-          obtain ⟨c', hc', hT'⟩ := ipcTransferSingleCap_slotTarget hInv.2.2.2.2.1 hTransfer _ hc
-          exact ⟨c', hc', hT.trans hT'.symm⟩
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact ih _ _ _ _ hInvNext hNamesNext hStep
-        | noSlot => exact ih _ _ _ _ hInvNext hNamesNext hStep
-        | grantDenied => exact ih _ _ _ _ hInvNext hNamesNext hStep
-        | sourceRevoked => exact ih _ _ _ _ hInvNext hNamesNext hStep
+/-- A badge written to the receiver's buffer keeps every slot. -/
+theorem recordUnwrappedBadge_slotCapAt (st : SystemState) (tcb : TCB) (i : Nat)
+    (b : SeLe4n.Badge) (r : SlotRef) :
+    (recordUnwrappedBadge st tcb i b).slotCapAt r = st.slotCapAt r := by
+  unfold recordUnwrappedBadge
+  split <;> rfl
 
-/-- V3-E / M3-D3b: `ipcUnwrapCaps` preserves `capabilityInvariantBundle`
-when the endpoint has Grant right (grantRight = true). Delegates to
-`ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` after unfolding
-the entry point. -/
-theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
-    (st st' : SystemState) (caps : Array TransferCap)
-    (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot)
-    (summary : CapTransferSummary)
-    (hInv : capabilityInvariantBundle st)
-    (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
-        capabilityInvariantBundle stI →
-        ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
-        ∃ c, st.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase true st
-             = .ok (summary, st')) :
-    capabilityInvariantBundle st' := by
-  simp [ipcUnwrapCaps] at hStep
-  exact ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
-    caps receiverRoot
-    0 slotBase #[] caps.size
-    st st' summary hInv hCapBacked hNames hStep
+/-- V3-E / M3-D3b: `ipcUnwrapCaps` preserves `capabilityInvariantBundle`.
 
-/-- M3-D3 / V3-E: ipcUnwrapCaps preserves capabilityInvariantBundle when the
-endpoint lacks Grant right (grantRight = false). In this case, all caps are
-silently dropped and the state is unchanged, so the invariant trivially holds.
-See also: `ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant` for the
-Grant=true case, and `ipcUnwrapCaps_preserves_capabilityInvariantBundle` for
-the unified theorem. -/
-theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
-    (st st' : SystemState) (caps : Array TransferCap)
-    (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot)
-    (summary : CapTransferSummary)
-    (hInv : capabilityInvariantBundle st)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase false st
-             = .ok (summary, st')) :
-    capabilityInvariantBundle st' := by
-  simp [ipcUnwrapCaps] at hStep
-  obtain ⟨_, rfl⟩ := hStep
-  exact hInv
-
-/-- V3-E / M3-D3b: `ipcUnwrapCaps` preserves `capabilityInvariantBundle`
-for any value of `endpointGrantRight`. This is the primary entry point for
-the IPC rendezvous composition chain.
-
-- **Grant=false**: State unchanged (no transfers), trivially preserved.
-- **Grant=true**: Fuel-indexed induction over `ipcUnwrapCapsLoop`, threading
-  the reply-cap backing hypothesis per-iteration.
-
-The `hCapBacked` hypothesis is vacuous when Grant=false (no
-`ipcTransferSingleCap` calls occur). -/
+A badge write keeps it (`recordUnwrappedBadge_preserves_capabilityInvariantBundle`)
+and an install keeps it (`ipcTransferSingleCap_preserves_capabilityInvariantBundle`),
+threading `hCapBacked` (reply-cap backing) and the sources' occupancy
+(`hNames`) through the loop (`ipcUnwrapCaps_rel`). -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (caps : Array TransferCap)
-    (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot)
-    (endpointGrantRight : Bool)
-    (summary : CapTransferSummary)
+    (st st' : SystemState) (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
+    (rtcb : TCB) (slot? : Option CSpaceAddr) (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
     (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
         ∃ c, st.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase
-             endpointGrantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
-  cases endpointGrantRight with
-  | false =>
-    exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
-      st st' caps receiverRoot slotBase summary hInv hStep
-  | true =>
-    exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
-      st st' caps receiverRoot slotBase summary
-      hInv hCapBacked hNames hStep
+  let N : SystemState → Prop := fun s => ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
+    ∃ c, s.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target
+  have hR := ipcUnwrapCaps_rel
+    (fun a b => capabilityInvariantBundle b → N b → capabilityInvariantBundle a ∧ N a)
+    (fun _ h1 h2 => ⟨h1, h2⟩)
+    (fun _ _ _ h1 h2 hA hN => let r := h2 hA hN; h1 r.1 r.2)
+    (fun s i b hA hN => ⟨recordUnwrappedBadge_preserves_capabilityInvariantBundle s rtcb i b hA,
+      fun j tc hj => by rw [recordUnwrappedBadge_slotCapAt]; exact hN j tc hj⟩)
+    (fun dst s s' tc _ ⟨i, hi⟩ hT hA hN =>
+      ⟨ipcTransferSingleCap_preserves_capabilityInvariantBundle s s' tc.cap tc.srcSlot dst hA
+          (hCapBacked s tc.cap hA) (hN i tc hi) hT,
+        fun j tc' hj => by
+          obtain ⟨c, hc, hTg⟩ := hN j tc' hj
+          obtain ⟨c', hc', hT'⟩ := ipcTransferSingleCap_slotTarget
+            (objects_invExt_of_capabilityInvariantBundle s hA) hT _ hc
+          exact ⟨c', hc', hTg.trans hT'.symm⟩⟩)
+    hStep
+  exact (hR hInv hNames).1
 
 -- ============================================================================
 -- V3-D (M-PRF-1): CDT Acyclicity Discharge Chain Documentation

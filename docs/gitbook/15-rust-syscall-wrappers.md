@@ -45,7 +45,7 @@ earlier wording named one block in `raw_syscall`, where under edition 2021 there
 was none:
 
 - **`MessageInfo`**: Bitfield encode/decode (7-bit length, 2-bit extraCaps,
-  20-bit label, seL4 convention). Fields are private (U3-B); construct via `new()` or `decode()`,
+  3-bit capsUnwrapped, 52-bit label, seL4's `seL4_MessageInfo_t`). Fields are private (U3-B); construct via `new()` or `decode()`,
   access via `length()`, `extra_caps()`, `label()` accessors
 - **`SyscallRequest` / `SyscallResponse`**: Register structures
 - **`raw_syscall`**: Inline `svc #0` — the single `unsafe fn`. Uses
@@ -65,9 +65,11 @@ was none:
   (27 in `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`)
 - **`TypeTag`**: 8 retype variants (TCB=0, Endpoint=1, ..., Untyped=5, SchedContext=6, Reply=7)
 - **`PagePerms`**: Permission bitmask with W^X enforcement
-- **`IpcBuffer`**: Overflow message registers (4–119) for messages exceeding
-  the 4 inline ARM64 registers. Compile-time layout assertions verify 960-byte
-  `#[repr(C)]` size and 8-byte alignment (U3-I)
+- **`IpcBuffer`**: seL4's `seL4_IPCBuffer` — the `tag` word, the 120 `msg`
+  words (`msg[i]` is message register `i`; 4–119 travel here, 0–3 in x2–x5),
+  `user_data`, `caps_or_badges` (a send's extra-capability addresses, a
+  delivery's unwrapped badges) and the receive path. Compile-time layout
+  assertions verify the 1024-byte `#[repr(C)]` size and 8-byte alignment (U3-I)
 
 ### sele4n-sys
 
@@ -120,7 +122,7 @@ frame on syscall exit:
 ```
 x0  ← badge / primary result (full 64-bit width)
 x1  ← MessageInfo; label 0 = success,
-      label ≥ ERROR_LABEL_BASE (0xFFF00) = KernelError discriminant (label − base),
+      label ≥ ERROR_LABEL_BASE (2^52 − 256) = KernelError discriminant (label − base),
       label < ERROR_LABEL_BASE = the delivered message's own label (a fault tag, say)
 x2–x5 ← Message registers [0..3] of a delivered message
 ```

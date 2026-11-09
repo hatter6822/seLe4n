@@ -1037,7 +1037,7 @@ theorem lockSet_endpointSend_size_le (a : ThreadId) (b c : ObjId) (d : Option Th
 -- inside the constant.
 -- **WS-OD (`v0.35.4`)**: and over the push's old head and the five members of
 -- the receiver's pre-receive return.  `3 + 11 = 14`, inside the constant.
-theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId)
+theorem lockSet_endpointReceive_size_lt (a : ThreadId) (b c : ObjId) (d : Option ThreadId)
     (e : Option ReplyId) (f : Bool) (g : Option SchedContextId) (h : Option ThreadId)
     (i : Option ReplyId) (j : Option SchedContextId) (k : Option ThreadId)
     (l : Option ReplyId) (m : Option ReplyId) (n : Option ThreadId)
@@ -1045,12 +1045,25 @@ theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option
     -- **WS-ZA ZA4.7**: and the dequeued sender's CSpace root, read when its
     -- extra capabilities are looked up at the rendezvous; `3 + 13 = 16`.
     (p : Option ObjId) :
-    (lockSet_endpointReceive a b c d e f g h i j k l m n o p).size ≤ maxLockSetSize := by
+    (lockSet_endpointReceive a b c d e f g h i j k l m n o p).size
+      < maxLockSetSize := by
+  -- One below the ceiling: the resolved footprint declares the receive slot's
+  -- CNode beside it (`lockSet_endpointReceiveOnCore`).
   unfold lockSet_endpointReceive maxLockSetSize
+  refine Nat.lt_of_le_sub_one (by decide) ?_
   -- **WS-ZA ZA4.6**: and the receiver's old reply-waiter head; `3 + 12 = 15`.
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.le_trans (Nat.add_le_add_right (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) 1)
     (by size_bound)
+
+/-- …so it is within the ceiling (the bound every footprint states). -/
+theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId)
+    (e : Option ReplyId) (f : Bool) (g : Option SchedContextId) (h : Option ThreadId)
+    (i : Option ReplyId) (j : Option SchedContextId) (k : Option ThreadId)
+    (l : Option ReplyId) (m : Option ReplyId) (n : Option ThreadId)
+    (o : Option ThreadId) (p : Option ObjId) :
+    (lockSet_endpointReceive a b c d e f g h i j k l m n o p).size ≤ maxLockSetSize :=
+  Nat.le_of_lt (lockSet_endpointReceive_size_lt a b c d e f g h i j k l m n o p)
 
 -- WS-RR RR7.7: and over the capability-transfer destination, which is where
 -- `lockSet_endpointCallWithCaps` now lives.  Five optionals over a three-member
@@ -1113,6 +1126,21 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
   -- **WS-ZA ZA4.6**: and two more -- the answered caller's reply-waiter
   -- neighbours.  `3 + 12 = 15`.
   exact Nat.le_trans (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) (by size_bound)
+
+/-- And with one member more -- the CNode the reply's capability transfer
+installs into, which the state-resolved reply footprint adds
+(`lockSet_endpointReplyOnCore`).  `15 + 1 = 16`. -/
+theorem lockSet_endpointReply_extendOpt_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : Option SchedContextId) (e : Option ThreadId) (f : Option ReplyId)
+    (g : Option ReplyId) (h : Option ThreadId) (i : Option ReplyId) (j : Option ReplyId)
+    (k : Option ReplyId) (l : Option ThreadId) (m n : Option ThreadId)
+    (o : Option (LockKey × AccessMode)) :
+    (lockSetExtendOpt (lockSet_endpointReply a b c d e f g h i j k l m n) o).size
+      ≤ maxLockSetSize := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  unfold lockSet_endpointReply maxLockSetSize
+  exact Nat.le_trans (Nat.add_le_add_right (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) 1)
+    (by size_bound)
 
 -- WS-RR RR7.11: and over the state-level member the capability install needs.
 -- Five optionals over a four-member base is `4 + 5 = 9`, which is
@@ -1389,7 +1417,7 @@ theorem lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_frameAbove_of_no_b
 -- **WS-HP HP10.6**'s origin member to `4 + 20 = 24` — which is the footprint the
 -- constant is measured against now, and the reason it stands at 24 (see its
 -- docstring).
-theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+theorem lockSet_replyRecv_size_lt (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId)
     (l : Option ReplyId) (m : Option ThreadId) (n : Option ThreadId)
@@ -1412,8 +1440,11 @@ theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     -- footprint `maxLockSetSize` now stands at.
     (bb : Option ObjId) :
     (lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb).size
-      ≤ maxLockSetSize := by
+      < maxLockSetSize := by
+  -- One below the ceiling: the resolved footprint declares the receive slot's
+  -- CNode beside it (`lockSet_endpointReplyRecvOnCore`).
   unfold lockSet_replyRecv maxLockSetSize
+  refine Nat.lt_of_le_sub_one (by decide) ?_
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
   refine Nat.le_trans (Nat.add_le_add_right
@@ -1425,6 +1456,19 @@ theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (size_le_20 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) 1) 1) 1) 1) ?_
   simp only [List.length_cons, List.length_nil]
   omega
+
+/-- …so it is within the ceiling (the bound every footprint states). -/
+theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
+    (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId)
+    (l : Option ReplyId) (m : Option ThreadId) (n : Option ThreadId)
+    (o : Option ReplyId) (p : Option ReplyId)
+    (q : Option SchedContextId) (r : Option ThreadId)
+    (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId)
+    (v : Option ReplyId) (w : Option ReplyId) (x : Option ThreadId)
+    (y z aa : Option ThreadId) (bb : Option ObjId) :
+    (lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb).size ≤ maxLockSetSize :=
+  Nat.le_of_lt (lockSet_replyRecv_size_lt a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb)
 
 -- WS-SM SM9.C.8: stated over **all six** arguments, including the SM6.B
 -- bound-delivery optionals.  Before this cut the theorem fixed those two at
@@ -1799,7 +1843,8 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d q, (lockSet_tcbBindNotification a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbUnbindNotification a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbSetAffinity a b c d q).size ≤ maxLockSetSize) :=
-  ⟨lockSet_endpointSend_size_le, lockSet_endpointReceive_size_le,
+  ⟨lockSet_endpointSend_size_le,
+   lockSet_endpointReceive_size_le,
    lockSet_endpointCall_size_le,
    lockSet_endpointReply_size_le,
    lockSet_replyRecv_size_le,

@@ -289,7 +289,7 @@ badges are valid because the badges at rest there are -- a conjunct of the
 bundle itself, not a hypothesis about the syscall's argument. -/
 theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -314,7 +314,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
         tcb.schedContextBinding ≠ .unbound) :
     ipcInvariantFull
       (endpointSendDualWithCapsOnCore endpointId sender payload
-        receiverSlotBase executingCore st).1 := by
+        executingCore st).1 := by
   have hBare := endpointSendDualOnCore_preserves_ipcInvariantFull endpointId sender
     payload executingCore st hInv
     hObjInv hAllBudgetsNone hFreshSender hSendTailFresh hSenderNotRecv
@@ -339,9 +339,9 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
         | (rename_i hT
            obtain ⟨stR, caps, hO, hS, hCaps, hOr⟩ := receiveTransferCaps_frame hT
            have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_eq hO hBare
-           rcases hOr with rfl | hU
+           rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
            · exact hR
-           · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ _ receiverSlotBase _ stR _ _ hR
+           · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ _ _ _ stR _ _ hR
                (hO ▸ hBareInv) (fun i c hc b hb => hCaps hBare.badgeWellFormed.2 i c hc b hb) hU)
 
 open SeLe4n.Model.SystemState in
@@ -351,7 +351,7 @@ theorem SM6.D's scope note claimed and cited the retired single-core function
 for; it is now about the function the live `.send` dispatch actually runs. -/
 theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -377,10 +377,10 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (c : CoreId) :
     ipcInvariantFull_perCore
       (endpointSendDualWithCapsOnCore endpointId sender payload
-        receiverSlotBase executingCore st).1 c :=
+        executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull endpointId sender payload
-      receiverSlotBase executingCore st
+      executingCore st
       (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone
       hFreshSender hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound)
 

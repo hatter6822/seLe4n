@@ -561,28 +561,6 @@ private def sad028_validateVSpaceMapPermsDeviceExec : IO Unit := do
   let resultRam := validateVSpaceMapPermsForMemoryKind pa { execute := true } [ramRegion]
   expect "SAD-028c ram+exec ok" resultRam.isOk
 
-/-- SAD-029: decodeExtraCapAddrs — basic and truncation behavior. -/
-private def sad029_decodeExtraCapAddrs : IO Unit := do
-  -- Set up a stub with 4 msgRegs, length=2, extraCaps=2
-  -- Extra caps start at index=length (2), so indices 2,3
-  let stub : SyscallDecodeResult :=
-    { capAddr := CPtr.ofNat 0
-      msgInfo := { length := 2, extraCaps := 2, label := 0 }
-      syscallId := .send
-      msgRegs := #[⟨10⟩, ⟨20⟩, ⟨30⟩, ⟨40⟩] }
-  let caps := decodeExtraCapAddrs stub
-  expect "SAD-029a extraCaps count" (caps.size == 2)
-  expect "SAD-029b cap0 value" (caps[0]!.toNat == 30)
-  expect "SAD-029c cap1 value" (caps[1]!.toNat == 40)
-  -- Truncation: extraCaps=2 but only 1 register available after length
-  let stubShort : SyscallDecodeResult :=
-    { capAddr := CPtr.ofNat 0
-      msgInfo := { length := 2, extraCaps := 2, label := 0 }
-      syscallId := .send
-      msgRegs := #[⟨10⟩, ⟨20⟩, ⟨30⟩] }  -- only index 2 available, not 3
-  let capsShort := decodeExtraCapAddrs stubShort
-  expect "SAD-029d truncated to 1" (capsShort.size == 1)
-
 -- ============================================================================
 -- AK4-A.7 (R-ABI-C01): IPC-buffer overflow merge regression tests
 -- ============================================================================
@@ -802,6 +780,29 @@ private def ipcBufferReadCarriesIntraPageOffset : IO Unit := do
     expect "a slot crossing into an unmapped page fails closed"
       (e == .ipcBufferVAddrUnmapped)
 
+/-- SAD-029: a sender's extra capability addresses are its IPC buffer's
+`caps_or_badges` words (seL4's `lookupExtraCaps`), never message registers;
+the count is capped at three and a thread whose buffer the kernel cannot read
+names none. -/
+private def sad029_senderExtraCapAddrs : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let st0 := buildIpcDecodeState 3 2 #[⟨10⟩, ⟨20⟩, ⟨30⟩, ⟨40⟩] (mapIpcBuffer := false)
+  match st0.getTcb? tid with
+  | none => throw <| IO.userError "SAD-029 fixture has no thread"
+  | some tcb0 =>
+    expect "SAD-029a no readable buffer, no addresses"
+      (SeLe4n.Kernel.senderExtraCapAddrs st0 tcb0 2).isEmpty
+    let st := SeLe4n.Testing.withSenderCapAddrs st0 tid #[CPtr.ofNat 30, CPtr.ofNat 40, CPtr.ofNat 50]
+    match st.getTcb? tid with
+    | none => throw <| IO.userError "SAD-029 fixture lost its thread"
+    | some tcb =>
+      let caps := SeLe4n.Kernel.senderExtraCapAddrs st tcb 2
+      expect "SAD-029b two addresses" (caps.size == 2)
+      expect "SAD-029c cap0 from caps_or_badges[0]" (caps[0]!.toNat == 30)
+      expect "SAD-029d cap1 from caps_or_badges[1]" (caps[1]!.toNat == 40)
+      expect "SAD-029e the count is capped at three"
+        ((SeLe4n.Kernel.senderExtraCapAddrs st tcb 7).map (·.toNat) == #[30, 40, 50])
+
 /-- Run AK4-A IPC-buffer merge regression tests. -/
 private def runAk4aTests : IO Unit := do
   IO.println "--- AK4-A: IPC-buffer merge (R-ABI-C01) ---"
@@ -854,7 +855,7 @@ private def runSyscallArgDecodeTests : IO Unit := do
   sad027_noArgDecoders
   -- Security-relevant validation
   sad028_validateVSpaceMapPermsDeviceExec
-  sad029_decodeExtraCapAddrs
+  sad029_senderExtraCapAddrs
 
 end SeLe4n.Testing.DecodingSuite
 

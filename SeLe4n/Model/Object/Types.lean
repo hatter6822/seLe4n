@@ -1026,48 +1026,44 @@ theorem checkBounds_iff_bounded (msg : IpcMessage) :
 
 end IpcMessage
 
-/-- M-D01: Result of attempting to unwrap a single transferred capability
-into the receiver's CSpace during IPC rendezvous.
-
-seL4 semantics: each extra cap in the message is independently unwrapped.
-Failures on one cap do not abort the transfer of subsequent caps. -/
+/-- M-D01: **what the transfer did with one extra capability** — seL4's
+`transferCaps` either unwraps a capability to the endpoint the message was sent
+on (only its badge is delivered, in the receiver's IPC buffer) or installs a
+derivation of it in the receiver's receive slot.  The transfer stops at the
+first capability it can do neither with, so the results are the capabilities it
+processed, in order. -/
 inductive CapTransferResult where
-  /-- Successfully installed in the receiver's CSpace at the given CNode and slot. -/
+  /-- Installed in the receive slot: the CNode and slot it was installed at. -/
   | installed (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
-  /-- No empty slot available in the receiver's CNode (receiver CSpace full). -/
-  | noSlot
-  /-- The endpoint capability lacks the Grant right — transfer silently skipped. -/
-  | grantDenied
-  /-- The source slot was destroyed between resolution and unwrap — deleted,
-  retyped away, or swept by a revoke — so installing would attach the copy
-  beneath a derivation node no slot points at, where no revoke could reach it.
-  The transfer is cancelled instead; the receiver simply gets one fewer
-  capability, exactly as with `.grantDenied`. -/
-  | sourceRevoked
+  /-- A capability to the endpoint the message was sent on: its badge was
+  written to the receiver's `caps_or_badges` word, and no capability was
+  installed (seL4's `setExtraBadge` and `capsUnwrapped`). -/
+  | unwrapped (badge : SeLe4n.Badge)
   deriving Repr, DecidableEq
 
-/-- M-D01: Aggregated results of unwrapping all extra capabilities in an
-IPC message. One entry per cap in the array resolved at the rendezvous. -/
+/-- M-D01: the capabilities a transfer processed, one entry each, in order. -/
 structure CapTransferSummary where
   results : Array CapTransferResult := #[]
   deriving Repr, DecidableEq
 
 namespace CapTransferSummary
 
-/-- The number of capabilities **actually installed** in the receiver's
-CSpace — the `.installed` entries only.  `.noSlot` and `.grantDenied`
-entries record caps the transfer did *not* deliver, so they must not be
-counted toward anything the receiver is told arrived (PR #866 round-2
-review: the return frame's `extraCaps` reads this, never the requested
-count). -/
-def installedCount (s : CapTransferSummary) : Nat :=
-  s.results.foldl
-    (fun n r => match r with
-      | .installed _ _ => n + 1
-      | _ => n) 0
+/-- One processed capability's contribution to the report: the count, and the
+unwrapped bit at its index. -/
+def capInfoStep : Nat × Nat → CapTransferResult → Nat × Nat
+  | (n, m), .installed _ _ => (n + 1, m)
+  | (n, m), .unwrapped _ => (n + 1, m + 2 ^ n)
 
-@[simp] theorem installedCount_empty :
-    installedCount { results := #[] } = 0 := rfl
+/-- **The transfer's report, as the receiver's `MessageInfo` carries it**
+(seL4's `transferCaps` answer): the number of extra capabilities processed
+(`extraCaps`, the low two bits) and which of them were unwrapped
+(`capsUnwrapped`, the next three).  Never the sender's requested count: a
+transfer that stops at its first capability reports none. -/
+def capInfo (s : CapTransferSummary) : Nat :=
+  let p := s.results.foldl capInfoStep (0, 0)
+  p.1 + 4 * p.2
+
+@[simp] theorem capInfo_empty : capInfo { results := #[] } = 0 := rfl
 
 end CapTransferSummary
 
@@ -4855,6 +4851,9 @@ end SyscallId
     Encodes the metadata carried in the message-info register (x1 on ARM64):
     - `length`: number of message registers used (0..120)
     - `extraCaps`: number of extra capabilities transferred (0..3)
+    - `capsUnwrapped`: which of the extra capabilities the transfer unwrapped
+      to their badge (bit `i` for capability `i`, 0..7), seL4's
+      `capsUnwrapped`; the kernel sets it on delivery and ignores a sender's
     - `label`: user-specified label/tag for message discrimination
 
 AK7-D (F-M02 / MEDIUM): The raw constructor `MessageInfo.mk` bypasses the
@@ -4867,14 +4866,19 @@ structure MessageInfo where
   length    : Nat
   extraCaps : Nat
   label     : Nat
+  capsUnwrapped : Nat := 0
   deriving Repr, DecidableEq, Inhabited
 
 namespace MessageInfo
 
-/-- V2-E (M-API-3): Maximum label value — 2^20 - 1 (20 bits), matching seL4's
-    `seL4_MessageInfo_t` label field width. The previous model allowed unbounded
-    labels (55 bits), which diverged from seL4's 20-bit limit. -/
-def maxLabel : Nat := (1 <<< 20) - 1
+/-- Maximum label value — 2^52 - 1 (52 bits): seL4's 64-bit
+    `seL4_MessageInfo_t` puts the label in bits 12-63, the whole word above
+    `capsUnwrapped`, so every label a register can hold is a label. -/
+def maxLabel : Nat := (1 <<< 52) - 1
+
+/-- The largest `capsUnwrapped` field: one bit for each of the `maxExtraCaps`
+    extra capabilities (seL4's 3-bit field). -/
+def maxCapsUnwrapped : Nat := (1 <<< 3) - 1
 
 /-- AK7-D (F-M02 / MEDIUM): Checked constructor that validates each field
 against its seL4 bound before returning a `MessageInfo`.
@@ -4882,7 +4886,7 @@ against its seL4 bound before returning a `MessageInfo`.
 Enforces:
 - `length ≤ maxMessageRegisters` (120 registers)
 - `extraCaps ≤ maxExtraCaps` (3 extra capabilities)
-- `label ≤ maxLabel` (20-bit label, 2^20 − 1)
+- `label ≤ maxLabel` (52-bit label, 2^52 − 1)
 
 Returns `none` on any bound violation, matching the behavior of the
 validating `decode` path. Prefer this over `MessageInfo.mk` anywhere the
@@ -4931,42 +4935,62 @@ verify the predicate explicitly. -/
 def wellFormed (mi : MessageInfo) : Prop :=
   mi.length ≤ maxMessageRegisters ∧
   mi.extraCaps ≤ maxExtraCaps ∧
-  mi.label ≤ maxLabel
-
+  mi.label ≤ maxLabel ∧
+  mi.capsUnwrapped ≤ maxCapsUnwrapped
 instance (mi : MessageInfo) : Decidable mi.wellFormed :=
   inferInstanceAs (Decidable (_ ∧ _))
 
 /-- AK7-D (F-M02): Output of `mkChecked` is well-formed. -/
 theorem mkChecked_wellFormed {length extraCaps label : Nat} {mi : MessageInfo}
-    (h : mkChecked length extraCaps label = some mi) : mi.wellFormed :=
-  mkChecked_bounded h
+    (h : mkChecked length extraCaps label = some mi) : mi.wellFormed := by
+  unfold mkChecked at h
+  split at h
+  · rename_i hAll
+    cases h
+    exact ⟨hAll.1, hAll.2.1, hAll.2.2, Nat.zero_le _⟩
+  · cases h
 
 /-- Encode a MessageInfo into a single register word.
-    Bit layout (seL4 convention):
+    Bit layout (seL4's `seL4_MessageInfo_t`):
     - bits  0..6  : length (7 bits, max 120)
     - bits  7..8  : extraCaps (2 bits, max 3)
-    - bits  9..28 : label (20 bits, max 2^20 - 1)
-    This matches seL4's `seL4_MessageInfo_t` layout. -/
+    - bits  9..11 : capsUnwrapped (3 bits)
+    - bits 12..63 : label (52 bits, max 2^52 - 1) -/
 @[inline] def encode (mi : MessageInfo) : Nat :=
-  mi.length ||| (mi.extraCaps <<< 7) ||| (mi.label <<< 9)
+  mi.length ||| (mi.extraCaps <<< 7) ||| (mi.capsUnwrapped <<< 9) ||| (mi.label <<< 12)
 
 /-- Decode a raw word into MessageInfo fields by extracting bit fields.
     Returns `none` if the length or extraCaps fields exceed their bounds,
-    or if the label exceeds the 20-bit maximum (V2-E/M-API-3). -/
+    or if the label exceeds the 52-bit maximum (only a word past 64 bits
+    can).  The
+    `capsUnwrapped` field is read as seL4 reads it; a send ignores it, since
+    the transfer that delivers a message sets it. -/
 @[inline] def decode (w : Nat) : Option MessageInfo :=
   let length    := w &&& 0x7F          -- bits 0..6
   let extraCaps := (w >>> 7) &&& 0x3   -- bits 7..8
-  let label     := w >>> 9             -- bits 9+
+  let capsUnwrapped := (w >>> 9) &&& 0x7 -- bits 9..11
+  let label     := w >>> 12            -- bits 12+
   if length ≤ maxMessageRegisters && extraCaps ≤ Model.maxExtraCaps && label ≤ maxLabel then
-    some { length, extraCaps, label }
+    some { length, extraCaps, label, capsUnwrapped }
   else
     none
 
 instance : ToString MessageInfo where
-  toString mi := s!"MessageInfo(len={mi.length}, caps={mi.extraCaps}, label={mi.label})"
+  toString mi :=
+    s!"MessageInfo(len={mi.length}, caps={mi.extraCaps}, unwrapped={mi.capsUnwrapped}, label={mi.label})"
+
+/-- `decode`'s fields as arithmetic on the word. -/
+theorem decode_fields (w : Nat) :
+    w &&& 0x7F = w % 128 ∧ (w >>> 7) &&& 0x3 = w / 128 % 4 ∧
+      (w >>> 9) &&& 0x7 = w / 512 % 8 ∧ w >>> 12 = w / 4096 := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.and_two_pow_sub_one_eq_mod w 7
+  · rw [Nat.shiftRight_eq_div_pow]; exact Nat.and_two_pow_sub_one_eq_mod _ 2
+  · rw [Nat.shiftRight_eq_div_pow]; exact Nat.and_two_pow_sub_one_eq_mod _ 3
+  · exact Nat.shiftRight_eq_div_pow w 12
 
 /-- AK7-D (F-M02): `decode` produces well-formed `MessageInfo` values —
-any `MessageInfo` surfaced from a raw register word satisfies all three
+any `MessageInfo` surfaced from a raw register word satisfies all four
 seL4 bounds. -/
 theorem decode_wellFormed {w : Nat} {mi : MessageInfo}
     (h : MessageInfo.decode w = some mi) : mi.wellFormed := by
@@ -4976,98 +5000,23 @@ theorem decode_wellFormed {w : Nat} {mi : MessageInfo}
   · rename_i hAll
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hAll
     cases h
-    refine ⟨hAll.1.1, ?_, hAll.2⟩
-    show _ ≤ maxExtraCaps
-    exact hAll.1.2
+    refine ⟨hAll.1.1, hAll.1.2, hAll.2, ?_⟩
+    show (w >>> 9) &&& 0x7 ≤ maxCapsUnwrapped
+    rw [(decode_fields w).2.2.1]; unfold maxCapsUnwrapped; omega
   · cases h
 
--- ============================================================================
--- Encode/decode round-trip proof (bitwise extraction lemmas)
--- ============================================================================
+/-- A field below `2^k` and a field shifted past it are added, not overlapped. -/
+private theorem or_shiftLeft_eq_add (x y k : Nat) (h : x < 2 ^ k) :
+    x ||| (y <<< k) = x + y * 2 ^ k := by
+  rw [Nat.or_comm, ← Nat.shiftLeft_add_eq_or_of_lt h, Nat.shiftLeft_eq]; omega
 
-/-- Bitwise extraction: AND with 0x7F (127) recovers the low 7-bit field
-    when the field value fits in 7 bits. -/
-private theorem and_mask_127 (a b c : Nat) (ha : a < 128) :
-    (a ||| (b <<< 7) ||| (c <<< 9)) &&& 0x7F = a := by
-  apply Nat.eq_of_testBit_eq
-  intro i
-  simp only [Nat.testBit_and, Nat.testBit_or, Nat.testBit_shiftLeft]
-  by_cases hi : i < 7
-  · have h7 : ¬(7 ≤ i) := by omega
-    have h9 : ¬(9 ≤ i) := by omega
-    simp only [h7, h9, decide_false, Bool.false_and, Bool.or_false]
-    have hmask : (127 : Nat).testBit i = true := by
-      have : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 := by omega
-      rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
-    rw [hmask, Bool.and_true]
-  · have hmask : (127 : Nat).testBit i = false := by
-      apply Nat.testBit_lt_two_pow
-      calc (127 : Nat) < 2 ^ 7 := by decide
-        _ ≤ 2 ^ i := Nat.pow_le_pow_right (by omega) (by omega)
-    rw [hmask, Bool.and_false]
-    symm; apply Nat.testBit_lt_two_pow
-    calc a < 128 := ha
-      _ = 2 ^ 7 := by decide
-      _ ≤ 2 ^ i := Nat.pow_le_pow_right (by omega) (by omega)
-
-/-- Bitwise extraction: shift right 7 then AND with 0x3 recovers the 2-bit
-    extraCaps field from position [7..8]. -/
-private theorem shift7_and_mask_3 (a b c : Nat) (ha : a < 128) (hb : b < 4) :
-    ((a ||| (b <<< 7) ||| (c <<< 9)) >>> 7) &&& 0x3 = b := by
-  apply Nat.eq_of_testBit_eq
-  intro i
-  simp only [Nat.testBit_and, Nat.testBit_shiftRight, Nat.testBit_or, Nat.testBit_shiftLeft]
-  by_cases hi : i < 2
-  · have h7 : 7 ≤ 7 + i := by omega
-    have h9 : ¬(9 ≤ 7 + i) := by omega
-    simp only [h7, h9, decide_true, decide_false, Bool.true_and, Bool.false_and, Bool.or_false]
-    have ha_bit : a.testBit (7 + i) = false := by
-      apply Nat.testBit_lt_two_pow
-      calc a < 128 := ha
-        _ = 2 ^ 7 := by decide
-        _ ≤ 2 ^ (7 + i) := Nat.pow_le_pow_right (by omega) (by omega)
-    simp only [ha_bit, Bool.false_or]
-    have : (7 + i) - 7 = i := by omega
-    rw [this]
-    have hmask : (3 : Nat).testBit i = true := by
-      have : i = 0 ∨ i = 1 := by omega
-      rcases this with rfl | rfl <;> decide
-    rw [hmask, Bool.and_true]
-  · have hmask : (3 : Nat).testBit i = false := by
-      apply Nat.testBit_lt_two_pow
-      calc (3 : Nat) < 2 ^ 2 := by decide
-        _ ≤ 2 ^ i := Nat.pow_le_pow_right (by omega) (by omega)
-    rw [hmask, Bool.and_false]
-    symm; apply Nat.testBit_lt_two_pow
-    calc b < 4 := hb
-      _ = 2 ^ 2 := by decide
-      _ ≤ 2 ^ i := Nat.pow_le_pow_right (by omega) (by omega)
-
-/-- Bitwise extraction: shift right 9 recovers the label field from position [9..]. -/
-private theorem shift9_extracts_label (a b c : Nat) (ha : a < 128) (hb : b < 4) :
-    (a ||| (b <<< 7) ||| (c <<< 9)) >>> 9 = c := by
-  apply Nat.eq_of_testBit_eq
-  intro i
-  simp only [Nat.testBit_shiftRight, Nat.testBit_or, Nat.testBit_shiftLeft]
-  have h9 : 9 ≤ 9 + i := by omega
-  have h7 : 7 ≤ 9 + i := by omega
-  simp only [h9, h7, decide_true, Bool.true_and]
-  have ha_bit : a.testBit (9 + i) = false := by
-    apply Nat.testBit_lt_two_pow
-    calc a < 128 := ha
-      _ = 2 ^ 7 := by decide
-      _ ≤ 2 ^ (9 + i) := Nat.pow_le_pow_right (by omega) (by omega)
-  simp only [ha_bit, Bool.false_or]
-  have hb_bit : b.testBit ((9 + i) - 7) = false := by
-    have : (9 + i) - 7 = i + 2 := by omega
-    rw [this]
-    apply Nat.testBit_lt_two_pow
-    calc b < 4 := hb
-      _ = 2 ^ 2 := by decide
-      _ ≤ 2 ^ (i + 2) := Nat.pow_le_pow_right (by omega) (by omega)
-  simp only [hb_bit, Bool.false_or]
-  have : (9 + i) - 9 = i := by omega
-  rw [this]
+/-- The encoded word as arithmetic, under the field bounds. -/
+theorem encode_eq_arith (mi : MessageInfo) (hLen : mi.length < 128)
+    (hCaps : mi.extraCaps < 4) (hUnw : mi.capsUnwrapped < 8) :
+    encode mi = mi.length + mi.extraCaps * 128 + mi.capsUnwrapped * 512 + mi.label * 4096 := by
+  unfold encode
+  rw [or_shiftLeft_eq_add _ _ 7 (by omega), or_shiftLeft_eq_add _ _ 9 (by omega),
+    or_shiftLeft_eq_add _ _ 12 (by omega)]
 
 /-- Round-trip: encoding then decoding a MessageInfo recovers the original,
     provided the fields satisfy the seL4 message-info bounds.
@@ -5076,14 +5025,26 @@ private theorem shift9_extracts_label (a b c : Nat) (ha : a < 128) (hb : b < 4) 
 theorem encode_decode_roundtrip (mi : MessageInfo)
     (hLen : mi.length ≤ maxMessageRegisters)
     (hCaps : mi.extraCaps ≤ maxExtraCaps)
-    (hLabel : mi.label ≤ maxLabel := by omega) :
+    (hLabel : mi.label ≤ maxLabel := by omega)
+    (hUnw : mi.capsUnwrapped ≤ maxCapsUnwrapped := by omega) :
     MessageInfo.decode (MessageInfo.encode mi) = some mi := by
-  unfold encode decode
   have hLen128 : mi.length < 128 := by unfold maxMessageRegisters at hLen; omega
   have hCaps4 : mi.extraCaps < 4 := by unfold maxExtraCaps at hCaps; omega
-  rw [and_mask_127 mi.length mi.extraCaps mi.label hLen128]
-  rw [shift7_and_mask_3 mi.length mi.extraCaps mi.label hLen128 hCaps4]
-  rw [shift9_extracts_label mi.length mi.extraCaps mi.label hLen128 hCaps4]
+  have hUnw8 : mi.capsUnwrapped < 8 := by unfold maxCapsUnwrapped at hUnw; omega
+  unfold decode
+  rw [encode_eq_arith mi hLen128 hCaps4 hUnw8]
+  obtain ⟨h1, h2, h3, h4⟩ :=
+    decode_fields (mi.length + mi.extraCaps * 128 + mi.capsUnwrapped * 512 + mi.label * 4096)
+  simp only [h1, h2, h3, h4]
+  have e1 : (mi.length + mi.extraCaps * 128 + mi.capsUnwrapped * 512 + mi.label * 4096) % 128
+      = mi.length := by omega
+  have e2 : (mi.length + mi.extraCaps * 128 + mi.capsUnwrapped * 512 + mi.label * 4096) / 128 % 4
+      = mi.extraCaps := by omega
+  have e3 : (mi.length + mi.extraCaps * 128 + mi.capsUnwrapped * 512 + mi.label * 4096) / 512 % 8
+      = mi.capsUnwrapped := by omega
+  have e4 : (mi.length + mi.extraCaps * 128 + mi.capsUnwrapped * 512 + mi.label * 4096) / 4096
+      = mi.label := by omega
+  rw [e1, e2, e3, e4]
   have hCond : (decide (mi.length ≤ maxMessageRegisters) && decide (mi.extraCaps ≤ maxExtraCaps)
       && decide (mi.label ≤ maxLabel)) = true := by
     simp only [Bool.and_eq_true, decide_eq_true_eq]
@@ -5103,11 +5064,6 @@ structure SyscallDecodeResult where
   msgInfo      : MessageInfo
   syscallId    : SyscallId
   msgRegs      : Array SeLe4n.RegValue := #[]
-  /-- V2-F (M-API-5): Cap receive slot base for IPC cap transfer.
-      In seL4, this is specified by the receiver. Default `Slot.ofNat 0`
-      preserves backward compatibility. Production deployments should
-      extract this from the receiver's IPC buffer or syscall arguments. -/
-  capRecvSlot  : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
   /-- AK4-A.2 (R-ABI-C01): Number of message registers populated from inline
       GPRs (x2..x5 on ARM64 → 4). Both decoders
       (`decodeSyscallArgs`, `decodeSyscallArgsFromState`) set this to

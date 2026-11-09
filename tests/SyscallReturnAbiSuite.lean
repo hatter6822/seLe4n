@@ -83,8 +83,8 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Kernel.Architecture.blockedReturn_staged_in_waiter_frame
 #check @SeLe4n.Kernel.Architecture.blockedUnitReturn_staged_in_sender_frame
 -- PR #866 round-2 — the transfer-honesty surface (installed, never requested)
-#check @SeLe4n.Model.CapTransferSummary.installedCount
-#check @SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_le_installed
+#check @SeLe4n.Model.CapTransferSummary.capInfo
+#check @SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_le_capInfo
 #check @SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_zero
 -- RA.B.8 — the per-arm shape-coherence family (over the live dispatch arms)
 #check @SeLe4n.Kernel.dispatchArm_notificationWait_matches_returnShape
@@ -256,16 +256,18 @@ private def core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
 /-- The shared CNode with all the capabilities (the §3 notification cap,
 the endpoint and reply caps the blocked orderings need, and the 9h
 transfer pair: the no-grant endpoint cap + the payload cap).  Slot 0 is
-deliberately free — it is the default `capRecvSlot` the granted transfer
-installs into. -/
-private def sharedCn : SeLe4n.Model.CNode :=
+deliberately free — the receiver's receive path names it
+(`capsSendScenario`), so the granted transfer installs there. -/
+private def sharedCnOf (replyCap : Capability) : SeLe4n.Model.CNode :=
   (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
        (SeLe4n.Slot.ofNat epCapPtr, epCap),
-       (SeLe4n.Slot.ofNat replyCapPtr, replyCapability),
+       (SeLe4n.Slot.ofNat replyCapPtr, replyCap),
        (SeLe4n.Slot.ofNat selfTcbCapPtr, selfTcbCap),
        (SeLe4n.Slot.ofNat epCapNoGrantPtr, epCapNoGrant),
        (SeLe4n.Slot.ofNat payloadCapPtr, payloadCapability)]))
+
+private def sharedCn : SeLe4n.Model.CNode := sharedCnOf replyCapability
 
 /-- Two threads on two cores: `callerTid` current on the boot core (the
 thread that blocks), `peerTid` current on core 1 (the thread whose
@@ -299,10 +301,10 @@ completed `.call` rendezvous) linked to the reply object `peerTid` holds
 the capability for — the state from which `.reply` / `.replyRecv` deliver
 `.call`'s `.message` frame (§3.5: a call never returns at its own
 boundary). -/
-private def replyPendingState : SystemState :=
+private def replyPendingStateOf (cn : SeLe4n.Model.CNode) : SystemState :=
   let base := BootstrapBuilder.empty
     |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
-    |>.withObject callerCn (.cnode sharedCn)
+    |>.withObject callerCn (.cnode cn)
     |>.withObject ntfnId (.notification
         { state := .idle, 
           hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })
@@ -323,6 +325,13 @@ private def replyPendingState : SystemState :=
         { replyId := replyRid, callerCode := SeLe4n.ThreadId.optCode (some callerTid) })
     |>.build
   { base with scheduler := base.scheduler.setCurrentOnCore core1 (some peerTid) }
+
+private def replyPendingState : SystemState := replyPendingStateOf sharedCn
+
+/-- The reply capability without the grant right: seL4's `doReplyTransfer`
+transfers no capability through it. -/
+private def replyCapabilityNoGrant : Capability :=
+  { replyCapability with rights := AccessRightSet.ofList [.read, .write] }
 
 /-- The `dispatchFromAbi` driver generalised to an executing core and the
 full inline register window — the RA.B.5b scenarios interleave syscalls
@@ -523,6 +532,24 @@ private def replyDeliveryScenario :
     | none => false
   pure (ready, stagedFrame st1 callerTid)
 
+/-- 9i: a reply transfers capabilities as seL4's `doReplyTransfer`.  The peer
+replies `[21, 22]` with ONE extra capability (`payloadCapPtr`, named in its IPC
+buffer's `caps_or_badges[0]`) through the reply cap in `cn`; the caller's
+buffer names slot 0 of its CNode as its receive slot when `withSlot`.  Returns
+(the caller's staged frame, receive slot 0 occupied?). -/
+private def replyCapsScenario (cn : SeLe4n.Model.CNode) (withSlot : Bool) :
+    Except KernelError (Kernel.Architecture.SyscallReturnFrame × Bool) := do
+  let st0 := replyPendingStateOf cn
+  let st0 := if withSlot then SeLe4n.Testing.withReceiveSlot st0 callerTid ⟨0x7701⟩ 0 else st0
+  let st0 := SeLe4n.Testing.withSenderCapAddrs st0 peerTid #[SeLe4n.CPtr.ofNat payloadCapPtr]
+  let msgInfoRaw : UInt64 := (2 + (1 <<< 7) : Nat).toUInt64
+  let (_, st1) ← dispatchFromAbiOn core1
+    SyscallId.reply.toNat msgInfoRaw replyCapPtr.toUInt64 21 22 0 st0
+  let slot0Occupied := match st1.objects[callerCn]? with
+    | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
+    | _ => false
+  pure (stagedFrame st1 callerTid, slot0Occupied)
+
 /-- 9e: `.replyRecv` — the compound arm's reply leg stages the previous
 caller's frame through `endpointReplyRecvOnCore`'s own composition (a distinct call
 site from 9d's `.reply` arm); the receive leg blocks the server (empty
@@ -573,15 +600,19 @@ receive slot.  Returns (staged frame, receive-slot-0 occupied?). -/
 private def capsSendScenario (epPtr : Nat) :
     Except KernelError
       (Kernel.Architecture.SyscallReturnFrame × Bool) := do
+  -- The receiver's IPC buffer names slot 0 of its CNode as its receive slot
+  -- (seL4's `seL4_SetCapReceivePath`).
+  let st0 := SeLe4n.Testing.withReceiveSlot twoThreadState callerTid ⟨0x7701⟩ 0
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
-    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 twoThreadState
+    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 st0
   if out1 != .blocks then throw .illegalState
-  -- msgInfo {length := 1, extraCaps := 1}: MR0 (x2) is the body word 7,
-  -- MR1 (x3) the extra-cap address (`decodeExtraCapAddrs` reads
-  -- `msgRegs[length + i]`).
+  -- msgInfo {length := 1, extraCaps := 1}: MR0 (x2) is the body word 7, and
+  -- the extra-cap address is the sender's IPC buffer's `caps_or_badges[0]`
+  -- (seL4's `lookupExtraCaps`, `senderExtraCapAddrs`).
   let msgInfoRaw : UInt64 := (1 + (1 <<< 7) : Nat).toUInt64
+  let st1 := SeLe4n.Testing.withSenderCapAddrs st1 peerTid #[SeLe4n.CPtr.ofNat payloadCapPtr]
   let (_, st2) ← dispatchFromAbiOn core1
-    SyscallId.send.toNat msgInfoRaw epPtr.toUInt64 7 payloadCapPtr.toUInt64 0 st1
+    SyscallId.send.toNat msgInfoRaw epPtr.toUInt64 7 0 0 st1
   let slot0Occupied := match st2.objects[callerCn]? with
     | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
     | _ => false
@@ -932,6 +963,27 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         (frame.x1 == (1 + (1 <<< 7) : Nat).toUInt64)
       assertBool "9h positive control: the transferred cap landed in receive slot 0"
         slot0
+  -- 9i — a reply transfers capabilities (seL4's `doReplyTransfer`, gated on
+  -- the reply capability's grant right, into the caller's receive slot)
+  match replyCapsScenario sharedCn true with
+  | .error e => assertBool s!"9i dispatches (got .error {reprStr e})" false
+  | .ok (frame, slot0) => do
+      assertBool "9i: a granting reply installs its extra cap into the caller's receive slot"
+        slot0
+      assertBool "9i: the caller's staged x1 reports it (length 2, extraCaps 1)"
+        (frame.x1 == (2 + (1 <<< 7) : Nat).toUInt64)
+      assertBool "9i: the reply's words still deliver (x2 = 21, x3 = 22)"
+        (frame.x2 == 21 && frame.x3 == 22)
+  match replyCapsScenario (sharedCnOf replyCapabilityNoGrant) true with
+  | .error e => assertBool s!"9i no-grant dispatches (got .error {reprStr e})" false
+  | .ok (frame, slot0) => do
+      assertBool "9i control: a reply cap without grant transfers nothing" (!slot0)
+      assertBool "9i control: ...and the staged x1 reports no extra cap" (frame.x1 == 2)
+  match replyCapsScenario sharedCn false with
+  | .error e => assertBool s!"9i no-slot dispatches (got .error {reprStr e})" false
+  | .ok (frame, slot0) => do
+      assertBool "9i control: a caller whose buffer names no receive slot takes nothing" (!slot0)
+      assertBool "9i control: ...and the staged x1 reports no extra cap" (frame.x1 == 2)
 
 -- ============================================================================
 -- §10  WS-SM SM9.A.10 — the audit reads return their computed word, end to end
@@ -1088,7 +1140,7 @@ alone, and the field that comes back non-zero — holding `2^(j - shift)` and
 re-encoding to the same word — owns it.  A shift or width changed in the
 decoder therefore changes the table even if nobody edits a constant. -/
 
-private def abiLayoutFields : List String := ["length", "extraCaps", "label"]
+private def abiLayoutFields : List String := ["length", "extraCaps", "capsUnwrapped", "label"]
 
 /-- Which field owns bit `j`, decided by decoding `2^j` alone and requiring the
 round trip; `reserved` for a bit the decoder refuses. -/
@@ -1097,11 +1149,12 @@ private def abiLayoutBitOwner (j : Nat) : String :=
   | none => "reserved"
   | some mi =>
     if MessageInfo.encode mi != 2 ^ j then "inconsistent"
-    else match mi.length != 0, mi.extraCaps != 0, mi.label != 0 with
-      | true, false, false => "length"
-      | false, true, false => "extraCaps"
-      | false, false, true => "label"
-      | _, _, _ => "inconsistent"
+    else match mi.length != 0, mi.extraCaps != 0, mi.capsUnwrapped != 0, mi.label != 0 with
+      | true, false, false, false => "length"
+      | false, true, false, false => "extraCaps"
+      | false, false, true, false => "capsUnwrapped"
+      | false, false, false, true => "label"
+      | _, _, _, _ => "inconsistent"
 
 /-- A field's shift and width, read off the bit ownership — or `noncontiguous`
 if its bits do not form one run. -/
@@ -1278,6 +1331,12 @@ private def runDeclassifiedBadgeDeliveryWitnesses : IO Unit := do
 private def rxBufferPA : Nat := 0x10_1000
 /-- The sender's IPC-buffer frame (`peerTid`'s buffer at VA 8192). -/
 private def txBufferPA : Nat := 0x10_2000
+/-- Where each buffer's overflow slot 0 (message register 4) is: past the
+`tag` word and the four `msg` words carried in registers. -/
+private def rxOverflowPA : Nat :=
+  rxBufferPA + 8 * Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord
+private def txOverflowPA : Nat :=
+  txBufferPA + 8 * Kernel.Architecture.IpcBufferRead.ipcBufferOverflowBaseWord
 
 /-- The three words the sender wrote past its four inline registers. -/
 private def overflowWords : List UInt64 := [0x55, 0x66, 0x77]
@@ -1327,9 +1386,9 @@ private def overflowSendRun (rxWrite sync : Bool) :
 
 /-- "RAM" at the sender's frame: its three overflow words at their slots. -/
 private def senderRamWordAt (pa : SeLe4n.PAddr) : UInt64 :=
-  if pa.toNat = txBufferPA then 0x55
-  else if pa.toNat = txBufferPA + 8 then 0x66
-  else if pa.toNat = txBufferPA + 16 then 0x77
+  if pa.toNat = txOverflowPA then 0x55
+  else if pa.toNat = txOverflowPA + 8 then 0x66
+  else if pa.toNat = txOverflowPA + 16 then 0x77
   else 0
 
 /-- WS-ZA ZA5.2: the other arrival order.  The sender sends seven registers to
@@ -1362,14 +1421,14 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
   | .error e => assertBool s!"12: the overflow send runs (got .error {reprStr e})" false
   | .ok (frame, writes, addrs) => do
       assertBool "12: the sender's three overflow slots resolve to its RAM frame"
-        (addrs == [SeLe4n.PAddr.ofNat txBufferPA, SeLe4n.PAddr.ofNat (txBufferPA + 8),
-                   SeLe4n.PAddr.ofNat (txBufferPA + 16)])
+        (addrs == [SeLe4n.PAddr.ofNat txOverflowPA, SeLe4n.PAddr.ofNat (txOverflowPA + 8),
+                   SeLe4n.PAddr.ofNat (txOverflowPA + 16)])
       assertBool "12: the receiver's inline window is the sender's first four registers"
         (frame.x2 == 1 && frame.x3 == 2 && frame.x4 == 3 && frame.x5 == 4)
       assertBool "12: the three words past the fourth are stored into the receiver's buffer, in order"
-        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
-                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0x66,
-                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxOverflowPA) 0x55,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 8)) 0x66,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 16)) 0x77])
       assertBool "12: ...and the frame's length counts them: seven registers delivered"
         ((SeLe4n.Model.MessageInfo.decode frame.x1.toNat).map (·.length) == some 7)
   -- CONTROL: the same send without the entry's RAM read — the retired reading.
@@ -1379,8 +1438,8 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
   | .error e => assertBool s!"12 CONTROL: the unsynced send runs (got .error {reprStr e})" false
   | .ok (_, writes, _) =>
       assertBool "12 CONTROL: without the RAM read the receiver is handed the model's zeroes"
-        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0, .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0,
-                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0])
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxOverflowPA) 0, .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 8)) 0,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 16)) 0])
   -- THE SEAM: the same send through the atomic step the hardware entry commits
   -- surfaces the three stores to the runtime and commits a state that owes none.
   match dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
@@ -1391,9 +1450,9 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
         SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
         0 0 0 0 (syncSenderOverflow st1 sevenRegisters)
       assertBool "12 SEAM: the step hands the runtime the three user-word stores"
-        (SeLe4n.Testing.ledgerWrites r.2.2.2.2.2.2.1 == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
-                             .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0x66,
-                             .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
+        (SeLe4n.Testing.ledgerWrites r.2.2.2.2.2.2.1 == [.storeUserWord (SeLe4n.PAddr.ofNat rxOverflowPA) 0x55,
+                             .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 8)) 0x66,
+                             .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 16)) 0x77])
       assertBool "12 SEAM: ...and the state it commits owes no physical write"
         (SeLe4n.Testing.pendingWrites stC).isEmpty
   -- WS-ZA ZA5.2: the receive that takes a blocked sender reads the sender's
@@ -1403,21 +1462,21 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
   | .error e => assertBool s!"12 BLOCKED SENDER: the send-then-receive runs (got .error {reprStr e})" false
   | .ok (writes, addrs) => do
       assertBool "12 BLOCKED SENDER: the receive's entry reads the blocked sender's three overflow slots"
-        (addrs == [SeLe4n.PAddr.ofNat txBufferPA, SeLe4n.PAddr.ofNat (txBufferPA + 8),
-                   SeLe4n.PAddr.ofNat (txBufferPA + 16)])
+        (addrs == [SeLe4n.PAddr.ofNat txOverflowPA, SeLe4n.PAddr.ofNat (txOverflowPA + 8),
+                   SeLe4n.PAddr.ofNat (txOverflowPA + 16)])
       assertBool "12 BLOCKED SENDER: ...and the receiver is stored the words the sender wrote"
-        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
-                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0x66,
-                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxOverflowPA) 0x55,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 8)) 0x66,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 16)) 0x77])
   -- CONTROL: an entry that reads the caller's slots alone hands the receiver
   -- the model's zeroes, so the sender's read is what delivers its words.
   match blockedSenderReceiveRun false with
   | .error e => assertBool s!"12 BLOCKED SENDER CONTROL: the run (got .error {reprStr e})" false
   | .ok (writes, _) =>
       assertBool "12 BLOCKED SENDER CONTROL: without the sender's read the receiver is handed zeroes"
-        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0,
-                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0,
-                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0])
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxOverflowPA) 0,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 8)) 0,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxOverflowPA + 16)) 0])
   -- WS-ZA ZA5.2: the runs the entry reads are the slots the decode reads, one
   -- per contiguous stretch of a page.  The sender's three slots in one page are
   -- one run; a buffer two words short of a page end, the next page mapped at the
@@ -1428,11 +1487,11 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
       let runs := Kernel.Architecture.IpcBufferRead.overflowRuns st0 tcb
         (Kernel.Architecture.IpcBufferRead.overflowStop sevenRegisters)
       assertBool "12 RUNS: three slots in one page are one run"
-        (runs == [(SeLe4n.PAddr.ofNat txBufferPA, 3)])
+        (runs == [(SeLe4n.PAddr.ofNat txOverflowPA, 3)])
       assertBool "12 RUNS: ...naming exactly the slots the decode reads"
         (Kernel.Architecture.IpcBufferRead.expandRuns runs ==
           Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st0 peerTid sevenRegisters)
-      let tcbS := { tcb with ipcBuffer := SeLe4n.VAddr.ofNat (8192 + 4096 - 16) }
+      let tcbS := { tcb with ipcBuffer := SeLe4n.VAddr.ofNat (8192 + 4096 - 16 - 40) }
       let stS : SystemState :=
         match st0.objects[callerVsp]? with
         | some (.vspaceRoot root) =>
@@ -1462,7 +1521,7 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
      stC.machine.entryWordCount == 0 && stC.machine.entryWordBytes.size == 0)
   assertBool "12: ...and leave model memory unwritten"
     ((List.range 3).all fun i =>
-      Kernel.Architecture.readUInt64 stR.machine.memory (SeLe4n.PAddr.ofNat (txBufferPA + 8 * i)) == 0)
+      Kernel.Architecture.readUInt64 stR.machine.memory (SeLe4n.PAddr.ofNat (txOverflowPA + 8 * i)) == 0)
   -- A fault message's width: thirteen words (`unknownSyscall`) staged for a woken
   -- handler write nine words past the fourth — the delivery is the one every
   -- wake shares, so a fault handler reads every word the model encodes.
@@ -1479,7 +1538,7 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
   assertBool "12: a thirteen-word delivery stores its nine words past the fourth"
     (SeLe4n.Testing.pendingWrites stD ==
       (List.range 9).map (fun i => Kernel.Architecture.PhysicalWrite.storeUserWord
-        (SeLe4n.PAddr.ofNat (rxBufferPA + 8 * i)) (104 + i).toUInt64))
+        (SeLe4n.PAddr.ofNat (rxOverflowPA + 8 * i)) (104 + i).toUInt64))
   assertBool "12: ...and the handler's frame reports thirteen"
     ((SeLe4n.Model.MessageInfo.decode (stagedFrame stD callerTid).x1.toNat).map (·.length) == some 13)
   -- CONTROL: a receiver whose buffer is read-only receives only the inline four.

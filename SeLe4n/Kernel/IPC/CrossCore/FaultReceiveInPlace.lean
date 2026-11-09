@@ -358,13 +358,12 @@ caller left blocked on the reply is owed no completion frame, and staging the
 receiver's message writes `performFaultReceiveDelivered`'s state, the fault's
 words read from the caller's TCB. -/
 theorem receiveFaultTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (root : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (f : Fault)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (f : Fault)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
     (hG : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true)
     (hF : sTcb.ipcFaultSend = true) (hf : sTcb.faultWords.fault? = some f) :
-    endpointReceiveDualWithCapsOnCore endpointId receiver (some rid) root slot core st =
+    endpointReceiveDualWithCapsOnCore endpointId receiver (some rid) core st =
         (receiveCallTakeState st endpointId s sTcb receiver rid,
           .ok (s, { results := #[] }, none)) ∧
       applyReceiveRendezvousHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)

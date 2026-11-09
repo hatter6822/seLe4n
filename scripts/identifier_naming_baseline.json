@@ -413,15 +413,6 @@
  "an10_d_hasSufficientBudget_zero": {
   "tests/An10CascadeSuite.lean": 2
  },
- "an10_d_lookupCspaceRoot_empty": {
-  "tests/An10CascadeSuite.lean": 2
- },
- "an10_d_lookupCspaceRoot_populated": {
-  "tests/An10CascadeSuite.lean": 2
- },
- "an10_d_lookupCspaceRoot_wrong_kind": {
-  "tests/An10CascadeSuite.lean": 2
- },
  "an10_d_typed_helper_equivalence": {
   "tests/An10CascadeSuite.lean": 2
  },

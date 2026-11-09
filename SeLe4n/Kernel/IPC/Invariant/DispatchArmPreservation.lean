@@ -5886,9 +5886,9 @@ theorem recordPhysicalWrites_donationChainFrame (st st' : SystemState)
 
 /-- Delivery staging is `writeReturnFrameToTcb` then a ledger record, or the identity. -/
 theorem stageDeliveredMessage_preserves_ipcInvariantFull
-    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (Architecture.stageDeliveredMessage st tid installedCaps) := by
+    ipcInvariantFull (Architecture.stageDeliveredMessage st tid capInfo) := by
   unfold Architecture.stageDeliveredMessage
   cases hLk : st.getTcb? tid with
   | none => exact hInv
@@ -5906,22 +5906,22 @@ theorem stageDeliveredMessage_preserves_ipcInvariantFull
 
 /-- Woken-delivery staging: `stageDeliveredMessage` on the woken thread. -/
 theorem stageWokenDelivery_preserves_ipcInvariantFull
-    (st : SystemState) (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat)
+    (st : SystemState) (woken? : Option SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (Architecture.stageWokenDelivery st woken? installedCaps) := by
+    ipcInvariantFull (Architecture.stageWokenDelivery st woken? capInfo) := by
   cases woken? with
   | none => exact hInv
   | some tid =>
       rw [Architecture.stageWokenDelivery_some]
-      exact stageDeliveredMessage_preserves_ipcInvariantFull st tid installedCaps hObjInv hInv
+      exact stageDeliveredMessage_preserves_ipcInvariantFull st tid capInfo hObjInv hInv
 
 /-- Review round (PR #887): the delivered-message staging is a single
 `writeReturnFrameToTcb` insert or the identity, so it preserves the
 object-store invariant. -/
 theorem stageDeliveredMessage_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) :
-    (Architecture.stageDeliveredMessage st tid installedCaps).objects.invExt := by
+    (Architecture.stageDeliveredMessage st tid capInfo).objects.invExt := by
   unfold Architecture.stageDeliveredMessage
   cases st.getTcb? tid with
   | none => exact hObjInv
@@ -5935,14 +5935,14 @@ theorem stageDeliveredMessage_preserves_objects_invExt
 
 /-- Review round (PR #887): and so does the woken-delivery wrapper. -/
 theorem stageWokenDelivery_preserves_objects_invExt
-    (st : SystemState) (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat)
+    (st : SystemState) (woken? : Option SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) :
-    (Architecture.stageWokenDelivery st woken? installedCaps).objects.invExt := by
+    (Architecture.stageWokenDelivery st woken? capInfo).objects.invExt := by
   cases woken? with
   | none => exact hObjInv
   | some tid =>
       rw [Architecture.stageWokenDelivery_some]
-      exact stageDeliveredMessage_preserves_objects_invExt st tid installedCaps hObjInv
+      exact stageDeliveredMessage_preserves_objects_invExt st tid capInfo hObjInv
 
 /-- Send-completion staging: the unit success frame or the identity. -/
 theorem stageWokenSendCompletion_preserves_ipcInvariantFull
@@ -5965,9 +5965,9 @@ theorem stageWokenSendCompletion_preserves_ipcInvariantFull
 /-- Staging never disturbs the object-store invariant: every arm is one TCB
 insert or the identity. -/
 theorem stageDeliveredMessage_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) :
-    (Architecture.stageDeliveredMessage st tid installedCaps).objects.invExt := by
+    (Architecture.stageDeliveredMessage st tid capInfo).objects.invExt := by
   unfold Architecture.stageDeliveredMessage
   cases hLk : st.getTcb? tid with
   | none => exact hObjInv
@@ -6037,9 +6037,9 @@ theorem writeDeliveredFrameToTcb_donationChainFrame
 /-- **WS-RM (`v0.35.6`)**: and so does delivery staging — every arm is that
 writeback or the identity. -/
 theorem stageDeliveredMessage_donationChainFrame
-    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) :
-    donationChainFrame st (Architecture.stageDeliveredMessage st tid installedCaps) := by
+    donationChainFrame st (Architecture.stageDeliveredMessage st tid capInfo) := by
   unfold Architecture.stageDeliveredMessage
   cases hLk : st.getTcb? tid with
   | none => simp only []; exact donationChainFrame.refl st

@@ -1,3 +1,158 @@
+## v0.37.5 — capability transfer is seL4's `transferCaps`: one receive slot named by the receiver's IPC buffer, endpoint capabilities unwrapped
+
+The specification's IPC capability transfer is restated as seL4's
+`transferCaps`, with the theorems that mentioned the old scan.
+
+- **One receive slot, named by the receiver** (`receiveSlot?`, seL4's
+  `getReceiveSlots`): the receiver's IPC buffer words 125-127
+  (`receive_cnode`, `receive_index`, `receive_depth`, `seL4_SetCapReceivePath`)
+  are read; `receive_cnode` looked up in the receiver's CSpace must name a
+  CNode, in which `receive_index` resolves `receive_depth` bits deep (1-64) to
+  an empty slot.  Any failure names no slot, and the transfer then installs
+  nothing, raising no fault, as seL4.  A receiver without an IPC buffer the
+  kernel may write takes no capability at all (`receiverCapTarget?`).  The
+  3-slot scan from slot 0 of the receiver's CSpace root (`findFirstEmptySlot`
+  and its theorems) is deleted.
+- **At most one capability is installed** (`ipcTransferSingleCap`, through
+  `cspaceInsertSlot` and the `.ipcTransfer` derivation edge): after an
+  install the slot is used up, and a later capability that does not unwrap
+  stops the transfer, as do an empty source slot and a refused derivation.
+- **Unwrap** (`capUnwrapsAt`, `recordUnwrappedBadge`): an extra capability to
+  the endpoint the message is sent on is not installed; its badge is written to
+  the receiver's `caps_or_badges` word at its index (seL4's `setExtraBadge`, a
+  physical write of the receiver's buffer) and its bit set in the message's
+  `capsUnwrapped`.
+- **The message info reports the count transferred**: `MessageInfo` gains
+  `capsUnwrapped` (bits 9-11; the label moves to bits 12-63, seL4's layout),
+  `CapTransferResult` is `installed | unwrapped`, and the receiver's staged
+  `extraCaps` / `capsUnwrapped` are `CapTransferSummary.capInfo`
+  (`returnMessageInfo`).  The return ABI version is 4; the Rust
+  `sele4n-types` / `sele4n-abi` `MessageInfo` follows.
+- **The syscall entry reads the receive path from RAM**
+  (`transferReceiverCode`, `captureReceivePath`): the three words of the
+  transfer's receiver (the caller on a receive or reply-receive, the endpoint's
+  receive-queue head on a send or call) are captured into the core's entry-word
+  buffer, so the kernel on hardware reads what the thread wrote; the HAL's
+  buffer grows by three pairs (`RECEIVE_PATH_WORDS`).
+- **Restated theorems**: the transfer's frame lemmas are stated once over the
+  receive slot (`ipcUnwrapCapsLoop_rel`, `ipcUnwrapCaps_object_cases`), and
+  every preservation, frame, run-queue, reply-view and information-flow result
+  over `ipcUnwrapCaps` / `receiveTransferCaps` follows from them; the
+  `receiverSlotBase` decode field, the `capRecvSlot` operand, the CSpace-root
+  lock-set operand of the receive arms and `lookupCspaceRoot` are removed.
+- **Tests**: the operation-chain transfer scenarios give their receivers a
+  receive path (`SeLe4n.Testing.withReceivePath` / `withReceiveSlot`) and
+  expect one install; `chain14` is the unwrap scenario (badge word written,
+  `capInfo = 2 + 4`); the negative suite covers an occupied, absent and
+  non-CNode receive slot (the transfer stops, nothing written); the
+  cross-core call's grant scenario and the lock-set fixture give the server a
+  receive slot.  The fixtures that carry a message-info word are regenerated
+  from their producers (`main_trace_smoke`, `fault_handling_4core`; the label
+  now sits at bit 12), and the reader-hygiene baseline is re-anchored for the
+  removed `lookupCspaceRoot` readers and their three cascade tests.
+
+- **The receive slot's CNode is in the receive footprints**
+  (`receiveInstallCNode?`): a receive or reply-receive whose rendezvous
+  installs a capability writes the slot its buffer names, which may lie in
+  any CNode its CSpace reaches, so `lockSet_endpointReceiveOnCore` and
+  `lockSet_endpointReplyRecvOnCore` declare that CNode for write beside the
+  receiver's root (`lockSet_endpoint{Receive,ReplyRecv}OnCore_covers_receiveSlot`).
+  The parametric receive and reply-receive footprints are stated strictly
+  below the ceiling (`lockSet_endpointReceive_size_lt`,
+  `lockSet_replyRecv_size_lt`), and the widest resolved `.replyRecv` reaches
+  it: `maxLockSetSize` is **29** (was 28).  The admissible per-lock critical
+  section on the RPi5 tick is unchanged at `1000 / (29 · 3) = 11` µs, and the
+  uniform 60 µs envelope moves 5040 → 5220 µs.  The two resolved
+  reply-receive bounds that carried their figure in their name are renamed to
+  what they state: `lockSet_endpointReplyRecvOnCore_size_le_onEveryState`
+  (any state, ≤ 23) and `lockSet_endpointReplyRecvOnCore_size_le_sharp`
+  (the reachable shapes, ≤ 22).
+
+- **A transfer that transfers nothing is written in place for receivers with
+  a buffer too** (`capTransferInert`, `InertCapTransfer.lean`): a short
+  capability-carrying send, call or take whose receiver has no IPC buffer, or
+  whose buffer names no receive slot (none, occupied or unresolvable) when the
+  first extra capability is not one the transfer unwraps, transfers nothing,
+  as seL4's `transferCaps` stops there.  The arms decide it before any write
+  from the sender's registers and the receiver's buffer, through
+  continuation-form lookups (`senderTransferInertW`, `receiverTransferInertW`,
+  `receiveSlotAbsentW`, `extraCapStaysW`), proven equal to the specification's
+  decision (`capTransferInert_sendCapRequest_of_W`,
+  `capTransferInert_receiveCapRequest_of_W`).  The specification runs the
+  transfer after the rendezvous; the rendezvous writes no CNode
+  (`ipcBufferViewOf` now names CNodes, so `ipcBufferReadsAgree` carries every
+  CNode read, `ipcBufferReadsAgree.getCNode?`), so the transfer is the identity
+  reporting zero (`receiveTransferCaps_of_inert`,
+  `sendDispatchChecked_inPlace_inert`, `callDispatchChecked_inPlace_inert`,
+  `receiveTakeCaps_delivered`).  The no-buffer predicate it generalises
+  (`receiveWindowClosed` and its two lemmas) is removed, and
+  `ClosedReceiveWindow.lean` is renamed `InertCapTransfer.lean`.
+- **The IPC buffer is seL4's `seL4_IPCBuffer`** (`ipcBufferOverflowBaseWord`):
+  the buffer starts with its `tag` word, message register `i` is `msg[i]`,
+  word `1 + i`, and the kernel reads and writes `msg[4..120]` from word 5;
+  then `userData`, the three `caps_or_badges` words (122-124) and the receive
+  path (125-127), 128 words, exactly the 1024-byte aligned buffer the
+  validator already admits (`ipcBufferWords_within_alignment`).  The Rust
+  `sele4n_abi::IpcBuffer` gains `tag` and holds all 120 `msg` words, so
+  `msg[i]` is register `i`.
+- **A sender names its extra capabilities in its IPC buffer**
+  (`senderExtraCapAddrs`, seL4's `lookupExtraCaps` reading `getExtraCPtr`):
+  the addresses are the first `extraCaps` words of the sender's
+  `caps_or_badges`, read where the kernel may read its buffer; a sender
+  without one names none.  The message-register decode of them
+  (`decodeExtraCapAddrs`, which read the registers after the body, so a
+  message longer than three words could carry no capability) is deleted.  The
+  in-place decision reads the same word (`senderExtraCapAddr?`), and the
+  syscall entry captures each sender's three words from RAM
+  (`captureSenderCapAddrs`); the HAL's entry-word buffer grows by two runs of
+  three (`EXTRA_CAP_WORDS`).  The test fixtures write the addresses into the
+  sender's buffer (`SeLe4n.Testing.withSenderCapAddrs`), and the exerciser's
+  capability-carrying steps write theirs before the call
+  (`RoundTrip::caps_or_badges`, unmeasured).
+- **The label is seL4's 52 bits** (`MessageInfo.maxLabel = 2^52 - 1`, bits
+  12-63): every label a word carries is a label, and the kernel-status range
+  is the top 256 of the field (`errorLabelBase = 2^52 - 256`).  An error's
+  `x1` is shifted as a machine word (`errorLabelWord`,
+  `errorLabelWord_eq_encode`), since the status label shifted into place is past
+  `2^63` and would be a heap number as a `Nat`.  The Rust `MAX_LABEL`,
+  `ERROR_LABEL_BASE` and the blocked-resume sentinel follow, and the shared
+  ABI layout table (`tests/fixtures/abi_layout.expected`) is regenerated.
+- **A reply transfers capabilities, as seL4's `doReplyTransfer`**
+  (`replyTransferCaps`): a `.reply` to an unfaulted caller runs the transfer
+  of seL4's `doIPCTransfer` with no endpoint and the reply capability's grant
+  right (`replyTransferOnCore … grant`).  The replier's extra capabilities are
+  installed into the one receive slot the caller's buffer names; with no
+  endpoint nothing unwraps (`capUnwrapsAt` takes an `Option`), and without
+  grant the replier names none.  The caller's staged message info reports the
+  count (`summary.capInfo`).  The caller's receive slot CNode is in the reply
+  footprint (`replyInstallCNode?`,
+  `lockSet_endpointReplyOnCore_covers_replyInstall`, size ≤ 16 under the
+  ceiling of 29), and the reply's in-place arms are taken only when the
+  transfer moves nothing (`replyTransferInertW`,
+  `replyTransferCaps_of_inert`, `replyTransferOnCore_of_no_fault_inert`);
+  otherwise the arm runs the specification.  The syscall entry captures the
+  answered caller's receive path on a `.reply` (`transferReceiverCode`).  A
+  faulted caller takes no transfer, as seL4.
+- **Fixed**: `docs/CLAIM_EVIDENCE_INDEX.md` cited two theorems that do not
+  exist (`CapSpaceAgrees.storeSendRendezvous`, `.storeCallRendezvous`); the row
+  now cites the frame lemmas the in-place transfers use.
+
+### Security
+
+- A receive's capability install was declared in no lock footprint: the
+  CNode holding the receive slot was written under a footprint that named
+  only the receiver's root.  Under the global kernel-entry lock this was not
+  reachable as a race, but the footprint is the contract the deadlock and
+  WCRT results are proved over, so it is now declared.
+- A capability transfer no longer installs into slots the receiver never
+  offered: the old scan wrote into the first empty of slots 0-2 of the
+  receiver's CSpace root, so any sender holding a grant capability could fill
+  a receiver's root CNode without its consent.  A receiver now takes a
+  capability only into the one slot its own IPC buffer names, as in seL4.
+- A capability to the receiving endpoint is unwrapped to its badge rather than
+  installed, so a badged endpoint capability is not handed back to the server
+  that already holds the endpoint (seL4's `capsUnwrapped`).
+
 ## v0.37.4 — the IPC buffer lies in one frame; long call, reply and reply-receive and capability-carrying send and call routed in place
 
 The decode-path follow-up's IPC stage.

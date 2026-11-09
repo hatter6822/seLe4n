@@ -407,39 +407,73 @@ theorem faultReplyOnCore_runQueueEntryStage (replier faulted : SeLe4n.ThreadId) 
         (by rw [hS]; exact fun h => by cases h)))
 
 theorem replyTransferOnCore_runQueueEntryStage {replier callerTid : SeLe4n.ThreadId}
-    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage}
+    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
     {c : Concurrency.CoreId} {st st' : SystemState}
     (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
-    (h : replyTransferOnCore replier callerTid mi regs msg c st = .ok ((), st')) :
+    (h : replyTransferOnCore replier callerTid mi regs msg grant c st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   have hF := faultReplyOnCore_runQueueEntryStage replier callerTid mi regs c st hInv hD
   have hE := endpointReplyCrossCoreDispatch_runQueueStage replier callerTid msg c st
     (blockedCurrentNowhere_of_currentDequeuedUnique hD)
   unfold replyTransferOnCore at h
-  repeat' (first | split at h | dsimp only at h)
-  all_goals first
-    | (cases h; done)
-    | (rename_i hR; cases h; rw [hR] at hF; exact hF)
-    | (rename_i hR; cases h; rw [hR] at hE
-       exact (hE.trans (stageDeliveredMessage_runQueueStage _ _ _)).entry)
+  split at h
+  · revert h hF
+    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro _ h; cases h
+    | ok _ => intro hF h; cases h; exact hF
+  · revert h hE
+    generalize endpointReplyCrossCoreDispatch replier callerTid msg c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro _ h; cases h
+    | ok _ =>
+      intro hE h
+      simp only [] at h
+      cases hX : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hX] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hX] at h
+        cases h
+        exact ((hE.trans (receiveTransferCaps_runQueueStage hX)).trans
+          (stageDeliveredMessage_runQueueStage _ _ _)).entry
 
 theorem replyTransferOnCoreChecked_runQueueEntryStage {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
-    {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {c : Concurrency.CoreId}
+    {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : Concurrency.CoreId}
     {st st' : SystemState}
     (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg c st = .ok ((), st')) :
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   have hF := faultReplyOnCore_runQueueEntryStage replier callerTid mi regs c st hInv hD
   have hE := endpointReplyCrossCoreDispatchChecked_runQueueStage ctx replier callerTid msg c st
     (blockedCurrentNowhere_of_currentDequeuedUnique hD)
   unfold replyTransferOnCoreChecked at h
-  repeat' (first | split at h | dsimp only at h)
-  all_goals first
-    | (cases h; done)
-    | (rename_i hR; cases h; rw [hR] at hF; exact hF)
-    | (rename_i hR; cases h; rw [hR] at hE
-       exact (hE.trans (stageDeliveredMessage_runQueueStage _ _ _)).entry)
+  split at h
+  · revert h hF
+    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro _ h; cases h
+    | ok _ => intro hF h; cases h; exact hF
+  · revert h hE
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro _ h; cases h
+    | ok _ =>
+      intro hE h
+      simp only [] at h
+      cases hX : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hX] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hX] at h
+        cases h
+        exact ((hE.trans (receiveTransferCaps_runQueueStage hX)).trans
+          (stageDeliveredMessage_runQueueStage _ _ _)).entry
 
 theorem stageWokenSendCompletion_runQueueStage (st : SystemState)
     (w? : Option SeLe4n.ThreadId) :
@@ -696,12 +730,12 @@ ready and the fault answer's abandon may deschedule it. -/
 theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
-    {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {c : Concurrency.CoreId}
+    {c : Concurrency.CoreId}
     {st st' : SystemState} {s : CapTransferSummary}
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg root base c st =
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg c st =
       .ok (s, st')) :
     SystemState.RunQueueEntryStage st st' := by
   have hPrev : ∀ sgi?, (endpointReplyOnCore tid prevCaller msg c st).2 = .ok sgi? →
@@ -751,11 +785,11 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture
     activeKeptStage.of_stage (replyRecvPopDonation_runQueueStage hPop) hI1 hR1 tid hA1
   have hHp := hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
       (hQ1 _ rfl))
-  have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) root base c
+  have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
     st1p hHp ((hPC c).trans hC1) hNI hAp
-  have hRK := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) root base c
+  have hRK := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) c
     st1p hHp ((hPC c).trans hC1) hNI hAp
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) root base c st1p = q at hR hRK h
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c st1p = q at hR hRK h
   obtain ⟨st2, r2⟩ := q
   dsimp only at hR hRK
   rcases r2 with _ | ⟨nt, sm, _⟩ <;> dsimp only at h

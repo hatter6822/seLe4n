@@ -114,7 +114,7 @@ installed, the reply's words those past MR0. -/
 theorem replyRecvTransferOnCore_fault_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (label : Nat)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge) (root : SeLe4n.ObjId) (slot : SeLe4n.Slot) (core : CoreId)
+    (badge : Option SeLe4n.Badge) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply) (tf : ThreadFault)
     (hPF : ct.pendingFault = some tf)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
@@ -130,7 +130,7 @@ theorem replyRecvTransferOnCore_fault_blocks_inPlace (st : SystemState) (epId : 
     (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
     replyRecvTransferOnCore epId tid rid c label
         { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }
-        root slot core st =
+        core st =
       .ok ({ results := #[] }, performReplyRecvFaultAnswer st c tid rid epId ep.recvTailCode core
         ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
         ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 layout rf len) := by
@@ -138,7 +138,7 @@ theorem replyRecvTransferOnCore_fault_blocks_inPlace (st : SystemState) (epId : 
   unfold replyRecvTransferOnCore
   rw [replyRecvCallerFaultAnswer?_of_fault st c ct tf label _ hTc hPF]
   simp only [replyRecvLegMessage]
-  rw [replyRecvAnsweringOnCore_blocks_inPlace _ st epId tid c rid IpcMessage.empty root slot core
+  rw [replyRecvAnsweringOnCore_blocks_inPlace _ st epId tid c rid IpcMessage.empty core
     ct ep0 rt ep rp (by simp [IpcMessage.empty]) hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree
     hStash hRec]
   unfold performReplyRecvFaultAnswer replyRecvAnswerCaller
@@ -242,7 +242,7 @@ it stages nothing for the server, which the receive leaves blocked. -/
 theorem replyRecvTransferOnCore_fault_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (label : Nat)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge) (root : SeLe4n.ObjId) (slot : SeLe4n.Slot) (core : CoreId)
+    (badge : Option SeLe4n.Badge) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply) (tf : ThreadFault)
     (hPF : ct.pendingFault = some tf)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
@@ -258,7 +258,7 @@ theorem replyRecvTransferOnCore_fault_donated_inPlace (st : SystemState) (epId :
     (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
     replyRecvTransferOnCore epId tid rid c label
         { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }
-        root slot core st =
+        core st =
       .ok ({ results := #[] }, performReplyRecvDonatedFaultAnswer st c tid rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId ep.recvTailCode core
         ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
@@ -278,7 +278,7 @@ theorem replyRecvTransferOnCore_fault_donated_inPlace (st : SystemState) (epId :
   obtain ⟨hEq, x, hX, hB⟩ := replyRecvAnsweringOnCore_donated_inPlace
     (replyRecvCallerFaultAnswer? st c label
       { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })
-    st epId tid c rid IpcMessage.empty root slot core ct ep0 rt ep rp (by simp [IpcMessage.empty])
+    st epId tid c rid IpcMessage.empty core ct ep0 rt ep rp (by simp [IpcMessage.empty])
     hT hIpc hRO hSRes hG hE hS hR hA hEnq hRp hStash hRec
   have hAns := replyRecvCallerFaultAnswer?_of_fault st c ct tf label
     { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } hTc hPF
@@ -342,7 +342,7 @@ leaves blocked. -/
 theorem replyRecvTransferOnCore_fault_unheld_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (label : Nat)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge) (root : SeLe4n.ObjId) (slot : SeLe4n.Slot) (core : CoreId)
+    (badge : Option SeLe4n.Badge) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply) (tf : ThreadFault)
     (hPF : ct.pendingFault = some tf)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
@@ -358,7 +358,7 @@ theorem replyRecvTransferOnCore_fault_unheld_inPlace (st : SystemState) (epId : 
     (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
     replyRecvTransferOnCore epId tid rid c label
         { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }
-        root slot core st =
+        core st =
       .ok ({ results := #[] }, performReplyRecvUnheldFaultAnswer st c tid rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId ep.recvTailCode core
         ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
@@ -377,7 +377,7 @@ theorem replyRecvTransferOnCore_fault_unheld_inPlace (st : SystemState) (epId : 
   obtain ⟨hEq, x, hX, hB⟩ := replyRecvAnsweringOnCore_unheld_inPlace
     (replyRecvCallerFaultAnswer? st c label
       { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })
-    st epId tid c rid IpcMessage.empty root slot core ct ep0 rt ep rp (by simp [IpcMessage.empty])
+    st epId tid c rid IpcMessage.empty core ct ep0 rt ep rp (by simp [IpcMessage.empty])
     hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hStash hRec
   have hAns := replyRecvCallerFaultAnswer?_of_fault st c ct tf label
     { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } hTc hPF
@@ -437,14 +437,14 @@ state. -/
 theorem faultReplyTransferChecked_donated_inPlace (ctx : LabelingContext) (st : SystemState)
     (replier c server : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
     (mi : MessageInfo) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
-    (msg : IpcMessage) (core : CoreId)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep (some server))
     (hRO : ct.replyObject = some rid)
     (hSRes : server.isReserved = false)
     (hG : replyPopsInPlace st c ct.scBindingScCode server rid = true)
     (hF : ct.faultWords.isFault = true) :
-    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg core
+    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
         st =
       .ok ((), performFaultReplyDonatedAnswer st c server rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) core ct.faultKind mi.label ct.faultIp ct.faultSp ct.faultLr
@@ -507,13 +507,13 @@ server recorded commits `performFaultReplyUnheldAnswer`'s state. -/
 theorem faultReplyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : SystemState)
     (replier c : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
     (mi : MessageInfo) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
-    (msg : IpcMessage) (core : CoreId)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep none)
     (hRO : ct.replyObject = some rid)
     (hG : replyUnheldPopsInPlace st c rid = true)
     (hF : ct.faultWords.isFault = true) :
-    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg core
+    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
         st =
       .ok ((), performFaultReplyUnheldAnswer st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) ct.faultKind mi.label ct.faultIp ct.faultSp ct.faultLr

@@ -159,8 +159,7 @@ structure SyscallLockOperands where
   /-- The message a `.reply` / `.replyRecv` carries, which their scheduler
   footprints read. -/
   message : Option IpcMessage := none
-  /-- **WS-RR RR8.12 Cut C4**: the receiving thread's capability-transfer slot
-  base, which `.call`'s and `.replyRecv`'s scheduler footprints read.
+  /-- **Cut C4**: the `MessageInfo` a `.reply` or `.replyRecv` carries.
 
   This and the fields below are the scheduler domain's, and they are here rather
   than in a record of their own because they are *this syscall's operands* —
@@ -170,10 +169,9 @@ structure SyscallLockOperands where
   it was invoked through, while a scheduler-domain footprint names the **cores**
   it writes, resolved by re-running the transition's own control flow — which
   needs the transition's own arguments.  Every one is optional and defaults to
-  absent, so an arm that needs one absent answers `none`. -/
-  receiverSlotBase : Option SeLe4n.Slot := none
-  /-- **Cut C4**: the `MessageInfo` a `.reply` or `.replyRecv` carries.  The
-  arm's footprint branches on whether the answered caller has a pending fault,
+  absent, so an arm that needs one absent answers `none`.
+
+  The arm's footprint branches on whether the answered caller has a pending fault,
   and on that branch `decodeFaultReply` reads this (and, for `.reply`, the
   registers below; `.replyRecv` decodes its reply payload) to tell a *restart*
   from an *abandon* — which is the one core the dispatch-level footprint never
@@ -514,7 +512,7 @@ theorem lockSetForSyscall_replyRecv_delegated_covers_server
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnRoot prevCaller endpointId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hServer]
-  exact lockSet_replyRecv_donation_server_tcb_write_mem ..
+  exact mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_donation_server_tcb_write_mem ..)
 
 /-- **WS-OD OD3.5**: a **delegated** `.replyRecv` — one whose reply capability
 answers a caller whose recorded server is some *other* thread — now declares a
@@ -816,8 +814,8 @@ theorem lockSetForSyscall_receive_covers_writes
     (endpointLock endpointId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
   cases hDecl
-  exact ⟨lockSet_endpointReceive_caller_tcb_write_mem ..,
-         lockSet_endpointReceive_endpoint_write_mem ..⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReceive_caller_tcb_write_mem ..),
+         mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReceive_endpoint_write_mem ..)⟩
 
 /-- **WS-OD OD3.12**: and the queue-structure neighbour.
 
@@ -870,7 +868,8 @@ theorem lockSetForSyscall_reply_eq
   simp only [lockSetForSyscall, hTcb, hRid, Option.bind_some, hAns, Option.map_some]
 
 /-- **WS-RR RR7.11**: `.reply` declares the answered caller's TCB (woken out of
-`blockedOnReply`) and the Reply object the delivery consumes. -/
+`blockedOnReply`) and the Reply object the delivery consumes, and the CNode the
+reply's capability transfer installs into (`replyInstallCNode?`). -/
 theorem lockSetForSyscall_reply_covers_writes
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
     (rid : ReplyId) (answered : ThreadId) (S : LockSet)
@@ -880,13 +879,17 @@ theorem lockSetForSyscall_reply_covers_writes
     (hDecl : lockSetForSyscall .reply ops st = some S) :
     (tcbLock answered, AccessMode.write) ∈ S.pairs ∧
     (∀ linked, (st.getTcb? answered).bind (·.replyObject) = some linked →
-      (replyLock linked, AccessMode.write) ∈ S.pairs) := by
+      (replyLock linked, AccessMode.write) ∈ S.pairs) ∧
+    (∀ r, replyInstallCNode? st ops.caller answered = some r →
+      (cnodeLock r, AccessMode.write) ∈ S.pairs) := by
   rw [lockSetForSyscall_reply_eq ops st caller rid answered hTcb hRid hAns] at hDecl
   cases hDecl
-  refine ⟨lockSet_endpointReply_target_tcb_write_mem .., ?_⟩
+  refine ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReply_target_tcb_write_mem ..), ?_,
+    fun r hR => lockSet_endpointReplyOnCore_covers_replyInstall st ops.caller caller.cspaceRoot
+      answered r hR⟩
   intro linked hLinked
   simp only [lockSet_endpointReplyOnCore, hLinked]
-  exact lockSet_endpointReply_reply_write_mem ..
+  exact mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReply_reply_write_mem ..)
 
 /-- **WS-RR RR7.11**: at resolved operands, `.replyRecv` declares the fused
 footprint.
@@ -922,9 +925,9 @@ theorem lockSetForSyscall_replyRecv_covers_writes
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact ⟨lockSet_replyRecv_caller_tcb_write_mem ..,
-         lockSet_replyRecv_target_tcb_write_mem ..,
-         lockSet_replyRecv_endpoint_write_mem ..⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_caller_tcb_write_mem ..),
+         mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_target_tcb_write_mem ..),
+         mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_endpoint_write_mem ..)⟩
 
 /-- **WS-RR RR7.11**: and its receive leg's capability install, which writes the
 same CDT structure a send's does. -/
@@ -943,8 +946,9 @@ theorem lockSetForSyscall_replyRecv_covers_capsWrites
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
   refine ⟨?_, lockSet_endpointReplyRecvOnCore_covers_cdt _ _ _ _ _ hCaps⟩
-  simp only [lockSet_endpointReplyRecvOnCore, hCaps]
-  exact lockSet_replyRecv_capsInstall_write_mem ..
+  unfold lockSet_endpointReplyRecvOnCore
+  rw [hCaps]
+  exact mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_capsInstall_write_mem ..)
 
 /-- **WS-OD OD3.13**: and the receive leg's queue-structure neighbour.
 
@@ -995,8 +999,8 @@ theorem lockSetForSyscall_replyRecv_covers_redonation
   cases hDecl
   unfold lockSet_endpointReplyRecvOnCore
   rw [hNew]
-  exact ⟨lockSet_replyRecv_redonated_sc_write_mem ..,
-         lockSet_replyRecv_redonation_stateLevel_write_mem ..⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonated_sc_write_mem ..),
+         mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonation_stateLevel_write_mem ..)⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.notificationSignal` declares the
 bound-delivery-aware signal footprint. -/
@@ -1119,7 +1123,7 @@ every object rather than over the ones someone remembered to list. -/
 theorem lockSetForSyscall_send_object_writes_declared
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
     (endpointId : ObjId) (payload : SendPayload) (S : LockSet)
-    (receiverSlotBase : Slot) (st' st'' : SystemState) (recvRoot : ObjId)
+    (st' st'' : SystemState) (recvRoot : ObjId)
     (summary : CapTransferSummary) (oid : ObjId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
@@ -1129,13 +1133,13 @@ theorem lockSetForSyscall_send_object_writes_declared
     (hDest : rendezvousCapsDestination? st endpointId ops.caller payload = some recvRoot)
     (hObjInv : st'.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId ops.caller payload
-        receiverSlotBase st = .ok (summary, st''))
+        st = .ok (summary, st''))
     (hChanged : ¬ SystemState.objectAgreesOffDerivationMetadataAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_send_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
   exact endpointSendDualWithCaps_object_writes_declared endpointId ops.caller payload
-    caller.cspaceRoot receiverSlotBase st st' st''
+    caller.cspaceRoot st st' st''
     recvRoot summary oid hSend hDest hObjInv hStep hChanged
 
 /-- **WS-RR RR7.11**: and the same capstone on `.call` — the same transfer,
@@ -1143,7 +1147,7 @@ reached through the same resolver, declared in the same members. -/
 theorem lockSetForSyscall_call_object_writes_declared
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
     (endpointId : ObjId) (payload : SendPayload) (S : LockSet)
-    (receiverSlotBase : Slot) (st' st'' : SystemState) (recvRoot : ObjId)
+    (st' st'' : SystemState) (recvRoot : ObjId)
     (summary : CapTransferSummary) (oid : ObjId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
@@ -1153,13 +1157,13 @@ theorem lockSetForSyscall_call_object_writes_declared
     (hDest : rendezvousCapsDestination? st endpointId ops.caller payload = some recvRoot)
     (hObjInv : st'.objects.invExt)
     (hStep : endpointCallWithCaps endpointId ops.caller payload
-        receiverSlotBase st = .ok (summary, st''))
+        st = .ok (summary, st''))
     (hChanged : ¬ SystemState.objectAgreesOffDerivationMetadataAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_call_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
   exact endpointCallWithCaps_object_writes_declared endpointId ops.caller payload
-    caller.cspaceRoot receiverSlotBase st st' st''
+    caller.cspaceRoot st st' st''
     recvRoot summary oid hCall hDest hObjInv hStep hChanged
 
 /-! ## The declared arms, and the negative that keeps the rest honest -/
@@ -1243,11 +1247,11 @@ Stated as a congruence over all five at once, so a sixth field added without
 extending it is a field nothing has checked. -/
 theorem lockSetForSyscall_ignores_sched_operands (sid : SyscallId)
     (ops : SyscallLockOperands) (st : SystemState)
-    (msg : Option IpcMessage) (slotBase : Option SeLe4n.Slot)
+    (msg : Option IpcMessage)
     (mi : Option MessageInfo) (regs : Option (Array SeLe4n.RegValue))
     (aff : Option (Option CoreId)) (slot : Option SeLe4n.Slot) :
     lockSetForSyscall sid
-        { ops with message := msg, receiverSlotBase := slotBase,
+        { ops with message := msg,
                    replyMessageInfo := mi, replyRegisters := regs, affinity := aff,
                    targetSlot := slot } st
       = lockSetForSyscall sid ops st := by

@@ -445,7 +445,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hPt := decodePageTableMapArgs_eq_by layout regs decoded hRegs
   have hIrqGet := decodeIrqControlGetArgs_eq_by layout regs decoded hRegs
   have hIrqNtfn := decodeIrqHandlerSetNotificationArgs_eq_by layout regs decoded hRegs
-  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, capRecvSlot, inlineCount, overflowCount⟩
+  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
   cases sid <;> simp only [routedInvocation, Bool.false_eq_true] at h <;>
     cases target <;>
@@ -1728,7 +1728,7 @@ theorem dispatchWithCapChecked_eq_configureBy (ctx : LabelingContext)
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       dispatchConfigureBy layout regs w tid cap st := by
   have hDec := decodeSchedContextConfigureArgsChecked_eq_by layout regs w decoded hRegs
-  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, capRecvSlot, inlineCount, overflowCount⟩
+  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
   simp only at h
   subst h
@@ -1891,7 +1891,7 @@ theorem dispatchWithCapChecked_eq_serviceRegisterBy (ctx : LabelingContext)
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       dispatchServiceRegisterBy ctx tid layout regs w cap st := by
   have hDec := decodeServiceRegisterArgs_eq_by layout regs w decoded hRegs
-  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, capRecvSlot, inlineCount, overflowCount⟩
+  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
   simp only at h
   subst h

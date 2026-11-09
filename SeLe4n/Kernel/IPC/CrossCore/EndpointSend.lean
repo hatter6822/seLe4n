@@ -590,7 +590,7 @@ including the AK1-I fail-closed `.invalidCapability` on a receiver with no CSpac
 root (the NI-symmetry fix shared by all three transfer paths). -/
 def endpointSendDualWithCapsOnCore
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   -- WS-ZA ZA4.7: the capabilities the sender's frame asks to transfer, read
@@ -599,19 +599,19 @@ def endpointSendDualWithCapsOnCore
   -- resolves its request then, `receiveTransferCaps`).
   let req := sendCapRequest st endpointId sender payload
   let receiver? := (st.getEndpoint? endpointId).bind (·.receiveQ.head)
+  -- The receiver's side of the transfer (its IPC buffer and the receive slot
+  -- the buffer names), read from the pre-state as the specification reads it.
+  let target? := receiver?.bind (receiverCapTarget? st)
   match endpointSendDualOnCore endpointId sender payload executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok sgi) =>
       if req.isNone then (st', .ok ({ results := #[] }, sgi))
       else
         match receiver? with
-        | some receiverId =>
-          match lookupCspaceRoot st' receiverId with
-          | some recvRoot =>
-            match receiveTransferCaps req recvRoot receiverSlotBase st' with
-            | .error e => (st', .error e)
-            | .ok (summary, st'') => (st'', .ok (summary, sgi))
-          | none => (st', .error .invalidCapability)
+        | some _ =>
+          match receiveTransferCaps req endpointId target? st' with
+          | .error e => (st', .error e)
+          | .ok (summary, st'') => (st'', .ok (summary, sgi))
         | none => (st', .ok ({ results := #[] }, sgi))
 
 /-- WS-SM SM6: with no capabilities to transfer, the WithCaps cross-core send is
@@ -619,9 +619,9 @@ exactly the bare cross-core send (empty transfer summary), so its surfaced SGI i
 the bare send's. -/
 theorem endpointSendDualWithCapsOnCore_no_caps
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (hCaps : sendCapRequest st endpointId sender payload = none) :
-    endpointSendDualWithCapsOnCore endpointId sender payload receiverSlotBase executingCore st
+    endpointSendDualWithCapsOnCore endpointId sender payload executingCore st
       = ((endpointSendDualOnCore endpointId sender payload executingCore st).1,
          (endpointSendDualOnCore endpointId sender payload executingCore st).2.map
            (fun sgi => ({ results := #[] }, sgi))) := by
@@ -644,13 +644,13 @@ the sender's frame and is bounded by construction (`sendPayloadMessage_bounded`)
 `.send` arm routes through, replacing the boot-pinned `endpointSendDualChecked`. -/
 def endpointSendCrossCoreDispatchChecked
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   -- WS-SM SM8.C: global lattice check AND this endpoint's configured override.
   if endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) then
-    endpointSendDualWithCapsOnCore endpointId sender payload receiverSlotBase executingCore st
+    endpointSendDualWithCapsOnCore endpointId sender payload executingCore st
   else
     (st, .error .flowDenied)
 
@@ -658,12 +658,12 @@ def endpointSendCrossCoreDispatchChecked
 cross-core send is fail-closed (state unchanged, `.flowDenied`). -/
 theorem endpointSendCrossCoreDispatchChecked_flow_denied
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = false) :
     endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-        receiverSlotBase executingCore st = (st, .error .flowDenied) := by
+        executingCore st = (st, .error .flowDenied) := by
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the override says.
   simp [endpointSendCrossCoreDispatchChecked,
     endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
@@ -672,7 +672,7 @@ theorem endpointSendCrossCoreDispatchChecked_flow_denied
 unchecked cross-core WithCaps send — the guard is a pure precondition. -/
 theorem endpointSendCrossCoreDispatchChecked_flow_allowed
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hAllow : securityFlowsTo (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true)
@@ -680,9 +680,9 @@ theorem endpointSendCrossCoreDispatchChecked_flow_allowed
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true) :
     endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-        receiverSlotBase executingCore st
+        executingCore st
       = endpointSendDualWithCapsOnCore endpointId sender payload
-          receiverSlotBase executingCore st := by
+          executingCore st := by
   simp [endpointSendCrossCoreDispatchChecked,
     endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 
@@ -702,17 +702,17 @@ answers a refusal with the state it was handed. -/
 theorem endpointSendCrossCoreDispatchChecked_error_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (executingCore : CoreId) (st : SystemState)
     (e : KernelError) (hCaps : sendCapRequest st endpointId sender payload = none)
     (h : (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-      receiverSlotBase executingCore st).2 = .error e) :
+      executingCore st).2 = .error e) :
     (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
-      receiverSlotBase executingCore st).1 = st := by
+      executingCore st).1 = st := by
   unfold endpointSendCrossCoreDispatchChecked at h ⊢
   split
   · next hG =>
     rw [if_pos hG] at h
-    rw [endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ _ hCaps] at h ⊢
+    rw [endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ hCaps] at h ⊢
     simp only at h ⊢
     apply endpointSendDualOnCore_error_state _ _ _ _ _ e
     revert h
@@ -778,8 +778,8 @@ capability transfer writes CNodes and the CDT, never the scheduler
 (`receiveTransferCaps_scheduler_eq`). -/
 theorem endpointSendDualWithCapsOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (slotBase : SeLe4n.Slot) (ec : CoreId) (st st' : SystemState) (c : CoreId)
-    (h : (endpointSendDualWithCapsOnCore epId sender payload slotBase ec st).1 = st') :
+    (ec : CoreId) (st st' : SystemState) (c : CoreId)
+    (h : (endpointSendDualWithCapsOnCore epId sender payload ec st).1 = st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   subst h
   unfold endpointSendDualWithCapsOnCore
@@ -803,16 +803,16 @@ theorem endpointSendDualWithCapsOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId
 flow gate returns the pre-state; past it it *is* the caps-carrying form. -/
 theorem endpointSendCrossCoreDispatchChecked_replenishQueueOnCore (ctx : LabelingContext)
     (epId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (slotBase : SeLe4n.Slot) (ec : CoreId)
+    (ec : CoreId)
     (st st' : SystemState) (c : CoreId)
-    (h : (endpointSendCrossCoreDispatchChecked ctx epId sender payload slotBase ec st).1
+    (h : (endpointSendCrossCoreDispatchChecked ctx epId sender payload ec st).1
       = st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   subst h
   unfold endpointSendCrossCoreDispatchChecked
   split
   · exact endpointSendDualWithCapsOnCore_replenishQueueOnCore epId sender payload
-      slotBase ec st _ c rfl
+      ec st _ c rfl
   · rfl
 
 /-- WS-SM SM8.B.2, relocated to production at **WS-RR RR8.12**: **the cores a

@@ -774,22 +774,16 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.tabl
 
 /-- **The capability transfer keeps the table back-links**: every object it
 writes is a CNode or a thread's links. -/
-theorem ipcUnwrapCaps_tableReferenceFrame {caps : Array TransferCap} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
+theorem ipcUnwrapCaps_tableReferenceFrame {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
+    {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
-    (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) :
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     SystemState.TableReferenceFrame st st' := by
   intro k
-  by_cases hk : k = root
-  · subst hk
-    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
-      hObjInv h with e | ⟨cn', hc⟩
-    · rw [e]
-    · cases hC : st.getCNode? k with
-      | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
-      | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
-  · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
-      k hk hObjInv h).tableBackLinks
+  rcases ipcUnwrapCaps_object_cases caps endpointId rtcb slot? st st' summary k hObjInv h with
+    hA | ⟨_, -, -, ⟨cn, hc⟩, ⟨cn', hc'⟩⟩
+  · exact hA.tableBackLinks
+  · rw [hc, hc']; rfl
 
 /-- The objects at a key agreeing up to derivation metadata hold the same
 release links: a CNode and a thread hold none. -/
@@ -805,23 +799,17 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.rele
 
 /-- **The capability transfer holds the release queues**: it writes no
 scheduler slot, and every object it writes is a CNode or a thread's links. -/
-theorem ipcUnwrapCaps_releaseStateAgree {caps : Array TransferCap} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
+theorem ipcUnwrapCaps_releaseStateAgree {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
+    {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
-    (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) :
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     SystemState.releaseStateAgree st' st := by
   refine ⟨.of_objReleaseLinkOn fun k c => ?_,
-    by rw [ipcUnwrapCaps_preserves_scheduler caps root base grant st st' summary h]⟩
-  by_cases hk : k = root
-  · subst hk
-    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
-      hObjInv h with e | ⟨cn', hc⟩
-    · rw [e]
-    · cases hC : st.getCNode? k with
-      | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
-      | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
-  · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
-      k hk hObjInv h).releaseLinkOn c
+    by rw [ipcUnwrapCaps_preserves_scheduler caps endpointId rtcb slot? st st' summary h]⟩
+  rcases ipcUnwrapCaps_object_cases caps endpointId rtcb slot? st st' summary k hObjInv h with
+    hA | ⟨_, -, -, ⟨cn, hc⟩, ⟨cn', hc'⟩⟩
+  · exact hA.releaseLinkOn c
+  · rw [hc, hc']; rfl
 
 /-- The objects at a key agreeing up to derivation metadata hold the same
 refill view: a CNode and a thread hold none. -/
@@ -841,22 +829,16 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.refi
 
 /-- The capability transfer keeps every context's refill view: every object it
 writes is a CNode or a thread's links. -/
-theorem ipcUnwrapCaps_refillViewsKept {caps : Array TransferCap} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
+theorem ipcUnwrapCaps_refillViewsKept {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
+    {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
-    (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) :
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     RefillViewsKept st' st := by
   refine .of_eq fun k => ?_
-  by_cases hk : k = root
-  · subst hk
-    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
-      hObjInv h with e | ⟨cn', hc⟩
-    · rw [e]
-    · cases hC : st.getCNode? k with
-      | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
-      | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
-  · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
-      k hk hObjInv h).refillView
+  rcases ipcUnwrapCaps_object_cases caps endpointId rtcb slot? st st' summary k hObjInv h with
+    hA | ⟨_, -, -, ⟨cn, hc⟩, ⟨cn', hc'⟩⟩
+  · exact hA.refillView
+  · rw [hc, hc']; rfl
 
 /-- The objects at a key agreeing up to derivation metadata hold the same
 yield codes: a CNode holds none and a thread's links are not its yield code. -/
@@ -872,47 +854,41 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.yiel
 
 /-- The capability transfer keeps every yield code: every object it writes is
 a CNode or a thread's links. -/
-theorem ipcUnwrapCaps_yieldLinksKept {caps : Array TransferCap} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
+theorem ipcUnwrapCaps_yieldLinksKept {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
+    {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
-    (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) :
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
     YieldLinksKept st' st := fun k => by
-  by_cases hk : k = root
-  · subst hk
-    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
-      hObjInv h with e | ⟨cn', hc⟩
-    · rw [e]
-    · cases hC : st.getCNode? k with
-      | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
-      | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
-  · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
-      k hk hObjInv h).yieldCodes
+  rcases ipcUnwrapCaps_object_cases caps endpointId rtcb slot? st st' summary k hObjInv h with
+    hA | ⟨_, -, -, ⟨cn, hc⟩, ⟨cn', hc'⟩⟩
+  · exact hA.yieldCodes
+  · rw [hc, hc']; rfl
 
 /-- The cap transfer writes CNodes, the derivation tree and slot links: every
 thread's TCB reads as it did off its slot links. -/
-theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
-    (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) : RunQueueStage st st' :=
-  have hS := ipcUnwrapCaps_preserves_scheduler caps root base grant st st' summary h
+theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
+    {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) : RunQueueStage st st' :=
+  have hS := ipcUnwrapCaps_preserves_scheduler caps endpointId rtcb slot? st st' summary h
   RunQueueStage.of_placement
-    (fun hInv => ipcUnwrapCaps_preserves_objects_invExt caps root base grant st st' summary hInv h)
+    (fun hInv => ipcUnwrapCaps_preserves_objects_invExt caps endpointId rtcb slot? st st' summary hInv h)
     (by rw [hS]) (by rw [hS])
     (fun hInv x => TCB.map_proj_of_map_withoutLinks_eq TCB.placement
-      (ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h))
+      (ipcUnwrapCaps_getTcb?_eq caps endpointId rtcb slot? st st' summary x hInv h))
     (fun hInv => SystemState.StateMono.of_stateFields fun x =>
       TCB.map_proj_of_map_withoutLinks_eq (fun t => (t.ipcState, t.threadState, t.cpuAffinity))
-        (ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h))
+        (ipcUnwrapCaps_getTcb?_eq caps endpointId rtcb slot? st st' summary x hInv h))
     (fun hInv => ipcUnwrapCaps_releaseStateAgree hInv h)
     (fun hInv => ipcUnwrapCaps_refillViewsKept hInv h)
     (fun hInv => ipcUnwrapCaps_yieldLinksKept hInv h)
-    (hRes := by rw [ipcUnwrapCaps_preserves_machine caps root base grant st st' summary h])
+    (hRes := by rw [ipcUnwrapCaps_preserves_machine caps endpointId rtcb slot? st st' summary h])
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
 receiver-side unwrap. -/
 theorem receiveTransferCaps_runQueueStage
-    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
-    {base : SeLe4n.Slot} {st st' : SystemState} {summary : CapTransferSummary}
-    (h : receiveTransferCaps req root base st = .ok (summary, st')) : RunQueueStage st st' := by
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState} {summary : CapTransferSummary}
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) : RunQueueStage st st' := by
   unfold receiveTransferCaps at h
   cases req with
   | none =>
@@ -924,7 +900,11 @@ theorem receiveTransferCaps_runQueueStage
       split at h
       · simp only [Except.ok.injEq, Prod.mk.injEq] at h
         rw [← h.2]; exact .refl _
-      · exact ipcUnwrapCaps_runQueueStage h
+      · cases target? with
+        | none =>
+            simp only [Except.ok.injEq, Prod.mk.injEq] at h
+            rw [← h.2]; exact .refl _
+        | some t => exact ipcUnwrapCaps_runQueueStage h
 
 /-- The donation rebinds a context and two threads' bindings: no run-queue
 field moves, and the refills of every context but the donated one are kept. -/
@@ -1120,10 +1100,10 @@ theorem endpointCallOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
 
 theorem endpointCallWithCapsOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
+    (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
     (hNI : isIdleThreadId caller = false) :
-    activeKeptStage st (endpointCallWithCapsOnCore endpointId caller payload base c st).1 := by
+    activeKeptStage st (endpointCallWithCapsOnCore endpointId caller payload c st).1 := by
   have s0 := (endpointCallOnCore_runQueueEntryStage endpointId caller payload c st hHeads hCur hNI).1
   have r0 := endpointCallOnCore_activeKeptStage endpointId caller payload c st hHeads hCur hNI
   unfold endpointCallWithCapsOnCore
@@ -1144,11 +1124,11 @@ theorem endpointCallWithCapsOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
 
 theorem endpointCallWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
+    (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
     (hNI : isIdleThreadId caller = false) :
     SystemState.RunQueueEntryStage st
-      (endpointCallWithCapsOnCore endpointId caller payload base c st).1 := by
+      (endpointCallWithCapsOnCore endpointId caller payload c st).1 := by
   have s0 := endpointCallOnCore_runQueueEntryStage endpointId caller payload c st hHeads hCur hNI
   unfold endpointCallWithCapsOnCore
   generalize endpointCallOnCore endpointId caller payload c st = r at s0 ⊢
@@ -1164,18 +1144,18 @@ theorem endpointCallWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId
 
 theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
+    (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
     (hNI : isIdleThreadId caller = false)
     (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt caller) :
     SystemState.RunQueueEntryStage st
-      (endpointCallCrossCoreDispatch endpointId caller payload base c st).1 := by
-  have s0 := endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller payload base c st
+      (endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
+  have s0 := endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller payload c st
     hHeads hCur hNI
-  have a0 := endpointCallWithCapsOnCore_activeKeptStage endpointId caller payload base c st
+  have a0 := endpointCallWithCapsOnCore_activeKeptStage endpointId caller payload c st
     hHeads hCur hNI hInv hR caller hAct
   unfold endpointCallCrossCoreDispatch
-  generalize endpointCallWithCapsOnCore endpointId caller payload base c st = r at s0 a0 ⊢
+  generalize endpointCallWithCapsOnCore endpointId caller payload c st = r at s0 a0 ⊢
   obtain ⟨st1, r⟩ := r
   cases r with
   | error e => exact s0
@@ -1430,9 +1410,9 @@ theorem faultDeliverOnCore_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
   · exact sus
   · rename_i tgt _
     have s0 := endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hHeads hCur hNI hInv hR hAct
+      (SendPayload.fault f fctx tgt.cap.badge) c st hHeads hCur hNI hInv hR hAct
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st = r at s0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge) c st = r at s0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus
