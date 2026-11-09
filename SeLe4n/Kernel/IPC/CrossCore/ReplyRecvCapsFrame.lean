@@ -452,4 +452,70 @@ theorem receiveGuard_of_transferFrame {s' s : SystemState} (h : transferFrame s'
         rintro ⟨a, b⟩
         exact ⟨(h.2.2.1 _).trans a, h.leaves b⟩
 
+/-! ### The guard, read before any write -/
+
+/-- `cnodeStoreInPlace` read through `getCNode?`, the index and the lifecycle. -/
+theorem cnodeStoreInPlace_eq_getCNode? (s : SystemState) (id : SeLe4n.ObjId) :
+    cnodeStoreInPlace s id = (match s.getCNode? id with
+      | some _ => s.objectIndexSet.table.holds id () && s.lifecycle.objectTypes.holds id .cnode
+      | none => true) := by
+  unfold cnodeStoreInPlace SystemState.getCNode? storeLeavesIndexAndTypes
+  cases h : s.objects[id]? with
+  | none => rfl
+  | some o =>
+    cases o <;> simp only []
+    simp only [Bool.and_true]
+    rfl
+
+/-- The CNode-store test is the same on states agreeing on CNodes, the index and the lifecycle. -/
+theorem cnodeStoreInPlace_congr {S st : SystemState} (hC : ∀ id, S.getCNode? id = st.getCNode? id)
+    (hI : S.objectIndexSet = st.objectIndexSet) (hL : S.lifecycle = st.lifecycle)
+    (id : SeLe4n.ObjId) : cnodeStoreInPlace S id = cnodeStoreInPlace st id := by
+  rw [cnodeStoreInPlace_eq_getCNode?, cnodeStoreInPlace_eq_getCNode?, hC, hI, hL]
+
+/-- **The reply transfer's stores lie where their CNodes are**, read on the
+pre-state `st` over the words the transfer reads (`capTransferK`): it has no
+receive slot or nothing to move, or the receive slot's CNode and the first
+source slot's CNode are each stored in place (`cnodeStoreInPlace`).  The guard
+under which the reply-receive's receive leg may run in place after the reply
+leg's transfer (`receiveTransferCaps_reply_transferFrame`). -/
+@[inline] def replyTransferStoresInPlace (st : SystemState) (ep : SeLe4n.ObjId)
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : Bool :=
+  capTransferK st ep sv sb sroot count rv rb rroot fun free dcn _ n _ _ _ a0 _ _ _ _ _ =>
+    !free || n == 0 || (cnodeStoreInPlace st dcn && cnodeStoreInPlace st a0)
+
+/-- **The specification's reply transfer keeps the frame**: on a state `S`
+agreeing with the pre-state `st` on buffers, CNodes, the index and the
+lifecycle, the transfer the reply leg runs (no endpoint, the request and the
+receive side read on `st`) leaves a state in `transferFrame` of `S`, when
+`replyTransferStoresInPlace` holds on `st`. -/
+theorem receiveTransferCaps_reply_transferFrame {S st : SystemState}
+    (hAg : ipcBufferReadsAgree S st) (hI : S.objectIndexSet = st.objectIndexSet)
+    (hL : S.lifecycle = st.lifecycle) (hNo : S.objects.noResizeDue) (ep : SeLe4n.ObjId)
+    (stcb rt : TCB) (count : Nat)
+    (hG : replyTransferStoresInPlace st ep stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count
+      rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot = true)
+    {s : CapTransferSummary} {S' : SystemState}
+    (hT : receiveTransferCaps (frameCapRequestOf st stcb count) none (capTargetOf st rt) S =
+      .ok (s, S')) :
+    transferFrame S' S ∧ S'.objects.noResizeDue := by
+  rw [← hAg.frameCapRequestOf, ← hAg.capTargetOf] at hT
+  have hK := capTransferK_eq_at S ep false stcb count rt (fun _ Y => Y)
+  simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte, hT] at hK
+  rw [capTransferK_eq_words, capTransferWords_congr hAg] at hK
+  unfold replyTransferStoresInPlace at hG
+  rw [capTransferK_eq_words] at hG
+  generalize capTransferWords st ep stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count
+    rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot = w at hK hG
+  dsimp only at hK hG
+  rw [← hK]
+  have hC := cnodeStoreInPlace_congr (S := S) (st := st) hAg.getCNode? hI hL
+  refine transferFrame_capStepsApply_noUnwrap _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ S hNo
+    (fun hf hn => ?_)
+  rw [hf] at hG
+  have hn' : (w.n == 0) = false := by simpa using hn
+  simp only [Bool.not_true, Bool.false_or, hn', Bool.and_eq_true] at hG
+  exact ⟨(hC _).trans hG.1, (hC _).trans hG.2⟩
+
 end SeLe4n.Kernel
