@@ -285,6 +285,43 @@ theorem routedExtraCaps_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr
       · cases hD
   · cases hR
 
+/-- The message length a register-routed frame names: bits 0–6 of its
+message-info word (`decodeMsgInfoWord`), read as a word so an arm that reads
+it builds no message info. -/
+@[inline] def routedLength (rf : SeLe4n.RegisterFile) : Nat :=
+  (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg &&& 0x7F).toNat
+
+theorem routedLength_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr : SeLe4n.CPtr}
+    {mi : MessageInfo}
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+      .transferring sid capAddr mi) :
+    routedLength rf = mi.length := by
+  unfold Architecture.RegisterDecode.registerRoutedSyscall at hR
+  split at hR
+  · unfold Architecture.RegisterDecode.registerRoutedSyscallOf at hR
+    dsimp only at hR
+    cases hD : Architecture.RegisterDecode.decodeMsgInfoWord
+        (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg) with
+    | error e => rw [hD] at hR; cases hR
+    | ok m =>
+      rw [hD] at hR
+      have hm : m = mi := by
+        simp only [Architecture.RegisterDecode.routedShortTail_eq,
+          Architecture.RegisterDecode.routedLongTail_eq] at hR
+        repeat' split at hR
+        all_goals first
+          | (cases hR; rfl)
+          | (cases hR; done)
+          | (rcases Architecture.RegisterDecode.unroutedSyscall_eq hR with h | ⟨h, -⟩ <;> cases h)
+          | skip
+        all_goals done
+      subst hm
+      unfold Architecture.RegisterDecode.decodeMsgInfoWord at hD
+      split at hD
+      · cases hD; rfl
+      · cases hD
+  · cases hR
+
 theorem frameCapRequestOf_zero (st : SystemState) (tcb : TCB) : frameCapRequestOf st tcb 0 = none := by
   unfold frameCapRequestOf
   rw [senderExtraCapAddrs_zero]

@@ -3208,12 +3208,13 @@ other rendezvous goes through the specification
                   sTcb.ipcBadged)
               else endpointReceiveRendezvousR epId tid replyCode executingCore st
             | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
-          | .transferring .send _ mi =>
-            if decide (mi.length ≤ 4) && !sTcb.ipcFaultSend &&
+          | .transferring .send _ _ =>
+            let len := routedLength sTcb.registerContext
+            if decide (len ≤ 4) && !sTcb.ipcFaultSend &&
                 receiveTakesInPlace st epId tid s sTcb then
               if receiverTransferInertW st epId tid sTcb then
                 let f := Architecture.regMessageFrameW SeLe4n.arm64DefaultLayout
-                  sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
+                  sTcb.registerContext len (SeLe4n.Badge.ofWord sTcb.ipcBadge)
                   sTcb.ipcBadged
                 .ok ((), performReceiveDelivered st epId s sTcb.queueNextCode tid executingCore
                   f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
@@ -3222,26 +3223,27 @@ other rendezvous goes through the specification
                 | some rt =>
                   let rf := sTcb.registerContext
                   .ok ((), performTakeCapsDelivered st epId s sTcb.queueNextCode tid executingCore
-                    SeLe4n.arm64DefaultLayout mi.length
+                    SeLe4n.arm64DefaultLayout len
                     (Architecture.badgeWordIf (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged)
-                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 0)
-                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 1)
-                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 2)
-                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf mi.length 3)
+                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 0)
+                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 1)
+                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 2)
+                    (Architecture.regMessageWord SeLe4n.arm64DefaultLayout rf len 3)
                     sTcb.vspaceRoot sTcb.ipcBuffer sTcb.cspaceRoot
                     (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
                     rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot)
                 | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
             else endpointReceiveRendezvousR epId tid replyCode executingCore st
-          | .transferring .call _ mi =>
+          | .transferring .call _ _ =>
+            let len := routedLength sTcb.registerContext
             match SeLe4n.ReplyId.ofOptCode replyCode with
             | some rid =>
-              if decide (mi.length ≤ 4) && !sTcb.ipcFaultSend &&
+              if decide (len ≤ 4) && !sTcb.ipcFaultSend &&
                   receiveCallTakesInPlace st epId tid s sTcb rid then
                 match st.getTcb? tid with
                 | some rt =>
                   .ok ((), performCallTakeCapsDelivered st epId s sTcb.queueNextCode tid rid
-                    executingCore SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
+                    executingCore SeLe4n.arm64DefaultLayout sTcb.registerContext len
                     (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.vspaceRoot
                     sTcb.ipcBuffer sTcb.cspaceRoot
                     (if sTcb.ipcCanGrant then routedExtraCaps sTcb.registerContext else 0)
@@ -3372,6 +3374,7 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
             · rfl
           · rfl
         · next capAddr mi hR =>
+          simp only [routedLength_eq hR]
           split
           · next hG =>
             simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
@@ -3400,6 +3403,7 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
               · rfl
           · rfl
         · next capAddr mi hR =>
+          simp only [routedLength_eq hR]
           split
           · next rid hRid =>
             split
