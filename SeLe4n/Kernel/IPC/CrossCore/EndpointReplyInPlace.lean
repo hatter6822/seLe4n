@@ -313,7 +313,7 @@ theorem replyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (hSRes : server.isReserved = false)
     (hG : replyWakesInPlace st c ct rid = true)
     (hNoF : ct.faultWords.isFault = false)
-    (hX : (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true)
+    (hX : replyTransferInert st replier ct grant = true)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
     replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
       .ok ((), performReplyRendezvous st c server rid msg core) := by

@@ -602,7 +602,7 @@ theorem replyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : System
     (hRO : ct.replyObject = some rid)
     (hG : replyUnheldPopsInPlace st c rid = true)
     (hNoF : ct.faultWords.isFault = false)
-    (hX : (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true)
+    (hX : replyTransferInert st replier ct grant = true)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
     replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
       .ok ((), performReplyUnheldDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩

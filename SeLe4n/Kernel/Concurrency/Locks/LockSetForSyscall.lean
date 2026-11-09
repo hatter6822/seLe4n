@@ -517,7 +517,7 @@ theorem lockSetForSyscall_replyRecv_delegated_covers_server
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnRoot prevCaller endpointId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hServer]
-  exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_donation_server_tcb_write_mem ..)))
+  exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_donation_server_tcb_write_mem ..))))
 
 /-- **WS-OD OD3.5**: a **delegated** `.replyRecv` — one whose reply capability
 answers a caller whose recorded server is some *other* thread — now declares a
@@ -948,9 +948,9 @@ theorem lockSetForSyscall_replyRecv_covers_writes
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_caller_tcb_write_mem ..))),
-         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_target_tcb_write_mem ..))),
-         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_endpoint_write_mem ..)))⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_caller_tcb_write_mem ..)))),
+         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_target_tcb_write_mem ..)))),
+         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_endpoint_write_mem ..))))⟩
 
 /-- And its reply leg's capability transfer: the answered caller's receive
 slot's CNode (`replyInstallCNode?`, the member `.reply` declares for the same
@@ -1009,7 +1009,7 @@ theorem lockSetForSyscall_replyRecv_covers_capsWrites
   refine ⟨?_, lockSet_endpointReplyRecvOnCore_covers_cdt _ _ _ _ _ hCaps⟩
   unfold lockSet_endpointReplyRecvOnCore
   rw [hCaps]
-  exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_capsInstall_write_mem ..)))
+  exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_capsInstall_write_mem ..))))
 
 /-- **WS-OD OD3.13**: and the receive leg's queue-structure neighbour.
 
@@ -1060,8 +1060,8 @@ theorem lockSetForSyscall_replyRecv_covers_redonation
   cases hDecl
   unfold lockSet_endpointReplyRecvOnCore
   rw [hNew]
-  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonated_sc_write_mem ..))),
-         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonation_stateLevel_write_mem ..)))⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonated_sc_write_mem ..)))),
+         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonation_stateLevel_write_mem ..))))⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.notificationSignal` declares the
 bound-delivery-aware signal footprint. -/

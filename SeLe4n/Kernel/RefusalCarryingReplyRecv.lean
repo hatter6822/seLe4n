@@ -302,22 +302,24 @@ theorem replyRecvBlocksFast_spec {st : SystemState} {epId : SeLe4n.ObjId}
   · simp only [receiveQueueTailCode, hEp]
 
 /-- **The reply-receive's reply leg transfers no capability, decided in place**:
-the reply capability lacks the grant right, or the answered caller `c` has no
-IPC buffer the kernel may write or names no receive slot there
-(`replyTransferInertW`); a caller with no TCB takes none.  Every in-place form of
-the arm answering an unfaulted caller is taken only then, because none of them
-runs seL4's `doReplyTransfer` capability transfer
-(`replyRecvReplyInertW_spec`, then `replyRecvReplyTransfer_of_inert`). -/
-@[inline] def replyRecvReplyInertW (st : SystemState) (c : SeLe4n.ThreadId) (grant : Bool) :
+the reply capability lacks the grant right, or the replier `tid`'s frame names
+no extra capability, or the answered caller `c` has no IPC buffer the kernel may
+write or names no receive slot there (`replyTransferInertW`); a caller with no
+TCB takes none.  Every in-place form of the arm answering an unfaulted caller is
+taken only then, because none of them runs seL4's `doReplyTransfer` capability
+transfer (`replyRecvReplyInertW_spec`, then `replyRecvReplyTransfer_of_inert`).
+A word-only reply (no extra capability) passes on the count alone, whatever
+receive path the caller configured. -/
+@[inline] def replyRecvReplyInertW (st : SystemState) (tid c : SeLe4n.ThreadId) (grant : Bool) :
     Bool :=
   match st.getTcb? c with
-  | some ct => replyTransferInertW st ct grant
+  | some ct => replyTransferInertW st tid ct grant
   | none => true
 
-theorem replyRecvReplyInertW_spec {st : SystemState} {c : SeLe4n.ThreadId} {grant : Bool}
-    {ct : TCB} (h : replyRecvReplyInertW st c grant = true)
+theorem replyRecvReplyInertW_spec {st : SystemState} {tid c : SeLe4n.ThreadId} {grant : Bool}
+    {ct : TCB} (h : replyRecvReplyInertW st tid c grant = true)
     (hT : st.objects[c.toObjId]? = some (.tcb ct)) :
-    (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true := by
+    replyTransferInert st tid ct grant = true := by
   unfold replyRecvReplyInertW at h
   rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT] at h
   exact replyTransferInert_of_W h
@@ -430,7 +432,7 @@ writes. -/
     (rid : SeLe4n.ReplyId) (grant : Bool) (layout : SeLe4n.SyscallRegisterLayout) (len : Nat)
     (st : SystemState) : Bool :=
   decide (Architecture.regMessageLength layout len - 1 ≤ 4) && replyRecvUnheldBlocks st epId tid c rid &&
-    replyRecvReplyInertW st c grant
+    replyRecvReplyInertW st tid c grant
 
 /-- The checked reply-receive answering a caller recording no server (seL4-MCS's
 `doReplyTransfer` by a holder of the reply capability, then `reply_pop` handing
@@ -457,7 +459,7 @@ call and nothing they read is held across the writes. -/
     (rid : SeLe4n.ReplyId) (grant : Bool) (layout : SeLe4n.SyscallRegisterLayout) (len : Nat)
     (st : SystemState) : Bool :=
   decide (Architecture.regMessageLength layout len - 1 ≤ 4) && replyRecvDonatedBlocks st epId tid c rid &&
-    replyRecvReplyInertW st c grant
+    replyRecvReplyInertW st tid c grant
 
 /-- The checked reply-receive on a reply whose reply object heads the stack of
 the context the server holds on loan (seL4-MCS's `reply_pop` between the legs):
@@ -592,7 +594,7 @@ caller carrying no fault, so the fault test runs first. -/
       if threadHasPendingFault st c then
         replyRecvFaultArmR epId tid c rid badge grant layout rf len label executingCore st
       else if decide (Architecture.regMessageLength layout len - 1 ≤ 4) &&
-          replyRecvBlocksFast st epId tid c rid && replyRecvReplyInertW st c grant then
+          replyRecvBlocksFast st epId tid c rid && replyRecvReplyInertW st tid c grant then
         .ok ((), performReplyRecvBlockDelivered st c tid rid epId (receiveQueueTailCode st epId)
           layout rf len badge executingCore)
       else replyRecvDonatedArmR epId tid c rid badge grant layout rf len label executingCore st
@@ -1090,7 +1092,7 @@ caller carrying no fault when the reply-receive may block in place
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
       if !threadHasPendingFault st c && replyRecvBlocksFast st epId tid c rid &&
-          replyRecvReplyInertW st c grant then
+          replyRecvReplyInertW st tid c grant then
         .ok ((), performReplyRecvBlockDeliveredLong st c tid rid epId (receiveQueueTailCode st epId)
           rf len badge executingCore)
       else replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st

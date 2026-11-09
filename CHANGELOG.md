@@ -45,20 +45,57 @@ reporting none.
   leaves the state unchanged).
 - **The ceiling**: the parametric reply-receive bound is restated three below
   the ceiling (`lockSet_replyRecv_size_add_three_le`, was `_size_lt`) and
-  **`maxLockSetSize` is 31** (was 29), counting the reply install's CNode and
+  `maxLockSetSize` went to 31 (was 29; 32 with the receive slot read after the
+  transfer, below), counting the reply install's CNode and
   its CDT lock as members of their own.  The CDT lock merges into the receive
   leg's `stateLevelLock` wherever that is declared, so the widest footprint a
-  test builds stays at thirty.  The resolved bounds move by two
+  test builds stays at thirty (thirty-one with the post-transfer receive
+  slot).  The resolved bounds move by two
   (`lockSet_endpointReplyRecvOnCore_size_le_onEveryState` 25,
   `…_size_le_sharp` 24), and the `.reply` bound is restated over both
   extensions (`lockSet_endpointReply_extendOpt_extendOpt_size_le`).  The
   admissible RPi5 per-lock section moves 11 → 10 µs; the uniform 60 µs
   envelope moves 5220 → 5580 µs.
+- **The receive leg's install CNode, read after the reply transfer** (review
+  finding): the receive leg reads its receive slot on the reply transfer's
+  post-state (seL4's `receiveIPC` → `getReceiveSlots`, after
+  `doReplyTransfer`), but the footprint resolved it on the pre-state only.
+  When the answered caller and the replier share a CSpace, the reply can
+  install a CNode capability into the slot the replier's receive path crosses,
+  and the receive leg then installs a queued sender's capability into a CNode
+  the footprint never named.  The footprint now also declares the slot's CNode
+  as resolved after an installing transfer
+  (`replyTransferInstalledState`, `receiveInstallCNodeAfterReply?`,
+  `lockSet_endpointReplyRecvOnCore_covers_receiveSlotAfterReply`); a reply
+  transfer leaves the receive slot resolving as one of the two
+  (`replyTransferCaps_receiverCapSlot_cases`), so a slot read after it, on
+  either answer and either grant right, is declared
+  (`lockSet_endpointReplyRecvOnCore_covers_receiveLegSlot`).  The parametric
+  bound is restated four below the ceiling
+  (`lockSet_replyRecv_size_add_four_le`, was `_add_three_le`),
+  **`maxLockSetSize` is 32**, the resolved bounds read 26 and 25, the
+  admissible RPi5 section stays 10 µs and the uniform envelope is 5760 µs.
+  `.reply` has no later leg, and `.receive` reads its slot from its own
+  pre-state, so neither moves.
+- **A word-only reply stays in place** (review finding): the inertness test
+  read only the grant right and the caller's receive path, so a granting reply
+  naming no extra capability to a caller with a configured receive slot left
+  the in-place arms for the allocating specification path.  The test now also
+  reads the replier's saved message-info word (`frameNamesNoExtraCapsW`,
+  `replyFrameNamesNoCapsW`, bits 7..8 of `x1`) before the receive path, proven
+  to make the specification's request `none`
+  (`senderFrameCapRequest_of_noExtraCaps`, `replyCapRequest_of_noCapsW`).  The
+  specification-side shape is one predicate, `replyTransferInert`, carried by
+  `replyTransferCaps_of_inert` and every in-place equality proof of `.reply`
+  and `.replyRecv`.  No live reply capability carries the grant right today
+  (`mintReplyCap` mints `.write` only), so the QEMU exerciser cannot reach the
+  case; `SmpCrossCoreReplySuite` pins the decision.
 - **In place only when nothing moves**: the four in-place `.replyRecv` arms
   (blocks, donated, unheld, long) are taken only when the reply leg's transfer
   moves nothing — no grant, no IPC buffer, or no receive slot
   (`replyRecvReplyInertW`, `replyRecvReplyInertW_spec`,
-  `replyRecvReplyTransfer_of_inert`); their equality proofs carry the guard.  A
+  `replyRecvReplyTransfer_of_inert`), or the replier names no extra capability
+  (above); their equality proofs carry the guard.  A
   reply-receive whose transfer installs runs the specification's path (the
   `docs/REGISTERED_DEBT.md` table C row).
 - **Entry capture**: a reply-receive reads two receive paths from RAM, its
@@ -69,7 +106,7 @@ reporting none.
   lock-set, deadlock-freedom and WCRT suites pin the new ceiling.
 - **Docs**: the "at HEAD" ceiling figures in the specification, GitBook chapter
   12 and `WORKSTREAM_CONTEXT.md` had been left at 24 / 13 µs / 4320 µs since
-  WS-HP HP10.6; they now read 31 / 10 µs / 5580 µs.
+  WS-HP HP10.6; they now read 32 / 10 µs / 5760 µs.
 
 ## v0.37.5 — capability transfer is seL4's `transferCaps`: one receive slot named by the receiver's IPC buffer, endpoint capabilities unwrapped
 

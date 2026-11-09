@@ -450,7 +450,7 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
     (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
     (hRec : replyRecordsInPlace st (rid.val + 1) = true)
     (hInert : answer = none →
-      (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true) :
+      replyTransferInert st tid ct grant = true) :
     endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
       .ok ({ results := #[] }, replyRecvAnswerCaller answer
         (PriorityInheritance.propagatePipChainCrossCore
@@ -507,7 +507,7 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
     (hRec : replyRecordsInPlace st (rid.val + 1) = true)
-    (hInert : (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true) :
+    (hInert : replyTransferInert st tid ct grant = true) :
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
@@ -753,7 +753,7 @@ theorem replyRecvOnCore_blocks_delivered (st : SystemState) (epId : SeLe4n.ObjId
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
     (hRec : replyRecordsInPlace st (rid.val + 1) = true)
-    (hInert : (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true) :
+    (hInert : replyTransferInert st tid ct grant = true) :
     (match endpointReplyRecvOnCore epId tid rid c msg grant core st with
       | .ok (summary, st') =>
           (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :

@@ -1227,11 +1227,12 @@ private def runLubMergeChecks : IO Unit := do
   -- re-donation's push rewrites, and — PR #894's review — the five objects the
   -- INVOKING receiver's own pre-receive return touches, and (WS-ZA ZA4.6) the
   -- three reply-waiter TCBs its unlink and link rewrite, and (WS-ZA ZA4.7) the
-  -- dequeued sender's CSpace root: twenty-eight, three below `maxLockSetSize`;
+  -- dequeued sender's CSpace root: twenty-eight, four below `maxLockSetSize`;
   -- the resolved footprint adds the receive slot's CNode beside it
-  -- (`lockSet_endpointReplyRecvOnCore`), which is the twenty-ninth, the
-  -- CNode the reply leg's capability transfer installs into, the thirtieth,
-  -- and that install's CDT lock, counted as a thirty-first.
+  -- (`lockSet_endpointReplyRecvOnCore`), which is the twenty-ninth, the receive
+  -- slot's CNode as resolved after the reply leg's capability transfer, the
+  -- thirtieth, the CNode that transfer installs into, the thirty-first, and
+  -- that install's CDT lock, counted as a thirty-second.
   let widestReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                           (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                           (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
@@ -1244,28 +1245,37 @@ private def runLubMergeChecks : IO Unit := do
                           (some ⟨17⟩) (some ⟨18⟩) (some ⟨19⟩)
                           -- WS-ZA ZA4.7: the dequeued sender's CSpace root.
                           (some (ObjId.ofNat 30))
-  assertBool "the widest declarable .replyRecv has 28 locks (= maxLockSetSize - 3)"
-    (decide (widestReplyRecv.size = 28 && widestReplyRecv.size = maxLockSetSize - 3))
+  assertBool "the widest declarable .replyRecv has 28 locks (= maxLockSetSize - 4)"
+    (decide (widestReplyRecv.size = 28 && widestReplyRecv.size = maxLockSetSize - 4))
   -- …and the receive slot's CNode, a CNode no other member names, is the
   -- twenty-ninth.
   let widestWithSlot := lockSetExtendOpt widestReplyRecv
                           (some (cnodeLock (ObjId.ofNat 31), AccessMode.write))
-  assertBool "…and with the receive slot's CNode it has 29 (= maxLockSetSize - 2)"
-    (decide (widestWithSlot.size = 29 && widestWithSlot.size = maxLockSetSize - 2))
+  assertBool "…and with the receive slot's CNode it has 29 (= maxLockSetSize - 3)"
+    (decide (widestWithSlot.size = 29 && widestWithSlot.size = maxLockSetSize - 3))
+  -- …and the receive slot's CNode as the receive leg resolves it after the
+  -- reply leg's capability transfer (`receiveInstallCNodeAfterReply?`): a CNode
+  -- the transfer made reachable, distinct from every other member, the
+  -- thirtieth.
+  let widestWithSlotAfterReply := lockSetExtendOpt widestWithSlot
+                          (some (cnodeLock (ObjId.ofNat 33), AccessMode.write))
+  assertBool "…and with the receive slot's CNode after the reply transfer it has 30 (= maxLockSetSize - 2)"
+    (decide (widestWithSlotAfterReply.size = 30
+      && widestWithSlotAfterReply.size = maxLockSetSize - 2))
   -- …and the answered caller's receive slot's CNode, which the reply leg's
-  -- capability transfer installs into, is the thirtieth.
-  let widestWithReplyInstall := lockSetExtendOpt widestWithSlot
+  -- capability transfer installs into, is the thirty-first.
+  let widestWithReplyInstall := lockSetExtendOpt widestWithSlotAfterReply
                           (some (cnodeLock (ObjId.ofNat 32), AccessMode.write))
-  assertBool "…and with the reply install's CNode it has 30 (= maxLockSetSize - 1)"
-    (decide (widestWithReplyInstall.size = 30 && widestWithReplyInstall.size = maxLockSetSize - 1))
+  assertBool "…and with the reply install's CNode it has 31 (= maxLockSetSize - 1)"
+    (decide (widestWithReplyInstall.size = 31 && widestWithReplyInstall.size = maxLockSetSize - 1))
   -- …and that install's CDT lock (`replyInstallCdtLock?`).  The ceiling counts
   -- it as a member of its own; on this shape the receive leg's install already
   -- declares `stateLevelLock` for write, so `insertOrMerge` collapses it and
-  -- the footprint stays at thirty, with the lock declared WRITE.
+  -- the footprint stays at thirty-one, with the lock declared WRITE.
   let widestWithReplyCdt := lockSetExtendOpt widestWithReplyInstall
                           (some (stateLevelLock, AccessMode.write))
-  assertBool "…and with the reply install's CDT lock it stays 30, the lock merged"
-    (decide (widestWithReplyCdt.size = 30 && widestWithReplyCdt.size ≤ maxLockSetSize))
+  assertBool "…and with the reply install's CDT lock it stays 31, the lock merged"
+    (decide (widestWithReplyCdt.size = 31 && widestWithReplyCdt.size ≤ maxLockSetSize))
   assertBool "the reply install's CDT lock is declared WRITE"
     (decide ((stateLevelLock, AccessMode.write) ∈ widestWithReplyCdt.pairs))
   -- **WS-HP HP3.1**: and the frame *below* the answered reply is a member of its
@@ -1297,8 +1307,8 @@ private def runLubMergeChecks : IO Unit := do
                 (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) none (senderCnodeRootObjId := none)).size = 23))
   assertBool "the redirect's origin is declared WRITE (the pop rebinds that TCB)"
     (decide ((tcbLock ⟨16⟩, AccessMode.write) ∈ widestReplyRecv.pairs))
-  assertBool "...and that is exactly three below maxLockSetSize"
-    (decide (widestReplyRecv.size + 3 = maxLockSetSize))
+  assertBool "...and that is exactly four below maxLockSetSize"
+    (decide (widestReplyRecv.size + 4 = maxLockSetSize))
   -- **PR #894 review**: and no *reachable* state declares all twenty-two --
   -- the re-donation members are live exactly when the endpoint has a queued
   -- sender and the invoker's pre-receive return exactly when it does not.  The

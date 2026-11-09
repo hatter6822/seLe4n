@@ -1861,7 +1861,7 @@ general arm, which runs seL4's `doReplyTransfer` capability transfer. -/
                                 securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
                                 !server.isReserved && replyWakesInPlace st c ct rid then
                               if !ct.faultWords.isFault then
-                                if replyTransferInertW st ct (cap.rights.mem .grant) then
+                                if replyTransferInertW st tid ct (cap.rights.mem .grant) then
                                   .ok ((), replyRendezvousDelivered st c server rid
                                     layout rf len cap.badgeWord cap.badged executingCore)
                                 else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps
@@ -1876,7 +1876,7 @@ general arm, which runs seL4's `doReplyTransfer` capability transfer. -/
                                 executingCore cap c server rid ct.scBindingScCode ct.faultKind
                                 ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
                                 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 st
-                            else if replyTransferInertW st ct (cap.rights.mem .grant) then
+                            else if replyTransferInertW st tid ct (cap.rights.mem .grant) then
                               endpointReplyDonatedArmR ctx layout rf len extraCaps label tid
                                 executingCore cap c server rid ct.scBindingScCode
                                 ct.faultWords.isFault st
@@ -1892,7 +1892,7 @@ general arm, which runs seL4's `doReplyTransfer` capability transfer. -/
                                 executingCore cap c rid ct.faultKind ct.faultIp ct.faultSp
                                 ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4
                                 ct.faultX5 ct.faultX6 ct.faultX7 st
-                            else if replyTransferInertW st ct (cap.rights.mem .grant) then
+                            else if replyTransferInertW st tid ct (cap.rights.mem .grant) then
                               endpointReplyUnheldArmR ctx layout rf len extraCaps label tid
                                 executingCore cap c rid ct.faultWords.isFault st
                             else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
@@ -2711,7 +2711,7 @@ as seL4's `doReplyTransfer` does, when the reply transfers no capability
                             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
                                 !server.isReserved && !ct.faultWords.isFault &&
                                 replyWakesInPlace st c ct rid &&
-                                replyTransferInertW st ct (cap.rights.mem .grant) then
+                                replyTransferInertW st tid ct (cap.rights.mem .grant) then
                               .ok ((), performReplyDeliveredLong st c server rid rf len tid
                                 cap.badgeWord cap.badged executingCore)
                             else endpointReplyLongGeneralR ctx rf len extraCaps label tid

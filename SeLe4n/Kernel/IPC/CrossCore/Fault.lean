@@ -757,7 +757,7 @@ theorem replyTransferOnCore_of_no_fault_inert (replier callerTid : SeLe4n.Thread
     (c : CoreId) (st : SystemState) (ct : TCB)
     (hNoFault : threadHasPendingFault st callerTid = false)
     (hT : st.getTcb? callerTid = some ct)
-    (hW : (!grant || !receiverHasBuffer st ct || (receiveSlot? st ct).isNone) = true) :
+    (hW : replyTransferInert st replier ct grant = true) :
     replyTransferOnCore replier callerTid mi regs msg grant c st =
       (match endpointReplyCrossCoreDispatch replier callerTid msg c st with
        | (st', .ok _) => .ok ((), Architecture.stageDeliveredMessage st' callerTid 0)
