@@ -432,13 +432,29 @@ theorem replyRecvOnCore_take_transfer (st : SystemState) (epId : SeLe4n.ObjId)
   simp only [hRec, Option.getD_some, hEq, hPop, hXf', hRecv, hEp2, Option.bind_some, hH]
   simp [replyRecvPostReceiveDonation, replyRecvAnswerCaller]
 
-/-- The replier's saved registers, handed over: out of line and returning its
-argument, so a performer passing its `rf` here takes ownership of it from the
-arm (`rf` is the replier's own register file, which the arm projects out of its
-TCB).  The performer releases it once the caller's frame is read from it, so the
-take's write of the replier's own frame finds the register file unshared and
-writes it in place rather than copying it. -/
-@[noinline] def ownedRegisterFile (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile := rf
+/-- The take's writes before the server's own frame: the sender popped, made
+ready and woken, the server made ready, its priority walk, then the caller's
+frame with the transfer's report (read from the server's saved registers `rf`)
+and the sender's completion frame. -/
+@[noinline] def replyRecvTakeLegs (capInfo : Nat) (Y : SystemState) (c tid s : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) (nextCode : Nat) (core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) : SystemState :=
+  let W := (wakeThread ((storePopHead Y epId false s (ThreadId.ofOptCode nextCode)).updateTcb s
+    receiverReady) s core).1
+  let Z := (PriorityInheritance.propagatePipChainCrossCore (W.updateTcb tid receiverReady) tid
+    core).1
+  Architecture.stageWokenSendCompletion (deliverReplyRecvCapsFrame capInfo Z c layout rf len badge)
+    (some s)
+
+/-- The server's own frame, its six words read from the sender's saved
+registers before any write.  Out of line from the legs (`replyRecvTakeLegs`):
+`rf` is the server's own register file, which the arm projects out of its TCB
+and holds while it passes it on, so the arm releases it once the legs return and
+this write finds it unshared and writes it in place rather than copying it. -/
+@[noinline] def writeTakerFrame (X : SystemState) (tid : SeLe4n.ThreadId)
+    (w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
+  X.mapTcbInPlace tid (withFrameWords w0 w1 w2 w3 w4 w5)
 
 /-- **The receive leg's take after the reply's transfer, delivered**: the
 sender popped, made ready and woken, the server made ready, its priority walk,
@@ -450,12 +466,8 @@ state is handed over. -/
     (epId : SeLe4n.ObjId) (nextCode : Nat) (core : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
-  let W := (wakeThread ((storePopHead Y epId false s (ThreadId.ofOptCode nextCode)).updateTcb s
-    receiverReady) s core).1
-  let Z := (PriorityInheritance.propagatePipChainCrossCore (W.updateTcb tid receiverReady) tid
-    core).1
-  (Architecture.stageWokenSendCompletion (deliverReplyRecvCapsFrame capInfo Z c layout rf len badge)
-    (some s)).mapTcbInPlace tid (withFrameWords w0 w1 w2 w3 w4 w5)
+  writeTakerFrame (replyRecvTakeLegs capInfo Y c tid s epId nextCode core layout rf len badge) tid
+    w0 w1 w2 w3 w4 w5
 
 theorem deliverReplyRecvCapsFrame_noResizeDue (capInfo : Nat) (Y : SystemState)
     (c : SeLe4n.ThreadId) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
@@ -587,7 +599,7 @@ theorem replyRecvTakeTail_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
   rw [wakeThread_msg c _ _ _ _ s core hNoU] at hW3r ⊢
   dsimp only at hW3r ⊢
   rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hCT] at hW3r
-  unfold replyRecvTakeTail
+  unfold replyRecvTakeTail writeTakerFrame replyRecvTakeLegs
   dsimp only
   rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode]
   generalize (wakeThread ((storePopHead Y epId false s sTcb.queueNext).updateTcb s receiverReady) s
@@ -640,12 +652,22 @@ theorem SenderWordsKept.ipcBadgeView {t' t : TCB} (h : SenderWordsKept t' t) :
 nothing, delivered**: the reply's writes, the take, the server's priority walk,
 then the caller's frame, the sender's completion and the server's frame, its six
 words read from the sender's saved registers before any write. -/
-@[noinline] def performReplyRecvTakeDelivered (st : SystemState) (c tid : SeLe4n.ThreadId)
+@[noinline] def performReplyRecvTakeLegs (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
+    (core : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (len : Nat) (badge : Option SeLe4n.Badge) : SystemState :=
+  replyRecvTakeLegs 0 (storeReplyRendezvousReady st c tid rid) c tid s epId nextCode core layout
+    rf len badge
+
+/-- The inert take, the legs (`performReplyRecvTakeLegs`) and then the
+server's frame (`writeTakerFrame`), each out of line so the arm releases the
+server's register file between them. -/
+@[inline] def performReplyRecvTakeDelivered (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
     (core : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (len : Nat) (badge : Option SeLe4n.Badge) (w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
-  replyRecvTakeTail 0 (storeReplyRendezvousReady st c tid rid) c tid s epId nextCode core layout
-    (ownedRegisterFile rf) len badge w0 w1 w2 w3 w4 w5
+  writeTakerFrame (performReplyRecvTakeLegs st c tid rid epId s nextCode core layout rf len badge)
+    tid w0 w1 w2 w3 w4 w5
 
 /-- **The reply-receive meeting a waiting sender, its reply transferring
 nothing, is the specification's**: under the reply's guard, a reply of at most
@@ -744,18 +766,30 @@ the server's priority walk, then the caller's frame with the transfer's report,
 the sender's completion and the server's frame.  The replier and the caller
 enter as the words the transfer reads of them, the sender as its successor and
 the six words of its frame, all read before the reply's writes. -/
-@[noinline] def performReplyRecvTakeCapsDelivered (st : SystemState) (c tid : SeLe4n.ThreadId)
+@[noinline] def performReplyRecvTakeCapsLegs (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
     (core : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
-    (len : Nat) (badge : Option SeLe4n.Badge) (w0 w1 w2 w3 w4 w5 : UInt64)
+    (len : Nat) (badge : Option SeLe4n.Badge)
     (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
     (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
   let X := storeReplyRendezvousReady st c tid rid
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
-    replyRecvTakeTail (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+    replyRecvTakeLegs (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
       (capStepsApply c.toObjId false rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
-      c tid s epId nextCode core layout (ownedRegisterFile rf) len badge w0 w1 w2 w3 w4 w5
+      c tid s epId nextCode core layout rf len badge
+
+/-- The installing take, its legs (`performReplyRecvTakeCapsLegs`) and then the
+server's frame (`writeTakerFrame`), each out of line so the arm releases the
+server's register file between them. -/
+@[inline] def performReplyRecvTakeCapsDelivered (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
+    (core : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (len : Nat) (badge : Option SeLe4n.Badge) (w0 w1 w2 w3 w4 w5 : UInt64)
+    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
+    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : SystemState :=
+  writeTakerFrame (performReplyRecvTakeCapsLegs st c tid rid epId s nextCode core layout rf len
+    badge sv sb sroot count rv rb rroot) tid w0 w1 w2 w3 w4 w5
 
 /-- **The reply-receive meeting a waiting sender, its reply leg transferring,
 is the specification's**: under the guard of `replyRecvOnCore_take_delivered`
@@ -853,24 +887,14 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
   rw [CapTransferSummary.capInfo_empty]
   rw [replyRecvTakeTail_staged Y1 c tid s epId ep sTcb2 core layout rf len badge sm.capInfo capAddr
     mi hNoY hNe hSC hSz4 hE2 hH hS2o hG2 hR2 hF2, hK.queueNext, hK.regs, hK.ipcBadgeView]
-  have hKt := capTransferK_eq_at X c.toObjId false stcb count ct
-    (fun i Y => replyRecvTakeTail i Y c tid s epId sTcb.queueNextCode core layout rf len badge
-      (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-        sTcb.ipcBadgeView).x0
-      (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-        sTcb.ipcBadgeView).x1
-      (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-        sTcb.ipcBadgeView).x2
-      (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-        sTcb.ipcBadgeView).x3
-      (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-        sTcb.ipcBadgeView).x4
-      (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
-        sTcb.ipcBadgeView).x5)
-  simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte] at hKt
-  rw [hAX.frameCapRequestOf, hAX.capTargetOf, hT1] at hKt
-  unfold performReplyRecvTakeCapsDelivered
+  have hKl := capTransferK_eq_at X c.toObjId false stcb count ct
+    (fun i Y => replyRecvTakeLegs i Y c tid s epId sTcb.queueNextCode core layout rf len badge)
+  simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte] at hKl
+  rw [hAX.frameCapRequestOf, hAX.capTargetOf, hT1] at hKl
+  unfold performReplyRecvTakeCapsDelivered performReplyRecvTakeCapsLegs
   rw [hX]
-  exact congrArg (fun Z => (.ok ((), Z) : Except KernelError (Unit × SystemState))) hKt.symm
+  dsimp only
+  rw [hKl]
+  rfl
 
 end SeLe4n.Kernel

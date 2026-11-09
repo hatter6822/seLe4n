@@ -4546,6 +4546,30 @@ run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldAdmits st epId ti
 run_check "INVARIANT" rg -n -U '    else if replyRecvLongDonatedCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvDonatedCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvUnheldCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvLongCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvBlockCapsDeliveredLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# A fault answered by a long reply or reply-receive runs in place on every shape
+# the short answer does, its restart words past the fourth read from the
+# replier's IPC buffer in the state the answer runs on, and the take writes the
+# replier's own frame out of line after its legs, so the arm has released the
+# replier's register file and the frame is written in place.
+run_check "INVARIANT" rg -n '^theorem faultReplyApplyOnCore_decode_eq_performFaultAnswerLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyWordOr_longSendRegs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyWordOr_longReplyRecvRegs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyTransferChecked_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyTransferChecked_donated_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyTransferChecked_unheld_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_blocks_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_donated_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_unheld_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvLongFaultArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '                              if ct\.faultWords\.isFault then\n                                if replyWakesInPlace st c ct rid then\n                                  \.ok \(\(\), performFaultReplyAnswerLong st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '                                else if replyPopsInPlace st c ct\.scBindingScCode server rid then\n                                  \.ok \(\(\), performFaultReplyDonatedAnswerLong st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '                              if ct\.faultWords\.isFault then\n                                \.ok \(\(\), performFaultReplyUnheldAnswerLong st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '      if threadHasPendingFault st c then\n        replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        if replyRecvBlocksFast st epId tid c rid then\n          \.ok \(\(\), performReplyRecvFaultAnswerLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvDonatedBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvDonatedFaultAnswerLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvUnheldBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvUnheldFaultAnswerLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def performReplyRecvTakeDelivered [^\n]*\n([ ][^\n]*\n)*  writeTakerFrame \(performReplyRecvTakeLegs st c tid rid epId s nextCode core layout rf len badge\)' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def performReplyRecvTakeCapsDelivered [^\n]*\n([ ][^\n]*\n)*  writeTakerFrame \(performReplyRecvTakeCapsLegs st c tid rid epId s nextCode core layout rf len' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 # ...and a final delete of an orphaned caller's head reply asks the unheld pop's
 # commit test through the in-place gate first, so the admission resolves no
 # outer caller as an `Except` where the gate passes.
