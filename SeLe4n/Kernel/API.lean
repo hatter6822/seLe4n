@@ -950,9 +950,9 @@ def syscallRequiredRight : SyscallId → AccessRight
 /-- Whether the object `id` names is of kind `kind`, read in place.
 
 An absent object answers `true`: the arm the capability reaches answers it as it
-always has.  Under `capabilityInvariantBundle` the case is unreachable, since
-`SystemState.CapTreeShape`'s `live` field makes every object a slot's
-capability names present. -/
+always has.  Under `capabilityInvariantBundle` the case is unreachable:
+`capabilityInvariantBundle_objectCapsBacked` backs every `.object` capability a
+slot holds with a present object. -/
 @[inline] def objectKindIs (st : SystemState) (id : SeLe4n.ObjId)
     (kind : KernelObjectType) : Bool :=
   match st.getObject? id with

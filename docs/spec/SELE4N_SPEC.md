@@ -7894,8 +7894,9 @@ in order:
    reads a right (`dispatchSyscallChecked_type_before_rights`).  An `.object`
    capability whose object is absent passes the type check and its arm answers
    as before; under `capabilityInvariantBundle` the case is unreachable,
-   because `SystemState.CapTreeShape`'s `live` field makes every object a
-   slot's capability names present.
+   because `capabilityInvariantBundle_objectCapsBacked` backs every `.object`
+   capability a slot holds with a present object (and `capTargetKindBacked`
+   types a kind-typed capability's target).
 3. **Right.**  The syscall's right (`syscallRequiredRight`), answered by
    `syscallMissingRightError` (`dispatchSyscallChecked_right_after_type`).
 4. **Length**, then the arguments, in the arm (§8.10.5a).
