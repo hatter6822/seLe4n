@@ -1509,7 +1509,7 @@ def auditReadWord (ctx : GenericLabelingContext)
   | .refusalSlotTags slot =>
       if isMonitor then
         (if h : slot < refusalRingSize then
-          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          match st.declassificationRefusals.slotView ⟨slot, h⟩ with
           | none => .error .invalidArgument
           | some r => .ok (refusalTagsWord r)
          else .error .invalidArgument)
@@ -1517,7 +1517,7 @@ def auditReadWord (ctx : GenericLabelingContext)
   | .refusalSlotFieldChunkCount slot f =>
       if isMonitor then
         (if h : slot < refusalRingSize then
-          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          match st.declassificationRefusals.slotView ⟨slot, h⟩ with
           | none => .error .invalidArgument
           | some r =>
               match auditFieldChunkCount? (refusalExportedFieldValue r f) with
@@ -1528,7 +1528,7 @@ def auditReadWord (ctx : GenericLabelingContext)
   | .refusalSlotField slot f chunk =>
       if isMonitor then
         (if h : slot < refusalRingSize then
-          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          match st.declassificationRefusals.slotView ⟨slot, h⟩ with
           | none => .error .invalidArgument
           | some r =>
               let v := refusalExportedFieldValue r f
@@ -1544,7 +1544,7 @@ def auditReadWord (ctx : GenericLabelingContext)
   | .refusalReceiverChunkCount slot =>
       if isMonitor then
         (if h : slot < refusalRingSize then
-          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          match st.declassificationRefusals.slotView ⟨slot, h⟩ with
           | none => .error .invalidArgument
           | some r =>
               match r.refusedReceiver with
@@ -1558,7 +1558,7 @@ def auditReadWord (ctx : GenericLabelingContext)
   | .refusalReceiverChunk slot chunk =>
       if isMonitor then
         (if h : slot < refusalRingSize then
-          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          match st.declassificationRefusals.slotView ⟨slot, h⟩ with
           | none => .error .invalidArgument
           | some r =>
               match r.refusedReceiver with
@@ -3177,9 +3177,9 @@ record sitting exactly where the next write lands — the state one further
 refusal turns into "every surviving row is visible to a low reader". -/
 def refusalEvictionWitness : RefusalLedger :=
   { attemptCount := ⟨5, by decide⟩
-    recent :=
-      (Vector.replicate refusalRingSize (some (refusalWitnessRecord ⟨0⟩))).set 0
-        (some (refusalWitnessRecord ⟨3⟩)) (by decide)
+    slots :=
+      (Vector.replicate refusalRingSize (RefusalSlot.ofRefusal (refusalWitnessRecord ⟨0⟩))).set 0
+        (RefusalSlot.ofRefusal (refusalWitnessRecord ⟨3⟩)) (by decide)
     nextSlot := ⟨0, by decide⟩
     droppedCount := ⟨0, by decide⟩
     version := 7 }
@@ -3216,7 +3216,8 @@ theorem refusalLedger_records_gate_unsound :
             threadDomainOf := fun _ => SecurityDomain.lowest
             endpointDomainOf := fun _ => SecurityDomain.lowest },
           some ⟨3⟩, ⟨0⟩, refusalEvictionWitness, refusalWitnessRecord ⟨0⟩,
-          ⟨⟨0, by decide⟩, by decide⟩, by decide, by decide, by decide, by decide⟩
+          ⟨⟨0, by decide⟩, by simp only [RefusalLedger.recent_get]; decide⟩,
+          by simp only [RefusalLedger.recent_get]; decide, by decide, by decide, by decide⟩
 
 /-- WS-SM SM9.B.10 (**why the ledger needs its own version**): the trail's
 `status` token does **not** move when a refusal is recorded.

@@ -184,6 +184,62 @@ theorem auditedArmSpec_declassify_admitted (ctx : LabelingContext) (capAddr : Se
     Bool.false_eq_true, ↓reduceIte, recordDeclassificationChecked, hRoom,
     declassificationActorOf]
 
+/-- **Why a `.declassify` that `declassifyAdmitted` refuses is refused**, in
+`declassifyObjectFromCore`'s order: the target absent (`.objectNotFound`), the
+base lattice already permitting the flow (`.flowDenied`), the declassification
+policy denying it (`.declassificationDenied`), and otherwise the trail full
+(`.auditLogCapacityExceeded`).  A scalar, read before anything is written
+(`auditedArmSpec_declassify_refused`). -/
+@[inline] def declassifyRefusal (ctx : LabelingContext) (st : SystemState)
+    (actorTid : SeLe4n.ThreadId) (targetId : SeLe4n.ObjId) : KernelError :=
+  if (st.getObjectType? targetId).isNone then .objectNotFound
+  else if securityFlowsTo (ctx.threadLabelOf actorTid) (ctx.objectLabelOf targetId) then
+    .flowDenied
+  else if !ctx.declassificationPolicy.canDeclassify (embedLegacyLabel (ctx.threadLabelOf actorTid))
+      (embedLegacyLabel (ctx.objectLabelOf targetId)) then .declassificationDenied
+  else .auditLogCapacityExceeded
+
+/-- A `.declassify` the admission refuses is the specification's refusal, with
+the error `declassifyRefusal` reads. -/
+theorem auditedArmSpec_declassify_refused (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+    (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (cap : Capability) (st : SystemState) (targetId : SeLe4n.ObjId) (actorTid : SeLe4n.ThreadId)
+    (hT : cap.target = .object targetId)
+    (hCur : st.scheduler.currentOnCore executingCore = some actorTid)
+    (hA : declassifyAdmitted ctx st actorTid targetId = false) :
+    auditedArmSpec ctx .declassify capAddr regs tid executingCore cap st =
+      .error (declassifyRefusal ctx st actorTid targetId) := by
+  unfold declassifyAdmitted at hA
+  unfold declassifyRefusal
+  cases hTy : st.getObjectType? targetId with
+  | none =>
+    simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+      declassifyObjectFromCore, hCur, hTy, Option.isNone_none, ↓reduceIte]
+  | some ty =>
+    simp only [hTy, Option.isSome_some, Bool.true_and] at hA
+    by_cases hFlow : securityFlowsTo (ctx.threadLabelOf actorTid) (ctx.objectLabelOf targetId) = true
+    · simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+        declassifyObjectFromCore, hCur, hTy, authorizeDeclassificationOnCore,
+        declassificationDecision, liftLegacyContext, legacyLattice_canFlow_embed, hFlow,
+        Option.isNone_some, Bool.false_eq_true, ↓reduceIte, declassificationActorOf]
+    · simp only [Bool.not_eq_true] at hFlow
+      by_cases hDecl : ctx.declassificationPolicy.canDeclassify
+          (embedLegacyLabel (ctx.threadLabelOf actorTid))
+          (embedLegacyLabel (ctx.objectLabelOf targetId)) = true
+      · have hRoom : ¬ st.declassificationAudit.length < maxDeclassificationAuditEntries := by
+          intro h; simp [hFlow, hDecl, h] at hA
+        simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
+          hT, declassifyObjectFromCore, hCur, hTy, authorizeDeclassificationOnCore,
+          declassificationDecision, liftLegacyContext, legacyLattice_canFlow_embed, hFlow, hDecl,
+          Option.isNone_some, Bool.false_eq_true, ↓reduceIte, recordDeclassificationChecked, hRoom,
+          declassificationActorOf, Bool.not_true]
+      · simp only [Bool.not_eq_true] at hDecl
+        simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
+          hT, declassifyObjectFromCore, hCur, hTy, authorizeDeclassificationOnCore,
+          declassificationDecision, liftLegacyContext, legacyLattice_canFlow_embed, hFlow, hDecl,
+          Option.isNone_some, Bool.false_eq_true, ↓reduceIte, declassificationActorOf,
+          Bool.not_false]
+
 /-- `.declassify`'s general form: the specification's arm, then its fused taint
 step over the pre-state's bypass bit and trail position (`declassifyTaintStep_eq`),
 every refusal carrying the state it was handed. -/
@@ -199,8 +255,8 @@ def declassifyGeneralR (ctx : LabelingContext) (regs : SeLe4n.RegisterFile)
 
 /-- **`.declassify` behind its operand check**: the idle-object check and the
 rights gate of the classic lookup, then the admitted form — the event written
-over the ring's next slot in place — or the general one
-(`declassifyOperandArmR_eq`). -/
+over the ring's next slot in place — or its refusal, read before any write
+(`declassifyRefusal`), or the general one (`declassifyOperandArmR_eq`). -/
 @[inline] def declassifyOperandArmR (ctx : LabelingContext) (regs : SeLe4n.RegisterFile)
     (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) :
     Option Capability → RefusalCarrying Unit :=
@@ -219,7 +275,7 @@ over the ring's next slot in place — or the general one
                 (embedLegacyLabel (ctx.objectLabelOf targetId)) targetId
                 (!declassifyTargetHoldsContent st targetId) st.declassificationAudit.epoch
                 st.declassificationAudit.length a0 a1 a2 a3 a4 a5 a6 a7 ac as st)
-          else declassifyGeneralR ctx regs capAddr tid executingCore cap st
+          else .error (declassifyRefusal ctx st actorTid targetId, st)
         | _, _ => declassifyGeneralR ctx regs capAddr tid executingCore cap st
       else .error (.illegalAuthority, st)
 
@@ -266,9 +322,9 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
           rw [auditedArmSpec_declassify_admitted ctx decoded.capAddr regs tid executingCore cap st
             targetId actorTid hT hCur hA, withTaintWordsAt_eq, declassifyPerform_eq]
           simp only [declassifyBypassB, operandObjectId, capObjectId, hT]
-        · unfold declassifyGeneralR
-          rcases auditedArmSpec ctx .declassify decoded.capAddr regs tid executingCore cap st with
-            _ | ⟨⟨⟩, post⟩ <;> rfl
+        · next hA =>
+          rw [auditedArmSpec_declassify_refused ctx decoded.capAddr regs tid executingCore cap st
+            targetId actorTid hT hCur (by simpa using hA)]
       · unfold declassifyGeneralR
         rcases auditedArmSpec ctx .declassify decoded.capAddr regs tid executingCore cap st with
           _ | ⟨⟨⟩, post⟩ <;> rfl
@@ -788,7 +844,7 @@ theorem auditBasisChunkCode_eq (e : DeclassificationEvent) (i : Nat) :
 @[inline] def refusalSlotCode (rl : RefusalLedger) (slot : Nat)
     (f : DeclassificationRefusal → Nat) : Nat :=
   if h : slot < refusalRingSize then
-    match rl.recent.get ⟨slot, h⟩ with
+    match rl.slotView ⟨slot, h⟩ with
     | none => 0
     | some r => f r
   else 0
@@ -1048,7 +1104,7 @@ theorem refusalSlotCode_some {rl : RefusalLedger} {slot w : Nat}
   · next hs =>
     split at h
     · cases h
-    · next r hr => exact ⟨hs, r, hr, h⟩
+    · next r hr => exact ⟨hs, r, (RefusalLedger.slotView_eq _ _) ▸ hr, h⟩
   · cases h
 
 /-- A refusal-ledger opcode's code is the specification's word, for a monitor. -/
@@ -1060,7 +1116,7 @@ theorem refusalFieldCountCode_spec (ctx : LabelingContext) (m reader : SecurityD
     auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalSlotFieldChunkCount slot f) =
       .ok w := by
   obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
-  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
+  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr, auditFieldChunkCount?_eq_code]
   unfold refusalFieldCountCode at hf
   rw [refusalFieldCount_eq] at hf
   by_cases hn : auditChunkCountN (refusalExportedFieldValue r f) = 0
@@ -1076,7 +1132,7 @@ theorem refusalFieldWordCode_spec (ctx : LabelingContext) (m reader : SecurityDo
     auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalSlotField slot f chunk) =
       .ok w := by
   obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
-  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
+  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr, auditFieldChunkCount?_eq_code]
   unfold refusalFieldWordCode at hf
   rw [refusalFieldCount_eq, refusalFieldChunk_eq] at hf
   by_cases hc : auditChunkCountN (refusalExportedFieldValue r f) ≠ 0 ∧
@@ -1094,7 +1150,7 @@ theorem refusalReceiverCountCode_spec (ctx : LabelingContext) (m reader : Securi
     auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalReceiverChunkCount slot) =
       .ok w := by
   obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
-  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
+  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr, auditFieldChunkCount?_eq_code]
   unfold refusalReceiverCountCode at hf
   split at hf
   · next hN =>
@@ -1116,7 +1172,7 @@ theorem refusalReceiverWordCode_spec (ctx : LabelingContext) (m reader : Securit
     auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalReceiverChunk slot chunk) =
       .ok w := by
   obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
-  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr, auditFieldChunkCount?_eq_code]
+  simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr, auditFieldChunkCount?_eq_code]
   unfold refusalReceiverWordCode at hf
   split at hf
   · cases hf
@@ -1193,7 +1249,7 @@ theorem auditReadFastCode_spec (ctx : LabelingContext) (m reader : SecurityDomai
     rw [h]
   | 14, h =>
     obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
-    simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte, hs, dite_true, hr]
+    simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr]
     simp only [Nat.add_right_cancel_iff] at hf
     rw [hf]
   | 15, h => exact refusalFieldCountCode_spec ctx m reader st _ _ _ hIs h
@@ -1807,6 +1863,116 @@ theorem auditedArmSpec_declassifySignal_bound (ctx : LabelingContext) (capAddr :
   all_goals (try simp only [hHop1, hHop2, ↓reduceIte])
   all_goals rw [hRec]
 
+/-- Whether a hop from `src` to `dst` is refused: the base lattice denies the
+flow and the declassification policy does not authorize it
+(`declassifiedSignalHopAuthorization` on the lifted legacy context). -/
+@[inline] def declassifySignalHopRefused (ctx : LabelingContext) (src dst : SecurityLabel) : Bool :=
+  !securityFlowsTo src dst &&
+    !ctx.declassificationPolicy.canDeclassify (embedLegacyLabel src) (embedLegacyLabel dst)
+
+/-- **Why `.declassifySignal`'s plan refuses**, as a code read before any
+write (`declassifiedSignalPlan`): `1` when the signaller's hop into the
+notification is refused (`.declassificationDenied`), `2` when the hop onward
+into the resolved receiver is (`.declassificationDeniedAtReceiver`), `0` when
+the plan is admitted.  The receiver is matched where it is resolved, so
+neither its `some` nor the bound pair is built. -/
+@[inline] def declassifySignalPlanRefusal (ctx : LabelingContext) (st : SystemState)
+    (signaler : SeLe4n.ThreadId) (nid : SeLe4n.ObjId) : Nat :=
+  if declassifySignalHopRefused ctx (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) then 1
+  else
+    match declassifiedSignalReceiver? st nid with
+    | some receiver =>
+      if declassifySignalHopRefused ctx (ctx.objectLabelOf nid) (ctx.threadLabelOf receiver) then 2
+      else 0
+    | none => 0
+
+/-- The error a refused plan's code names. -/
+@[inline] def declassifySignalPlanRefusalError (code : Nat) : KernelError :=
+  if code = 1 then .declassificationDenied else .declassificationDeniedAtReceiver
+
+/-- A `.declassifySignal` on a present notification whose plan refuses is the
+specification's refusal, with the error its code names. -/
+theorem auditedArmSpec_declassifySignal_planRefused (ctx : LabelingContext)
+    (capAddr : SeLe4n.CPtr) (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) (st : SystemState)
+    (nid : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
+    (hT : cap.target = .object nid)
+    (hCur : st.scheduler.currentOnCore executingCore = some signaler)
+    (hPresent : (st.getNotification? nid).isSome = true)
+    (hR : declassifySignalPlanRefusal ctx st signaler nid ≠ 0) :
+    auditedArmSpec ctx .declassifySignal capAddr regs tid executingCore cap st =
+      .error (declassifySignalPlanRefusalError (declassifySignalPlanRefusal ctx st signaler nid)) := by
+  obtain ⟨ntfn, hN⟩ := Option.isSome_iff_exists.mp hPresent
+  unfold declassifySignalPlanRefusal at hR ⊢
+  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+    Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
+    auditedDecoded_msgReg regs 0 (by decide), bind, Except.bind, pure, Except.pure,
+    ← SeLe4n.Badge.ofWord_eq_ofNatMasked, notificationSignalDeclassifiedCrossCoreDispatch,
+    notificationSignalDeclassifiedOnCore, hCur, hN, declassificationActorOf,
+    liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
+    declassifiedSignalHopAuthorization, liftLegacyContext_policy, legacyLattice_canFlow_embed]
+  by_cases h1 : declassifySignalHopRefused ctx (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid)
+  · have h1' := h1
+    simp only [declassifySignalHopRefused, Bool.and_eq_true, Bool.not_eq_true'] at h1'
+    simp only [h1, h1'.1, h1'.2, ↓reduceIte, declassificationDecision, liftLegacyContext_policy,
+      legacyLattice_canFlow_embed, Bool.false_eq_true, declassifySignalPlanRefusalError,
+      DeclassifiedSignalHop.refusal]
+  · simp only [h1, Bool.false_eq_true, ↓reduceIte] at hR ⊢
+    have hOk : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) = true ∨
+        ctx.declassificationPolicy.canDeclassify (embedLegacyLabel (ctx.threadLabelOf signaler))
+          (embedLegacyLabel (ctx.objectLabelOf nid)) = true := by
+      by_cases hF : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) = true
+      · exact .inl hF
+      · right
+        simp only [declassifySignalHopRefused, hF, Bool.not_false,
+          Bool.true_and, Bool.not_eq_true'] at h1
+        simpa using h1
+    rcases hOk with hF | hD
+    · simp only [hF, ↓reduceIte]
+      cases hRcv : declassifiedSignalReceiver? st nid with
+      | none => simp only [hRcv] at hR; exact absurd rfl hR
+      | some receiver =>
+        simp only [hRcv] at hR ⊢
+        by_cases h2 : declassifySignalHopRefused ctx (ctx.objectLabelOf nid)
+            (ctx.threadLabelOf receiver)
+        · have h2' := h2
+          simp only [declassifySignalHopRefused, Bool.and_eq_true, Bool.not_eq_true'] at h2'
+          simp only [h2, h2'.1, h2'.2, ↓reduceIte, declassificationDecision,
+            liftLegacyContext_policy, legacyLattice_canFlow_embed, Bool.false_eq_true,
+            declassifySignalPlanRefusalError, DeclassifiedSignalHop.refusal, Nat.reduceEqDiff]
+        · simp only [h2, Bool.false_eq_true, ↓reduceIte] at hR
+          exact absurd rfl hR
+    · by_cases hF : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) = true
+      · simp only [hF, ↓reduceIte]
+        cases hRcv : declassifiedSignalReceiver? st nid with
+        | none => simp only [hRcv] at hR; exact absurd rfl hR
+        | some receiver =>
+          simp only [hRcv] at hR ⊢
+          by_cases h2 : declassifySignalHopRefused ctx (ctx.objectLabelOf nid)
+              (ctx.threadLabelOf receiver)
+          · have h2' := h2
+            simp only [declassifySignalHopRefused, Bool.and_eq_true, Bool.not_eq_true'] at h2'
+            simp only [h2, h2'.1, h2'.2, ↓reduceIte, declassificationDecision,
+              liftLegacyContext_policy, legacyLattice_canFlow_embed, Bool.false_eq_true,
+              declassifySignalPlanRefusalError, DeclassifiedSignalHop.refusal, Nat.reduceEqDiff]
+          · simp only [h2, Bool.false_eq_true, ↓reduceIte] at hR
+            exact absurd rfl hR
+      · simp only [hF, Bool.false_eq_true, ↓reduceIte, declassificationDecision,
+          liftLegacyContext_policy, legacyLattice_canFlow_embed, hD]
+        cases hRcv : declassifiedSignalReceiver? st nid with
+        | none => simp only [hRcv] at hR; exact absurd rfl hR
+        | some receiver =>
+          simp only [hRcv] at hR ⊢
+          by_cases h2 : declassifySignalHopRefused ctx (ctx.objectLabelOf nid)
+              (ctx.threadLabelOf receiver)
+          · have h2' := h2
+            simp only [declassifySignalHopRefused, Bool.and_eq_true, Bool.not_eq_true'] at h2'
+            simp only [h2, h2'.1, h2'.2, ↓reduceIte,
+              Bool.false_eq_true,
+              declassifySignalPlanRefusalError, DeclassifiedSignalHop.refusal, Nat.reduceEqDiff]
+          · simp only [h2, Bool.false_eq_true, ↓reduceIte] at hR
+            exact absurd rfl hR
+
 /-- `.declassifySignal`'s general form: the specification's arm, then its fused
 taint step over the pre-state's words (`declassifySignalTaintStep_eq`), every
 refusal carrying the state it was handed. -/
@@ -1837,6 +2003,11 @@ writing the records its one or two downgrades owe), or else the general one
       else if cap.hasRight (syscallRequiredRight .declassifySignal) then
         match cap.target, st.scheduler.currentOnCore executingCore with
         | .object nid, some signaler =>
+          if (st.getNotification? nid).isSome && declassifySignalPlanRefusal ctx st signaler nid != 0
+          then
+            .error (declassifySignalPlanRefusalError (declassifySignalPlanRefusal ctx st signaler nid),
+              st)
+          else
           if declassifySignalStoredAdmitted ctx st tid signaler nid then
             withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
             withTaintWordsAt st nid fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
@@ -2060,92 +2231,101 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
       split
       · next nid signaler hT hCur =>
         split
-        · next hA =>
-          have hA' := hA
-          simp only [declassifySignalStoredAdmitted, Bool.and_eq_true, decide_eq_true_eq,
-            Option.isNone_iff_eq_none] at hA'
-          obtain ⟨⟨⟨⟨-, hPresent⟩, hBound⟩, hWait⟩, -⟩ := hA'
-          obtain ⟨ntfn, hN⟩ := Option.isSome_iff_exists.mp hPresent
-          have hCase : signalTaintCaseOf st (some cap) = .stored := by
-            simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound, hWait]
-          rw [auditedArmSpec_declassifySignal_stored ctx decoded.capAddr regs tid executingCore cap
-            st nid signaler hT hCur hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase]
-          simp only [declassifySignalStoredPerform, TaintWords.mk_fields, operandObjectId,
-            capObjectId, hT]
-          have hOk := notificationSignalBoundOnCore_stored_ok nid
-            (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st ntfn hN hBound hWait
-          rcases hS : notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
-              executingCore st with ⟨st1, e | sgi⟩
-          · rw [hS] at hOk; cases hOk
-          · rfl
+        · next hR =>
+          simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hR
+          rw [auditedArmSpec_declassifySignal_planRefused ctx decoded.capAddr regs tid executingCore
+            cap st nid signaler hT hCur hR.1 hR.2]
         · split
-          · next ntfn hN =>
-            split
-            · next k hK =>
+          · next hA =>
+            have hA' := hA
+            simp only [declassifySignalStoredAdmitted, Bool.and_eq_true, decide_eq_true_eq,
+              Option.isNone_iff_eq_none] at hA'
+            obtain ⟨⟨⟨⟨-, hPresent⟩, hBound⟩, hWait⟩, -⟩ := hA'
+            obtain ⟨ntfn, hN⟩ := Option.isSome_iff_exists.mp hPresent
+            have hCase : signalTaintCaseOf st (some cap) = .stored := by
+              simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound, hWait]
+            rw [auditedArmSpec_declassifySignal_stored ctx decoded.capAddr regs tid executingCore cap
+              st nid signaler hT hCur hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase]
+            simp only [declassifySignalStoredPerform, TaintWords.mk_fields, operandObjectId,
+              capObjectId, hT]
+            have hOk := notificationSignalBoundOnCore_stored_ok nid
+              (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st ntfn hN hBound hWait
+            rcases hS : notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+                executingCore st with ⟨st1, e | sgi⟩
+            · rw [hS] at hOk; cases hOk
+            · rfl
+          · split
+            · next ntfn hN =>
               split
-              · next hA =>
-                have hA' := hA
-                simp only [declassifySignalWokenAdmitted, Bool.and_eq_true, decide_eq_true_eq,
-                  Option.isNone_iff_eq_none] at hA'
-                obtain ⟨⟨⟨⟨⟨-, hBound⟩, hW⟩, -⟩, -⟩, -⟩ := hA'
-                have hHead : ntfn.waitHead = some ⟨k⟩ := by
-                  rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
-                have hWait : notificationSignalWaiter? st nid = some ⟨k⟩ := by
-                  simp only [notificationSignalWaiter?, hN, hHead]
-                have hCase : signalTaintCaseOf st (some cap) = .toWaiter ⟨k⟩ := by
-                  simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound,
-                    hWait]
-                have hNo : st.objects.noResizeDue := by
-                  simp only [signalWakesInPlace, Bool.and_eq_true] at hW
-                  exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.2
-                rw [auditedArmSpec_declassifySignal_woken ctx decoded.capAddr regs tid executingCore
-                  cap st nid signaler ntfn k hT hCur hN hK hA, withTaintWordsAt_eq,
-                  withTaintWordsAt_eq, hCase, declassifySignalWoken_eq_writes _ _ _ _ _ _ _ _ _ _ _ st hNo,
-                  ← optCode_ntfnSuccessor?]
-                simp only [declassifySignalWokenPerform, TaintWords.mk_fields, operandObjectId,
-                  capObjectId, hT]
-              · unfold declassifySignalGeneralR
-                rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore
-                  cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
-            · next hK0 =>
-              split
-              · next k hB =>
+              · next k hK =>
                 split
-                · next tcb hTT0 =>
-                  have hTT := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTT0
+                · next hA =>
+                  have hA' := hA
+                  simp only [declassifySignalWokenAdmitted, Bool.and_eq_true, decide_eq_true_eq,
+                    Option.isNone_iff_eq_none] at hA'
+                  obtain ⟨⟨⟨⟨⟨-, hBound⟩, hW⟩, -⟩, -⟩, -⟩ := hA'
+                  have hHead : ntfn.waitHead = some ⟨k⟩ := by
+                    rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
+                  have hWait : notificationSignalWaiter? st nid = some ⟨k⟩ := by
+                    simp only [notificationSignalWaiter?, hN, hHead]
+                  have hCase : signalTaintCaseOf st (some cap) = .toWaiter ⟨k⟩ := by
+                    simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound,
+                      hWait]
+                  have hNo : st.objects.noResizeDue := by
+                    simp only [signalWakesInPlace, Bool.and_eq_true] at hW
+                    exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.2
+                  rw [auditedArmSpec_declassifySignal_woken ctx decoded.capAddr regs tid executingCore
+                    cap st nid signaler ntfn k hT hCur hN hK hA, withTaintWordsAt_eq,
+                    withTaintWordsAt_eq, hCase, declassifySignalWoken_eq_writes _ _ _ _ _ _ _ _ _ _ _ st hNo,
+                    ← optCode_ntfnSuccessor?]
+                  simp only [declassifySignalWokenPerform, TaintWords.mk_fields, operandObjectId,
+                    capObjectId, hT]
+                · unfold declassifySignalGeneralR
+                  rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore
+                    cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
+              · next hK0 =>
+                split
+                · next k hB =>
                   split
-                  · next hSt =>
+                  · next tcb hTT0 =>
+                    have hTT := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTT0
                     split
-                    · next ep hE0 =>
-                      have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE0
+                    · next hSt =>
                       split
-                      · next hA =>
-                        have hBT : boundDeliveryTarget? st nid =
-                            some (⟨k⟩, ⟨tcb.ipcObjectCode⟩) := by
-                          have hBl := (blockedOnQueueSide_ipcState
-                            (isReceiveQ := true) (endpointId := ⟨tcb.ipcObjectCode⟩) (t := tcb)
-                            (by simp only [blockedOnQueueSide, ↓reduceIte, hSt, beq_self_eq_true,
-                              Bool.and_self])).1 rfl
-                          have hTg : st.getTcb? ⟨k⟩ = some tcb :=
-                            (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTT
-                          simp only [boundDeliveryTarget?, hN, hK0, ↓reduceIte, Notification.boundTCB,
-                            hB, SeLe4n.ThreadId.ofOptCode, hTg, hBl]
-                        have hCase : signalTaintCaseOf st (some cap) = .toBound ⟨k⟩ := by
-                          simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBT]
-                        have hNo : st.objects.noResizeDue := by
-                          have hA' := hA
-                          simp only [declassifySignalBoundAdmitted, Bool.and_eq_true] at hA'
-                          obtain ⟨⟨⟨⟨-, hQ⟩, -⟩, -⟩, -⟩ := hA'
-                          unfold queueRemoveInPlace at hQ
-                          simp only [Bool.and_eq_true] at hQ
-                          obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩, -⟩ := hQ
-                          exact RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
-                        rw [auditedArmSpec_declassifySignal_bound ctx decoded.capAddr regs tid
-                          executingCore cap st nid signaler ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb hT hCur hBT
-                          hE hTT hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase,
-                          declassifySignalBound_eq_writes _ _ _ _ _ _ _ _ _ _ _ _ _ st hNo]
-                        simp only [declassifySignalBoundPerform, TaintWords.mk_fields, operandObjectId,
-                          capObjectId, hT]
+                      · next ep hE0 =>
+                        have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE0
+                        split
+                        · next hA =>
+                          have hBT : boundDeliveryTarget? st nid =
+                              some (⟨k⟩, ⟨tcb.ipcObjectCode⟩) := by
+                            have hBl := (blockedOnQueueSide_ipcState
+                              (isReceiveQ := true) (endpointId := ⟨tcb.ipcObjectCode⟩) (t := tcb)
+                              (by simp only [blockedOnQueueSide, ↓reduceIte, hSt, beq_self_eq_true,
+                                Bool.and_self])).1 rfl
+                            have hTg : st.getTcb? ⟨k⟩ = some tcb :=
+                              (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTT
+                            simp only [boundDeliveryTarget?, hN, hK0, ↓reduceIte, Notification.boundTCB,
+                              hB, SeLe4n.ThreadId.ofOptCode, hTg, hBl]
+                          have hCase : signalTaintCaseOf st (some cap) = .toBound ⟨k⟩ := by
+                            simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBT]
+                          have hNo : st.objects.noResizeDue := by
+                            have hA' := hA
+                            simp only [declassifySignalBoundAdmitted, Bool.and_eq_true] at hA'
+                            obtain ⟨⟨⟨⟨-, hQ⟩, -⟩, -⟩, -⟩ := hA'
+                            unfold queueRemoveInPlace at hQ
+                            simp only [Bool.and_eq_true] at hQ
+                            obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩, -⟩ := hQ
+                            exact RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
+                          rw [auditedArmSpec_declassifySignal_bound ctx decoded.capAddr regs tid
+                            executingCore cap st nid signaler ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb hT hCur hBT
+                            hE hTT hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase,
+                            declassifySignalBound_eq_writes _ _ _ _ _ _ _ _ _ _ _ _ _ st hNo]
+                          simp only [declassifySignalBoundPerform, TaintWords.mk_fields, operandObjectId,
+                            capObjectId, hT]
+                        all_goals
+                          unfold declassifySignalGeneralR
+                          rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid
+                            executingCore cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
                       all_goals
                         unfold declassifySignalGeneralR
                         rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid
@@ -2160,15 +2340,11 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
                       executingCore cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
                 all_goals
                   unfold declassifySignalGeneralR
-                  rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid
-                    executingCore cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
-              all_goals
-                unfold declassifySignalGeneralR
-                rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore
-                  cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
-          · unfold declassifySignalGeneralR
-            rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
-              with _ | ⟨⟨⟩, post⟩ <;> rfl
+                  rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore
+                    cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
+            · unfold declassifySignalGeneralR
+              rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
+                with _ | ⟨⟨⟩, post⟩ <;> rfl
       · unfold declassifySignalGeneralR
         rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
           with _ | ⟨⟨⟩, post⟩ <;> rfl

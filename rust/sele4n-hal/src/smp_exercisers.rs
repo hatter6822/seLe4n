@@ -9512,6 +9512,26 @@ impl core::fmt::Display for ReadingBytes {
     }
 }
 
+/// The words the kernel routed a measured round trip by, as its frame carried
+/// them (`x7` the syscall number, `x1` the message-info word): the host-side
+/// gate routes them with the kernel's own router to tell which syscall arm the
+/// reading measured (`scripts/exerciser_route_coverage.lean`), and the label
+/// word it was answered with (`x1`), or `blocked` for a trip that blocked.
+#[cfg(feature = "hw_target")]
+fn print_routed(trip: &RoundTrip, core: usize, which: &str, outcome: &Dispatched) {
+    let (x7, x1) = (trip.syscall, trip.msg_len);
+    let name = trip.name;
+    match outcome {
+        Dispatched::Returned(regs) => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed x7={x7:#x} x1={x1:#x} answered {:#x}",
+            regs[1]
+        ),
+        _ => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed x7={x7:#x} x1={x1:#x} answered blocked"
+        ),
+    }
+}
+
 /// The reading of one measured entry — its cells, and their bytes by size
 /// beside the count (WS-UC UC1) — and the ticks of
 /// its window (from `start`, [`window_start`]) on a line of its own
@@ -11961,6 +11981,7 @@ fn heap_allocations_self_delete(which: &str) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = SELF_TCB_DELETE.name;
     let (outcome, before, after, resumed) = dispatch_round_trip(&SELF_TCB_DELETE);
+    print_routed(&SELF_TCB_DELETE, core, which, &outcome);
     let (Some(before), Some(after)) = (before, after) else {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"
@@ -12219,6 +12240,7 @@ fn heap_allocations_any_restore(trip: &RoundTrip, which: &str) -> Option<bool> {
     if after < before {
         return remote_failed("the counter went back");
     }
+    print_routed(trip, core, which, &outcome);
     print_reading(name, core, which, before, after, window_start());
     Some(true)
 }
@@ -12392,7 +12414,9 @@ fn heap_allocations_yield_to_linked(which: &str) -> Option<bool> {
         }
         Dispatched::Failed => return Some(false),
     }
+    print_routed(&YIELD_TO_LINK, core, which, &linked);
     let (blocked, _, after, resumed) = dispatch_round_trip(&YIELD_TO_PARTNER_BLOCKS);
+    print_routed(&YIELD_TO_PARTNER_BLOCKS, core, which, &blocked);
     if !matches!(blocked, Dispatched::Blocked) {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the partner's wait did not block"
@@ -12481,6 +12505,7 @@ fn heap_allocations_round_trip_resuming(
             return Some(false);
         }
     }
+    print_routed(trip, core, which, &outcome);
     match outcome {
         Dispatched::Returned(regs) if !trip.blocks => {
             crate::kprintln!(

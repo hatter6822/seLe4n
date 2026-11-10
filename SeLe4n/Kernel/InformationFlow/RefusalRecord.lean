@@ -288,6 +288,105 @@ fold's closed form uses. -/
 -- §3  SM9.B.2 — the ledger
 -- ============================================================================
 
+/-- **A ledger slot, as words.**  The refusal a slot holds, stored field by
+field: an occupancy flag, the record's scalar fields, and its optional receiver
+as a flag and a thread id.  A slot is one cell with no cell inside it that a
+write must build: the boot gives each slot its own cell
+(`SystemState.withFreshRefusalLedger`), and a record writes every field over
+the slot's own (`RefusalSlot.overwrite`), so recording a refusal builds no
+heap cell, whether the slot held a refusal, a receiver, or nothing.
+
+The ledger's meaning is the slot's view (`RefusalSlot.view`): the refusal the
+slot holds, or `none` for a slot no refusal has reached.  The words a vacant
+slot carries, and the receiver word of a slot naming none, are never read. -/
+structure RefusalSlot where
+  /-- Whether a refusal has reached the slot. -/
+  occupied : Bool
+  originatingCore : CoreId
+  subject : SeLe4n.ThreadId
+  subjectDomain : SecurityDomain
+  syscall : SeLe4n.Model.SyscallId
+  reason : SeLe4n.Model.KernelError
+  requestedTarget : SeLe4n.CPtr
+  /-- Whether the refusal names a receiver (`DeclassificationRefusal.refusedReceiver`). -/
+  receiverNamed : Bool
+  /-- The receiver, when `receiverNamed`. -/
+  receiver : SeLe4n.ThreadId
+  deriving Repr, DecidableEq
+
+namespace RefusalSlot
+
+/-- A slot no refusal has reached. -/
+def vacant : RefusalSlot :=
+  { occupied := false, originatingCore := Concurrency.bootCoreId, subject := ⟨0⟩,
+    subjectDomain := SecurityDomain.lowest, syscall := .declassify,
+    reason := .declassificationDenied, requestedTarget := SeLe4n.CPtr.ofNat 0,
+    receiverNamed := false, receiver := ⟨0⟩ }
+
+/-- The slot holding refusal `r`. -/
+def ofRefusal (r : DeclassificationRefusal) : RefusalSlot :=
+  { occupied := true, originatingCore := r.originatingCore, subject := r.subject,
+    subjectDomain := r.subjectDomain, syscall := r.syscall, reason := r.reason,
+    requestedTarget := r.requestedTarget, receiverNamed := r.refusedReceiver.isSome,
+    receiver := r.refusedReceiver.getD ⟨0⟩ }
+
+/-- The slot holding `o`: the refusal, or vacant. -/
+def ofView : Option DeclassificationRefusal → RefusalSlot
+  | some r => ofRefusal r
+  | none => vacant
+
+/-- The receiver a slot names. -/
+@[inline] def receiver? (s : RefusalSlot) : Option SeLe4n.ThreadId :=
+  if s.receiverNamed then some s.receiver else none
+
+/-- The refusal a slot's words spell, whether or not a refusal reached it. -/
+@[inline] def toRefusal (s : RefusalSlot) : DeclassificationRefusal :=
+  { originatingCore := s.originatingCore, subject := s.subject,
+    subjectDomain := s.subjectDomain, syscall := s.syscall, reason := s.reason,
+    requestedTarget := s.requestedTarget, refusedReceiver := s.receiver? }
+
+/-- **What a slot holds**: its refusal, or `none` for a slot no refusal has
+reached. -/
+@[inline] def view (s : RefusalSlot) : Option DeclassificationRefusal :=
+  if s.occupied then some s.toRefusal else none
+
+@[simp] theorem view_vacant : vacant.view = none := rfl
+
+@[simp] theorem view_ofRefusal (r : DeclassificationRefusal) : (ofRefusal r).view = some r := by
+  cases r with
+  | mk c s d sid ke t rcv =>
+    cases rcv <;> rfl
+
+@[simp] theorem view_ofView (o : Option DeclassificationRefusal) : (ofView o).view = o := by
+  cases o <;> simp [ofView]
+
+@[simp] theorem view_isSome (s : RefusalSlot) : s.view.isSome = s.occupied := by
+  unfold view; split <;> simp_all
+
+/-- **A refusal written over a slot's own cell**: every field replaced, the
+subject read back through `s` (kept when equal) so `s` stays live and is the
+cell the compiler writes into; a write of every field that never read `s`
+would drop it and build a fresh slot, as `DeclassificationActor.overwrite`
+records.  Equal to the slot of that refusal (`overwrite_eq`). -/
+@[inline] def overwrite (s : RefusalSlot) (c : CoreId) (subject : SeLe4n.ThreadId)
+    (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId) (ke : SeLe4n.Model.KernelError)
+    (target : SeLe4n.CPtr) (named : Bool) (receiver : SeLe4n.ThreadId) : RefusalSlot :=
+  { occupied := true, originatingCore := c,
+    subject := if s.subject = subject then s.subject else subject,
+    subjectDomain := domain, syscall := sid, reason := ke, requestedTarget := target,
+    receiverNamed := named, receiver := receiver }
+
+theorem overwrite_eq (s : RefusalSlot) (c : CoreId) (subject : SeLe4n.ThreadId)
+    (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId) (ke : SeLe4n.Model.KernelError)
+    (target : SeLe4n.CPtr) (named : Bool) (receiver : SeLe4n.ThreadId) :
+    s.overwrite c subject domain sid ke target named receiver =
+      { occupied := true, originatingCore := c, subject, subjectDomain := domain,
+        syscall := sid, reason := ke, requestedTarget := target, receiverNamed := named,
+        receiver } := by
+  by_cases h : s.subject = subject <;> simp [overwrite, h]
+
+end RefusalSlot
+
 /-- WS-SM SM9.B.2: **the refusal ledger** — a saturating attempt counter, a
 bounded ring of recent attributed refusals, and a version that advances on
 every write.
@@ -301,13 +400,16 @@ carriage layer every mounted field needs is still there and is
 
 `droppedCount` is what keeps eviction honest: a ring that overwrote silently
 would report a clean history to a monitor that had simply not polled often
-enough. -/
+enough.
+
+The ring is stored as word slots (`RefusalSlot`), so a record writes a slot's
+own cell and builds none; what the ring holds is the slots' view
+(`RefusalLedger.recent`). -/
 structure RefusalLedger where
   /-- Cumulative count of refusals recorded, saturating at `maxRefusalCount`. -/
   attemptCount : Fin (maxRefusalCount + 1)
-  /-- The most recent refusals, oldest evicted first.  `none` marks a slot no
-      refusal has reached yet. -/
-  recent : Vector (Option DeclassificationRefusal) refusalRingSize
+  /-- The ring's slots, as words.  Their view is `recent`. -/
+  slots : Vector RefusalSlot refusalRingSize
   /-- The slot the next refusal will occupy. -/
   nextSlot : Fin refusalRingSize
   /-- How many recorded refusals have been evicted by ring wrap, saturating at
@@ -322,11 +424,32 @@ structure RefusalLedger where
 
 namespace RefusalLedger
 
+/-- WS-SM SM9.B.2: **the most recent refusals**, oldest evicted first: each
+slot's refusal, `none` marking a slot no refusal has reached yet.  The ring as
+the ledger's readers state it; a reader that runs reads one slot
+(`RefusalLedger.slotView`). -/
+def recent (L : RefusalLedger) : Vector (Option DeclassificationRefusal) refusalRingSize :=
+  L.slots.map RefusalSlot.view
+
+/-- One slot of `recent`, read off its slot alone (`slotView_eq`): what a
+running reader reads, so it builds no vector. -/
+@[inline] def slotView (L : RefusalLedger) (i : Fin refusalRingSize) :
+    Option DeclassificationRefusal :=
+  (L.slots.get i).view
+
+@[simp] theorem recent_get (L : RefusalLedger) (i : Fin refusalRingSize) :
+    L.recent.get i = (L.slots.get i).view := by
+  simp [recent, SeLe4n.PerCoreVector.get_eq_getElem]
+
+@[simp] theorem slotView_eq (L : RefusalLedger) (i : Fin refusalRingSize) :
+    L.slotView i = L.recent.get i := by
+  simp [slotView]
+
 /-- WS-SM SM9.B.2: the boot ledger — nothing attempted, nothing recorded,
 nothing dropped. -/
 def initial : RefusalLedger :=
   { attemptCount := ⟨0, by omega⟩
-    recent := Vector.replicate refusalRingSize none
+    slots := Vector.replicate refusalRingSize RefusalSlot.vacant
     nextSlot := ⟨0, refusalRingSize_pos⟩
     droppedCount := ⟨0, by omega⟩
     version := 0 }
@@ -364,12 +487,67 @@ monitor reading a nonzero drop count knows records are missing rather than
 believing it has seen everything. -/
 def recordRefusal (L : RefusalLedger) (r : DeclassificationRefusal) : RefusalLedger :=
   { attemptCount := saturatingSucc L.attemptCount
-    recent := L.recent.set L.nextSlot.val (some r) L.nextSlot.isLt
+    slots := L.slots.set L.nextSlot.val (RefusalSlot.ofRefusal r) L.nextSlot.isLt
     nextSlot := refusalSlotSucc L.nextSlot
     droppedCount :=
-      if (L.recent.get L.nextSlot).isSome then saturatingSucc L.droppedCount
+      if (L.slots.get L.nextSlot).occupied then saturatingSucc L.droppedCount
       else L.droppedCount
     version := L.version + 1 }
+
+/-- WS-SM SM9.B.2: the slot array with refusal `r`'s words written over slot
+`i` where it stands (`Array.modify`, `RefusalSlot.overwrite`).  Out of line,
+so the ledger that holds the array is rebuilt after it with no join point
+between, and is written in place too. -/
+@[noinline] def recordRefusalSlots (slots : Array RefusalSlot) (i : Nat) (c : CoreId)
+    (subject : SeLe4n.ThreadId) (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId)
+    (ke : SeLe4n.Model.KernelError) (target : SeLe4n.CPtr) (named : Bool)
+    (receiver : SeLe4n.ThreadId) : Array RefusalSlot :=
+  slots.modify i (·.overwrite c subject domain sid ke target named receiver)
+
+/-- WS-SM SM9.B.2: **record a refusal by rewriting its slot**: the counters,
+the drop test and the version read first, then the selected slot written over
+in its own cell (`recordRefusalSlots`), so a ledger the state alone holds is
+written without building a record, a slot or an `Option`.  It is
+`recordRefusal` of the refusal of those words (`recordRefusalWords_eq`). -/
+@[noinline] def recordRefusalWords (L : RefusalLedger) (c : CoreId)
+    (subject : SeLe4n.ThreadId) (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId)
+    (ke : SeLe4n.Model.KernelError) (target : SeLe4n.CPtr) (named : Bool)
+    (receiver : SeLe4n.ThreadId) : RefusalLedger :=
+  let attempts := saturatingSucc L.attemptCount
+  let next := L.nextSlot
+  let dropped :=
+    if (L.slots.get L.nextSlot).occupied then saturatingSucc L.droppedCount
+    else L.droppedCount
+  let version := L.version + 1
+  { attemptCount := attempts
+    slots := ⟨recordRefusalSlots L.slots.toArray next.val c subject domain sid ke target named
+        receiver, by simp [recordRefusalSlots]⟩
+    nextSlot := refusalSlotSucc next
+    droppedCount := dropped
+    version }
+
+/-- WS-SM SM9.B.2: the in-place record is `recordRefusal` of the refusal its
+words spell, the receiver word zero when none is named. -/
+theorem recordRefusalWords_eq (L : RefusalLedger) (c : CoreId)
+    (subject : SeLe4n.ThreadId) (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId)
+    (ke : SeLe4n.Model.KernelError) (target : SeLe4n.CPtr) (named : Bool)
+    (receiver : SeLe4n.ThreadId) (hNone : named = false → receiver = ⟨0⟩) :
+    recordRefusalWords L c subject domain sid ke target named receiver =
+      recordRefusal L
+        { originatingCore := c, subject, subjectDomain := domain, syscall := sid,
+          reason := ke, requestedTarget := target,
+          refusedReceiver := if named then some receiver else none } := by
+  unfold recordRefusalWords recordRefusal
+  simp only [RefusalLedger.mk.injEq, true_and, and_true]
+  apply Vector.ext
+  intro i hi
+  simp only [recordRefusalSlots, Vector.getElem_set, Vector.getElem_mk, Array.getElem_modify,
+    RefusalSlot.overwrite_eq, RefusalSlot.ofRefusal]
+  split
+  · cases named
+    · simp [hNone rfl]
+    · simp
+  · rfl
 
 -- ============================================================================
 -- §4  SM9.B.2 — what recording does, and what it cannot do
@@ -386,7 +564,8 @@ every other slot is carried through unchanged. -/
 theorem recordRefusal_frames_other_slots (L : RefusalLedger)
     (r : DeclassificationRefusal) (j : Fin refusalRingSize) (hj : L.nextSlot ≠ j) :
     (recordRefusal L r).recent.get j = L.recent.get j := by
-  simpa [recordRefusal] using SeLe4n.PerCoreVector.get_set_ne L.recent L.nextSlot j (some r) hj
+  simp only [recordRefusal, RefusalLedger.recent_get]
+  rw [SeLe4n.PerCoreVector.get_set_ne L.slots L.nextSlot j _ hj]
 
 /-- WS-SM SM9.B.2: the ring advances by one slot. -/
 @[simp] theorem recordRefusal_nextSlot (L : RefusalLedger) (r : DeclassificationRefusal) :
@@ -433,6 +612,7 @@ theorem recordRefusal_ring_wraps_counted (L : RefusalLedger)
       (recordRefusal L r).droppedCount = saturatingSucc L.droppedCount) ∧
     ((L.recent.get L.nextSlot).isSome = false →
       (recordRefusal L r).droppedCount = L.droppedCount) := by
+  simp only [RefusalLedger.recent_get, RefusalSlot.view_isSome]
   constructor
   · intro h; simp [recordRefusal, h]
   · intro h; simp [recordRefusal, h]

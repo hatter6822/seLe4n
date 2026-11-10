@@ -1753,6 +1753,41 @@ def SystemState.withFreshAuditRing (st : SystemState) : SystemState :=
 theorem SystemState.withFreshAuditRing_eq (st : SystemState) : st.withFreshAuditRing = st := by
   simp only [SystemState.withFreshAuditRing, SeLe4n.Kernel.AuditRing.fresh_eq]
 
+/-- A refusal-ledger slot rebuilt into a cell of its own, through `opaqueId`, so
+a record that writes the slot over in place (`RefusalSlot.overwrite`) finds it
+exclusive.  The identity (`freshSlot_eq`). -/
+@[inline] def _root_.SeLe4n.Kernel.RefusalLedger.freshSlot (s : SeLe4n.Kernel.RefusalSlot) :
+    SeLe4n.Kernel.RefusalSlot :=
+  { s with subject := opaqueId s.subject }
+
+theorem _root_.SeLe4n.Kernel.RefusalLedger.freshSlot_eq (s : SeLe4n.Kernel.RefusalSlot) :
+    SeLe4n.Kernel.RefusalLedger.freshSlot s = s := rfl
+
+/-- The refusal ledger rebuilt with its own slot array and a cell per slot.
+The boot's ledger is the shared initial constant, whose slots are one vacant
+slot, so the first refusal recorded would copy the array and the slot; each
+slot passes through `opaqueId`, so the compiler builds a fresh array of fresh
+slots rather than handing back the constant's. -/
+@[noinline] def _root_.SeLe4n.Kernel.RefusalLedger.fresh (L : SeLe4n.Kernel.RefusalLedger) :
+    SeLe4n.Kernel.RefusalLedger :=
+  { L with slots := L.slots.map SeLe4n.Kernel.RefusalLedger.freshSlot }
+
+theorem _root_.SeLe4n.Kernel.RefusalLedger.fresh_eq (L : SeLe4n.Kernel.RefusalLedger) :
+    L.fresh = L := by
+  have h : SeLe4n.Kernel.RefusalLedger.freshSlot = id :=
+    funext SeLe4n.Kernel.RefusalLedger.freshSlot_eq
+  simp only [SeLe4n.Kernel.RefusalLedger.fresh, h, Vector.map_id]
+
+/-- **The refusal ledger prepared at boot** — the installed state's ledger gets
+its own slots (`RefusalLedger.fresh`), so the first refusal recorded after boot
+writes its slot in place.  The state itself (`withFreshRefusalLedger_eq`). -/
+def SystemState.withFreshRefusalLedger (st : SystemState) : SystemState :=
+  { st with declassificationRefusals := st.declassificationRefusals.fresh }
+
+theorem SystemState.withFreshRefusalLedger_eq (st : SystemState) :
+    st.withFreshRefusalLedger = st := by
+  simp only [SystemState.withFreshRefusalLedger, SeLe4n.Kernel.RefusalLedger.fresh_eq]
+
 /-- A register file rebuilt through `opaqueWord`: its own cell. -/
 @[inline] def RegisterFile.fresh (rf : RegisterFile) : RegisterFile :=
   { rf with x0 := opaqueWord rf.x0 }

@@ -8611,7 +8611,7 @@ private def runRefusalLedgerChecks : IO Unit := do
   assertBool "NEGATIVE: the ledger's bounds hold for EVERY value, not only recorded ones"
     (let arbitrary : RefusalLedger :=
        { attemptCount := ⟨maxRefusalCount, by decide⟩
-         recent := Vector.replicate refusalRingSize (some refusalAtCapacity)
+         slots := Vector.replicate refusalRingSize (RefusalSlot.ofRefusal refusalAtCapacity)
          nextSlot := ⟨7, by decide⟩
          droppedCount := ⟨maxRefusalCount, by decide⟩
          version := 999999 }

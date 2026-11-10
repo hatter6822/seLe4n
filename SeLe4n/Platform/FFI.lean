@@ -1040,7 +1040,10 @@ buffer).  The state installed carries seeded shootdown spares
 unmap after boot allocates nothing, and an audit ring with its own slot array
 (`SystemState.withFreshAuditRing`, the state itself), so the first
 declassification record after boot writes its slot in place instead of copying
-the shared initial ring, and per-core slots of its own
+the shared initial ring, and a refusal ledger with a slot cell of its own per
+slot (`SystemState.withFreshRefusalLedger`, the state itself), so the first
+refused declassification recorded after boot writes its slot in place, and
+per-core slots of its own
 (`SystemState.withFreshPerCoreSlots`, the state itself), so the first entry on
 each core writes its register bank and scheduler slots in place, and a
 physical-write ledger of its own (`SystemState.withFreshPhysicalWrites`, the
@@ -1054,8 +1057,8 @@ the first maintenance after boot write in place. -/
 def initialiseKernelState (st : SystemState) : BaseIO Unit :=
   kernelStateRef.set
     ((Architecture.withShootdownSparesSeeded
-      st).withFreshAuditRing.withFreshPerCoreSlots.withFreshPhysicalWrites.withFreshIrqLines
-      ).withFreshCoreCaches
+      st).withFreshAuditRing.withFreshRefusalLedger.withFreshPerCoreSlots.withFreshPhysicalWrites
+      |>.withFreshIrqLines).withFreshCoreCaches
 
 /-- WS-RC R2.A.2: Read the current kernel state.
 
@@ -2468,6 +2471,57 @@ def recordSyscallRefusal
                   reason := ke
                   requestedTarget := SeLe4n.CPtr.ofNat x0.toNat
                   refusedReceiver := refusalReceiverFor st tid sid ke x0 } }
+
+/-- **The refused syscall recorded as words**: `recordSyscallRefusal` as it
+runs.  The receiver a second-hop refusal names is matched where it is resolved,
+so neither its `some` nor a record is built, and the ledger's slot is written
+over in its own cell (`recordRefusalWords`); the operand is the
+caller's `x0` as a word.  Equal to the specification
+(`recordSyscallRefusal_eq_impl`). -/
+@[inline] def recordSyscallRefusalImpl
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) : SystemState :=
+  match SyscallId.ofNat? syscallId.toNat with
+  | none => st
+  | some sid =>
+      match refusalSeamClass sid with
+      | .exempt => st
+      | .records =>
+          let domain := (liftLegacyContext ctx).threadDomainOf tid
+          match refusalReceiverFor st tid sid ke x0 with
+          | some receiver =>
+            { st with
+              declassificationRefusals :=
+                recordRefusalWords st.declassificationRefusals executingCore tid domain sid ke
+                  (SeLe4n.CPtr.ofWord x0) true receiver }
+          | none =>
+            { st with
+              declassificationRefusals :=
+                recordRefusalWords st.declassificationRefusals executingCore tid domain sid ke
+                  (SeLe4n.CPtr.ofWord x0) false ⟨0⟩ }
+
+/-- The refused syscall recorded as words is the specification's record. -/
+@[csimp] theorem recordSyscallRefusal_eq_impl :
+    @recordSyscallRefusal = @recordSyscallRefusalImpl := by
+  funext ctx executingCore syscallId tid ke x0 st
+  unfold recordSyscallRefusal recordSyscallRefusalImpl
+  have hT : SeLe4n.CPtr.ofNat x0.toNat = SeLe4n.CPtr.ofWord x0 :=
+    SeLe4n.CPtr.ofNat_toNat (SeLe4n.CPtr.ofWord x0)
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · next receiver hR =>
+        dsimp only
+        rw [recordRefusalWords_eq _ _ _ _ _ _ _ _ _ (fun h => absurd h (by simp)), hR, hT]
+        rfl
+      · next hR =>
+        dsimp only
+        rw [recordRefusalWords_eq _ _ _ _ _ _ _ _ _ (fun _ => rfl), hR, hT]
+        rfl
 
 /-- WS-SM SM9.B.9: an exempt syscall's refusal is not recorded — the ledger is
 a declassification audit, not a general syscall-failure log. -/

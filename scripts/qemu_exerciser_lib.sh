@@ -105,9 +105,10 @@ exerciser_check() {
         fi
     fi
     verdict=$(RETYPE_OBJECT_KINDS="${kinds}" RETYPE_OBJECT_KINDS_STATUS="${kinds_status}" \
-        python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
+        EXERCISER_REPO_ROOT="${REPO_ROOT}" python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
 import os
 import re
+import subprocess
 import sys
 
 log_path, lean, drivers = sys.argv[1], sys.argv[2] == "1", sys.argv[3:]
@@ -771,6 +772,34 @@ for driver in drivers:
         for key in carved:
             if key not in trips:
                 failures.append(f"heap-allocations-per-syscall: {key[0]}: a carve named with no returned round trip")
+        # Every arm the kernel's router routes a syscall to has a measured
+        # round trip.  The arms are derived by the router itself
+        # (`scripts/exerciser_route_coverage.lean`, run by Lean, which routes
+        # every syscall number and message-info shape the ABI decodes); the
+        # evidence is each pinned scenario's routed words and answer, as the
+        # exerciser printed them beside its reading, routed by the same
+        # router.  A tool that cannot run, or answers nonzero, fails the gate.
+        routed_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: routed x7=(0x[0-9a-f]+) x1=(0x[0-9a-f]+) answered (0x[0-9a-f]+|blocked)")
+        evidence = []
+        for line in lines:
+            m = routed_re.fullmatch(line)
+            if m and m.group(1) in expected and (m.group(1), m.group(2) is not None) in runs:
+                evidence.append(f"{m.group(1)}{'/first' if m.group(2) else ''} {m.group(3)} {m.group(4)} {m.group(5)}")
+        try:
+            coverage = subprocess.run(
+                ["lake", "env", "lean", "--run", "scripts/exerciser_route_coverage.lean"],
+                cwd=os.environ["EXERCISER_REPO_ROOT"], input="\n".join(evidence) + "\n",
+                capture_output=True, text=True, timeout=600)
+        except (OSError, KeyError, subprocess.SubprocessError) as error:
+            failures.append(f"heap-allocations-per-syscall: the route coverage could not run: {error}")
+        else:
+            reported = [l[len("FAIL: "):] for l in coverage.stderr.split("\n") if l.startswith("FAIL: ")]
+            for finding in reported:
+                failures.append(f"heap-allocations-per-syscall: route coverage: {finding}")
+            if coverage.returncode != 0 and not reported:
+                failures.append(f"heap-allocations-per-syscall: the route coverage answered {coverage.returncode}: {coverage.stderr.strip()!r}")
+            if coverage.returncode == 0 and reported:
+                failures.append("heap-allocations-per-syscall: the route coverage reported findings and answered 0")
         for m in readings:
             before, after, delta = (int(g) for g in m.groups()[2:5])
             kind = carved.get((m.group(1), m.group(2) is not None))
