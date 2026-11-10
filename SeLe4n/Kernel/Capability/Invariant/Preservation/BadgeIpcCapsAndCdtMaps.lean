@@ -244,7 +244,6 @@ found empty (`cdt_addEdge_after_insert`). -/
 theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     (st st' : SystemState) (cap : Capability) (srcNode : SlotRef) (dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
-    (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
     (hSrcCap : ∃ c, st.slotCapAt srcNode = some c ∧ cap.target = c.target)
     (hStep : ipcTransferSingleCap cap srcNode dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
@@ -253,6 +252,11 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
   obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
     (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
   obtain ⟨c0, hc0, hT0⟩ := hSrcCap
+  -- The transferred capability names its source slot's object, so its kind is
+  -- the source's, which the bundle backs.
+  have hCapBacked : capTargetKindBackedAt st cap.withoutMapping.target := by
+    rw [show cap.withoutMapping.target = cap.target from Capability.withMapping_target cap none, hT0]
+    exact hInv.targetKindBacked.slotCapAt hc0
   rw [Option.some.inj (hc0.symm.trans (SystemState.slotCapAt_of_lookupSlotCap hLc))] at hT0
   have hBundleSt2 := cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st2
     dst cap.withoutMapping hInv.offCoverage hCapBacked hIns
@@ -277,7 +281,7 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
       hCdt.1, hCdt.2.1,
       cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
       (hObjFinal _) ▸ hObjInv2,
-      replyCapPointsToValidReply_of_objects_eq (hObjFinal _) hRCPV2⟩
+      capTargetKindBacked_of_objects_eq (hObjFinal _) hRCPV2⟩
 
 /-- A badge written to the receiver's buffer keeps the bundle: it goes to the
 physical-write ledger, which the bundle does not read. -/
@@ -300,15 +304,14 @@ theorem recordUnwrappedBadge_slotCapAt (st : SystemState) (tcb : TCB) (i : Nat)
 
 A badge write keeps it (`recordUnwrappedBadge_preserves_capabilityInvariantBundle`)
 and an install keeps it (`ipcTransferSingleCap_preserves_capabilityInvariantBundle`),
-threading `hCapBacked` (reply-cap backing) and the sources' occupancy
-(`hNames`) through the loop (`ipcUnwrapCaps_rel`). -/
+threading the sources' occupancy (`hNames`) through the loop
+(`ipcUnwrapCaps_rel`).  Each transferred capability names its source slot's
+object, so the bundle's `capTargetKindBacked` backs it: the transfer owes no
+backing premise of its own. -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (st st' : SystemState) (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
     (rtcb : TCB) (slot? : Option CSpaceAddr) (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
-    (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
-        capabilityInvariantBundle stI →
-        ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
     (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
         ∃ c, st.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target)
     (hStep : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
@@ -323,7 +326,7 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
       fun j tc hj => by rw [recordUnwrappedBadge_slotCapAt]; exact hN j tc hj⟩)
     (fun dst s s' tc _ ⟨i, hi⟩ hT hA hN =>
       ⟨ipcTransferSingleCap_preserves_capabilityInvariantBundle s s' tc.cap tc.srcSlot dst hA
-          (hCapBacked s tc.cap hA) (hN i tc hi) hT,
+          (hN i tc hi) hT,
         fun j tc' hj => by
           obtain ⟨c, hc, hTg⟩ := hN j tc' hj
           obtain ⟨c', hc', hT'⟩ := ipcTransferSingleCap_slotTarget
@@ -373,8 +376,7 @@ theorem cdtShrinkingOps_preserve_acyclicity
 
 `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` composes the per-step
 `ipcTransferSingleCap_preserves_capabilityInvariantBundle` by induction on the
-fuel, threading the reply-cap backing (`hCapBacked`) and each capability's
-target being its source slot's (`hNames`, kept by every transfer,
+fuel, threading each capability's target being its source slot's (`hNames`, kept by every transfer,
 `ipcTransferSingleCap_slotTarget`).  The no-Grant
 case leaves the state unchanged
 (`ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`).

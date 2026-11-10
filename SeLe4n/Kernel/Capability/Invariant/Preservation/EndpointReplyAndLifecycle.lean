@@ -79,7 +79,7 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
     (hDepthPre : cspaceDepthConsistent st)
     (hObjInv : st.objects.invExt)
-    (hRCPV : replyCapPointsToValidReply st)
+    (hRCPV : capTargetKindBacked st)
     (hLinks : cdtLinksAgree st) (hShape : SystemState.CapTreeShape st)
     (hTcb : storeTcbIpcStateAndMessage st target ipc msg = .ok st1)
     (hLookup : lookupTcb st target = some tcb) :

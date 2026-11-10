@@ -56,20 +56,19 @@ theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
   simpa using hInv
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.b keystone): `cspaceInsertSlot` preserves
-`replyCapPointsToValidReply`, given that the inserted cap — if it is a reply cap — is itself
-backed (`hCapBacked`).  This is the **unifying** lemma: `cspaceCopy`/`Move`/`Mint`/`mintReplyCap`
+`capTargetKindBacked`, given that the inserted cap's target is itself backed
+(`hCapBacked`).  This is the **unifying** lemma: `cspaceCopy`/`Move`/`Mint`/`mintReplyCap`
 all insert through `cspaceInsertSlot` and discharge `hCapBacked` (the inserted cap copies a
 backed source, or — for `mintReplyCap` — is backed by construction).  A CNode store never
-affects `getReply?` (it reads only `.reply` objects; the stored object is a `.cnode`), so the
-backing of every reply cap frames through; the newly-written slot is backed by `hCapBacked`,
-every other slot by the pre-state invariant (`CNode.lookup_insert_eq`/`_ne`). -/
-theorem cspaceInsertSlot_preserves_replyCapPointsToValidReply
+affects `getReply?` and keeps every CNode a CNode, so the backing of every other slot frames
+through; the newly-written slot is backed by `hCapBacked`. -/
+theorem cspaceInsertSlot_preserves_capTargetKindBacked
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
-    (hRCPV : replyCapPointsToValidReply st)
+    (hRCPV : capTargetKindBacked st)
     (hObjInv : st.objects.invExt)
-    (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
+    (hCapBacked : capTargetKindBackedAt st cap.target)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    replyCapPointsToValidReply st' := by
+    capTargetKindBacked st' := by
   obtain ⟨preCn, hCnOpt, _hAddr, _hLookup, hStore⟩ :=
     cspaceInsertSlot_ok_decompose st st' addr cap hStep
   have hPre : st.objects[addr.cnode]? = some (.cnode preCn) :=
@@ -78,14 +77,19 @@ theorem cspaceInsertSlot_preserves_replyCapPointsToValidReply
     storeObject_objects_eq st st' addr.cnode _ hObjInv hStore
   have hNe : ∀ oid, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => storeObject_objects_ne st st' addr.cnode oid _ h hObjInv hStore
-  have hGetReply : ∀ rid : SeLe4n.ReplyId, st'.getReply? rid = st.getReply? rid := by
-    intro rid
-    simp only [SystemState.getReply?]
-    by_cases hc : rid.toObjId = addr.cnode
-    · rw [hc, hSelf, hPre]
-    · rw [hNe rid.toObjId hc]
-  intro oid cn slot cap' rid hObj hLook hTgt
-  rw [hGetReply]
+  have hKind : ∀ t, capTargetKindBackedAt st t → capTargetKindBackedAt st' t :=
+    capTargetKindBackedAt_mono
+      (fun rid hR => by
+        simp only [SystemState.getReply?] at hR ⊢
+        by_cases hc : rid.toObjId = addr.cnode
+        · rw [hc, hPre] at hR; exact absurd rfl hR
+        · rw [hNe rid.toObjId hc]; exact hR)
+      (fun cn hC => by
+        simp only [SystemState.getCNode?] at hC ⊢
+        by_cases hc : cn = addr.cnode
+        · rw [hc, hSelf]; simp
+        · rw [hNe cn hc]; exact hC)
+  intro oid cn slot cap' hObj hLook
   by_cases hc : oid = addr.cnode
   · subst hc
     rw [hSelf] at hObj
@@ -98,12 +102,12 @@ theorem cspaceInsertSlot_preserves_replyCapPointsToValidReply
         (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLook)] at hLook
       simp only [Option.some.injEq] at hLook
       subst hLook
-      exact hCapBacked rid hTgt
+      exact hKind _ hCapBacked
     · rw [CNode.lookup_insert_ne preCn addr.slot slot cap (Ne.symm hs)
         (CNode.slotsUnique_holds preCn)] at hLook
-      exact hRCPV addr.cnode (.cnode preCn) slot cap' rid hPre hLook hTgt
+      exact hKind _ (hRCPV addr.cnode (.cnode preCn) slot cap' hPre hLook)
   · rw [hNe oid hc] at hObj
-    exact hRCPV oid cn slot cap' rid hObj hLook hTgt
+    exact hKind _ (hRCPV oid cn slot cap' hObj hLook)
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceInsertSlot`.
 WS-RC R4.A close-out: slot-uniqueness is now carried structurally on
@@ -121,7 +125,7 @@ theorem cspaceInsertSlot_preserves_capabilityBundleOffCoverage
     (addr : CSpaceAddr)
     (cap : Capability)
     (hInv : capabilityBundleOffCoverage st)
-    (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
+    (hCapBacked : capTargetKindBackedAt st cap.target)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityBundleOffCoverage st' := by
   rcases hInv with ⟨⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩, hLinks, hOrd⟩
@@ -145,22 +149,23 @@ theorem cspaceInsertSlot_preserves_capabilityBundleOffCoverage
         (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)⟩
   exact ⟨⟨cspaceLookupSound_holds st',
     hComp', hAcyclic', hDepth', hObjInv',
-    cspaceInsertSlot_preserves_replyCapPointsToValidReply st st' addr cap hRCPV hObjInv hCapBacked hStep⟩,
+    cspaceInsertSlot_preserves_capTargetKindBacked st st' addr cap hRCPV hObjInv hCapBacked hStep⟩,
     hLinks', by
       obtain ⟨cn, -, -, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
       rw [storeObject_cdt_eq st st' addr.cnode _ hStore]; exact hOrd⟩
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.b): `cspaceDeleteSlotCore` preserves
-`replyCapPointsToValidReply` — deletion only *removes* a cap (and detaches its CDT node,
-which does not touch the object store beyond the one CNode), so every reply
-cap in the post-state already existed in the pre-state (backed by the pre-invariant) and
-`getReply?` frames through.  Used by `cspaceDeleteSlot` and the CDT-revoke fold. -/
-theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
+`capTargetKindBacked` — deletion only *removes* a cap (and detaches its CDT node,
+which does not touch the object store beyond the one CNode), so every cap in the
+post-state already existed in the pre-state (backed by the pre-invariant), and the
+emptied object keeps its kind, so every Reply and CNode stays.  Used by
+`cspaceDeleteSlot` and the CDT-revoke fold. -/
+theorem cspaceDeleteSlotCore_preserves_capTargetKindBacked
     (st st' : SystemState) (addr : CSpaceAddr)
-    (hRCPV : replyCapPointsToValidReply st)
+    (hRCPV : capTargetKindBacked st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
-    replyCapPointsToValidReply st' := by
+    capTargetKindBacked st' := by
   obtain ⟨o, hPre, hH, hStore⟩ := cspaceDeleteSlotCore_ok hStep
   have hMidSelf := storeObject_objects_eq st st' addr.cnode _ hObjInv hStore
   have hMidNe : ∀ oid, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
@@ -172,30 +177,36 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
     · rw [hc, hMidSelf, hPre]
       cases o <;> simp_all [KernelObject.holdsSlots, KernelObject.removeSlotCap]
     · rw [hMidNe rid.toObjId hc]
-  intro oid o' slot cap' rid hObj hLook hTgt
-  rw [hGetReply]
+  have hGetCNode : ∀ cn : SeLe4n.ObjId, st.getCNode? cn ≠ none → st'.getCNode? cn ≠ none := by
+    intro cn hC
+    simp only [SystemState.getCNode?] at hC ⊢
+    by_cases hc : cn = addr.cnode
+    · rw [hc, hMidSelf]; rw [hc, hPre] at hC
+      cases o <;> simp_all [KernelObject.holdsSlots, KernelObject.removeSlotCap]
+    · rw [hMidNe cn hc]; exact hC
+  have hKind := capTargetKindBackedAt_mono (fun rid h => by rw [hGetReply]; exact h) hGetCNode
+  intro oid o' slot cap' hObj hLook
   by_cases hc : oid = addr.cnode
   · subst hc
     rw [hMidSelf] at hObj
     cases hObj
-    exact hRCPV _ o slot cap' rid hPre (KernelObject.slotCap_removeSlotCap_back hLook) hTgt
+    exact hKind _ (hRCPV _ o slot cap' hPre (KernelObject.slotCap_removeSlotCap_back hLook))
   · rw [hMidNe oid hc] at hObj
-    exact hRCPV oid o' slot cap' rid hObj hLook hTgt
+    exact hKind _ (hRCPV oid o' slot cap' hObj hLook)
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.a): a capability resolved from a CSpace slot in a state
-satisfying `capabilityInvariantBundle` is reply-backed — if its target is a reply cap, the
-backing reply object exists.  This is the shared discharge for the `hCapBacked` hypothesis of
+satisfying `capabilityInvariantBundle` names an object of the kind its target claims.  This is
+the shared discharge for the `hCapBacked` hypothesis of
 `cspaceInsertSlot_preserves_capabilityBundleOffCoverage`: `cspaceCopy`/`cspaceMove` insert the
 resolved source cap directly, and `cspaceMint` inserts a derivation with the same target
 (`mintDerivedCap_target_preserved_with_badge_override`).  It unfolds the read-only
 `cspaceLookupSlot` result to the source slot's containing CNode and appeals to the pre-state
-`replyCapPointsToValidReply` conjunct. -/
-theorem replyCapBacked_of_source_slot
+`capTargetKindBacked` conjunct. -/
+theorem capTargetKindBacked_of_source_slot
     (st : SystemState) (src : CSpaceAddr) (parent : Capability)
     (hInv : capabilityInvariantBundle st)
     (hSrc : cspaceLookupSlot src st = .ok (parent, st)) :
-    ∀ rid, parent.target = .replyCap rid → st.getReply? rid ≠ none := by
-  intro rid hTgt
+    capTargetKindBackedAt st parent.target := by
   have hCap : SystemState.lookupSlotCap st src = some parent :=
     (cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hSrc
   rw [SystemState.lookupSlotCap] at hCap
@@ -205,8 +216,8 @@ theorem replyCapBacked_of_source_slot
       rw [hCN] at hCap
       have hObjCN : st.objects[src.cnode]? = some (.cnode cn) :=
         (SystemState.lookupCNode_eq_some_iff st src.cnode cn).1 hCN
-      exact replyCapPointsToValidReply_of_capabilityInvariantBundle st hInv
-        src.cnode (.cnode cn) src.slot parent rid hObjCN hCap hTgt
+      exact capTargetKindBacked_of_capabilityInvariantBundle st hInv
+        src.cnode (.cnode cn) src.slot parent hObjCN hCap
 
 /-- The base mint, which records no derivation, leaves the bundle without the
 tree's coverage; `cspaceMintWithCdt` records the edge. -/
@@ -242,8 +253,7 @@ theorem cspaceMint_preserves_capabilityBundleOffCoverage
           have hChildTgt : child.target = parent.target :=
             mintDerivedCap_target_preserved_with_badge_override ⟨parent, hNotNull⟩ child rights badge hMint
           exact cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st' dst child hInv.offCoverage
-            (fun rid h => replyCapBacked_of_source_slot st src parent hInv hSrc rid
-              (by rw [← hChildTgt]; exact h))
+            (by rw [hChildTgt]; exact capTargetKindBacked_of_source_slot st src parent hInv hSrc)
             hInsert
 
 /-- WS-SM SM6.D / PR #822 Phase H: `mintReplyCap` leaves the bundle without the
@@ -275,8 +285,7 @@ theorem mintReplyCap_preserves_capabilityBundleOffCoverage
                     rights := replyCapRightsFrom parent.rights } st
                   = .ok ((), st') := by simpa [hSrc, hTgt, hRep] using hStep
               exact cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st' dst _ hInv.offCoverage
-                (fun rid h => by
-                  simp only [CapTarget.replyCap.injEq] at h; subst h; rw [hRep]; simp) hInsert
+                (by show st.getReply? _ ≠ none; rw [hRep]; simp) hInsert
       | cnodeSlot a b => simp [hSrc, hTgt] at hStep
       | replyCap rid => simp [hSrc, hTgt] at hStep
       | auditTrail _ => simp [hSrc, hTgt] at hStep

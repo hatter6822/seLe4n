@@ -470,6 +470,16 @@ theorem getReply? (rid : SeLe4n.ReplyId) : st'.getReply? rid = st.getReply? rid 
     | tcb t => obtain ⟨t', h', _⟩ := h.get_tcb e; rw [h']
     | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
 
+/-- CNodes read the same in both stores. -/
+theorem getCNode? (id : SeLe4n.ObjId) : st'.getCNode? id = st.getCNode? id := by
+  unfold SystemState.getCNode?
+  cases e : st.objects[id]? with
+  | none => rw [h.get_none_iff.mpr e]
+  | some o => cases o with
+    | cnode cn => rw [h.get_cnode_iff.mpr e]
+    | tcb t => obtain ⟨t', h', _⟩ := h.get_tcb e; rw [h']
+    | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
+
 /-- A step that writes only run-queue links rewrites each object to one of its
 own kind. -/
 theorem kindPreserving : SeLe4n.Model.kindPreservingWrite st st' := by

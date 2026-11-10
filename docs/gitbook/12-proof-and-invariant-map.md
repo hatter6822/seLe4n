@@ -89,7 +89,7 @@ Per-core lifts live in `Scheduler/Invariant/PerCore.lean` and
 ```
 capabilityInvariantBundle :=
   cspaceLookupSound ∧ cdtCompleteness ∧ cdtAcyclicity
-  ∧ cspaceDepthConsistent ∧ objects.invExt ∧ replyCapPointsToValidReply
+  ∧ cspaceDepthConsistent ∧ objects.invExt ∧ capTargetKindBacked
   ∧ cdtLinksAgree ∧ CapTreeShape
 ```
 
@@ -97,6 +97,10 @@ capabilityInvariantBundle :=
 structural guarantees — the two that make revocation terminate and make it
 complete. `objects.invExt` is the Robin Hood table's own well-formedness
 (§3.6), carried here because capability lookup goes through it.
+`capTargetKindBacked` (since `v0.37.13`) says a Reply capability names a Reply
+and a slot capability names a CNode; `capabilityInvariantBundle_objectCapsBacked`
+derives from the tree shape that every `.object` capability names an installed
+object. The canonical statement is `SELE4N_SPEC.md` §8.6.
 `CapTreeShape` puts every capability-holding slot in the tree, as seL4's
 mapping database holds every capability; since `v0.36.129` it also holds every
 capability to a live object and every capability naming another object than

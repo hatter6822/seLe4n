@@ -857,10 +857,13 @@ quantified over the two it does not.
 
 **Why a reduction hypothesis and not
 `ipcUnwrapCaps_preserves_capabilityInvariantBundle`'s own premises.**  That
-lemma externalises its reply-cap backing condition quantified over *every*
-bundle-satisfying state and *every* capability, which no caller can exhibit for
-an arbitrary transferred capability.  (Its slot-capacity premise is gone: WS-ZA
-ZA5.3 made a CNode's slots a fixed array, so the bound is a theorem.)  This
+lemma takes the transferred capabilities' sources (`hNames`: each capability's
+target is the one its source slot holds), which the receive's resolution of the
+sender's addresses would have to exhibit.  (Its slot-capacity premise is gone:
+WS-ZA ZA5.3 made a CNode's slots a fixed array, so the bound is a theorem; and
+its reply-cap backing premise, quantified over every capability, is gone since
+the bundle's `capTargetKindBacked` backs a transferred capability through its
+source.)  This
 hypothesis is instead a statement about the *operation*, and it is exhibited: `receiveTransferCapsPreservesCapabilityBundle_of_none`
 discharges it whenever the send asks to transfer nothing (WS-ZA ZA4.7: the
 request is `sendCapRequest`, resolved from the sender's CSpace at the rendezvous,

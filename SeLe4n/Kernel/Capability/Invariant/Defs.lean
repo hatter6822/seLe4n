@@ -178,14 +178,80 @@ def cspaceDepthConsistent (st : SystemState) : Prop :=
     cn.depth ≤ maxCSpaceDepth ∧
     (cn.bitsConsumed > 0 → cn.wellFormed)
 
-/-- WS-SM SM6.D / PR #822 Phase H (#1): **no dangling reply caps** — every `.replyCap rid`
-held in a CNode slot is backed by an existing Reply object.  Mirrors the runtime
-`cspaceSlotCoherencyChecks` backing check (`.replyCap rid => getReply? rid .isSome` in
-`Testing/InvariantChecks.lean`); the production capability/lifecycle invariants previously
-only constrained `.object` cap targets, so the model admitted a `.replyCap rid` pointing at
-an absent/non-Reply object that the live `.reply` path then rejects (`getReply?`).  The
-7th conjunct of `capabilityInvariantBundle`; preserved by the cap ops via the keystone
-`cspaceInsertSlot_preserves_replyCapPointsToValidReply` (+ delete dual). -/
+/-- **The kind a capability target claims of the object it names is the kind in
+the store**: a reply capability's reply is a Reply (`getReply?`), and a CNode-slot
+capability's CNode is a CNode (`getCNode?`).  Every other target claims no kind:
+an `.object` capability is typed by the object it names, whatever it is, and its
+presence is the tree shape's `live` (`capabilityInvariantBundle_objectCapsBacked`);
+the audit trail, scheduling control and interrupt control name no object; an
+interrupt handler names its line's node, whose presence and issued line are
+`live`'s too. -/
+def capTargetKindBackedAt (st : SystemState) : CapTarget → Prop
+  | .replyCap rid => st.getReply? rid ≠ none
+  | .cnodeSlot cn _ => st.getCNode? cn ≠ none
+  | _ => True
+
+/-- **Every capability slot's capability names an object of the kind its target
+claims** — a CNode's slot and a thread's space slot, read through
+`KernelObject.slotCap`.  The 6th conjunct of `capabilityInvariantBundle`.
+
+WS-SM SM6.D / PR #822 Phase H (#1) stated its reply half alone
+(`replyCapPointsToValidReply`, now derived: `capTargetKindBacked.reply`): the
+model admitted a `.replyCap rid` at an absent or non-Reply object, which the live
+`.reply` path then rejects.  The CNode-slot half rules out a `.cnodeSlot` capability
+whose CNode is gone or is another kind of object; the boot admits one only over a
+CNode it installs (`bootCapTargetKindCheck`). -/
+def capTargetKindBacked (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (o : KernelObject) (slot : SeLe4n.Slot) (cap : Capability),
+    st.objects[oid]? = some o →
+    o.slotCap slot = some cap →
+    capTargetKindBackedAt st cap.target
+
+/-- **A step that removes no Reply and no CNode keeps every target's kind
+backed.** -/
+theorem capTargetKindBackedAt_mono {st st' : SystemState}
+    (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
+    (hCNode : ∀ cn : SeLe4n.ObjId, st.getCNode? cn ≠ none → st'.getCNode? cn ≠ none) :
+    ∀ t, capTargetKindBackedAt st t → capTargetKindBackedAt st' t := by
+  intro t h
+  cases t with
+  | replyCap rid => exact hReply rid h
+  | cnodeSlot cn _ => exact hCNode cn h
+  | _ => trivial
+
+/-- A step that leaves every Reply and CNode where it was keeps every target's
+kind backed. -/
+theorem capTargetKindBackedAt_congr {st st' : SystemState}
+    (hReply : ∀ rid : SeLe4n.ReplyId, st'.getReply? rid = st.getReply? rid)
+    (hCNode : ∀ cn : SeLe4n.ObjId, st'.getCNode? cn = st.getCNode? cn) :
+    ∀ t, capTargetKindBackedAt st t → capTargetKindBackedAt st' t :=
+  capTargetKindBackedAt_mono (fun rid h => by rw [hReply]; exact h)
+    (fun cn h => by rw [hCNode]; exact h)
+
+/-- **A CNode stored over a CNode keeps every target's kind backed**: no Reply
+is touched and the key stays a CNode. -/
+theorem capTargetKindBackedAt_storeObject_cnode {st st' : SystemState} {k : SeLe4n.ObjId}
+    {cn cn' : CNode} (hObjInv : st.objects.invExt) (hPre : st.objects[k]? = some (.cnode cn))
+    (hStore : storeObject k (.cnode cn') st = .ok ((), st')) :
+    ∀ t, capTargetKindBackedAt st t → capTargetKindBackedAt st' t := by
+  have hSelf := storeObject_objects_eq st st' k _ hObjInv hStore
+  have hNe : ∀ oid, oid ≠ k → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => storeObject_objects_ne st st' k oid _ h hObjInv hStore
+  refine capTargetKindBackedAt_mono (fun rid hR => ?_) (fun c hC => ?_)
+  · simp only [SystemState.getReply?] at hR ⊢
+    by_cases hc : rid.toObjId = k
+    · rw [hc, hPre] at hR; exact absurd rfl hR
+    · rw [hNe rid.toObjId hc]; exact hR
+  · simp only [SystemState.getCNode?] at hC ⊢
+    by_cases hc : c = k
+    · rw [hc, hSelf]; simp
+    · rw [hNe c hc]; exact hC
+
+/-- **No dangling reply caps**: every `.replyCap rid` held in a capability slot is
+backed by an existing Reply object.  Mirrors the runtime reply arm of
+`Testing/InvariantChecks.lean`.  The reply half of `capTargetKindBacked`
+(`capTargetKindBacked.reply`), kept as its own statement for the consumers that
+read a reply cap's Reply. -/
 def replyCapPointsToValidReply (st : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (o : KernelObject) (slot : SeLe4n.Slot)
     (cap : Capability) (rid : SeLe4n.ReplyId),
@@ -193,6 +259,33 @@ def replyCapPointsToValidReply (st : SystemState) : Prop :=
     o.slotCap slot = some cap →
     cap.target = .replyCap rid →
     st.getReply? rid ≠ none
+
+/-- The reply half of the kind backing. -/
+theorem capTargetKindBacked.reply {st : SystemState} (h : capTargetKindBacked st) :
+    replyCapPointsToValidReply st := fun oid o slot cap rid hO hL hT => by
+  have hK := h oid o slot cap hO hL
+  rw [hT] at hK
+  exact hK
+
+/-- **A `.cnodeSlot` capability names a CNode**: the CNode-slot half. -/
+theorem capTargetKindBacked.cnodeSlot {st : SystemState} (h : capTargetKindBacked st)
+    {oid : SeLe4n.ObjId} {o : KernelObject} {slot : SeLe4n.Slot} {cap : Capability}
+    {cn : SeLe4n.ObjId} {s : SeLe4n.Slot} (hO : st.objects[oid]? = some o)
+    (hL : o.slotCap slot = some cap) (hT : cap.target = .cnodeSlot cn s) :
+    st.getCNode? cn ≠ none := by
+  have hK := h oid o slot cap hO hL
+  rw [hT] at hK
+  exact hK
+
+/-- The slot-reader form: the capability a slot holds names an object of the
+kind its target claims. -/
+theorem capTargetKindBacked.slotCapAt {st : SystemState} (h : capTargetKindBacked st)
+    {r : SlotRef} {cap : Capability} (hC : st.slotCapAt r = some cap) :
+    capTargetKindBackedAt st cap.target := by
+  unfold SystemState.slotCapAt SystemState.getObject? at hC
+  cases hO : st.objects[r.cnode]? with
+  | none => rw [hO] at hC; cases hC
+  | some o => rw [hO] at hC; exact h r.cnode o r.slot cap hO hC
 
 /-- The CNode reading of the reply-cap clause. -/
 theorem replyCapPointsToValidReply.cnode {st : SystemState} (h : replyCapPointsToValidReply st)
@@ -202,32 +295,33 @@ theorem replyCapPointsToValidReply.cnode {st : SystemState} (h : replyCapPointsT
   h oid _ slot cap rid hO hL hT
 
 /-- **A step whose every object was there before with the same slots, and that
-removes no Reply, keeps every reply cap backed.** -/
-theorem replyCapPointsToValidReply_of_slotCap_back {st st' : SystemState}
-    (h : replyCapPointsToValidReply st)
+removes no Reply and no CNode, keeps every target's kind backed.** -/
+theorem capTargetKindBacked_of_slotCap_back {st st' : SystemState}
+    (h : capTargetKindBacked st)
     (hBack : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject), st'.objects[oid]? = some o' →
       ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap)
-    (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none) :
-    replyCapPointsToValidReply st' := fun oid o' slot cap rid hO hL hT => by
+    (hKind : ∀ t, capTargetKindBackedAt st t → capTargetKindBackedAt st' t) :
+    capTargetKindBacked st' := fun oid o' slot cap hO hL => by
   obtain ⟨o, ho, he⟩ := hBack oid o' hO
-  exact hReply rid (h oid o slot cap rid ho (he ▸ hL) hT)
+  exact hKind _ (h oid o slot cap ho (he ▸ hL))
 
-/-- #1: `replyCapPointsToValidReply` reads only the object store (CNode slots +
-`getReply?`), so any transition leaving `st.objects` unchanged frames it. -/
-theorem replyCapPointsToValidReply_of_objects_eq {st st' : SystemState}
-    (hObjs : st'.objects = st.objects) (h : replyCapPointsToValidReply st) :
-    replyCapPointsToValidReply st' := by
-  unfold replyCapPointsToValidReply SystemState.getReply? at h ⊢
-  rw [hObjs]; exact h
+/-- `capTargetKindBacked` reads only the object store, so any transition leaving
+`st.objects` unchanged frames it. -/
+theorem capTargetKindBacked_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : capTargetKindBacked st) :
+    capTargetKindBacked st' :=
+  capTargetKindBacked_of_slotCap_back h (fun oid o' hO => ⟨o', hObjs ▸ hO, rfl⟩)
+    (capTargetKindBackedAt_congr (SystemState.getReply?_frame hObjs)
+      (fun cn => by unfold SystemState.getCNode?; rw [hObjs]))
 
-/-- WS-ZA ZA4.5: a step writing only run-queue links keeps every reply cap
+/-- WS-ZA ZA4.5: a step writing only run-queue links keeps every target's kind
 backed — CNodes and Reply objects are not TCBs. -/
-theorem replyCapPointsToValidReply_of_objectsAgreeOffRunLinks {st st' : SystemState}
-    (hA : st'.objectsAgreeOffRunLinks st) (h : replyCapPointsToValidReply st) :
-    replyCapPointsToValidReply st' :=
-  replyCapPointsToValidReply_of_slotCap_back h
+theorem capTargetKindBacked_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : capTargetKindBacked st) :
+    capTargetKindBacked st' :=
+  capTargetKindBacked_of_slotCap_back h
     (fun _ _ hO => let ⟨o, ho, hc, _⟩ := hA.slots_back hO; ⟨o, ho, hc⟩)
-    (fun rid hR => by rw [hA.getReply? rid]; exact hR)
+    (capTargetKindBackedAt_congr hA.getReply? hA.getCNode?)
 
 /-- Composed capability invariant bundle entrypoint.
 
@@ -267,7 +361,9 @@ WS-RC R4.A.6: The historical `cspaceSlotUnique` conjunct was removed when
 witness structurally at construction time (via `UniqueSlotMap.hWF`).  The
 bundle now has **7** conjuncts: the R4.A.6 close-out retired `cspaceSlotUnique`
 (7 → 6), PR #822 Phase H #1.a added `replyCapPointsToValidReply` (the 7th,
-6 → 7) so the step-preserved bundle rules out dangling `.replyCap` slots, and
+6 → 7) so the step-preserved bundle rules out dangling `.replyCap` slots (since
+generalised to `capTargetKindBacked`, which also rules out a `.cnodeSlot` capability
+naming anything but a CNode), and
 WS-ZA ZA5.3 part 4 added `cdtLinksAgree` (the 8th): the derivation links the
 slots hold agree with the tree, so the executable children and descendant reads
 that walk them read the tree.  WS-ZA ZA5.3 part 5 retired the slot-count
@@ -286,7 +382,7 @@ by it alone. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cdtCompleteness st ∧ cdtAcyclicity st ∧
-    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st ∧
+    cspaceDepthConsistent st ∧ st.objects.invExt ∧ capTargetKindBacked st ∧
     cdtLinksAgree st ∧ SystemState.CapTreeShape st
 
 /-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
@@ -319,7 +415,7 @@ agree with the tree (`capabilityInvariantBundle_of_linkReach`). -/
 def capabilityBundleOffLinks (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cdtCompleteness st ∧ cdtAcyclicity st ∧
-    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st
+    cspaceDepthConsistent st ∧ st.objects.invExt ∧ capTargetKindBacked st
 
 theorem capabilityInvariantBundle.offLinks {st : SystemState} (h : capabilityInvariantBundle st) :
     capabilityBundleOffLinks st :=
@@ -369,9 +465,9 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   /-- The kernel-level `objects` `RHTable` invariant holds (external hash,
       capacity positive, no duplicate keys). -/
   objectsInvExt : st.objects.invExt
-  /-- WS-SM SM6.D / PR #822 Phase H (#1): every `.replyCap rid` in a CNode slot is
-      backed by an existing Reply object (no dangling reply caps). -/
-  replyCapBacked : replyCapPointsToValidReply st
+  /-- Every capability names an object of the kind its target claims: a reply
+      capability a Reply, a CNode-slot capability a CNode. -/
+  targetKindBacked : capTargetKindBacked st
   /-- WS-ZA ZA5.3: the slot links encode the derivation tree. -/
   linksAgree : cdtLinksAgree st
   /-- WS-ZA ZA5.4 part 16: every slot holding a capability is in the tree, and
@@ -391,11 +487,11 @@ theorem capabilityInvariantBundle_iff_CapabilityInvariantBundle
     exact { lookupSound := hS
           , cdtCompleteness := hComp, cdtAcyclicity := hAcyc
           , depthConsistent := hDep, objectsInvExt := hObj
-          , replyCapBacked := hRCPV, linksAgree := hLinks, treeShape := hShape }
+          , targetKindBacked := hRCPV, linksAgree := hLinks, treeShape := hShape }
   · intro h
     exact ⟨h.lookupSound,
            h.cdtCompleteness, h.cdtAcyclicity, h.depthConsistent,
-           h.objectsInvExt, h.replyCapBacked, h.linksAgree, h.treeShape⟩
+           h.objectsInvExt, h.targetKindBacked, h.linksAgree, h.treeShape⟩
 
 /-! ### AN4-F.5.2 (CAP-M05): `@[simp]` projection abbreviations
 
@@ -425,7 +521,69 @@ namespace capabilityInvariantBundle
 @[simp] abbrev treeShape {st : SystemState} (h : capabilityInvariantBundle st) :
     SystemState.CapTreeShape st := h.2.2.2.2.2.2.2
 
+/-- Extract the target-kind backing (the 6th conjunct). -/
+@[simp] abbrev targetKindBacked {st : SystemState} (h : capabilityInvariantBundle st) :
+    capTargetKindBacked st := h.2.2.2.2.2.1
+
+/-- **Every object a capability names is in the store** (seL4's `valid_cap`: no
+capability outlives its object), its line issued when it is an interrupt node:
+the tree shape's `live`, for every target that names an object
+(`Capability.namedObject`). -/
+theorem namedObjectPresent {st : SystemState} (h : capabilityInvariantBundle st)
+    {r : SlotRef} {o : SeLe4n.ObjId} (hN : SystemState.namesAt st.slotCapAt r o) :
+    st.objectPresent o :=
+  h.treeShape.live r o hN
+
 end capabilityInvariantBundle
+
+/-- **No `.object` capability dangles**: every `.object x` capability held in a
+capability slot — a CNode's slot or a thread's space slot, read through
+`KernelObject.slotCap` — names an `x` present in the object store. -/
+def objectCapsBacked (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (o : KernelObject) (slot : SeLe4n.Slot) (cap : Capability)
+    (x : SeLe4n.ObjId),
+    st.objects[oid]? = some o →
+    o.slotCap slot = some cap →
+    cap.target = .object x →
+    st.objects[x]? ≠ none
+
+/-- **The capability bundle backs every `.object` capability** — the answer to
+"can a decoder reach an absent object through a capability it resolved": no.  It
+is the tree shape's `live` (`capabilityInvariantBundle.namedObjectPresent`),
+preserved by every transition that preserves the bundle; an object leaves the
+store only through the final-delete retire, once no slot names it
+(`capIsFinal_iff_capFinalSpec`, `TreeShapeOver.retire`). -/
+theorem capabilityInvariantBundle_objectCapsBacked {st : SystemState}
+    (h : capabilityInvariantBundle st) : objectCapsBacked st := by
+  intro oid o slot cap x hO hL hT
+  have hN : SystemState.namesAt st.slotCapAt ⟨oid, slot⟩ x :=
+    ⟨cap, by rw [SystemState.slotCapAt_of_object (r := ⟨oid, slot⟩) hO]; exact hL,
+      by unfold Capability.namedObject; rw [hT]⟩
+  exact (h.namedObjectPresent hN).1
+
+/-- The slot-reader form: a slot holding an `.object x` capability names a
+present `x`. -/
+theorem objectCapsBacked.slotCapAt {st : SystemState} (h : objectCapsBacked st)
+    {r : SlotRef} {cap : Capability} {x : SeLe4n.ObjId}
+    (hC : st.slotCapAt r = some cap) (hT : cap.target = .object x) : st.objects[x]? ≠ none := by
+  unfold SystemState.slotCapAt SystemState.getObject? at hC
+  cases hO : st.objects[r.cnode]? with
+  | none => rw [hO] at hC; cases hC
+  | some o => rw [hO] at hC; exact h r.cnode o r.slot cap x hO hC hT
+
+/-- The CNode-lookup form (`SystemState.lookupSlotCap`, what a decoder resolves
+through). -/
+theorem objectCapsBacked.lookupSlotCap {st : SystemState} (h : objectCapsBacked st)
+    {r : SlotRef} {cap : Capability} {x : SeLe4n.ObjId}
+    (hC : SystemState.lookupSlotCap st r = some cap) (hT : cap.target = .object x) :
+    st.objects[x]? ≠ none := by
+  rw [SystemState.lookupSlotCap] at hC
+  cases hCN : SystemState.lookupCNode st r.cnode with
+  | none => rw [hCN] at hC; cases hC
+  | some cn =>
+    rw [hCN] at hC
+    exact h r.cnode (.cnode cn) r.slot cap x
+      ((SystemState.lookupCNode_eq_some_iff st r.cnode cn).1 hCN) hC hT
 
 /-- **Every slot the tree names holds a capability**, read through the slot
 reader: `cdtCompleteness`. -/
@@ -706,10 +864,16 @@ theorem objects_invExt_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
     st.objects.invExt := hInv.2.2.2.2.1
 
-/-- WS-SM SM6.D / PR #822 Phase H (#1): extract the reply-cap backing invariant. -/
+/-- Extract the target-kind backing (the 6th conjunct). -/
+theorem capTargetKindBacked_of_capabilityInvariantBundle
+    (st : SystemState) (hInv : capabilityInvariantBundle st) :
+    capTargetKindBacked st := hInv.2.2.2.2.2.1
+
+/-- WS-SM SM6.D / PR #822 Phase H (#1): extract the reply-cap backing invariant,
+the reply half of the 6th conjunct. -/
 theorem replyCapPointsToValidReply_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    replyCapPointsToValidReply st := hInv.2.2.2.2.2.1
+    replyCapPointsToValidReply st := hInv.2.2.2.2.2.1.reply
 
 /-- WS-ZA ZA5.3: extract the slot-link agreement. -/
 theorem cdtLinksAgree_of_capabilityInvariantBundle

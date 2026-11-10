@@ -5959,7 +5959,7 @@ theorem getCNode?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (cn : CNode
 /-- WS-SM SM6.D / PR #822 Phase H (#1.a): Unfolding lemma — `lookupCNode`
 returns `some cn` iff the store holds exactly `KernelObject.cnode cn` at `id`.
 Mirrors `getCNode?_eq_some_iff` (the two helpers share a definition); used by the
-reply-cap backing discharge (`replyCapBacked_of_source_slot`) that connects a
+reply-cap backing discharge (`capTargetKindBacked_of_source_slot`) that connects a
 `cspaceLookupSlot` result to the slot's containing CNode object. -/
 theorem lookupCNode_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (cn : CNode) :
     st.lookupCNode id = some cn ↔ st.objects[id]? = some (.cnode cn) := by

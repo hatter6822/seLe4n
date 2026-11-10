@@ -269,6 +269,25 @@ theorem installIrqNodes_objectPresent {n : Nat} {ist : IntermediateState}
   · rw [e]; exact h.1
   · exact absurd e0 h.1
 
+/-- The install keeps every capability's target kind backed: it adds empty nodes
+at ids that held nothing and keeps every object the state holds. -/
+theorem installIrqNodes_capTargetKindBacked {n : Nat} {ist : IntermediateState}
+    (hFresh : irqNodesFresh n ist.state = true) (h : SeLe4n.Kernel.capTargetKindBacked ist.state) :
+    SeLe4n.Kernel.capTargetKindBacked (installIrqNodes n ist).state := by
+  intro oid o slot c hO hc
+  have hS : (installIrqNodes n ist).state.slotCapAt ⟨oid, slot⟩ = some c := by
+    rw [SystemState.slotCapAt_of_object hO]; exact hc
+  rw [installIrqNodes_slotCapAt hFresh] at hS
+  refine SeLe4n.Kernel.capTargetKindBackedAt_mono (fun rid hR => ?_) (fun cn hC => ?_) _ (h.slotCapAt hS)
+  · unfold SystemState.getReply? at hR ⊢
+    cases e : ist.state.objects[rid.toObjId]? with
+    | none => rw [e] at hR; exact absurd rfl hR
+    | some o0 => rw [installIrqNodes_objects_of_some hFresh e]; rw [e] at hR; exact hR
+  · unfold SystemState.getCNode? at hC ⊢
+    cases e : ist.state.objects[cn]? with
+    | none => rw [e] at hC; exact absurd rfl hC
+    | some o0 => rw [installIrqNodes_objects_of_some hFresh e]; rw [e] at hC; exact hC
+
 /-- An empty node has the boot shape. -/
 theorem irqNodeCNode_bootObjectShape : bootObjectShape (.cnode irqNodeCNode) :=
   bootSafeObject_bootObjectShape (bootSafeObjectCheck_sound _ (by decide))

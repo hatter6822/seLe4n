@@ -3407,8 +3407,8 @@ code may assume:
   capability frame states the DIRECTION each conjunct transports in**, which is
   its whole content: three conjuncts read CNodes and go **backward** (a post-state
   CNode must be a pre-state CNode — what a store at a TCB key gives), while
-  `cdtCompleteness` and the Reply half of `replyCapPointsToValidReply` go
-  **forward** (a store removes no key and no Reply).  `cspaceLookupSound` is
+  `cdtCompleteness` and `capTargetKindBacked`'s target halves go
+  **forward** (a store removes no key, no Reply and no CNode).  `cspaceLookupSound` is
   structural and `cdtAcyclicity` reads `st.cdt` alone.  (4) **`cnode` is excluded
   from the pointwise instance, in one direction only**: a CNode *rewrite* keeps
   the key and the kind while changing the slots, and three conjuncts are about
@@ -3889,7 +3889,8 @@ code may assume:
   operations is one `storeObject_*` frame lemma rather than a composition of
   two.  (4) **The one substantive fact the layer had restated is owned where
   it always was**: a reply cap is backed iff its Reply resolves, which is the
-  capability layer's step-preserved `replyCapPointsToValidReply`, exhibited
+  capability layer's step-preserved `replyCapPointsToValidReply` (since
+  `v0.37.13` the reply half of `capTargetKindBacked`), exhibited
   by `replyCapPointsToValidReply_distinguishes_backed_and_dangling`.
 - **A state-resolved thread is descheduled where the state PLACES it** (WS-RR
   RR8.6, `v0.35.79`).  `descheduleThread`, `cancelIpcBlockingOnCore` and

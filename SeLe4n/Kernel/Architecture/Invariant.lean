@@ -514,14 +514,14 @@ All components are vacuously true (empty objects and derivation tree) or use
 `CapDerivationTree.empty_edgeWellFounded`. -/
 private theorem default_capabilityInvariantBundle :
     capabilityInvariantBundle (default : SystemState) :=
-  -- WS-SM SM6.D / PR #822 Phase H (#1.a): the `replyCapPointsToValidReply` conjunct is
-  -- vacuous on the empty default state (no CNode objects to hold a reply cap).
+  -- WS-SM SM6.D / PR #822 Phase H (#1.a): the `capTargetKindBacked` conjunct is
+  -- vacuous on the empty default state (no object holds a capability).
   ⟨SeLe4n.Kernel.cspaceLookupSound_holds _,
    by intro ref h; exact absurd h (CapDerivationTree.empty_not_mentions ref),
    by exact CapDerivationTree.empty_edgeWellFounded,
    by intro cnodeId cn hObj; exact default_objects_absurd hObj,
    by exact RHTable_empty_invExt 16 (by omega),
-   by intro oid cn slot cap rid hObj hLook hTgt; exact default_objects_absurd hObj,
+   by intro oid cn slot cap hObj hLook; exact default_objects_absurd hObj,
    LinksAgree.of_empty CapDerivationTree.empty_edges CapDerivationTree.empty_rootChains fun r f => by
      rw [SystemState.slotLinkAt_def]
      cases h : (default : SystemState).objects[r.cnode]? with

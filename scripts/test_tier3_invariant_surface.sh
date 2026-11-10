@@ -3908,7 +3908,7 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&\n    bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&\n    bootCapabilitiesNameInstalledObjects config && bootCapabilitiesNameObjectsOfTheirKind config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # The boot keeps every untyped clear of the devices the kernel drives, as seL4
@@ -23492,7 +23492,7 @@ run_check "INVARIANT" rg -n '^theorem spliceNode_edgeWellFounded($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem spliceNode \(h : LinksAgree L cdt\) \(n : SlotRef\)$' SeLe4n/Model/Object/DerivationLinks.lean
 # v0.36.106: the capability bundle carries the slot links' agreement with the
 # tree; since v0.36.111 the revoke reads the source's first-child link.
-run_check "INVARIANT" rg -n -U '    cspaceDepthConsistent st ∧ st\.objects\.invExt ∧ replyCapPointsToValidReply st ∧\n    cdtLinksAgree st ∧ SystemState\.CapTreeShape st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n -U '    cspaceDepthConsistent st ∧ st\.objects\.invExt ∧ capTargetKindBacked st ∧\n    cdtLinksAgree st ∧ SystemState\.CapTreeShape st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^    let fc := st\.slotLinkNodeWord cnode slot \.firstChild$' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem linkDescendantsOf_eq($|[ ({:\[\]])' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
@@ -23533,7 +23533,7 @@ run_check "INVARIANT" rg -n -U '^@\[inline\] def cdtAppendRoot \(st : SystemStat
 run_check "INVARIANT" rg -n '^theorem cdtSplice_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^theorem cdtMove_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^theorem cdtAppendRoot_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
-run_check "INVARIANT" rg -n -U '^def bootDerivationTreeSound \(st : SystemState\) : Prop :=\n  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ st\.CapTreeShape$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^def bootDerivationTreeSound \(st : SystemState\) : Prop :=\n  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ st\.CapTreeShape ∧\n    capTargetKindBacked st$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '        match a\.roots\.find\? \(fun q => decide \(q\.2 = cap\.namedObject\)\) with\n        \| some q => \{ a with st := a\.st\.cdtAddChild q\.1 r \.copy, done := r :: a\.done \}\n        \| none =>\n            \{ st := a\.st\.cdtAppendRoot a\.last r, last := some r, done := r :: a\.done,' SeLe4n/Platform/Boot/CapabilityLinks.lean
@@ -23621,6 +23621,18 @@ run_check "INVARIANT" rg -n '^theorem startInitialThreads_capabilitiesLive($|[ (
 run_check "INVARIANT" rg -n -U '^    \(startInitialThreads_capabilitiesLive _ _ _ hStart\n      \(bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive cores config base hBase\)\)' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n -U '^    \(hLive : ∀ r o, SystemState\.namesAt ist\.state\.slotCapAt r o → ist\.state\.objectPresent o\)\n    \(hUnique : ' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n 'runBootCapabilityLiveChecks$' tests/SmpIdleSuite.lean
+# Every `.object` capability names an installed object: derived from the
+# capability tree's `live` field, and a capability's Reply or CNode target names
+# an object of that kind (`capTargetKindBacked`, conjunct 6 of the bundle).
+run_check "INVARIANT" rg -n '^def capTargetKindBacked \(st : SystemState\) : Prop :=$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def objectCapsBacked \(st : SystemState\) : Prop :=$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_objectCapsBacked($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem namedObjectPresent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^   \(bootCapabilitiesNameObjectsOfTheirKind config, bootCapabilityKindBootError\),$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capTargetKindBacked($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreads_capTargetKindBacked($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem installIrqNodes_capTargetKindBacked($|[ ({:\[\]])' SeLe4n/Platform/Boot/IrqNodes.lean
+run_check "INVARIANT" rg -n 'a slot capability into an installed non-CNode is refused by its kind' tests/SmpIdleSuite.lean
 # WS-ZA ZA5.4 part 19 (v0.36.130): the untyped chains and descendants.  The
 # shape reads the store's untyped records: the slots naming one untyped form one
 # vertical first-child chain, an untyped capability that is not full has no
