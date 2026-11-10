@@ -1066,13 +1066,6 @@ theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
 -- V2-I: Notification and ReplyRecv argument structures
 -- ============================================================================
 
-/-- V2-A/V2-I: Per-syscall argument structure for `notificationSignal`.
-    Register mapping: x2=badge value.
-    The notification object is resolved from the capability target (no MR decode). -/
-structure NotificationSignalArgs where
-  badge : Badge
-  deriving Repr, DecidableEq
-
 /-- V2-A/V2-I: Per-syscall argument structure for `notificationWait`.
     No message registers needed — the notification object is resolved from the
     capability target. The waiter thread ID comes from the current thread. -/
@@ -1089,14 +1082,6 @@ structure NotificationWaitArgs where
 structure ReplyRecvArgs where
   replyCPtr : SeLe4n.CPtr
   deriving Repr, DecidableEq
-
-/-- V2-I: Decode notification signal arguments from message registers.
-    Requires 1 message register (badge).  Inlined, so a caller that matches
-    the result builds no `Except` (WS-ZA ZA2.3). -/
-@[inline] def decodeNotificationSignalArgs (decoded : SyscallDecodeResult)
-    : Except KernelError NotificationSignalArgs := do
-  let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { badge := Badge.ofNatMasked r0.val }
 
 /-- V2-I: Decode notification wait arguments. No message registers needed. -/
 def decodeNotificationWaitArgs (_decoded : SyscallDecodeResult)
@@ -1381,10 +1366,6 @@ theorem decodeSchedContextUnbindArgs_roundtrip (args : SchedContextUnbindArgs) :
     decodeSchedContextUnbindArgs (stubDecoded (encodeSchedContextUnbindArgs args)) = .ok args := by
   rcases args; rfl
 
-/-- V2-I: Encode notification signal arguments into message registers. -/
-@[inline] def encodeNotificationSignalArgs (args : NotificationSignalArgs) : Array RegValue :=
-  #[⟨args.badge.val⟩]
-
 /-- V2-I: Encode notification wait arguments (empty — no message registers). -/
 @[inline] def encodeNotificationWaitArgs (_args : NotificationWaitArgs) : Array RegValue :=
   #[]
@@ -1392,16 +1373,6 @@ theorem decodeSchedContextUnbindArgs_roundtrip (args : SchedContextUnbindArgs) :
 /-- V2-I: Encode replyRecv arguments into message registers. -/
 @[inline] def encodeReplyRecvArgs (args : ReplyRecvArgs) : Array RegValue :=
   #[⟨args.replyCPtr.toNat⟩]
-
-/-- V2-I: NotificationSignalArgs decode round-trip.
-    Requires badge validity for lossless round-trip through `ofNatMasked`. -/
-theorem decodeNotificationSignalArgs_roundtrip (args : NotificationSignalArgs)
-    (hBadge : args.badge.valid) :
-    decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args := by
-  rcases args with ⟨b⟩
-  simp [decodeNotificationSignalArgs, encodeNotificationSignalArgs, stubDecoded,
-        requireMsgReg, bind, Except.bind, pure, Except.pure]
-  exact Badge.ofNatMasked_toNat b hBadge
 
 /-- V2-I: NotificationWaitArgs decode round-trip (trivial — no MR decode). -/
 theorem decodeNotificationWaitArgs_roundtrip (args : NotificationWaitArgs) :
@@ -1414,9 +1385,11 @@ theorem decodeReplyRecvArgs_roundtrip (args : ReplyRecvArgs) :
   simp [decodeReplyRecvArgs, encodeReplyRecvArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
-/-- Composed round-trip: all 14 argument structures satisfy the encode-decode
-    round-trip property. R6-B: CSpaceMintArgs and NotificationSignalArgs require
-    badge validity for lossless roundtrip through `ofNatMasked`. Y1-D:
+/-- Composed round-trip: every argument structure listed satisfies the
+    encode-decode round-trip property. R6-B: CSpaceMintArgs requires badge
+    validity for lossless roundtrip through `ofNatMasked` (a signal has no
+    argument structure: its badge is the capability's, `Capability.signalBadge`,
+    and it reads no message register). Y1-D:
     CSpaceMintArgs additionally requires rights validity for lossless roundtrip
     through `AccessRightSet.ofNat`. Parallel to `decode_components_roundtrip`
     in `RegisterDecode.lean`. -/
@@ -1437,8 +1410,6 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       args.maxMessageSize ≤ serviceMaxMessageSize →
       args.maxResponseSize ≤ serviceMaxMessageSize →
       decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
-    (∀ args, args.badge.valid →
-      decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args) ∧
     (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
     (∀ args, decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args) ∧
     (∀ args, decodeRecvArgs (stubDecoded (encodeRecvArgs args)) = .ok args) ∧
@@ -1453,30 +1424,12 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args maxASID hA hV hWx,
    fun args hA hV => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV,
    fun args hMc hMms hMrs => decodeServiceRegisterArgs_roundtrip args hMc hMms hMrs,
-   fun args h => decodeNotificationSignalArgs_roundtrip args h,
    decodeNotificationWaitArgs_roundtrip,
    decodeReplyRecvArgs_roundtrip,
    decodeRecvArgs_roundtrip,
    decodeSchedContextConfigureArgs_roundtrip,
    decodeSchedContextBindArgs_roundtrip,
    decodeSchedContextUnbindArgs_roundtrip⟩
-
-/-- V2-I: NotificationSignalArgs error exclusivity. -/
-theorem decodeNotificationSignalArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeNotificationSignalArgs d = .error e) ↔ d.msgRegs.size < 1 := by
-  constructor
-  · intro ⟨e, he⟩
-    by_cases hlt : d.msgRegs.size < 1
-    · exact hlt
-    · exfalso
-      simp only [decodeNotificationSignalArgs, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
-  · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeNotificationSignalArgs, bind, Except.bind]
-    rw [requireMsgReg_unfold_err _ _ (by omega)]
 
 /-- V2-I: ReplyRecvArgs error exclusivity. -/
 theorem decodeReplyRecvArgs_error_iff (d : SyscallDecodeResult) :

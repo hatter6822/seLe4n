@@ -699,8 +699,6 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     · exact .of_frameK fun hI => RecordsFrame.registerService hI h
     · cases h
   case none.notificationSignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -724,8 +722,6 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
   case none.declassify.object targetId =>
     exact .of_frameK fun hI => RecordsFrame.declassifyObjectFromCore hI h
   case none.declassifySignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

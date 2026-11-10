@@ -196,26 +196,28 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<Syscall
     })
 }
 
-/// Signal a notification object (badge OR accumulation).
+/// Signal a notification object (badge OR accumulation), as seL4's
+/// `seL4_Signal`.
 ///
-/// The badge value is passed via message register 0 (x2). The kernel's
-/// `decodeNotificationSignalArgs` reads MR\[0\] and accumulates it into the
-/// notification object's badge word via bitwise OR (`Badge.bor`).
+/// The badge ORed into the notification's word is the one **minted into the
+/// capability** `ntfn` names (`cspace_mint`), and zero for an unbadged
+/// capability — seL4's `sendSignal(ntfn, capNtfnBadge(cap))`.  The caller
+/// cannot choose it: the kernel reads no message register, so a holder of a
+/// notification capability can never set badge bits its capability was not
+/// minted with (another client's, or an interrupt handler's).  The call sends
+/// an empty message; the kernel checks no length, as seL4's does not.
 ///
-/// Lean: `notificationSignal` (API.lean) dispatches to
-/// `decodeNotificationSignalArgs` (SyscallArgDecode.lean:869-872) which
-/// reads `badge := Badge.ofNatMasked (requireMsgReg msgRegs 0).val`.
-///
-/// Note: seLe4n's badge-via-MR\[0\] design deliberately differs from seL4's
-/// capability-embedded badge. This allows callers to specify the badge
-/// value per-signal rather than relying on capability badge alone.
+/// Lean: the `.notificationSignal` arm of `dispatchWithCap` /
+/// `dispatchWithCapChecked` (API.lean), which ORs in `Capability.signalBadge`;
+/// `dispatchWithCap_notificationSignal_badge_of_cap` proves no word of the
+/// decoded message reaches it.  Requires the **write** right.
 #[inline]
-pub fn notification_signal(ntfn: CPtr, badge: Badge) -> KernelResult<SyscallResponse> {
-    let msg_info = MessageInfo::new_const(1, 0, 0);
+pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
+    let msg_info = MessageInfo::new_const(0, 0, 0);
     invoke_syscall(SyscallRequest {
         cap_addr: ntfn,
         msg_info,
-        msg_regs: [badge.into(), 0, 0, 0],
+        msg_regs: [0; 4],
         syscall_id: SyscallId::NotificationSignal,
     })
 }

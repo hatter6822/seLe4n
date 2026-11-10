@@ -1,3 +1,69 @@
+## v0.37.12 — A signal's badge is its capability's, as seL4's `sendSignal`
+
+**Security fix.**  `seL4_Signal` took its badge from the caller's first
+message register (`decodeNotificationSignalArgs`), so any holder of a
+notification write capability could OR any badge bits into the notification,
+another client's or an interrupt handler's.  seL4's `sendSignal` uses
+`cap_notification_cap_get_capNtfnBadge(cap)`: the badge minted into the
+capability, 0 for an unbadged one.  seLe4n now does exactly that
+(`docs/spec/SELE4N_SPEC.md` §8.10.3b).
+
+- **The badge is the capability's** (`Capability.signalBadge`,
+  `SeLe4n/Model/Object/Types.lean`): `if cap.badged then cap.badgeWord else 0`.
+  Every signal arm ORs it in: `dispatchWithCap`, `dispatchWithCapChecked`, the
+  refusal-carrying general, woken and bound arms
+  (`notificationSignalCheckedArmR`), the routed (`signalRoutedArm`) and
+  overflowed arms.  It is read from the operand's slot in place, so the fast
+  path builds no `Option` or capability record.
+- **No message register is read and no length is checked**, as in seL4: a
+  signal of length 0 is accepted.  The check order is the lookup, then the
+  capability's target and right.  The HAL prefilter's minimum for
+  `NotificationSignal` and `DeclassifySignal` drops from 1 to 0.
+- **Retired**: `NotificationSignalArgs`, `decodeNotificationSignalArgs`,
+  `encodeNotificationSignalArgs`, their round-trip and error theorems, the
+  `sigArgs` parameter of the refusal-carrying signal arms, and the badge
+  operand of `RegisterRoutedSyscall.signal` and `signalRoutedArm`.
+- **Proved**: `dispatchWithCap_notificationSignal_badge_of_cap` and
+  `dispatchWithCapChecked_notificationSignal_badge_of_cap` (two decodes naming
+  the signal dispatch identically on one capability, so no caller word reaches
+  the badge).  Every dependent proof is restated, the `DispatchPayoff` ones
+  included.
+- **Declassify-signal**: its badge is also ORed in as notification badge bits,
+  and a declassifying signal whose hops are ordinary is the ordinary signal, so
+  its MR0 badge was a second forging path.  It now takes the capability's badge
+  too (`dispatchWithCapChecked_declassifySignal_badge_of_cap`).  What it
+  declassifies is the delivery of that minted identity across the label
+  boundary; no caller-supplied word crosses.
+- **Rust**: `sele4n_sys::ipc::notification_signal(ntfn)` and
+  `sele4n_sys::declassify::declassify_signal(cap)` drop their badge arguments,
+  send an empty message, and document seL4's semantics.  The conformance sweep
+  asserts that both real wrappers send length 0 and no badge word.
+- **Exerciser**: signals send an empty message.  The wide-badge scenario
+  (`2^63`) now signals through a notification capability minted with that
+  badge, set up and deleted unmeasured.  The priming signal names a capability.
+- **Tests**: `tests/SyscallReturnAbiSuite.lean` §9s covers three cases.  An
+  unbadged capability wakes the waiter with 0.  A capability minted with `0x1`
+  delivers exactly `0x1` while MR0 asks for `0x2`.  A length-0 signal is
+  accepted.  The existing witnesses now mint badge 42 into the capability and
+  write a forged MR0.  `tests/DecodingSuite.lean` SAD-013 checks
+  `signalBadge`.  The new Tier 3 anchors pin the theorems, the routed arm's
+  signature and each arm's `cap.signalBadge`.
+- **Not changed**: as for every syscall, the generic gate checks the right
+  before the capability's target.  A cap of the wrong type with no write right
+  is refused with `illegalAuthority`, where seL4 gives `InvalidCapability`.  A
+  signal longer than the inline registers still has its overflow words read
+  by the decode.  No other caller-supplied badge was found.  Send and call use
+  the capability's badge, reply and reply-receive the reply capability's, and
+  interrupt delivery the notification capability in the line's node slot.
+- **CI: every job runs on `ubuntu-24.04`.**  `ubuntu-latest` moved to
+  `ubuntu-26.04`, which ships no `clang` (the HAL's `.S` sources found no
+  AArch64 assembler) and QEMU 10.2.1, whose `virt` device tree no longer
+  matches `tests/fixtures/qemu_virt_dtb.hex`.  The workflows now name
+  `ubuntu-24.04`, the image every earlier result was measured on, so a
+  runner-image move happens only as its own change: install an assembler,
+  regenerate the device-tree fixture with that QEMU and re-run the board
+  suite.
+
 ## v0.37.11 — IPC and scheduler ordering coverage, and the reply-receive donation
 
 The coverage audit's IPC and scheduler items (13, 14, 17, 18, 19 and 22) each
