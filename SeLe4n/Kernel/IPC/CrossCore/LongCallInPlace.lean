@@ -242,7 +242,7 @@ receiver is, unexpectedly, not ready. -/
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId) : SystemState :=
   deliverLongSendFrame (PriorityInheritance.propagatePipChainCrossCore
       (storeCallRendezvousReady st endpointId caller r nextCode rid core) r core).1 r
-    layout rf len caller badgeWord badged
+    layout rf len caller badgeWord badged 0
 
 /-- **The staged call rendezvous is the delivered one** for a message of more
 than four words, its inline words read in the caller's registers and the rest
@@ -264,8 +264,8 @@ theorem stageWokenDelivery_performCallRendezvous_long (st : SystemState)
   unfold performCallRendezvous performCallDeliveredLong
   rw [storeCallRendezvous_eq_hold _ _ _ _ _ _ _ _ hNo hNe,
     propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS, Architecture.stageWokenDelivery_some,
-    deliverLongSendFrame_eq _ st r caller layout rf len badgeWord badged
+    deliverLongSendFrame_eq _ st r caller layout rf len badgeWord badged 0
       (propagatePipChainCrossCore_noResizeDue _ _ _ hNoS)
-      (ipcBufferReadsAgree_callWoken st endpointId caller r _ rid core hNo) hSize hLen]
+      (ipcBufferReadsAgree_callWoken st endpointId caller r _ rid core hNo).words hSize hLen]
 
 end SeLe4n.Kernel

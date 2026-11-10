@@ -363,7 +363,7 @@ receiver's (`deliverLongSendFrame`). -/
     (badged : Bool) : SystemState :=
   deliverLongSendFrame (PriorityInheritance.propagatePipChainCrossCore
       (storeReceiveCallReady st endpointId s nextCode receiver rid) receiver core).1 receiver
-    SeLe4n.arm64DefaultLayout rf len s badgeWord badged
+    SeLe4n.arm64DefaultLayout rf len s badgeWord badged 0
 
 /-- **The receive's take of a blocked long caller, delivered, is the
 specification's**: under `receiveCallTakesInPlace`, for a caller blocked by a
@@ -471,7 +471,7 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
         hNo).trans hAP.symm)
     unfold performReceiveCallDeliveredLong
     exact (deliverLongSendFrame_eq _ _ receiver s SeLe4n.arm64DefaultLayout sTcb.registerContext
-      mi.length _ _ (propagatePipChainCrossCore_noResizeDue _ receiver core hNoS) hAX hSz
+      mi.length _ _ 0 (propagatePipChainCrossCore_noResizeDue _ receiver core hNoS) hAX.words hSz
       (by omega)).symm
 
 
@@ -645,27 +645,27 @@ with the four inline words read before the call (`deliverLongSendFrameWords_eq`)
 so no register file is held across the writes before it.  A receiver that is
 not ready is left as it is: the delivery is only called on one made ready. -/
 @[inline] def deliverLongSendFrameWords (X : SystemState) (r : SeLe4n.ThreadId) (len : Nat)
-    (s : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool) (w0 w1 w2 w3 : UInt64) :
-    SystemState :=
+    (s : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool) (capInfo : Nat)
+    (w0 w1 w2 w3 : UInt64) : SystemState :=
   match X.getTcb? r with
   | some t =>
     if t.ipcState = .ready then
       let k := overflowSlotsFrom X r 0 (len - 4)
       overflowCopyStore
         (X.mapTcbInPlace r (withFrameWords (Architecture.badgeWordIf badgeWord badged)
-          (longMessageInfoWord len k) w0 w1 w2 w3))
+          (longMessageInfoWord len k capInfo) w0 w1 w2 w3))
         r s 0 (len - 4)
     else X
   | none => X
 
 theorem deliverLongSendFrameWords_eq (X : SystemState) (r : SeLe4n.ThreadId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (s : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool) (t : TCB)
+    (s : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool) (capInfo : Nat) (t : TCB)
     (hT : X.getTcb? r = some t) (hR : t.ipcState = .ready) :
-    deliverLongSendFrameWords X r len s badgeWord badged
+    deliverLongSendFrameWords X r len s badgeWord badged capInfo
         (Architecture.regMessageWord layout rf len 0) (Architecture.regMessageWord layout rf len 1)
         (Architecture.regMessageWord layout rf len 2) (Architecture.regMessageWord layout rf len 3) =
-      deliverLongSendFrame X r layout rf len s badgeWord badged := by
+      deliverLongSendFrame X r layout rf len s badgeWord badged capInfo := by
   unfold deliverLongSendFrameWords deliverLongSendFrame
   rw [hT]
   simp only [hR, ↓reduceIte]
@@ -684,7 +684,7 @@ is built. -/
   let X := (wakeThread ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
     s receiverReady) s core).1
   deliverLongSendFrameWords (Architecture.stageWokenSendCompletion
-    (X.updateTcb receiver receiverReady) (some s)) receiver len s badgeWord badged w0 w1 w2 w3
+    (X.updateTcb receiver receiverReady) (some s)) receiver len s badgeWord badged 0 w0 w1 w2 w3
 
 /-- **The receive's take of a blocked long sender, delivered, is the
 specification's**: under `receiveTakesInPlace`, a sender blocked by a routed
@@ -836,9 +836,9 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       TCB.ipcBadgeView_eq_opt]
     unfold performReceiveDeliveredLong
     rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode,
-      deliverLongSendFrameWords_eq _ _ SeLe4n.arm64DefaultLayout sTcb.registerContext _ _ _ _ _ hZr
+      deliverLongSendFrameWords_eq _ _ SeLe4n.arm64DefaultLayout sTcb.registerContext _ _ _ _ 0 _ hZr
         (by simp only [receiverReady, TCB.ipcState_setIpcState])]
     exact (deliverLongSendFrame_eq _ _ receiver s SeLe4n.arm64DefaultLayout sTcb.registerContext
-      mi.length _ _ hNoZ hAZ hSz (by omega)).symm
+      mi.length _ _ 0 hNoZ hAZ.words hSz (by omega)).symm
 
 end SeLe4n.Kernel

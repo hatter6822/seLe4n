@@ -1,3 +1,67 @@
+## v0.37.8 — a long capability transfer, and an installing reply on a donated or unheld reply object, run in place
+
+A send, call or take of more than four words whose capability transfer
+installs or unwraps, and a granting reply that installs, whether it is longer
+than four words, answers a caller on a donated reply object or answers one
+recording no server, now run in place.  Before, each ran the specification's
+general path under `RefusalCarrying.ofKernel`, which holds the pre-state and
+copies every table the transfer writes, so each allocated on the kernel heap.
+
+- **Long sends, calls and takes**: `performSendCapsDeliveredLong`,
+  `performCallCapsDeliveredLong`, `performTakeCapsDeliveredLong` and
+  `performCallTakeCapsDeliveredLong` (`LongCapsDelivered.lean`) write the
+  rendezvous, run the transfer in place (`capTransferK`), then write the long
+  frame: the inline words into the receiver's saved registers and the overflow
+  words copied from the sender's IPC buffer into the receiver's.  The transfer
+  leaves the words a long frame reads where they were
+  (`ipcWordReadsAgree`, `ipcWordReadsAgree_receiveTransferCaps`), so the copy
+  after it reads what the specification's message held.  The send and call
+  arms take the overflow-read fact from the entry; the take arms read it off
+  the blocked sender's buffer (`overflowWordsRead`).
+- **Donated and unheld replies**: `performReplyDonatedCapsDelivered` hands the
+  loaned context back down its stack in place (`replyDonationPopInPlace`),
+  walks the server's priority chain, runs the transfer on no endpoint and
+  writes the caller's frame; `performReplyUnheldCapsDelivered` returns the
+  context no thread holds and settles it on the caller's home first
+  (`ReplyCapsReturnDelivered.lean`).  Those returns write no buffer address,
+  VSpace root, CNode or machine word
+  (`ipcBufferReadsAgree_replyDonationPopInPlace`,
+  `ipcBufferReadsAgree_returnUnheldSchedContextInPlace`), so the transfer reads
+  what the specification's reads.  Proven equal to the specification by
+  `replyTransferChecked_donatedCaps_inPlace` and
+  `replyTransferChecked_unheldCaps_inPlace`; the checked reply arm takes them
+  through `endpointReplyDonatedCapsArmR` and `endpointReplyUnheldCapsArmR`.
+- **Long replies**: the long reply arm (`endpointReplyLongCheckedArmR`) runs
+  the transfer in place for a reply the caller is woken by, on a donated reply
+  object and to a caller recording no server
+  (`performReplyCapsDeliveredLong`, `performReplyDonatedCapsDeliveredLong`,
+  `performReplyUnheldCapsDeliveredLong`, `ReplyCapsLongDelivered.lean`), the
+  count being the replier's frame's under the grant right and none without it,
+  so the donated and unheld long replies that transfer nothing run in place
+  too.  The entry supplies the overflow-read fact and the replier's frame.
+- **Exercisers**: 120-word install and unwrap scenarios for the send, call,
+  take of a send and take of a call; a 120-word granting reply that installs
+  (`grant-long-reply-installs-cap`); a granting reply on a donated reply object
+  (`donated-reply-installs-cap`) and to a caller recording no server
+  (`unheld-reply-installs-cap`), each followed by a signal through the
+  installed copy.  Each is pinned in the heap gate's scenario set.
+- **Still general**: a reply-receive whose reply leg installs a capability
+  (`docs/REGISTERED_DEBT.md` table C, narrowed to that form).
+
+### Security
+
+- Narrows a heap-exhaustion denial of service: a thread holding an endpoint
+  capability with the grant right could make each long capability-carrying
+  send, call or take, and a thread holding a granting reply capability could
+  make each long, donated or unheld installing reply, allocate on the kernel
+  heap in proportion to the object table and the receiver's CNode.  These
+  forms now allocate nothing.  An installing reply-receive still allocates
+  (table C).
+- No lock footprint changed: the new forms write what the short forms write,
+  plus the long frame's overflow words in the receiver's IPC buffer and the
+  donated or unheld return's scheduling context, reply links and run links,
+  each already in the reply's and the long message's footprints.
+
 ## v0.37.7 — a short capability transfer that installs or unwraps, and a granting reply that installs, run in place
 
 A send or a call of at most four words that meets a waiting receiver, and a

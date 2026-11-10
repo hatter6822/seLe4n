@@ -48,7 +48,7 @@ theorem overflowCopyStoreFrom_eq (r s : SeLe4n.ThreadId) (X : SystemState) (t : 
     (Y : SystemState) :
     ∀ (n j i : Nat) (S : SystemState),
       (∀ k, overflowSlotOf S r k = Architecture.IpcBufferRead.ipcBufferSlotPAddr? X t k true) →
-      ipcBufferReadsAgree S Y →
+      ipcWordReadsAgree S Y →
       overflowCopyStoreFrom S r s j i n =
         Architecture.recordPhysicalWrites S
           (Architecture.overflowDeliveryWrites X t (overflowRegsFrom Y s j n) i)
@@ -64,7 +64,7 @@ theorem overflowCopyStoreFrom_eq (r s : SeLe4n.ThreadId) (X : SystemState) (t : 
         simp only [Nat.toUInt64_eq, UInt64.ofNat_toNat]
       rw [hReg, hA.overflowWordAt]
       have hA' := (ipcBufferReadsAgree_recordPhysicalWrite S
-        (.storeUserWord pa (overflowWordAt Y s j))).trans hA
+        (.storeUserWord pa (overflowWordAt Y s j))).words.trans hA
       exact overflowCopyStoreFrom_eq r s X t Y n (j + 1) (i + 1) _
         (fun k => by rw [(ipcBufferReadsAgree_recordPhysicalWrite S _).overflowSlotOf, hS k]) hA'
     · next hPa => rw [hPa]; exact (Architecture.recordPhysicalWrites_nil S).symm
@@ -132,24 +132,24 @@ theorem longReplyRecvRegs_word3 (rf : SeLe4n.RegisterFile) (S : SystemState)
   simp [Architecture.regMessageRegs, overflowRegsFrom, Nat.toUInt64_eq, hL4]
 
 theorem longReplyRecvFrame_eq (rf : SeLe4n.RegisterFile) (S : SystemState)
-    (s : SeLe4n.ThreadId) (len k : Nat) (badge : Option SeLe4n.Badge) (hLen : 5 ≤ len) :
-    withFrameWords (Architecture.badgeWordOrZero badge) (longMessageInfoWord (len - 1) k)
+    (s : SeLe4n.ThreadId) (len k capInfo : Nat) (badge : Option SeLe4n.Badge) (hLen : 5 ≤ len) :
+    withFrameWords (Architecture.badgeWordOrZero badge) (longMessageInfoWord (len - 1) k capInfo)
         (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
         (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
         (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3) (overflowWordAt S s 0) =
       withFrameWords
         (Architecture.returnFrameOfMessage
-          { registers := longReplyRecvRegs rf S s len, badge := badge } 0 k).x0
+          { registers := longReplyRecvRegs rf S s len, badge := badge } capInfo k).x0
         (Architecture.returnFrameOfMessage
-          { registers := longReplyRecvRegs rf S s len, badge := badge } 0 k).x1
+          { registers := longReplyRecvRegs rf S s len, badge := badge } capInfo k).x1
         (Architecture.returnFrameOfMessage
-          { registers := longReplyRecvRegs rf S s len, badge := badge } 0 k).x2
+          { registers := longReplyRecvRegs rf S s len, badge := badge } capInfo k).x2
         (Architecture.returnFrameOfMessage
-          { registers := longReplyRecvRegs rf S s len, badge := badge } 0 k).x3
+          { registers := longReplyRecvRegs rf S s len, badge := badge } capInfo k).x3
         (Architecture.returnFrameOfMessage
-          { registers := longReplyRecvRegs rf S s len, badge := badge } 0 k).x4
+          { registers := longReplyRecvRegs rf S s len, badge := badge } capInfo k).x4
         (Architecture.returnFrameOfMessage
-          { registers := longReplyRecvRegs rf S s len, badge := badge } 0 k).x5 := by
+          { registers := longReplyRecvRegs rf S s len, badge := badge } capInfo k).x5 := by
   simp only [Architecture.returnFrameOfMessage,
     longReplyRecvRegs_word rf S s len hLen 0 (by omega),
     longReplyRecvRegs_word rf S s len hLen 1 (by omega),
@@ -176,15 +176,15 @@ caller's from slot 0 (`overflowCopyStoreFrom`).  A caller that is,
 unexpectedly, not ready holds the message (`holdLongReplyRecvMessage`).  Each
 step reads what it needs before it writes (`deliverLongReplyRecvFrame_eq`). -/
 @[inline] def deliverLongReplyRecvFrame (X : SystemState) (r : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (len : Nat) (s : SeLe4n.ThreadId) (badge : Option SeLe4n.Badge) :
-    SystemState :=
+    (rf : SeLe4n.RegisterFile) (len : Nat) (s : SeLe4n.ThreadId) (badge : Option SeLe4n.Badge)
+    (capInfo : Nat) : SystemState :=
   match X.getTcb? r with
   | some t =>
     if t.ipcState = .ready then
       let k := overflowSlotsFrom X r 0 (len - 5)
       overflowCopyStoreFrom
         (X.mapTcbInPlace r (withFrameWords (Architecture.badgeWordOrZero badge)
-          (longMessageInfoWord (len - 1) k)
+          (longMessageInfoWord (len - 1) k capInfo)
           (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
           (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
           (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3) (overflowWordAt X s 0)))
@@ -196,12 +196,12 @@ step reads what it needs before it writes (`deliverLongReplyRecvFrame_eq`). -/
 reply-receive's message, its overflow words read in a state `Y` that reads
 every buffer as the delivery's own does. -/
 theorem deliverLongReplyRecvFrame_eq (X Y : SystemState) (r s : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge)
-    (hNoX : X.objects.noResizeDue) (hA : ipcBufferReadsAgree X Y) (hLen : 5 ≤ len) :
-    deliverLongReplyRecvFrame X r rf len s badge =
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (capInfo : Nat)
+    (hNoX : X.objects.noResizeDue) (hA : ipcWordReadsAgree X Y) (hLen : 5 ≤ len) :
+    deliverLongReplyRecvFrame X r rf len s badge capInfo =
       Architecture.stageDeliveredMessage (X.mapTcbInPlace r (holdMessage
-        { registers := longReplyRecvRegs rf Y s len, badge := badge })) r 0 := by
-  rw [stageDeliveredMessage_holdMessage_overflow _ r _ _ hNoX
+        { registers := longReplyRecvRegs rf Y s len, badge := badge })) r capInfo := by
+  rw [stageDeliveredMessage_holdMessage_overflow _ r _ _ capInfo hNoX
     (longReplyRecvRegs_tail rf Y s len hLen)]
   unfold deliverLongReplyRecvFrame
   cases hT : X.getTcb? r with
@@ -218,21 +218,21 @@ theorem deliverLongReplyRecvFrame_eq (X Y : SystemState) (r s : SeLe4n.ThreadId)
         simp only [overflowSlotOf, SystemState.getTcb?_mapTcbInPlace, hT, Option.map_some]
         exact ipcBufferSlotPAddr?_mapTcbInPlace X r _ t _ j true rfl rfl
       have hAg : ∀ (a b c d e g : UInt64),
-          ipcBufferReadsAgree (X.mapTcbInPlace r (withFrameWords a b c d e g)) Y :=
+          ipcWordReadsAgree (X.mapTcbInPlace r (withFrameWords a b c d e g)) Y :=
         fun a b c d e g =>
           (ipcBufferReadsAgree_mapTcbInPlace X r (withFrameWords a b c d e g)
-            (fun _ => ⟨rfl, rfl⟩)).trans hA
+            (fun _ => ⟨rfl, rfl⟩)).words.trans hA
       have hC := overflowSlotsFrom_eq X r X t hX (overflowRegsFrom Y s 1 (len - 5)) 0
       rw [overflowRegsFrom_length] at hC
       rw [overflowCopyStoreFrom_eq r s X t Y _ 1 0 _ (hS _ _ _ _ _ _) (hAg _ _ _ _ _ _), hC,
-        hA.overflowWordAt, longReplyRecvFrame_eq rf Y s len _ badge hLen]
+        hA.overflowWordAt, longReplyRecvFrame_eq rf Y s len _ capInfo badge hLen]
     · unfold holdLongReplyRecvMessage longReplyRecvRegs longSendMessage
       rw [hA.overflowRegsFrom]
 
 theorem deliverLongReplyRecvFrame_getTcb?_ne (X : SystemState) (r s t : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (capInfo : Nat)
     (hNe : r.toObjId ≠ t.toObjId) :
-    (deliverLongReplyRecvFrame X r rf len s badge).getTcb? t = X.getTcb? t := by
+    (deliverLongReplyRecvFrame X r rf len s badge capInfo).getTcb? t = X.getTcb? t := by
   unfold deliverLongReplyRecvFrame
   cases X.getTcb? r with
   | none => rfl
@@ -326,7 +326,7 @@ where the caller is, unexpectedly, not ready. -/
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat) (rf : SeLe4n.RegisterFile)
     (len : Nat) (badge : Option SeLe4n.Badge) (core : CoreId) : SystemState :=
   deliverLongReplyRecvFrame (storeReplyRecvBlockReady st c tid rid epId tailCode core) c rf len
-    tid badge
+    tid badge 0
 
 /-- **The blocking long reply-receive's stages are its delivery**: under the
 in-place guard of `replyRecvOnCore_blocks_inPlace`, staging the caller of the
@@ -374,11 +374,12 @@ theorem replyRecvOnCore_blocks_deliveredLong (st : SystemState) (epId : SeLe4n.O
   change Architecture.stageDeliveredMessage (Architecture.stageDeliveredMessage
       ((storeReplyRecvBlockReady st c tid rid epId ep.recvTailCode core).mapTcbInPlace c
         (holdMessage { registers := longReplyRecvRegs rf st tid len, badge := badge })) c 0) tid 0 = _
-  rw [← deliverLongReplyRecvFrame_eq _ st c tid rf len badge
+  rw [← deliverLongReplyRecvFrame_eq _ st c tid rf len badge 0
     (storeReplyRecvBlockReady_noResizeDue st c tid rid epId ep.recvTailCode core hNo)
-    (ipcBufferReadsAgree_storeReplyRecvBlockReady st c tid rid epId ep.recvTailCode core hNo) hLen]
+    (ipcBufferReadsAgree_storeReplyRecvBlockReady st c tid rid epId ep.recvTailCode core hNo).words
+    hLen]
   exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x
-    (by rw [deliverLongReplyRecvFrame_getTcb?_ne _ _ _ _ _ _ _ hCT]; exact hX)
+    (by rw [deliverLongReplyRecvFrame_getTcb?_ne _ _ _ _ _ _ _ _ hCT]; exact hX)
     (by rw [hEq, hB]; exact fun h => by cases h)
 
 end SeLe4n.Kernel

@@ -330,25 +330,25 @@ a table with no resize due, a ready thread holding a message stages the frame
 whose length counts the overflow words its IPC buffer takes, then those words,
 resolved against the thread as it was before the message was held. -/
 theorem stageDeliveredMessage_holdMessage_overflow (X : SystemState) (r : SeLe4n.ThreadId)
-    (msg : IpcMessage) (ws : List SeLe4n.RegValue) (hNo : X.objects.noResizeDue)
+    (msg : IpcMessage) (ws : List SeLe4n.RegValue) (capInfo : Nat) (hNo : X.objects.noResizeDue)
     (hTail : msg.registers.toList.drop 4 = ws) :
-    Architecture.stageDeliveredMessage (X.mapTcbInPlace r (holdMessage msg)) r 0 =
+    Architecture.stageDeliveredMessage (X.mapTcbInPlace r (holdMessage msg)) r capInfo =
       match X.getTcb? r with
       | some t =>
         if t.ipcState = .ready then
           Architecture.recordPhysicalWrites
             (X.mapTcbInPlace r (withFrameWords
-              (Architecture.returnFrameOfMessage msg 0
+              (Architecture.returnFrameOfMessage msg capInfo
                 (Architecture.overflowDeliveryWrites X t ws 0).length).x0
-              (Architecture.returnFrameOfMessage msg 0
+              (Architecture.returnFrameOfMessage msg capInfo
                 (Architecture.overflowDeliveryWrites X t ws 0).length).x1
-              (Architecture.returnFrameOfMessage msg 0
+              (Architecture.returnFrameOfMessage msg capInfo
                 (Architecture.overflowDeliveryWrites X t ws 0).length).x2
-              (Architecture.returnFrameOfMessage msg 0
+              (Architecture.returnFrameOfMessage msg capInfo
                 (Architecture.overflowDeliveryWrites X t ws 0).length).x3
-              (Architecture.returnFrameOfMessage msg 0
+              (Architecture.returnFrameOfMessage msg capInfo
                 (Architecture.overflowDeliveryWrites X t ws 0).length).x4
-              (Architecture.returnFrameOfMessage msg 0
+              (Architecture.returnFrameOfMessage msg capInfo
                 (Architecture.overflowDeliveryWrites X t ws 0).length).x5))
             (Architecture.overflowDeliveryWrites X t ws 0)
         else X.mapTcbInPlace r (holdMessage msg)
@@ -592,7 +592,7 @@ theorem deliverFaultFrame_eq (X : SystemState) (r : SeLe4n.ThreadId) (w : Thread
         w.lr w.spsr w.x0 w.x1 w.x2 w.x3 w.x4 w.x5 w.x6 w.x7 =
       Architecture.stageDeliveredMessage (X.mapTcbInPlace r (holdMessage
         (faultMessage f w.context (SeLe4n.Badge.opt badgeWord badged)))) r 0 := by
-  rw [stageDeliveredMessage_holdMessage_overflow _ r _ _ hNoX
+  rw [stageDeliveredMessage_holdMessage_overflow _ r _ _ 0 hNoX
     (faultMessage_overflowRegs_words w f hf _)]
   unfold deliverFaultFrame
   cases hT : X.getTcb? r with
