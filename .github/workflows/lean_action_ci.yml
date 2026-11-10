@@ -366,13 +366,18 @@ jobs:
     # The `.S` files need an assembler that can target AArch64.
     # `scripts/test_aarch64_cross_build.sh` probes for one (bare-metal
     # and Linux cross prefixes, then `clang`) and fails with an
-    # actionable message if none is present.  On `ubuntu-latest` it
-    # finds `clang`, which the runner image ships; if a future image
-    # drops it, add an `apt-get install -y gcc-aarch64-linux-gnu` step
-    # — the probe prefers that toolchain when both are available.
+    # actionable message if none is present.  The `ubuntu-26.04` image
+    # that `ubuntu-latest` now names ships no `clang`, so the job
+    # installs `gcc-aarch64-linux-gnu`, which the probe prefers.
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the AArch64 cross assembler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
+          aarch64-linux-gnu-gcc --version
 
       # Same SHA-pinned action and toolchain version as `test-rust`; see
       # the comment there.  `targets:` mirrors the `targets` key in

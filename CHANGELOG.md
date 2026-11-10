@@ -55,6 +55,10 @@ capability, 0 for an unbadged one.  seLe4n now does exactly that
   by the decode.  No other caller-supplied badge was found.  Send and call use
   the capability's badge, reply and reply-receive the reply capability's, and
   interrupt delivery the notification capability in the line's node slot.
+- **CI: the cross build installs its assembler.**  The `ubuntu-26.04` image
+  that `ubuntu-latest` now names ships no `clang`, so the `aarch64 Cross Build`
+  job found no AArch64 assembler for the `.S` sources.  The job now installs
+  `gcc-aarch64-linux-gnu`, which `scripts/test_aarch64_cross_build.sh` prefers.
 
 ## v0.37.11 — IPC and scheduler ordering coverage, and the reply-receive donation
 
