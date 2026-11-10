@@ -7822,9 +7822,11 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
     // Three tables installed in the root task's space; the first's unmap
     // refused while the second hangs below it; a frame carved and mapped under
     // them, mapped again at the same ASID and address with other rights (a
-    // remap, as seL4's `Page_Map` allows), mapped at another address (refused:
-    // the capability records its mapping), an address with no mapping unmapped
-    // (refused), and the frame's last
+    // remap, as seL4's `Page_Map` allows, here to code), mapped at another
+    // address (refused: the capability records its mapping), its code unified
+    // and unmapped (the executable unmap's instruction-cache maintenance) and
+    // the frame mapped again, an address with no mapping unmapped (refused),
+    // and the frame's last
     // capability deleted while it is mapped, which unmaps it; then the first
     // table's last capability deleted while it is installed with the others
     // below it, which takes the subtree out; the second's unmap, its record
@@ -7917,6 +7919,24 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
             [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
         )
     },
+    invocation(
+        "mapped-frame-unify",
+        VSPACE_UNIFY_INSTRUCTION,
+        VSPACE_CAP,
+        [ROOT_ASID, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "mapped-frame-unmap-code",
+        VSPACE_UNMAP,
+        VSPACE_CAP,
+        [ROOT_ASID, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "mapped-frame-map-again",
+        VSPACE_MAP,
+        VSPACE_CAP,
+        [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+    ),
     RoundTrip {
         returns: refused(TRANSLATION_FAULT),
         ..invocation(

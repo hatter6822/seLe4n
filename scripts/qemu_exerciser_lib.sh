@@ -674,6 +674,7 @@ for driver in drivers:
             "untyped-retype-installed-table-3", "installed-table-map-3",
             "installed-table-unmap-refused", "untyped-retype-mapped-frame",
             "mapped-frame-map", "mapped-frame-remap", "mapped-frame-remap-other-vaddr",
+            "mapped-frame-unify", "mapped-frame-unmap-code", "mapped-frame-map-again",
             "unmap-nothing",
             "mapped-frame-delete", "installed-table-delete-1", "stale-table-unmap-2",
             "stale-table-delete-2", "stale-table-delete-3",
