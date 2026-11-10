@@ -155,7 +155,7 @@ theorem dispatchCapabilityOnly_mappingStage
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · exact vspaceMapFromFrameCap_mappingStage P.teardown hStep
+          · exact vspaceMapOrRemapFromFrameCap_mappingStage P.teardown hStep
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

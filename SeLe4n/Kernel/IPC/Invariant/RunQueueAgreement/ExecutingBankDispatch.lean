@@ -235,8 +235,8 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
         ((untypedResetFromCap_keyFrame _ _ _ _ hInv h).stepCoversInv (e := e')
           (hRes := by rw [untypedResetFromCap_machine_eq h])
           (hBank := banksKeptOffCore_of_eq (by rw [untypedResetFromCap_machine_eq h])))
-    | exact hF (vspaceMapFromFrameCap_savedRegsKept hInv h)
-        ((vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv (e := e'))
+    | exact hF (vspaceMapOrRemapFromFrameCap_savedRegsKept hInv h)
+        ((vspaceMapOrRemapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv (e := e'))
     | exact hF (vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv h)
         ((vspaceRootOnlyWrite_keyFrame
           (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv

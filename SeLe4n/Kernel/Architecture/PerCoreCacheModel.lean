@@ -1371,12 +1371,15 @@ def clearIcacheMaintenanceCells (st : SystemState) : SystemState :=
 
 /-- WS-ZA ZA6.35: the operand `.unifyPage p` written over a spare operand `c`:
 out of line, so `c` is the cell the compiler writes it into, and a spare of the
-same operand keeps its address through `c` (as `mappingValueOver`).  Equal to
-the operand (`unifyPageOver_eq`). -/
+same operand keeps its address through `c` (as `mappingValueOver`).  A spare
+`.ivauPage` (an unmap's operand) has the same shape and is named in its own arm,
+so its cell is reused too; a wildcard arm would free it and build the operand.
+Equal to the operand (`unifyPageOver_eq`). -/
 @[noinline] def ICacheInvalidation.unifyPageOver (c : ICacheInvalidation)
     (p : SeLe4n.PAddr) : ICacheInvalidation :=
   match c with
   | .unifyPage q => .unifyPage (if q.val = p.val then q else p)
+  | .ivauPage _ => .unifyPage p
   | _ => .unifyPage p
 
 theorem ICacheInvalidation.unifyPageOver_eq (c : ICacheInvalidation) (p : SeLe4n.PAddr) :
@@ -1387,6 +1390,7 @@ theorem ICacheInvalidation.unifyPageOver_eq (c : ICacheInvalidation) (p : SeLe4n
     split
     · next h => cases q; cases p; simp_all
     · rfl
+  · rfl
   · rfl
 
 /-- WS-ZA ZA6.35: an empty ledger's record of `.unifyPage p`, given the spares
@@ -1429,6 +1433,70 @@ theorem recordIcacheUnifyCells_eq (st : SystemState) (p : SeLe4n.PAddr)
   | h l =>
     show recordIcacheUnifyFrom _ p l = _
     rw [recordIcacheUnifyFrom_eq]
+    unfold recordIcacheMaintenance
+    rw [h, recordIcacheMaintenanceList_nil]
+    cases st; simp only [SystemState.mk.injEq, and_true, true_and]
+    exact Subsingleton.elim _ _
+
+/-- The operand `.ivauPage p` (an executable unmap's) written over a spare
+operand `c`, as `unifyPageOver` writes a unify's: out of line, so `c` is the
+cell the compiler writes it into, whether it held an unmap's operand or a
+unify's (`ivauPageOver_eq`). -/
+@[noinline] def ICacheInvalidation.ivauPageOver (c : ICacheInvalidation)
+    (p : SeLe4n.PAddr) : ICacheInvalidation :=
+  match c with
+  | .ivauPage q => .ivauPage (if q.val = p.val then q else p)
+  | .unifyPage _ => .ivauPage p
+  | _ => .ivauPage p
+
+theorem ICacheInvalidation.ivauPageOver_eq (c : ICacheInvalidation) (p : SeLe4n.PAddr) :
+    c.ivauPageOver p = .ivauPage p := by
+  unfold ICacheInvalidation.ivauPageOver
+  split
+  · next q =>
+    split
+    · next h => cases q; cases p; simp_all
+    · rfl
+  · rfl
+  · rfl
+
+/-- An empty ledger's record of `.ivauPage p`, given the spares `spare` the
+caller took out of their field (`recordIcacheUnifyFrom`'s, for an unmap). -/
+@[inline] def recordIcacheIvauFrom (st : SystemState) (p : SeLe4n.PAddr)
+    (spare : List ICacheInvalidation) : SystemState :=
+  match spare with
+  | c :: rest =>
+    { st with pendingIcacheMaintenance := c.ivauPageOver p :: [],
+              icacheLedgerSpare := Squash.mk rest }
+  | [] => { st with pendingIcacheMaintenance := [.ivauPage p] }
+
+theorem recordIcacheIvauFrom_eq (st : SystemState) (p : SeLe4n.PAddr)
+    (spare : List ICacheInvalidation) :
+    recordIcacheIvauFrom st p spare = { st with pendingIcacheMaintenance := [.ivauPage p] } := by
+  unfold recordIcacheIvauFrom
+  cases spare with
+  | nil => rfl
+  | cons c rest =>
+    simp only [ICacheInvalidation.ivauPageOver_eq]
+    cases st; simp only [SystemState.mk.injEq, and_true, true_and]
+    exact Subsingleton.elim _ _
+
+/-- **An empty ledger's record of an executable unmap's operand, written over
+its spares**, as `recordIcacheUnifyCells` writes a unify's
+(`recordIcacheIvauCells_eq`). -/
+@[noinline] def recordIcacheIvauCells (st : SystemState) (p : SeLe4n.PAddr) : SystemState :=
+  let sp := st.icacheLedgerSpare
+  Quot.lift (recordIcacheIvauFrom { st with icacheLedgerSpare := Squash.mk [] } p)
+    (fun a b _ => by rw [recordIcacheIvauFrom_eq, recordIcacheIvauFrom_eq]) sp
+
+theorem recordIcacheIvauCells_eq (st : SystemState) (p : SeLe4n.PAddr)
+    (h : st.pendingIcacheMaintenance = []) :
+    recordIcacheIvauCells st p = recordIcacheMaintenance st (.ivauPage p) := by
+  unfold recordIcacheIvauCells
+  induction st.icacheLedgerSpare using Squash.ind with
+  | h l =>
+    show recordIcacheIvauFrom _ p l = _
+    rw [recordIcacheIvauFrom_eq]
     unfold recordIcacheMaintenance
     rw [h, recordIcacheMaintenanceList_nil]
     cases st; simp only [SystemState.mk.injEq, and_true, true_and]

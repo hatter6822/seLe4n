@@ -436,9 +436,15 @@ attributed by disassembling the traced image.
 | cnode/2 | 28 | 1248 | 19 / 1024 | 5 / 120 | 2 / 48 | 2 / 56 |
 | frame/0 | 11 | 272 | 2 / 48 | 5 / 120 | 2 / 48 | 2 / 56 |
 | page-table/0 | 13 | 352 | 4 / 128 | 5 / 120 | 2 / 48 | 2 / 56 |
-| vspace-root/0 | 14 | 376 | 3 / 104 | 5 / 120 | 2 / 48 + 2 / 48 ASID entry | 2 / 56 |
+| vspace-root/0 | 106 | 3688 | 95 / 3416 | 5 / 120 | 2 / 48 + 2 / 48 ASID entry | 2 / 56 |
 | untyped/12 | 12 | 304 | 3 / 80 | 5 / 120 | 2 / 48 | 2 / 56 |
 
+- **VSpace root** (since `v0.37.10`): the object group holds the root's own
+  mapping and epoch tables and their spare cells, built at the carve
+  (`KernelObject.unshareFresh`) so the root's first map writes them in place
+  instead of copying a shared empty table; the heap admission counts them
+  (`carvedVSpaceRootHeapBytes`).  Before, the object group was 3 / 104 and the
+  pin 14 / 376.
 - **Ghost tables** (UC2): the index row's cons cell (24 B), and a `some` cell
   (16 B) and an `RHEntry` (32 B) in each of the index-set and type tables
   (`withObjectIndexed`, `withObjectIndexSet`, `withObjectType`).

@@ -1521,7 +1521,15 @@ words included, so without this member a map and a capability operation that
 relinks a slot of that CNode had provably disjoint footprints while both
 rewriting the CNode, and one of the two updates could be lost.  Read mode is
 the honest one: the map reads the link words and writes them back unchanged,
-so it conflicts with every link writer and with no other map. -/
+so it conflicts with every link writer and with no other map.
+
+**The remap.**  Since `v0.37.10` the arm is `vspaceMapOrRemapFromFrameCap`:
+a frame capability whose mapping is live is remapped, as seL4's `Page_Map`
+does, at the ASID and address it records — the unmap of that address followed
+by the fresh mapping.  The unmap writes the root the ASID resolves to (this
+set's write member), and the TLB, shootdown and instruction-cache state the
+fresh mapping's own shootdown also writes, none a lock subject; its footprint
+is `lockSet_vspaceUnmap`'s, which this set contains. -/
 def lockSet_vspaceMap (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId)
     (frameCnodeObjId frameObjId : ObjId) : LockSet :=

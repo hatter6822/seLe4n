@@ -687,12 +687,6 @@
  "test_AK8_E_unbound_returns_tcb_priority": {
   "tests/Ak8CoverageSuite.lean": 2
  },
- "test_AK8_F_rejects_base_over_radix": {
-  "tests/Ak8CoverageSuite.lean": 2
- },
- "test_AK8_F_returns_first_free_slot": {
-  "tests/Ak8CoverageSuite.lean": 2
- },
  "test_AK8_G_storeEndpointChecked_cross_variant_rejected": {
   "tests/Ak8CoverageSuite.lean": 2
  },

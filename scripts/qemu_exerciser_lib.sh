@@ -263,7 +263,7 @@ for driver in drivers:
         carve_cells = {
             "endpoint/0": (11, 368), "notification/0": (11, 360), "reply/0": (15, 376),
             "tcb/0": (24, 2160), "sched-context/7": (13, 560), "cnode/2": (28, 1248),
-            "frame/0": (11, 272), "page-table/0": (13, 352), "vspace-root/0": (14, 376),
+            "frame/0": (11, 272), "page-table/0": (13, 352), "vspace-root/0": (106, 3688),
             "untyped/12": (12, 304),
         }
         # The scenario set is pinned: a round trip renamed or dropped from
@@ -644,6 +644,60 @@ for driver in drivers:
             "untyped-retype-queued-sender", "untyped-retype-unheld-long-recv-caps-reply",
             "untyped-retype-unheld-long-recv-caps-server",
             "untyped-retype-unheld-long-recv-reply", "untyped-retype-unheld-long-recv-server",
+            # The lifecycle branches: final deletes of untypeds with live
+            # children, moved parents, bound and running threads, threads'
+            # space slots, installed tables, mapped frames, tabled VSpace
+            # roots, registered endpoints, endpoints with blocked senders and
+            # callers, and notifications whose last capability is a handler's;
+            # the refusals and the empty unmaps beside them.
+            "untyped-retype-parent-untyped", "child-retype-endpoint",
+            "child-untyped-reset-refused", "child-untyped-revoke",
+            "child-retype-notification", "childless-revoke", "parent-untyped-delete",
+            "adopted-notification-delete", "untyped-retype-moved-parent",
+            "moved-parent-copy", "parent-cap-move", "moved-parent-child-delete",
+            "moved-parent-delete", "untyped-retype-bound-context",
+            "untyped-retype-context-thread", "bind-context-thread",
+            "context-bound-tcb-delete", "released-context-delete",
+            "untyped-retype-space-tcb", "untyped-retype-space-root",
+            "space-root-set-space", "space-root-cap-delete", "space-root-replaced",
+            "untyped-retype-replaced-cnode", "replaced-cnode-set-space",
+            "replaced-cnode-cap-delete", "replaced-cnode-retired",
+            "untyped-retype-zombie-cnode", "untyped-retype-zombie-endpoint",
+            "zombie-cnode-set-space", "zombie-cnode-cap-delete",
+            "zombie-cnode-replaced", "untyped-retype-nested-cnode",
+            "untyped-retype-nested-endpoint", "nested-cnode-set-space",
+            "nested-cnode-cap-delete", "nested-space-tcb-delete",
+            "untyped-retype-rooted-tcb", "untyped-retype-thread-root",
+            "thread-root-set-space", "thread-root-cap-delete", "rooted-tcb-delete",
+            "untyped-retype-installed-table-1", "installed-table-map-1",
+            "untyped-retype-installed-table-2", "installed-table-map-2",
+            "untyped-retype-installed-table-3", "installed-table-map-3",
+            "installed-table-unmap-refused", "untyped-retype-mapped-frame",
+            "mapped-frame-map", "mapped-frame-remap", "mapped-frame-remap-other-vaddr",
+            "mapped-frame-unify", "mapped-frame-unmap-code", "mapped-frame-map-again",
+            "unmap-nothing",
+            "mapped-frame-delete", "installed-table-delete-1", "stale-table-unmap-2",
+            "stale-table-delete-2", "stale-table-delete-3",
+            "untyped-retype-uninstalled-table", "uninstalled-table-unmap",
+            "uninstalled-table-delete", "untyped-retype-tabled-root",
+            "untyped-retype-tabled-root-table-1", "tabled-root-table-map-1",
+            "untyped-retype-tabled-root-table-2", "tabled-root-table-map-2",
+            "untyped-retype-tabled-root-table-3", "tabled-root-table-map-3",
+            "untyped-retype-tabled-root-frame", "tabled-root-map",
+            "tabled-root-frame-other-asid", "tabled-root-delete",
+            "orphaned-table-unmap-3", "orphaned-table-delete-3",
+            "orphaned-table-delete-2", "orphaned-table-delete-1",
+            "orphaned-frame-delete", "lifecycle-untyped-reset",
+            "untyped-retype-send-endpoint", "send-on-carved", "sender-endpoint-delete",
+            "untyped-retype-call-endpoint", "call-on-carved", "caller-endpoint-delete",
+            "untyped-retype-registered-endpoint", "registered-endpoint-register",
+            "registered-endpoint-delete", "untyped-retype-irq-notification",
+            "irq-handler-set-carved-notification", "irq-notification-cap-delete",
+            "irq-handler-set-notification-over-last",
+            "untyped-retype-irq-cleared-notification",
+            "irq-handler-set-notification-over-copy",
+            "irq-cleared-notification-cap-delete", "irq-handler-clear-last",
+            "self-tcb-delete", "remote-running-tcb-delete",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

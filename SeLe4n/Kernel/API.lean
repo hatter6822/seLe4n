@@ -2959,6 +2959,122 @@ theorem vspaceMapFromFrameCap_ok_records (tid : SeLe4n.ThreadId) (executingCore 
   exact CNode.lookup_insert_eq cn frameSlot.slot _ (CNode.slotsUnique_holds cn)
     (CNode.slotAddressable_of_lookup cn _ _ hLk)
 
+/-- **The remap's refusals, in seL4's order, read before any write.**  seL4's
+`decodeARMFrameInvocation` (`ARMPageMap`) decides every refusal of a remap
+before `performPageInvocationMap` writes anything: the address space the call
+names must resolve (`findVSpaceForASID`, here `.asidNotBound`), the address must
+be page-aligned (`checkVPAlignment`, `.alignmentError`), the capability's record
+must name that address space (`.invalidCapability`) and that address
+(`.invalidArgument`), and the walk to the address must be complete
+(`lookupPTSlot`'s `ptBitsLeft`, here `.translationFault`).  After them come the
+checks this kernel adds to the decode, in the fresh mapping's order: the rights
+the capability grants and the memory type (`frameMappingAdmissible`), the user
+window, the frame's memory kind, the canonical address and the physical-address
+width, and W^X.  Every check the fresh mapping makes is here except the two the
+unmap clears (the capability's live record and the address already mapped), so
+a remap that passes these is refused by nothing the unmap leaves behind. -/
+@[inline] def vspaceRemapRefusal (st : SystemState) (args : VSpaceMapArgs) (frameCap : Capability)
+    (frame : FrameObject) : Except KernelError Unit :=
+  match Architecture.resolveAsidRoot st args.asid with
+  | none => .error .asidNotBound
+  | some (_, root) =>
+    if !Architecture.pageMappingAligned args.vaddr frame.base then .error .alignmentError
+    else if frameCap.mapAsid != args.asid then .error .invalidCapability
+    else if frameCap.mapVaddr != args.vaddr then .error .invalidArgument
+    else if !root.translationReady args.vaddr then .error .translationFault
+    else
+      match frameMappingAdmissible frameCap frame args.perms with
+      | .error e => .error e
+      | .ok () =>
+        if !args.vaddr.inUserWindow then .error .addressOutOfBounds
+        else
+          match validateVSpaceMapPermsForMemoryKind frame.base args.perms st.machine.memoryMap with
+          | .error e => .error e
+          | .ok _ =>
+            if !args.vaddr.isCanonical then .error .addressOutOfBounds
+            else if !(frame.base.toNat < 2 ^ st.machine.physicalAddressWidth) then
+              .error .addressOutOfBounds
+            else if !args.perms.wxCompliant then .error .policyDenied
+            else .ok ()
+
+/-- **`seL4_ARM_Page_Map` on a frame capability: a fresh mapping, or a remap.**
+seL4's `decodeARMFrameInvocation` takes a capability whose recorded mapping is
+in place as a remap, and decides all of its refusals before it writes
+(`vspaceRemapRefusal`): a refused remap changes nothing
+(`vspaceMapOrRemapFromFrameCap_of_remapRefused`).  The remap's writes are the
+mapping taken down where it stands
+(`vspaceUnmapPageWithShootdownAndIcacheBroadcast`: the invalid descriptor, the
+flush and the shootdown round, so no core keeps the old rights) and the frame
+mapped again in its place (`vspaceMapFromFrameCap`, which records the new
+mapping on the same capability).  Either half refusing refuses the whole call,
+which then writes nothing; on a store the checks admit, neither does
+(`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).  A capability whose record
+has gone stale, or that records none, maps as a fresh mapping. -/
+def vspaceMapOrRemapFromFrameCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (args : VSpaceMapArgs) : Kernel Unit :=
+  fun st =>
+    match resolveVSpaceMapFrame tid args st with
+    | .error e => .error e
+    | .ok (_, frameCap, frame) =>
+      if capabilityMappingLive st frameCap then
+        match vspaceRemapRefusal st args frameCap frame with
+        | .error e => .error e
+        | .ok () =>
+          match Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore
+              args.asid args.vaddr st with
+          | .error e => .error e
+          | .ok ((), st0) => vspaceMapFromFrameCap tid executingCore args st0
+      else vspaceMapFromFrameCap tid executingCore args st
+
+/-- **A refused remap changes nothing**: a capability whose mapping is in place,
+refused by the remap's checks, is refused on the state the call was made in,
+before the unmap writes anything. -/
+theorem vspaceMapOrRemapFromFrameCap_of_remapRefused (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (args : VSpaceMapArgs) (st : SystemState)
+    (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject) (e : KernelError)
+    (hRes : resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame))
+    (hLive : capabilityMappingLive st frameCap = true)
+    (hR : vspaceRemapRefusal st args frameCap frame = .error e) :
+    vspaceMapOrRemapFromFrameCap tid executingCore args st = .error e := by
+  unfold vspaceMapOrRemapFromFrameCap
+  simp only [hRes, hLive, ↓reduceIte, hR]
+
+/-- **What a successful map or remap consists of**: a fresh mapping from the
+pre-state, or the unmap of the address the capability records followed by a
+fresh mapping from the state it leaves. -/
+theorem vspaceMapOrRemapFromFrameCap_cases {tid : SeLe4n.ThreadId}
+    {executingCore : Concurrency.CoreId} {args : VSpaceMapArgs} {st st' : SystemState}
+    (h : vspaceMapOrRemapFromFrameCap tid executingCore args st = .ok ((), st')) :
+    vspaceMapFromFrameCap tid executingCore args st = .ok ((), st') ∨
+      ∃ st0, Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore
+          args.asid args.vaddr st = .ok ((), st0) ∧
+        vspaceMapFromFrameCap tid executingCore args st0 = .ok ((), st') := by
+  unfold vspaceMapOrRemapFromFrameCap at h
+  split at h
+  · cases h
+  · split at h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · next st0 hU => exact .inr ⟨st0, hU, h⟩
+    · exact .inl h
+
+/-- **A property both the unmap and a fresh mapping keep, and that composes,
+holds across a map or remap.** -/
+theorem vspaceMapOrRemapFromFrameCap_closed {tid : SeLe4n.ThreadId}
+    {executingCore : Concurrency.CoreId} {args : VSpaceMapArgs} {st st' : SystemState}
+    (R : SystemState → SystemState → Prop)
+    (hMap : ∀ s s', vspaceMapFromFrameCap tid executingCore args s = .ok ((), s') → R s s')
+    (hUnmap : ∀ s s', Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore
+      args.asid args.vaddr s = .ok ((), s') → R s s')
+    (hTrans : ∀ a b c, R a b → R b c → R a c)
+    (h : vspaceMapOrRemapFromFrameCap tid executingCore args st = .ok ((), st')) :
+    R st st' := by
+  rcases vspaceMapOrRemapFromFrameCap_cases h with hM | ⟨st0, hU, hM⟩
+  · exact hMap _ _ hM
+  · exact hTrans _ _ _ (hUnmap _ _ hU) (hMap _ _ hM)
+
 /-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these arms
 derive authority entirely from capability possession and require no
 information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
@@ -3077,7 +3193,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               -- WS-BP BP7.1: the page mapped is the frame MR2's capability names,
               -- resolved through the caller's own CSpace; its address is the
               -- frame's own `base`, never a register value.
-              vspaceMapFromFrameCap tid executingCore args st
+              vspaceMapOrRemapFromFrameCap tid executingCore args st
     | _ => fun _ => .error .invalidCapability
   | .vspaceUnmap =>
     some <| match cap.target with
@@ -3704,15 +3820,25 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, epoch, st2, hT, hRec⟩ :=
-              vspaceMapFromFrameCap_ok tid executingCore args st st' hStep
-            have hTag := tagFrameMapping_preserves_ipcInvariantFull _ _ _ st1 st2 epoch
-              (vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1
-                hObjInv hMap).1
-              (vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
-                st st1 _ _ _ _ _ hObjInv hInv hMap) hT
-            exact (cspaceRecordFrameMapping_preserves_ipcInvariantFull _ _ st2 st'
-              hTag.2 hTag.1 hRec).1
+          · have hFresh : ∀ s s', s.objects.invExt → ipcInvariantFull s →
+                vspaceMapFromFrameCap tid executingCore args s = .ok ((), s') →
+                ipcInvariantFull s' := by
+              intro s s' hObjInv hInv hStep
+              obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, epoch, st2, hT, hRec⟩ :=
+                vspaceMapFromFrameCap_ok tid executingCore args s s' hStep
+              have hTag := tagFrameMapping_preserves_ipcInvariantFull _ _ _ st1 st2 epoch
+                (vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ s st1
+                  hObjInv hMap).1
+                (vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
+                  s st1 _ _ _ _ _ hObjInv hInv hMap) hT
+              exact (cspaceRecordFrameMapping_preserves_ipcInvariantFull _ _ st2 s'
+                hTag.2 hTag.1 hRec).1
+            rcases vspaceMapOrRemapFromFrameCap_cases hStep with hM | ⟨st0, hU, hM⟩
+            · exact hFresh _ _ hObjInv hInv hM
+            · exact hFresh _ _
+                (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hObjInv hU).1
+                (vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_ipcInvariantFull
+                  _ _ _ _ _ hObjInv hInv hU) hM
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -6429,7 +6555,8 @@ theorem dispatchWithCap_cspaceRevoke_delegates
 
 /-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9 / WS-SM SM7.F.4(a)+(b)(ii) / WS-BP
 BP7.1: When vspaceMap dispatch passes its address-space check it is exactly
-`vspaceMapFromFrameCap` — resolve the frame MR2's capability names, admit the
+`vspaceMapOrRemapFromFrameCap`: seL4's remap of a capability whose mapping is in
+place, or the fresh mapping `vspaceMapFromFrameCap` — resolve the frame MR2's capability names, admit the
 requested permissions against that capability and the frame's memory kind, and
 invoke `vspaceMapPageCheckedWithShootdownFromStatePerCore` with the caller's
 executing core, the decoded ASID and vaddr, the **frame's own `base`**, and the
@@ -6456,7 +6583,8 @@ theorem dispatchWithCap_vspaceMap_delegates
     -- unauthorized caller is now rejected with `.illegalAuthority` before the
     -- transition runs.
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
-    dispatchWithCap decoded tid executingCore gate cap st = vspaceMapFromFrameCap tid executingCore args st := by
+    dispatchWithCap decoded tid executingCore gate cap st =
+      vspaceMapOrRemapFromFrameCap tid executingCore args st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
 
 /-- WS-SM SM7.D: When `.vspaceUnifyInstruction` dispatch succeeds,
@@ -6592,11 +6720,13 @@ theorem dispatchWithCap_vspaceMap_requires_frame_cap
     dispatchWithCap decoded tid executingCore gate cap st = .error e := by
   rw [dispatchWithCap_vspaceMap_delegates decoded tid executingCore gate cap objId args st
     hSyscall hTarget hDecode hAuth]
-  simp [vspaceMapFromFrameCap, hNoFrame]
+  simp [vspaceMapOrRemapFromFrameCap, hNoFrame]
 
 /-- **WS-BP BP7.1**: and a successful `.vspaceMap` installs the frame the caller
 holds a capability to — the physical address is that frame's `base`, taken from
-the object the capability names and from nothing the caller wrote. -/
+the object the capability names and from nothing the caller wrote.  A remap
+first takes the capability's own mapping down (`st0`), and the frame is
+resolved and installed from the state that leaves. -/
 theorem dispatchWithCap_vspaceMap_maps_frame_base
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -6607,11 +6737,13 @@ theorem dispatchWithCap_vspaceMap_maps_frame_base
     (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true)
     (hOk : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st')) :
-    ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+    ∃ (st0 : SystemState) (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
       (st1 : SystemState),
-      resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame) ∧
+      (st0 = st ∨ Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore
+        args.asid args.vaddr st = .ok ((), st0)) ∧
+      resolveVSpaceMapFrame tid args st0 = .ok (frameSlot, frameCap, frame) ∧
       Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
-        executingCore args.asid args.vaddr frame.base args.perms st
+        executingCore args.asid args.vaddr frame.base args.perms st0
         = .ok ((), st1) ∧
       ∃ (epoch : Nat) (st2 : SystemState),
         tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 = .ok (epoch, st2) ∧
@@ -6619,9 +6751,25 @@ theorem dispatchWithCap_vspaceMap_maps_frame_base
           { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2 = .ok ((), st') := by
   rw [dispatchWithCap_vspaceMap_delegates decoded tid executingCore gate cap objId args st
     hSyscall hTarget hDecode hAuth] at hOk
-  obtain ⟨frameSlot, frameCap, frame, st1, hR, _, _, _, _, hMap, hRec⟩ :=
-    vspaceMapFromFrameCap_ok tid executingCore args st st' hOk
-  exact ⟨frameSlot, frameCap, frame, st1, hR, hMap, hRec⟩
+  have hFresh : ∀ s, vspaceMapFromFrameCap tid executingCore args s = .ok ((), st') →
+      ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+        (st1 : SystemState),
+        resolveVSpaceMapFrame tid args s = .ok (frameSlot, frameCap, frame) ∧
+        Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
+          executingCore args.asid args.vaddr frame.base args.perms s = .ok ((), st1) ∧
+        ∃ (epoch : Nat) (st2 : SystemState),
+          tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 = .ok (epoch, st2) ∧
+          cspaceRecordFrameMapping frameSlot
+            { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2 = .ok ((), st') := by
+    intro s hS
+    obtain ⟨frameSlot, frameCap, frame, st1, hR, _, _, _, _, hMap, hRec⟩ :=
+      vspaceMapFromFrameCap_ok tid executingCore args s st' hS
+    exact ⟨frameSlot, frameCap, frame, st1, hR, hMap, hRec⟩
+  rcases vspaceMapOrRemapFromFrameCap_cases hOk with hM | ⟨st0, hU, hM⟩
+  · obtain ⟨a, b, c, d, e⟩ := hFresh st hM
+    exact ⟨st, a, b, c, d, .inl rfl, e⟩
+  · obtain ⟨a, b, c, d, e⟩ := hFresh st0 hM
+    exact ⟨st0, a, b, c, d, .inr hU, e⟩
 
 /-- **Fail-closed**: `.vspaceUnmap` dispatch rejects a capability that does not
 name the operand ASID's VSpace root, leaving the address space intact.  This is
@@ -8783,7 +8931,7 @@ def syscallDelegates : SyscallId → Prop
         cap.target = .object objId →
         decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args →
         vspaceCapAuthorizesAsid cap args.asid st = true →
-        dispatchWithCap decoded tid executingCore gate cap st = vspaceMapFromFrameCap tid executingCore args st
+        dispatchWithCap decoded tid executingCore gate cap st = vspaceMapOrRemapFromFrameCap tid executingCore args st
   | .vspaceUnmap =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)

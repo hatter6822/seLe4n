@@ -222,4 +222,48 @@ theorem RHTable.noResizeDue_of_findsInPlace {t : RHTable α β} {k : α}
   simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at h
   exact h.1
 
+theorem Array.set_modify_same {γ : Type} (a : Array γ) (i : Nat) (g : γ → γ) (v : γ)
+    (h : i < (a.modify i g).size) (h' : i < a.size) :
+    (a.modify i g).set i v h = a.set i v h' := by
+  apply Array.ext
+  · simp
+  · intro j hj1 hj2
+    simp only [Array.getElem_set, Array.getElem_modify]
+    split <;> simp_all
+
+omit [Hashable α] in
+theorem backshiftLoop_congr_slots {A B : Array (Option (RHEntry α β))} (h : A = B)
+    {i j : Nat} (hij : i = j) (fuel cap : Nat) (hA : A.size = cap) (hB : B.size = cap)
+    (hpos : 0 < cap) :
+    backshiftLoop fuel i A cap hA hpos = backshiftLoop fuel j B cap hB hpos := by
+  subst h; subst hij; rfl
+
+/-- **The erase of a key forgets what was written at it**: a value rewritten in
+its slot and then erased leaves the table the erase alone leaves, since the
+write moves no key and the erase empties that slot. -/
+theorem RHTable.erase_mapValueAt [LawfulBEq α] (t : RHTable α β) (k : α) (f : β → β) :
+    (t.mapValueAt k f).erase k = t.erase k := by
+  rw [RHTable.erase_eq_eraseAt, RHTable.erase_eq_eraseAt]
+  have hp : findIdxLoop (t.mapValueAt k f).capacity
+      (idealIndex k (t.mapValueAt k f).capacity (t.mapValueAt k f).hCapPos) k 0
+      (t.mapValueAt k f).slots (t.mapValueAt k f).capacity (t.mapValueAt k f).hSlotsLen
+      (t.mapValueAt k f).hCapPos = t.probe k := RHTable.probe_mapValueAt t k k f
+  by_cases hlt : t.probe k < t.capacity
+  · rw [dif_pos (hp ▸ hlt), dif_pos hlt]
+    refine RHTable.ext_slots ?_ rfl rfl
+    unfold RHTable.eraseAt
+    dsimp only
+    refine backshiftLoop_congr_slots ?_ hp _ _ _ _ _
+    have hS : ∀ (A B : Array (Option (RHEntry α β))) (hAB : A = B) (i j : Nat) (hij : i = j)
+        (h1 : i < A.size) (h2 : j < B.size), A.set i none h1 = B.set j none h2 := by
+      intro A B hAB i j hij _ _; subst hAB; subst hij; rfl
+    rw [hS _ _ (RHTable.mapValueAt_slots t k f) _ _ hp _ (by
+      rw [Array.size_modify, t.hSlotsLen]; exact hlt)]
+    exact Array.set_modify_same _ _ _ _ _ _
+  · rw [dif_neg (hp ▸ hlt), dif_neg hlt]
+    refine RHTable.ext_slots ?_ rfl rfl
+    rw [RHTable.mapValueAt_slots]
+    have hs : t.slots.size ≤ t.probe k := by rw [t.hSlotsLen]; omega
+    exact Array.modify_of_size_le t.slots _ hs
+
 end SeLe4n.Kernel.RobinHood

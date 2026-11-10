@@ -1125,13 +1125,17 @@ queue end, a wait's) would copy it; each is given its own cells where it is
 built (`KernelObject.unshareFresh`).  A thread is too: its record is built from
 the carve's operands, but its space slots, their links and their spare records
 are constants, so the thread's first space set would copy the slot and link
-arrays and could not write over a shared record.  Every other kind is built
-from the carve's operands, so its cells are already its own. -/
+arrays and could not write over a shared record.  A VSpace root is too: its
+mapping and epoch tables are the empty table, a constant, so its first map
+copied both slot arrays and built its translation's cells; given its own
+tables and a spare cell for each of their slots, as the boot gives every root
+it stores, no map into it allocates until a table resizes.  Every other kind is
+built from the carve's operands, so its cells are already its own. -/
 def CarveRequest.objectImpl (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) (idx : Nat) :
     CarveRequest → KernelObject
   | .frame => .frame (untypedNextFrame ut idx)
   | .untyped b => .untyped (untypedNextChild ut idx untypedId b)
-  | .vspaceRoot asid => .vspaceRoot (untypedNextVSpaceRoot ut idx asid)
+  | .vspaceRoot asid => (KernelObject.vspaceRoot (untypedNextVSpaceRoot ut idx asid)).unshareFresh
   | .pageTable => .pageTable (untypedNextPageTable ut idx)
   | .tcb dom core => (KernelObject.tcb (carvedTcb childId dom core)).unshareFresh
   | .endpoint => (KernelObject.endpoint (Endpoint.ofQueues {} {})).unshareFresh
@@ -1269,6 +1273,12 @@ def carvedObjectHeapBytes : Nat := 1024
 FP/SIMD context, space slots and their spare records. -/
 def carvedTcbHeapBytes : Nat := 8 * 1024
 
+/-- Bytes a carved VSpace root takes, over-approximated: its record and the
+store's bookkeeping (`carvedObjectHeapBytes`), its own mapping and epoch tables,
+and a spare translation cell and a spare epoch cell for each of their slots
+(`KernelObject.unshareFresh`), with the arrays that hold them. -/
+def carvedVSpaceRootHeapBytes : Nat := carvedObjectHeapBytes + 4 * 1024
+
 /-- Bytes each slot of a carved CNode takes, over-approximated: its cell, its
 link and occupancy words and its spare capability record with that record's
 `some` cell and target. -/
@@ -1289,6 +1299,7 @@ scale with its slot count, every other kind's are fixed. -/
 def CarveRequest.objectHeapBytes : CarveRequest → Nat
   | .tcb _ _ => carvedTcbHeapBytes
   | .cnode r _ => carvedObjectHeapBytes + cnodeSlotHeapBytes * 2 ^ r
+  | .vspaceRoot _ => carvedVSpaceRootHeapBytes
   | _ => carvedObjectHeapBytes
 
 /-- **What a carve needs of the kernel heap**, over-approximated: the reserve,

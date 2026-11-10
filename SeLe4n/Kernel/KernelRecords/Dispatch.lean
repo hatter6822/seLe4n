@@ -155,7 +155,7 @@ theorem dispatchCapabilityOnly_recordsStage
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · exact RecordsStage.vspaceMapFromFrameCap hStep
+          · exact RecordsStage.vspaceMapOrRemapFromFrameCap hStep
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

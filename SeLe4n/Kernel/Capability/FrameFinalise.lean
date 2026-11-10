@@ -1026,6 +1026,312 @@ theorem cspaceDeleteTeardownAt_eq_frame :
             orphanedTableMappings, List.flatMap_nil, List.append_nil, detachPageTablesState,
             unmapLivePagesState, cspaceDeletePerformAt, mappedPageLive_eq_words]
 
+-- ============================================================================
+-- §4a  The detach of one installed table, written in place
+-- ============================================================================
+
+/-- **Whether the detach of `table`, installed at `(level, index)`, keeps the
+root slot `s`** (`VSpaceRoot.withoutTablesBeneath`), on words, so the slot
+record `PageTableInstall.slotFor` is not built.  Out of line, so a walk
+branches once on its answer and a kept slot's list cell is reused. -/
+@[noinline] def detachKeepsSlot (level index : Nat) (table : SeLe4n.ObjId) (s : PageTableSlot) :
+    Bool :=
+  !(s.level == level && s.index == index && s.table == table) &&
+    !(level < s.level && s.index >>> (9 * (s.level - level)) == index)
+
+theorem detachKeepsSlot_eq (inst : PageTableInstall) (table : SeLe4n.ObjId) (s : PageTableSlot) :
+    detachKeepsSlot inst.level inst.index table s =
+      (!(s == inst.slotFor table) && !inst.coversSlot s) := by
+  obtain ⟨l, i, t⟩ := s
+  unfold detachKeepsSlot PageTableInstall.coversSlot PageTableInstall.slotFor
+  congr 2
+  rw [Bool.eq_iff_iff]
+  simp only [Bool.and_eq_true, beq_iff_eq, PageTableSlot.mk.injEq, and_assoc]
+
+theorem detachKeepsSlot_removed (inst : PageTableInstall) (table : SeLe4n.ObjId) (s : PageTableSlot) :
+    (s == inst.slotFor table || inst.coversSlot s) = !detachKeepsSlot inst.level inst.index table s := by
+  rw [detachKeepsSlot_eq]
+  cases s == inst.slotFor table <;> cases inst.coversSlot s <;> rfl
+
+/-- Whether a slot the detach keeps holds a table at `(level, index)`. -/
+def slotPresentKeptIn (level index dl di : Nat) (table : SeLe4n.ObjId) :
+    List PageTableSlot → Bool
+  | [] => false
+  | s :: rest => (detachKeepsSlot dl di table s && (s.level == level && s.index == index)) ||
+      slotPresentKeptIn level index dl di table rest
+
+/-- The table of the first slot the detach keeps at `(level, index)`. -/
+def slotTableKeptIn (level index dl di : Nat) (table : SeLe4n.ObjId) :
+    List PageTableSlot → SeLe4n.ObjId
+  | [] => ⟨0⟩
+  | s :: rest =>
+    if detachKeepsSlot dl di table s && (s.level == level && s.index == index) then s.table
+    else slotTableKeptIn level index dl di table rest
+
+theorem slotPresentKeptIn_eq (level index dl di : Nat) (table : SeLe4n.ObjId)
+    (ts : List PageTableSlot) :
+    slotPresentKeptIn level index dl di table ts =
+      VSpaceRoot.slotPresentIn level index (ts.filter (detachKeepsSlot dl di table)) := by
+  induction ts with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [slotPresentKeptIn, List.filter_cons]
+    cases h : detachKeepsSlot dl di table s
+    · simp [ih]
+    · simp [ih, VSpaceRoot.slotPresentIn]
+
+theorem slotTableKeptIn_eq (level index dl di : Nat) (table : SeLe4n.ObjId)
+    (ts : List PageTableSlot) :
+    slotTableKeptIn level index dl di table ts =
+      VSpaceRoot.slotTableIn level index (ts.filter (detachKeepsSlot dl di table)) := by
+  induction ts with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [slotTableKeptIn, List.filter_cons]
+    cases h : detachKeepsSlot dl di table s
+    · simp [ih]
+    · simp [ih, VSpaceRoot.slotTableIn]
+
+/-- **The table page at `(level, index)` of the root the detach leaves**, read
+off the root before it: `Architecture.tablePageAt?` of
+`VSpaceRoot.withoutTablesBeneath` with the kept slots found by first-order
+loops, so neither the detached root nor its slot list is built
+(`tablePageAtKept_eq`). -/
+@[inline] def tablePageAtKept (st : SystemState) (root : VSpaceRoot) (dl di : Nat)
+    (table : SeLe4n.ObjId) (level index : Nat) : Option SeLe4n.PAddr :=
+  if level = 0 then root.tableBase
+  else if slotPresentKeptIn level index dl di table root.tables then
+    (st.getPageTable? (slotTableKeptIn level index dl di table root.tables)).map (·.base)
+  else none
+
+theorem withoutTablesBeneath_keep (inst : PageTableInstall) (table : SeLe4n.ObjId) :
+    (fun s : PageTableSlot => !(s == inst.slotFor table) && !inst.coversSlot s) =
+      detachKeepsSlot inst.level inst.index table := by
+  funext s; exact (detachKeepsSlot_eq inst table s).symm
+
+theorem tablePageAtKept_eq (st : SystemState) (root : VSpaceRoot) (inst : PageTableInstall)
+    (table : SeLe4n.ObjId) (level index : Nat) :
+    tablePageAtKept st root inst.level inst.index table level index =
+      Architecture.tablePageAt? st (root.withoutTablesBeneath inst table) level index := by
+  rw [Architecture.tablePageAt?_eq_loops]
+  unfold tablePageAtKept Architecture.tablePageAtLoops VSpaceRoot.withoutTablesBeneath
+  simp only [withoutTablesBeneath_keep, slotPresentKeptIn_eq, slotTableKeptIn_eq]
+
+/-- The descriptor word the detach's parent-entry store writes, out of line, as
+`Architecture.slotDescriptorWord` is. -/
+@[noinline] def detachDescriptorWord (st : SystemState) (root : VSpaceRoot) (dl di : Nat)
+    (table : SeLe4n.ObjId) : UInt64 :=
+  match tablePageAtKept st root dl di table dl di with
+  | some base => Architecture.tableDescriptorValue base
+  | none => 0
+
+/-- **The detach's parent-entry store, recorded**, read off the root before the
+detach (`recordDetachSlotStore_eq`). -/
+@[inline] def recordDetachSlotStore (st : SystemState) (root : VSpaceRoot) (dl di : Nat)
+    (table : SeLe4n.ObjId) : SystemState :=
+  match tablePageAtKept st root dl di table (dl - 1) (di >>> 9) with
+  | some parent =>
+    st.recordPhysicalWrite (.storeTableDescriptor (Architecture.tableEntryAddress parent di)
+      (detachDescriptorWord st root dl di table))
+  | none => st
+
+theorem recordDetachSlotStore_eq (st : SystemState) (root : VSpaceRoot) (inst : PageTableInstall)
+    (table : SeLe4n.ObjId) :
+    recordDetachSlotStore st root inst.level inst.index table =
+      Architecture.recordPhysicalWrites st
+        (Architecture.slotStore? st (root.withoutTablesBeneath inst table) inst.level inst.index).toList := by
+  unfold recordDetachSlotStore detachDescriptorWord Architecture.slotStore?
+  rw [tablePageAtKept_eq, tablePageAtKept_eq]
+  cases Architecture.tablePageAt? st (root.withoutTablesBeneath inst table) (inst.level - 1)
+    (inst.index >>> 9) <;> rfl
+
+/-- **The zeroing of each table the detach takes out**, recorded slot by slot in
+the root's order (`recordRemovedZeroPages_eq`), so neither the removed slots'
+list nor the writes' is built. -/
+def recordRemovedZeroPages (dl di : Nat) (table : SeLe4n.ObjId) :
+    SystemState → List PageTableSlot → SystemState
+  | st, [] => st
+  | st, s :: rest =>
+    if detachKeepsSlot dl di table s then recordRemovedZeroPages dl di table st rest
+    else
+      match st.getPageTable? s.table with
+      | some p => recordRemovedZeroPages dl di table (st.recordPhysicalWrite (.zeroPage p.base)) rest
+      | none => recordRemovedZeroPages dl di table st rest
+
+theorem recordRemovedZeroPages_eq (inst : PageTableInstall) (table : SeLe4n.ObjId) :
+    ∀ (st : SystemState) (ts : List PageTableSlot),
+      recordRemovedZeroPages inst.level inst.index table st ts =
+        Architecture.recordPhysicalWrites st
+          ((ts.filter fun s => s == inst.slotFor table || inst.coversSlot s).filterMap
+            (fun s => (st.getPageTable? s.table).map fun t => .zeroPage t.base))
+  | st, [] => rfl
+  | st, s :: rest => by
+    have hr := detachKeepsSlot_removed inst table s
+    simp only [recordRemovedZeroPages]
+    cases h : detachKeepsSlot inst.level inst.index table s
+    · rw [h] at hr
+      simp only [Bool.false_eq_true, ↓reduceIte, List.filter_cons, hr, Bool.not_false,
+        List.filterMap_cons]
+      cases hp : st.getPageTable? s.table with
+      | none => exact recordRemovedZeroPages_eq inst table st rest
+      | some p =>
+        dsimp only
+        rw [recordRemovedZeroPages_eq inst table]
+        exact (Architecture.recordPhysicalWrites_append st [.zeroPage p.base] _).symm
+    · rw [h] at hr
+      simp only [↓reduceIte, List.filter_cons, hr, Bool.not_true, Bool.false_eq_true]
+      exact recordRemovedZeroPages_eq inst table st rest
+
+/-- The slots the detach keeps, by first-order recursion, so an exclusively
+owned list keeps its cells (`tablesKeptLoop_eq`). -/
+def tablesKeptLoop (dl di : Nat) (table : SeLe4n.ObjId) : List PageTableSlot → List PageTableSlot
+  | [] => []
+  | s :: rest =>
+    if detachKeepsSlot dl di table s then s :: tablesKeptLoop dl di table rest
+    else tablesKeptLoop dl di table rest
+
+theorem tablesKeptLoop_eq (dl di : Nat) (table : SeLe4n.ObjId) (ts : List PageTableSlot) :
+    tablesKeptLoop dl di table ts = ts.filter (detachKeepsSlot dl di table) := by
+  induction ts with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [tablesKeptLoop, List.filter_cons]
+    cases detachKeepsSlot dl di table s <;> simp [ih]
+
+/-- **The root the detach leaves**, its slot list filtered in place
+(`rootWithoutTablesBeneathCell_eq`).  Out of line, so the root arrives
+exclusive. -/
+@[noinline] def rootWithoutTablesBeneathCell (dl di : Nat) (table : SeLe4n.ObjId)
+    (r : VSpaceRoot) : VSpaceRoot :=
+  { r with tables := tablesKeptLoop dl di table r.tables }
+
+theorem rootWithoutTablesBeneathCell_eq (inst : PageTableInstall) (table : SeLe4n.ObjId) :
+    rootWithoutTablesBeneathCell inst.level inst.index table =
+      (·.withoutTablesBeneath inst table) := by
+  funext r
+  unfold rootWithoutTablesBeneathCell VSpaceRoot.withoutTablesBeneath
+  rw [tablesKeptLoop_eq, withoutTablesBeneath_keep]
+
+/-- **The detach of `table`, installed at `(level, index)` of the root at
+`rootId`, written in place**: the parent entry's store, each detached table's
+zeroing and the ASID invalidate recorded one by one, read off the root before
+the detach, then the root's slot list filtered in its slot.  Out of line, so
+the state arrives exclusive.  Equal to the specification's store of the
+detached root over its writes (`detachTableAt_eq`). -/
+@[noinline] def detachTableAt (rootId : SeLe4n.ObjId) (dl di : Nat) (table : SeLe4n.ObjId)
+    (st : SystemState) : SystemState :=
+  match st.getVSpaceRoot? rootId with
+  | some root =>
+    let st1 := recordDetachSlotStore st root dl di table
+    let st2 := recordRemovedZeroPages dl di table st1 root.tables
+    let st3 := st2.recordPhysicalWrite (.invalidateAsid root.asid)
+    st3.storeVSpaceRootWith rootId (rootWithoutTablesBeneathCell dl di table)
+  | none => st
+
+theorem detachTableAt_eq (inst : PageTableInstall) (table : SeLe4n.ObjId) (st : SystemState)
+    (root : VSpaceRoot) (hR : st.getVSpaceRoot? inst.root = some root) :
+    detachTableAt inst.root inst.level inst.index table st =
+      storeObjectState inst.root (.vspaceRoot (root.withoutTablesBeneath inst table))
+        (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root inst table)) := by
+  have hO : st.objects[inst.root]? = some (.vspaceRoot root) :=
+    (SystemState.getVSpaceRoot?_eq_some_iff st inst.root root).1 hR
+  have hO2 : (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root inst table)).objects[inst.root]? =
+      some (.vspaceRoot root) := by
+    rw [Architecture.recordPhysicalWrites_objects]; exact hO
+  unfold storeObjectState
+  rw [SystemState.storeObject_vspaceRoot_eq_storeVSpaceRootWith hO2
+    (fun r => r.withoutTablesBeneath inst table) rfl]
+  dsimp only
+  unfold detachTableAt
+  rw [hR]
+  dsimp only
+  rw [recordDetachSlotStore_eq, recordRemovedZeroPages_eq, rootWithoutTablesBeneathCell_eq]
+  unfold Architecture.detachWrites
+  rw [Architecture.recordPhysicalWrites_append, Architecture.recordPhysicalWrites_append]
+  rfl
+
+/-- A root none of whose mappings has its level-`inst.level` index at
+`inst.index` (`mappingsIndexedFrom`) has none beneath the install. -/
+theorem pageTableMappingsBeneath_nil (root : VSpaceRoot) (inst : PageTableInstall)
+    (h : Architecture.mappingsIndexedFrom root.mappings.slots inst.level inst.index 0 = false) :
+    Architecture.pageTableMappingsBeneath root inst = [] := by
+  rw [Architecture.mappingsIndexedFrom_eq, List.drop_zero] at h
+  unfold Architecture.pageTableMappingsBeneath RobinHood.RHTable.fold
+  rw [← Array.foldl_toList]
+  generalize root.mappings.slots.toList = l at h
+  generalize ([] : List MappedPage) = acc
+  induction l generalizing acc with
+  | nil => rfl
+  | cons s l ih =>
+    simp only [List.any_cons, Bool.or_eq_false_iff] at h
+    simp only [List.foldl_cons]
+    cases s with
+    | none => exact ih h.2 acc
+    | some e =>
+      simp only [Option.any_some] at h
+      simp only [h.1, Bool.false_eq_true, ↓reduceIte]
+      exact ih h.2 acc
+
+/-- **The finalisation of a deleted page-table capability, as compiled**: when
+the table is installed, its root still holds the slot, and no mapping lies
+beneath it, the table and every table beneath it leave the root in place
+(`detachTableAt`); there is then nothing to unmap.  Any other case takes the
+specification.  Equal to it (`finaliseInstalledTableCells_eq`). -/
+def finaliseInstalledTableCells (executingCore : Concurrency.CoreId) (tableId : SeLe4n.ObjId)
+    (st : SystemState) : SystemState :=
+  match st.getPageTable? tableId with
+  | some p =>
+    if p.installed then
+      match st.getVSpaceRoot? p.installRoot with
+      | some root =>
+        if VSpaceRoot.slotHeldIn p.installLevel p.installIndex tableId root.tables &&
+            !Architecture.mappingsIndexedFrom root.mappings.slots p.installLevel p.installIndex 0 then
+          detachTableAt p.installRoot p.installLevel p.installIndex tableId st
+        else finaliseDestroyedCapabilitiesState executingCore [tableId] [] st
+      | none => finaliseDestroyedCapabilitiesState executingCore [tableId] [] st
+    else finaliseDestroyedCapabilitiesState executingCore [tableId] [] st
+  | none => finaliseDestroyedCapabilitiesState executingCore [tableId] [] st
+
+theorem finaliseInstalledTableCells_eq (ec : Concurrency.CoreId) (tableId : SeLe4n.ObjId)
+    (st : SystemState) :
+    finaliseInstalledTableCells ec tableId st = finaliseDestroyedCapabilitiesState ec [tableId] [] st := by
+  unfold finaliseInstalledTableCells
+  cases hP : st.getPageTable? tableId with
+  | none => rfl
+  | some p =>
+    dsimp only
+    cases hI : p.installed with
+    | false => rfl
+    | true =>
+      simp only [↓reduceIte]
+      cases hR : st.getVSpaceRoot? p.installRoot with
+      | none => rfl
+      | some root =>
+        dsimp only
+        split
+        · next hC =>
+          simp only [Bool.and_eq_true, Bool.not_eq_true'] at hC
+          obtain ⟨hHeld, hMap⟩ := hC
+          let inst : PageTableInstall := ⟨p.installRoot, p.installLevel, p.installIndex⟩
+          have hIn : p.installedIn = some inst := by
+            simp [PageTableObject.installedIn, hI, inst]
+          have hLive : Architecture.pageTableInstallLive st tableId = true := by
+            rw [Architecture.pageTableInstallLive_eq_loop]
+            unfold Architecture.pageTableInstallLiveLoop
+            rw [hP]; dsimp only; rw [hIn]; dsimp only [inst]; rw [hR]; exact hHeld
+          unfold finaliseDestroyedCapabilitiesState
+          have hO : pageTablesOrphaned [tableId] st = [(tableId, inst)] := by
+            simp only [pageTablesOrphaned, List.foldl_cons, List.foldl_nil, List.any_nil,
+              Bool.false_eq_true, ↓reduceIte, hP, hIn, hLive]
+          rw [hO]
+          simp only [orphanedTableMappings, List.flatMap_cons, List.flatMap_nil, List.nil_append,
+            List.append_nil, detachPageTablesState]
+          rw [show st.getVSpaceRoot? inst.root = some root from hR]
+          dsimp only
+          rw [pageTableMappingsBeneath_nil root inst hMap]
+          exact detachTableAt_eq inst tableId st root hR
+        · rfl
+
 /-- WS-ZA ZA5.4: **`cspaceDeleteTeardownAt` for a page table's capability**, on
 the slot's words: the capability names the table and records no page.  When it
 is the table's final capability (`SystemState.capIsFinal`, read from the slot's
@@ -1051,7 +1357,7 @@ built.  Any other capability takes `cspaceDeleteTeardownAtFrame`
           (if st.capIsFinal cnode slot then
             let st1 := cspaceDeletePerformAt cnode slot st
             if Architecture.pageTableInstallLive st1 tableId then
-              finaliseDestroyedCapabilitiesState executingCore [tableId] [] st1
+              finaliseInstalledTableCells executingCore tableId st1
             else st1
           else cspaceDeletePerformAt cnode slot st)
       | none => cspaceDeleteTeardownAtFrame executingCore cnode slot st
@@ -1062,6 +1368,7 @@ built.  Any other capability takes `cspaceDeleteTeardownAtFrame`
     @cspaceDeleteTeardownAt = @cspaceDeleteTeardownAtTable := by
   funext ec cnode slot st
   unfold cspaceDeleteTeardownAtTable
+  simp only [finaliseInstalledTableCells_eq]
   rw [← cspaceDeleteTeardownAt_eq_frame]
   cases hL : st.slotCapAt ⟨cnode, slot⟩ with
   | none => rfl
@@ -1734,12 +2041,13 @@ longer passes the checks — the passes may have finalised it, its last
 capability inside the CNode they emptied — the passes' work stands and nothing
 else is written: the caller sees the thread's roots unchanged.  Out of line:
 only a space change replacing the last capability to a populated CNode takes
-it. -/
+it.  The source slots cross as words, so the call builds no address record. -/
 @[noinline] def copyThreadSpacesAfterZombie (executingCore : Concurrency.CoreId) (st : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) : SystemState :=
+    (vtid : SeLe4n.ValidThreadId) (cnCNode : SeLe4n.ObjId) (cnSlot : SeLe4n.Slot)
+    (vrCNode : SeLe4n.ObjId) (vrSlot : SeLe4n.Slot) : SystemState :=
   let s := zombiePasses executingCore vtid.val.toObjId TCB.cspaceRootSlot (zombieFuel st) st
-  if copyThreadSpacesAdmitted s vtid cnSrc vrSrc then
-    copyThreadSpacesPerform executingCore s vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot
+  if copyThreadSpacesAdmitted s vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩ then
+    copyThreadSpacesPerform executingCore s vtid.val cnCNode cnSlot vrCNode vrSlot
   else s
 
 /-- **An admitted space change's writes, the old CSpace root deleted as
@@ -1753,7 +2061,7 @@ no slots, so the VSpace slot's old capability never needs the loop. -/
   if zombieSlotClass st vtid.val.toObjId TCB.cspaceRootSlot vtid.val.toObjId TCB.cspaceRootSlot = 0 then
     copyThreadSpacesPerform executingCore st vtid.val cnCNode cnSlot vrCNode vrSlot
   else
-    copyThreadSpacesAfterZombie executingCore st vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩
+    copyThreadSpacesAfterZombie executingCore st vtid cnCNode cnSlot vrCNode vrSlot
 
 /-- **`.tcbSetSpace`: seL4's `TCB_SetSpace`**, the old roots deleted through the
 zombie delete: refused, committing nothing, as `copyThreadSpaces` refuses

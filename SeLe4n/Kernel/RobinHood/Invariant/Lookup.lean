@@ -2483,4 +2483,77 @@ theorem RHTable.fold_or_false_iff {α β : Type} [BEq α] [Hashable α] [LawfulB
     · rw [← hSlot]; exact Array.getElem_mem_toList _
     · rw [eq_of_beq hKey, hVal]; exact hf
 
+-- ============================================================================
+-- A key held in one slot only: the erase removes it, on every table
+-- ============================================================================
+
+/-- Whether slot `j` of `slots` holds key `k`, read in place. -/
+@[inline] def slotHoldsKey [BEq α] (slots : Array (Option (RHEntry α β))) (k : α) (j : Nat) :
+    Bool :=
+  if h : j < slots.size then
+    match slots[j] with
+    | some e => e.key == k
+    | none => false
+  else false
+
+/-- **No slot below `n` but `skip` holds key `k`**: a scan of the slots as
+words, tail-recursive, so it builds nothing and grows no stack. -/
+def keyAbsentBelowExcept [BEq α] (slots : Array (Option (RHEntry α β))) (k : α) (skip : Nat) :
+    Nat → Bool
+  | 0 => true
+  | n + 1 =>
+    if n != skip && slotHoldsKey slots k n then false
+    else keyAbsentBelowExcept slots k skip n
+
+theorem keyAbsentBelowExcept_spec [BEq α] (slots : Array (Option (RHEntry α β))) (k : α)
+    (skip : Nat) : ∀ (n : Nat), keyAbsentBelowExcept slots k skip n = true →
+      ∀ j (hj : j < slots.size) (e : RHEntry α β), j < n → j ≠ skip →
+        slots[j] = some e → (e.key == k) = false
+  | 0, _, _, _, _, hjn, _, _ => absurd hjn (Nat.not_lt_zero _)
+  | n + 1, h, j, hj, e, hjn, hne, hS => by
+    unfold keyAbsentBelowExcept at h
+    split at h
+    · cases h
+    · next hC =>
+      by_cases hjn' : j = n
+      · subst hjn'
+        have hNe : (j != skip) = true := by simpa using hne
+        simp only [hNe, Bool.true_and, slotHoldsKey, dif_pos hj, hS] at hC
+        simpa using hC
+      · exact keyAbsentBelowExcept_spec slots k skip n h j hj e (by omega) hne hS
+
+/-- **`k` is held in the slot its probe finds and in no other**, read as words:
+the probe's slot as a bare index (`findIdxLoop`) and a scan of the rest
+(`keyAbsentBelowExcept`).  No `invExt`: it is the fact that makes the erase of
+`k` leave `k` absent (`RHTable.get?_erase_self_of_keyOnlyAt`). -/
+def RHTable.keyOnlyAt [BEq α] [Hashable α] (t : RHTable α β) (k : α) : Bool :=
+  let i := findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots t.capacity
+    t.hSlotsLen t.hCapPos
+  decide (i < t.capacity) && keyAbsentBelowExcept t.slots k i t.capacity
+
+/-- **The erase of a key held in one slot only leaves it absent**, on every
+table, well-formed or not: the erase clears that slot, and the shift back after
+it moves entries without adding a key. -/
+theorem RHTable.get?_erase_self_of_keyOnlyAt [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (h : t.keyOnlyAt k = true) : (t.erase k).get? k = none := by
+  unfold RHTable.keyOnlyAt at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨hi, hScan⟩ := h
+  rw [RHTable.erase_eq_eraseAt, dif_pos hi]
+  unfold RHTable.get? RHTable.eraseAt
+  dsimp only
+  have hIdx : findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots t.capacity
+      t.hSlotsLen t.hCapPos < t.slots.size := by rw [t.hSlotsLen]; exact hi
+  have hLen' : (t.slots.set _ none hIdx).size = t.capacity := by
+    rw [Array.size_set]; exact t.hSlotsLen
+  apply getLoop_none_of_absent
+  apply backshiftLoop_preserves_key_absence
+  intro j hj e hS
+  simp only [Array.getElem_set] at hS
+  split at hS
+  · cases hS
+  · next hne =>
+    exact keyAbsentBelowExcept_spec t.slots k _ t.capacity hScan j
+      (by rw [t.hSlotsLen]; exact hj) e hj (fun h => hne h.symm) hS
+
 end SeLe4n.Kernel.RobinHood

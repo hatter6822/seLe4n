@@ -325,6 +325,19 @@ theorem vspaceMapFromFrameCap_keyFrame (tid : SeLe4n.ThreadId) (ec : CoreId)
   have k2 := tagFrameMapping_keyFrame _ _ _ st1 st2 epoch k1.2.2 hT
   exact (k1.trans k2).trans (cspaceRecordFrameMapping_keyFrame _ _ st2 st' k2.2.2 hRec)
 
+/-- A map or seL4's remap: the unmap writes VSpace roots alone, then the fresh
+map. -/
+theorem vspaceMapOrRemapFromFrameCap_keyFrame (tid : SeLe4n.ThreadId) (ec : CoreId)
+    (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) :
+    capabilityKeyFrame st st' := by
+  rcases vspaceMapOrRemapFromFrameCap_cases hStep with hM | ⟨st0, hU, hM⟩
+  · exact vspaceMapFromFrameCap_keyFrame tid ec args st st' hObjInv hM
+  · have k0 := vspaceRootOnlyWrite_keyFrame
+      (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hObjInv hU)
+    exact k0.trans (vspaceMapFromFrameCap_keyFrame tid ec args st0 st' k0.2.2 hM)
+
 /-- **The carve's key frame** (WS-ZA ZA5.4 part 14): the carve moves no key input
 off the child's slot, which was empty before it; whatever it stores there — a
 fresh TCB or scheduling context carries key inputs of its own — is queued on no

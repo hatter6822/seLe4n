@@ -3995,10 +3995,27 @@ run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?
 run_check "INVARIANT" rg -n '^  if perms\.write && !frameCap\.hasRight \.write then \.error \.illegalAuthority$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then\n    \.error \.policyDenied$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*executingCore args\.asid args\.vaddr frame\.base perms st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^              vspaceMapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^              vspaceMapOrRemapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
+# seL4's Page_Map remap: a live mapping on the frame capability is remapped
+# only at the ASID and address it records — a different ASID is refused as an
+# invalid capability, a different address as an invalid argument — and every
+# refusal is decided in seL4's decode order (the ASID's root, the alignment,
+# the record's ASID, its address, the walk) before the unmap writes; a refused
+# map half no longer leaves the unmap standing.
+run_check "INVARIANT" rg -n '^def vspaceMapOrRemapFromFrameCap \(tid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceRemapRefusal[^\n]*(\n([ \t][^\n]*)?)*  match Architecture\.resolveAsidRoot st args\.asid with\n  \| none => \.error \.asidNotBound\n  \| some \(_, root\) =>\n    if !Architecture\.pageMappingAligned args\.vaddr frame\.base then \.error \.alignmentError\n    else if frameCap\.mapAsid != args\.asid then \.error \.invalidCapability\n    else if frameCap\.mapVaddr != args\.vaddr then \.error \.invalidArgument\n    else if !root\.translationReady args\.vaddr then \.error \.translationFault' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapOrRemapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*      if capabilityMappingLive st frameCap then\n        match vspaceRemapRefusal st args frameCap frame with\n        \| \.error e => \.error e\n        \| \.ok \(\) =>\n          match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore\n              args\.asid args\.vaddr st with\n          \| \.error e => \.error e\n          \| \.ok \(\(\), st0\) => vspaceMapFromFrameCap tid executingCore args st0$' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'vspaceRemapChecks|vspaceRemapMapFallback|vspaceRemapAdmittedAt' SeLe4n tests
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_of_remapRefused($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapAdmittedAt_of_remapInPlace($|[ ({:\[\]])' SeLe4n/Kernel/VSpaceRemapPerform.lean
+run_check "INVARIANT" rg -n '^theorem RHTable\.get\?_erase_self_of_keyOnlyAt($|[ ({:\[\]])' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_of_remapAdmitted($|[ ({:\[\]])' SeLe4n/Kernel/VSpaceRemapPerform.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmap_preserves_teardownWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTeardownClears.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_requires_frame_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_maps_frame_base($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -n 'decodeVSpaceMapArgsChecked' SeLe4n tests
 run_negative_check "INVARIANT" rg -n 'lockKind_ne_page' SeLe4n tests
 run_negative_check "INVARIANT" rg -n 'args\.paddr|paddr := PAddr\.ofNat r2' SeLe4n/Kernel
@@ -5310,7 +5327,7 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_copyThreadSpacesZombie_covers
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_cases ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_closed ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '^def copyThreadSpacesZombie [^\n]*\n[^\n]*\n  if copyThreadSpacesAdmitted st vtid cnSrc vrSrc then\n    \.ok \(copyThreadSpacesZombiePerform ' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if copyThreadSpacesAdmitted s vtid cnSrc vrSrc then\n    copyThreadSpacesPerform executingCore s ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if copyThreadSpacesAdmitted s vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩ then\n    copyThreadSpacesPerform executingCore s ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s : SeLe4n\.Slot, s\.toNat < 2 → ∀ c o,' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
@@ -5387,7 +5404,10 @@ run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise [^\n]*(\n([ \t][^\n
 run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_negative_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*carvedSubtreeUnreferenced' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '^@\[inline\] def slotPageTables \(st : SystemState\) \(addr : CSpaceAddr\) : List SeLe4n\.ObjId :=\n  match \(st\.slotCapAt addr\)\.bind \(capabilityPageTable st\) with\n  \| some id => if st\.capIsFinal addr\.cnode addr\.slot then \[id\] else \[\]\n  \| none => \[\]$' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U 'def cspaceDeleteTeardownAtTable [^\n]*(\n([ \t][^\n]*)?)*      \| some _ =>\n        let target := slotRetireTarget st cnode slot\n        let recorder := recorderFor st target cnode slot\n        retireFinalisedObject executingCore target recorder\n          \(if st\.capIsFinal cnode slot then\n            let st1 := cspaceDeletePerformAt cnode slot st\n            if Architecture\.pageTableInstallLive st1 tableId then\n              finaliseDestroyedCapabilitiesState executingCore \[tableId\] \[\] st1\n            else st1\n          else cspaceDeletePerformAt cnode slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteTeardownAtTable [^\n]*(\n([ \t][^\n]*)?)*      \| some _ =>\n        let target := slotRetireTarget st cnode slot\n        let recorder := recorderFor st target cnode slot\n        retireFinalisedObject executingCore target recorder\n          \(if st\.capIsFinal cnode slot then\n            let st1 := cspaceDeletePerformAt cnode slot st\n            if Architecture\.pageTableInstallLive st1 tableId then\n              finaliseInstalledTableCells executingCore tableId st1\n            else st1\n          else cspaceDeletePerformAt cnode slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# The compiled finalisation of one table is the specification's, proven equal;
+# any case it does not write in place takes the specification.
+run_check "INVARIANT" rg -n -U '^theorem finaliseInstalledTableCells_eq [^\n]*\n[^\n]*\n    finaliseInstalledTableCells ec tableId st = finaliseDestroyedCapabilitiesState ec \[tableId\] \[\] st :=' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_negative_check "INVARIANT" rg -n 'carvedSubtreeUnreferenced|objectNamesListed|capNamesListed' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.131 finality (seL4's isFinalCapability over mdb_chunked): the slots
 # naming one object are one contiguous preorder run, a conjunct of the tree
@@ -8015,7 +8035,8 @@ run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshCoreCaches_eq($|[ ({
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_copy($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_delete($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_ok_cases($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
-run_check "INVARIANT" rg -n -U '^            RefusalCarrying\.ofChecked \(irqHandlerSetNotificationAdmitted st line srcCnode ncap\)\n              \(fun st => irqHandlerSetNotificationPerformAt line srcCnode srcSlot st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '^            RefusalCarrying\.ofChecked \(irqHandlerSetNotificationAdmitted st line srcCnode ncap\)\n              \(fun st => irqHandlerSetNotificationBindAt executingCore line srcCnode srcSlot ncap st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_overFinal_copy($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
 run_check "INVARIANT" rg -n -U '^              RefusalCarrying\.ofChecked \(irqControlGetAdmittedAt dstCnode dstSlot args\.line st\)\n                \(fun st => irqControlGetPerformAt srcCnode srcSlot dstCnode dstSlot args\.line st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceCopyPerform_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshPhysicalWrites_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean

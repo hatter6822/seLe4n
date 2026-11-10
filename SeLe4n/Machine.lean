@@ -1583,6 +1583,33 @@ def MachineState.releaseThreadOnCore (ms : MachineState) (tid : ThreadId) (c : C
     | none => ms
   if ms1.residentCode.get c == tid.val + 1 then ms1.setResidentOnCore c none else ms1
 
+/-- The owner half of `releaseThreadOnCore`, out of line, so the record arrives
+owned and the owner table is rewritten in place. -/
+@[noinline] def MachineState.releaseFpOwnerOnCore (ms : MachineState) (tid : ThreadId)
+    (c : CoreId) : MachineState :=
+  match ms.fpOwnerOnCore c with
+  | some t => if t.val == tid.val then ms.setFpOwnerOnCore c none else ms
+  | none => ms
+
+/-- The residency half of `releaseThreadOnCore`, out of line for the same
+reason. -/
+@[noinline] def MachineState.releaseResidentOnCore (ms : MachineState) (tid : ThreadId)
+    (c : CoreId) : MachineState :=
+  if ms.residentCode.get c == tid.val + 1 then ms.setResidentOnCore c none else ms
+
+/-- The compiled `releaseThreadOnCore`: the two halves as calls.  Inlined, the
+owner test's join point carried every field of the record and rebuilt it when
+the residency matched (a 224-byte record on each running thread's delete).
+Proven equal (`releaseThreadOnCore_eq_impl`). -/
+def MachineState.releaseThreadOnCoreImpl (ms : MachineState) (tid : ThreadId) (c : CoreId) :
+    MachineState :=
+  (ms.releaseFpOwnerOnCore tid c).releaseResidentOnCore tid c
+
+@[csimp] theorem MachineState.releaseThreadOnCore_eq_impl :
+    @MachineState.releaseThreadOnCore = @MachineState.releaseThreadOnCoreImpl := by
+  funext ms tid c
+  rfl
+
 /-- The release on each of the cores `cs`, by structural recursion, so it builds
 no closure. -/
 def MachineState.releaseThreadOnCores (ms : MachineState) (tid : ThreadId) :

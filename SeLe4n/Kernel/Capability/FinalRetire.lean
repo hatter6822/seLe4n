@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Lifecycle.Operations.CarvedObjectErase
 import SeLe4n.Model.CapabilityFinality
 import SeLe4n.Kernel.Architecture.PageTeardownClears
 import SeLe4n.Kernel.Architecture.InterruptMask
+import SeLe4n.Kernel.RobinHood.Invariant.InPlaceCommute
 
 /-!
 # Retiring an object with its final capability
@@ -216,6 +217,53 @@ theorem childListAdopt_of_not_records {l : List UntypedChild} {x : SeLe4n.ObjId}
     simp only [childListRecords, Bool.or_eq_false_iff] at h
     unfold childListAdopt
     rw [if_neg (by simpa using h.1), ih h.2]
+
+/-- **`x`'s children spliced onto `tail`**: each record of `x` dropped, the rest
+rebased by `b`, then `tail`, in one recursion, so an exclusively owned list has
+each of its cells rewritten in place (`childListSpliceOnto_eq`). -/
+def childListSpliceOnto : List UntypedChild → SeLe4n.ObjId → Nat → List UntypedChild →
+    List UntypedChild
+  | [], _, _, tail => tail
+  | c :: r, x, b, tail =>
+    if c.objId == x then childListSpliceOnto r x b tail
+    else { c with offset := b + c.offset } :: childListSpliceOnto r x b tail
+
+theorem childListSpliceOnto_eq (xs : List UntypedChild) (x : SeLe4n.ObjId) (b : Nat)
+    (tail : List UntypedChild) :
+    childListSpliceOnto xs x b tail = childListRebase (childListErase xs x) b ++ tail := by
+  induction xs with
+  | nil => rfl
+  | cons c r ih =>
+    unfold childListSpliceOnto childListErase
+    split <;> simp [ih, childListRebase]
+
+/-- **The compiled `childListAdopt`**: at a record of `x` that is the list's last,
+`x`'s children are spliced onto the rest (`childListSpliceOnto`), the only use
+of `xs`, so its cells are rewritten in place; the specification's splice kept
+`xs` for the rest of the walk and so copied each cell of it.  Proven equal
+(`childListAdopt_eq_impl`). -/
+def childListAdoptImpl : List UntypedChild → SeLe4n.ObjId → List UntypedChild → List UntypedChild
+  | [], _, _ => []
+  | ch :: rest, x, xs =>
+    if ch.objId == x then
+      if childListRecords rest x then
+        childListRebase (childListErase xs x) ch.offset ++ childListAdoptImpl rest x xs
+      else childListSpliceOnto xs x ch.offset rest
+    else ch :: childListAdoptImpl rest x xs
+
+@[csimp] theorem childListAdopt_eq_impl : @childListAdopt = @childListAdoptImpl := by
+  funext l x xs
+  induction l with
+  | nil => rfl
+  | cons ch rest ih =>
+    unfold childListAdopt childListAdoptImpl
+    split
+    · split
+      · rw [ih]
+      · next hr =>
+        rw [childListSpliceOnto_eq,
+          childListAdopt_of_not_records _ (by simpa using hr)]
+    · rw [ih]
 
 -- ============================================================================
 -- §2  The untyped that records an object
@@ -778,6 +826,218 @@ def retireRecordedObject (executingCore : Concurrency.CoreId) (recorder : Nat) (
   match st1.getVSpaceRoot? x with
   | some root => asidReleaseRound executingCore root.asid (retireCarvedObject st1 x)
   | none => retireCarvedObject st1 x
+
+-- ============================================================================
+-- §3a  The retire of an untyped with children, its child list taken out first
+-- ============================================================================
+
+/-- **`x`'s child list taken out of its record**, in its slot: the children
+of an untyped at `x` emptied, any other object left as it is.  The retire
+erases `x` afterwards, so what its record holds then is never read
+(`retireRecordedObject_eq_impl`); taking the list out first is what leaves the
+retire's own copy of it, `retiredChildren`, the list's only reference, so the
+recorder's adopt rewrites its cells in place. -/
+@[noinline] def clearRetiredChildren (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
+  { st with
+      objects := st.objects.mapValueAt x (SystemState.mapUntypedObject fun U => { U with children := [] }) }
+
+open SeLe4n.Kernel.RobinHood in
+theorem clearRetiredChildren_objects_ne (st : SystemState) {x y : SeLe4n.ObjId} (h : y ≠ x) :
+    (clearRetiredChildren st x).objects[y]? = st.objects[y]? := by
+  unfold clearRetiredChildren
+  simp only [RHTable_getElem?_eq_get?]
+  rw [RHTable.get?_mapValueAt]
+  have : (x == y) = false := by simpa using Ne.symm h
+  rw [this]; rfl
+
+open SeLe4n.Kernel.RobinHood in
+theorem clearRetiredChildren_objects_self (st : SystemState) (x : SeLe4n.ObjId) :
+    (clearRetiredChildren st x).objects[x]? =
+      (st.objects[x]?).map (SystemState.mapUntypedObject fun U => { U with children := [] }) := by
+  unfold clearRetiredChildren
+  simp only [RHTable_getElem?_eq_get?]
+  rw [RHTable.get?_mapValueAt]
+  simp
+
+open SeLe4n.Kernel.RobinHood in
+/-- A store to an untyped other than `x` keeps the object table below its
+resize threshold, and commutes with the take-out at `x`: both are slot writes
+there. -/
+theorem storeUntypedWith_clearRetiredChildren (st : SystemState) {x y : SeLe4n.ObjId}
+    (f : UntypedObject → UntypedObject) (hne : y ≠ x) (hNo : st.objects.noResizeDue) :
+    (clearRetiredChildren st x).storeUntypedWith y f =
+        clearRetiredChildren (st.storeUntypedWith y f) x ∧
+      (st.storeUntypedWith y f).objects.noResizeDue := by
+  have hG := clearRetiredChildren_objects_ne st hne
+  unfold SystemState.storeUntypedWith
+  rw [hG]
+  cases hy : st.objects[y]? with
+  | none => exact ⟨rfl, hNo⟩
+  | some o =>
+    cases o with
+    | untyped u =>
+      dsimp only
+      have hgy : st.objects.get? y = some (.untyped u) := hy
+      have hL : storeLeavesIndexAndTypes (clearRetiredChildren st x) y .untyped =
+          storeLeavesIndexAndTypes st y .untyped := by
+        unfold storeLeavesIndexAndTypes; rw [hG]; rfl
+      rw [hL]
+      have hNo' : (st.objects.mapValueAt x
+          (SystemState.mapUntypedObject fun U => { U with children := [] })).noResizeDue :=
+        (RHTable.noResizeDue_mapValueAt _ _ _).2 hNo
+      split
+      · refine ⟨?_, ?_⟩
+        · unfold SystemState.modifyObject clearRetiredChildren
+          dsimp only
+          rw [RHTable.modify_eq_mapValueAt _ _ hNo', RHTable.modify_eq_mapValueAt _ _ hNo,
+            RHTable.mapValueAt_comm _ _ _ hne]
+        · unfold SystemState.modifyObject
+          dsimp only
+          rw [RHTable.modify_eq_mapValueAt _ _ hNo]
+          exact (RHTable.noResizeDue_mapValueAt _ _ _).2 hNo
+      · have hgy' : (st.objects.mapValueAt x
+            (SystemState.mapUntypedObject fun U => { U with children := [] })).get? y = some (.untyped u) := by
+          have := hG; simp only [clearRetiredChildren, RHTable_getElem?_eq_get?] at this
+          rw [this]; exact hgy
+        refine ⟨?_, ?_⟩
+        · unfold storeObject clearRetiredChildren storeKeepsAsid
+          dsimp only
+          rw [RHTable.insert_eq_mapValueAt _ (RHTable.findsInPlace_of_get? hNo' hgy'),
+            RHTable.insert_eq_mapValueAt _ (RHTable.findsInPlace_of_get? hNo hgy),
+            RHTable.mapValueAt_comm _ _ _ hne]
+          have h1 := hG; simp only [clearRetiredChildren] at h1
+          simp only [h1]
+        · unfold storeObject
+          dsimp only
+          rw [RHTable.insert_eq_mapValueAt _ (RHTable.findsInPlace_of_get? hNo hgy)]
+          exact (RHTable.noResizeDue_mapValueAt _ _ _).2 hNo
+    | _ => exact ⟨rfl, hNo⟩
+
+/-- The reparent of children none of which is `x` commutes with the take-out at
+`x`, and keeps the table below its resize threshold. -/
+theorem reparentChildren_clearRetiredChildren (recorder : Nat) {x : SeLe4n.ObjId} :
+    ∀ (kids : List UntypedChild) (st : SystemState), childListRecords kids x = false →
+      st.objects.noResizeDue →
+      reparentChildren recorder kids (clearRetiredChildren st x) =
+          clearRetiredChildren (reparentChildren recorder kids st) x ∧
+        (reparentChildren recorder kids st).objects.noResizeDue
+  | [], _, _, hNo => ⟨rfl, hNo⟩
+  | c :: rest, st, hK, hNo => by
+    simp only [childListRecords, Bool.or_eq_false_iff, beq_eq_false_iff_ne] at hK
+    obtain ⟨hS, hNo1⟩ := storeUntypedWith_clearRetiredChildren st
+      (fun U => { U with parent := recorderParent recorder }) hK.1 hNo
+    simp only [reparentChildren]
+    rw [hS]
+    exact reparentChildren_clearRetiredChildren recorder rest _ hK.2 hNo1
+
+open SeLe4n.Kernel.RobinHood in
+/-- The erase of a carved `x`, and the ASID round of a root at `x`, read the
+same after the take-out at `x`: it keeps the object's kind and the erase
+forgets the slot (`RHTable.erase_mapValueAt`). -/
+theorem retireCarved_clearRetiredChildren (ec : Concurrency.CoreId) (st : SystemState)
+    (x : SeLe4n.ObjId) :
+    (match (clearRetiredChildren st x).getVSpaceRoot? x with
+     | some root => asidReleaseRound ec root.asid (retireCarvedObject (clearRetiredChildren st x) x)
+     | none => retireCarvedObject (clearRetiredChildren st x) x) =
+    (match st.getVSpaceRoot? x with
+     | some root => asidReleaseRound ec root.asid (retireCarvedObject st x)
+     | none => retireCarvedObject st x) := by
+  have hS := clearRetiredChildren_objects_self st x
+  have hKind : ∀ (g : SystemState → SeLe4n.ObjId → Option KernelObject → Prop), True := fun _ => trivial
+  clear hKind
+  have hFr : (clearRetiredChildren st x).getFrame? x = st.getFrame? x := by
+    unfold SystemState.getFrame?; rw [hS]; cases st.objects[x]? with
+    | none => rfl
+    | some o => cases o <;> rfl
+  have hUt : ((clearRetiredChildren st x).getUntyped? x).isSome = (st.getUntyped? x).isSome := by
+    unfold SystemState.getUntyped?; rw [hS]; cases st.objects[x]? with
+    | none => rfl
+    | some o => cases o <;> rfl
+  have hVs : (clearRetiredChildren st x).getVSpaceRoot? x = st.getVSpaceRoot? x := by
+    unfold SystemState.getVSpaceRoot?; rw [hS]; cases st.objects[x]? with
+    | none => rfl
+    | some o => cases o <;> rfl
+  have hPt : (clearRetiredChildren st x).getPageTable? x = st.getPageTable? x := by
+    unfold SystemState.getPageTable?; rw [hS]; cases st.objects[x]? with
+    | none => rfl
+    | some o => cases o <;> rfl
+  have hEr : (clearRetiredChildren st x).objects.erase x = st.objects.erase x :=
+    RHTable.erase_mapValueAt _ _ _
+  rw [hVs]
+  have hR : retireCarvedObject (clearRetiredChildren st x) x = retireCarvedObject st x := by
+    unfold retireCarvedObject
+    rw [hFr, hUt, hVs, hPt, hEr]
+    split
+    · simp only [clearRetiredChildren]
+    · next hN =>
+      have hU : (st.getUntyped? x).isSome = false := by
+        simp only [Bool.or_eq_true, not_or] at hN
+        simpa using hN.1.1.2
+      unfold clearRetiredChildren
+      cases hx : st.objects.get? x with
+      | none => rw [RHTable.mapValueAt_of_get?_none hx]
+      | some v =>
+        have hNU : ∀ u, v ≠ .untyped u := by
+          intro u hv
+          unfold SystemState.getUntyped? at hU
+          rw [RHTable_getElem?_eq_get?, hx, hv] at hU
+          cases hU
+        rw [RHTable.mapValueAt_congr hx (G := id) (by
+          cases v with
+          | untyped u => exact absurd rfl (hNU u)
+          | _ => rfl), RHTable.mapValueAt_id]
+  rw [hR]
+
+/-- **The compiled `retireRecordedObject`**: when the object table is below its
+resize threshold, the recorder is not `x` and `x` does not record itself, `x`'s
+children are read, its record's list taken out (`clearRetiredChildren`), and the
+specification's reparent, adopt and erase follow.  The list then has no other
+reference, so the adopt rebuilds none of its cells (on an untyped with children
+the specification's adopt copied each record and its list cell, since `x`'s own
+record still held them).  Any other case takes the specification.  Proven equal
+(`retireRecordedObject_eq_impl`). -/
+def retireRecordedObjectImpl (executingCore : Concurrency.CoreId) (recorder : Nat)
+    (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
+  if decide (st.objects.size * 4 < st.objects.capacity * 3) &&
+      (recorder == 0 || SeLe4n.ObjId.ofNat (recorder - 1) != x) &&
+      !childListRecords (retiredChildren st x) x then
+    let kids := retiredChildren st x
+    let st0 := reparentChildren recorder kids (clearRetiredChildren st x)
+    let st1 := if recorder = 0 then st0
+      else adoptChildren st0 (SeLe4n.ObjId.ofNat (recorder - 1)) x kids
+    match st1.getVSpaceRoot? x with
+    | some root => asidReleaseRound executingCore root.asid (retireCarvedObject st1 x)
+    | none => retireCarvedObject st1 x
+  else retireRecordedObject executingCore recorder x st
+
+@[csimp] theorem retireRecordedObject_eq_impl :
+    @retireRecordedObject = @retireRecordedObjectImpl := by
+  funext ec recorder x st
+  unfold retireRecordedObjectImpl
+  split
+  · next hC =>
+    simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true', Bool.or_eq_true,
+      beq_iff_eq, bne_iff_ne, ne_eq] at hC
+    obtain ⟨⟨hSz, hW⟩, hK⟩ := hC
+    have hNo : st.objects.noResizeDue := by
+      unfold SeLe4n.Kernel.RobinHood.RHTable.noResizeDue; omega
+    obtain ⟨hRp, hNo1⟩ := reparentChildren_clearRetiredChildren recorder
+      (retiredChildren st x) st hK hNo
+    unfold retireRecordedObject retireUnrecord
+    dsimp only
+    rw [hRp]
+    by_cases h0 : recorder = 0
+    · simp only [h0, ↓reduceIte]
+      exact (retireCarved_clearRetiredChildren ec _ x).symm
+    · simp only [h0, ↓reduceIte]
+      have hW' : SeLe4n.ObjId.ofNat (recorder - 1) ≠ x := by
+        rcases hW with h | h
+        · exact absurd h h0
+        · exact h
+      unfold adoptChildren
+      rw [(storeUntypedWith_clearRetiredChildren _ _ hW' hNo1).1]
+      exact (retireCarved_clearRetiredChildren ec _ x).symm
+  · rfl
 
 /-- **WS-ZA ZA6.32: the retire of interrupt node `x`**, seL4's
 `deletedIRQHandler`: its line put at `IRQInactive` and masked

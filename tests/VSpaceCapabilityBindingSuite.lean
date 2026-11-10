@@ -79,7 +79,8 @@ because the defect lived in dispatch and only dispatch can witness it.
   records a carved object it is refused as the reset is.
 * §5f — **WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it
   made.**  `.vspaceMap` records the mapping on the capability; a copy carries
-  none; a capability whose mapping is live cannot map again; deleting a frame
+  none; a capability whose mapping is live maps again only at its own address, a
+  remap with the new rights (seL4's `Page_Map`); deleting a frame
   capability removes exactly the mapping it made (seL4's `finaliseCap` →
   `unmapPage`), with the retired non-finalising delete computed beside it; a
   record gone stale removes nothing — a different frame mapped since at the
@@ -1293,9 +1294,23 @@ private def runFrameFinaliseChecks : IO Unit := do
     assertBool "a copy carries no mapping record (seL4's `deriveCap`)"
       (recordAt st 12 == none &&
        (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 }).isSome)
-    assertBool "a capability whose mapping is live cannot map again (invalidCapability)"
-      (isErr .invalidCapability
+    -- seL4's `Page_Map` on a capability whose mapping is live: another
+    -- address is refused (`InvalidArgument`); its own address is a remap with
+    -- the new rights, the record unchanged.
+    assertBool "a capability whose mapping is live cannot map at another address (invalidArgument)"
+      (isErr .invalidArgument
         (dispatchSyscallAsCurrent (decodeOwnMap 0x61000 slotCarved permsRWUC) carveOwner Concurrency.bootCoreId st))
+    let va := SeLe4n.Testing.fixtureUserVAddr 0x60000
+    match dispatchSyscallAsCurrent (decodeOwnMap 0x60000 slotCarved permsRUC) carveOwner Concurrency.bootCoreId st with
+    | .error e => assertBool s!"a remap at the capability's own address succeeds (got {repr e})" false
+    | .ok ((), stR) =>
+      assertBool "the remap keeps the page, now read-only, recorded live at the same ASID and address"
+        (mappedPaddr stR carveAsid va == mappedPaddr st carveAsid va &&
+         (match resolveAsidRoot stR carveAsid with
+          | some (_, root) => (VSpaceRoot.lookup root va).map (fun p => p.2.write) == some false
+          | none => false) &&
+         (recordAt stR slotCarved).map (fun m => (m.asid, m.vaddr)) == some (carveAsid, va) &&
+         recordLive stR slotCarved)
     -- The copy maps the same frame a second time, and deleting the COPY removes
     -- exactly the mapping the copy made.
     match dispatchSyscallAsCurrent (decodeOwnMap 0x61000 12 permsRWUC) carveOwner Concurrency.bootCoreId st with

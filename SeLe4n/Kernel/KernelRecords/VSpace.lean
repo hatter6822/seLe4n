@@ -343,6 +343,16 @@ theorem vspaceMapFromFrameCap {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId}
   exact (RecordsFrame.storeObject (KernelRecords.objects_invExt hK) hS
     (by rw [(SystemState.getCNode?_eq_some_iff _ _ _).1 hC]; rfl) (fun _ => by simp)).preserves hK
 
+/-- **The VSpace map or remap**: a fresh map, or the unmap of the address the
+frame capability records followed by a fresh map from the state it leaves. -/
+theorem vspaceMapOrRemapFromFrameCap {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId}
+    {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}
+    (h : _root_.SeLe4n.Kernel.vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) :
+    RecordsStage st st' :=
+  vspaceMapOrRemapFromFrameCap_closed RecordsStage (fun _ _ h => vspaceMapFromFrameCap h)
+    (fun _ _ h => vspaceUnmapPageWithShootdownAndIcacheBroadcast h)
+    (fun _ _ _ h₁ h₂ => h₁.trans h₂) h
+
 end RecordsStage
 
 /-- **The instruction-page unify**: a cache operation, writing no object. -/

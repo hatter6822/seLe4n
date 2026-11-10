@@ -8,7 +8,7 @@
 -/
 
 import SeLe4n.Kernel.RefusalCarryingDispatch
-import SeLe4n.Kernel.VSpacePerform
+import SeLe4n.Kernel.VSpaceRemapPerform
 import SeLe4n.Kernel.IPC.CrossCore.SuspendAdmission
 
 /-!
@@ -132,7 +132,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             if !vspaceCapAuthorizesAsid cap args.asid st then
               .error .illegalAuthority
             else
-              vspaceMapFromFrameCap tid executingCore args st
+              vspaceMapOrRemapFromFrameCap tid executingCore args st
     | _ => .error .invalidCapability
   | .vspaceUnmap =>
     match cap.target with
@@ -724,9 +724,10 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
                 (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   -- WS-ZA ZA6.32: the bind reads the decode, the named capability's slot, its
-  -- notification and send right, the line's node and the node slot's plain
-  -- delete before any write, then empties the node slot and copies the
-  -- capability into it in place (`irqHandlerSetNotificationPerform`).
+  -- notification and send right, the line's node and the node slot's delete
+  -- (a plain one, or the final delete of a notification capability) before any
+  -- write, then empties the node slot and copies the capability into it in
+  -- place (`irqHandlerSetNotificationBindAt`).
   | .irqHandlerSetNotification =>
     match cap.target with
     | .irqHandler line =>
@@ -736,7 +737,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         resolveCallerCapSlotK tid args.notificationCPtr .write st (fun e => .error (e, st))
           (fun srcCnode srcSlot ncap _ =>
             RefusalCarrying.ofChecked (irqHandlerSetNotificationAdmitted st line srcCnode ncap)
-              (fun st => irqHandlerSetNotificationPerformAt line srcCnode srcSlot st)
+              (fun st => irqHandlerSetNotificationBindAt executingCore line srcCnode srcSlot ncap st)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   -- WS-ZA ZA6.32: the clear reads the line's node, then empties its slot by
@@ -876,10 +877,27 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         else
           resolveVSpaceMapFrameK tid args st (fun e => .error (e, st))
             (fun frameCnode frameSlot frameCap frame =>
-              RefusalCarrying.ofChecked (vspaceMapAdmittedAt st args frameCap frame rootId)
-                (fun st => vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
-                  args.perms rootId (frameCapObjId frameCap) frameCnode frameSlot st)
-                (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+              -- seL4's `Page_Map` on a capability whose mapping is in place:
+              -- every refusal read before any write, in seL4's order
+              -- (`vspaceMapOrRemapFromFrameCap_of_remapRefused`); admitted, the
+              -- unmap in place, then the map in place on the state it leaves
+              -- (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).
+              if capabilityMappingLive st frameCap then
+                match vspaceRemapRefusal st args frameCap frame with
+                | .error e => .error (e, st)
+                | .ok () =>
+                  if vspaceRemapInPlaceAt st args frameCap rootId then
+                    .ok ((), vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
+                      args.perms rootId (frameCapObjId frameCap) frameCnode frameSlot
+                      (vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st))
+                  else
+                    RefusalCarrying.ofChecked false (fun st => st)
+                      (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+              else
+                RefusalCarrying.ofChecked (vspaceMapAdmittedAt st args frameCap frame rootId)
+                  (fun st => vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
+                    args.perms rootId (frameCapObjId frameCap) frameCnode frameSlot st)
+                  (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .vspaceUnmap =>
     match cap.target with
@@ -888,6 +906,10 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .error e => .error (e, st)
       | .ok args =>
         if !vspaceCapAuthorizesAsid cap args.asid st then .error (.illegalAuthority, st)
+        -- An address nothing is mapped at is refused on the root's words
+        -- (`vspaceUnmapUnmappedAt`), before the unmap's wrappers run.
+        else if vspaceUnmapUnmappedAt st args.asid args.vaddr rootId then
+          .error (.translationFault, st)
         else
           RefusalCarrying.ofChecked (vspaceUnmapAdmittedAt st args.asid args.vaddr rootId)
             (fun st => vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st)
@@ -917,12 +939,16 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
               (fun st => pageTableMapPerformAt objId rootId args.vaddr st)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
+  -- The in-use refusal is read on the table's words (`pageTableUnmapInUseAt`),
+  -- so it builds no install record or slot.
   | .pageTableUnmap =>
     match cap.target with
     | .object objId =>
-      RefusalCarrying.ofChecked (pageTableUnmapAdmittedAt st objId)
-        (fun st => pageTableUnmapPerformAt objId st)
-        (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+      if pageTableUnmapInUseAt st objId then .error (.revocationRequired, st)
+      else
+        RefusalCarrying.ofChecked (pageTableUnmapAdmittedAt st objId)
+          (fun st => pageTableUnmapPerformAt objId st)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .untypedRetype =>
     match cap.target with
@@ -1470,16 +1496,35 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           rw [resolveVSpaceMapFrameK_eq]
           cases hRs : resolveVSpaceMapFrame tid args st with
           | error e =>
-            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, vspaceMapFromFrameCap,
-              hRs]
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu,
+              vspaceMapOrRemapFromFrameCap, hRs]
           | ok triple =>
             obtain ⟨frameSlot, frameCap, frame⟩ := triple
             dsimp only
-            apply RefusalCarrying.ofChecked_eq
-            intro hA
-            simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
-              vspaceMapFromFrameCap_of_admitted tid executingCore args st frameSlot frameCap frame
-                rootId hRs hA]
+            split
+            · next hLive =>
+              cases hRf : vspaceRemapRefusal st args frameCap frame with
+              | error e =>
+                simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
+                  ↓reduceIte, vspaceMapOrRemapFromFrameCap_of_remapRefused tid executingCore args st
+                    frameSlot frameCap frame e hRs hLive hRf]
+              | ok u =>
+                cases u
+                dsimp only
+                split
+                · next hIn =>
+                  simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu,
+                    Bool.false_eq_true, ↓reduceIte,
+                    vspaceMapOrRemapFromFrameCap_of_remapAdmitted tid executingCore args st
+                      frameSlot frameCap frame rootId hRs hLive hRf hIn]
+                · apply RefusalCarrying.ofChecked_eq
+                  intro h
+                  cases h
+            · apply RefusalCarrying.ofChecked_eq
+              intro hA
+              simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
+                vspaceMapOrRemapFromFrameCap_of_admitted tid executingCore args st frameSlot frameCap
+                  frame rootId hRs hA]
     all_goals rfl
   case vspaceUnmap =>
     cases target
@@ -1492,11 +1537,16 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         split
         · next hAu => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu]
         · next hAu =>
-          apply RefusalCarrying.ofChecked_eq
-          intro hA
-          simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
-            vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted executingCore args.asid
-              args.vaddr rootId st hA]
+          split
+          · next hU =>
+            simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
+              ↓reduceIte, vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_unmappedAt executingCore
+                args.asid args.vaddr rootId st hU]
+          · apply RefusalCarrying.ofChecked_eq
+            intro hA
+            simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
+              vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted executingCore args.asid
+                args.vaddr rootId st hA]
     all_goals rfl
   case vspaceUnifyInstruction =>
     cases target
@@ -1537,9 +1587,12 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     cases target
     case object objId =>
       dsimp only
-      apply RefusalCarrying.ofChecked_eq
-      intro hA
-      simp only [dispatchInvocationBy, pageTableUnmap_of_admitted objId st hA]
+      split
+      · next hU =>
+        simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, pageTableUnmap_of_inUseAt hU]
+      · apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [dispatchInvocationBy, pageTableUnmap_of_admitted objId st hA]
     all_goals rfl
   case untypedRetype =>
     cases target

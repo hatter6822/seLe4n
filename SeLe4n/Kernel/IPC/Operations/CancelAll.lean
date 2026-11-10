@@ -1703,6 +1703,49 @@ theorem releaseFinalRegistration_cases (target : Nat) (st : SystemState) :
       · exact .inl rfl
   · exact .inl rfl
 
+/-- The compiled `releaseFinalRegistration`: the endpoint's record cleared
+(`clearServiceRecord`, which returns any other state as it is), with no
+fallback holding the state.  The specification's refusal arm kept the state
+alive across the revoke, so the clear met a shared state and copied the object
+store's tables on each final delete of a registered endpoint.  Proven equal
+(`releaseFinalRegistration_eq_impl`). -/
+def releaseFinalRegistrationImpl (target : Nat) (st : SystemState) : SystemState :=
+  if target = 0 then st else clearServiceRecord st (SeLe4n.ObjId.ofNat (target - 1))
+
+@[csimp] theorem releaseFinalRegistration_eq_impl :
+    @releaseFinalRegistration = @releaseFinalRegistrationImpl := by
+  funext target st
+  unfold releaseFinalRegistration releaseFinalRegistrationImpl
+  split
+  · rfl
+  · have hClear : ∀ o, st.getObject? (SeLe4n.ObjId.ofNat (target - 1)) = o →
+        (∀ ep, o ≠ some (.endpoint ep) ∨ ep.serviceRegistered = false) →
+        clearServiceRecord st (SeLe4n.ObjId.ofNat (target - 1)) = st := by
+      intro o ho hN
+      unfold clearServiceRecord
+      split
+      · next ep h =>
+        rcases hN ep with hN | hN
+        · exact absurd (ho ▸ h) hN
+        · simp [hN]
+      · rfl
+    split
+    · next ep hEp =>
+      split
+      · next hC => exact (hClear _ hEp (fun e => by
+          by_cases he : e = ep
+          · exact .inr (he ▸ hC)
+          · exact .inl (fun h => he (by cases h; rfl)))).symm
+      · next hC =>
+        unfold revokeService
+        have hP : recordedRegistrationPresent st
+            (SeLe4n.ObjId.ofNat (ServiceId.ofNat (target - 1)).toNat) = true := by
+          unfold recordedRegistrationPresent
+          rw [ServiceId.toNat_ofNat, hEp]; exact hC
+        rw [if_pos hP, ServiceId.toNat_ofNat]
+    · next hN =>
+      exact (hClear _ rfl (fun e => .inl (hN e))).symm
+
 /-- **A property every successful revoke keeps holds after the release.** -/
 theorem releaseFinalRegistration_closed (P : SystemState → Prop)
     (hRev : ∀ (s s' : SystemState) (sid : ServiceId), P s → revokeService sid s = .ok ((), s') →

@@ -106,7 +106,7 @@ pub const SLOT_COUNT: usize = MAX_SMALL_OBJECT_SIZE / OBJECT_SIZE_DELTA;
 /// allocation number ([`Heap::allocation_sizes`]).  Above every reading the
 /// exerciser gates (a carve's cells), so a gated window is always recorded
 /// whole; a longer one reads as unrecorded, never as a partial list.
-pub const RECORDED_ALLOCATIONS: usize = 64;
+pub const RECORDED_ALLOCATIONS: usize = 128;
 /// The largest arena, in pages, the page map can describe: a run's page count
 /// shares its word with two tag bits.
 pub const MAX_PAGES: usize = 1 << 29;

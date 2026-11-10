@@ -770,7 +770,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqHandler line =>
       obtain ⟨_, _, -, hN⟩ := irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ hStep
-      obtain ⟨-, st1, -, -, -, hZ, hC | ⟨-, -, rfl⟩⟩ := irqHandlerSetNotification_ok_cases hN
+      obtain ⟨-, st1, -, -, -, hZ, hC | rfl⟩ := irqHandlerSetNotification_ok_cases hN
       · exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
           (cspaceCopy_runQueueStage hC)).2
       · exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
@@ -842,7 +842,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           split at hStep
           · cases hStep
           · refine readyKeptStage.of_stage ?_
-            exact vspaceMapFromFrameCap_runQueueStage hStep
+            exact vspaceMapOrRemapFromFrameCap_runQueueStage hStep
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
