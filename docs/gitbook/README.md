@@ -6,7 +6,7 @@ This GitBook is the long-form guide for seLe4n — a production-oriented microke
 
 ## Current project state
 - **Version:** 0.37.10 (Lean v4.28.0).
-- **Codebase metrics:** 616,576 production LoC across 617 Lean files, 89,046 test LoC across 70 suites, 23,571 proved declarations, zero `sorry` and zero `axiom`. Regenerate with `python3 scripts/report_current_state.py`.
+- **Codebase metrics:** 617,844 production LoC across 617 Lean files, 89,046 test LoC across 70 suites, 23,611 proved declarations, zero `sorry` and zero `axiom`. Regenerate with `python3 scripts/report_current_state.py`.
 - **Registered debt:** [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) — every deferred item, with an owner and a closure target.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.
