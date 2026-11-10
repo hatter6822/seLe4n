@@ -98,6 +98,24 @@ arguments are read as words and no record of them is built. -/
     vspaceUnmapAdmittedAt st args.asid args.vaddr rootId &&
     vspaceRemapChecks st args frameCap frame
 
+/-- **The remap's map half where its in-place checks fail**: the fresh mapping
+as specified, or — where it refuses — the state the unmap left.  Out of line and
+handed the arguments as words, so the record of them is built only here, on a
+path a well-formed store does not reach, and not on every map. -/
+@[noinline] def vspaceRemapMapFallback (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (frame : SeLe4n.CPtr)
+    (perms : PagePermissions) (st0 : SystemState) : SystemState :=
+  match vspaceMapFromFrameCap tid ec { asid, vaddr, frame, perms } st0 with
+  | .ok ((), s) => s
+  | .error _ => st0
+
+theorem vspaceRemapMapFallback_eq (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
+    (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st0 : SystemState) :
+    vspaceRemapMapFallback tid ec args.asid args.vaddr args.frame args.perms st0 =
+      match vspaceMapFromFrameCap tid ec args st0 with
+      | .ok ((), s) => s
+      | .error _ => st0 := rfl
+
 /-- **The remap's map half, on the state the unmap left**: the frame mapped in
 place (`vspaceMapPerformAt`) when its checks hold there; otherwise the fresh
 mapping as specified, or — where it refuses — the state the unmap left. -/
@@ -108,10 +126,7 @@ mapping as specified, or — where it refuses — the state the unmap left. -/
   if vspaceMapAdmittedAt st0 args frameCap frame rootId then
     vspaceMapPerformAt ec args.asid args.vaddr frame.base args.perms rootId
       (frameCapObjId frameCap) frameCnode frameSlot st0
-  else
-    match vspaceMapFromFrameCap tid ec args st0 with
-    | .ok ((), s) => s
-    | .error _ => st0
+  else vspaceRemapMapFallback tid ec args.asid args.vaddr args.frame args.perms st0
 
 /-- **A remap at another address space is refused**, before any write: the
 capability's mapping is in place in another ASID (seL4's `Page_Map`,
@@ -209,6 +224,7 @@ theorem vspaceMapOrRemapFromFrameCap_of_remapAdmitted (tid : SeLe4n.ThreadId)
     show _ = Except.ok ((), if vspaceMapAdmittedAt st0 args frameCap frame rootId = true then _ else _)
     rw [hM']
     simp only [Bool.false_eq_true, ↓reduceIte]
+    rw [vspaceRemapMapFallback_eq]
     cases hFr : vspaceMapFromFrameCap tid ec args st0 with
     | ok r => obtain ⟨⟨⟩, s⟩ := r; rfl
     | error e => simp only [hC, ↓reduceIte]
