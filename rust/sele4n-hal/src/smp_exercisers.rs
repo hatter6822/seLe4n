@@ -8636,8 +8636,8 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         false,
     ),
 ];
-/// A refused declassification (WS-ZA ZA6.35), unmeasured, so the refusal
-/// ledger has a slot for the audit reads to read: the boot domain's endpoint
+/// A refused declassification (WS-ZA ZA6.35), measured, and it gives the
+/// refusal ledger a slot for the audit reads to read: the boot domain's endpoint
 /// is in the caller's own domain, a flow the base lattice already permits,
 /// which `.declassify` refuses (`flowDenied`) and the seam records.
 #[cfg(feature = "hw_target")]
@@ -9088,7 +9088,7 @@ const BOUND_SIGNAL_SWAP: [RoundTrip; 3] = [
         [MOVE_CAP, 0, 0, 0],
     ),
 ];
-/// The root task's declassified signal refused at its second hop, unmeasured.
+/// The root task's declassified signal refused at its second hop, measured.
 #[cfg(feature = "hw_target")]
 const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     name: "declassified-signal-refused-at-receiver",
@@ -9193,8 +9193,8 @@ const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 6] = [
 ///   its slot read off the ledger's status first, its word checked to be the
 ///   low thread's id.
 ///
-/// Only the four deliveries and the read are measured; the setup, the switches,
-/// the refusal and the deletes that leave the slots empty again are not.
+/// The four deliveries, the refusal and the read are measured; the setup, the
+/// switches and the deletes that leave the slots empty again are not.
 ///
 /// One run (`which` names the first call); the caller masks the timer across
 /// it.
@@ -9238,10 +9238,8 @@ fn bound_declassified_signals(which: &str) -> bool {
             "the low thread's receive did not block",
         )
         || !unmeasured_all(&BOUND_SIGNAL_SWAP, "the notifications were not swapped")
-        || !unmeasured(
-            &DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER,
-            "the declassified signal was not refused at its receiver",
-        )
+        || heap_allocations_round_trip(&DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER, which)
+            != Some(true)
     {
         return false;
     }
@@ -9655,10 +9653,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                 return Some(false);
             }
         }
-        if !unmeasured(
-            &DECLASSIFICATION_REFUSAL,
-            "the declassification was not refused with flowDenied",
-        ) {
+        if heap_allocations_round_trip(&DECLASSIFICATION_REFUSAL, which) != Some(true) {
             return Some(false);
         }
         for step in AUDIT_SCENARIO.iter() {
