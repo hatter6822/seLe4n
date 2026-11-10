@@ -518,7 +518,7 @@ theorem irqHandlerSetNotificationFromCap_crossCoreNonInterference
   obtain ⟨_, _, -, hB⟩ := irqHandlerSetNotificationFromCap_ok tid executingCore line args? st st' hStep
   obtain ⟨_, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok_cases hB
   have hK : observableSlotsConfinedToCores st1 st' [] := by
-    rcases hC with hC | ⟨-, -, rfl⟩
+    rcases hC with hC | rfl
     · exact cspaceCopy_confinedToCores hC
     · exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
         (cspaceCopyPerform_scheduler _ _ _) (cspaceCopyPerform_machine _ _ _)

@@ -724,9 +724,10 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
                 (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   -- WS-ZA ZA6.32: the bind reads the decode, the named capability's slot, its
-  -- notification and send right, the line's node and the node slot's plain
-  -- delete before any write, then empties the node slot and copies the
-  -- capability into it in place (`irqHandlerSetNotificationPerform`).
+  -- notification and send right, the line's node and the node slot's delete
+  -- (a plain one, or the final delete of a notification capability) before any
+  -- write, then empties the node slot and copies the capability into it in
+  -- place (`irqHandlerSetNotificationBindAt`).
   | .irqHandlerSetNotification =>
     match cap.target with
     | .irqHandler line =>
@@ -736,7 +737,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         resolveCallerCapSlotK tid args.notificationCPtr .write st (fun e => .error (e, st))
           (fun srcCnode srcSlot ncap _ =>
             RefusalCarrying.ofChecked (irqHandlerSetNotificationAdmitted st line srcCnode ncap)
-              (fun st => irqHandlerSetNotificationPerformAt line srcCnode srcSlot st)
+              (fun st => irqHandlerSetNotificationBindAt executingCore line srcCnode srcSlot ncap st)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   -- WS-ZA ZA6.32: the clear reads the line's node, then empties its slot by

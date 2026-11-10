@@ -8027,7 +8027,8 @@ run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshCoreCaches_eq($|[ ({
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_copy($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_delete($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_ok_cases($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
-run_check "INVARIANT" rg -n -U '^            RefusalCarrying\.ofChecked \(irqHandlerSetNotificationAdmitted st line srcCnode ncap\)\n              \(fun st => irqHandlerSetNotificationPerformAt line srcCnode srcSlot st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '^            RefusalCarrying\.ofChecked \(irqHandlerSetNotificationAdmitted st line srcCnode ncap\)\n              \(fun st => irqHandlerSetNotificationBindAt executingCore line srcCnode srcSlot ncap st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_overFinal_copy($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
 run_check "INVARIANT" rg -n -U '^              RefusalCarrying\.ofChecked \(irqControlGetAdmittedAt dstCnode dstSlot args\.line st\)\n                \(fun st => irqControlGetPerformAt srcCnode srcSlot dstCnode dstSlot args\.line st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceCopyPerform_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshPhysicalWrites_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
