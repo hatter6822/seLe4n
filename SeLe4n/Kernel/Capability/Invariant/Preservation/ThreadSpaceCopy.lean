@@ -26,11 +26,12 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- A capability a slot holds in a state satisfying the bundle is reply-backed. -/
-theorem replyCapBacked_of_lookupSlotCap {st : SystemState} {src : SlotRef} {cap : Capability}
+/-- A capability a slot holds in a state satisfying the bundle names an object of
+the kind its target claims. -/
+theorem capTargetKindBacked_of_lookupSlotCap {st : SystemState} {src : SlotRef} {cap : Capability}
     (hInv : capabilityInvariantBundle st) (h : SystemState.lookupSlotCap st src = some cap) :
-    ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none :=
-  replyCapBacked_of_source_slot st src cap hInv
+    capTargetKindBackedAt st cap.target :=
+  capTargetKindBacked_of_source_slot st src cap hInv
     ((cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).2 h)
 
 /-- One key's untyped record is kept by a write that keeps the key's object up
@@ -82,7 +83,7 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st) (hT : st.getTcb? tid = some t)
     (hs : slot.toNat < 2) (hEmpty : t.spaceSlotCap slot = none)
     (hSrc : SystemState.lookupSlotCap st src = some cap)
-    (hBacked : ∀ rid, c.target = .replyCap rid → st.getReply? rid ≠ none)
+    (hBacked : capTargetKindBackedAt st c.target)
     (hTgt : c.target = cap.target)
     (hNotUt : ∀ u, cap.target = .object u → st.getUntyped? u = none) :
     capabilityInvariantBundle
@@ -140,15 +141,21 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     by_cases h : rid.toObjId = tid.toObjId
     · rw [h, hAt, hPre]
     · rw [hNe _ (Ne.symm h)]
-  have hRCPV1 : replyCapPointsToValidReply st1 := by
-    intro oid o s cap' rid hO hL hTg
-    rw [hReply]
+  have hCNode : ∀ cn : SeLe4n.ObjId, st1.getCNode? cn = st.getCNode? cn := by
+    intro cn
+    unfold SystemState.getCNode?
+    by_cases h : cn = tid.toObjId
+    · rw [h, hAt, hPre]
+    · rw [hNe _ (Ne.symm h)]
+  have hKind := capTargetKindBackedAt_congr hReply hCNode
+  have hRCPV1 : capTargetKindBacked st1 := by
+    intro oid o s cap' hO hL
     by_cases h : oid = tid.toObjId
     · rw [h, hAt] at hO; cases hO
       rcases TCB.spaceSlotCap_insertSpaceCap_back hL with rfl | hL'
-      · exact hBacked rid hTg
-      · exact hRCPV tid.toObjId (.tcb t) s cap' rid hPre hL' hTg
-    · rw [hNe _ (Ne.symm h)] at hO; exact hRCPV oid o s cap' rid hO hL hTg
+      · exact hKind _ hBacked
+      · exact hKind _ (hRCPV tid.toObjId (.tcb t) s cap' hPre hL')
+    · rw [hNe _ (Ne.symm h)] at hO; exact hKind _ (hRCPV oid o s cap' hO hL)
   have hL1 : st1.slotLinkAt = st.slotLinkAt := by
     refine SystemState.slotLinkAt_eq_of_links fun k => ?_
     by_cases h : k = tid.toObjId
@@ -195,7 +202,7 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     (SystemState.cdtAddChild_reach st1 src _ .copy) hObjInv1 ?_ hShape1
   · refine ⟨cspaceLookupSound_holds _, fun ref hM => ?_, ?_,
       cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 rfl, hObjInv1,
-      replyCapPointsToValidReply_of_objects_eq rfl hRCPV1⟩
+      capTargetKindBacked_of_objects_eq rfl hRCPV1⟩
     · rcases hM with ⟨e, he, hr⟩ | hr
       · simp only [CapDerivationTree.addEdge_edges, List.mem_cons] at he
         rcases he with rfl | he
@@ -243,8 +250,8 @@ theorem threadSlotCopied_preserves_capabilityInvariantBundle
     · intro u hu
       rw [threadSlotDeleted_getUntyped? hObjInv hT slot]
       exact hSrcNotUt cap (by rw [← threadSlotDeleted_lookupSlotCap hObjInv hT slot]; exact hCap) u hu
-    intro rid hTg
-    exact replyCapBacked_of_lookupSlotCap hD hCap rid (by simpa using hTg)
+    rw [TCB.spaceCopyOf_target]
+    exact capTargetKindBacked_of_lookupSlotCap hD hCap
 
 /-- A CNode slot lookup is the slot's capability. -/
 theorem slotCapAt_of_lookupSlotCap {st : SystemState} {r : SlotRef} {cap : Capability}

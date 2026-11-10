@@ -450,7 +450,8 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
       SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r' u → r = r')
     (hUncarved : ∀ u U, ist.state.getUntyped? u = some U → U.children = [])
     (hNamedU : ∀ r u, SystemState.namesAt ist.state.slotCapAt r u → ist.state.getUntyped? u ≠ none →
-      SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u) :
+      SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u)
+    (hKinds : capTargetKindBacked ist.state) :
     bootLinkedShape (linkBootCapabilities config ist) := by
   obtain ⟨hShape, ⟨hCdt, hF⟩, ⟨hA1, hA2⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQ⟩,
     hBindings⟩ := h
@@ -487,14 +488,14 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     SystemState.runQueueRefined_of_frame (runLinkOn_of_agree hA) (by rw [hSch'])
       (by rw [hSch']) hRun,
     ⟨by rw [hSch']; exact hNodup, fun tid hMem => ?_⟩,
-    ⟨fun ref hRef => ?_, hW, hL, fun r hr => ?_, ⟨P, hP⟩, fun r o hN => ?_,
+    ⟨fun ref hRef => ?_, hW, hL, ⟨fun r hr => ?_, ⟨P, hP⟩, fun r o hN => ?_,
     fun p c o hc hcN _ hpN => ?_, fun u p r hp hr => .inl (hU u p r hp hr),
     fun u p r hp hr hR => ?_, fun p c u U _ hc ht hu _ r hR hr => ?_,
     fun u x hx => (SystemState.CarvedFrom.not_of_childless (fun U h => hUncarved u U
       (hUt ▸ h)) hx).elim,
     fun u U h => by rw [hUncarved u U (hUt ▸ h)]; simp,
     fun u _ U _ h => by rw [hUncarved u U (hUt ▸ h)]; simp,
-    fun r u hr hu => ?_, fun Q hQ o => ?_⟩,
+    fun r u hr hu => ?_, fun Q hQ o => ?_⟩, capTargetKindBacked_of_agree hA hKinds⟩,
     .of_codes (.of_objectsAgreeOffDerivationLinks hA) hBindings⟩
   · have e := (hA oid).map_withoutLinks
     rw [hO] at e

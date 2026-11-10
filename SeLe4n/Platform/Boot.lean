@@ -1624,6 +1624,34 @@ def bootCapabilityDanglingBootError : String :=
   "boot: a capability names an object the configuration does not install " ++
     "(WS-ZA ZA5.4 part 18)"
 
+/-- **Whether a boot capability's target names a configured object of the kind
+    it claims**: a CNode-slot capability a configured CNode, a reply capability a
+    configured Reply; every other target claims no kind. -/
+@[inline] def bootCapTargetKindInstalled (objs : List ObjectEntry) (c : Capability) : Bool :=
+  match c.target with
+  | .cnodeSlot cn _ => objs.any fun e => decide (e.id = cn) && e.obj.objectType == .cnode
+  | .replyCap r => objs.any fun e => decide (e.id = r.toObjId) && e.obj.objectType == .reply
+  | _ => true
+
+/-- The tenth conjunct's companion — **every boot capability names an object of
+    the kind its target claims.**
+
+    The capability invariant holds every capability's target to its kind
+    (`capTargetKindBacked`): a CNode-slot capability names a CNode and a reply
+    capability a Reply.  The presence check above cannot say it — a CNode-slot
+    capability into a configured endpoint names an object the boot installs —
+    so the boot reads the configuration's objects for the kind.  The boot root
+    and the interrupt nodes are no capability's CNode at boot: the root is an
+    address space, and a node is reserved (`irqNodeIdsReserved`).  Not
+    attacker-reachable — the configuration is the integrator's. -/
+def bootCapabilitiesNameObjectsOfTheirKind (config : PlatformConfig) : Bool :=
+  (config.initialObjects.flatMap bootEntryCapabilities).all
+    (bootCapTargetKindInstalled config.initialObjects)
+
+/-- The kind conjunct's diagnostic. -/
+def bootCapabilityKindBootError : String :=
+  "boot: a CNode-slot or reply capability names a configured object of another kind"
+
 /-- **Whether a configured object binding names, by code, an entry that names it
     back**: `code = 0` (unbound), or some entry sits at `code - 1` and holds
     `back` as the opposite code (`KernelObject.bindingCodes`). -/
@@ -1707,7 +1735,7 @@ def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
     objectBudgetRespected config && declaredCoreCountInRange config &&
     untypedPlacementRespected config && bootRootTablesPlaced config &&
     untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&
-    bootCapabilitiesNameInstalledObjects config &&
+    bootCapabilitiesNameInstalledObjects config && bootCapabilitiesNameObjectsOfTheirKind config &&
     bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&
     irqNodeIdsReserved config
 
@@ -1768,6 +1796,12 @@ theorem PlatformConfig.wellFormed_bootCapabilitiesNameInstalledObjects (config :
     (h : config.wellFormed = true) : bootCapabilitiesNameInstalledObjects config = true := by
   simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
+/-- A well-formed config's CNode-slot and reply capabilities name configured
+    objects of their kind. -/
+theorem PlatformConfig.wellFormed_bootCapabilitiesNameObjectsOfTheirKind (config : PlatformConfig)
+    (h : config.wellFormed = true) : bootCapabilitiesNameObjectsOfTheirKind config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
 /-- **WS-ZA ZA5.4 part 27**: a well-formed config binds threads and
     notifications only in reciprocal pairs. -/
 theorem PlatformConfig.wellFormed_bootNotificationBindingsReciprocal (config : PlatformConfig)
@@ -1815,6 +1849,7 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError),
    (bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError),
    (bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError),
+   (bootCapabilitiesNameObjectsOfTheirKind config, bootCapabilityKindBootError),
    (bootNotificationBindingsReciprocal config, bootNotificationBindingBootError),
    (bootInterfacesWellFormed config, bootInterfaceBootError),
    (irqNodeIdsReserved config, irqNodeIdReservationBootError)]
@@ -4320,6 +4355,17 @@ theorem bootCapabilitiesNameInstalledObjects_withoutExtents (c : PlatformConfig)
   simp only [List.flatMap_map, bootEntryCapabilities_withoutUntypedExtent, List.any_map,
     Function.comp_def, ObjectEntry.withoutUntypedExtent_id]
 
+theorem bootCapabilitiesNameObjectsOfTheirKind_withoutExtents (c : PlatformConfig) :
+    bootCapabilitiesNameObjectsOfTheirKind c.withoutExtents =
+      bootCapabilitiesNameObjectsOfTheirKind c := by
+  have hT : ∀ e : ObjectEntry, e.withoutUntypedExtent.obj.objectType = e.obj.objectType := by
+    intro e; simp only [ObjectEntry.withoutUntypedExtent_obj]
+    cases e.obj <;> rfl
+  unfold bootCapabilitiesNameObjectsOfTheirKind bootCapTargetKindInstalled
+    PlatformConfig.withoutExtents
+  simp only [List.flatMap_map, bootEntryCapabilities_withoutUntypedExtent, List.any_map,
+    Function.comp_def, ObjectEntry.withoutUntypedExtent_id, hT]
+
 theorem bootIssuesNoInterruptHandler_withoutExtents (c : PlatformConfig) :
     bootIssuesNoInterruptHandler c.withoutExtents = bootIssuesNoInterruptHandler c := by
   unfold bootIssuesNoInterruptHandler PlatformConfig.withoutExtents
@@ -4413,6 +4459,8 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   rw [hEq, untypedCapabilitiesUnique_withoutExtents] at h8
   have h9 := bootCapabilitiesNameInstalledObjects_withoutExtents c
   rw [hEq, bootCapabilitiesNameInstalledObjects_withoutExtents] at h9
+  have hKinds := bootCapabilitiesNameObjectsOfTheirKind_withoutExtents c
+  rw [hEq, bootCapabilitiesNameObjectsOfTheirKind_withoutExtents] at hKinds
   have hRecip := bootNotificationBindingsReciprocal_withoutExtents c
   rw [hEq, bootNotificationBindingsReciprocal_withoutExtents] at hRecip
   unfold PlatformConfig.wellFormed at hWf ⊢
@@ -4424,10 +4472,11 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   rw [hEq, bootIssuesNoInterruptHandler_withoutExtents] at hLines
   have hNodes := irqNodeIdsReserved_withoutExtents c
   rw [hEq, irqNodeIdsReserved_withoutExtents] at hNodes
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w2, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, wLines⟩, w9⟩, wRecip⟩, wIf⟩, wNodes⟩ :=
-    hWf
-  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h2 ▸ w2, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
-    h8 ▸ w8⟩, hLines ▸ wLines⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩, hNodes ▸ wNodes⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w2, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, wLines⟩, w9⟩, wKinds⟩, wRecip⟩, wIf⟩,
+    wNodes⟩ := hWf
+  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h2 ▸ w2, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
+    h8 ▸ w8⟩, hLines ▸ wLines⟩, h9 ▸ w9⟩, hKinds ▸ wKinds⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩,
+    hNodes ▸ wNodes⟩
 
 /-- PR #889 review round 3: the idle store over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
@@ -5775,9 +5824,12 @@ def bootQuiescentFields (st : SystemState) : Prop :=
 /-- **WS-ZA ZA5.4**: what the proof-layer bundle reads of a booted state's
     derivation tree — every slot it names holds a capability, it is acyclic,
     the slots' links spell it — and its shape over the slots: every slot
-    holding a capability is in it, and it has a preorder (`CapTreeShape`). -/
+    holding a capability is in it, and it has a preorder (`CapTreeShape`); and
+    the capabilities it orders name objects of the kinds their targets claim
+    (`capTargetKindBacked`). -/
 def bootDerivationTreeSound (st : SystemState) : Prop :=
-  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ st.CapTreeShape
+  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ st.CapTreeShape ∧
+    capTargetKindBacked st
 
 /-- The empty tree, over objects that hold no link, agrees with their links. -/
 theorem cdtLinksAgree_of_bootEmpty {st : SystemState}
@@ -5833,7 +5885,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hRefill : ist.state.refillsSound) :
     Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
-  obtain ⟨hComp, hAcyc, hLinks, hTreeShape⟩ := hTree
+  obtain ⟨hComp, hAcyc, hLinks, hTreeShape, hKinds⟩ := hTree
   have hAllTables := ist.hAllTables
   have hBS := hShape
   have h1 := hSched
@@ -5842,7 +5894,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     -- The per-CNode `slotsUnique` and slot-count invariants are carried
     -- structurally (`UniqueSlotMap`, the fixed slot array), so neither is a
     -- conjunct of this bundle.
-    refine ⟨?_, ?_, ?_, ?_, hAllTables.objects.1, ?_, hLinks, hTreeShape⟩
+    refine ⟨?_, ?_, ?_, ?_, hAllTables.objects.1, hKinds, hLinks, hTreeShape⟩
     · exact cspaceLookupSound_holds _
     · exact hComp
     · exact hAcyc
@@ -5850,15 +5902,6 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       intro cnodeId cn hObj
       have hCN := (hBS cnodeId _ hObj).2.2.1 cn rfl
       exact ⟨hCN.1, hCN.2.1⟩
-    · -- replyCapPointsToValidReply: boot CNodes hold no reply caps (`bootSafeObject`),
-      -- so the reply-cap hypothesis is contradicted and the conjunct is vacuous.
-      intro oid o slot cap rid hObj hLookupSlot hTgt
-      cases o with
-      | cnode cn => exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2 slot cap rid hLookupSlot)
-      | tcb t =>
-        exact absurd hTgt
-          (((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.2.1 slot cap rid hLookupSlot)
-      | _ => simp [KernelObject.slotCap] at hLookupSlot
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle ist.state :=
     ist.hLifecycleConsistent
@@ -8016,6 +8059,54 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive
         exact ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_bootVSpaceRoot_present cores config ist
           h v hR, SystemState.irqNodeIssued_of_not_node _
             (irqNodeIdsReserved_bootVSpaceRoot (config.wellFormed_irqNodeIdsReserved hWf) hR)⟩
+
+/-- **Every capability the idle-storing boot installs names an object of the
+    kind its target claims** — the capability invariant's `capTargetKindBacked`
+    at boot.  A capability is a configured object's, so one of the
+    configuration's boot capabilities, which the configuration check holds to a
+    configured object of its kind (`bootCapabilitiesNameObjectsOfTheirKind`); the
+    boot installs each configured object as given. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capTargetKindBacked
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    capTargetKindBacked ist.state := by
+  intro oid obj slot c hO hc
+  obtain ⟨e, he, -, hObj⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
+    cores config ist h oid obj hO slot (by rw [hc]; exact Option.some_ne_none _)
+  have hMem := mem_bootEntryCapabilities_of_slotCap (e := e) (s := slot) (by rw [hObj]; exact hc)
+  have hWf : config.wellFormed = true := by
+    cases hChecked : bootFromPlatformChecked config with
+    | error err =>
+      rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config err hChecked] at h
+      cases h
+    | ok base => exact (bootFromPlatformChecked_ok_shape config base hChecked).1
+  have hChk := config.wellFormed_bootCapabilitiesNameObjectsOfTheirKind hWf
+  unfold bootCapabilitiesNameObjectsOfTheirKind at hChk
+  have hC := List.all_eq_true.mp hChk c (List.mem_flatMap.mpr ⟨e, he, hMem⟩)
+  unfold bootCapTargetKindInstalled at hC
+  -- a configured object of the claimed kind sits at the named id
+  have hInst : ∀ (k : SeLe4n.ObjId) (t : KernelObjectType),
+      (config.initialObjects.any fun e => decide (e.id = k) && e.obj.objectType == t) = true →
+      ∃ o, ist.state.objects[k]? = some o ∧ o.objectType = t := by
+    intro k t hA
+    simp only [List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hA
+    obtain ⟨e', he', rfl, hT⟩ := hA
+    exact ⟨e'.obj, bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem cores config ist h
+      e' he', hT⟩
+  cases hT : c.target with
+  | cnodeSlot cn _ =>
+    rw [hT] at hC
+    obtain ⟨o, hO', hK⟩ := hInst cn .cnode hC
+    show ist.state.getCNode? cn ≠ none
+    unfold SystemState.getCNode?; rw [hO']
+    cases o <;> simp_all [KernelObject.objectType]
+  | replyCap r =>
+    rw [hT] at hC
+    obtain ⟨o, hO', hK⟩ := hInst r.toObjId .reply hC
+    show ist.state.getReply? r ≠ none
+    unfold SystemState.getReply?; rw [hO']
+    cases o <;> simp_all [KernelObject.objectType]
+  | _ => trivial
 
 /-- **WS-ZA ZA5.4 part 19**: **every untyped the idle-storing boot holds is a
     configured untyped at its id** — the binding's root and the idle threads

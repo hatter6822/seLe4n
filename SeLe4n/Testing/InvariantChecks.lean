@@ -295,7 +295,13 @@ capability pointing at an object of the wrong kind is not backed *for the purpos
 this check states*, and reporting it as backed would be the check agreeing with a
 dangling descent.  No fixture in the tree installs a `.cnodeSlot` capability whose
 target is a non-CNode, so the discriminating case is unexercised; the arm is
-stated this way because it is what the claim means, not because a test drove it. -/
+stated this way because it is what the claim means, not because a test drove it.
+
+Every arm is a theorem of any state the capability bundle holds in: the `.object`
+arm is `capabilityInvariantBundle_objectCapsBacked` (the tree shape's `live`), and
+the `.cnodeSlot` and `.replyCap` arms are `capTargetKindBacked`, the bundle's 6th
+conjunct (`capTargetKindBacked.cnodeSlot`, `capTargetKindBacked.reply`).  The check
+stays because it runs on hand-built fixture states, which no theorem reaches. -/
 private def slotTargetBacked (st : SystemState) (cap : Capability) : Bool :=
   match cap.target with
   -- Kind-agnostic by intent: the claim is that *some* object backs

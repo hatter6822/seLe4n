@@ -591,7 +591,7 @@ theorem capabilityInvariantBundle_of_components
     (hAcyclic : cdtAcyclicity st)
     (hDepth : cspaceDepthConsistent st)
     (hObjInv : st.objects.invExt)
-    (hRCPV : replyCapPointsToValidReply st)
+    (hRCPV : capTargetKindBacked st)
     (hLinks : cdtLinksAgree st)
     (hShape : SystemState.CapTreeShape st) :
     capabilityInvariantBundle st :=
@@ -610,13 +610,14 @@ step owed a fresh forty-line case analysis over predicates it does not touch.
 The frame states the read set once, and it is smaller than the bundle's
 quantifiers suggest.  `cspaceLookupSound` is structural
 (`cspaceLookupSound_holds`), so it needs nothing.  Two conjuncts
-(`cspaceDepthConsistent` and the CNode half of
-`replyCapPointsToValidReply`) read **CNodes** and are transported **backward** —
+(`cspaceDepthConsistent` and the slot reading of
+`capTargetKindBacked`) read **CNodes** and are transported **backward** —
 a post-state CNode must be a pre-state CNode, which is exactly what a store at a
 TCB key gives.  `cdtCompleteness` reads the CDT and asks that every slot it
 names hold a capability in a live CNode, which is **forward**: a pre-state CNode
 must still be there, unchanged, which a store at a TCB key also gives.  `cdtAcyclicity` reads `st.cdt` alone.  And the Reply half of
-`replyCapPointsToValidReply` asks that a Reply still resolve, which is forward.
+`capTargetKindBacked` asks that a Reply and a CNode a capability names still
+resolve, which is forward.
 
 So a step frames the bundle when it (a) keeps the CDT, (b) introduces
 no CNode that was not one, (c) keeps every CNode it had, and (d) removes no
@@ -676,10 +677,17 @@ theorem capabilityBundleOffLinks_of_frame {st st' : SystemState}
     exact ⟨o', hO', by rw [hE]; exact hL⟩
   · unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
   · exact fun oid cn hCn => hDepth oid cn (hCnode oid cn hCn)
-  · intro oid o' slot cap rid hO' hLook hTgt
+  · intro oid o' slot cap hO' hLook
     obtain ⟨o, hO, hE⟩ := SystemState.slotCap_back_of_slots (hCn oid) (hTcb oid) hO'
       (by rw [hLook]; exact Option.some_ne_none _)
-    exact hReply rid (hRCPV oid o slot cap rid hO (by rw [hE]; exact hLook) hTgt)
+    exact capTargetKindBackedAt_mono hReply
+      (fun cn hC => by
+        cases e : st.getCNode? cn with
+        | none => exact absurd e hC
+        | some c =>
+          have := hCnodeFwd cn c ((SystemState.getCNode?_eq_some_iff st cn c).mp e)
+          rw [(SystemState.getCNode?_eq_some_iff st' cn c).mpr this]; simp)
+      _ (hRCPV oid o slot cap hO (by rw [hE]; exact hLook))
 
 theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     (h : capabilityInvariantBundle st)
@@ -730,12 +738,14 @@ theorem cdtCompleteness_of_agree {st st' : SystemState}
     (h : cdtCompleteness st) : cdtCompleteness st' := fun ref hM =>
   cdtCompletenessOff_of_agree (gone := fun _ => False) hA hCdt (h.off _) ref hM id
 
-theorem replyCapPointsToValidReply_of_agree {st st' : SystemState}
-    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : replyCapPointsToValidReply st) :
-    replyCapPointsToValidReply st' := fun oid o' slot cap rid hO hL hT => by
+theorem capTargetKindBacked_of_agree {st st' : SystemState}
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : capTargetKindBacked st) :
+    capTargetKindBacked st' := fun oid o' slot cap hO hL => by
   obtain ⟨o, hc, hS, -⟩ := hA.obj_slots_back hO
-  rw [hA.getReply? rid]
-  exact h oid o slot cap rid hc (by rw [← hS]; exact hL) hT
+  exact capTargetKindBackedAt_mono (fun rid h => by rw [hA.getReply? rid]; exact h)
+    (fun cn h => by
+      rw [← Option.isSome_iff_ne_none, hA.getCNode?_isSome]; exact Option.isSome_iff_ne_none.mpr h)
+    _ (h oid o slot cap hc (by rw [← hS]; exact hL))
 
 /-- A step that keeps the tree and changes objects only in their CNodes' links
 keeps every conjunct of the bundle less the links and the shape. -/
@@ -746,7 +756,7 @@ theorem capabilityBundleOffLinks_of_agree {st st' : SystemState}
     capabilityBundleOffLinks st' := by
   obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
   refine ⟨cspaceLookupSound_holds st', cdtCompleteness_of_agree hA hCdt hComp, ?_,
-    cspaceDepthConsistent_of_agree hA hDepth, hObjInv, replyCapPointsToValidReply_of_agree hA hRCPV⟩
+    cspaceDepthConsistent_of_agree hA hDepth, hObjInv, capTargetKindBacked_of_agree hA hRCPV⟩
   unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
 
 /-- **A run of link writes keeps the bundle off (b) at a source** when its links
@@ -771,7 +781,7 @@ theorem capabilityInvariantBundle_of_agree {st st' : SystemState}
   refine capabilityInvariantBundle_of_components st'
     (cdtCompleteness_of_agree hA hCdt hComp)
     ?_ (cspaceDepthConsistent_of_agree hA hDepth) hObjInv
-    (replyCapPointsToValidReply_of_agree hA hRCPV) hLinks
+    (capTargetKindBacked_of_agree hA hRCPV) hLinks
     (hShape.of_frame (.of_agree hA hCdt))
   unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
 

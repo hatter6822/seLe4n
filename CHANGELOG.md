@@ -1,3 +1,39 @@
+## v0.37.13 — every capability names an object of its kind
+
+A read-only audit of every transition that removes an object, or replaces it
+with one of another kind, found no path that leaves a dangling `.object`
+capability and no in-place kind change under a live capability.  This version
+states the result as a theorem and widens the capability bundle's reply
+conjunct to every kind-typed target.  Compiled code is unchanged.
+
+- **`objectCapsBacked`** (`SeLe4n/Kernel/Capability/Invariant/Defs.lean`):
+  every `.object` capability held in any slot names an installed object.
+  `capabilityInvariantBundle_objectCapsBacked` derives it from the tree shape's
+  `live` field with no new conjunct. `capabilityInvariantBundle.namedObjectPresent`
+  is the general form over `Capability.namedObject`.
+- **`capTargetKindBacked`** replaces `replyCapPointsToValidReply` as the
+  bundle's sixth conjunct: a `.replyCap` names a Reply and a `.cnodeSlot`
+  names a CNode.  `replyCapPointsToValidReply` stays as the derived reply half
+  (`capTargetKindBacked.reply`), so its consumers are unchanged.  Every
+  preservation proof that carried the reply conjunct now carries the
+  generalised one.
+- **The IPC transfer needs no backing premise.**
+  `ipcTransferSingleCap_preserves_capabilityInvariantBundle` and
+  `ipcUnwrapCaps_preserves_capabilityInvariantBundle` lose their `hCapBacked`
+  hypothesis. Callers could not satisfy it in general.  It is now read off the
+  source slot.
+- **Boot**: a new `wellFormed` conjunct, `bootCapabilitiesNameObjectsOfTheirKind`
+  (diagnostic `bootCapabilityKindBootError`), refuses a configured capability
+  whose target is not of its kind.  `bootDerivationTreeSound` carries
+  `capTargetKindBacked` to the bundle through the idle boot, the initial
+  threads and the IRQ nodes.
+- **Tests**: `tests/SmpIdleSuite.lean` refuses a slot capability into an
+  installed non-CNode.  `slotTargetBacked` is kept as the oracle for
+  hand-built fixtures, and its docstring now cites the theorems.
+- **Debt**: a new `docs/REGISTERED_DEBT.md` §C row covers dispatch-wide
+  `capabilityInvariantBundle` preservation.  Its obligations include per-step
+  kind stability of `.object` targets, which is a two-state property.
+
 ## v0.37.11 — IPC and scheduler ordering coverage, and the reply-receive donation
 
 The coverage audit's IPC and scheduler items (13, 14, 17, 18, 19 and 22) each

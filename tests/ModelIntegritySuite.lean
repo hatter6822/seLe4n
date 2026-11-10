@@ -950,8 +950,9 @@ def call_without_reply_object_fails_closed_no_unanswerable_block : IO Unit := do
           ((stRecv.getTcb? caller).any (fun t => decide (t.ipcState = .ready)))
     | .ok _ => throw <| IO.userError "Call with no server reply object must be rejected"
 
-/-- WS-SM SM6.D (PR #822 review, Phase H #1.a): runtime witness for the new
-`replyCapPointsToValidReply` conjunct of `capabilityInvariantBundle`.  The invariant states that
+/-- WS-SM SM6.D (PR #822 review, Phase H #1.a): runtime witness for
+`replyCapPointsToValidReply`, the reply half of `capTargetKindBacked` (the 6th conjunct of
+`capabilityInvariantBundle`).  The invariant states that
 a reply cap held in a CNode is *backed* — its `ReplyId` resolves through `getReply?` to a live
 Reply object — and forbids a dangling reply cap.  This test exhibits both sides so the invariant
 carries genuine content: a CNode reply cap pointing at an allocated Reply resolves (`isSome`),

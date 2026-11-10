@@ -1077,6 +1077,18 @@ private def runBootCapabilityLiveChecks : IO Unit := do
   assertBool "NEGATIVE: a slot capability into a CNode the boot does not install is refused"
     (danglingSlot.wellFormed == false &&
       SeLe4n.Platform.Boot.bootCapabilitiesNameInstalledObjects danglingSlot == false)
+  -- A slot capability into an installed object that is not a CNode names an object
+  -- the boot installs, so the presence check passes it; the kind check refuses it.
+  let wrongKindSlot := withSlots
+    [(SeLe4n.Slot.ofNat 0, { target := .cnodeSlot utId (SeLe4n.Slot.ofNat 0), rights })]
+  assertBool "NEGATIVE: a slot capability into an installed non-CNode is refused by its kind"
+    (wrongKindSlot.wellFormed == false &&
+      SeLe4n.Platform.Boot.bootCapabilitiesNameInstalledObjects wrongKindSlot == true &&
+      SeLe4n.Platform.Boot.bootCapabilitiesNameObjectsOfTheirKind wrongKindSlot == false &&
+      SeLe4n.Platform.Boot.wellFormedDiagnostic wrongKindSlot ==
+        SeLe4n.Platform.Boot.bootCapabilityKindBootError)
+  assertBool "CONTROL: the slot capability into the configured CNode passes the kind check"
+    (SeLe4n.Platform.Boot.bootCapabilitiesNameObjectsOfTheirKind live == true)
   assertBool "...and the refusal names the dangling capability, not another conjunct"
     (SeLe4n.Platform.Boot.wellFormedDiagnostic dangling ==
       SeLe4n.Platform.Boot.bootCapabilityDanglingBootError)

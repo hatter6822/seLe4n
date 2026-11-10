@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.11` (`lakefile.toml`) |
+| **Package version** | `0.37.13` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 620,860 across 620 Lean files |
-| **Test LoC** | 89,034 across 70 Lean test suites |
-| **Proved declarations** | 23,664 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 621,243 across 620 Lean files |
+| **Test LoC** | 89,047 across 70 Lean test suites |
+| **Proved declarations** | 23,682 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4885,6 +4885,27 @@ install — a configured object or the boot VSpace root — as the tenth
 `wellFormed` conjunct (`bootCapabilitiesNameInstalledObjects`, diagnostic
 `bootCapabilityDanglingBootError`), so `live` holds
 (`bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive`).
+
+**Every capability names an object of its kind** (`v0.37.13`).  `live` gives
+every `.object` capability an installed target: `capabilityInvariantBundle_objectCapsBacked`
+(`SeLe4n/Kernel/Capability/Invariant/Defs.lean`) states `objectCapsBacked` (a
+capability `cap` held in any slot with `cap.target = .object x` has
+`st.objects[x]? ≠ none`) and derives it from the tree shape, with no further
+conjunct; `capabilityInvariantBundle.namedObjectPresent` is the general form
+over every target `Capability.namedObject` reads.  The bundle's sixth conjunct,
+`capTargetKindBacked`, says the target of a kind-typed capability is of that
+kind: a `.replyCap` names a Reply and a `.cnodeSlot` names a CNode.  It
+generalises the reply-only `replyCapPointsToValidReply`, which is now its
+derived reply half (`capTargetKindBacked.reply`).  Every slot write, the IPC
+transfer (whose capability's target is read from its source slot, so the
+transfer needs no backing premise), the space copy, the carve, the delete and
+the revocation keep it; the boot establishes it through the eleventh
+`wellFormed` conjunct, `bootCapabilitiesNameObjectsOfTheirKind` (diagnostic
+`bootCapabilityKindBootError`), which reads each configured target's kind off
+the configured store, and `bootDerivationTreeSound` carries it to the bundle.
+A capability carries no kind tag, so an `.object` capability keeping its
+target's kind across a step is a two-state property; it is an obligation of the
+dispatch-wide capability-bundle row of `docs/REGISTERED_DEBT.md` §C.
 
 **The untyped chains and descendants** (`v0.36.130`).  The tree shape also
 reads the store's untyped records (`SystemState.getUntyped?`) and holds seL4's
@@ -10849,7 +10870,8 @@ linked boot is the instance of one argument, `proofLayerInvariantBundle_of_bootS
 boot-safe configured object, the binding's VSpace root read per mapping, or an
 enqueued idle TCB, read off its derivation links), the quiescent fields are
 their defaults (`bootQuiescentFieldsOffCdt`), the derivation tree is sound
-(`bootDerivationTreeSound`: the linked tree, every capability-holding slot in
+(`bootDerivationTreeSound`: the linked tree, every capability's target of its
+kind (`capTargetKindBacked`), every capability-holding slot in
 it — the linking walks every configured slot, and every slot holding a
 capability is one, `bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed`),
 the ASID table is consistent with the roots — each install registers its
@@ -10866,7 +10888,7 @@ Proving it found a gap in the checked boot itself: the runtime CNode check
 did not look at slot contents, so a configuration whose CNode held a reply
 capability — which can only dangle at boot — or an out-of-range badge was
 accepted, and the state it installed violated `replyCapPointsToValidReply`
-and `capabilityBadgesWellFormed`.  `bootSafeCapCheck` now refuses both.
+(now the reply half of `capTargetKindBacked`) and `capabilityBadgesWellFormed`.  `bootSafeCapCheck` now refuses both.
 
 The checked boot path `bootFromPlatformChecked` validates per-object
 well-formedness (uniqueness via `wellFormed`) AND structural boot safety
