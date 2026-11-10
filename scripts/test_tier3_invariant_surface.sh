@@ -3995,10 +3995,19 @@ run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?
 run_check "INVARIANT" rg -n '^  if perms\.write && !frameCap\.hasRight \.write then \.error \.illegalAuthority$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then\n    \.error \.policyDenied$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*executingCore args\.asid args\.vaddr frame\.base perms st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^              vspaceMapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^              vspaceMapOrRemapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
+# seL4's Page_Map remap: a live mapping on the frame capability is remapped
+# only at the ASID and address it records — a different ASID is refused as an
+# invalid capability, a different address as an invalid argument.
+run_check "INVARIANT" rg -n '^def vspaceMapOrRemapFromFrameCap \(tid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapOrRemapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*        if frameCap\.mapAsid != args\.asid then \.error \.invalidCapability\n        else if frameCap\.mapVaddr != args\.vaddr then \.error \.invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_of_remapAdmitted($|[ ({:\[\]])' SeLe4n/Kernel/VSpaceRemapPerform.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmap_preserves_teardownWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTeardownClears.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_requires_frame_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_maps_frame_base($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -n 'decodeVSpaceMapArgsChecked' SeLe4n tests
 run_negative_check "INVARIANT" rg -n 'lockKind_ne_page' SeLe4n tests
 run_negative_check "INVARIANT" rg -n 'args\.paddr|paddr := PAddr\.ofNat r2' SeLe4n/Kernel

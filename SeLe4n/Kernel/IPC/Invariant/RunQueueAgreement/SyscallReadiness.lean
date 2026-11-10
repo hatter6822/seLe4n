@@ -842,7 +842,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           split at hStep
           · cases hStep
           · refine readyKeptStage.of_stage ?_
-            exact vspaceMapFromFrameCap_runQueueStage hStep
+            exact vspaceMapOrRemapFromFrameCap_runQueueStage hStep
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

@@ -253,6 +253,47 @@ theorem unmapPageState_wellFormed {ec : Concurrency.CoreId} {asid : SeLe4n.ASID}
   have := resolveAsidRoot_of_root hW' hObj'
   rwa [hAsid, hAsidR] at this
 
+/-- **The unmap the `.vspaceUnmap` arm runs succeeds only as `unmapPageState`**:
+the ASID resolves, its root maps the address, and the state it leaves is the
+teardown's one-page unmap. -/
+theorem vspaceUnmap_ok_unmapPageState {ec : Concurrency.CoreId} {asid : SeLe4n.ASID}
+    {vaddr : SeLe4n.VAddr} {st st' : SystemState}
+    (h : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
+      = .ok ((), st')) :
+    ∃ rid r r', Architecture.resolveAsidRoot st asid = some (rid, r) ∧
+      r.unmapPage vaddr = some r' ∧ st' = unmapPageState ec asid vaddr st := by
+  cases hR : Architecture.resolveAsidRoot st asid with
+  | none =>
+    exfalso
+    unfold Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
+      Architecture.withIcacheBroadcast Architecture.vspaceUnmapPageWithShootdownPerCore
+      Architecture.vspaceUnmapPageWithShootdown Architecture.vspaceUnmapPageWithFlush
+      Architecture.vspaceUnmapPage at h
+    simp [hR] at h
+  | some p =>
+    obtain ⟨rid, r⟩ := p
+    cases hU : r.unmapPage vaddr with
+    | none =>
+      exfalso
+      unfold Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
+        Architecture.withIcacheBroadcast Architecture.vspaceUnmapPageWithShootdownPerCore
+        Architecture.vspaceUnmapPageWithShootdown Architecture.vspaceUnmapPageWithFlush
+        Architecture.vspaceUnmapPage at h
+      simp [hR, hU] at h
+    | some r' =>
+      rw [vspaceUnmap_eq_unmapPageState ec asid vaddr st rid r r' hR hU] at h
+      refine ⟨rid, r, r', rfl, hU, ?_⟩
+      exact (Prod.mk.inj (Except.ok.inj h)).2.symm
+
+/-- **The unmap keeps the state well formed.** -/
+theorem vspaceUnmap_preserves_teardownWellFormed {ec : Concurrency.CoreId}
+    {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {st st' : SystemState}
+    (hW : teardownWellFormed st)
+    (h : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
+      = .ok ((), st')) : teardownWellFormed st' := by
+  obtain ⟨_, _, _, hR, hU, rfl⟩ := vspaceUnmap_ok_unmapPageState h
+  exact (unmapPageState_wellFormed hW hR hU).1
+
 /-- **The page an unmap names is not live after it.** -/
 theorem unmapPageState_clears {ec : Concurrency.CoreId} {st : SystemState} {p : MappedPage}
     {rid : SeLe4n.ObjId} {r r' : VSpaceRoot} (hW : teardownWellFormed st)

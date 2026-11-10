@@ -355,16 +355,18 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterferen
     (vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores executingCore asid
       vaddr paddr perms st st' hStep) hShared
 
-/-- **WS-BP BP7.1**: the live `.vspaceMap` arm, cross-core — a frame mapping is
-invisible on every core, stated at the definition the arm runs. -/
-theorem vspaceMapFromFrameCap_crossCoreNonInterference
+/-- **WS-BP BP7.1**: the live `.vspaceMap` arm, cross-core — a frame mapping, or
+a remap of the address the frame capability records (the unmap of that address
+followed by the fresh mapping), is invisible on every core, stated at the
+definition the arm runs. -/
+theorem vspaceMapOrRemapFromFrameCap_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState) (c : CoreId)
-    (hStep : vspaceMapFromFrameCap tid executingCore args st = .ok ((), st'))
+    (hStep : vspaceMapOrRemapFromFrameCap tid executingCore args st = .ok ((), st'))
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer (by simp)
-    (vspaceMapFromFrameCap_confinedToCores tid executingCore args st st' hStep) hShared
+    (vspaceMapOrRemapFromFrameCap_confinedToCores tid executingCore args st st' hStep) hShared
 
 /-- SM8.B.3 (**the live `.vspaceUnmap` arm, cross-core**): an unmap is invisible
 on **every** core — the strongest form of the cross-core statement, and the
@@ -1473,7 +1475,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .setPriorityDispatch => niName! setPriorityOnCore_crossCoreNonInterference
   | .setMCPriorityDispatch => niName! setMCPriorityOnCore_crossCoreNonInterference
   | .vspaceMapDispatch =>
-      niName! vspaceMapFromFrameCap_crossCoreNonInterference
+      niName! vspaceMapOrRemapFromFrameCap_crossCoreNonInterference
   | .vspaceUnmapDispatch =>
       niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
   | .untypedResetDispatch => niName! untypedResetFromCap_crossCoreNonInterference

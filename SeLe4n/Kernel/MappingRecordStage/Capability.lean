@@ -159,6 +159,20 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage {ec : Concur
     fun _ hL => vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded
       ec asid vaddr st st' hW hL h
 
+/-- **The live `.vspaceMap` arm, map or remap, keeps the mappings recorded**: a
+remap is the unmap of the address the frame capability records, which keeps the
+state well formed, followed by a fresh mapping from the state it leaves. -/
+theorem vspaceMapOrRemapFromFrameCap_mappingStage {tid : SeLe4n.ThreadId}
+    {ec : Concurrency.CoreId} {args : Architecture.SyscallArgDecode.VSpaceMapArgs}
+    {st st' : SystemState} (hW : teardownWellFormed st)
+    (h : vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) :
+    MappingStage st st' := by
+  rcases vspaceMapOrRemapFromFrameCap_cases h with hM | ⟨st0, hU, hM | rfl⟩
+  · exact vspaceMapFromFrameCap_mappingStage hW hM
+  · exact (vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage hW hU).trans
+      (vspaceMapFromFrameCap_mappingStage (vspaceUnmap_preserves_teardownWellFormed hW hU) hM)
+  · exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage hW hU
+
 theorem vspaceUnifyInstructionPage_mappingStage {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
     {st st' : SystemState} (h : Architecture.vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
     MappingStage st st' :=

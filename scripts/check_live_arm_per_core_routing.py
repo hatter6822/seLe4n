@@ -1033,7 +1033,11 @@ def main() -> int:
     # root, so at depth 3 the walk would stop one level shallower inside that
     # wrapper than it did before.  Measured on the whole scan: no new finding,
     # no measurable time.
-    depth = 4
+    #
+    # Raised from 4 to 5 when the arm became `vspaceMapOrRemapFromFrameCap`
+    # (seL4's `Page_Map` remap), one more hop in front of
+    # `vspaceMapFromFrameCap`.  Measured: no new finding, about 5 s in all.
+    depth = 5
     listing = "--list" in sys.argv
     if "--depth" in sys.argv:
         depth = int(sys.argv[sys.argv.index("--depth") + 1])

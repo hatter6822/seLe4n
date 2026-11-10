@@ -325,6 +325,20 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores
   observableSlotsConfinedToCores_nil_of_framed
     (vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed executingCore asid vaddr st st' hStep)
 
+/-- **The live `.vspaceMap` arm, map or remap, writes no core.**  A remap is the
+unmap of the address the frame capability records followed by a fresh mapping
+(or by nothing), and both halves are bounded by the empty core list. -/
+theorem vspaceMapOrRemapFromFrameCap_confinedToCores
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState)
+    (hStep : vspaceMapOrRemapFromFrameCap tid executingCore args st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] :=
+  vspaceMapOrRemapFromFrameCap_closed (fun a b => observableSlotsConfinedToCores a b [])
+    (fun s s' h => vspaceMapFromFrameCap_confinedToCores tid executingCore args s s' h)
+    (fun s s' h => vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores
+      executingCore args.asid args.vaddr s s' h)
+    (fun _ _ _ h₁ h₂ => by simpa using observableSlotsConfinedToCores_trans h₁ h₂) hStep
+
 /-- WS-BP BP7.1: the page teardown (`unmapLivePages`, run when a frame
 capability is destroyed) is a sequence of the `.vspaceUnmap`
 arm's own transition, each step taken only while its page is still live, so it

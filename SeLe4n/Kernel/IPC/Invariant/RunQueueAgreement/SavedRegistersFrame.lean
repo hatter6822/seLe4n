@@ -315,6 +315,20 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept {ec : CoreI
   savedRegsKept.of_vspaceRootOnlyWrite
     (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv hStep).2.1
 
+/-- **The VSpace map or seL4's remap**: the unmap and the fresh map, each
+keeping every saved register file. -/
+theorem vspaceMapOrRemapFromFrameCap_savedRegsKept {tid : SeLe4n.ThreadId} {ec : CoreId}
+    {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (hStep : vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) :
+    savedRegsKept st st' := by
+  rcases vspaceMapOrRemapFromFrameCap_cases hStep with hM | ⟨st0, hU, hM | rfl⟩
+  · exact vspaceMapFromFrameCap_savedRegsKept hInv hM
+  · exact (vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv hU).trans
+      (vspaceMapFromFrameCap_savedRegsKept
+        (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv hU).1 hM)
+  · exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv hU
+
 /-- **The instruction unification** is cache maintenance: it writes no object. -/
 theorem vspaceUnifyInstructionPage_savedRegsKept {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
     {st st' : SystemState}

@@ -1424,7 +1424,7 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | exact hF (mintReplyCapWithCdt_savedRegsKept hInv h)
     | exact hF (untypedResetFromCap_savedRegsKept hInv h)
     | exact hF (untypedRetypeFromCap_savedRegsKept hInv h)
-    | exact hF (vspaceMapFromFrameCap_savedRegsKept hInv h)
+    | exact hF (vspaceMapOrRemapFromFrameCap_savedRegsKept hInv h)
     | exact hF (vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv h)
     | exact hF (vspaceUnifyInstructionPage_savedRegsKept h)
     | exact hF (pageTableMap_savedRegsKept hInv h)

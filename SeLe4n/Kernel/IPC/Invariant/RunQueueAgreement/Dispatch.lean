@@ -333,7 +333,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
           split at hStep
           · cases hStep
           · refine RunQueueStage.entry ?_
-            exact vspaceMapFromFrameCap_runQueueStage hStep
+            exact vspaceMapOrRemapFromFrameCap_runQueueStage hStep
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

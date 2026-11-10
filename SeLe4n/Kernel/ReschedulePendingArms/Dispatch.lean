@@ -330,6 +330,14 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_machine_eq {ec : CoreId}
       = .ok ((), st')) : st'.machine = st.machine :=
   (vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed ec asid vaddr st st' h).2
 
+theorem vspaceMapOrRemapFromFrameCap_machine_eq {tid : SeLe4n.ThreadId} {ec : CoreId}
+    {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}
+    (h : vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) : st'.machine = st.machine :=
+  vspaceMapOrRemapFromFrameCap_closed (fun s s' => s'.machine = s.machine)
+    (fun _ _ hM => vspaceMapFromFrameCap_machine_eq hM)
+    (fun _ _ hU => vspaceUnmapPageWithShootdownAndIcacheBroadcast_machine_eq hU)
+    (fun _ _ _ h₁ h₂ => h₂.trans h₁) h
+
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (completeYieldFrom_machine _ _).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
@@ -349,7 +357,7 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (revokeServiceByRecordedRegistration_machine_eq (by assumption)).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine (vspaceMapFromFrameCap_machine_eq (by assumption)).trans ?_;
+  (with_reducible refine (vspaceMapOrRemapFromFrameCap_machine_eq (by assumption)).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine
@@ -1342,7 +1350,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         (hRes := by rw [mintReplyCapWithCdt_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [mintReplyCapWithCdt_machine_eq h]))
     | exact (untypedResetFromCap_keyFrame _ _ _ _ hInv h).stepCoversInv
         (hRes := by rw [untypedResetFromCap_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [untypedResetFromCap_machine_eq h]))
-    | exact (vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
+    | exact (vspaceMapOrRemapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
     | exact (vspaceRootOnlyWrite_keyFrame
         (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv

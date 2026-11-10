@@ -7821,8 +7821,10 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
     ),
     // Three tables installed in the root task's space; the first's unmap
     // refused while the second hangs below it; a frame carved and mapped under
-    // them, mapped again with other rights (refused: the address is mapped),
-    // an address with no mapping unmapped (refused), and the frame's last
+    // them, mapped again at the same ASID and address with other rights (a
+    // remap, as seL4's `Page_Map` allows), mapped at another address (refused:
+    // the capability records its mapping), an address with no mapping unmapped
+    // (refused), and the frame's last
     // capability deleted while it is mapped, which unmaps it; then the first
     // table's last capability deleted while it is installed with the others
     // below it, which takes the subtree out; the second's unmap, its record
@@ -7900,13 +7902,19 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
         VSPACE_CAP,
         [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
     ),
+    invocation(
+        "mapped-frame-remap",
+        VSPACE_MAP,
+        VSPACE_CAP,
+        [ROOT_ASID, FRAME_VADDR, MOVE_CAP, CODE_PERMS],
+    ),
     RoundTrip {
-        returns: refused(INVALID_CAPABILITY),
+        returns: refused(INVALID_ARGUMENT),
         ..invocation(
-            "mapped-frame-remap",
+            "mapped-frame-remap-other-vaddr",
             VSPACE_MAP,
             VSPACE_CAP,
-            [ROOT_ASID, FRAME_VADDR, MOVE_CAP, CODE_PERMS],
+            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
         )
     },
     RoundTrip {
@@ -8049,6 +8057,17 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
         FRAME_CAP,
         [CARVED_ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
     ),
+    // The frame mapped in the carved root's address space, mapped through the
+    // root task's own: refused, the capability's mapping is in another ASID.
+    RoundTrip {
+        returns: refused(INVALID_CAPABILITY),
+        ..invocation(
+            "tabled-root-frame-other-asid",
+            VSPACE_MAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+        )
+    },
     invocation(
         "tabled-root-delete",
         CSPACE_DELETE,
@@ -8100,16 +8119,19 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
 const fn refused(code: u64) -> Option<(u64, Option<u64>)> {
     Some(((crate::svc_dispatch::ERROR_LABEL_BASE + code) << 12, None))
 }
-/// `KernelError.invalidCapability`, `.translationFault` and
-/// `.revocationRequired`'s discriminants (`sele4n-types`).
+/// `KernelError.invalidCapability`, `.translationFault`, `.revocationRequired`
+/// and `.invalidArgument`'s discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
 const INVALID_CAPABILITY: u64 = 0;
 #[cfg(feature = "hw_target")]
 const TRANSLATION_FAULT: u64 = 12;
 #[cfg(feature = "hw_target")]
 const REVOCATION_REQUIRED: u64 = 38;
-/// The ASID a carved VSpace root is given while the root task holds the first
-/// (`freshAsid?`, the least free one from 1).
+#[cfg(feature = "hw_target")]
+const INVALID_ARGUMENT: u64 = 39;
+/// The ASID a carved VSpace root is given (`freshAsid?`, the least free one
+/// from 1): the root task's space holds ASID 1 and the untrusted partition's
+/// ASID 2, so the first carved root takes 3.
 #[cfg(feature = "hw_target")]
 const CARVED_ROOT_ASID: u64 = 3;
 

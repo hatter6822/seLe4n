@@ -8,7 +8,7 @@
 -/
 
 import SeLe4n.Kernel.RefusalCarryingDispatch
-import SeLe4n.Kernel.VSpacePerform
+import SeLe4n.Kernel.VSpaceRemapPerform
 import SeLe4n.Kernel.IPC.CrossCore.SuspendAdmission
 
 /-!
@@ -132,7 +132,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             if !vspaceCapAuthorizesAsid cap args.asid st then
               .error .illegalAuthority
             else
-              vspaceMapFromFrameCap tid executingCore args st
+              vspaceMapOrRemapFromFrameCap tid executingCore args st
     | _ => .error .invalidCapability
   | .vspaceUnmap =>
     match cap.target with
@@ -876,10 +876,17 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         else
           resolveVSpaceMapFrameK tid args st (fun e => .error (e, st))
             (fun frameCnode frameSlot frameCap frame =>
-              RefusalCarrying.ofChecked (vspaceMapAdmittedAt st args frameCap frame rootId)
-                (fun st => vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
-                  args.perms rootId (frameCapObjId frameCap) frameCnode frameSlot st)
-                (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+              -- seL4's remap of a capability whose mapping is in place: the
+              -- unmap in place, then the map half on the state it leaves
+              -- (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).
+              if vspaceRemapAdmittedAt st args frameCap frame rootId then
+                .ok ((), vspaceRemapMapAt tid executingCore args frameCap frame rootId frameCnode
+                  frameSlot (vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st))
+              else
+                RefusalCarrying.ofChecked (vspaceMapAdmittedAt st args frameCap frame rootId)
+                  (fun st => vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
+                    args.perms rootId (frameCapObjId frameCap) frameCnode frameSlot st)
+                  (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .vspaceUnmap =>
     match cap.target with
@@ -1478,16 +1485,21 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           rw [resolveVSpaceMapFrameK_eq]
           cases hRs : resolveVSpaceMapFrame tid args st with
           | error e =>
-            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, vspaceMapFromFrameCap,
-              hRs]
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu,
+              vspaceMapOrRemapFromFrameCap, hRs]
           | ok triple =>
             obtain ⟨frameSlot, frameCap, frame⟩ := triple
             dsimp only
-            apply RefusalCarrying.ofChecked_eq
-            intro hA
-            simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
-              vspaceMapFromFrameCap_of_admitted tid executingCore args st frameSlot frameCap frame
-                rootId hRs hA]
+            split
+            · next hRm =>
+              simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
+                ↓reduceIte, vspaceMapOrRemapFromFrameCap_of_remapAdmitted tid executingCore args st
+                  frameSlot frameCap frame rootId hRs hRm]
+            · apply RefusalCarrying.ofChecked_eq
+              intro hA
+              simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
+                vspaceMapOrRemapFromFrameCap_of_admitted tid executingCore args st frameSlot frameCap
+                  frame rootId hRs hA]
     all_goals rfl
   case vspaceUnmap =>
     cases target

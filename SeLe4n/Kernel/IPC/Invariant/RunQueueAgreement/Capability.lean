@@ -393,6 +393,17 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_runQueueStage {ec : Concu
     (congrArg MachineState.residentCode
       (vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed ec asid vaddr st st' h).2)
 
+/-- A map or seL4's remap of a frame capability: the unmap and the fresh map
+each keep the stage. -/
+theorem vspaceMapOrRemapFromFrameCap_runQueueStage {tid : SeLe4n.ThreadId}
+    {ec : Concurrency.CoreId} {args : Architecture.SyscallArgDecode.VSpaceMapArgs}
+    {st st' : SystemState}
+    (h : vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) : RunQueueStage st st' :=
+  vspaceMapOrRemapFromFrameCap_closed RunQueueStage
+    (fun _ _ hM => vspaceMapFromFrameCap_runQueueStage hM)
+    (fun _ _ hU => vspaceUnmapPageWithShootdownAndIcacheBroadcast_runQueueStage hU)
+    (fun _ _ _ h₁ h₂ => h₁.trans h₂) h
+
 theorem vspaceUnifyInstructionPage_runQueueStage {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
     {st st' : SystemState} (h : Architecture.vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
     RunQueueStage st st' :=
