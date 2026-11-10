@@ -4511,7 +4511,21 @@ run_check "INVARIANT" rg -n '^theorem returnUnheldSchedContextInPlace_popFrame($
 run_check "INVARIANT" rg -n '^theorem popUnheldSettled_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
-run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvUnheldArmR epId tid c rid badge grant layout rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvDonatedCallTakeArmR epId tid c rid badge grant layout rf len label executingCore\n      st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# A donated reply-receive whose receive leg takes a caller queued by a Call is
+# donated that caller's context in place, every check read on the pre-state and
+# carried across the reply leg and the pop; any other shape falls through to the
+# unheld arm.
+run_check "INVARIANT" rg -n -U '    if replyRecvDonatedCallTakeAdmits epId tid c rid grant layout len st then\n(      [^\n]*\n){9}              \.ok \(\(\), performReplyRecvDonatedCallTakeDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else replyRecvUnheldArmR epId tid c rid badge grant layout rf len label executingCore st\n\ntheorem replyRecvDonatedCallTakeArmR_of_not_admits' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvDonatedCallTakeArmR_of_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem popDonationSettled_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donatedCallTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextInPlace_keepsAt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastPop_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
+# A receive taking a caller that donates its context runs in place.
+run_check "INVARIANT" rg -n '^theorem receiveCallDonatingTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveCallDonatingInPlace.lean
+run_check "INVARIANT" rg -n -U 'receiveCallDonatesInPlace st epId tid s sTcb rid then\n\s*\.ok \(\(\), performReceiveCallDonatingDelivered st epId s' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvUnheldAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvUnheldDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # A reply-receive whose reply leg installs a capability runs the transfer in
 # place between the reply's writes and the receive leg, on every shape that
