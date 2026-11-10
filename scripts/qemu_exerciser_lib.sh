@@ -266,6 +266,20 @@ for driver in drivers:
             "frame/0": (11, 272), "page-table/0": (13, 352), "vspace-root/0": (14, 376),
             "untyped/12": (12, 304),
         }
+        # The branches that still allocate, each held at its exact reading,
+        # (cells, bytes) on the first call and at steady state: a change
+        # either way fails, so a fix must retire its pin and a regression
+        # cannot hide behind one.  Registered in the debt register (the seven
+        # lifecycle and VSpace branches row), which owns their closure.
+        registered_readings = {
+            "irq-handler-set-notification-over-last": ((1926, 81696), (1926, 81696)),
+            "installed-table-delete-1": ((38, 9464), (38, 9464)),
+            "tabled-root-map": ((9, 488), (9, 488)),
+            "parent-cap-move": ((8, 10640), (8, 10640)),
+            "mapped-frame-unmap-code": ((4, 88), (4, 88)),
+            "parent-untyped-delete": ((2, 56), (2, 56)),
+            "mapped-frame-unify": ((0, 0), (1, 16)),
+        }
         # The scenario set is pinned: a round trip renamed or dropped from
         # the exerciser (smp_exercisers.rs) must change this set too, so the
         # evidence cannot disappear while the gate stays green.
@@ -725,6 +739,14 @@ for driver in drivers:
                 failures.append(f"heap-allocations-per-syscall: {m.group(1)} carved {kind}, whose cells the gate does not know: {m.group(0)!r}")
                 continue
             pin, byte_pin = carve_cells[kind] if kind is not None else (0, 0)
+            registered = registered_readings.get(m.group(1)) if kind is None else None
+            if registered is not None:
+                want = registered[0] if m.group(2) is not None else registered[1]
+                if after < before or delta != after - before:
+                    failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
+                elif (delta, int(m.group(6)) if m.group(6) != "unrecorded" else None) != want:
+                    failures.append(f"heap-allocations-per-syscall: {m.group(1)} read {delta} cells, {m.group(6)} bytes; its registered reading is {want[0]} cells, {want[1]} bytes: {m.group(0)!r}")
+                continue
             if after < before or delta != after - before:
                 failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
                 continue

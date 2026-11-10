@@ -1,3 +1,62 @@
+## v0.37.10 — seL4's frame remap, and the lifecycle branches measured
+
+A frame capability whose mapping is in place is now remapped, as seL4's ARM
+`Page_Map` does, when the call names the ASID and the address the capability
+records; the `.vspaceMap` arm refused every such call as an invalid
+capability.  The coverage audit's lifecycle and VSpace branches each have an
+exerciser scenario, first call and steady state, and the ones fixed here read
+0 heap cells.
+
+- **The remap** (`vspaceMapOrRemapFromFrameCap`, `SeLe4n/Kernel/API.lean`):
+  the same ASID and address is the unmap of that address followed by the
+  fresh mapping with the new rights; another ASID is refused as
+  `.invalidCapability` and another address as `.invalidArgument`, before any
+  write (seL4's `decodeARMFrameInvocation`).  Every consumer of the arm is
+  restated over it through `vspaceMapOrRemapFromFrameCap_cases` and `_closed`:
+  the run-queue stage, the saved registers, the key frame, the machine, slot
+  confinement and cross-core non-interference
+  (`vspaceMapOrRemapFromFrameCap_crossCoreNonInterference`), the mapping and
+  records stages (`vspaceMapOrRemapFromFrameCap_mappingStage`, with
+  `vspaceUnmap_preserves_teardownWellFormed`), the covert-channel and
+  per-core routing tables.  The lock footprint already contains the unmap's
+  (`lockSet_vspaceMap`).
+- **In place** (`SeLe4n/Kernel/VSpaceRemapPerform.lean`): the fast arm reads
+  the refusals and the remap's checks before any write and runs the unmap and
+  the map in their slots (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`,
+  `_of_otherAsid`, `_of_otherVaddr`); the decoded arguments stay words, the
+  record of them built only on an out-of-line fallback a well-formed store
+  does not reach (`vspaceRemapMapFallback`).
+- **Lifecycle branches in place**: a page-table unmap refused while the table
+  is in use (`pageTableUnmapInUseAt`) and an unmap of an address nothing is
+  mapped at (`vspaceUnmapUnmappedAt`) are refused on the root's words; a
+  registered endpoint's release (`releaseFinalRegistrationImpl`), a thread's
+  core release (`MachineState.releaseThreadOnCoreImpl`) and a zombie CNode's
+  space copy (`copyThreadSpacesAfterZombie`, handed words) write in place.
+- **Exercisers**: `mapped-frame-remap` now expects the remap, beside
+  `mapped-frame-remap-other-vaddr`, `tabled-root-frame-other-asid`,
+  `mapped-frame-unify`, `mapped-frame-unmap-code` and `mapped-frame-map-again`.
+  `registered-endpoint-delete`, `unmap-nothing`, `installed-table-unmap-refused`,
+  `zombie-cnode-replaced`, `self-tcb-delete`, `remote-running-tcb-delete` and
+  every map, remap and remap refusal read 0.  Seven branches still allocate
+  and are held by the gate at their exact readings, a row of
+  `docs/REGISTERED_DEBT.md` table C: `irq-handler-set-notification-over-last`
+  (1926 cells), `installed-table-delete-1` (38), `tabled-root-map` (9),
+  `parent-cap-move` (8), `mapped-frame-unmap-code` (4), `parent-untyped-delete`
+  (2) and `mapped-frame-unify` (1, at steady state).
+
+### Security
+
+- The remap's refusals are read before any write, so a call naming another
+  address space or address commits nothing; a remap writes only the root the
+  capability's mapping is in and the capability's record, the footprint of an
+  unmap and a map together.
+- A thread that deletes its own TCB is answered nothing: the finalisation
+  leaves it held by no core (`finaliseThread_quiesces`), the retire erases it,
+  so the return-frame staging writes neither its context
+  (`writeReturnFrameToTcb_id_when_not_tcb`) nor a core's bank, which it stages
+  only for a current caller — as seL4's `handleInvocation` writes no reply to a
+  thread no longer restarting.
+
 ## v0.37.9 — an installing reply-receive runs in place
 
 A granting reply-receive whose reply leg installs a capability now runs in
