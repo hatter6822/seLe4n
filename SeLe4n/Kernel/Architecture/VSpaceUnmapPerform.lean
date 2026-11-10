@@ -252,6 +252,97 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted (ec : Concurr
   simp only [Architecture.tlbShootdownBroadcastPage_eq]
   cases Architecture.unmapIcacheOperand st asid vaddr <;> rfl
 
+/-- The unmap's writes before its instruction-cache operand: the mapping erased
+in the root's slot, its descriptor on the ledger, the flush, the shootdown round
+and the initiator's drain (`vspaceUnmapPerformAt`'s first five steps). -/
+@[noinline] def vspaceUnmapWritesAt (ec : Concurrency.CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (rootId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
+  let st1 := st.storeVSpaceRootWith rootId (rootWithoutMapping vaddr)
+  let st1 := Architecture.recordPhysicalWrites st1 (mappedRootLedger st1 rootId vaddr)
+  let st2 := { st1 with tlb := adapterFlushTlbByVAddr st1.tlb asid vaddr }
+  let st3 := Architecture.tlbShootdownBroadcastPage st2 ec
+    (Architecture.shootdownTargets ec) asid vaddr
+  Architecture.drainInitiatorPageOnCore st3 ec asid vaddr
+
+/-- An executable unmap's instruction-cache broadcast and its record, as
+`vspaceUnifyPerformAtCells` writes a unify's: over an empty ledger the operand
+is written over the drained ledger's cells first (`recordIcacheIvauCells`) and
+the broadcast reads it back, so neither an operand nor a list cell is built; a
+ledger that is not empty takes the specification's writes
+(`recordUnmapIvauAt_eq`). -/
+@[noinline] def recordUnmapIvauAt (paddr : SeLe4n.PAddr) (st : SystemState) : SystemState :=
+  match st.pendingIcacheMaintenance with
+  | [] =>
+    let st1 := Architecture.recordIcacheIvauCells st paddr
+    match st1.pendingIcacheMaintenance with
+    | op :: _ => Architecture.icInvalidateBroadcast st1 Architecture.icBroadcastReach op
+    | [] => Architecture.icInvalidateBroadcast st1 Architecture.icBroadcastReach (.ivauPage paddr)
+  | _ :: _ =>
+    Architecture.recordIcacheMaintenance
+      (Architecture.icInvalidateBroadcast st Architecture.icBroadcastReach (.ivauPage paddr))
+      (.ivauPage paddr)
+
+theorem recordUnmapIvauAt_eq (paddr : SeLe4n.PAddr) (st : SystemState) :
+    recordUnmapIvauAt paddr st =
+      Architecture.recordIcacheMaintenance
+        (Architecture.icInvalidateBroadcast st Architecture.icBroadcastReach (.ivauPage paddr))
+        (.ivauPage paddr) := by
+  unfold recordUnmapIvauAt
+  cases hP : st.pendingIcacheMaintenance with
+  | nil =>
+    dsimp only
+    rw [Architecture.recordIcacheIvauCells_eq st paddr hP,
+      Architecture.recordIcacheMaintenance_of_nil hP]
+    rfl
+  | cons _ _ => rfl
+
+/-- **`vspaceUnmapPerformAt` as compiled**: whether the mapping is executable,
+and its frame's address, are read from the root before the first write, as
+words, so no operand or `Option` is built and the root is not held across its
+store; the writes follow (`vspaceUnmapWritesAt`), then, for an executable
+mapping, the instruction-cache broadcast over the ledger's spare cells
+(`recordUnmapIvauAt`).  Equal to the specification
+(`vspaceUnmapPerformAt_eq_cells`). -/
+def vspaceUnmapPerformAtCells (ec : Concurrency.CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (rootId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
+  match Architecture.resolveAsidRoot st asid with
+  | some (_, root) =>
+    match VSpaceRoot.lookup root vaddr with
+    | some (paddr, perms) =>
+      if perms.execute then recordUnmapIvauAt paddr (vspaceUnmapWritesAt ec asid vaddr rootId st)
+      else vspaceUnmapWritesAt ec asid vaddr rootId st
+    | none => vspaceUnmapWritesAt ec asid vaddr rootId st
+  | none => vspaceUnmapWritesAt ec asid vaddr rootId st
+
+@[csimp] theorem vspaceUnmapPerformAt_eq_cells :
+    @vspaceUnmapPerformAt = @vspaceUnmapPerformAtCells := by
+  funext ec asid vaddr rootId st
+  unfold vspaceUnmapPerformAt vspaceUnmapPerformAtCells Architecture.unmapIcacheOperand
+    Architecture.unmapExecutablePaddr
+  rw [show vspaceUnmapWritesAt ec asid vaddr rootId st =
+      Architecture.drainInitiatorPageOnCore
+        (Architecture.tlbShootdownBroadcastPage
+          { Architecture.recordPhysicalWrites (st.storeVSpaceRootWith rootId (rootWithoutMapping vaddr))
+              (mappedRootLedger (st.storeVSpaceRootWith rootId (rootWithoutMapping vaddr)) rootId vaddr) with
+            tlb := adapterFlushTlbByVAddr
+              (Architecture.recordPhysicalWrites (st.storeVSpaceRootWith rootId (rootWithoutMapping vaddr))
+                (mappedRootLedger (st.storeVSpaceRootWith rootId (rootWithoutMapping vaddr)) rootId vaddr)).tlb
+              asid vaddr }
+          ec (Architecture.shootdownTargets ec) asid vaddr) ec asid vaddr from rfl]
+  cases Architecture.resolveAsidRoot st asid with
+  | none => rfl
+  | some rr =>
+    obtain ⟨_, root⟩ := rr
+    dsimp only [Option.bind]
+    cases VSpaceRoot.lookup root vaddr with
+    | none => rfl
+    | some lk =>
+      obtain ⟨paddr, perms⟩ := lk
+      dsimp only
+      cases perms.execute
+      · rfl
+      · simp only [↓reduceIte, Option.map, recordUnmapIvauAt_eq]
+
 /-- **The unmap's refusal of an address nothing is mapped at**, read before any
 write: the root at `rootId` is the one the ASID table names for `asid`, and it
 maps nothing at `vaddr`, so the unmap answers `translationFault`

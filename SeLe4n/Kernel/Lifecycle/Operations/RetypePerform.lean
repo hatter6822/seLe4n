@@ -450,7 +450,7 @@ theorem CarveRequest.ofWords_words (dom0 : SeLe4n.DomainId)
   match k with
   | 0 => .frame (untypedNextFrame ut idx)
   | 1 => .untyped (untypedNextChild ut idx untypedId n)
-  | 2 => .vspaceRoot (untypedNextVSpaceRoot ut idx asid)
+  | 2 => (KernelObject.vspaceRoot (untypedNextVSpaceRoot ut idx asid)).unshareFresh
   | 3 => .pageTable (untypedNextPageTable ut idx)
   | 4 => (KernelObject.tcb (carvedTcb childId dom core)).unshareFresh
   | 5 => (KernelObject.endpoint (Endpoint.ofQueues {} {})).unshareFresh
@@ -482,6 +482,7 @@ theorem CarveRequest.ofWords_words (dom0 : SeLe4n.DomainId)
 @[inline] def CarveRequest.heapAdmittedW (st : SystemState) (k n : Nat) : Bool :=
   decide (retypeHeapReserveBytes +
       (match k with
+       | 2 => carvedVSpaceRootHeapBytes
        | 4 => carvedTcbHeapBytes
        | 7 => carvedObjectHeapBytes + cnodeSlotHeapBytes * 2 ^ (min n maxCSpaceDepth)
        | _ => carvedObjectHeapBytes)

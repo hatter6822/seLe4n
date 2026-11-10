@@ -979,6 +979,32 @@ def linkSetParentRun : Nat → SystemState → Nat → Nat → Nat → Nat → S
       linkSetParentRun k (st.setSlotLinkWords o s .parent pc ps) pc ps
         (st.slotLinkNodeWord o s .next) (st.slotLinkSlotWord o s .next)
 
+/-- **The compiled `linkSetParentRun`**: each slot's next words are read
+before its parent words are written, so the write meets a state held by
+nothing else.  The specification passes the write and the reads as arguments
+of one call, evaluated in that order, so the state stayed alive across the
+write and was copied, object table and all, at each child of a moved
+capability.  Proven equal (`linkSetParentRun_eq_impl`). -/
+def linkSetParentRunImpl : Nat → SystemState → Nat → Nat → Nat → Nat → SystemState
+  | 0, st, _, _, _, _ => st
+  | k + 1, st, pc, ps, c, w =>
+    if c = 0 then st
+    else
+      let o := SeLe4n.ObjId.ofNat (c - 1)
+      let s := SeLe4n.Slot.ofNat (w - 1)
+      let nc := st.slotLinkNodeWord o s .next
+      let ns := st.slotLinkSlotWord o s .next
+      let st1 := st.setSlotLinkWords o s .parent pc ps
+      linkSetParentRunImpl k st1 pc ps nc ns
+
+@[csimp] theorem linkSetParentRun_eq_impl : @linkSetParentRun = @linkSetParentRunImpl := by
+  funext k
+  induction k with
+  | zero => rfl
+  | succ k ih =>
+    funext st pc ps c w
+    simp only [linkSetParentRun, linkSetParentRunImpl, ih]
+
 theorem linkSetParentRun_spec : ∀ (k : Nat) {st : SystemState} (pc ps c w : Nat),
     st.objects.invExt →
     (∀ x ∈ st.slotLinkAt.walk k (decodeLink c w), st.slotInObject x) →
