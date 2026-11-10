@@ -99,6 +99,16 @@ jobs:
           fi
           qemu-system-aarch64 --version
 
+      # The kernel image links the HAL, whose `.S` sources need an AArch64
+      # assembler; the `ubuntu-26.04` image ships no `clang`.
+      - name: Install the AArch64 cross assembler
+        run: |
+          if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
+          fi
+          aarch64-linux-gnu-gcc --version
+
       # The Lean-linked half of every tier-4 gate (`--lean-kernel`) links the
       # cross archive `libsele4n.a`, and refuses one whose build record names
       # a different working tree (`build_lean_aarch64_archive.py

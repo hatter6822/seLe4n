@@ -479,11 +479,14 @@ jobs:
       # QEMU's `virt` machine (`scripts/test_qemu.sh --lean-kernel`), and runs
       # it with `REQUIRE_QEMU=1`, so an absent emulator fails the job rather
       # than skipping the one run of the kernel a PR gets.
-      - name: Install QEMU
+      # The kernel image links the HAL, whose `.S` sources need an AArch64
+      # assembler; the `ubuntu-26.04` image ships no `clang`.
+      - name: Install QEMU and the AArch64 cross assembler
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-arm
+          sudo apt-get install -y --no-install-recommends qemu-system-arm gcc-aarch64-linux-gnu
           qemu-system-aarch64 --version
+          aarch64-linux-gnu-gcc --version
 
       - name: Build and reconcile the kernel's Lean archive for aarch64
         run: ./scripts/test_lean_aarch64_archive.sh

@@ -58,7 +58,9 @@ capability, 0 for an unbadged one.  seLe4n now does exactly that
 - **CI: the cross build installs its assembler.**  The `ubuntu-26.04` image
   that `ubuntu-latest` now names ships no `clang`, so the `aarch64 Cross Build`
   job found no AArch64 assembler for the `.S` sources.  The job now installs
-  `gcc-aarch64-linux-gnu`, which `scripts/test_aarch64_cross_build.sh` prefers.
+  `gcc-aarch64-linux-gnu`, which `scripts/test_aarch64_cross_build.sh` prefers.  The `Lean aarch64
+  Archive` job and the nightly determinism workflow, which link the kernel
+  image, install it too.
 
 ## v0.37.11 — IPC and scheduler ordering coverage, and the reply-receive donation
 
