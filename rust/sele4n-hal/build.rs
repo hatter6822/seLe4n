@@ -150,6 +150,11 @@ fn main() {
     scan_lean_ready_gates_intact();
     scan_lean_upcalls_readiness_gated();
 
+    // The kernel-entry site table the allocation exerciser attributes each
+    // measured reading's entries to, derived from the code.
+    verify_kernel_entry_bracket_sites();
+    emit_kernel_entry_sites();
+
     // WS-RR RR5.18: the two safety tripwires whose documented behaviour is a
     // clean halt were `debug_assert!`s, which a `--release` build — the way a
     // `kernel8.img` is built — compiles out.  Each is now a real branch to
@@ -4427,6 +4432,131 @@ fn kernel_entry_bracket_encloses(code: &str, body_open: usize, call: usize) -> b
         }
     }
     false
+}
+
+/// The slots of the exerciser's per-core kernel-entry tally
+/// (`kernel_entry::entered_sites`): one per bracket site, and the last for an
+/// entry from a site the table does not list.
+const KERNEL_ENTRY_SITE_SLOTS: usize = 16;
+
+/// The line of every [`KERNEL_ENTRY_BRACKET`] call in `code`, a strings-blanked
+/// code view of the file at `path`, in order.  Every other whole-identifier
+/// reference to `with_kernel_entry` is refused: an alias, a `use` or a bare
+/// call is an entry the table would not name, so it fails closed.  The one
+/// file excepted is the bracket's own (`src/kernel_entry.rs`), whose
+/// definition and unit tests (everything from its `mod tests`) are not entry
+/// sites; a reference there before its tests is refused too.
+fn kernel_entry_bracket_sites(path: &str, code: &str) -> Result<Vec<u32>, String> {
+    const NAME: &str = "with_kernel_entry";
+    let prefix = &KERNEL_ENTRY_BRACKET[..KERNEL_ENTRY_BRACKET.len() - NAME.len() - 1];
+    let own = path == "src/kernel_entry.rs";
+    let tests_from = if own { code.find("mod tests {") } else { None };
+    let mut lines = Vec::new();
+    for at in whole_word_offsets(code, NAME) {
+        let end = at + NAME.len();
+        if code.as_bytes().get(end).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_') {
+            continue;
+        }
+        if own && code[..at].trim_end().ends_with("pub fn") {
+            continue;
+        }
+        if own && tests_from.is_some_and(|t| at > t) {
+            continue;
+        }
+        let start = at.checked_sub(prefix.len());
+        let bracket = start.filter(|s| code[*s..].starts_with(KERNEL_ENTRY_BRACKET));
+        let Some(start) = bracket else {
+            let excerpt: String = code[at.saturating_sub(24)..].chars().take(64).collect();
+            return Err(format!(
+                "`{NAME}` is referenced at byte {at} other than as `{KERNEL_ENTRY_BRACKET}` \
+                 (`{excerpt}…`); the kernel-entry site table names only the canonical \
+                 bracket, so write the entry that way"
+            ));
+        };
+        lines.push(1 + code[..start].matches('\n').count() as u32);
+    }
+    Ok(lines)
+}
+
+/// **The kernel-entry site table**, derived from the code: every
+/// [`KERNEL_ENTRY_BRACKET`] call under `src/`, as `(path, line)`, written to
+/// `OUT_DIR/kernel_entry_sites.rs` for the allocation exerciser, which tallies
+/// each entry by its bracket's caller location and prints the sites each
+/// measured reading entered; the host-side heap gate requires every
+/// production site to be entered by a measured reading.
+fn emit_kernel_entry_sites() {
+    let mut sources: Vec<std::path::PathBuf> = Vec::new();
+    collect_rust_sources(std::path::Path::new("src"), &mut sources);
+    sources.sort();
+    let mut sites: Vec<(String, u32)> = Vec::new();
+    for source in &sources {
+        let path = source.to_string_lossy().replace('\\', "/");
+        let contents = std::fs::read_to_string(source)
+            .unwrap_or_else(|e| panic!("kernel-entry site table: failed to read {path}: {e}"));
+        let (_, code) = rust_code_views(&contents);
+        match kernel_entry_bracket_sites(&path, &code) {
+            Ok(lines) => sites.extend(lines.into_iter().map(|line| (path.clone(), line))),
+            Err(e) => panic!("kernel-entry site table: `{path}`: {e}"),
+        }
+    }
+    assert!(
+        !sites.is_empty(),
+        "kernel-entry site table: no `{KERNEL_ENTRY_BRACKET}` call under src/; an empty \
+         table would leave every entry unattributed"
+    );
+    assert!(
+        sites.len() < KERNEL_ENTRY_SITE_SLOTS,
+        "kernel-entry site table: {} sites, the exerciser's tally holds {}; raise \
+         KERNEL_ENTRY_SITE_SLOTS",
+        sites.len(),
+        KERNEL_ENTRY_SITE_SLOTS - 1
+    );
+    let mut table = format!(
+        "pub const KERNEL_ENTRY_SITE_SLOTS: usize = {KERNEL_ENTRY_SITE_SLOTS};\n\
+         pub const KERNEL_ENTRY_SITES: [(&str, u32); {}] = [\n",
+        sites.len()
+    );
+    for (path, line) in &sites {
+        table.push_str(&format!("    ({path:?}, {line}),\n"));
+    }
+    table.push_str("];\n");
+    let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR for every build script");
+    let out = std::path::Path::new(&out_dir).join("kernel_entry_sites.rs");
+    std::fs::write(&out, table)
+        .unwrap_or_else(|e| panic!("kernel-entry site table: cannot write {}: {e}", out.display()));
+}
+
+/// The site table's scanner, held to its relation: a canonical bracket is a
+/// site at its line, a bare call or an alias is refused, and the bracket's own
+/// definition and tests are not sites.
+fn verify_kernel_entry_bracket_sites() {
+    let (_, good) = rust_code_views(
+        "fn a() {\n    let r = crate::kernel_entry::with_kernel_entry(0, || 1);\n}\n",
+    );
+    assert_eq!(kernel_entry_bracket_sites("src/a.rs", &good), Ok(vec![2]));
+    let (_, mention) = rust_code_views(
+        "fn a() {\n    // with_kernel_entry\n    let s = \"crate::kernel_entry::with_kernel_entry(\";\n}\n",
+    );
+    assert_eq!(kernel_entry_bracket_sites("src/a.rs", &mention), Ok(vec![]));
+    for bad in [
+        "fn a() { with_kernel_entry(0, || 1); }\n",
+        "use crate::kernel_entry::with_kernel_entry;\n",
+        "fn a() { let f = crate::kernel_entry::with_kernel_entry; }\n",
+    ] {
+        let (_, code) = rust_code_views(bad);
+        assert!(
+            kernel_entry_bracket_sites("src/a.rs", &code).is_err(),
+            "kernel-entry site table: accepted {bad:?}"
+        );
+    }
+    let (_, own) = rust_code_views(
+        "pub fn with_kernel_entry<F>(c: usize, f: F) {}\nmod tests {\n    fn t() { with_kernel_entry(0, || ()); }\n}\n",
+    );
+    assert_eq!(kernel_entry_bracket_sites("src/kernel_entry.rs", &own), Ok(vec![]));
+    let (_, own_bare) = rust_code_views(
+        "pub fn with_kernel_entry<F>(c: usize, f: F) {}\nfn x() { with_kernel_entry(0, || ()); }\n",
+    );
+    assert!(kernel_entry_bracket_sites("src/kernel_entry.rs", &own_bare).is_err());
 }
 
 const IRQ_MASK_CALL: &str = "crate::interrupts::disable_interrupts()";

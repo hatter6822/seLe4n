@@ -9426,6 +9426,7 @@ const ROUND_TRIP_SPSR: u64 = 0;
 #[cfg(feature = "hw_target")]
 fn own_heap_allocations(core: usize) -> Option<u64> {
     let totals = crate::lean_heap::kernel_allocation_totals_on(core).ok();
+    note_entered_sites(core, totals.map_or(u64::MAX, |(count, _)| count));
     crate::barriers::isb();
     let now = crate::read_sysreg!("cntvct_el0");
     WINDOW_TICKS[0].store(WINDOW_TICKS[1].load(Ordering::Relaxed), Ordering::Relaxed);
@@ -9456,6 +9457,98 @@ static WINDOW_TOTALS: [[AtomicU64; 2]; 2] = [
 fn window_bytes(before: u64, after: u64) -> Option<u64> {
     let read = |i: usize, j: usize| WINDOW_TOTALS[i][j].load(Ordering::Relaxed);
     (read(0, 0) == before && read(1, 0) == after).then(|| read(1, 1).wrapping_sub(read(0, 1)))
+}
+
+/// The heap-counter reads [`ENTERED_SITES`] keeps per core.
+#[cfg(feature = "hw_target")]
+const ENTERED_SITES_KEPT: usize = 8;
+
+/// A core's kernel-entry tally ([`crate::kernel_entry::entered_sites`]) at
+/// each of its last [`ENTERED_SITES_KEPT`] heap-counter reads, beside the
+/// count that read gave and its sequence number (0 for a slot never written):
+/// what a reading's window entered is the difference between the read that
+/// gave its `before` and its last read ([`entered_in_window`]).  Written only
+/// by the boot core's driver, which reads every core's counter itself.
+#[cfg(feature = "hw_target")]
+static ENTERED_SITES: [[EnteredSitesRead; ENTERED_SITES_KEPT]; CORE_COUNT] =
+    [const { [const { EnteredSitesRead::new() }; ENTERED_SITES_KEPT] }; CORE_COUNT];
+
+/// The reads [`ENTERED_SITES`] has numbered, across every core.
+#[cfg(feature = "hw_target")]
+static ENTERED_SITES_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// One heap-counter read's slot of [`ENTERED_SITES`].
+#[cfg(feature = "hw_target")]
+struct EnteredSitesRead {
+    sequence: AtomicU64,
+    count: AtomicU64,
+    tally: [core::sync::atomic::AtomicU32; crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITE_SLOTS],
+}
+
+#[cfg(feature = "hw_target")]
+impl EnteredSitesRead {
+    const fn new() -> Self {
+        Self {
+            sequence: AtomicU64::new(0),
+            count: AtomicU64::new(u64::MAX),
+            tally: [const { core::sync::atomic::AtomicU32::new(0) };
+                crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITE_SLOTS],
+        }
+    }
+}
+
+/// Keep `core`'s tally at a heap-counter read that gave `count`, over the
+/// oldest of its kept reads.
+#[cfg(feature = "hw_target")]
+fn note_entered_sites(core: usize, count: u64) {
+    let Some(ring) = ENTERED_SITES.get(core) else {
+        return;
+    };
+    let tally = crate::kernel_entry::entered_sites::snapshot(core);
+    let slot = ring
+        .iter()
+        .min_by_key(|r| r.sequence.load(Ordering::Relaxed))
+        .expect("the ring is not empty");
+    for (kept, now) in slot.tally.iter().zip(tally) {
+        kept.store(now, Ordering::Relaxed);
+    }
+    slot.count.store(count, Ordering::Relaxed);
+    slot.sequence
+        .store(ENTERED_SITES_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1, Ordering::Relaxed);
+}
+
+/// The sites a reading on `core` from `before` to `after` entered: the
+/// difference between `core`'s last kept read, which must have given
+/// `after`, and the latest earlier read that gave `before`.  For a window
+/// whose count did not move that is the read just before the last, so a
+/// reading spanning several dispatches is attributed only its last one's
+/// entries: the gate may be told less than a window entered, never more.
+/// `None` when the kept reads do not hold the window.
+#[cfg(feature = "hw_target")]
+fn entered_in_window(
+    core: usize,
+    before: u64,
+    after: u64,
+) -> Option<crate::kernel_entry::entered_sites::Entered> {
+    let ring = ENTERED_SITES.get(core)?;
+    let mut reads: [(u64, u64, usize); ENTERED_SITES_KEPT] = [(0, 0, 0); ENTERED_SITES_KEPT];
+    for (i, r) in ring.iter().enumerate() {
+        reads[i] = (r.sequence.load(Ordering::Relaxed), r.count.load(Ordering::Relaxed), i);
+    }
+    reads.sort_unstable_by_key(|r| core::cmp::Reverse(r.0));
+    let (last_sequence, last_count, last) = reads[0];
+    if last_sequence == 0 || last_count != after {
+        return None;
+    }
+    let &(_, _, first) = reads[1..].iter().find(|r| r.0 != 0 && r.1 == before)?;
+    let load = |i: usize| {
+        let mut out = [0; crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITE_SLOTS];
+        for (o, c) in out.iter_mut().zip(&ring[i].tally) {
+            *o = c.load(Ordering::Relaxed);
+        }
+        out
+    };
+    Some(crate::kernel_entry::entered_sites::Entered(load(first), load(last)))
 }
 
 /// The virtual count at the last two heap-counter reads, older first.
@@ -9554,6 +9647,14 @@ fn print_reading(name: &str, core: usize, which: &str, before: u64, after: u64, 
         "[smp-test] entry-ticks: {name}: core {core}{which}: ticks={ticks} frequency={}",
         crate::timer::read_frequency()
     );
+    match entered_in_window(core, before, after) {
+        Some(entered) => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: entered {entered}"
+        ),
+        None => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: entered unattributed"
+        ),
+    }
 }
 
 /// What one dispatched round trip did.
@@ -9613,6 +9714,12 @@ fn unmeasured(trip: &RoundTrip, why: &str) -> bool {
 /// reading but zero.
 #[cfg(feature = "hw_target")]
 fn heap_allocations_per_syscall() -> Option<bool> {
+    // The kernel-entry sites, as `build.rs` derived them from the code: the
+    // host-side gate requires each production site to be entered by a
+    // measured reading (the `entered` line beside each).
+    for (path, line) in crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITES {
+        crate::kprintln!("[smp-test] heap-allocations-per-syscall: kernel-entry site {path}:{line}");
+    }
     if !secondary_core_windows(" (first call)") {
         return Some(false);
     }

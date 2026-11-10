@@ -800,6 +800,40 @@ for driver in drivers:
                 failures.append(f"heap-allocations-per-syscall: the route coverage answered {coverage.returncode}: {coverage.stderr.strip()!r}")
             if coverage.returncode == 0 and reported:
                 failures.append("heap-allocations-per-syscall: the route coverage reported findings and answered 0")
+        # Every kernel-entry site has a measured reading that entered it.  The
+        # sites are the HAL's own `crate::kernel_entry::with_kernel_entry(`
+        # calls, derived from the code by its `build.rs` and printed by the
+        # image; each reading names the sites its window entered, tallied by
+        # the bracket's caller.  The exerciser's own brackets (its file) are
+        # not kernel entries a thread or device takes, the one exclusion.  An
+        # entry the table does not name, or a window the image could not
+        # attribute, fails the gate.
+        site_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: kernel-entry site (src/[a-z0-9_/]+\.rs:\d+)")
+        entered_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core \d+( \(first call\))?: entered (\S+)")
+        sites = [m.group(1) for m in (site_re.fullmatch(line) for line in lines) if m]
+        if not sites:
+            failures.append("heap-allocations-per-syscall: the image printed no kernel-entry site")
+        if len(set(sites)) != len(sites):
+            failures.append(f"heap-allocations-per-syscall: the kernel-entry sites repeat: {sites}")
+        entered_sites = set()
+        windows = {"secondary-ticks", "secondary-reschedule", "secondary-entry"}
+        for line in lines:
+            m = entered_re.fullmatch(line)
+            if m is None:
+                continue
+            if m.group(1) not in expected and m.group(1) not in windows:
+                failures.append(f"heap-allocations-per-syscall: entered sites named for {m.group(1)}, not a pinned reading: {line!r}")
+                continue
+            if m.group(3) == "none":
+                continue
+            for site in m.group(3).split(","):
+                if site not in sites:
+                    failures.append(f"heap-allocations-per-syscall: {m.group(1)} entered {site}, which is not a kernel-entry site: {line!r}")
+                else:
+                    entered_sites.add(site)
+        for site in sites:
+            if not site.startswith("src/smp_exercisers.rs:") and site not in entered_sites:
+                failures.append(f"heap-allocations-per-syscall: the kernel-entry site {site} has no measured reading that entered it")
         for m in readings:
             before, after, delta = (int(g) for g in m.groups()[2:5])
             kind = carved.get((m.group(1), m.group(2) is not None))
