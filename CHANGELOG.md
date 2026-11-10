@@ -1,55 +1,97 @@
-## v0.37.10 — seL4's frame remap, and the lifecycle branches measured
+## v0.37.10 — seL4's frame remap, and the lifecycle branches in place
 
 A frame capability whose mapping is in place is now remapped, as seL4's ARM
 `Page_Map` does, when the call names the ASID and the address the capability
 records; the `.vspaceMap` arm refused every such call as an invalid
 capability.  The coverage audit's lifecycle and VSpace branches each have an
-exerciser scenario, first call and steady state, and the ones fixed here read
-0 heap cells.
+exerciser scenario, first call and steady state, and every one of them now
+reads 0 heap cells.
 
 - **The remap** (`vspaceMapOrRemapFromFrameCap`, `SeLe4n/Kernel/API.lean`):
   the same ASID and address is the unmap of that address followed by the
-  fresh mapping with the new rights; another ASID is refused as
-  `.invalidCapability` and another address as `.invalidArgument`, before any
-  write (seL4's `decodeARMFrameInvocation`).  Every consumer of the arm is
-  restated over it through `vspaceMapOrRemapFromFrameCap_cases` and `_closed`:
-  the run-queue stage, the saved registers, the key frame, the machine, slot
+  fresh mapping with the new rights.  Every refusal is decided before the
+  unmap writes, in the order of seL4's `decodeARMFrameInvocation`
+  (`vspaceRemapRefusal`): the ASID's root (`.asidNotBound`), the page
+  alignment (`.alignmentError`), the record's ASID (`.invalidCapability`) and
+  address (`.invalidArgument`), the walk (`.translationFault`), then the
+  checks this kernel adds to the decode in the fresh map's order.  A refused
+  remap is refused on the pre-state
+  (`vspaceMapOrRemapFromFrameCap_of_remapRefused`), and either half refusing
+  refuses the whole call: the earlier fallback that left the unmap standing
+  when the map half refused is gone.  Every consumer of the arm is restated
+  over it through `vspaceMapOrRemapFromFrameCap_cases` and `_closed`: the
+  run-queue stage, the saved registers, the key frame, the machine, slot
   confinement and cross-core non-interference
   (`vspaceMapOrRemapFromFrameCap_crossCoreNonInterference`), the mapping and
   records stages (`vspaceMapOrRemapFromFrameCap_mappingStage`, with
   `vspaceUnmap_preserves_teardownWellFormed`), the covert-channel and
-  per-core routing tables.  The lock footprint already contains the unmap's
-  (`lockSet_vspaceMap`).
-- **In place** (`SeLe4n/Kernel/VSpaceRemapPerform.lean`): the fast arm reads
-  the refusals and the remap's checks before any write and runs the unmap and
-  the map in their slots (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`,
-  `_of_otherAsid`, `_of_otherVaddr`); the decoded arguments stay words, the
-  record of them built only on an out-of-line fallback a well-formed store
-  does not reach (`vspaceRemapMapFallback`).
+  per-core routing tables, and `dispatchWithCap_vspaceMap_maps_frame_base`,
+  which no longer has an unmap-only case.  The lock footprint already
+  contains the unmap's (`lockSet_vspaceMap`).
+- **The remap in place** (`SeLe4n/Kernel/VSpaceRemapPerform.lean`): the fast
+  arm reads the same refusals, then the in-place conditions
+  (`vspaceRemapInPlaceAt`), and runs the unmap and the map in their slots
+  (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).  The map half is proven
+  admitted on the state the unmap leaves
+  (`vspaceMapAdmittedAt_of_remapInPlace`), through a fact about the root's
+  table that needs no table invariant: a key held in one slot only is absent
+  after its erase (`RHTable.keyOnlyAt`,
+  `RHTable.get?_erase_self_of_keyOnlyAt`, `RobinHood/Invariant/Lookup.lean`).
 - **Lifecycle branches in place**: a page-table unmap refused while the table
   is in use (`pageTableUnmapInUseAt`) and an unmap of an address nothing is
   mapped at (`vspaceUnmapUnmappedAt`) are refused on the root's words; a
   registered endpoint's release (`releaseFinalRegistrationImpl`), a thread's
   core release (`MachineState.releaseThreadOnCoreImpl`) and a zombie CNode's
   space copy (`copyThreadSpacesAfterZombie`, handed words) write in place.
+- **The seven branches that still allocated, in place**, each compiled form
+  proven equal to its specification:
+  - the interrupt bind over a final notification capability
+    (`irqHandlerSetNotificationBindAt`, `IrqControl.lean`): seL4's
+    `SetIRQHandler` deletes the node slot's capability and inserts the new
+    one, so when that capability is a notification's, the bind decides the
+    copy's checks before any write and runs the delete and the copy on the
+    state it owns (`irqHandlerSetNotification_overFinal_copy`);
+  - the final delete of an installed page table
+    (`finaliseInstalledTableCells`, `FrameFinalise.lean`): the table and every
+    table beneath it detached in the root's slot, each write recorded as
+    words (`finaliseInstalledTableCells_eq`);
+  - the first map into a carved VSpace root: the carve gives the root its own
+    mapping and epoch tables and their spare cells, and the heap admission
+    counts them (`carvedVSpaceRootHeapBytes`);
+  - a capability move's parent-link walk reads its words before it writes
+    the slot (`linkSetParentRunImpl`, `SlotLinks.lean`);
+  - the code unmap records its instruction invalidate through the spare cell
+    (`vspaceUnmapPerformAtCells`, `VSpaceUnmapPerform.lean`), and the unify
+    reuses its spare ledger cell when it holds an invalidate
+    (`PerCoreCacheModel.lean`);
+  - the retire of an untyped with children takes the child list out of its
+    record before the recorder adopts it (`clearRetiredChildren`,
+    `retireRecordedObjectImpl`), and the adopt splices the last record's
+    children onto the rest (`childListAdoptImpl`, `FinalRetire.lean`).
 - **Exercisers**: `mapped-frame-remap` now expects the remap, beside
   `mapped-frame-remap-other-vaddr`, `tabled-root-frame-other-asid`,
   `mapped-frame-unify`, `mapped-frame-unmap-code` and `mapped-frame-map-again`.
-  `registered-endpoint-delete`, `unmap-nothing`, `installed-table-unmap-refused`,
-  `zombie-cnode-replaced`, `self-tcb-delete`, `remote-running-tcb-delete` and
-  every map, remap and remap refusal read 0.  Seven branches still allocate
-  and are held by the gate at their exact readings, a row of
-  `docs/REGISTERED_DEBT.md` table C: `irq-handler-set-notification-over-last`
-  (1926 cells), `installed-table-delete-1` (38), `tabled-root-map` (9),
-  `parent-cap-move` (8), `mapped-frame-unmap-code` (4), `parent-untyped-delete`
-  (2) and `mapped-frame-unify` (1, at steady state).
+  Every lifecycle and VSpace scenario reads 0 on the first call and at steady
+  state, so the gate's list of held nonzero readings is deleted and every
+  kernel entry that carves nothing is held at 0.  A carved VSpace root's own
+  cells are now 106 (3688 bytes), its tables among them, and each core's heap
+  size record holds the latest 128 allocations so that window is recorded
+  whole (`RECORDED_ALLOCATIONS`).
 
 ### Security
 
-- The remap's refusals are read before any write, so a call naming another
-  address space or address commits nothing; a remap writes only the root the
-  capability's mapping is in and the capability's record, the footprint of an
-  unmap and a map together.
+- The remap's refusals are read before any write, so a refused remap commits
+  nothing, and no refusal can come after the unmap has written: a remap
+  writes only the root the capability's mapping is in and the capability's
+  record, the footprint of an unmap and a map together.
+- Each of the seven branches above allocated on the kernel heap for the
+  length of the call, up to 81696 bytes for the interrupt bind, 10640 for a
+  capability move and 9464 for an installed table's delete.  The heap halts
+  the system when an allocation finds it at its reserve, so a thread holding
+  the capabilities a branch needs could halt the kernel by calling it while
+  the heap was near its reserve.  None of them allocates now.
+- A carved VSpace root's heap admission did not count the tables its first
+  map then allocated; it now counts them, and the carve allocates them.
 - A thread that deletes its own TCB is answered nothing: the finalisation
   leaves it held by no core (`finaliseThread_quiesces`), the retire erases it,
   so the return-frame staging writes neither its context

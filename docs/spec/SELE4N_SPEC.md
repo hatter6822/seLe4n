@@ -6984,13 +6984,18 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   capability whose recorded mapping is still live (`capabilityMappingLive`) is
   remapped, as seL4's `Page_Map` does (since `v0.37.10`), when the call names
   the ASID and the address it records: the unmap of that address, then the
-  fresh mapping with the new rights (`vspaceMapOrRemapFromFrameCap`); another
-  ASID is refused as `.invalidCapability` and another address as
-  `.invalidArgument`, before any write.  Should the fresh half refuse after the
-  unmap, for a reason the unmap cleared (which a well-formed store does not
-  reach), the unmap stands.  The fast arm runs the remap in place
-  (`vspaceRemapAdmittedAt`, `vspaceRemapMapAt`,
-  `vspaceMapOrRemapFromFrameCap_of_remapAdmitted`); a copy and an IPC transfer
+  fresh mapping with the new rights (`vspaceMapOrRemapFromFrameCap`).  Every
+  refusal is decided before the unmap writes, in the order of seL4's
+  `decodeARMFrameInvocation` (`vspaceRemapRefusal`): the ASID's root
+  (`.asidNotBound`), the page alignment (`.alignmentError`), the record's ASID
+  (`.invalidCapability`) and address (`.invalidArgument`), the walk
+  (`.translationFault`), then this kernel's own checks in the fresh map's
+  order; a refused remap changes nothing
+  (`vspaceMapOrRemapFromFrameCap_of_remapRefused`), and either half refusing
+  refuses the call.  The fast arm reads the same refusals and the in-place
+  conditions (`vspaceRemapInPlaceAt`), then runs the unmap and the map in
+  place (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`), the map admitted on
+  the state the unmap leaves (`vspaceMapAdmittedAt_of_remapInPlace`); a copy and an IPC transfer
   insert `cap.withoutMapping` (seL4's `deriveCap`).  The live `.cspaceDelete`
   and `.cspaceRevoke` arms are `cspaceDeleteSlotFinalising` /
   `cspaceRevokeCdtFinalising`: the destroying step, then the removal of every
