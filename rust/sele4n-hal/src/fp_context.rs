@@ -98,6 +98,20 @@ pub type FpBuffers = [FpBuffer; crate::svc_dispatch::RETURN_FRAME_CORES];
 static CAPTURE: FpBuffers = [const { FpBuffer::new() }; crate::svc_dispatch::RETURN_FRAME_CORES];
 static LOAD: FpBuffers = [const { FpBuffer::new() }; crate::svc_dispatch::RETURN_FRAME_CORES];
 
+/// Per core, how many contexts [`load_commit`] has loaded: an FP/SIMD access
+/// the Lean kernel answered `.load`.  Read by the exercisers to tell a load from
+/// a `.retry`, which loads nothing ([`load_commits_on`]).
+static LOAD_COMMITS: [core::sync::atomic::AtomicU64; crate::svc_dispatch::RETURN_FRAME_CORES] =
+    [const { core::sync::atomic::AtomicU64::new(0) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// How many contexts `core` has loaded ([`load_commit`]); `0` past the cores.
+#[must_use]
+pub fn load_commits_on(core: usize) -> u64 {
+    LOAD_COMMITS
+        .get(core)
+        .map_or(0, |count| count.load(core::sync::atomic::Ordering::Relaxed))
+}
+
 /// **WS-BP BP7.9**: per core, the buffer [`load_commit`] loads — what
 /// `ffi::ffi_fp_stage_context` stages into.
 #[must_use]
@@ -198,6 +212,9 @@ pub fn load_commit() {
     }
     #[cfg(not(all(feature = "hw_target", target_arch = "aarch64")))]
     let _ = buf;
+    if let Some(count) = LOAD_COMMITS.get(core_index()) {
+        count.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
     set_trap_for_resume(false);
 }
 

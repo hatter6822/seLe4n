@@ -698,6 +698,50 @@ for driver in drivers:
             "irq-handler-set-notification-over-copy",
             "irq-cleared-notification-cap-delete", "irq-handler-clear-last",
             "self-tcb-delete", "remote-running-tcb-delete",
+            # The call queued with no receiver and the receive and the
+            # reply-receive that take it, the priority of a ready thread and of
+            # the caller itself set, the one-page long send that blocks.
+            "untyped-retype-queued-caller", "queued-caller-set-space",
+            "queued-caller-set-priority", "queued-caller-bind",
+            "queued-caller-resume-caller", "queued-caller-root-waits",
+            "queued-caller-caller-wakes-root", "queued-caller-calls",
+            "queued-caller-root-receives", "queued-caller-root-replies",
+            "queued-caller-suspend-caller", "queued-caller-resume-partner",
+            "queued-caller-root-takes-partner", "queued-caller-partner-calls",
+            "queued-caller-resume-caller-again", "queued-caller-lower-ready",
+            "queued-caller-raise-ready", "queued-caller-root-lowers-self",
+            "queued-caller-calls-again", "queued-caller-root-raises-self",
+            "queued-caller-reply-recv", "queued-caller-root-replies-again",
+            "queued-caller-suspend-caller-again", "queued-caller-suspend-partner",
+            "queued-caller-unbind", "queued-caller-delete",
+            "long-send-blocks", "long-send-partner-takes", "long-send-blocks-partner-yield",
+            "yield-to-lower-partner", "yield-to-resume-partner", "yield-to-raise-partner",
+            # Every fault kind queued on a handler with no receiver, and the
+            # refusals the entry turns into capability faults on either side
+            # of the IPC buffer's TLB fill.
+            "vm-fault-instruction-queued", "cap-fault-queued", "unknown-syscall-queued",
+            "user-exception-queued", "receive-queued-instruction-fault",
+            "receive-queued-cap-fault", "receive-queued-unknown-syscall",
+            "receive-queued-user-exception", "reply-queued-instruction-fault",
+            "reply-queued-cap-fault", "reply-queued-unknown-syscall",
+            "reply-queued-user-exception",
+            "configure-refused-fills", "configure-cap-fault-fills",
+            "receive-configure-cap-fault", "reply-configure-cap-fault",
+            "configure-fills-ipc-buffer", "configure-cap-fault-held",
+            "receive-configure-cap-fault-held", "reply-configure-cap-fault-held",
+            "configure-refused-held", "configure-held-ipc-buffer",
+            "service-register-cap-fault", "receive-service-register-cap-fault",
+            "reply-service-register-cap-fault", "long-send-cap-fault",
+            "receive-long-send-cap-fault", "reply-long-send-cap-fault",
+            # The unbound line's handler issued and acknowledged, the
+            # notification bound again after the revoke.
+            "irq-control-get-unbound", "irq-unbound-ack", "irq-handler-set-notification-again",
+            # A remote core's work: a shootdown with a remote target, a
+            # syscall on a core another core vacated and the reschedule that
+            # ends it, an FP/SIMD access retried while another core holds its
+            # values and the access once it has released them.
+            "remote-asid-map", "remote-asid-unmap", "vacated-core-syscall",
+            "vacated-core-reschedule", "fp-access-retry", "fp-access-released",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
@@ -808,6 +852,28 @@ for driver in drivers:
         # WS-ZA ZA6.1: each core's first entry, its bring-up reschedule, read
         # once per core (the boot core's after boot, each secondary's as it
         # comes up), each a delta of zero.
+        # Each secondary's timer ticks and `.reschedule` SGI once it is up,
+        # read on that core's own counter at the driver's start and its end:
+        # one reading of each per core and run, with the line that says the
+        # window took them, and each 0.
+        for kind, took in (("secondary-ticks", r"took \d+ ticks"), ("secondary-reschedule", r"took the SGI")):
+            for which in (" (first call)", ""):
+                for core in (1, 2, 3):
+                    prefix = f"[smp-test] heap-allocations-per-syscall: {kind}: core {core}{which}: "
+                    window = [l for l in lines if l.startswith(prefix + "before=")]
+                    taken = [l for l in lines if l.startswith(prefix) and re.fullmatch(took, l[len(prefix):])]
+                    if len(window) != 1 or len(taken) != 1:
+                        failures.append(f"heap-allocations-per-syscall: {kind}: core {core}{which}: expected one reading and one taken line, found {len(window)} and {len(taken)}")
+                        continue
+                    m = re.fullmatch(r"before=(\d+) after=(\d+) delta=(\d+) bytes=(\d+) sizes=(none|\d+x\d+(?:,\d+x\d+)*)", window[0][len(prefix):])
+                    if m is None:
+                        failures.append(f"heap-allocations-per-syscall: a reading the gate cannot read: {window[0]!r}")
+                        continue
+                    before, after, delta = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                    if after < before or delta != after - before:
+                        failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {window[0]!r}")
+                    elif delta != 0:
+                        failures.append(f"heap-allocations-per-syscall: a secondary's kernel entries read {delta}, not 0: {window[0]!r}")
         secondary = matches(r"\[smp-test\] heap-allocations-per-syscall: secondary-entry: core (\d+) \(first call\): before=(\d+) after=(\d+) delta=(\d+)$")
         cores = sorted(int(m.group(1)) for m in secondary)
         if cores != [0, 1, 2, 3]:
