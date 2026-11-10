@@ -422,7 +422,23 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
       (descheduleAtPlacement_objectsAgreeOffRunLinks _ _)).mpr (hc c)
   unfold replyRecvPostReceiveDonation at h
   cases returned? with
-  | none => simp only [] at h; cases h; exact hPip st hObjInv hCons
+  | none =>
+    simp only [] at h
+    cases hCall : rendezvousDequeuedCall st nextThread with
+    | false =>
+        rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h
+        exact hPip st hObjInv hCons
+    | true =>
+        rw [hCall] at h; simp only [if_true] at h
+        cases hDon : applyRendezvousCallDonation st tid nextThread with
+        | error e => rw [hDon] at h; simp only [] at h; cases h
+        | ok st2 =>
+            rw [hDon] at h; simp only [] at h; cases h
+            exact hPip _
+              (applyRendezvousCallDonation_preserves_objects_invExt _ st2 tid nextThread
+                hObjInv hDon)
+              (applyRendezvousCallDonation_preserves_replenishQueueAffinityConsistent_smp
+                _ st2 tid nextThread hObjInv hCons hDon)
   | some pair =>
     obtain ⟨_scId, holder⟩ := pair
     simp only [] at h
@@ -935,9 +951,31 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
   unfold replyRecvPostReceiveDonation at h
   cases returned? with
   | none =>
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h
-      exact h.2 ▸ propagatePipChainCrossCore_preserves_ipcInvariantFull st recordedServer
-        serverCore _ hObjInv hInv
+    simp only [] at h
+    cases hCall : rendezvousDequeuedCall st nextThread with
+    | false =>
+        rw [hCall] at h; simp only [Bool.false_eq_true, if_false, Except.ok.injEq,
+          Prod.mk.injEq] at h
+        exact h.2 ▸ propagatePipChainCrossCore_preserves_ipcInvariantFull st recordedServer
+          serverCore _ hObjInv hInv
+    | true =>
+        rw [hCall] at h; simp only [if_true] at h
+        cases hDon : applyRendezvousCallDonation st tid nextThread with
+        | error e => rw [hDon] at h; simp only [] at h; cases h
+        | ok st2 =>
+            rw [hDon] at h; simp only [Except.ok.injEq, Prod.mk.injEq] at h
+            have hStep : applyReceiveRendezvousDonation st tid nextThread = .ok st2 := by
+              unfold applyReceiveRendezvousDonation
+              rw [hCall]
+              simpa using hDon
+            have hInv2 : ipcInvariantFull st2 :=
+              applyReceiveRendezvousDonation_preserves_ipcInvariantFull _ st2
+                tid nextThread hObjInv hInv hReceiverNotOwner hStep
+            have hObjInv2 : st2.objects.invExt :=
+              applyReceiveRendezvousDonation_preserves_objects_invExt _ st2 tid
+                nextThread hObjInv hStep
+            exact h.2 ▸ propagatePipChainCrossCore_preserves_ipcInvariantFull st2
+              recordedServer serverCore _ hObjInv2 hInv2
   | some pair =>
     obtain ⟨scIdP, holder⟩ := pair
     simp only [] at h
@@ -1006,9 +1044,18 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
             exact h.2 ▸ propagatePipChainCrossCore_preserves_ipcInvariantFull st2
               recordedServer serverCore _ hObjInv2 hInv2
 
-@[simp] theorem replyRecvPostReceiveReplenishCores_none (tid nextThread : SeLe4n.ThreadId)
-    (st : SystemState) :
-    replyRecvPostReceiveReplenishCores tid nextThread none st = [] := rfl
+theorem replyRecvPostReceiveReplenishCores_none_of_no_call (tid nextThread : SeLe4n.ThreadId)
+    (st : SystemState) (h : rendezvousDequeuedCall st nextThread = false) :
+    replyRecvPostReceiveReplenishCores tid nextThread none st = [] := by
+  unfold replyRecvPostReceiveReplenishCores
+  simp [h]
+
+theorem replyRecvPostReceiveReplenishCores_none_of_call (tid nextThread : SeLe4n.ThreadId)
+    (st : SystemState) (h : rendezvousDequeuedCall st nextThread = true) :
+    replyRecvPostReceiveReplenishCores tid nextThread none st
+      = rendezvousCallDonationReplenishCores st tid nextThread := by
+  unfold replyRecvPostReceiveReplenishCores
+  simp [h]
 
 theorem replyRecvPostReceiveReplenishCores_of_no_call (tid nextThread : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId) (st : SystemState)
@@ -1215,10 +1262,10 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_postReceiveDonation
   simp only [List.mem_append]
   exact Or.inr (Or.inr hc)
 
-/-- **WS-RR RR8.12 Cut C2**: where no hand-off fires — the pop handed nothing back
-and the receive leg's block path returns no loan — the segment is empty, so the
-footprint is the table lock and the run queues alone.  The post-receive half needs
-no hypothesis: with nothing handed back it walks and never donates. -/
+/-- **WS-RR RR8.12 Cut C2**: where no hand-off fires — the pop handed nothing back,
+the receive leg's block path returns no loan, and the post-receive half's donation
+of a dequeued `Call` (the one `.receive` makes) migrates nothing (`hDecl`) — the
+segment is empty, so the footprint is the table lock and the run queues alone. -/
 theorem replyRecvHandoffReplenishCores_of_no_donation (answer : Option Architecture.FaultReplyOutcome)
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
@@ -1229,7 +1276,11 @@ theorem replyRecvHandoffReplenishCores_of_no_donation (answer : Option Architect
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1q))
     (hX : replyRecvReplyTransfer answer st receiver prevCaller grant st1q = .ok (xs, st1p))
     (hNoHead : replyFrameHeadContext? st1 replyId = none)
-    (hPre : receivePreReturn? st1p endpointId receiver = none) :
+    (hPre : receivePreReturn? st1p endpointId receiver = none)
+    (hDecl : ∀ st2 nextThread summary sgi2,
+      endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p =
+        (st2, .ok (nextThread, summary, sgi2)) →
+      replyRecvPostReceiveReplenishCores receiver nextThread none st2 = []) :
     replyRecvHandoffReplenishCores answer endpointId receiver replyId prevCaller msg grant
       executingCore st = [] := by
   rw [replyRecvHandoffReplenishCores_eq_of_pop answer endpointId receiver replyId prevCaller msg
@@ -1237,7 +1288,9 @@ theorem replyRecvHandoffReplenishCores_of_no_donation (answer : Option Architect
     replyDonationReturnReplenishCores_of_no_head st1 replyId prevCaller hNoHead,
     receivePreReturnReplenishCores_of_none st1p endpointId
     receiver hPre, List.nil_append, List.nil_append]
-  split <;> rfl
+  split
+  · rfl
+  · next h => exact hDecl _ _ _ _ h
 
 /-- **WS-RR RR8.12 Cut C2 (the empty segment)**: a `.replyRecv` that hands nothing
 back and returns no loan declares **no** replenish-queue lock — over-declaring is
@@ -1254,14 +1307,19 @@ theorem schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1q))
     (hX : replyRecvReplyTransfer none st receiver prevCaller grant st1q = .ok (xs, st1p))
     (hNoHead : replyFrameHeadContext? st1 replyId = none)
-    (hPre : receivePreReturn? st1p endpointId receiver = none) (c : Concurrency.CoreId) :
+    (hPre : receivePreReturn? st1p endpointId receiver = none)
+    (hDecl : ∀ st2 nextThread summary sgi2,
+      endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p =
+        (st2, .ok (nextThread, summary, sgi2)) →
+      replyRecvPostReceiveReplenishCores receiver nextThread none st2 = [])
+    (c : Concurrency.CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant
           executingCore st := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [replyRecvHandoffReplenishCores_of_no_donation none endpointId receiver replyId prevCaller
-    msg grant executingCore st st1 st1q st1p sgi xs hReply hPop hX hNoHead hPre] at this
+    msg grant executingCore st st1 st1q st1p sgi xs hReply hPop hX hNoHead hPre hDecl] at this
   simp at this
 
 /-- **WS-RR RR8.12 Cut C2 (frame)**: the receive leg writes no replenish queue where
@@ -1304,27 +1362,60 @@ theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_preReturn
             receiver replyId executingCore st ep hEp hHead
             hNoDon c
 
-/-- The post-receive half's never-donated arm is the chain walk from the recorded
-server, and nothing else. -/
+/-- The post-receive half on a pop that handed nothing back and a receive leg that
+dequeued no `Call` is the chain walk from the recorded server, and nothing else. -/
 theorem replyRecvPostReceiveDonation_ok_none_eq (tid recordedServer nextThread : SeLe4n.ThreadId)
     (serverCore : Concurrency.CoreId) (st st' : SystemState) (u : Unit)
+    (hNoCall : rendezvousDequeuedCall st nextThread = false)
     (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st
       = .ok (u, st')) :
     st' = (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1 := by
   unfold replyRecvPostReceiveDonation at h
-  simp only [] at h
+  simp only [hNoCall, Bool.false_eq_true, if_false] at h
   exact ((Prod.mk.inj (Except.ok.inj h)).2).symm
 
-/-- ...so it writes no replenish queue (WS-RR RR2.20's frame over the walk)... -/
+/-- On a pop that handed nothing back and a receive leg that dequeued a `Call`, the
+post-receive half is the donation `.receive` makes (`applyRendezvousCallDonation`)
+followed by the chain walk from the recorded server. -/
+theorem replyRecvPostReceiveDonation_ok_none_call (tid recordedServer nextThread : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId) (st st' : SystemState) (u : Unit)
+    (hCall : rendezvousDequeuedCall st nextThread = true)
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st
+      = .ok (u, st')) :
+    ∃ st2, applyRendezvousCallDonation st tid nextThread = .ok st2 ∧
+      st' = (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1 := by
+  unfold replyRecvPostReceiveDonation at h
+  simp only [hCall, if_true] at h
+  cases hDon : applyRendezvousCallDonation st tid nextThread with
+  | error e => rw [hDon] at h; simp only [] at h; cases h
+  | ok st2 =>
+    rw [hDon] at h; simp only [] at h
+    exact ⟨st2, rfl, ((Prod.mk.inj (Except.ok.inj h)).2).symm⟩
+
+/-- ...so it writes no replenish queue outside its segment (WS-RR RR2.20's frame
+over the walk, and the donation's own frame at the cores it migrates between)... -/
 theorem replyRecvPostReceiveDonation_replenishQueueOnCore_of_none
     (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
     (st st' : SystemState) (u : Unit) (hObjInv : st.objects.invExt)
     (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st
-      = .ok (u, st')) (c : Concurrency.CoreId) :
+      = .ok (u, st')) (c : Concurrency.CoreId)
+    (hne : c ∉ replyRecvPostReceiveReplenishCores tid nextThread none st) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  rw [replyRecvPostReceiveDonation_ok_none_eq tid recordedServer nextThread serverCore st st' u h]
-  exact (PriorityInheritance.propagatePipChainCrossCore_replenish_readings st recordedServer
-    serverCore _ hObjInv).1 c
+  cases hCall : rendezvousDequeuedCall st nextThread with
+  | false =>
+    rw [replyRecvPostReceiveDonation_ok_none_eq tid recordedServer nextThread serverCore st st' u
+      hCall h]
+    exact (PriorityInheritance.propagatePipChainCrossCore_replenish_readings st recordedServer
+      serverCore _ hObjInv).1 c
+  | true =>
+    obtain ⟨st2, hDon, rfl⟩ := replyRecvPostReceiveDonation_ok_none_call tid recordedServer
+      nextThread serverCore st st' u hCall h
+    rw [replyRecvPostReceiveReplenishCores_none_of_call tid nextThread st hCall] at hne
+    have hInv2 := applyRendezvousCallDonation_preserves_objects_invExt _ st2 tid nextThread
+      hObjInv hDon
+    rw [(PriorityInheritance.propagatePipChainCrossCore_replenish_readings st2 recordedServer
+      serverCore _ hInv2).1 c,
+      applyRendezvousCallDonation_replenishQueueOnCore_ne _ st2 tid nextThread c hne hDon]
 
 /-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the post-receive half writes no
 replenish queue outside `replyRecvPostReceiveReplenishCores` — the FOOTPRINT's own
@@ -1349,7 +1440,7 @@ theorem replyRecvPostReceiveDonation_replenishQueueOnCore_ne
   | none =>
     subst hRet
     exact replyRecvPostReceiveDonation_replenishQueueOnCore_of_none tid recordedServer nextThread
-      serverCore st st' u hObjInv h c
+      serverCore st st' u hObjInv h c hne
   | some pair =>
     obtain ⟨scId, holder⟩ := pair
     subst hRet
@@ -1402,9 +1493,18 @@ theorem replyRecvPostReceiveDonation_preserves_objects_invExt_of_none
     (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st
       = .ok (u, st')) :
     st'.objects.invExt := by
-  rw [replyRecvPostReceiveDonation_ok_none_eq tid recordedServer nextThread serverCore st st' u h]
-  exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st recordedServer
-    serverCore _ hObjInv
+  cases hCall : rendezvousDequeuedCall st nextThread with
+  | false =>
+    rw [replyRecvPostReceiveDonation_ok_none_eq tid recordedServer nextThread serverCore st st' u
+      hCall h]
+    exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st recordedServer
+      serverCore _ hObjInv
+  | true =>
+    obtain ⟨st2, hDon, rfl⟩ := replyRecvPostReceiveDonation_ok_none_call tid recordedServer
+      nextThread serverCore st st' u hCall h
+    exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st2
+      recordedServer serverCore _
+      (applyRendezvousCallDonation_preserves_objects_invExt _ st2 tid nextThread hObjInv hDon)
 
 /-- **WS-RR RR8.12 Cut C6e**: the post-receive half keeps object-store integrity on
 **every** arm, which is what the walk after it and the `.replyRecv` composite's own
@@ -1469,14 +1569,12 @@ post-receive half's never-donated arm is the chain walk, which is a frame
 identity or another walk (`applyReceiveLegPipHandoff_cases`), and the two stagers
 write registers only.
 
-**This theorem also pins a divergence the register records** (the WS-CB
-passive/legacy row): on a `.replyRecv` whose pop returned nothing, a dequeued `Call`
-caller's context is NOT donated to an `.unbound` receiver — the never-donated arm
-walks only — where seL4-MCS's `receiveIPC` and this kernel's own `.receive` arm
-would donate.  A cut that makes that arm donate widens the segment
-(`replyRecvPostReceiveReplenishCores`'s `none` arm) and breaks this theorem, which is
-the intended coupling: the footprint and the transition move together or not at
-all. -/
+The post-receive half on a pop that returned nothing donates a dequeued `Call`
+caller's context to an `.unbound` receiver, as seL4-MCS's `receiveIPC` and this
+kernel's own `.receive` arm do, and that donation migrates replenishments; `hDecl`
+is the hypothesis that it migrates none (no `Call` dequeued, a receiver already
+bound, or a caller holding no context), the segment's `none` arm read at the
+receive leg's post-state. -/
 theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
     {answer : Option Architecture.FaultReplyOutcome}
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
@@ -1495,6 +1593,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
     (hPost : replyRecvPostReceiveDonation receiver ((recordedReplyServer? st prevCaller).getD receiver)
         nextThread executingCore
         none st2 = .ok ((), st3))
+    (hDecl : replyRecvPostReceiveReplenishCores receiver nextThread none st2 = [])
     (hBody : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg grant executingCore st = .ok (summary', stOut))
     (c : Concurrency.CoreId) :
     stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
@@ -1524,6 +1623,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
     rw [hRecv, replyRecvReplyTransfer_scheduler_eq hX] at h; exact h
   have hR3 : st3.scheduler.replenishQueueOnCore c = st2.scheduler.replenishQueueOnCore c :=
     replyRecvPostReceiveDonation_replenishQueueOnCore_of_none _ _ _ _ st2 st3 () hInv2 hPost c
+      (by rw [hDecl]; simp)
   -- the body's post-state is the stagers over the hand-off over `st3`
   unfold endpointReplyRecvAnsweringOnCore at hBody
   simp only [hReply, hPop, hX, hRecv, hPost] at hBody

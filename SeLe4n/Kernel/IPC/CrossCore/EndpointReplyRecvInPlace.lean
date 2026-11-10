@@ -482,10 +482,14 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
     have hSnd : (receiveRendezvousSender? S1 epId).isNone = true := by
       simp [receiveRendezvousSender?, hEp1, hS]
     simp only [hSnd, ↓reduceIte]
+  have hRes : tid.isReserved = false := by
+    have h := hG1
+    simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
+    exact h.1.1.1.1.1.1.1
   unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRec, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hS]
-  simp [replyRecvPostReceiveDonation, applyReceiveLegPipHandoff,
-    Architecture.stageWokenSendCompletion_none]
+  simp only [hRec, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hS,
+    replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
+  simp [applyReceiveLegPipHandoff, Architecture.stageWokenSendCompletion_none]
 
 /-- **The reply-receive that blocks, in place**: the composite for a caller
 carrying no fault (`replyRecvAnsweringOnCore_blocks_inPlace` at `none`) is the

@@ -233,10 +233,14 @@ never-donated path.
 * Otherwise (a plain `Send` rendezvous, or the server blocked with no waiter) the
   now-passive **holder** is descheduled at its placement.
 
-A reply that popped **no** context needs no donation change — the run-queue state
-is left to the receive leg.  Every arm reverts the reply leg's
-priority-inheritance boost through the cross-core chain walk from
-`recordedServer`.
+A reply that popped **no** context leaves the receiver's binding as it was, so a
+receive leg that dequeued a **Call** donates the new client's context to `tid`
+exactly as `.receive` does (`applyRendezvousCallDonation`; seL4-MCS
+`receiveIPC` → `reply_push` with `canDonate`): a receiver holding no context is
+handed the client's, and a receiver already bound, or a client holding none, is
+left as it was.  Nothing is descheduled there, since the pop made no thread
+passive.  Every arm reverts the reply leg's priority-inheritance boost through
+the cross-core chain walk from `recordedServer`.
 
 **Two threads, two questions** (PR #897 review).  `recordedServer` is
 `recordedReplyServer?` of the answered caller — the thread it recorded when it
@@ -253,7 +257,21 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
   fun st =>
     match returned? with
     | none =>
-        .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1)
+        -- A reply that popped no context leaves the receiver as it was, and the
+        -- receive leg's Call is donated to it exactly as `.receive` donates
+        -- (seL4-MCS `receiveIPC` → `reply_push (canDonate)`): the new client's
+        -- context goes to the receiver when the receiver holds none and the
+        -- client holds one, and `applyRendezvousCallDonation` is the identity
+        -- otherwise.  The reply leg has no say in it.
+        if rendezvousDequeuedCall st nextThread then
+            match applyRendezvousCallDonation st tid nextThread with
+            | .error e => .error e
+            | .ok st2 =>
+                .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer
+                  serverCore).1)
+        else
+            .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer
+              serverCore).1)
     | some (_, holder) =>
         if rendezvousDequeuedCall st nextThread then
             -- New Call: donate to the RECEIVER `tid`, not the (possibly delegated)
@@ -296,6 +314,34 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             -- `recordedServer`, because that one keys on waiters.
             .ok ((), (PriorityInheritance.propagatePipChainCrossCore
               (descheduleAtPlacement st holder) recordedServer serverCore).1)
+
+/-- On a pop that handed nothing back, a post-receive donation the resolver
+declines (`callDonationSchedContext?` answering `none`: the receiver already holds
+a context, the dequeued caller holds none, or the two are one thread) is the chain
+walk alone, whether or not a `Call` was dequeued. -/
+theorem replyRecvPostReceiveDonation_none_of_declined (tid recordedServer nextThread : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId) (st : SystemState) (nextV tidV : SeLe4n.ValidThreadId)
+    (hNV : nextThread.toValid? = some nextV) (hTV : tid.toValid? = some tidV)
+    (hNone : callDonationSchedContext? st nextThread tid = none) :
+    replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st =
+      .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1) := by
+  have h := applyReceiveRendezvousDonation_of_no_donation st tid nextThread nextV tidV hNV hTV hNone
+  unfold applyReceiveRendezvousDonation at h
+  unfold replyRecvPostReceiveDonation
+  simp only []
+  split
+  · next hC => rw [if_pos hC] at h; rw [h]
+  · rfl
+
+/-- ...and on a receive leg that blocked, which hands back the receiver itself as
+the thread it dequeued, that is always so: a thread donates nothing to itself. -/
+theorem replyRecvPostReceiveDonation_none_self (tid recordedServer : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId) (st : SystemState) (hRes : tid.isReserved = false) :
+    replyRecvPostReceiveDonation tid recordedServer tid serverCore none st =
+      .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1) := by
+  obtain ⟨tidV, hTV⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff tid).mpr hRes)
+  exact replyRecvPostReceiveDonation_none_of_declined tid recordedServer tid serverCore st tidV tidV
+    hTV hTV (callDonationSchedContext?_self st tid)
 
 /-- **WS-RM RM5.2**: the donation the pop handed back — the scheduling context
 **and the thread it unbound** — as a total accessor.  `none` on the refusal arm
@@ -698,10 +744,11 @@ def replyRecvHolderDescheduleWriteSet (tid holder : SeLe4n.ThreadId)
   if holder = tid then []
   else descheduleAtPlacementCores st holder
 /-- SM8.B.2 / WS-RR RR2.20 / **WS-RM (`v0.35.6`)**: **the cores the post-receive
-half may write**, mirroring its own control flow.  Three shapes: the
-never-donated arm walks the chain from its pre-state; the rendezvous arm donates
-(per-core silent) and walks from the post-donation state; the remaining arm
-deschedules the recorded server on its own core first.  The fail-closed arm
+half may write**, mirroring its own control flow.  Three shapes: a rendezvous
+arm (on either pop answer) donates (per-core silent) and walks from the
+post-donation state; the arm that popped nothing and dequeued no `Call` walks the
+chain from its pre-state; the remaining arm deschedules the recorded server on
+its own core first.  The fail-closed arm
 produces no post-state at all, so its entry is `[]` and the confinement theorem's
 hypothesis rules it out.
 
@@ -713,7 +760,12 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (st : SystemState) : List Concurrency.CoreId :=
   match returned? with
-  | none => pipChainWriteSet st recordedServer serverCore st.objectIndex.length
+  | none =>
+      if rendezvousDequeuedCall st nextThread then
+        match applyRendezvousCallDonation st tid nextThread with
+        | .error _ => []
+        | .ok st2 => pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
+      else pipChainWriteSet st recordedServer serverCore st.objectIndex.length
   | some (_, holder) =>
       if rendezvousDequeuedCall st nextThread then
         match applyRendezvousCallDonation
@@ -853,12 +905,13 @@ def replyRecvTransferWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
 -- the duplication this project retires.
 
 /-- **WS-RR RR8.12 Cut C2**: the replenish-queue cores the post-receive half
-migrates between -- the dequeued caller's home and the receiver's, when the pop
-handed a context back AND the receive leg dequeued a `Call` AND the donation's own
-resolver answers `some` at the state the donation runs on (the post-deschedule
-state, which is scheduler-only relative to the receive leg's post-state).  Every
-other arm migrates nothing: the never-donated arm walks the chain only, and the
-non-`Call` arm deschedules and walks.
+migrates between -- the dequeued caller's home and the receiver's, when the
+receive leg dequeued a `Call` AND the donation's own resolver answers `some` at
+the state the donation runs on (on a pop that handed a context back, the
+post-deschedule state, which is scheduler-only relative to the receive leg's
+post-state; on one that handed none, the receive leg's post-state itself).  Every
+other arm migrates nothing: a non-`Call` arm only walks the chain, after
+descheduling the holder where the pop handed one back.
 
 The three-way gate is the transition's own, clause for clause
 (`replyRecvPostReceiveDonation`): a footprint keyed on fewer conditions would
@@ -868,7 +921,10 @@ def replyRecvPostReceiveReplenishCores (tid nextThread : SeLe4n.ThreadId)
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState) :
     List Concurrency.CoreId :=
   match returned? with
-  | none => []
+  | none =>
+      if rendezvousDequeuedCall st nextThread then
+        rendezvousCallDonationReplenishCores st tid nextThread
+      else []
   | some (_, holder) =>
       if rendezvousDequeuedCall st nextThread then
         rendezvousCallDonationReplenishCores (replyRecvHolderDeschedule tid holder st)

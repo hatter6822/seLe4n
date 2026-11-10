@@ -577,6 +577,10 @@ theorem replyRecvPostReceiveDonation_runQueueStage {tid recordedServer nextThrea
     | (cases h; done)
     | (cases h; exact PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
     | (cases h
+       exact (applyRendezvousCallDonation_runQueueStage
+         (rendezvousDequeuedCall_activeAt hC (by assumption)) (by assumption)).trans
+         (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _))
+    | (cases h
        refine ((replyRecvHolderDeschedule_runQueueStage tid _ st).trans
          (applyRendezvousCallDonation_runQueueStage ?_ (by assumption))).trans
          (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)

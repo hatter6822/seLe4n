@@ -31,7 +31,9 @@ open SeLe4n.Model
 
 /-- **The long-send arm**: slot 0 and the next page's first slot read, then the
 send's operand dispatch on the state whose TLB holds the buffer's
-translations, a refusal handing back the TLB the entry held.  Its result reported under the entry's first continuation. -/
+translations, a refusal handing back the TLB the entry held; a refusal reported
+under the entry's resolved or lookup continuation as the dispatch told them
+apart, a result under the first. -/
 @[noinline] def sendLongRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (length : Nat) (st : SystemState) :
     SystemState :=
@@ -43,21 +45,10 @@ translations, a refusal handing back the TLB the entry held.  Its result reporte
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
             (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
-            (fun _ => entryReportGeneral (
-              if SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid (length - 4) then
-                dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => longOperandK (SeLe4n.CPtr.ofWord capWord) tid executingCore
                   (sendOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
-                    length tid executingCore (syscallRequiredRight .send)) st
-              else
-                let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
-                match dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
-                    (sendOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
-                      length tid executingCore (syscallRequiredRight .send))
-                    (SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore st executingCore tid
-                        (length - 4)) with
-                | .error (e, stF) =>
-                  .error (e, SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
-                | .ok r => .ok r)))
+                    length tid executingCore (syscallRequiredRight .send))
+                  (length - 4) st entryReportGeneral entryReportResolved entryReportLookup))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

@@ -604,7 +604,14 @@ theorem replyRecvPostReceiveDonation_mappingStage
       = .ok ((), st')) : MappingStage st st' := by
   unfold replyRecvPostReceiveDonation at h
   split at h
-  · cases h; exact propagatePipChainCrossCore_mappingStage
+  · split at h
+    · split at h
+      · cases h
+      · rename_i st2 hD
+        cases h
+        exact (applyRendezvousCallDonation_mappingStage hD).trans
+          propagatePipChainCrossCore_mappingStage
+    · cases h; exact propagatePipChainCrossCore_mappingStage
   · rename_i holder
     have hH : MappingStage st (replyRecvHolderDeschedule tid holder st) := by
       unfold replyRecvHolderDeschedule

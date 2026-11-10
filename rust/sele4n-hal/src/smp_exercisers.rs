@@ -3565,6 +3565,38 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
+        // The long send that blocks with no receiver waiting (its overflow
+        // words read again at the receive that takes it, from the sender's
+        // buffer), at the one-page length beside the full-length form above.
+        invocation(
+            "long-send-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "long-send-blocks",
+            SEND,
+            ENDPOINT_CAP,
+            LONG_SEND_LENGTH,
+            [0x57, 0x58],
+            true,
+        ),
+        partner_step(
+            "long-send-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+        kernel_step("long-send-blocks-partner-yield", YIELD),
+        invocation(
+            "long-send-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
         // The long call answered by a full-length reply-receive that then blocks
         // on the endpoint with no sender waiting, copying the partner's
         // overflow words, from its slot 1 on, into the caller's buffer in
@@ -6689,6 +6721,265 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             CNODE_CAP,
             [CHAIN_TCB_SLOT, 0, 0, 0],
         ),
+        // The call that queues with no receiver waiting, and the receive that
+        // takes it: a third thread, holding the image's scheduling context,
+        // calls the endpoint while the root task waits on the notification it
+        // has just signalled, so the call is queued on the endpoint's send
+        // queue (seL4's `sendIPC` with no receiver: the caller blocks on
+        // send, `canDonate` held); the root task's receive then dequeues the
+        // caller, binds the reply object to it and takes its context (seL4-MCS
+        // `receiveIPC` meeting a waiting caller: `reply_push` and
+        // `schedContext_donate`, the root task holding none), and its reply
+        // hands the context back.  Then the server loop with a caller queued
+        // behind a client it is answering: the partner's call taken, the
+        // third thread resumed and its priority set while it is ready and
+        // queued (lowered below the root task's and raised back, each
+        // re-queued in place), the root task lowering its own priority below
+        // the ready thread (rescheduled at once, seL4's `setPriority` of the
+        // current thread), the third thread's call queued, the root task
+        // raising its own priority back, and its reply-receive answering the
+        // partner and taking the queued caller at once, its context lent to the
+        // root task again until the root task's reply.  The ticks are masked
+        // across the whole sequence, so no budget runs out between steps, and
+        // at each switch exactly one thread is runnable.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        invocation(
+            "untyped-retype-queued-caller",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ),
+        invocation(
+            "queued-caller-set-space",
+            TCB_SET_SPACE,
+            CHAIN_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "queued-caller-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        invocation(
+            "queued-caller-bind",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [CHAIN_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "queued-caller-resume-caller",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "queued-caller-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("queued-caller-caller-wakes-root", 0xb1),
+        partner_step(
+            "queued-caller-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb2, 0],
+            true,
+        ),
+        partner_step(
+            "queued-caller-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            false,
+        ),
+        partner_step(
+            "queued-caller-root-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0xb3, 0],
+            false,
+        ),
+        // The reply handed the context back and took the root task off its
+        // core (seL4-MCS: a server whose context returns to its caller no
+        // longer runs), so the third thread restarts it before suspending
+        // itself, which leaves the root task current.
+        invocation(
+            "queued-caller-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-suspend-caller",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        // The root task, serving no one, lowers its own priority below the
+        // ready third thread: rescheduled at once (seL4's `setPriority` of the
+        // current thread), its own result staged as it is switched out
+        // (`stageCallerReturn_stages_switched_out`), so the round trip returns
+        // and the third thread is current after it.  The third thread waits,
+        // and the root task raises its own priority back and wakes it.
+        invocation(
+            "queued-caller-resume-lowered",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-root-lowers-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            [PARTNER_PRIORITY - 1, 0, 0, 0],
+        ),
+        partner_step(
+            "queued-caller-caller-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "queued-caller-root-raises-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        signal("queued-caller-root-wakes-caller", 0xb9),
+        invocation(
+            "queued-caller-suspend-lowered",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "queued-caller-root-takes-partner",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "queued-caller-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb4, 0],
+            true,
+        ),
+        invocation(
+            "queued-caller-resume-caller-again",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-lower-ready",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY - 1, 0, 0, 0],
+        ),
+        invocation(
+            "queued-caller-raise-ready",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        partner_step(
+            "queued-caller-root-waits-again",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("queued-caller-caller-wakes-root-again", 0xb8),
+        partner_step(
+            "queued-caller-calls-again",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb5, 0],
+            true,
+        ),
+        partner_step(
+            "queued-caller-reply-recv",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            2,
+            [REPLY_CAP, 0xb6],
+            false,
+        ),
+        partner_step(
+            "queued-caller-root-replies-again",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0xb7, 0],
+            false,
+        ),
+        // The context back with the third thread and the root task off its
+        // core again: the third thread suspends the partner, restarts the root
+        // task and suspends itself.
+        invocation(
+            "queued-caller-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-suspend-root-again",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-resume-root-again",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-suspend-caller-again",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         // WS-ZA ZA6.34: a reply stack three frames deep, and a final delete
         // of its middle reply.  The server is carved again, with a fourth
         // thread and a reply for each; the root task, the server and the
@@ -9000,7 +9291,7 @@ fn bound_declassified_signals(which: &str) -> bool {
 /// switches the two threads between steps.  The setup binds the context to
 /// the suspended partner, lowers the partner one priority below the root
 /// task and resumes it on core 0 (its affinity, as the TCB scenarios leave
-/// it), unmeasured.
+/// it): the bind unmeasured, the priority change and the resume measured.
 #[cfg(feature = "hw_target")]
 const YIELD_TO_SETUP: [RoundTrip; 3] = [
     invocation(
@@ -9026,7 +9317,8 @@ const YIELD_TO_SETUP: [RoundTrip; 3] = [
 /// at its band's head and the consumed time returns at once.
 #[cfg(feature = "hw_target")]
 const YIELD_TO_REQUEUE: RoundTrip = yield_to("sched-context-yield-to-requeue");
-/// The partner raised to the root task's priority, unmeasured.
+/// The partner raised to the root task's priority while it is ready and
+/// queued, measured.
 #[cfg(feature = "hw_target")]
 const YIELD_TO_RAISE: RoundTrip = invocation(
     "yield-to-raise-partner",
@@ -9303,6 +9595,9 @@ fn unmeasured(trip: &RoundTrip, why: &str) -> bool {
 /// reading but zero.
 #[cfg(feature = "hw_target")]
 fn heap_allocations_per_syscall() -> Option<bool> {
+    if !secondary_core_windows(" (first call)") {
+        return Some(false);
+    }
     for trip in ROUND_TRIPS.iter() {
         for first in [true, false] {
             if let Some(badge) = trip.primed {
@@ -9547,6 +9842,19 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             }
         }
     }
+    // The entries a remote core's work reaches: a shootdown with a remote
+    // target, a syscall on a core another core vacated, an FP/SIMD access
+    // whose values another core holds; each run set up afresh, the timer
+    // masked across each.
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        let saved = crate::interrupts::disable_interrupts();
+        let ok = remote_core_entries(which);
+        crate::interrupts::restore_interrupts(saved);
+        if ok != Some(true) {
+            return Some(false);
+        }
+    }
     // WS-ZA ZA6.29's requeue and linked branches (added at ZA6.30), twice,
     // the timer masked across each run.
     for first in [true, false] {
@@ -9576,6 +9884,9 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     if ok != Some(true) {
         return ok;
     }
+    if !secondary_core_windows("") {
+        return Some(false);
+    }
     // The retype the kernel heap cannot hold, twice, last: its confirming
     // carve and delete run unmeasured and touch nothing a later reading sees.
     for first in [true, false] {
@@ -9585,6 +9896,79 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         }
     }
     Some(true)
+}
+
+/// The ticks a secondary's tick window waits for.
+#[cfg(feature = "hw_target")]
+const SECONDARY_WINDOW_TICKS: u64 = 3;
+
+/// **The kernel entries of cores 1 to 3 once they are up**: on each
+/// secondary, that core's own slot of the heap counter read across a window in
+/// which it takes [`SECONDARY_WINDOW_TICKS`] timer ticks (`lean_per_core_timer_tick`
+/// on its idle thread), and across one `.reschedule` SGI the boot core sends it
+/// (`lean_per_core_reschedule`).  Nothing else enters the kernel on an idle
+/// secondary, so each window holds those entries alone; the host-side gate
+/// holds each to 0, at the driver's start (`which` the first call) and at its
+/// end (the steady state).
+#[cfg(feature = "hw_target")]
+fn secondary_core_windows(which: &str) -> bool {
+    for core in 1..CORE_COUNT {
+        let ticks = crate::per_cpu_stats::timer_tick_count_for(core);
+        let Some(before) = own_heap_allocations(core) else {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: secondary-ticks: core {core}: the heap counter could not be read"
+            );
+            return false;
+        };
+        let start = window_start();
+        let ticked = wait_until(|| {
+            crate::per_cpu_stats::timer_tick_count_for(core) >= ticks + SECONDARY_WINDOW_TICKS
+        });
+        let Some(after) = own_heap_allocations(core) else {
+            return false;
+        };
+        if !ticked || after < before {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: secondary-ticks: core {core}: \
+                 no {SECONDARY_WINDOW_TICKS} ticks, or the counter went back ({before} -> {after})"
+            );
+            return false;
+        }
+        crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: secondary-ticks: core {core}{which}: took {} ticks",
+            crate::per_cpu_stats::timer_tick_count_for(core) - ticks
+        );
+        print_reading("secondary-ticks", core, which, before, after, start);
+        let sgis = crate::per_cpu_stats::sgi_count_for(core);
+        let Some(before) = own_heap_allocations(core) else {
+            return false;
+        };
+        let start = window_start();
+        crate::gic::send_sgi(1u8 << core, crate::trap::RESCHEDULE_INTID);
+        let taken = wait_until(|| crate::per_cpu_stats::sgi_count_for(core) > sgis);
+        // The count moves as the handler is entered: a millisecond more for
+        // the reschedule entry to finish.
+        let settle = crate::timer::read_counter()
+            .saturating_add(u64::from(crate::timer::read_frequency()) / 1000);
+        while crate::timer::read_counter() < settle {
+            core::hint::spin_loop();
+        }
+        let Some(after) = own_heap_allocations(core) else {
+            return false;
+        };
+        if !taken || after < before {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: secondary-reschedule: core {core}: \
+                 the SGI was not taken, or the counter went back ({before} -> {after})"
+            );
+            return false;
+        }
+        crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: secondary-reschedule: core {core}{which}: took the SGI"
+        );
+        print_reading("secondary-reschedule", core, which, before, after, start);
+    }
+    true
 }
 
 /// `KernelError.untypedRegionExhausted`'s discriminant (`sele4n-types`'
@@ -9790,7 +10174,7 @@ fn interrupt_handlers_issued(which: &str) -> bool {
         [NOTIFICATION_CAP, 0, 0, 0],
     );
     heap_allocations_round_trip(&get_bound, which) == Some(true)
-        && unmeasured(&get_unbound, "the unbound line's handler was not issued")
+        && heap_allocations_round_trip(&get_unbound, which) == Some(true)
         && heap_allocations_round_trip(&bind, which) == Some(true)
 }
 
@@ -9845,7 +10229,7 @@ fn interrupt_binding_revoked(which: &str) -> bool {
         )
         && unmeasured(&block, "the revoked line signalled the notification")
         && unmeasured(&wake, "the waiter on the notification was not woken")
-        && unmeasured(&rebind, "the notification was not bound again")
+        && heap_allocations_round_trip(&rebind, which) == Some(true)
 }
 
 /// **A handler's node holding the last capability to its notification**, each
@@ -10004,10 +10388,10 @@ fn interrupt_entries(which: &str) -> bool {
             "the bound line was not acknowledged",
         )
         && heap_allocations_interrupt(&unbound, which)
-        && unmeasured(
+        && heap_allocations_round_trip(
             &irq_handler_ack("irq-unbound-ack", IRQ_UNBOUND_HANDLER_SLOT),
-            "the unbound line was not acknowledged",
-        )
+            which,
+        ) == Some(true)
         && heap_allocations_interrupt(&spurious, which)
 }
 
@@ -10282,6 +10666,168 @@ const FAULT_REPLIES: [&str; 5] = [
     "user-exception-reply",
 ];
 
+/// A syscall the register file routes past the operand dispatch, through the
+/// empty slot: the root task's `x7`, `x1` and `x0` as an `SVC` traps with them.
+#[cfg(feature = "hw_target")]
+const fn overflow_cap_fault(name: &'static str, syscall: u64, length: u64) -> TrapTrip {
+    TrapTrip {
+        x1: length,
+        x7: syscall,
+        ..cap_fault(name)
+    }
+}
+
+/// The `x1` a capability fault reaches its receiver with: `seL4_Fault_CapFault`
+/// (1) as the label, the frame's four words as the length.
+#[cfg(feature = "hw_target")]
+const CAP_FAULT_MESSAGE_INFO: u64 = (1 << 12) | 4;
+
+/// One overflow capability fault queued and answered: the partner resumed,
+/// the root task's trap queued on its handler's endpoint, the partner's
+/// receive taking the fault and its reply restarting the root task, the
+/// partner suspended again.
+#[cfg(feature = "hw_target")]
+fn queued_overflow_cap_fault(
+    trap: &TrapTrip,
+    receive: &'static str,
+    reply: &'static str,
+    which: &str,
+) -> bool {
+    let receive = RoundTrip {
+        name: receive,
+        syscall: RECEIVE,
+        cptr: ENDPOINT_CAP,
+        msg_len: 1,
+        msg: [REPLY_CAP, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        returns: Some((CAP_FAULT_MESSAGE_INFO, None)),
+    };
+    let reply = partner_step(reply, REPLY, REPLY_CAP, 0, [0, 0], false);
+    unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+        && heap_allocations_trap(trap, which) == Some(true)
+        && heap_allocations_round_trip(&receive, which) == Some(true)
+        && heap_allocations_round_trip(&reply, which) == Some(true)
+        && suspend_partner()
+}
+
+/// **The refusals the entry turns into capability faults, and the IPC
+/// buffer's TLB fill either side of them** (seL4's `handleInvocation`: a
+/// failed lookup of the invoked capability raises a capability fault).  The
+/// configure, the service register (each one word past the registers, read
+/// from the root task's IPC buffer: the `.overflowOne` route) and a long send
+/// each name the empty slot, so the operand's lookup fails inside the routed
+/// arm and the entry's refusal seam reads it as the fault
+/// (`syscallCapFaultOf`, delivered by `deliverSyscallCapFault`); with the
+/// partner runnable and not waiting, each is queued on the handler's endpoint.
+/// The buffer's page is unmapped and mapped again first, so its translation is
+/// on no core's TLB: the first configure refused for its arguments and the
+/// first fault take the arm that fills the entry and takes the fill back
+/// (`tlbFillIpcBufferOnCore`, `tlbUndoFillOnCore`); the configure that then
+/// succeeds fills it and keeps it; the second fault and refusal and the
+/// configure after them find it held.
+#[cfg(feature = "hw_target")]
+fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
+    let unmap_buffer_page = invocation(
+        "fault-long-unmap-buffer",
+        VSPACE_UNMAP,
+        VSPACE_CAP,
+        [ROOT_ASID, FRAME_VADDR, 0, 0],
+    );
+    let refused_args = [
+        SCHED_CONTEXT_CAP,
+        SCHED_CONTEXT_PERIOD + 1,
+        SCHED_CONTEXT_PERIOD,
+        PARTNER_PRIORITY,
+    ];
+    let admitted_args = [
+        SCHED_CONTEXT_CAP,
+        SCHED_CONTEXT_BUDGET,
+        SCHED_CONTEXT_PERIOD,
+        PARTNER_PRIORITY,
+    ];
+    let refused_fills = RoundTrip {
+        returns: refused(INVALID_ARGUMENT),
+        ..configure("configure-refused-fills", refused_args)
+    };
+    let refused_held = RoundTrip {
+        returns: refused(INVALID_ARGUMENT),
+        ..configure("configure-refused-held", refused_args)
+    };
+    let fills = configure("configure-fills-ipc-buffer", admitted_args);
+    let held = configure("configure-held-ipc-buffer", admitted_args);
+    unmeasured(&unmap_buffer_page, "the buffer's page was not unmapped")
+        && unmeasured(map_buffer_page, "the buffer's page was not mapped again")
+        && heap_allocations_round_trip(&refused_fills, which) == Some(true)
+        && queued_overflow_cap_fault(
+            &overflow_cap_fault("configure-cap-fault-fills", SCHED_CONTEXT_CONFIGURE, 5),
+            "receive-configure-cap-fault",
+            "reply-configure-cap-fault",
+            which,
+        )
+        && heap_allocations_round_trip(&fills, which) == Some(true)
+        && queued_overflow_cap_fault(
+            &overflow_cap_fault("configure-cap-fault-held", SCHED_CONTEXT_CONFIGURE, 5),
+            "receive-configure-cap-fault-held",
+            "reply-configure-cap-fault-held",
+            which,
+        )
+        && heap_allocations_round_trip(&refused_held, which) == Some(true)
+        && heap_allocations_round_trip(&held, which) == Some(true)
+        && queued_overflow_cap_fault(
+            &overflow_cap_fault("service-register-cap-fault", SERVICE_REGISTER, 5),
+            "receive-service-register-cap-fault",
+            "reply-service-register-cap-fault",
+            which,
+        )
+        && queued_overflow_cap_fault(
+            &overflow_cap_fault("long-send-cap-fault", SEND, LONG_SEND_LENGTH),
+            "receive-long-send-cap-fault",
+            "reply-long-send-cap-fault",
+            which,
+        )
+}
+
+/// Each kind's queued scenario: the trap raised while no handler waits, the
+/// partner's receive that takes it, and its reply (the data abort's are the
+/// boot pins `vm-fault-queued`, `receive-queued-fault`, `reply-queued-fault`).
+#[cfg(feature = "hw_target")]
+const FAULT_QUEUED: [&str; 5] = [
+    "vm-fault-queued",
+    "vm-fault-instruction-queued",
+    "cap-fault-queued",
+    "unknown-syscall-queued",
+    "user-exception-queued",
+];
+#[cfg(feature = "hw_target")]
+const FAULT_QUEUED_RECEIVES: [&str; 5] = [
+    "receive-queued-fault",
+    "receive-queued-instruction-fault",
+    "receive-queued-cap-fault",
+    "receive-queued-unknown-syscall",
+    "receive-queued-user-exception",
+];
+#[cfg(feature = "hw_target")]
+const FAULT_QUEUED_REPLIES: [&str; 5] = [
+    "reply-queued-fault",
+    "reply-queued-instruction-fault",
+    "reply-queued-cap-fault",
+    "reply-queued-unknown-syscall",
+    "reply-queued-user-exception",
+];
+/// The `x1` each queued kind reaches the receiver with: the kind's
+/// `seL4_Fault_tag` as the label (VM 6, capability 1, unknown syscall 2, user
+/// exception 3) and the four words of the frame as the length.
+#[cfg(feature = "hw_target")]
+const FAULT_QUEUED_INFO: [u64; 5] = [
+    VM_FAULT_MESSAGE_INFO,
+    VM_FAULT_MESSAGE_INFO,
+    (1 << 12) | 4,
+    (2 << 12) | 4,
+    (3 << 12) | 4,
+];
+
 /// The word a fault handler's answer supplies as its first reply word: the
 /// restart PC of a user exception and the restart `x0` of an unknown syscall
 /// (seL4's `handleFaultReply`).  An EL0 address, so no restart frame of either
@@ -10399,7 +10945,14 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     frame.gprs[7] = trip.x7;
     let saved_daif = crate::interrupts::disable_interrupts();
     let before = own_heap_allocations(core as usize);
+    let loads = crate::fp_context::load_commits_on(core as usize);
     crate::trap::handle_synchronous_exception(&mut frame);
+    // Whether the entry loaded an FP/SIMD context (an access answered
+    // `.load`); a `.retry` loads none.
+    TRAP_LOADED_FP.store(
+        crate::fp_context::load_commits_on(core as usize) != loads,
+        Ordering::SeqCst,
+    );
     let after = own_heap_allocations(core as usize);
     crate::interrupts::restore_interrupts(saved_daif);
     crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
@@ -10422,6 +10975,12 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     print_reading(name, core as usize, which, before, after, window_start());
     Some(true)
 }
+
+/// Whether the last [`heap_allocations_trap`]'s entry loaded an FP/SIMD
+/// context: an access answered `.load`, where one answered `.retry` loads
+/// none.
+#[cfg(feature = "hw_target")]
+static TRAP_LOADED_FP: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 /// The partner suspended, unmeasured, which leaves the root task current:
 /// by the root task, or by the partner itself when a step left it current
@@ -10543,6 +11102,38 @@ fn fault_entries() -> Option<bool> {
             return Some(false);
         }
     }
+    // The other four kinds queued the same way: each raised by the root task
+    // while no handler waits, so the root task is queued on the handler's
+    // endpoint (seL4's `sendFaultIPC` with no receiver); the partner's receive
+    // takes the fault message (its label the kind's tag, its length the
+    // frame's four words: no buffer is mapped for the rest) and its reply
+    // restarts the root task.
+    for kind in 1..FAULT_KINDS.len() {
+        let receive = RoundTrip {
+            name: FAULT_QUEUED_RECEIVES[kind],
+            returns: Some((FAULT_QUEUED_INFO[kind], None)),
+            ..receive_fault
+        };
+        let reply = partner_step(
+            FAULT_QUEUED_REPLIES[kind],
+            REPLY,
+            REPLY_CAP,
+            0,
+            [0, 0],
+            false,
+        );
+        for first in [true, false] {
+            let which = if first { " (first call)" } else { "" };
+            if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+                || heap_allocations_trap(&fault_trip(kind, FAULT_QUEUED[kind]), which) != Some(true)
+                || heap_allocations_round_trip(&receive, which) != Some(true)
+                || heap_allocations_round_trip(&reply, which) != Some(true)
+                || !suspend_partner()
+            {
+                return Some(false);
+            }
+        }
+    }
     // The handler waits first: the root task's receive blocks it, and the
     // partner, current in its place, faults to it (the root task is chosen
     // over the partner whenever both are runnable).
@@ -10657,6 +11248,12 @@ fn fault_entries() -> Option<bool> {
         || !unmeasured(&root_buffer, "the handler's IPC buffer was not set")
     {
         return Some(false);
+    }
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !overflow_cap_faults(&map_buffer_page, which) {
+            return Some(false);
+        }
     }
     let long_reply = partner_step(
         "cap-fault-long-reply",
@@ -10857,15 +11454,22 @@ fn dispatch_round_trip_at(
 /// run finds the state the first did.
 #[cfg(feature = "hw_target")]
 fn yield_to_branches(which: &str) -> Option<bool> {
-    for step in YIELD_TO_SETUP.iter() {
-        if !unmeasured(step, "the yieldTo setup failed") {
+    // The bind unmeasured; the partner's priority lowered while it is
+    // suspended and its resume, measured.
+    if !unmeasured(&YIELD_TO_SETUP[0], "the yieldTo setup failed") {
+        return Some(false);
+    }
+    for step in YIELD_TO_SETUP[1..].iter() {
+        if heap_allocations_round_trip(step, which) != Some(true) {
             return Some(false);
         }
     }
     if heap_allocations_round_trip(&YIELD_TO_REQUEUE, which) != Some(true) {
         return Some(false);
     }
-    if !unmeasured(&YIELD_TO_RAISE, "the partner was not raised") {
+    // The partner, ready and queued on core 0 below the root task, raised to
+    // the root task's priority: re-queued in its new band in place.
+    if heap_allocations_round_trip(&YIELD_TO_RAISE, which) != Some(true) {
         return Some(false);
     }
     if heap_allocations_yield_to_linked(which) != Some(true) {
@@ -11468,6 +12072,300 @@ fn running_thread_delete(remote: bool, which: &str) -> Option<bool> {
         return move_failed("core 1 still runs the deleted thread");
     }
     Some(deleted_thread_teardown())
+}
+
+/// **The remote thread's program** for [`remote_core_entries`], at the code
+/// page's start: an FP/SIMD instruction (its first trap on core 1 makes core 1
+/// its FP owner), then a wait for the stage word at [`REMOTE_STAGE_OFFSET`] to
+/// reach 1, a `TCB_Suspend` of the root task's TCB, a wait for stage 2, a
+/// `TCB_Resume` of it, and a spin.
+///
+/// ```text
+///   0: fmov d0, xzr
+///   4: ldr x9, stage ; cmp x9, #1 ; b.lo 4
+///  10: mov x0, #1 ; movk x0, #0x8000, lsl #48 ; mov x1, #4 ; mov x7, #20 ; svc #0
+///  24: ldr x9, stage ; cmp x9, #2 ; b.lo 24
+///  30: mov x0, #1 ; movk x0, #0x8000, lsl #48 ; mov x1, #4 ; mov x7, #21 ; svc #0
+///  44: b .
+/// ```
+#[cfg(feature = "hw_target")]
+const REMOTE_PROGRAM: [u32; 18] = [
+    0x9e67_03e0,
+    0x5800_3fe9,
+    0xf100_053f,
+    0x54ff_ffc3,
+    0xd280_0020,
+    0xf2f0_0000,
+    0xd280_0081,
+    0xd280_0287,
+    0xd400_0001,
+    0x5800_3ee9,
+    0xf100_093f,
+    0x54ff_ffc3,
+    0xd280_0020,
+    0xf2f0_0000,
+    0xd280_0081,
+    0xd280_02a7,
+    0xd400_0001,
+    0x1400_0000,
+];
+/// The stage word's offset in the code page (the program's `ldr` literal).
+#[cfg(feature = "hw_target")]
+const REMOTE_STAGE_OFFSET: u64 = 0x800;
+
+/// Store `stage` into the remote thread's stage word, in the code page
+/// `page` (its physical frame, under the kernel's identity map).
+#[cfg(feature = "hw_target")]
+fn remote_stage(page: u64, stage: u64) {
+    // SAFETY: `page` is the frame the root task's tables map at the code
+    // address, RAM past the kernel's extent; the stage word is the program's
+    // literal, which the thread only reads; one aligned 64-bit store.
+    unsafe { core::ptr::write_volatile((page + REMOTE_STAGE_OFFSET) as *mut u64, stage) };
+    core::sync::atomic::fence(Ordering::SeqCst);
+}
+
+/// Report `why` for the remote-core scenario and fail.
+#[cfg(feature = "hw_target")]
+fn remote_failed(why: &str) -> Option<bool> {
+    crate::kprintln!("[smp-test] FAIL: heap-allocations-per-syscall: remote-core: {why}");
+    Some(false)
+}
+
+/// The frame's copy mapped at the next page and unmapped while the root
+/// task's address space is live on core 1, and the copy's capability.
+#[cfg(feature = "hw_target")]
+const REMOTE_COPY: RoundTrip = invocation(
+    "remote-asid-frame-copy",
+    CSPACE_COPY,
+    CNODE_CAP,
+    [FRAME_SLOT, MOVE_SLOT, 0, 0],
+);
+#[cfg(feature = "hw_target")]
+const REMOTE_MAP: RoundTrip = invocation(
+    "remote-asid-map",
+    VSPACE_MAP,
+    VSPACE_CAP,
+    [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+);
+#[cfg(feature = "hw_target")]
+const REMOTE_UNMAP: RoundTrip = invocation(
+    "remote-asid-unmap",
+    VSPACE_UNMAP,
+    VSPACE_CAP,
+    [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
+);
+#[cfg(feature = "hw_target")]
+const REMOTE_COPY_DELETE: RoundTrip = invocation(
+    "remote-asid-frame-copy-delete",
+    CSPACE_DELETE,
+    CNODE_CAP,
+    [MOVE_SLOT, 0, 0, 0],
+);
+/// The root task's syscall on core 0 once core 1 has taken it off core 0: a
+/// yield, which the entry does not run (`vacatedCore_next_syscall_rejected`):
+/// it answers `illegalState`.
+#[cfg(feature = "hw_target")]
+const VACATED_CORE_SYSCALL: RoundTrip = RoundTrip {
+    returns: refused(ILLEGAL_STATE),
+    ..kernel_step("vacated-core-syscall", YIELD)
+};
+/// `KernelError.illegalState`'s discriminant: the vacated core's answer, which
+/// no thread receives (its restore resumes the successor, and the root task's
+/// frame is rewound to its `SVC`).
+#[cfg(feature = "hw_target")]
+const ILLEGAL_STATE: u64 = 2;
+/// The moved thread homed back on core 0 while core 1, held, still owns its
+/// FP/SIMD values; then the root task's receive, which blocks.
+#[cfg(feature = "hw_target")]
+const FP_DEFERRED_HOME_BACK: RoundTrip = invocation(
+    "fp-deferred-home-back",
+    TCB_SET_AFFINITY,
+    CHAIN_TCB_CAP,
+    [AFFINITY_UNBIND, 0, 0, 0],
+);
+#[cfg(feature = "hw_target")]
+const FP_DEFERRED_ROOT_RECEIVES: RoundTrip = partner_step(
+    "fp-deferred-root-receives",
+    RECEIVE,
+    ENDPOINT_CAP,
+    0,
+    [0, 0],
+    true,
+);
+
+/// Wait until core 1 has issued `count` syscalls, then a millisecond more.
+#[cfg(feature = "hw_target")]
+fn second_core_syscalls_reach(count: u64) -> bool {
+    let reached = wait_until(|| crate::per_cpu_stats::syscall_count_for(1) >= count);
+    let settle = crate::timer::read_counter()
+        .saturating_add(u64::from(crate::timer::read_frequency()) / 1000);
+    while crate::timer::read_counter() < settle {
+        core::hint::spin_loop();
+    }
+    reached
+}
+
+/// A round trip measured whatever its restore resumed: the vacated core's
+/// syscall, which the entry answers by dispatching a successor.
+#[cfg(feature = "hw_target")]
+fn heap_allocations_any_restore(trip: &RoundTrip, which: &str) -> Option<bool> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    let name = trip.name;
+    let (outcome, before, after, _) = dispatch_round_trip(trip);
+    let (Some(before), Some(after)) = (before, after) else {
+        return remote_failed("the heap counter could not be read");
+    };
+    if matches!(outcome, Dispatched::Failed) {
+        return Some(false);
+    }
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: entered, a thread restored"
+    );
+    if after < before {
+        return remote_failed("the counter went back");
+    }
+    print_reading(name, core, which, before, after, window_start());
+    Some(true)
+}
+
+/// **The kernel entries a remote core's work reaches**, measured once per
+/// call (the timer masked by the caller).  The moved thread is set up as
+/// [`affinity_move_running`] sets it up, its code [`REMOTE_PROGRAM`], and runs
+/// on core 1 in the root task's address space, having made core 1 its FP/SIMD
+/// owner.  Then, each measured on core 0:
+/// - a map and an unmap of the frame's copy at the next page while that
+///   address space is live on core 1, so the unmap's shootdown round has a
+///   remote target (seL4's `invalidateTLBByASID` across the cores the ASID
+///   ran on);
+/// - the root task's syscall once the thread's `TCB_Suspend` on core 1 has
+///   taken the root task off core 0 (the vacated core's entry: the frame saved
+///   to the resident thread rewound to its `SVC`, the syscall not run, a
+///   successor dispatched), and, once the thread's `TCB_Resume` has made it
+///   ready again, the reschedule that runs it;
+/// - with core 1 held in its agent handler, the thread homed back on core 0
+///   and the root task's receive, which blocks: core 0 does not resume the
+///   thread, still resident on core 1 (`deferResidentElsewhere`), so an
+///   FP/SIMD access there loads nothing; then, core 1 released (its entry
+///   saves the thread, releases its live values and pokes core 0), the
+///   reschedule that runs the thread on core 0 and its access, which loads
+///   the values core 1 saved.  The residency deferral is what keeps
+///   `fpAccessOnCore`'s `.retry` arm (`fpOwnedElsewhere`) from being reached:
+///   a thread is resumed only where no other core still holds it, and a
+///   core's FP/SIMD owner is its resident until the entry that releases both.
+#[cfg(feature = "hw_target")]
+fn remote_core_entries(which: &str) -> Option<bool> {
+    if !unmeasured_all(&MOVE_SETUP_PAGE, "the code page's setup failed")
+        || !unmeasured(&MOVE_MAP_CODE, "the code page was not mapped")
+        || !unmeasured_all(&MOVE_SETUP_THREAD, "the moved thread's setup failed")
+    {
+        return Some(false);
+    }
+    let Some(page) = root_user_page(FRAME_VADDR) else {
+        return remote_failed("the code page has no translation");
+    };
+    if page < crate::mmu::KERNEL_RESERVED_END || !page.is_multiple_of(4096) {
+        return remote_failed("the code page's translation names no frame");
+    }
+    for (i, word) in REMOTE_PROGRAM.iter().enumerate() {
+        // SAFETY: as in `affinity_move_running`: the frame the root task's
+        // tables map at the code address, which no thread runs yet; one
+        // aligned 32-bit store per instruction, inside the page.
+        unsafe { core::ptr::write_volatile((page + 4 * i as u64) as *mut u32, *word) };
+    }
+    remote_stage(page, 0);
+    if !unmeasured(&MOVE_UNIFY, "the code page was not unified")
+        || !unmeasured(&MOVE_RESUME, "the moved thread was not resumed")
+        || !unmeasured(&MOVE_ROOT_RECEIVES, "the root task's receive did not block")
+        || !unmeasured(&MOVE_THREAD_SENDS, "the thread's send failed")
+    {
+        return Some(false);
+    }
+    let (received, _, _, resumed) = dispatch_round_trip_at(&MOVE_THREAD_RECEIVES, FRAME_VADDR);
+    if !matches!(received, Dispatched::Blocked) || resumed.regs[2] != MOVE_MARKER {
+        return remote_failed("the thread's receive did not switch core 0 back to the root task");
+    }
+    if !unmeasured(&MOVE_HOME_SECOND, "the thread was not homed on core 1")
+        || !unmeasured(&MOVE_ROOT_WAKES, "the root task's send failed")
+    {
+        return Some(false);
+    }
+    if !second_core_at_user() {
+        return remote_failed("core 1 did not run the thread at EL0");
+    }
+    if !unmeasured(&REMOTE_COPY, "the frame was not copied")
+        || heap_allocations_round_trip(&REMOTE_MAP, which) != Some(true)
+        || heap_allocations_round_trip(&REMOTE_UNMAP, which) != Some(true)
+        || !unmeasured(&REMOTE_COPY_DELETE, "the frame's copy was not deleted")
+    {
+        return Some(false);
+    }
+    let syscalls = crate::per_cpu_stats::syscall_count_for(1);
+    remote_stage(page, 1);
+    if !second_core_syscalls_reach(syscalls + 1)
+        || !wait_until(|| crate::remote_stall::STALL_REQUESTED[0].load(Ordering::SeqCst))
+    {
+        return remote_failed("the thread's suspend of the root task did not reach core 0");
+    }
+    if heap_allocations_any_restore(&VACATED_CORE_SYSCALL, which) != Some(true) {
+        return Some(false);
+    }
+    if !second_core_at_user() {
+        return remote_failed("core 1 did not return to the thread after its suspend");
+    }
+    remote_stage(page, 2);
+    if !second_core_syscalls_reach(syscalls + 2) || !second_core_at_user() {
+        return remote_failed("the thread's resume of the root task did not complete");
+    }
+    let reschedule = KernelEntry {
+        name: "vacated-core-reschedule",
+        enter: crate::trap::reschedule_sgi_entry,
+    };
+    if heap_allocations_kernel_entry(&reschedule, which) != Some(true) {
+        return Some(false);
+    }
+    let Some(held) = hold_core(1) else {
+        return remote_failed("core 1 was not held");
+    };
+    if heap_allocations_round_trip(&FP_DEFERRED_HOME_BACK, which) != Some(true)
+        || heap_allocations_round_trip(&FP_DEFERRED_ROOT_RECEIVES, which) != Some(true)
+        || heap_allocations_trap(&fp_access("fp-access-deferred"), which) != Some(true)
+    {
+        let _released = release_core(1, held);
+        return Some(false);
+    }
+    let deferred = !TRAP_LOADED_FP.load(Ordering::SeqCst);
+    if !release_core(1, held) {
+        return remote_failed("core 1 did not report its release");
+    }
+    if !second_core_left_user() {
+        return remote_failed("core 1 still runs the thread");
+    }
+    if !deferred {
+        return remote_failed("core 0 loaded FP/SIMD values while core 1 held the thread");
+    }
+    let released = KernelEntry {
+        name: "fp-released-reschedule",
+        enter: crate::trap::reschedule_sgi_entry,
+    };
+    if heap_allocations_kernel_entry(&released, which) != Some(true)
+        || heap_allocations_trap(&fp_access("fp-access-released"), which) != Some(true)
+    {
+        return Some(false);
+    }
+    if !TRAP_LOADED_FP.load(Ordering::SeqCst) {
+        return remote_failed("the FP/SIMD access did not load once core 1 released the values");
+    }
+    if !unmeasured(&MOVE_THREAD_SENDS, "the thread's send failed") {
+        return Some(false);
+    }
+    let (received, _, _, _) = dispatch_round_trip_at(&MOVE_THREAD_RECEIVES, FRAME_VADDR);
+    if !matches!(received, Dispatched::Blocked) {
+        return remote_failed("the thread's receive did not switch core 0 back to the root task");
+    }
+    Some(unmeasured_all(
+        &MOVE_TEARDOWN,
+        "the remote scenario's teardown failed",
+    ))
 }
 
 /// **The linked yieldTo, measured across its whole round trip**: the root

@@ -25,6 +25,7 @@ import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsDelivered
 import SeLe4n.Kernel.IPC.CrossCore.LongCapsDelivered
 import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsLongDelivered
 import SeLe4n.Kernel.IPC.CrossCore.LongFaultAnswerInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReceiveCallDonatingInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -3861,7 +3862,11 @@ sender blocked by a capability-free send (`registerRoutedSyscall` of its saved
 frame), not delivering a fault, whose writes all stay in their slots
 (`receiveTakesInPlace`), takes it in place: the six words of the delivered
 frame are read from the sender's saved registers before any write and written
-into the receiver's (`performReceiveDelivered`, `receiveTake_delivered`).  Any
+into the receiver's (`performReceiveDelivered`, `receiveTake_delivered`).  A
+caller blocked by a capability-free call whose SchedContext the take donates to
+a passive receiver (`receiveCallDonatesInPlace`) is taken, donated and
+delivered in place, both home cores read off the pre-state
+(`performReceiveCallDonatingDelivered`, `receiveCallDonatingTake_delivered`).  Any
 other rendezvous goes through the specification
 (`endpointReceiveTakeR_eq`). -/
 @[inline] def endpointReceiveTakeR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
@@ -3922,6 +3927,11 @@ other rendezvous goes through the specification
                 .ok ((), performReceiveCallDelivered st epId s sTcb.queueNextCode tid rid
                   executingCore sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
                   sTcb.ipcBadged)
+              else if !sTcb.ipcFaultSend && receiveCallDonatesInPlace st epId tid s sTcb rid then
+                .ok ((), performReceiveCallDonatingDelivered st epId s sTcb.queueNextCode tid rid
+                  ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
+                  (determineTargetCore st tid) executingCore sTcb.registerContext mi.length
+                  (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged)
               else endpointReceiveRendezvousR epId tid replyCode executingCore st
             | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
           | .transferring .send _ _ =>
@@ -4110,7 +4120,19 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
               simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
                 CapTransferSummary.capInfo_empty]
               rw [h3]
-            · rfl
+            · split
+              · next hG =>
+                simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+                obtain ⟨hF, hG⟩ := hG
+                obtain ⟨h1, h2, h3, -, -⟩ := receiveCallDonatingTake_delivered st epId ep tid rid
+                  executingCore s sTcb capAddr mi
+                  ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hF hR
+                unfold endpointReceiveRendezvousR
+                simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
+                  CapTransferSummary.capInfo_empty]
+                rw [h3]
+              · rfl
           · rfl
         · next capAddr mi hR =>
           simp only [routedLength_eq hR]

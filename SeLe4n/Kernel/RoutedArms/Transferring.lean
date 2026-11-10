@@ -46,21 +46,10 @@ filled first as the long send's. -/
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
             (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
-            (fun _ => entryReportGeneral (
-              if SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid (length - 4) then
-                dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => longOperandK (SeLe4n.CPtr.ofWord capWord) tid executingCore
                   (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid
-                    executingCore (syscallRequiredRight sid)) st
-              else
-                let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
-                match dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
-                    (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid
-                      executingCore (syscallRequiredRight sid))
-                    (SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore st executingCore tid
-                        (length - 4)) with
-                | .error (e, stF) =>
-                  .error (e, SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
-                | .ok r => .ok r)))
+                    executingCore (syscallRequiredRight sid))
+                  (length - 4) st entryReportGeneral entryReportResolved entryReportLookup))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

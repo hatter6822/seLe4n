@@ -636,8 +636,15 @@ theorem replyRecvPostReceiveDonation_savedRegsUnwritten
     savedRegsUnwritten st st' := by
   unfold replyRecvPostReceiveDonation at h
   split at h
-  · cases h
-    exact savedRegsUnwritten.of_propagate _ _ _ _ hInv
+  · split at h
+    · split at h
+      · cases h
+      · rename_i st2 hD
+        cases h
+        have h1 := savedRegsUnwritten.of_applyRendezvousCallDonation hInv hD
+        exact h1.trans (savedRegsUnwritten.of_propagate _ _ _ _ h1.2)
+    · cases h
+      exact savedRegsUnwritten.of_propagate _ _ _ _ hInv
   · rename_i holder
     have hH : savedRegsUnwritten st (replyRecvHolderDeschedule tid holder st) := by
       unfold replyRecvHolderDeschedule

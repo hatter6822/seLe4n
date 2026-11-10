@@ -1636,8 +1636,16 @@ theorem replyRecvPostReceiveDonation_stepCovers (e : CoreId)
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold replyRecvPostReceiveDonation at h
   split at h
-  · cases h
-    exact propagatePipChainCrossCore_stepCovers e serverCore _ st recordedServer hInv
+  · split at h
+    · split at h
+      · cases h
+      · rename_i st2 hD
+        cases h
+        obtain ⟨hDc, hDInv⟩ := applyRendezvousCallDonation_stepCovers e hInv hD
+        exact (propagatePipChainCrossCore_stepCovers e serverCore _ st2 recordedServer hDInv).imp_left
+          (stepCovers_trans hDc)
+    · cases h
+      exact propagatePipChainCrossCore_stepCovers e serverCore _ st recordedServer hInv
   · rename_i holder
     split at h
     · split at h

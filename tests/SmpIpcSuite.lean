@@ -4336,14 +4336,12 @@ which is this section's subject.
 Three shapes, each built through the live operations.  (a) The MCS steady state with
 a second client on a third core: the pop and the re-donation both fire, and the
 segment names three cores.  (b) A first client that never donated (a legacy
-`.unbound` thread): the pop hands nothing back and the segment is EMPTY — and this
-is the shape on which the `.receive` arm's pre-state reading, computed beside the
-live one, declares two cores for a migration the `.replyRecv` transition does not
-perform.  That divergence between the two receiving arms is the one
-`docs/REGISTERED_DEBT.md`'s WS-CB row records: on a `.replyRecv` whose pop returned
-nothing, a dequeued `Call` caller's context is not donated to an `.unbound`
-receiver, where `.receive` and seL4-MCS's `receiveIPC` would donate.  The assertion
-that pins it is labelled MEASURED and must flip when that row closes.  (c) A
+`.unbound` thread): the pop hands nothing back, and the receive leg's dequeued
+`Call` donates the second client's context to the passive server exactly as
+`.receive` and seL4-MCS's `receiveIPC` (`reply_push (canDonate)`) do -- the
+segment is that donation's pair, the same two cores the `.receive` arm's pre-state
+reading declares on this state, and after the `.replyRecv` the server is bound to
+the second client's context.  (c) A
 delegated invoker that answers another server's client and then blocks holding a
 loan of its own: the pop and the block-path return both fire, on four distinct
 cores, and the post-receive half deschedules the holder the pop unbound. -/
@@ -4526,9 +4524,11 @@ private def runReplyRecvFootprintChecks : IO Unit := do
         (returned? == some (scClient, donServer))
       assertBool "(a) CONTROL: the `.receive` arm's pre-state segment at the pop's post-state agrees here"
         (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer = [c2, c1]))
-  -- (b) a first client that never donated: the pop hands nothing back, the segment
-  --     is EMPTY, and the `.receive` reading declares two cores for a migration the
-  --     `.replyRecv` transition does not perform.
+  -- (b) a first client that never donated: the pop hands nothing back, and the
+  --     receive leg's dequeued `Call` donates the second client's context to the
+  --     passive server exactly as `.receive` does (seL4-MCS `receiveIPC` ->
+  --     `reply_push (canDonate)`): the segment is the donation's pair, the same
+  --     two cores the `.receive` arm's reading declares on this state.
   match fpSteadyState stFpLegacyBase with
   | none => assertBool "Cut C2 setup (b): recv, call, dispatch and second call succeed" false
   | some stQ =>
@@ -4547,18 +4547,11 @@ private def runReplyRecvFootprintChecks : IO Unit := do
       false c1 stQ
     let fp := schedLockSet_endpointReplyRecvOnCore donEp donServer donReply donClient
       IpcMessage.empty false c1 stQ
-    assertBool "(b) PAYOFF: the segment is EMPTY" (decide (seg = []))
-    assertBool "(b) PAYOFF: the footprint names NO replenish-queue write lock"
-      (replenishMemberCount fp == 0)
-    -- WS-RR RR8.12 Cut C6e: an empty segment is a claim about EVERY core, so this
-    -- is the exactness frame at its strongest -- and the shape that makes the
-    -- measurement decisive, since (a) leaves only one core outside.
-    match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty
-        false c1 stQ with
-    | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
-    | .ok (_, stOut) =>
-      assertBool "(b) C6e: with an empty segment the arm leaves EVERY core's replenish queue alone"
-        (Concurrency.allCores.all (fun d => (stOut.releaseEntriesOn d) == (stQ.releaseEntriesOn d)))
+    assertBool "(b) PAYOFF: the segment is the donation's pair (second client's home, server's home): [2, 1]"
+      (decide (seg = [c2, c1]))
+    assertBool "(b) PAYOFF: the footprint names replenish-queue write locks on cores 1 and 2 only"
+      (hasReplenishWrite fp c1 && hasReplenishWrite fp c2 && !hasReplenishWrite fp c0
+        && !hasReplenishWrite fp c3 && replenishMemberCount fp == 2)
     assertBool "(b) ...while it still names the answered client's run queue"
       (hasRunQueueWrite fp c0)
     let (st1, _) := endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQ
@@ -4566,38 +4559,33 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     | .error e => assertBool s!"(b) the pop must succeed (got {reprStr e})" false
     | .ok (returned?, st1p) =>
       assertBool "(b) the pop hands nothing back" (returned? == none)
-      -- The decisive comparison: same state, same endpoint, same receiver -- the
-      -- `.receive` arm's reading names two cores here.
-      assertBool "(b) NEGATIVE: the `.receive` arm's pre-state segment declares TWO cores on this state"
-        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer = [c2, c1]))
-      -- ...and the reason the `.replyRecv` reading is the right one for THIS arm: at the
-      -- state its post-receive half runs on, the `.receive` step WOULD donate --
-      -- which is the divergence the register records, not a fact about the shape.
+      -- The two receiving arms agree: the `.receive` arm's reading on the pop's
+      -- post-state names the same pair the `.replyRecv` segment does.
+      assertBool "(b) AGREEMENT: the `.receive` arm's pre-state segment declares the same two cores"
+        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer = seg))
       let st2 := (endpointReceiveDualWithCapsOnCore donEp donServer (some donReply) c1 st1p).1
       assertBool "(b) the receive leg dequeues the second client's Call"
         (decide (rendezvousDequeuedCall st2 fpClient2 = true))
-      assertBool "(b) MEASURED (register, WS-CB): the `.receive` arm's donation step WOULD hand the context over here"
-        (match applyReceiveRendezvousDonation st2 donServer fpClient2 with
-         | .ok stDon =>
-             (match stDon.getTcb? donServer with
-              | some t => t.schedContextBinding == .donated fpClient2Sc fpClient2
-              | none => false)
-         | .error _ => false)
-    -- The live arm: no replenishment moves on any core (the exactness licence,
-    -- measured), and no context is handed over (the divergence, measured).
+    -- The live arm: the second client's context is donated to the server and its
+    -- replenishment migrated 2 -> 1; no other core's replenish queue moves.
     match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty
         false c1 stQ with
     | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
-      assertBool "(b) PAYOFF: the live `.replyRecv` moves NO replenishment on any core"
-        (Concurrency.allCores.all fun c => (stOut.releaseEntriesOn c) == (stQ.releaseEntriesOn c))
-      assertBool "(b) MEASURED (register, WS-CB): the `.replyRecv` never-donated arm hands NO context to the passive receiver"
+      assertBool "(b) PAYOFF: the donation migrated the second context to the server's home (2 -> 1)"
+        (replenishCountFor stOut c1 fpClient2Sc == 1 && replenishCountFor stOut c2 fpClient2Sc == 0)
+      assertBool "(b) C6e: cores 0 and 3 are outside the segment, and the arm leaves their replenish queues alone"
+        ((stOut.releaseEntriesOn c0) == (stQ.releaseEntriesOn c0)
+          && (stOut.releaseEntriesOn c3) == (stQ.releaseEntriesOn c3))
+      assertBool "(b) PAYOFF: the affinity invariant holds after the ReplyRecv"
+        (replenishAffinityConsistentB stOut)
+      assertBool "(b) PAYOFF (seL4-MCS reply_push canDonate): the passive server is bound to the second client's context"
         (match stOut.getTcb? donServer, stOut.getTcb? fpClient2 with
          | some s, some b =>
-             s.schedContextBinding == SchedContextBinding.unbound
-               && b.schedContextBinding == .bound fpClient2Sc
+             s.schedContextBinding == .donated fpClient2Sc fpClient2
+               && b.schedContextBinding == SchedContextBinding.unbound
          | _, _ => false)
-      assertBool "(b) ...although the second client IS the one now awaiting the server's reply"
+      assertBool "(b) ...and the second client is the one now awaiting the server's reply"
         (match stOut.getTcb? fpClient2 with
          | some t => match t.ipcState with
                      | .blockedOnReply _ _ => true
