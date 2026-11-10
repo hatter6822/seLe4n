@@ -2391,6 +2391,49 @@ def refusedSignalReceiver? (st : SystemState) (tid : SeLe4n.ThreadId)
     | .object nid => declassifiedSignalReceiver? st nid
     | _ => none
 
+/-- `refusedSignalReceiver?` as its code (`ThreadId.optCode`): the operand
+resolved through the continuation-passing walk (`resolveCapAddressKUnrolled`),
+the slot's capability matched where it is read, and the notification's receiver
+as its code (`declassifiedSignalReceiverCode`), so the seam's re-resolution
+builds no slot reference, no `some` and no result
+(`ofOptCode_refusedSignalReceiverCode`). -/
+@[inline] def refusedSignalReceiverCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (capPtr : SeLe4n.CPtr) : Nat :=
+  match st.getTcb? tid with
+  | none => 0
+  | some tcb =>
+    match st.getCNode? tcb.cspaceRoot with
+    | none => 0
+    | some rootCn =>
+      resolveCapAddressKUnrolled tcb.cspaceRoot capPtr rootCn.depth st (fun _ => 0)
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | none => 0
+          | some cap =>
+            match cap.target with
+            | .object nid => declassifiedSignalReceiverCode st nid
+            | _ => 0)
+
+@[simp] theorem ofOptCode_refusedSignalReceiverCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (capPtr : SeLe4n.CPtr) :
+    SeLe4n.ThreadId.ofOptCode (refusedSignalReceiverCode st tid capPtr) =
+      refusedSignalReceiver? st tid capPtr := by
+  unfold refusedSignalReceiverCode refusedSignalReceiver? syscallOperandCap?
+  rcases st.getTcb? tid with _ | tcb
+  · rfl
+  · dsimp only
+    rcases st.getCNode? tcb.cspaceRoot with _ | rootCn
+    · rfl
+    · dsimp only
+      rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+      rcases resolveCapAddress tcb.cspaceRoot capPtr rootCn.depth st with _ | ⟨cn, sl⟩
+      · rfl
+      · dsimp only
+        rcases SystemState.lookupSlotCap st { cnode := cn, slot := sl } with _ | cap
+        · rfl
+        · dsimp only
+          rcases cap.target <;> simp
+
 /-- WS-SM SM9.C.1: on the resolution path the dispatch itself took, the seam's
 re-resolution **is** the transition's — both are `declassifiedSignalReceiver?`
 at the same state and the same notification, so the record below names exactly
@@ -2420,6 +2463,27 @@ def refusalReceiverFor (st : SystemState) (tid : SeLe4n.ThreadId)
   if sid = SyscallId.declassifySignal ∧ ke = KernelError.declassificationDeniedAtReceiver then
     refusedSignalReceiver? st tid (SeLe4n.CPtr.ofNat x0.toNat)
   else none
+
+/-- `refusalReceiverFor` as its code: the operand's receiver, as
+`refusedSignalReceiverCode`, on the second-hop refusal, else none
+(`ofOptCode_refusalReceiverForCode`). -/
+@[inline] def refusalReceiverForCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sid : SyscallId) (ke : KernelError) (x0 : UInt64) : Nat :=
+  if sid = SyscallId.declassifySignal ∧ ke = KernelError.declassificationDeniedAtReceiver then
+    refusedSignalReceiverCode st tid (SeLe4n.CPtr.ofWord x0)
+  else 0
+
+@[simp] theorem ofOptCode_refusalReceiverForCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sid : SyscallId) (ke : KernelError) (x0 : UInt64) :
+    SeLe4n.ThreadId.ofOptCode (refusalReceiverForCode st tid sid ke x0) =
+      refusalReceiverFor st tid sid ke x0 := by
+  unfold refusalReceiverForCode refusalReceiverFor
+  have hT : SeLe4n.CPtr.ofNat x0.toNat = SeLe4n.CPtr.ofWord x0 :=
+    SeLe4n.CPtr.ofNat_toNat (SeLe4n.CPtr.ofWord x0)
+  rw [hT]
+  split
+  · exact ofOptCode_refusedSignalReceiverCode _ _ _
+  · rfl
 
 /-- WS-SM SM9.C.1: the fill on the second-hop refusal. -/
 @[simp] theorem refusalReceiverFor_receiver_hop (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -2489,14 +2553,17 @@ caller's `x0` as a word.  Equal to the specification
       match refusalSeamClass sid with
       | .exempt => st
       | .records =>
-          let domain := (liftLegacyContext ctx).threadDomainOf tid
-          match refusalReceiverFor st tid sid ke x0 with
-          | some receiver =>
+          -- The lifted context's thread domain, read without building the
+          -- lifted context (`liftLegacyContext` holds three closures).
+          let domain := embedLegacyLabel (ctx.threadLabelOf tid)
+          -- The receiver as its code (`refusalReceiverForCode`).
+          match refusalReceiverForCode st tid sid ke x0 with
+          | k + 1 =>
             { st with
               declassificationRefusals :=
                 recordRefusalWords st.declassificationRefusals executingCore tid domain sid ke
-                  (SeLe4n.CPtr.ofWord x0) true receiver }
-          | none =>
+                  (SeLe4n.CPtr.ofWord x0) true ⟨k⟩ }
+          | 0 =>
             { st with
               declassificationRefusals :=
                 recordRefusalWords st.declassificationRefusals executingCore tid domain sid ke
@@ -2513,14 +2580,14 @@ caller's `x0` as a word.  Equal to the specification
   · rfl
   · split
     · rfl
-    · split
-      · next receiver hR =>
-        dsimp only
-        rw [recordRefusalWords_eq _ _ _ _ _ _ _ _ _ (fun h => absurd h (by simp)), hR, hT]
+    · dsimp only
+      rw [← ofOptCode_refusalReceiverForCode]
+      rcases refusalReceiverForCode st tid _ ke x0 with _ | k
+      · dsimp only [SeLe4n.ThreadId.ofOptCode]
+        rw [recordRefusalWords_eq _ _ _ _ _ _ _ _ _ (fun _ => rfl), hT]
         rfl
-      · next hR =>
-        dsimp only
-        rw [recordRefusalWords_eq _ _ _ _ _ _ _ _ _ (fun _ => rfl), hR, hT]
+      · dsimp only [SeLe4n.ThreadId.ofOptCode]
+        rw [recordRefusalWords_eq _ _ _ _ _ _ _ _ _ (fun h => absurd h (by simp)), hT]
         rfl
 
 /-- WS-SM SM9.B.9: an exempt syscall's refusal is not recorded — the ledger is

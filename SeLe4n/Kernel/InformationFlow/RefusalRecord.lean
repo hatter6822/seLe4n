@@ -339,11 +339,16 @@ def ofView : Option DeclassificationRefusal → RefusalSlot
 @[inline] def receiver? (s : RefusalSlot) : Option SeLe4n.ThreadId :=
   if s.receiverNamed then some s.receiver else none
 
-/-- The refusal a slot's words spell, whether or not a refusal reached it. -/
-@[inline] def toRefusal (s : RefusalSlot) : DeclassificationRefusal :=
+/-- The refusal of a slot's scalar words and receiver `rcv`. -/
+@[inline] def toRefusalWith (s : RefusalSlot) (rcv : Option SeLe4n.ThreadId) :
+    DeclassificationRefusal :=
   { originatingCore := s.originatingCore, subject := s.subject,
     subjectDomain := s.subjectDomain, syscall := s.syscall, reason := s.reason,
-    requestedTarget := s.requestedTarget, refusedReceiver := s.receiver? }
+    requestedTarget := s.requestedTarget, refusedReceiver := rcv }
+
+/-- The refusal a slot's words spell, whether or not a refusal reached it. -/
+@[inline] def toRefusal (s : RefusalSlot) : DeclassificationRefusal :=
+  s.toRefusalWith s.receiver?
 
 /-- **What a slot holds**: its refusal, or `none` for a slot no refusal has
 reached. -/
@@ -367,8 +372,11 @@ reached. -/
 subject read back through `s` (kept when equal) so `s` stays live and is the
 cell the compiler writes into; a write of every field that never read `s`
 would drop it and build a fresh slot, as `DeclassificationActor.overwrite`
-records.  Equal to the slot of that refusal (`overwrite_eq`). -/
-@[inline] def overwrite (s : RefusalSlot) (c : CoreId) (subject : SeLe4n.ThreadId)
+records.  Out of line, so the cell is tested for reuse after the array has
+given up its reference (`recordRefusalSlots`): inlined, the test ran while
+the array still held the slot, and every write built a fresh one.  Equal to
+the slot of that refusal (`overwrite_eq`). -/
+@[noinline] def overwrite (s : RefusalSlot) (c : CoreId) (subject : SeLe4n.ThreadId)
     (domain : SecurityDomain) (sid : SeLe4n.Model.SyscallId) (ke : SeLe4n.Model.KernelError)
     (target : SeLe4n.CPtr) (named : Bool) (receiver : SeLe4n.ThreadId) : RefusalSlot :=
   { occupied := true, originatingCore := c,

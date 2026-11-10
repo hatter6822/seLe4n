@@ -840,13 +840,27 @@ theorem auditBasisChunkCode_eq (e : DeclassificationEvent) (i : Nat) :
     else 0
 
 /-- A refusal-ledger slot's code: `0` for a slot out of range or empty, else
-`f` of its refusal. -/
+`f` of its refusal, read off the slot's words: `f` is applied to a refusal
+literal on each side of the receiver flag, so inlined it reads the slot's fields
+and no record is built, nor carried to a join of the two sides. -/
 @[inline] def refusalSlotCode (rl : RefusalLedger) (slot : Nat)
     (f : DeclassificationRefusal → Nat) : Nat :=
   if h : slot < refusalRingSize then
-    match rl.slotView ⟨slot, h⟩ with
-    | none => 0
-    | some r => f r
+    let s := rl.slots.get ⟨slot, h⟩
+    if s.occupied then
+      if s.receiverNamed then f (s.toRefusalWith (some s.receiver)) else f (s.toRefusalWith none)
+    else 0
+  else 0
+
+/-- A refusal-ledger slot's code for a reader of its scalar fields alone (every
+field but the receiver): `f` of the slot's refusal with no receiver, a literal
+`f` inlined reads straight off the slot's words, so the read builds no record
+(`refusalScalarSlotCode_some`). -/
+@[inline] def refusalScalarSlotCode (rl : RefusalLedger) (slot : Nat)
+    (f : DeclassificationRefusal → Nat) : Nat :=
+  if h : slot < refusalRingSize then
+    let s := rl.slots.get ⟨slot, h⟩
+    if s.occupied then f (s.toRefusalWith none) else 0
   else 0
 
 /-- A word's chunk count: a word never needs more than two chunks. -/
@@ -969,13 +983,13 @@ def auditReadFastCode (ctx : LabelingContext) (reader : SecurityDomain) (st : Sy
   | 11 => auditBasisWordCode ctx reader r index chunk
   | 12 => refusalStatusWord rl.nextSlot.val rl.version + 1
   | 13 => refusalCountersWord rl.attemptCount.val rl.droppedCount.val + 1
-  | 14 => refusalSlotCode rl index fun x => refusalTagsWord x + 1
-  | 15 => refusalSlotCode rl index fun x => refusalFieldCountCode x .subject
-  | 16 => refusalSlotCode rl index fun x => refusalFieldCountCode x .subjectDomain
-  | 17 => refusalSlotCode rl index fun x => refusalFieldCountCode x .requestedTarget
-  | 18 => refusalSlotCode rl index fun x => refusalFieldWordCode x .subject chunk
-  | 19 => refusalSlotCode rl index fun x => refusalFieldWordCode x .subjectDomain chunk
-  | 20 => refusalSlotCode rl index fun x => refusalFieldWordCode x .requestedTarget chunk
+  | 14 => refusalScalarSlotCode rl index fun x => refusalTagsWord x + 1
+  | 15 => refusalScalarSlotCode rl index fun x => refusalFieldCountCode x .subject
+  | 16 => refusalScalarSlotCode rl index fun x => refusalFieldCountCode x .subjectDomain
+  | 17 => refusalScalarSlotCode rl index fun x => refusalFieldCountCode x .requestedTarget
+  | 18 => refusalScalarSlotCode rl index fun x => refusalFieldWordCode x .subject chunk
+  | 19 => refusalScalarSlotCode rl index fun x => refusalFieldWordCode x .subjectDomain chunk
+  | 20 => refusalScalarSlotCode rl index fun x => refusalFieldWordCode x .requestedTarget chunk
   | 21 => auditFieldCountCode ctx reader r index .actorSubject
   | 22 => auditFieldCountCode ctx reader r index .actorDomain
   | 23 => auditFieldWordCode ctx reader r index chunk .actorSubject
@@ -1102,20 +1116,48 @@ theorem refusalSlotCode_some {rl : RefusalLedger} {slot w : Nat}
   unfold refusalSlotCode at h
   split at h
   · next hs =>
+    dsimp only at h
     split at h
+    · next hOcc =>
+      split at h
+      · next hN =>
+        exact ⟨hs, _, by simp only [RefusalLedger.recent_get, RefusalSlot.view, hOcc,
+          RefusalSlot.toRefusal, RefusalSlot.receiver?, hN, ↓reduceIte], h⟩
+      · next hN =>
+        exact ⟨hs, _, by simp only [RefusalLedger.recent_get, RefusalSlot.view, hOcc,
+          RefusalSlot.toRefusal, RefusalSlot.receiver?, hN, ↓reduceIte, Bool.false_eq_true], h⟩
     · cases h
-    · next r hr => exact ⟨hs, r, (RefusalLedger.slotView_eq _ _) ▸ hr, h⟩
+  · cases h
+
+/-- A scalar slot's code is nonzero only on a present slot, for a reader `f` the
+receiver does not move. -/
+theorem refusalScalarSlotCode_some {rl : RefusalLedger} {slot w : Nat}
+    {f : DeclassificationRefusal → Nat}
+    (hScalar : ∀ r : DeclassificationRefusal, f { r with refusedReceiver := none } = f r)
+    (h : refusalScalarSlotCode rl slot f = w + 1) :
+    ∃ (hs : slot < refusalRingSize) (r : DeclassificationRefusal),
+      rl.recent.get ⟨slot, hs⟩ = some r ∧ f r = w + 1 := by
+  unfold refusalScalarSlotCode at h
+  split at h
+  · next hs =>
+    dsimp only at h
+    split at h
+    · next hOcc =>
+      refine ⟨hs, (rl.slots.get ⟨slot, hs⟩).toRefusal, ?_, ?_⟩
+      · simp only [RefusalLedger.recent_get, RefusalSlot.view, hOcc, ↓reduceIte]
+      · exact (hScalar _).symm.trans h
+    · cases h
   · cases h
 
 /-- A refusal-ledger opcode's code is the specification's word, for a monitor. -/
 theorem refusalFieldCountCode_spec (ctx : LabelingContext) (m reader : SecurityDomain)
     (st : SystemState) (slot w : Nat) (f : RefusalReadField)
     (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
-    (h : refusalSlotCode st.declassificationRefusals slot (fun x => refusalFieldCountCode x f) =
-      w + 1) :
+    (h : refusalScalarSlotCode st.declassificationRefusals slot
+      (fun x => refusalFieldCountCode x f) = w + 1) :
     auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalSlotFieldChunkCount slot f) =
       .ok w := by
-  obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
+  obtain ⟨hs, r, hr, hf⟩ := refusalScalarSlotCode_some (fun _ => rfl) h
   simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr, auditFieldChunkCount?_eq_code]
   unfold refusalFieldCountCode at hf
   rw [refusalFieldCount_eq] at hf
@@ -1127,11 +1169,11 @@ theorem refusalFieldCountCode_spec (ctx : LabelingContext) (m reader : SecurityD
 theorem refusalFieldWordCode_spec (ctx : LabelingContext) (m reader : SecurityDomain)
     (st : SystemState) (slot chunk w : Nat) (f : RefusalReadField)
     (hIs : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true)
-    (h : refusalSlotCode st.declassificationRefusals slot
+    (h : refusalScalarSlotCode st.declassificationRefusals slot
       (fun x => refusalFieldWordCode x f chunk) = w + 1) :
     auditReadWord (liftLegacyContext ctx) (some m) reader st (.refusalSlotField slot f chunk) =
       .ok w := by
-  obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
+  obtain ⟨hs, r, hr, hf⟩ := refusalScalarSlotCode_some (fun _ => rfl) h
   simp only [auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr, auditFieldChunkCount?_eq_code]
   unfold refusalFieldWordCode at hf
   rw [refusalFieldCount_eq, refusalFieldChunk_eq] at hf
@@ -1248,7 +1290,7 @@ theorem auditReadFastCode_spec (ctx : LabelingContext) (m reader : SecurityDomai
     simp only [Nat.add_right_cancel_iff] at h
     rw [h]
   | 14, h =>
-    obtain ⟨hs, r, hr, hf⟩ := refusalSlotCode_some h
+    obtain ⟨hs, r, hr, hf⟩ := refusalScalarSlotCode_some (fun _ => rfl) h
     simp only [decodeAuditReadOp, auditReadWord, hIs, ↓reduceIte, hs, dite_true, RefusalLedger.slotView_eq, hr]
     simp only [Nat.add_right_cancel_iff] at hf
     rw [hf]
@@ -1885,6 +1927,28 @@ neither its `some` nor the bound pair is built. -/
       if declassifySignalHopRefused ctx (ctx.objectLabelOf nid) (ctx.threadLabelOf receiver) then 2
       else 0
     | none => 0
+
+/-- `declassifySignalPlanRefusal` as compiled: the receiver resolved as its code
+(`declassifiedSignalReceiverCode`), its hop tested on the word, so the plan
+builds no receiver (`declassifySignalPlanRefusal_eq_code`). -/
+@[inline] def declassifySignalPlanRefusalCode (ctx : LabelingContext) (st : SystemState)
+    (signaler : SeLe4n.ThreadId) (nid : SeLe4n.ObjId) : Nat :=
+  if declassifySignalHopRefused ctx (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) then 1
+  else
+    match declassifiedSignalReceiverCode st nid with
+    | 0 => 0
+    | k + 1 =>
+      if declassifySignalHopRefused ctx (ctx.objectLabelOf nid) (ctx.threadLabelOf ⟨k⟩) then 2
+      else 0
+
+@[csimp] theorem declassifySignalPlanRefusal_eq_code :
+    @declassifySignalPlanRefusal = @declassifySignalPlanRefusalCode := by
+  funext ctx st signaler nid
+  unfold declassifySignalPlanRefusal declassifySignalPlanRefusalCode
+  rw [← ofOptCode_declassifiedSignalReceiverCode]
+  split
+  · rfl
+  · rcases declassifiedSignalReceiverCode st nid with _ | k <;> rfl
 
 /-- The error a refused plan's code names. -/
 @[inline] def declassifySignalPlanRefusalError (code : Nat) : KernelError :=

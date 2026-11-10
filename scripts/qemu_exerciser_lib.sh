@@ -752,6 +752,23 @@ for driver in drivers:
             "remote-asid-map", "remote-asid-unmap", "vacated-core-syscall",
             "vacated-core-reschedule", "fp-deferred-home-back", "fp-deferred-root-receives",
             "fp-access-deferred", "fp-released-reschedule", "fp-access-released",
+            # Every syscall the router takes past its inline words, refused.
+            "overflowed-receive", "overflowed-cspace-mint", "overflowed-cspace-copy",
+            "overflowed-cspace-move", "overflowed-cspace-delete", "overflowed-cspace-revoke",
+            "overflowed-vspace-map", "overflowed-vspace-unmap",
+            "overflowed-vspace-unify-instruction", "overflowed-service-revoke",
+            "overflowed-service-query", "overflowed-sched-context-bind",
+            "overflowed-sched-context-unbind", "overflowed-sched-context-consumed",
+            "overflowed-sched-context-yield-to", "overflowed-tcb-suspend", "overflowed-tcb-resume",
+            "overflowed-tcb-set-priority", "overflowed-tcb-set-ipc-buffer",
+            "overflowed-tcb-set-affinity", "overflowed-tcb-bind-notification",
+            "overflowed-tcb-unbind-notification", "overflowed-tcb-set-fault-handler",
+            "overflowed-tcb-set-space", "overflowed-mint-reply-cap", "overflowed-irq-handler-ack",
+            "overflowed-irq-control-get", "overflowed-irq-handler-set-notification",
+            "overflowed-irq-handler-clear", "overflowed-page-table-map",
+            "overflowed-page-table-unmap", "overflowed-audit-read", "overflowed-audit-drain",
+            "overflowed-service-register", "overflowed-untyped-reset", "overflowed-declassify",
+            "overflowed-declassify-signal", "overflowed-untyped-retype",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
@@ -780,10 +797,20 @@ for driver in drivers:
         # exerciser printed them beside its reading, routed by the same
         # router.  A tool that cannot run, or answers nonzero, fails the gate.
         routed_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: routed x7=(0x[0-9a-f]+) x1=(0x[0-9a-f]+) answered (0x[0-9a-f]+|blocked)")
+        # A round trip is evidence for its arm only if its reading's window
+        # entered the kernel through the syscall entry: a trip the HAL refused
+        # before the kernel ran measured no arm.
+        svc_entry_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: entered (\S+)")
+        svc_entered = set()
+        for line in lines:
+            m = svc_entry_re.fullmatch(line)
+            if m and "src/svc_dispatch.rs:" in m.group(3):
+                svc_entered.add((m.group(1), m.group(2) is not None))
         evidence = []
         for line in lines:
             m = routed_re.fullmatch(line)
-            if m and m.group(1) in expected and (m.group(1), m.group(2) is not None) in runs:
+            key = (m.group(1), m.group(2) is not None) if m else None
+            if m and m.group(1) in expected and key in runs and key in svc_entered:
                 evidence.append(f"{m.group(1)}{'/first' if m.group(2) else ''} {m.group(3)} {m.group(4)} {m.group(5)}")
         try:
             coverage = subprocess.run(

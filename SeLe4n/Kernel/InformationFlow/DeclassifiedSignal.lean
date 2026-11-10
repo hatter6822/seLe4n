@@ -369,6 +369,49 @@ matches the receiver where it resolves it and no `some` is built. -/
   | some (t, _) => some t
   | none => notificationSignalWaiter? st notificationId
 
+/-- `declassifiedSignalReceiver?` as its code (`ThreadId.optCode`): read off the
+notification's head-waiter and bound-thread codes and the bound thread's
+blocking state, so a caller that tests the receiver, or carries it across a
+branch, holds a word and builds no `some` (`ofOptCode_declassifiedSignalReceiverCode`). -/
+@[inline] def declassifiedSignalReceiverCode (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    Nat :=
+  match st.getNotification? notificationId with
+  | none => 0
+  | some ntfn =>
+    match ntfn.waitHeadCode with
+    | k + 1 => k + 1
+    | 0 =>
+      match ntfn.boundTCBCode with
+      | 0 => 0
+      | k + 1 =>
+        match st.getTcb? ⟨k⟩ with
+        | none => 0
+        | some tcb =>
+          match tcb.ipcState with
+          | .blockedOnReceive _ => k + 1
+          | _ => 0
+
+@[simp] theorem ofOptCode_declassifiedSignalReceiverCode (st : SystemState)
+    (notificationId : SeLe4n.ObjId) :
+    SeLe4n.ThreadId.ofOptCode (declassifiedSignalReceiverCode st notificationId) =
+      declassifiedSignalReceiver? st notificationId := by
+  unfold declassifiedSignalReceiverCode declassifiedSignalReceiver? notificationSignalWaiter?
+  rw [boundDeliveryTarget?_eq_impl]
+  unfold boundDeliveryTargetImpl?
+  cases st.getNotification? notificationId with
+  | none => rfl
+  | some ntfn =>
+    simp only [Notification.waitHead, Notification.boundTCB]
+    rcases ntfn.waitHeadCode with _ | k
+    · simp only [↓reduceIte, SeLe4n.ThreadId.ofOptCode]
+      rcases ntfn.boundTCBCode with _ | b
+      · rfl
+      · simp only
+        cases st.getTcb? ⟨b⟩ with
+        | none => rfl
+        | some tcb => dsimp only; cases tcb.ipcState <;> rfl
+    · simp only [Nat.add_one_ne_zero, ↓reduceIte, SeLe4n.ThreadId.ofOptCode]
+
 /-- WS-SM SM9.C.1: on the bound-delivery path the resolved receiver is the bound
 TCB. -/
 @[simp] theorem declassifiedSignalReceiver?_bound (st : SystemState)

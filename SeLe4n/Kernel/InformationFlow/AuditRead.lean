@@ -1321,7 +1321,7 @@ theorem refusalTagSlots_bounds_reason (e : KernelError) :
   omega
 
 /-- WS-SM SM9.B.10: a ring record's three bounded tags, packed into one word. -/
-def refusalTagsWord (r : DeclassificationRefusal) : Nat :=
+@[inline] def refusalTagsWord (r : DeclassificationRefusal) : Nat :=
   r.originatingCore.val +
     refusalTagSlots * (r.syscall.toNat + refusalTagSlots * r.reason.toDiscriminant)
 
@@ -1428,7 +1428,7 @@ theorem refusalCountersWord_fits (attempts dropped : Nat)
   omega
 
 /-- WS-SM SM9.B.10: the value of an unbounded field of a ring record. -/
-def refusalExportedFieldValue (r : DeclassificationRefusal) : RefusalReadField → Nat
+@[inline] def refusalExportedFieldValue (r : DeclassificationRefusal) : RefusalReadField → Nat
   | .subject => r.subject.val
   | .subjectDomain => r.subjectDomain.id
   | .requestedTarget => r.requestedTarget.val
