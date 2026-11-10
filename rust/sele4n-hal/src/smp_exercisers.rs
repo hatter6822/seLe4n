@@ -2100,7 +2100,7 @@ const RECEIVE_PATH_WORD: u64 = 125;
 /// Each carve's object is its own id ([`FINALISED_CHILD_IDS`]) in the frame
 /// slot, which the invocation scenarios fill only later; the delete empties it.
 #[cfg(feature = "hw_target")]
-const PARTNER_SCENARIOS: [&[RoundTrip]; 10] = [
+const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
     &[
         partner_step("receive-blocks", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true),
         partner_step("send-to-receiver", SEND, ENDPOINT_CAP, 1, [0x55, 0], false),
@@ -2242,6 +2242,39 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 10] = [
         partner_step("wait-on-carved", WAIT, FRAME_CAP, 0, [0, 0], true),
         invocation(
             "busy-notification-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+    ],
+    // The final delete of an endpoint a sender is blocked on, and of one a
+    // caller is blocked on: the sender pass of the endpoint's queue cancel
+    // (seL4's `cancelAllIPC`), which restarts each.
+    &[
+        invocation(
+            "untyped-retype-send-endpoint",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [ENDPOINT_TYPE, FINALISED_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ),
+        partner_step("send-on-carved", SEND, FRAME_CAP, 1, [0x88, 0], true),
+        invocation(
+            "sender-endpoint-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+    ],
+    &[
+        invocation(
+            "untyped-retype-call-endpoint",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [ENDPOINT_TYPE, FINALISED_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ),
+        partner_step("call-on-carved", CALL, FRAME_CAP, 1, [0x66, 0], true),
+        invocation(
+            "caller-endpoint-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
@@ -2553,7 +2586,7 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   endpoint against the interface the boot installs (its fifth word read
 ///   from that buffer), queried and revoked.
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
     &[
         invocation(
             "cspace-copy",
@@ -3095,6 +3128,23 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         service_register("service-register", ENDPOINT_CAP, SERVICE_INTERFACE),
         invocation("service-query", SERVICE_QUERY, ENDPOINT_CAP, [0; 4]),
         invocation("service-revoke", SERVICE_REVOKE, ENDPOINT_CAP, [0; 4]),
+        // A carved endpoint registered as the service, then its only
+        // capability deleted: the final delete drops the registration
+        // (`releaseFinalRegistration`, seL4's endpoint finalisation with the
+        // registry's back-link) and retires the endpoint.
+        invocation(
+            "untyped-retype-registered-endpoint",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, MINT_SLOT],
+        ),
+        service_register("registered-endpoint-register", MINT_CAP, SERVICE_INTERFACE),
+        invocation(
+            "registered-endpoint-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
         // The long, short-argument and refused forms, each routed past the
         // named syscalls, the root task's IPC buffer mapped for the words
         // past the fourth: a register one word short, refused; a configure
@@ -7465,7 +7515,603 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
         ),
         invocation("untyped-reset", UNTYPED_RESET, UNTYPED_CAP, [0; 4]),
     ],
+    &LIFECYCLE_SCENARIO,
 ];
+
+/// **The lifecycle branches no other scenario reaches**: the final deletes,
+/// retires and refusals of untypeds, moved parents, bound threads, threads'
+/// space slots, page tables, mapped frames and used VSpace roots, run as the
+/// root task with the partner inactive, after the invocation
+/// scenarios above have retired everything they carved.  Each step is
+/// measured; the last rewinds the boot untyped, so the steady-state run
+/// starts where the first did.
+#[cfg(feature = "hw_target")]
+const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
+    // A child untyped carved, and an endpoint carved from it (its recorder a
+    // carved untyped, not the boot one); its reset refused while the
+    // endpoint's capability is its derivation child; its revoke, which deletes
+    // that capability, the endpoint's last, so finalises and retires it; a
+    // notification carved from it; a revoke of that notification's capability,
+    // which has no child; then the untyped's last capability deleted while the
+    // notification lives, so the boot untyped adopts the child and its
+    // capability, whose delete retires it.
+    invocation(
+        "untyped-retype-parent-untyped",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [UNTYPED_TYPE, UNTYPED_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+    ),
+    invocation(
+        "child-retype-endpoint",
+        UNTYPED_RETYPE,
+        FRAME_CAP,
+        [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, MOVE_SLOT],
+    ),
+    RoundTrip {
+        returns: refused(REVOCATION_REQUIRED),
+        ..invocation(
+            "child-untyped-reset-refused",
+            UNTYPED_RESET,
+            FRAME_CAP,
+            [0, 0, 0, 0],
+        )
+    },
+    invocation(
+        "child-untyped-revoke",
+        CSPACE_REVOKE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "child-retype-notification",
+        UNTYPED_RETYPE,
+        FRAME_CAP,
+        [
+            NOTIFICATION_TYPE,
+            PASSIVE_CHILD_IDS[1],
+            CNODE_CAP,
+            MOVE_SLOT,
+        ],
+    ),
+    invocation(
+        "childless-revoke",
+        CSPACE_REVOKE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "parent-untyped-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "adopted-notification-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    // A capability with a derivation child moved: the child stays linked below
+    // it in its new slot; the child deleted, then the moved capability, the
+    // last.
+    invocation(
+        "untyped-retype-moved-parent",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            NOTIFICATION_TYPE,
+            PASSIVE_CHILD_IDS[1],
+            CNODE_CAP,
+            FRAME_SLOT,
+        ],
+    ),
+    invocation(
+        "moved-parent-copy",
+        CSPACE_COPY,
+        CNODE_CAP,
+        [FRAME_SLOT, COPY_SLOT, 0, 0],
+    ),
+    invocation(
+        "parent-cap-move",
+        CSPACE_MOVE,
+        CNODE_CAP,
+        [FRAME_SLOT, MINT_SLOT, 0, 0],
+    ),
+    invocation(
+        "moved-parent-child-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [COPY_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "moved-parent-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MINT_SLOT, 0, 0, 0],
+    ),
+    // A carved thread's last capability deleted while its scheduling context
+    // is still bound to it: the finalisation unbinds the context (seL4's
+    // `schedContext_unbindTCB`), which the context's own delete then retires.
+    invocation(
+        "untyped-retype-bound-context",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            SCHED_CONTEXT_TYPE,
+            THREAD_CHILD_IDS[2],
+            CNODE_CAP,
+            MINT_SLOT,
+        ],
+    ),
+    invocation(
+        "untyped-retype-context-thread",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [TCB_TYPE, THREAD_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+    ),
+    invocation(
+        "bind-context-thread",
+        SCHED_CONTEXT_BIND,
+        MINT_CAP,
+        [FRAME_CAP, 0, 0, 0],
+    ),
+    invocation(
+        "context-bound-tcb-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "released-context-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MINT_SLOT, 0, 0, 0],
+    ),
+    // A carved thread whose space slots hold the last capabilities to what
+    // they name, replaced or destroyed: a carved VSpace root replaced by the
+    // boot root (`threadSlotSet` retires the carved root and releases its
+    // ASID); an empty carved CNode replaced; a carved CNode holding an
+    // endpoint's only capability replaced (the zombie loop empties it first);
+    // the same CNode as the thread's CSpace root when the thread's own last
+    // capability is deleted (the loop goes down two levels, thread to CNode to
+    // endpoint); and a carved VSpace root as its VSpace root then.
+    invocation(
+        "untyped-retype-space-tcb",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+    ),
+    invocation(
+        "untyped-retype-space-root",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [VSPACE_ROOT_TYPE, VSPACE_ROOT_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+    ),
+    invocation(
+        "space-root-set-space",
+        TCB_SET_SPACE,
+        FRAME_CAP,
+        [CNODE_CAP, MOVE_CAP, 0, 0],
+    ),
+    invocation(
+        "space-root-cap-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "space-root-replaced",
+        TCB_SET_SPACE,
+        FRAME_CAP,
+        [CNODE_CAP, VSPACE_CAP, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-replaced-cnode",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+    ),
+    invocation(
+        "replaced-cnode-set-space",
+        TCB_SET_SPACE,
+        FRAME_CAP,
+        [MOVE_CAP, VSPACE_CAP, 0, 0],
+    ),
+    invocation(
+        "replaced-cnode-cap-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "replaced-cnode-retired",
+        TCB_SET_SPACE,
+        FRAME_CAP,
+        [CNODE_CAP, VSPACE_CAP, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-zombie-cnode",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+    ),
+    invocation(
+        "untyped-retype-zombie-endpoint",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], MOVE_CAP, 0],
+    ),
+    invocation(
+        "zombie-cnode-set-space",
+        TCB_SET_SPACE,
+        FRAME_CAP,
+        [MOVE_CAP, VSPACE_CAP, 0, 0],
+    ),
+    invocation(
+        "zombie-cnode-cap-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "zombie-cnode-replaced",
+        TCB_SET_SPACE,
+        FRAME_CAP,
+        [CNODE_CAP, VSPACE_CAP, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-nested-cnode",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+    ),
+    invocation(
+        "untyped-retype-nested-endpoint",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], MOVE_CAP, 0],
+    ),
+    invocation(
+        "nested-cnode-set-space",
+        TCB_SET_SPACE,
+        FRAME_CAP,
+        [MOVE_CAP, VSPACE_CAP, 0, 0],
+    ),
+    invocation(
+        "nested-cnode-cap-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "nested-space-tcb-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-rooted-tcb",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+    ),
+    invocation(
+        "untyped-retype-thread-root",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [VSPACE_ROOT_TYPE, VSPACE_ROOT_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+    ),
+    invocation(
+        "thread-root-set-space",
+        TCB_SET_SPACE,
+        FRAME_CAP,
+        [CNODE_CAP, MOVE_CAP, 0, 0],
+    ),
+    invocation(
+        "thread-root-cap-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "rooted-tcb-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    // Three tables installed in the root task's space; the first's unmap
+    // refused while the second hangs below it; a frame carved and mapped under
+    // them, mapped again with other rights (refused: the address is mapped),
+    // an address with no mapping unmapped (refused), and the frame's last
+    // capability deleted while it is mapped, which unmaps it; then the first
+    // table's last capability deleted while it is installed with the others
+    // below it, which takes the subtree out; the second's unmap, its record
+    // stale, and both deleted; and a table never installed unmapped and
+    // deleted.
+    invocation(
+        "untyped-retype-installed-table-1",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[0],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[0],
+        ],
+    ),
+    invocation(
+        "installed-table-map-1",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[0],
+        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-installed-table-2",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[1],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[1],
+        ],
+    ),
+    invocation(
+        "installed-table-map-2",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[1],
+        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-installed-table-3",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[2],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[2],
+        ],
+    ),
+    invocation(
+        "installed-table-map-3",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[2],
+        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+    ),
+    RoundTrip {
+        returns: refused(REVOCATION_REQUIRED),
+        ..invocation(
+            "installed-table-unmap-refused",
+            PAGE_TABLE_UNMAP,
+            PAGE_TABLE_CAPS[0],
+            [0, 0, 0, 0],
+        )
+    },
+    invocation(
+        "untyped-retype-mapped-frame",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+    ),
+    invocation(
+        "mapped-frame-map",
+        VSPACE_MAP,
+        VSPACE_CAP,
+        [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+    ),
+    RoundTrip {
+        returns: refused(MAPPING_CONFLICT),
+        ..invocation(
+            "mapped-frame-remap",
+            VSPACE_MAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_VADDR, MOVE_CAP, CODE_PERMS],
+        )
+    },
+    RoundTrip {
+        returns: refused(TRANSLATION_FAULT),
+        ..invocation(
+            "unmap-nothing",
+            VSPACE_UNMAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
+        )
+    },
+    invocation(
+        "mapped-frame-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "installed-table-delete-1",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[0], 0, 0, 0],
+    ),
+    invocation(
+        "stale-table-unmap-2",
+        PAGE_TABLE_UNMAP,
+        PAGE_TABLE_CAPS[1],
+        [0, 0, 0, 0],
+    ),
+    invocation(
+        "stale-table-delete-2",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[1], 0, 0, 0],
+    ),
+    invocation(
+        "stale-table-delete-3",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[2], 0, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-uninstalled-table",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[0],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[0],
+        ],
+    ),
+    invocation(
+        "uninstalled-table-unmap",
+        PAGE_TABLE_UNMAP,
+        PAGE_TABLE_CAPS[0],
+        [0, 0, 0, 0],
+    ),
+    invocation(
+        "uninstalled-table-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[0], 0, 0, 0],
+    ),
+    // A carved VSpace root with three tables installed and a frame mapped, its
+    // last capability deleted: the ASID released with its tables attached; the
+    // deepest table's unmap, its root gone; the tables' and the frame's last
+    // capabilities deleted, each naming the gone root.
+    invocation(
+        "untyped-retype-tabled-root",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            VSPACE_ROOT_TYPE,
+            VSPACE_ROOT_CHILD_ID,
+            CNODE_CAP,
+            FRAME_SLOT,
+        ],
+    ),
+    invocation(
+        "untyped-retype-tabled-root-table-1",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[0],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[0],
+        ],
+    ),
+    invocation(
+        "tabled-root-table-map-1",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[0],
+        [FRAME_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-tabled-root-table-2",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[1],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[1],
+        ],
+    ),
+    invocation(
+        "tabled-root-table-map-2",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[1],
+        [FRAME_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-tabled-root-table-3",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[2],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[2],
+        ],
+    ),
+    invocation(
+        "tabled-root-table-map-3",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[2],
+        [FRAME_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "untyped-retype-tabled-root-frame",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, MOVE_SLOT],
+    ),
+    invocation(
+        "tabled-root-map",
+        VSPACE_MAP,
+        FRAME_CAP,
+        [CARVED_ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
+    ),
+    invocation(
+        "tabled-root-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "orphaned-table-unmap-3",
+        PAGE_TABLE_UNMAP,
+        PAGE_TABLE_CAPS[2],
+        [0, 0, 0, 0],
+    ),
+    invocation(
+        "orphaned-table-delete-3",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[2], 0, 0, 0],
+    ),
+    invocation(
+        "orphaned-table-delete-2",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[1], 0, 0, 0],
+    ),
+    invocation(
+        "orphaned-table-delete-1",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[0], 0, 0, 0],
+    ),
+    invocation(
+        "orphaned-frame-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SLOT, 0, 0, 0],
+    ),
+    // The boot untyped rewound, every object carved from it retired, so the
+    // steady-state run carves where the first did.
+    invocation(
+        "lifecycle-untyped-reset",
+        UNTYPED_RESET,
+        UNTYPED_CAP,
+        [0, 0, 0, 0],
+    ),
+];
+
+/// The refusal frame's `x1` for `KernelError` discriminant `code`.
+#[cfg(feature = "hw_target")]
+const fn refused(code: u64) -> Option<(u64, Option<u64>)> {
+    Some(((crate::svc_dispatch::ERROR_LABEL_BASE + code) << 12, None))
+}
+/// `KernelError.mappingConflict`, `.translationFault` and
+/// `.revocationRequired`'s discriminants (`sele4n-types`).
+#[cfg(feature = "hw_target")]
+const MAPPING_CONFLICT: u64 = 11;
+#[cfg(feature = "hw_target")]
+const TRANSLATION_FAULT: u64 = 12;
+#[cfg(feature = "hw_target")]
+const REVOCATION_REQUIRED: u64 = 38;
+/// The ASID a carved VSpace root is given while the root task holds the first
+/// (`freshAsid?`, the least free one from 1).
+#[cfg(feature = "hw_target")]
+const CARVED_ROOT_ASID: u64 = 2;
 
 /// **WS-ZA ZA5.4 part 25: the final delete of a reply whose caller still waits
 /// on it**, run as the root task once the partner is suspended (so the roles
@@ -8652,6 +9298,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         if !interrupt_handlers_issued(which)
             || !interrupt_entries(which)
             || !interrupt_binding_revoked(which)
+            || !interrupt_notification_finalised(which)
             || !interrupt_handlers_retired(which)
         {
             return Some(false);
@@ -8843,6 +9490,20 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     crate::interrupts::restore_interrupts(saved);
     if ok != Some(true) {
         return Some(false);
+    }
+    // The final delete of a running thread: by itself on core 0, and by the
+    // root task while it runs on core 1, each run set up afresh, the timer
+    // masked across each.
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        for remote in [false, true] {
+            let saved = crate::interrupts::disable_interrupts();
+            let ok = running_thread_delete(remote, which);
+            crate::interrupts::restore_interrupts(saved);
+            if ok != Some(true) {
+                return Some(false);
+            }
+        }
     }
     // WS-ZA ZA6.29's requeue and linked branches (added at ZA6.30), twice,
     // the timer masked across each run.
@@ -9143,6 +9804,78 @@ fn interrupt_binding_revoked(which: &str) -> bool {
         && unmeasured(&block, "the revoked line signalled the notification")
         && unmeasured(&wake, "the waiter on the notification was not woken")
         && unmeasured(&rebind, "the notification was not bound again")
+}
+
+/// **A handler's node holding the last capability to its notification**, each
+/// step measured, on the unbound line's handler: a notification carved, bound
+/// to the line (the node holds a copy), its own capability deleted, so the
+/// node's copy is the last; the boot notification bound over it, which deletes
+/// the node's capability first (seL4's `cteDeleteOne`), finalising and
+/// retiring the carved notification, then copies; a second carved
+/// notification bound over that copy, its capability deleted, and the handler
+/// cleared, whose delete of the node's capability is again final.  The node
+/// is empty after, as before.
+#[cfg(feature = "hw_target")]
+fn interrupt_notification_finalised(which: &str) -> bool {
+    let handler = cap_address(IRQ_UNBOUND_HANDLER_SLOT);
+    let steps = [
+        invocation(
+            "untyped-retype-irq-notification",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                NOTIFICATION_TYPE,
+                FINALISED_CHILD_IDS[1],
+                CNODE_CAP,
+                FRAME_SLOT,
+            ],
+        ),
+        invocation(
+            "irq-handler-set-carved-notification",
+            IRQ_HANDLER_SET_NOTIFICATION,
+            handler,
+            [FRAME_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "irq-notification-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "irq-handler-set-notification-over-last",
+            IRQ_HANDLER_SET_NOTIFICATION,
+            handler,
+            [NOTIFICATION_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-irq-cleared-notification",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                NOTIFICATION_TYPE,
+                FINALISED_CHILD_IDS[1],
+                CNODE_CAP,
+                FRAME_SLOT,
+            ],
+        ),
+        invocation(
+            "irq-handler-set-notification-over-copy",
+            IRQ_HANDLER_SET_NOTIFICATION,
+            handler,
+            [FRAME_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "irq-cleared-notification-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation("irq-handler-clear-last", IRQ_HANDLER_CLEAR, handler, [0; 4]),
+    ];
+    steps
+        .iter()
+        .all(|step| heap_allocations_round_trip(step, which) == Some(true))
 }
 
 /// **WS-ZA ZA6.32: the handlers cleared and deleted**, each measured: the bound
@@ -10555,6 +11288,101 @@ fn affinity_move_running() -> Option<bool> {
         }
     }
     Some(unmeasured_all(&MOVE_TEARDOWN, "the move's teardown failed"))
+}
+
+/// The moved thread's own delete of its only capability, issued as that
+/// thread while it runs on core 0: the delete finalises the caller itself
+/// (its context still bound), so the dispatch restores the root task.
+#[cfg(feature = "hw_target")]
+const SELF_TCB_DELETE: RoundTrip = RoundTrip {
+    blocks: true,
+    ..invocation(
+        "self-tcb-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [CHAIN_TCB_SLOT, 0, 0, 0],
+    )
+};
+/// The root task's delete of the moved thread's only capability while the
+/// thread runs on core 1: the finalisation takes it off that core
+/// (`finaliseThreadReleaseCores`) with its context still bound.
+#[cfg(feature = "hw_target")]
+const REMOTE_TCB_DELETE: RoundTrip = invocation(
+    "remote-running-tcb-delete",
+    CSPACE_DELETE,
+    CNODE_CAP,
+    [CHAIN_TCB_SLOT, 0, 0, 0],
+);
+/// What the move's teardown leaves once the thread is gone: its context's
+/// delete, the page unmapped and deleted, and the tables taken out deepest
+/// first and deleted.
+#[cfg(feature = "hw_target")]
+fn deleted_thread_teardown() -> bool {
+    unmeasured(
+        &MOVE_TEARDOWN[2],
+        "the deleted thread's context was not deleted",
+    ) && unmeasured_all(
+        &MOVE_TEARDOWN[4..],
+        "the deleted thread's page was not taken down",
+    )
+}
+
+/// **The final delete of a running thread**, measured once per call: the
+/// moved thread set up as [`affinity_move_running`] sets it up, resumed, and
+/// running on core 0 once the root task's receive blocks; then either its own
+/// delete of its capability ([`SELF_TCB_DELETE`]) or, once it has blocked,
+/// been homed on core 1 and woken there, the root task's
+/// ([`REMOTE_TCB_DELETE`]).  The timer is masked by the caller.
+#[cfg(feature = "hw_target")]
+fn running_thread_delete(remote: bool, which: &str) -> Option<bool> {
+    if !unmeasured_all(&MOVE_SETUP_PAGE, "the code page's setup failed")
+        || !unmeasured(&MOVE_MAP_CODE, "the code page was not mapped")
+        || !unmeasured_all(&MOVE_SETUP_THREAD, "the moved thread's setup failed")
+    {
+        return Some(false);
+    }
+    let Some(page) = root_user_page(FRAME_VADDR) else {
+        return move_failed("the code page has no translation");
+    };
+    if page < crate::mmu::KERNEL_RESERVED_END || !page.is_multiple_of(4096) {
+        return move_failed("the code page's translation names no frame");
+    }
+    // SAFETY: as in `affinity_move_running`: the frame the root task's tables
+    // map at the code address, which no thread runs yet; one aligned store.
+    unsafe { core::ptr::write_volatile(page as *mut u64, SPIN_CODE_WORD) };
+    core::sync::atomic::fence(Ordering::SeqCst);
+    if !unmeasured(&MOVE_UNIFY, "the code page was not unified")
+        || !unmeasured(&MOVE_RESUME, "the moved thread was not resumed")
+        || !unmeasured(&MOVE_ROOT_RECEIVES, "the root task's receive did not block")
+        || !unmeasured(&MOVE_THREAD_SENDS, "the thread's send failed")
+    {
+        return Some(false);
+    }
+    if !remote {
+        if heap_allocations_round_trip(&SELF_TCB_DELETE, which) != Some(true) {
+            return Some(false);
+        }
+        return Some(deleted_thread_teardown());
+    }
+    let (received, _, _, resumed) = dispatch_round_trip_at(&MOVE_THREAD_RECEIVES, FRAME_VADDR);
+    if !matches!(received, Dispatched::Blocked) || resumed.regs[2] != MOVE_MARKER {
+        return move_failed("the thread's receive did not switch core 0 back to the root task");
+    }
+    if !unmeasured(&MOVE_HOME_SECOND, "the thread was not homed on core 1")
+        || !unmeasured(&MOVE_ROOT_WAKES, "the root task's send failed")
+    {
+        return Some(false);
+    }
+    if !second_core_at_user() {
+        return move_failed("core 1 did not run the thread at EL0");
+    }
+    if heap_allocations_round_trip(&REMOTE_TCB_DELETE, which) != Some(true) {
+        return Some(false);
+    }
+    if !second_core_left_user() {
+        return move_failed("core 1 still runs the deleted thread");
+    }
+    Some(deleted_thread_teardown())
 }
 
 /// **The linked yieldTo, measured across its whole round trip**: the root
