@@ -89,8 +89,9 @@ theorem resolveVSpaceMapFrame_congr {s t : SystemState} (tid : SeLe4n.ThreadId)
 recorded mapping is in place and names the address space and the address the
 call names (`vspaceMapOrRemapFromFrameCap`'s remap), the unmap of that address
 is admitted in place (`vspaceUnmapAdmittedAt`), and the map's checks that read
-nothing the unmap writes hold (`vspaceRemapChecks`). -/
-def vspaceRemapAdmittedAt (st : SystemState) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+nothing the unmap writes hold (`vspaceRemapChecks`).  Inline, so the decoded
+arguments are read as words and no record of them is built. -/
+@[inline] def vspaceRemapAdmittedAt (st : SystemState) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
     (frameCap : Capability) (frame : FrameObject) (rootId : SeLe4n.ObjId) : Bool :=
   capabilityMappingLive st frameCap && frameCap.mapAsid == args.asid &&
     frameCap.mapVaddr == args.vaddr &&
@@ -100,7 +101,7 @@ def vspaceRemapAdmittedAt (st : SystemState) (args : Architecture.SyscallArgDeco
 /-- **The remap's map half, on the state the unmap left**: the frame mapped in
 place (`vspaceMapPerformAt`) when its checks hold there; otherwise the fresh
 mapping as specified, or — where it refuses — the state the unmap left. -/
-def vspaceRemapMapAt (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
+@[inline] def vspaceRemapMapAt (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (frameCap : Capability)
     (frame : FrameObject) (rootId frameCnode : SeLe4n.ObjId) (frameSlot : SeLe4n.Slot)
     (st0 : SystemState) : SystemState :=
@@ -111,6 +112,34 @@ def vspaceRemapMapAt (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
     match vspaceMapFromFrameCap tid ec args st0 with
     | .ok ((), s) => s
     | .error _ => st0
+
+/-- **A remap at another address space is refused**, before any write: the
+capability's mapping is in place in another ASID (seL4's `Page_Map`,
+`InvalidCapability`). -/
+theorem vspaceMapOrRemapFromFrameCap_of_otherAsid (tid : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (st : SystemState) (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+    (hRes : resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame))
+    (h : (capabilityMappingLive st frameCap && frameCap.mapAsid != args.asid) = true) :
+    vspaceMapOrRemapFromFrameCap tid ec args st = .error .invalidCapability := by
+  simp only [Bool.and_eq_true] at h
+  unfold vspaceMapOrRemapFromFrameCap
+  simp only [hRes, h.1, h.2, ↓reduceIte]
+
+/-- **A remap at another address is refused**, before any write: the
+capability's mapping is in place at another virtual address of the same ASID
+(seL4's `Page_Map`, `InvalidArgument`). -/
+theorem vspaceMapOrRemapFromFrameCap_of_otherVaddr (tid : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (st : SystemState) (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+    (hRes : resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame))
+    (hN : (capabilityMappingLive st frameCap && frameCap.mapAsid != args.asid) = false)
+    (h : (capabilityMappingLive st frameCap && frameCap.mapVaddr != args.vaddr) = true) :
+    vspaceMapOrRemapFromFrameCap tid ec args st = .error .invalidArgument := by
+  simp only [Bool.and_eq_true] at h
+  rw [h.1, Bool.true_and] at hN
+  unfold vspaceMapOrRemapFromFrameCap
+  simp only [hRes, h.1, h.2, hN, ↓reduceIte, Bool.false_eq_true]
 
 open SeLe4n.Kernel.RobinHood in
 /-- **An admitted remap is its writes**: the unmap in place, then the map half

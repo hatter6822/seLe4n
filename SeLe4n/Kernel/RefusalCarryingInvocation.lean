@@ -876,10 +876,16 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         else
           resolveVSpaceMapFrameK tid args st (fun e => .error (e, st))
             (fun frameCnode frameSlot frameCap frame =>
-              -- seL4's remap of a capability whose mapping is in place: the
-              -- unmap in place, then the map half on the state it leaves
-              -- (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).
-              if vspaceRemapAdmittedAt st args frameCap frame rootId then
+              -- seL4's `Page_Map` on a capability whose mapping is in place:
+              -- refused at another ASID or address, read before any write
+              -- (`vspaceMapOrRemapFromFrameCap_of_otherAsid`, `_of_otherVaddr`);
+              -- at its own, the unmap in place, then the map half on the state
+              -- it leaves (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).
+              if capabilityMappingLive st frameCap && frameCap.mapAsid != args.asid then
+                .error (.invalidCapability, st)
+              else if capabilityMappingLive st frameCap && frameCap.mapVaddr != args.vaddr then
+                .error (.invalidArgument, st)
+              else if vspaceRemapAdmittedAt st args frameCap frame rootId then
                 .ok ((), vspaceRemapMapAt tid executingCore args frameCap frame rootId frameCnode
                   frameSlot (vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st))
               else
@@ -1490,6 +1496,16 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           | ok triple =>
             obtain ⟨frameSlot, frameCap, frame⟩ := triple
             dsimp only
+            split
+            · next hOA =>
+              simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
+                ↓reduceIte, vspaceMapOrRemapFromFrameCap_of_otherAsid tid executingCore args st
+                  frameSlot frameCap frame hRs hOA]
+            split
+            · next hOA hOV =>
+              simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
+                ↓reduceIte, vspaceMapOrRemapFromFrameCap_of_otherVaddr tid executingCore args st
+                  frameSlot frameCap frame hRs (by simpa using hOA) hOV]
             split
             · next hRm =>
               simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
