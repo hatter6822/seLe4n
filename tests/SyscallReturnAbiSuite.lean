@@ -151,9 +151,17 @@ private def capPtrValue : Nat := 5
 
 private def signalledBadge : Nat := 42
 
+/-- A word the signaller writes to its first message register, which must
+never reach the notification: a signal's badge is the capability's
+(`Capability.signalBadge`, seL4's `capNtfnBadge`). -/
+private def forgedBadge : Nat := 0x99
+
+/-- The notification capability, minted with `signalledBadge`: a signal through
+it ORs exactly that word in, whatever the caller's registers hold. -/
 private def ntfnCap : Capability :=
   { target := .object ntfnId,
-    rights := AccessRightSet.ofList [.read, .write] }
+    rights := AccessRightSet.ofList [.read, .write],
+    badgeWord := Badge.ofNatMasked signalledBadge, badged := true }
 
 /-- Every entity the fixture uses is labelled `kernelTrusted`, so every flow
 gate on the dispatch path is reflexively satisfied and the ABI shape is what the
@@ -251,6 +259,18 @@ private def payloadCapability : Capability :=
   { target := .object ntfnId,
     rights := AccessRightSet.ofList [.read] }
 
+/-- The notification minted three more ways, for the badge-from-capability
+witnesses (§9s): with the declassified badge, with badge `0x1`, and unbadged
+(with a stale word in `badgeWord` that the clear `badged` flag must hide). -/
+private def declassCapPtr : Nat := 11
+private def badgeOneCapPtr : Nat := 12
+private def unbadgedCapPtr : Nat := 13
+
+private def ntfnCapWith (badgeWord : Nat) (badged : Bool) : Capability :=
+  { target := .object ntfnId,
+    rights := AccessRightSet.ofList [.read, .write],
+    badgeWord := Badge.ofNatMasked badgeWord, badged }
+
 private def core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
 
 /-- The shared CNode with all the capabilities (the §3 notification cap,
@@ -265,7 +285,10 @@ private def sharedCnOf (replyCap : Capability) : SeLe4n.Model.CNode :=
        (SeLe4n.Slot.ofNat replyCapPtr, replyCap),
        (SeLe4n.Slot.ofNat selfTcbCapPtr, selfTcbCap),
        (SeLe4n.Slot.ofNat epCapNoGrantPtr, epCapNoGrant),
-       (SeLe4n.Slot.ofNat payloadCapPtr, payloadCapability)]))
+       (SeLe4n.Slot.ofNat payloadCapPtr, payloadCapability),
+       (SeLe4n.Slot.ofNat declassCapPtr, ntfnCapWith 0x5C true),
+       (SeLe4n.Slot.ofNat badgeOneCapPtr, ntfnCapWith 0x1 true),
+       (SeLe4n.Slot.ofNat unbadgedCapPtr, ntfnCapWith 0x7 false)]))
 
 private def sharedCn : SeLe4n.Model.CNode := sharedCnOf replyCapability
 
@@ -360,7 +383,7 @@ private def runUnitReturnWitness : IO Unit := do
   -- x2 carries the badge argument for the signal.
   let msgInfoRaw : UInt64 := 1
   match dispatchFromAbi SyscallId.notificationSignal.toNat msgInfoRaw
-      signalledBadge.toUInt64 witnessState with
+      forgedBadge.toUInt64 witnessState with
   | .error e =>
       assertBool s!"the signal dispatch reaches the FFI seam (got .error {reprStr e})" false
   | .ok (outcome, st') => do
@@ -393,7 +416,7 @@ private def runBadgeDeliveryWitness : IO Unit := do
   IO.println "-- §5 inverted witness B: the signal-before-wait badge round trip DELIVERS"
   let msgInfoRaw : UInt64 := 1
   match dispatchFromAbi SyscallId.notificationSignal.toNat msgInfoRaw
-      signalledBadge.toUInt64 witnessState with
+      forgedBadge.toUInt64 witnessState with
   | .error e =>
       assertBool s!"the signal leg dispatches (got .error {reprStr e})" false
   | .ok (_, stSignalled) => do
@@ -487,8 +510,24 @@ private def waitThenSignalScenario :
   let preStagedX0 := (stagedFrame st1 callerTid).x0
   let (_, st2) ← dispatchFromAbiOn core1
     SyscallId.notificationSignal.toNat 1 capPtrValue.toUInt64
-    signalledBadge.toUInt64 0 0 st1
+    forgedBadge.toUInt64 0 0 st1
   pure (preStagedX0, stagedFrame st2 callerTid)
+
+/-- §9s: the waiter blocks on the boot core, then the peer signals from core 1
+through the capability at `sigCap`, writing `x2` to its first message register
+and `len` as its message length.  Returns the waiter's staged frame and the
+notification's pending word after a second, unwaited signal. -/
+private def badgeFromCapScenario (sigCap : Nat) (len x2 : UInt64) :
+    Except KernelError (Kernel.Architecture.SyscallReturnFrame × Option Badge) := do
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 0 0 twoThreadState
+  if out1 != .blocks then throw .illegalState
+  let (_, st2) ← dispatchFromAbiOn core1
+    SyscallId.notificationSignal.toNat len sigCap.toUInt64 x2 0 0 st1
+  let (_, st3) ← dispatchFromAbiOn core1
+    SyscallId.notificationSignal.toNat len sigCap.toUInt64 x2 0 0 st2
+  pure (stagedFrame st2 callerTid,
+    (st3.getNotification? ntfnId).bind (·.pendingBadge))
 
 /-- 9b: blocked receiver.  The caller blocks in `.receive` on the empty
 endpoint (core 0); the peer sends `[7, 8]` under the badge-9 endpoint cap
@@ -787,7 +826,7 @@ private def returnAbiTraceLines : List String :=
   let signalMsgInfo : UInt64 := 1
   let signalled :=
     dispatchFromAbi SyscallId.notificationSignal.toNat signalMsgInfo
-      signalledBadge.toUInt64 witnessState
+      forgedBadge.toUInt64 witnessState
   let waitAfterSignal :=
     match signalled with
     | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
@@ -900,6 +939,29 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         (frame.x1 == 0)
       assertBool "9a: the staged frame decodes as the badge, end to end"
         (rustDecodeResponse (postTrapRegs frame) == .ok signalledBadge.toUInt64 #[0, 0, 0, 0])
+  -- 9s — a signal's badge is its capability's, never a register's (seL4's
+  -- `sendSignal(ntfn, capNtfnBadge)`): an unbadged capability delivers 0, a
+  -- capability minted with 0x1 delivers exactly 0x1 though MR0 asks for 0x2,
+  -- and a signal of length 0 (no message register at all) is accepted.
+  match badgeFromCapScenario unbadgedCapPtr 1 0x2 with
+  | .error e => assertBool s!"9s unbadged dispatches (got .error {reprStr e})" false
+  | .ok (frame, pending) => do
+      assertBool "9s: an unbadged capability's signal wakes the waiter with badge 0"
+        (frame.x0 == 0 && frame.x1 == 0)
+      assertBool "9s: an unbadged capability's pending word stays 0 (MR0 0x2 ignored)"
+        (pending == some (Badge.ofNatMasked 0))
+  match badgeFromCapScenario badgeOneCapPtr 1 0x2 with
+  | .error e => assertBool s!"9s badge-0x1 dispatches (got .error {reprStr e})" false
+  | .ok (frame, pending) => do
+      assertBool "9s: a 0x1-badged capability wakes the waiter with exactly 0x1, not MR0's 0x2"
+        (frame.x0 == 0x1)
+      assertBool "9s: its pending word is exactly 0x1 (no 0x2 bit forged in)"
+        (pending == some (Badge.ofNatMasked 0x1))
+  match badgeFromCapScenario badgeOneCapPtr 0 0 with
+  | .error e => assertBool s!"9s length-0 signal dispatches (got .error {reprStr e})" false
+  | .ok (frame, pending) => do
+      assertBool "9s: a signal of length 0 is accepted and delivers the capability's 0x1"
+        (frame.x0 == 0x1 && pending == some (Badge.ofNatMasked 0x1))
   -- 9b — blocked receiver woken by a send
   match receiveThenSendScenario with
   | .error e => assertBool s!"9b dispatches (got .error {reprStr e})" false
@@ -1310,7 +1372,7 @@ private def declassifiedBadgeRun (ctx : LabelingContext) :
   let (r1, st1) := entryStepOn ctx SeLe4n.Kernel.Concurrency.bootCoreId
     SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 twoThreadState
   let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat 1
-    capPtrValue.toUInt64 declassBadge.toUInt64 st1
+    declassCapPtr.toUInt64 forgedBadge.toUInt64 st1
   let st3 := ((SeLe4n.Kernel.rescheduleBracket 0).run st2).2
   -- The step reports the cores whose reschedule flag it raised as one word;
   -- these are the SGIs it fires (`fireRaisedReschedules_eq`).

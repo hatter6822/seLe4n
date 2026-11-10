@@ -49,8 +49,7 @@ noncomputable def overflowedOperandR (ctx : LabelingContext) (sid : SyscallId)
   match sid with
   | .notificationSignal =>
     dispatchOperandCheckedR capAddr tid executingCore
-      (signalOperandArmThenTaintR ctx (.ok { badge := Badge.ofWord (readRegWord rf ⟨2⟩) }) tid
-        executingCore (syscallRequiredRight .notificationSignal))
+      (signalOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationSignal))
   | .notificationWait =>
     dispatchOperandCheckedR capAddr tid executingCore
       (waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait))
@@ -192,8 +191,7 @@ theorem overflowedArmWith_eq_spec (ctx : LabelingContext) (executingCore : Concu
     match sid with
     | .notificationSignal =>
       dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
-        (signalOperandArmThenTaintR ctx (.ok { badge := Badge.ofWord (readRegWord rf ⟨2⟩) }) tid
-          executingCore (syscallRequiredRight .notificationSignal))
+        (signalOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationSignal))
     | .notificationWait =>
       dispatchOperandCheckedR (SeLe4n.CPtr.ofWord capWord) tid executingCore
         (waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait))

@@ -332,7 +332,10 @@ impl SyscallId {
             // sends length 0.  The previous minimum of 1 rejected every
             // call, the fifth unreachable-wrapper instance of this class.
             Self::ServiceQuery => 0,
-            Self::NotificationSignal => 1,
+            // seL4's `seL4_Signal` reads no message register: the badge it
+            // ORs in is the capability's (`Capability.signalBadge`), so the
+            // kernel checks no length and neither does this prefilter.
+            Self::NotificationSignal => 0,
             Self::NotificationWait => 0,
             Self::ReplyRecv => 0,
             Self::SchedContextConfigure => 5,
@@ -393,13 +396,13 @@ impl SyscallId {
             // now produced nine instances of.
             Self::AuditRead => 3,
             Self::AuditDrain => 1,
-            // WS-SM SM9.C.8: the declassifying signal reuses the ordinary
-            // signal's decode (`decodeNotificationSignalArgs`) — the badge in
-            // x2, one inline register.  Neither security domain is an operand,
+            // WS-SM SM9.C.8: the declassifying signal reads what the ordinary
+            // signal reads — no message register, its badge being the
+            // capability's.  Neither security domain is an operand,
             // for the reason `Declassify` takes none: the source is read off
             // the subject the executing core is running and the two
             // destinations off the notification and its resolved receiver.
-            Self::DeclassifySignal => 1,
+            Self::DeclassifySignal => 0,
         }
     }
 }
@@ -1219,6 +1222,9 @@ mod tests {
         assert_eq!(SyscallId::SchedContextUnbind.min_inline_args(), 0);
         assert_eq!(SyscallId::SchedContextBind.min_inline_args(), 1);
         assert_eq!(SyscallId::Send.min_inline_args(), 0);
+        // A signal's badge is its capability's: no operand register at all.
+        assert_eq!(SyscallId::NotificationSignal.min_inline_args(), 0);
+        assert_eq!(SyscallId::DeclassifySignal.min_inline_args(), 0);
         // The four single-register TCB-management syscalls each read exactly ONE
         // inline register (`requireMsgReg decoded.msgRegs 0` in their decoders;
         // docstrings "Requires 1 message register") and their `sele4n-sys`

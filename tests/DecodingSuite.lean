@@ -383,11 +383,20 @@ private def sad012_vspaceUnmap : IO Unit := do
 
 -- Notification family ----------------------------------------------------------
 
-/-- SAD-013: decodeNotificationSignalArgs — valid decode. -/
+/-- SAD-013: a signal decodes no argument — its badge is the capability's
+(`Capability.signalBadge`, seL4's `capNtfnBadge`): the minted word for a
+badged capability, zero for an unbadged one even when a stale word sits in
+`badgeWord`. -/
 private def sad013_notificationSignal : IO Unit := do
-  let stub := mkStub #[⟨0xFF⟩]
-  let result := decodeNotificationSignalArgs stub
-  expect "SAD-013a notification signal ok" result.isOk
+  let badged : Capability :=
+    { target := .object ⟨7⟩, rights := AccessRightSet.ofList [.write],
+      badgeWord := SeLe4n.Badge.ofWord 0x1, badged := true }
+  let unbadged : Capability :=
+    { target := .object ⟨7⟩, rights := AccessRightSet.ofList [.write] }
+  let stale : Capability := { unbadged with badgeWord := SeLe4n.Badge.ofWord 0x5 }
+  expect "SAD-013a badged cap signals its minted badge" (badged.signalBadge.word == 0x1)
+  expect "SAD-013b unbadged cap signals badge 0" (unbadged.signalBadge.word == 0)
+  expect "SAD-013c unbadged cap ignores a stale badge word" (stale.signalBadge.word == 0)
 
 /-- SAD-014: decodeNotificationWaitArgs — always succeeds. -/
 private def sad014_notificationWait : IO Unit := do

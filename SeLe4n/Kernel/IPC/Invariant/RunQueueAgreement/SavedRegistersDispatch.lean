@@ -249,8 +249,6 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     · exact hF (savedRegsKept.of_serviceRecordRewrite hInv (registerService_serviceRecordRewrite h))
     · cases h
   case none.notificationSignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -285,8 +283,6 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1] at hF ⊢
     exact hF (savedRegsKept.of_objects_eq rfl)
   case none.declassifySignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

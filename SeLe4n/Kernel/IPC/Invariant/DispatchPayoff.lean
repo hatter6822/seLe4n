@@ -933,22 +933,18 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
       case notificationSignal =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object notifId =>
-          cases hDec : decodeNotificationSignalArgs decoded with
-          | error e => simp only [hDec] at hStep; cases hStep
-          | ok args =>
-              simp only [hDec] at hStep
               have hNoBound := hPack.signalNoBoundTarget notifId hSy hTgt
-              have hReduce : notificationSignalBoundCrossCoreDispatch notifId args.badge
-                  executingCore st = notificationSignalOnCore notifId args.badge
+              have hReduce : notificationSignalBoundCrossCoreDispatch notifId cap.signalBadge
+                  executingCore st = notificationSignalOnCore notifId cap.signalBadge
                     executingCore st := by
                 unfold notificationSignalBoundCrossCoreDispatch
-                exact notificationSignalBoundOnCore_fallthrough_eq notifId args.badge
+                exact notificationSignalBoundOnCore_fallthrough_eq notifId cap.signalBadge
                   executingCore st hNoBound
               rw [hReduce] at hStep
               have hSigInv := notificationSignalOnCore_preserves_ipcInvariantFull notifId
-                args.badge executingCore st hInv hObjInv
+                cap.signalBadge executingCore st hInv hObjInv
                 hPack.reachable.notificationWaiterConsistent hBudgets
-              cases hSig : notificationSignalOnCore notifId args.badge
+              cases hSig : notificationSignalOnCore notifId cap.signalBadge
                   executingCore st with
               | mk st1 res1 =>
                   rw [hSig] at hStep hSigInv
@@ -958,7 +954,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                       simp only [] at hStep
                       have hObjInv1 : st1.objects.invExt := by
                         have h := notificationSignalOnCore_preserves_objects_invExt
-                          notifId args.badge executingCore st hObjInv
+                          notifId cap.signalBadge executingCore st hObjInv
                         rw [hSig] at h; exact h
                       cases hClear : clearWokenReceiverStash
                           ((boundDeliveryTarget? st notifId).map (·.1)) st1 with
@@ -1370,23 +1366,19 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       case notificationSignal =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object notifId =>
-          cases hDec : decodeNotificationSignalArgs decoded with
-          | error e => simp only [hDec] at hStep; cases hStep
-          | ok args =>
-              simp only [hDec] at hStep
               have hNoBound := hQ.base.signalNoBoundTarget notifId hSy hTgt
               cases hFlow : securityFlowsTo (ctx.threadLabelOf tid)
                   (ctx.objectLabelOf notifId) with
               | false =>
                   rw [notificationSignalBoundCrossCoreDispatchChecked_flow_denied
-                        ctx notifId tid args.badge executingCore st hFlow] at hStep
+                        ctx notifId tid cap.signalBadge executingCore st hFlow] at hStep
                   simp only [] at hStep; cases hStep
               | true =>
                   rw [notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_no_delivery
-                        ctx notifId tid args.badge executingCore st hFlow hNoBound] at hStep
+                        ctx notifId tid cap.signalBadge executingCore st hFlow hNoBound] at hStep
                   have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                     unfold dispatchWithCap
-                    simp only [hCapOnly0, hSy, hTgt, hDec]
+                    simp only [hCapOnly0, hSy, hTgt]
                     exact hStep
                   exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
                     cap st st' hQ.base hU
@@ -1443,14 +1435,10 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       case declassifySignal =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object notifId =>
-          cases hDec : decodeNotificationSignalArgs decoded with
-          | error e => simp only [hDec] at hStep; cases hStep
-          | ok args =>
-              simp only [hDec] at hStep
               have hNoBound := hQ.declassifySignalNoBoundTarget notifId hSy hTgt
               cases hDisp : notificationSignalDeclassifiedCrossCoreDispatch
                   (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                  args.badge executingCore st with
+                  cap.signalBadge executingCore st with
               | mk st1 res1 =>
                   rw [hDisp] at hStep
                   cases res1 with
@@ -1461,13 +1449,13 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       have hSigInv : ipcInvariantFull st1 :=
                         notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          args.badge executingCore st st1 sgi1 hNoBound
+                          cap.signalBadge executingCore st st1 sgi1 hNoBound
                           hInv hObjInv hQ.base.reachable.notificationWaiterConsistent
                           hQ.base.reachable.allTimeoutBudgetsNone hDisp
                       have hObjInv1 : st1.objects.invExt :=
                         notificationSignalDeclassifiedOnCore_preserves_objects_invExt
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          args.badge executingCore st st1 sgi1
+                          cap.signalBadge executingCore st st1 sgi1
                           hObjInv hDisp
                       cases hClear : clearWokenReceiverStash
                           ((boundDeliveryTarget? st notifId).map (·.1)) st1 with

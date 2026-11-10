@@ -59,13 +59,11 @@ private theorem decodeSyscallArgsFromState_of_routed
 theorem decodeSyscallArgsFromState_of_routedSignal
     (st : SystemState) (tid : ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
-    (capAddr : CPtr) (badge : Badge)
-    (h : registerRoutedSyscall layout regs regCount = .signal capAddr badge) :
+    (capAddr : CPtr)
+    (h : registerRoutedSyscall layout regs regCount = .signal capAddr) :
     ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
       decoded.syscallId = .notificationSignal ∧ decoded.capAddr = capAddr ∧
-      decoded.overflowCount = 0 ∧
-      ∃ h0 : 0 < decoded.msgRegs.size,
-        badge = Badge.ofNatMasked (decoded.msgRegs[0]'h0).val := by
+      decoded.overflowCount = 0 := by
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
@@ -82,9 +80,7 @@ theorem decodeSyscallArgsFromState_of_routedSignal
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       cases h
-      refine ⟨_, hD .notificationSignal ‹_›, rfl, rfl, rfl,
-        by simpa only [Array.size_map] using ‹0 < layout.msgRegs.size›,
-        by simp only [Array.getElem_map, readReg_val_eq_word, Badge.ofWord_eq_ofNatMasked]⟩
+      exact ⟨_, hD .notificationSignal ‹_›, rfl, rfl, rfl⟩
     · repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
