@@ -3261,48 +3261,276 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         // not take, so its arm refuses and changes nothing: the untyped reset
         // on the untyped while its frame child lives, the declassifications on
         // the boot endpoint, whose flow the base lattice already permits.
-        overflowed("overflowed-receive", RECEIVE, CNODE_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-cspace-mint", CSPACE_MINT, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
-        overflowed("overflowed-cspace-copy", CSPACE_COPY, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
-        overflowed("overflowed-cspace-move", CSPACE_MOVE, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
-        overflowed("overflowed-cspace-delete", CSPACE_DELETE, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
-        overflowed("overflowed-cspace-revoke", CSPACE_REVOKE, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
-        overflowed("overflowed-vspace-map", VSPACE_MAP, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
-        overflowed("overflowed-vspace-unmap", VSPACE_UNMAP, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
-        overflowed("overflowed-vspace-unify-instruction", VSPACE_UNIFY_INSTRUCTION, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
-        overflowed("overflowed-service-revoke", SERVICE_REVOKE, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
-        overflowed("overflowed-service-query", SERVICE_QUERY, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
-        overflowed("overflowed-sched-context-bind", SCHED_CONTEXT_BIND, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-sched-context-unbind", SCHED_CONTEXT_UNBIND, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
-        overflowed("overflowed-sched-context-consumed", SCHED_CONTEXT_CONSUMED, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-sched-context-yield-to", SCHED_CONTEXT_YIELD_TO, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-tcb-suspend", TCB_SUSPEND, NOTIFICATION_CAP, 5, INVALID_ARGUMENT),
-        overflowed("overflowed-tcb-resume", TCB_RESUME, NOTIFICATION_CAP, 5, INVALID_ARGUMENT),
-        overflowed("overflowed-tcb-set-priority", TCB_SET_PRIORITY, NOTIFICATION_CAP, 5, INVALID_ARGUMENT),
-        overflowed("overflowed-tcb-set-ipc-buffer", TCB_SET_IPC_BUFFER, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
-        overflowed("overflowed-tcb-set-affinity", TCB_SET_AFFINITY, NOTIFICATION_CAP, 5, INVALID_ARGUMENT),
-        overflowed("overflowed-tcb-bind-notification", TCB_BIND_NOTIFICATION, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-tcb-unbind-notification", TCB_UNBIND_NOTIFICATION, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
-        overflowed("overflowed-tcb-set-fault-handler", TCB_SET_FAULT_HANDLER, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
-        overflowed("overflowed-tcb-set-space", TCB_SET_SPACE, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-mint-reply-cap", MINT_REPLY_CAP, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
-        overflowed("overflowed-irq-handler-ack", IRQ_HANDLER_ACK, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-irq-control-get", IRQ_CONTROL_GET, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-irq-handler-set-notification", IRQ_HANDLER_SET_NOTIFICATION, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-irq-handler-clear", IRQ_HANDLER_CLEAR, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-page-table-map", PAGE_TABLE_MAP, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-page-table-unmap", PAGE_TABLE_UNMAP, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-audit-read", AUDIT_READ, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-audit-drain", AUDIT_DRAIN, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
-        overflowed("overflowed-service-register", SERVICE_REGISTER, NOTIFICATION_CAP, 6, OBJECT_NOT_FOUND),
-        overflowed("overflowed-untyped-reset", UNTYPED_RESET, UNTYPED_CAP, 5, REVOCATION_REQUIRED),
-        overflowed("overflowed-declassify", DECLASSIFY, ENDPOINT_CAP, 5, FLOW_DENIED),
-        overflowed("overflowed-declassify-signal", DECLASSIFY_SIGNAL, ENDPOINT_CAP, 5, INVALID_CAPABILITY),
+        overflowed(
+            "overflowed-receive",
+            RECEIVE,
+            CNODE_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-cspace-mint",
+            CSPACE_MINT,
+            NOTIFICATION_CAP,
+            5,
+            ILLEGAL_AUTHORITY,
+        ),
+        overflowed(
+            "overflowed-cspace-copy",
+            CSPACE_COPY,
+            NOTIFICATION_CAP,
+            5,
+            ILLEGAL_AUTHORITY,
+        ),
+        overflowed(
+            "overflowed-cspace-move",
+            CSPACE_MOVE,
+            NOTIFICATION_CAP,
+            5,
+            ILLEGAL_AUTHORITY,
+        ),
+        overflowed(
+            "overflowed-cspace-delete",
+            CSPACE_DELETE,
+            NOTIFICATION_CAP,
+            5,
+            OBJECT_NOT_FOUND,
+        ),
+        overflowed(
+            "overflowed-cspace-revoke",
+            CSPACE_REVOKE,
+            NOTIFICATION_CAP,
+            5,
+            OBJECT_NOT_FOUND,
+        ),
+        overflowed(
+            "overflowed-vspace-map",
+            VSPACE_MAP,
+            NOTIFICATION_CAP,
+            5,
+            ILLEGAL_AUTHORITY,
+        ),
+        overflowed(
+            "overflowed-vspace-unmap",
+            VSPACE_UNMAP,
+            NOTIFICATION_CAP,
+            5,
+            ILLEGAL_AUTHORITY,
+        ),
+        overflowed(
+            "overflowed-vspace-unify-instruction",
+            VSPACE_UNIFY_INSTRUCTION,
+            NOTIFICATION_CAP,
+            5,
+            ILLEGAL_AUTHORITY,
+        ),
+        overflowed(
+            "overflowed-service-revoke",
+            SERVICE_REVOKE,
+            NOTIFICATION_CAP,
+            5,
+            OBJECT_NOT_FOUND,
+        ),
+        overflowed(
+            "overflowed-service-query",
+            SERVICE_QUERY,
+            NOTIFICATION_CAP,
+            5,
+            OBJECT_NOT_FOUND,
+        ),
+        overflowed(
+            "overflowed-sched-context-bind",
+            SCHED_CONTEXT_BIND,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-sched-context-unbind",
+            SCHED_CONTEXT_UNBIND,
+            NOTIFICATION_CAP,
+            5,
+            OBJECT_NOT_FOUND,
+        ),
+        overflowed(
+            "overflowed-sched-context-consumed",
+            SCHED_CONTEXT_CONSUMED,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-sched-context-yield-to",
+            SCHED_CONTEXT_YIELD_TO,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-suspend",
+            TCB_SUSPEND,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_ARGUMENT,
+        ),
+        overflowed(
+            "overflowed-tcb-resume",
+            TCB_RESUME,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_ARGUMENT,
+        ),
+        overflowed(
+            "overflowed-tcb-set-priority",
+            TCB_SET_PRIORITY,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_ARGUMENT,
+        ),
+        overflowed(
+            "overflowed-tcb-set-ipc-buffer",
+            TCB_SET_IPC_BUFFER,
+            NOTIFICATION_CAP,
+            5,
+            OBJECT_NOT_FOUND,
+        ),
+        overflowed(
+            "overflowed-tcb-set-affinity",
+            TCB_SET_AFFINITY,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_ARGUMENT,
+        ),
+        overflowed(
+            "overflowed-tcb-bind-notification",
+            TCB_BIND_NOTIFICATION,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-unbind-notification",
+            TCB_UNBIND_NOTIFICATION,
+            NOTIFICATION_CAP,
+            5,
+            OBJECT_NOT_FOUND,
+        ),
+        overflowed(
+            "overflowed-tcb-set-fault-handler",
+            TCB_SET_FAULT_HANDLER,
+            NOTIFICATION_CAP,
+            5,
+            OBJECT_NOT_FOUND,
+        ),
+        overflowed(
+            "overflowed-tcb-set-space",
+            TCB_SET_SPACE,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-mint-reply-cap",
+            MINT_REPLY_CAP,
+            NOTIFICATION_CAP,
+            5,
+            ILLEGAL_AUTHORITY,
+        ),
+        overflowed(
+            "overflowed-irq-handler-ack",
+            IRQ_HANDLER_ACK,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-irq-control-get",
+            IRQ_CONTROL_GET,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-irq-handler-set-notification",
+            IRQ_HANDLER_SET_NOTIFICATION,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-irq-handler-clear",
+            IRQ_HANDLER_CLEAR,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-page-table-map",
+            PAGE_TABLE_MAP,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-page-table-unmap",
+            PAGE_TABLE_UNMAP,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-audit-read",
+            AUDIT_READ,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-audit-drain",
+            AUDIT_DRAIN,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-service-register",
+            SERVICE_REGISTER,
+            NOTIFICATION_CAP,
+            6,
+            OBJECT_NOT_FOUND,
+        ),
+        overflowed(
+            "overflowed-untyped-reset",
+            UNTYPED_RESET,
+            UNTYPED_CAP,
+            5,
+            REVOCATION_REQUIRED,
+        ),
+        overflowed(
+            "overflowed-declassify",
+            DECLASSIFY,
+            ENDPOINT_CAP,
+            5,
+            FLOW_DENIED,
+        ),
+        overflowed(
+            "overflowed-declassify-signal",
+            DECLASSIFY_SIGNAL,
+            ENDPOINT_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
         // The untyped retype past its inline words, its type tag one no
         // object kind has, refused by the argument decode.
         RoundTrip {
             msg: [0xff, 0, 0, 0],
-            ..overflowed("overflowed-untyped-retype", UNTYPED_RETYPE, UNTYPED_CAP, 5, INVALID_TYPE_TAG)
+            ..overflowed(
+                "overflowed-untyped-retype",
+                UNTYPED_RETYPE,
+                UNTYPED_CAP,
+                5,
+                INVALID_TYPE_TAG,
+            )
         },
         invocation(
             "sched-context-bind",
@@ -9569,7 +9797,8 @@ static ENTERED_SITES_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 struct EnteredSitesRead {
     sequence: AtomicU64,
     count: AtomicU64,
-    tally: [core::sync::atomic::AtomicU32; crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITE_SLOTS],
+    tally: [core::sync::atomic::AtomicU32;
+        crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITE_SLOTS],
 }
 
 #[cfg(feature = "hw_target")]
@@ -9600,8 +9829,10 @@ fn note_entered_sites(core: usize, count: u64) {
         kept.store(now, Ordering::Relaxed);
     }
     slot.count.store(count, Ordering::Relaxed);
-    slot.sequence
-        .store(ENTERED_SITES_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1, Ordering::Relaxed);
+    slot.sequence.store(
+        ENTERED_SITES_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,
+        Ordering::Relaxed,
+    );
 }
 
 /// The sites a reading on `core` from `before` to `after` entered: the
@@ -9620,7 +9851,11 @@ fn entered_in_window(
     let ring = ENTERED_SITES.get(core)?;
     let mut reads: [(u64, u64, usize); ENTERED_SITES_KEPT] = [(0, 0, 0); ENTERED_SITES_KEPT];
     for (i, r) in ring.iter().enumerate() {
-        reads[i] = (r.sequence.load(Ordering::Relaxed), r.count.load(Ordering::Relaxed), i);
+        reads[i] = (
+            r.sequence.load(Ordering::Relaxed),
+            r.count.load(Ordering::Relaxed),
+            i,
+        );
     }
     reads.sort_unstable_by_key(|r| core::cmp::Reverse(r.0));
     let (last_sequence, last_count, last) = reads[0];
@@ -9635,7 +9870,10 @@ fn entered_in_window(
         }
         out
     };
-    Some(crate::kernel_entry::entered_sites::Entered(load(first), load(last)))
+    Some(crate::kernel_entry::entered_sites::Entered(
+        load(first),
+        load(last),
+    ))
 }
 
 /// The virtual count at the last two heap-counter reads, older first.
@@ -9805,7 +10043,9 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     // host-side gate requires each production site to be entered by a
     // measured reading (the `entered` line beside each).
     for (path, line) in crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITES {
-        crate::kprintln!("[smp-test] heap-allocations-per-syscall: kernel-entry site {path}:{line}");
+        crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: kernel-entry site {path}:{line}"
+        );
     }
     if !secondary_core_windows(" (first call)") {
         return Some(false);

@@ -4454,7 +4454,11 @@ fn kernel_entry_bracket_sites(path: &str, code: &str) -> Result<Vec<u32>, String
     let mut lines = Vec::new();
     for at in whole_word_offsets(code, NAME) {
         let end = at + NAME.len();
-        if code.as_bytes().get(end).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_') {
+        if code
+            .as_bytes()
+            .get(end)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+        {
             continue;
         }
         if own && code[..at].trim_end().ends_with("pub fn") {
@@ -4522,8 +4526,12 @@ fn emit_kernel_entry_sites() {
     table.push_str("];\n");
     let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR for every build script");
     let out = std::path::Path::new(&out_dir).join("kernel_entry_sites.rs");
-    std::fs::write(&out, table)
-        .unwrap_or_else(|e| panic!("kernel-entry site table: cannot write {}: {e}", out.display()));
+    std::fs::write(&out, table).unwrap_or_else(|e| {
+        panic!(
+            "kernel-entry site table: cannot write {}: {e}",
+            out.display()
+        )
+    });
 }
 
 /// The site table's scanner, held to its relation: a canonical bracket is a
@@ -4552,7 +4560,10 @@ fn verify_kernel_entry_bracket_sites() {
     let (_, own) = rust_code_views(
         "pub fn with_kernel_entry<F>(c: usize, f: F) {}\nmod tests {\n    fn t() { with_kernel_entry(0, || ()); }\n}\n",
     );
-    assert_eq!(kernel_entry_bracket_sites("src/kernel_entry.rs", &own), Ok(vec![]));
+    assert_eq!(
+        kernel_entry_bracket_sites("src/kernel_entry.rs", &own),
+        Ok(vec![])
+    );
     let (_, own_bare) = rust_code_views(
         "pub fn with_kernel_entry<F>(c: usize, f: F) {}\nfn x() { with_kernel_entry(0, || ()); }\n",
     );

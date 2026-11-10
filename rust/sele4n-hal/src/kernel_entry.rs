@@ -346,7 +346,10 @@ pub mod entered_sites {
     /// The sites entered between two snapshots of one core, as a reading's
     /// line prints them: `path:line` comma-separated in table order, then
     /// `unlisted` for an entry the table does not name, or `none`.
-    pub struct Entered(pub [u32; KERNEL_ENTRY_SITE_SLOTS], pub [u32; KERNEL_ENTRY_SITE_SLOTS]);
+    pub struct Entered(
+        pub [u32; KERNEL_ENTRY_SITE_SLOTS],
+        pub [u32; KERNEL_ENTRY_SITE_SLOTS],
+    );
 
     impl core::fmt::Display for Entered {
         fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
