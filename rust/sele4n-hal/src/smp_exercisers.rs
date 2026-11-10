@@ -7526,7 +7526,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
 /// measured; the last rewinds the boot untyped, so the steady-state run
 /// starts where the first did.
 #[cfg(feature = "hw_target")]
-const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
+const LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // A child untyped carved, and an endpoint carved from it (its recorder a
     // carved untyped, not the boot one); its reset refused while the
     // endpoint's capability is its derivation child; its revoke, which deletes
