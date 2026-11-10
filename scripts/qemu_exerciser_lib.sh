@@ -706,15 +706,21 @@ for driver in drivers:
             "queued-caller-resume-caller", "queued-caller-root-waits",
             "queued-caller-caller-wakes-root", "queued-caller-calls",
             "queued-caller-root-receives", "queued-caller-root-replies",
+            "queued-caller-suspend-root", "queued-caller-resume-root",
             "queued-caller-suspend-caller", "queued-caller-resume-partner",
             "queued-caller-root-takes-partner", "queued-caller-partner-calls",
             "queued-caller-resume-caller-again", "queued-caller-lower-ready",
             "queued-caller-raise-ready", "queued-caller-root-lowers-self",
             "queued-caller-calls-again", "queued-caller-root-raises-self",
+            "queued-caller-resume-lowered", "queued-caller-caller-waits",
+            "queued-caller-root-wakes-caller", "queued-caller-suspend-lowered",
+            "queued-caller-root-waits-again", "queued-caller-caller-wakes-root-again",
             "queued-caller-reply-recv", "queued-caller-root-replies-again",
             "queued-caller-suspend-caller-again", "queued-caller-suspend-partner",
+            "queued-caller-suspend-root-again", "queued-caller-resume-root-again",
             "queued-caller-unbind", "queued-caller-delete",
-            "long-send-blocks", "long-send-partner-takes", "long-send-blocks-partner-yield",
+            "long-send-blocks-resume", "long-send-blocks", "long-send-partner-takes",
+            "long-send-blocks-partner-yield", "long-send-blocks-suspend",
             "yield-to-lower-partner", "yield-to-resume-partner", "yield-to-raise-partner",
             # Every fault kind queued on a handler with no receiver, and the
             # refusals the entry turns into capability faults on either side
@@ -738,10 +744,12 @@ for driver in drivers:
             "irq-control-get-unbound", "irq-unbound-ack", "irq-handler-set-notification-again",
             # A remote core's work: a shootdown with a remote target, a
             # syscall on a core another core vacated and the reschedule that
-            # ends it, an FP/SIMD access retried while another core holds its
-            # values and the access once it has released them.
+            # ends it, a thread homed back while another core still holds it
+            # (deferred, an FP/SIMD access there loads nothing), and the
+            # reschedule and access once that core has released it.
             "remote-asid-map", "remote-asid-unmap", "vacated-core-syscall",
-            "vacated-core-reschedule", "fp-access-retry", "fp-access-released",
+            "vacated-core-reschedule", "fp-deferred-home-back", "fp-deferred-root-receives",
+            "fp-access-deferred", "fp-released-reschedule", "fp-access-released",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

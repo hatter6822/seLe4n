@@ -3374,26 +3374,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             false,
         ),
         kernel_step("long-send-partner-yield", YIELD),
-        // The long send that blocks with no receiver waiting (its overflow
-        // words read again at the receive that takes it, from the sender's
-        // buffer), at the one-page length beside the full-length form below.
-        partner_step(
-            "long-send-blocks",
-            SEND,
-            ENDPOINT_CAP,
-            LONG_SEND_LENGTH,
-            [0x57, 0x58],
-            true,
-        ),
-        partner_step(
-            "long-send-partner-takes",
-            RECEIVE,
-            ENDPOINT_CAP,
-            0,
-            [0, 0],
-            false,
-        ),
-        kernel_step("long-send-blocks-partner-yield", YIELD),
         invocation("long-send-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         invocation(
             "long-send-unbind",
@@ -3581,6 +3561,38 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         kernel_step("tail-send-blocks-partner-yield", YIELD),
         invocation(
             "tail-send-blocks-suspend",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        // The long send that blocks with no receiver waiting (its overflow
+        // words read again at the receive that takes it, from the sender's
+        // buffer), at the one-page length beside the full-length form above.
+        invocation(
+            "long-send-blocks-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "long-send-blocks",
+            SEND,
+            ENDPOINT_CAP,
+            LONG_SEND_LENGTH,
+            [0x57, 0x58],
+            true,
+        ),
+        partner_step(
+            "long-send-partner-takes",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+        kernel_step("long-send-blocks-partner-yield", YIELD),
+        invocation(
+            "long-send-blocks-suspend",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],
@@ -6726,7 +6738,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         // the ready thread (rescheduled at once, seL4's `setPriority` of the
         // current thread), the third thread's call queued, the root task
         // raising its own priority back, and its reply-receive answering the
-        // partner and taking the queued caller at once.  The ticks are masked
+        // partner and taking the queued caller at once, its context lent to the
+        // root task again until the root task's reply.  The ticks are masked
         // across the whole sequence, so no budget runs out between steps, and
         // at each switch exactly one thread is runnable.
         kernel_step("mask-ticks", MASK_TICKS_STEP),
@@ -6793,8 +6806,63 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0xb3, 0],
             false,
         ),
+        // The reply handed the context back and took the root task off its
+        // core (seL4-MCS: a server whose context returns to its caller no
+        // longer runs), so the third thread restarts it before suspending
+        // itself, which leaves the root task current.
+        invocation(
+            "queued-caller-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
         invocation(
             "queued-caller-suspend-caller",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        // The root task, serving no one, lowers its own priority below the
+        // ready third thread: rescheduled at once (seL4's `setPriority` of the
+        // current thread), its own result staged as it is switched out
+        // (`stageCallerReturn_stages_switched_out`), so the round trip returns
+        // and the third thread is current after it.  The third thread waits,
+        // and the root task raises its own priority back and wakes it.
+        invocation(
+            "queued-caller-resume-lowered",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-root-lowers-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            [PARTNER_PRIORITY - 1, 0, 0, 0],
+        ),
+        partner_step(
+            "queued-caller-caller-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "queued-caller-root-raises-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        signal("queued-caller-root-wakes-caller", 0xb9),
+        invocation(
+            "queued-caller-suspend-lowered",
             TCB_SUSPEND,
             CHAIN_TCB_CAP,
             [0; 4],
@@ -6839,15 +6907,15 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             CHAIN_TCB_CAP,
             [PARTNER_PRIORITY, 0, 0, 0],
         ),
-        RoundTrip {
-            blocks: true,
-            ..invocation(
-                "queued-caller-root-lowers-self",
-                TCB_SET_PRIORITY,
-                ROOT_TCB_CAP,
-                [PARTNER_PRIORITY - 1, 0, 0, 0],
-            )
-        },
+        partner_step(
+            "queued-caller-root-waits-again",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("queued-caller-caller-wakes-root-again", 0xb8),
         partner_step(
             "queued-caller-calls-again",
             CALL,
@@ -6855,12 +6923,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             1,
             [0xb5, 0],
             true,
-        ),
-        invocation(
-            "queued-caller-root-raises-self",
-            TCB_SET_PRIORITY,
-            ROOT_TCB_CAP,
-            [PARTNER_PRIORITY, 0, 0, 0],
         ),
         partner_step(
             "queued-caller-reply-recv",
@@ -6878,16 +6940,31 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0xb7, 0],
             false,
         ),
-        invocation(
-            "queued-caller-suspend-caller-again",
-            TCB_SUSPEND,
-            CHAIN_TCB_CAP,
-            [0; 4],
-        ),
+        // The context back with the third thread and the root task off its
+        // core again: the third thread suspends the partner, restarts the root
+        // task and suspends itself.
         invocation(
             "queued-caller-suspend-partner",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-suspend-root-again",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-resume-root-again",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-suspend-caller-again",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
             [0; 4],
         ),
         invocation(
@@ -12085,17 +12162,35 @@ const REMOTE_COPY_DELETE: RoundTrip = invocation(
     [MOVE_SLOT, 0, 0, 0],
 );
 /// The root task's syscall on core 0 once core 1 has taken it off core 0: a
-/// yield, which the entry does not run (`vacatedCore_next_syscall_rejected`).
+/// yield, which the entry does not run (`vacatedCore_next_syscall_rejected`):
+/// it answers `illegalState`.
 #[cfg(feature = "hw_target")]
-const VACATED_CORE_SYSCALL: RoundTrip = kernel_step("vacated-core-syscall", YIELD);
+const VACATED_CORE_SYSCALL: RoundTrip = RoundTrip {
+    returns: refused(ILLEGAL_STATE),
+    ..kernel_step("vacated-core-syscall", YIELD)
+};
+/// `KernelError.illegalState`'s discriminant: the vacated core's answer, which
+/// no thread receives (its restore resumes the successor, and the root task's
+/// frame is rewound to its `SVC`).
+#[cfg(feature = "hw_target")]
+const ILLEGAL_STATE: u64 = 2;
 /// The moved thread homed back on core 0 while core 1, held, still owns its
-/// FP/SIMD values.
+/// FP/SIMD values; then the root task's receive, which blocks.
 #[cfg(feature = "hw_target")]
-const FP_RETRY_HOME_BACK: RoundTrip = invocation(
-    "fp-retry-home-back",
+const FP_DEFERRED_HOME_BACK: RoundTrip = invocation(
+    "fp-deferred-home-back",
     TCB_SET_AFFINITY,
     CHAIN_TCB_CAP,
     [AFFINITY_UNBIND, 0, 0, 0],
+);
+#[cfg(feature = "hw_target")]
+const FP_DEFERRED_ROOT_RECEIVES: RoundTrip = partner_step(
+    "fp-deferred-root-receives",
+    RECEIVE,
+    ENDPOINT_CAP,
+    0,
+    [0, 0],
+    true,
 );
 
 /// Wait until core 1 has issued `count` syscalls, then a millisecond more.
@@ -12148,10 +12243,15 @@ fn heap_allocations_any_restore(trip: &RoundTrip, which: &str) -> Option<bool> {
 ///   successor dispatched), and, once the thread's `TCB_Resume` has made it
 ///   ready again, the reschedule that runs it;
 /// - with core 1 held in its agent handler, the thread homed back on core 0
-///   and run there (the root task's receive blocks): its FP/SIMD access
-///   answered `.retry`, since core 1 still holds its live values
-///   (`fpOwnedElsewhere`), and, core 1 released (its entry saves the thread
-///   and releases the values), the access that loads them.
+///   and the root task's receive, which blocks: core 0 does not resume the
+///   thread, still resident on core 1 (`deferResidentElsewhere`), so an
+///   FP/SIMD access there loads nothing; then, core 1 released (its entry
+///   saves the thread, releases its live values and pokes core 0), the
+///   reschedule that runs the thread on core 0 and its access, which loads
+///   the values core 1 saved.  The residency deferral is what keeps
+///   `fpAccessOnCore`'s `.retry` arm (`fpOwnedElsewhere`) from being reached:
+///   a thread is resumed only where no other core still holds it, and a
+///   core's FP/SIMD owner is its resident until the entry that releases both.
 #[cfg(feature = "hw_target")]
 fn remote_core_entries(which: &str) -> Option<bool> {
     if !unmeasured_all(&MOVE_SETUP_PAGE, "the code page's setup failed")
@@ -12226,26 +12326,30 @@ fn remote_core_entries(which: &str) -> Option<bool> {
     let Some(held) = hold_core(1) else {
         return remote_failed("core 1 was not held");
     };
-    if !unmeasured(
-        &FP_RETRY_HOME_BACK,
-        "the thread was not homed back on core 0",
-    ) || !unmeasured(&MOVE_ROOT_RECEIVES, "the root task's receive did not block")
-        || heap_allocations_trap(&fp_access("fp-access-retry"), which) != Some(true)
+    if heap_allocations_round_trip(&FP_DEFERRED_HOME_BACK, which) != Some(true)
+        || heap_allocations_round_trip(&FP_DEFERRED_ROOT_RECEIVES, which) != Some(true)
+        || heap_allocations_trap(&fp_access("fp-access-deferred"), which) != Some(true)
     {
         let _released = release_core(1, held);
         return Some(false);
     }
-    let retried = !TRAP_LOADED_FP.load(Ordering::SeqCst);
+    let deferred = !TRAP_LOADED_FP.load(Ordering::SeqCst);
     if !release_core(1, held) {
         return remote_failed("core 1 did not report its release");
     }
     if !second_core_left_user() {
         return remote_failed("core 1 still runs the thread");
     }
-    if !retried {
-        return remote_failed("the FP/SIMD access was not retried while core 1 held the values");
+    if !deferred {
+        return remote_failed("core 0 loaded FP/SIMD values while core 1 held the thread");
     }
-    if heap_allocations_trap(&fp_access("fp-access-released"), which) != Some(true) {
+    let released = KernelEntry {
+        name: "fp-released-reschedule",
+        enter: crate::trap::reschedule_sgi_entry,
+    };
+    if heap_allocations_kernel_entry(&released, which) != Some(true)
+        || heap_allocations_trap(&fp_access("fp-access-released"), which) != Some(true)
+    {
         return Some(false);
     }
     if !TRAP_LOADED_FP.load(Ordering::SeqCst) {
