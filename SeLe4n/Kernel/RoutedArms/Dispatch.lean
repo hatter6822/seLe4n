@@ -64,9 +64,9 @@ continuations are compiled once. -/
     | some (.tcb tcb) =>
       match SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
               SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
-      | .signal capAddr badge =>
+      | .signal capAddr =>
         finish .notificationSignal capAddr.word
-          (signalRoutedArm ctx executingCore tid capAddr.word badge.word st)
+          (signalRoutedArm ctx executingCore tid capAddr.word st)
       | .wait capAddr =>
         finish .notificationWait capAddr.word (waitRoutedArm ctx executingCore tid capAddr.word st)
       | .yield => finish .yield 0 (yieldRoutedArm executingCore st)
@@ -181,7 +181,7 @@ compiled form `syscallEntryCheckedK` runs as. -/
   | tcb tcb =>
     dsimp only
     cases Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
-    | signal capAddr badge =>
+    | signal capAddr =>
       simp only [signalRoutedArm, entryReportOutcome_operand]; rfl
     | wait capAddr => simp only [waitRoutedArm, entryReportOutcome_operand]; rfl
     | yield =>

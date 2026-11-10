@@ -1545,8 +1545,6 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
         (hRes := by rw [registerService_preserves_machine _ _ _ h]) (hBank := banksKeptOffCore_of_eq (by rw [registerService_preserves_machine _ _ _ h]))
     · cases h
   case none.notificationSignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -1581,8 +1579,6 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1]
     exact ⟨stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl, hInv⟩
   case none.declassifySignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

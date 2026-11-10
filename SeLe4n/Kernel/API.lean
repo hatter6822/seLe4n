@@ -4572,13 +4572,14 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           registerService reg st
     | _ => fun _ => .error .invalidCapability
   -- V2-A: Notification signal — badge merge or wake a waiter.
-  -- The notification object comes from the capability target, badge from MR[0].
+  -- The notification object comes from the capability target, and so does the
+  -- badge: the one minted into the capability, zero for an unbadged one
+  -- (`Capability.signalBadge`, seL4's `sendSignal(ntfn, capNtfnBadge)`).  No
+  -- message register is read and no length is checked, as in seL4.
   | .notificationSignal =>
     match cap.target with
     | .object notifId =>
-      fun st => match decodeNotificationSignalArgs decoded with
-      | .error e => .error e
-      | .ok args =>
+      fun st =>
           -- WS-SM SM6.B (live bound-aware cross-core signal): route through
           -- `notificationSignalBoundCrossCoreDispatch` — when the notification is
           -- bound to a `BlockedOnReceive` TCB the badge is delivered directly to
@@ -4601,7 +4602,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           -- wait queue), and each stager is inert when its target was not
           -- woken.
           let plainWaiter? := notificationSignalWaiter? st notifId
-          match notificationSignalBoundCrossCoreDispatch notifId args.badge executingCore st with
+          match notificationSignalBoundCrossCoreDispatch notifId cap.signalBadge executingCore st with
           | (st', .ok _) =>
               match clearWokenReceiverStash woken? st' with
               | .error e => .error e
@@ -5094,9 +5095,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   | .notificationSignal =>
     match cap.target with
     | .object notifId =>
-      fun st => match decodeNotificationSignalArgs decoded with
-      | .error e => .error e
-      | .ok args =>
+      fun st =>
           -- WS-SM SM6.B (live checked bound-aware cross-core signal): the
           -- info-flow-checked analogue of the unchecked arm, gating on
           -- `securityFlowsTo signaler→notification` before the bound-aware
@@ -5108,7 +5107,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           -- the checked dispatch's notification→receiver gate ran before the
           -- wake, so a denied delivery errors and stages nothing).
           let plainWaiter? := notificationSignalWaiter? st notifId
-          match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid args.badge executingCore st with
+          match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap.signalBadge executingCore st with
           | (st', .ok _) =>
               match clearWokenReceiverStash woken? st' with
               | .error e => .error e
@@ -5226,13 +5225,11 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   | .declassifySignal =>
     match cap.target with
     | .object notifId =>
-      fun st => match decodeNotificationSignalArgs decoded with
-      | .error e => .error e
-      | .ok args =>
+      fun st =>
           let woken? := (boundDeliveryTarget? st notifId).map (·.1)
           let plainWaiter? := notificationSignalWaiter? st notifId
           match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
-                  ctx.declassificationPolicy notifId args.badge executingCore st with
+                  ctx.declassificationPolicy notifId cap.signalBadge executingCore st with
           | (st', .ok _) =>
               match clearWokenReceiverStash woken? st' with
               | .error e => .error e
@@ -7901,14 +7898,12 @@ per-core routing gate and the cross-core inventory both consume this equation
 as their tie to the dispatch. -/
 theorem dispatchWithCapChecked_declassifySignal_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.NotificationSignalArgs) (st : SystemState)
+    (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .declassifySignal)
-    (hTarget : cap.target = .object notifId)
-    (hDecode : decodeNotificationSignalArgs decoded = .ok args) :
+    (hTarget : cap.target = .object notifId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       (match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
-              ctx.declassificationPolicy notifId args.badge executingCore st with
+              ctx.declassificationPolicy notifId cap.signalBadge executingCore st with
        | (st', .ok _) =>
            (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
             | .error e => .error e
@@ -7920,7 +7915,7 @@ theorem dispatchWithCapChecked_declassifySignal_delegates
        | (_, .error e) => .error e) := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
-  simp only [hTarget, hDecode]
+  simp only [hTarget]
 
 /-- **WS-SM SM9.C.8: there is no unchecked declassifying signal.**
 
@@ -7936,6 +7931,49 @@ theorem dispatchWithCap_declassifySignal_denied
     dispatchWithCap decoded tid executingCore gate cap st = .error .declassificationDenied := by
   unfold dispatchWithCap dispatchCapabilityOnly
   rw [hSyscall]
+
+/-- **A signal's badge is its capability's.**  The unchecked signal arm reads
+nothing of the decode but its syscall: two decodes that both name
+`.notificationSignal` — whatever message registers, length or overflow words
+each carries — dispatch identically on the same capability, so no word the
+caller writes can set a badge bit.  The bits ORed in are `cap.signalBadge`, the
+badge minted into the capability and zero for an unbadged one, as seL4's
+`sendSignal` takes `capNtfnBadge`. -/
+theorem dispatchWithCap_notificationSignal_badge_of_cap
+    (decoded decoded' : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (h : decoded.syscallId = .notificationSignal)
+    (h' : decoded'.syscallId = .notificationSignal) :
+    dispatchWithCap decoded tid executingCore gate cap =
+      dispatchWithCap decoded' tid executingCore gate cap := by
+  unfold dispatchWithCap dispatchCapabilityOnly
+  rw [h, h']
+
+/-- The checked signal arm's badge is its capability's too
+(`dispatchWithCap_notificationSignal_badge_of_cap`'s checked twin). -/
+theorem dispatchWithCapChecked_notificationSignal_badge_of_cap (ctx : LabelingContext)
+    (decoded decoded' : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (h : decoded.syscallId = .notificationSignal)
+    (h' : decoded'.syscallId = .notificationSignal) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
+      dispatchWithCapChecked ctx decoded' tid executingCore gate cap := by
+  unfold dispatchWithCapChecked dispatchCapabilityOnly
+  rw [h, h']
+
+/-- The declassifying signal's badge is its capability's: no word of the
+decode reaches it (`dispatchWithCapChecked_declassifySignal_delegates` names
+`cap.signalBadge`), so a declassifying signal whose hops are ordinary is the
+ordinary signal of the same capability, and neither can forge a badge. -/
+theorem dispatchWithCapChecked_declassifySignal_badge_of_cap (ctx : LabelingContext)
+    (decoded decoded' : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (h : decoded.syscallId = .declassifySignal)
+    (h' : decoded'.syscallId = .declassifySignal) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
+      dispatchWithCapChecked ctx decoded' tid executingCore gate cap := by
+  unfold dispatchWithCapChecked dispatchCapabilityOnly
+  rw [h, h']
 
 /-- **WS-SM SM9.C.8**: an unconfigured deployment performs no downgrade through
 a signal.
@@ -7956,19 +7994,17 @@ falsify this while the transition's own theorem stayed true. -/
 theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.NotificationSignalArgs)
     (st st' : SystemState)
     (hSyscall : decoded.syscallId = .declassifySignal)
     (hTarget : cap.target = .object notifId)
-    (hDecode : decodeNotificationSignalArgs decoded = .ok args)
     (hDefault : ctx.declassificationPolicy.canDeclassify = fun _ _ => false)
     (hStep : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
     st'.declassificationAuditLog = st.declassificationAuditLog := by
   rw [dispatchWithCapChecked_declassifySignal_delegates ctx decoded tid executingCore gate cap notifId
-    args st hSyscall hTarget hDecode] at hStep
+    st hSyscall hTarget] at hStep
   unfold notificationSignalDeclassifiedCrossCoreDispatch at hStep
   obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalDeclassifiedOnCore (liftLegacyContext ctx)
-      ctx.declassificationPolicy notifId args.badge executingCore st = p :=
+      ctx.declassificationPolicy notifId cap.signalBadge executingCore st = p :=
     ⟨_, rfl⟩
   rw [hPair] at hStep
   obtain ⟨stT, res⟩ := pair
@@ -7979,7 +8015,7 @@ theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
     -- The transition's own trail statement, then the arm's post-processing —
     -- neither the stash clear nor either stager touches the trail.
     have hTrail := declassifiedSignal_default_policy_never_downgrades (liftLegacyContext ctx)
-      ctx.declassificationPolicy notifId args.badge executingCore st stT
+      ctx.declassificationPolicy notifId cap.signalBadge executingCore st stT
       sgi hDefault hPair
     obtain ⟨stash, hStash⟩ : ∃ r, clearWokenReceiverStash
         ((boundDeliveryTarget? st notifId).map (·.1)) stT = r := ⟨_, rfl⟩
@@ -8963,14 +8999,12 @@ def syscallDelegates : SyscallId → Prop
   -- would not satisfy this.
   | .declassifySignal =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-        (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId)
-        (args : Architecture.SyscallArgDecode.NotificationSignalArgs) (st : SystemState),
+        (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId) (st : SystemState),
         decoded.syscallId = .declassifySignal →
         cap.target = .object notifId →
-        decodeNotificationSignalArgs decoded = .ok args →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
           (match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
-                  ctx.declassificationPolicy notifId args.badge executingCore st with
+                  ctx.declassificationPolicy notifId cap.signalBadge executingCore st with
            | (st', .ok _) =>
                (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
                 | .error e => .error e
@@ -9223,9 +9257,9 @@ theorem syscallDelegates_declassify : syscallDelegates .declassify := by
 
 /-- WS-SM SM9.C.9: the `.declassifySignal` obligation, discharged. -/
 theorem syscallDelegates_declassifySignal : syscallDelegates .declassifySignal := by
-  intro ctx decoded tid executingCore gate cap notifId args st hSyscall hTarget hDecode
+  intro ctx decoded tid executingCore gate cap notifId st hSyscall hTarget
   exact dispatchWithCapChecked_declassifySignal_delegates ctx decoded tid executingCore gate cap notifId
-    args st hSyscall hTarget hDecode
+    st hSyscall hTarget
 
 /-- WS-SM SM9.A.10: the `.auditRead` obligation, discharged. -/
 theorem syscallDelegates_auditRead : syscallDelegates .auditRead := by

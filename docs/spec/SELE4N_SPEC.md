@@ -7589,6 +7589,40 @@ destroyers (the revocation walk, the retype cleanup) still reach thread slots.
 Witness: `tests/NegativeStateSuite.lean`'s thread-slot invocation refusal
 checks (both space slots, both calls, the roots kept).
 
+### 8.10.3b A signal's badge is its capability's (`v0.37.12`)
+
+`seL4_Signal` ORs into the notification word the badge minted into the
+invoked capability, and zero for an unbadged one: seL4's
+`sendSignal(ntfn, cap_notification_cap_get_capNtfnBadge(cap))`.  The caller
+has no say in it.  seLe4n now does exactly this: every signal arm — the
+specification's unchecked and checked arms (`dispatchWithCap`,
+`dispatchWithCapChecked`), the refusal-carrying arms, the in-place woken and
+bound fast forms, the routed and overflowed entry arms — ORs in
+`Capability.signalBadge` (`if cap.badged then cap.badgeWord else 0`), read from
+the operand's slot in place, so no `Option` or capability record is built.  No
+message register is read and no length is checked, so a signal of length 0 is
+accepted (the HAL prefilter's minimum for `NotificationSignal` and
+`DeclassifySignal` is 0).  The order of checks is the lookup, then the
+capability's target and right; there is no argument decode.
+
+`dispatchWithCap_notificationSignal_badge_of_cap` and its checked twin prove
+that two decodes naming the signal dispatch identically on the same
+capability, so no word the caller writes can set a badge bit.  Before
+`v0.37.12` the badge was taken from the first message register
+(`decodeNotificationSignalArgs`, since retired), which let any holder of a
+notification write capability forge any badge bits, another client's or an
+interrupt handler's.
+
+`.declassifySignal` takes its badge the same way
+(`dispatchWithCapChecked_declassifySignal_badge_of_cap`): the badge is ORed in
+as notification badge bits, and a declassifying signal whose two hops are
+ordinary is the ordinary signal, so a register-supplied badge was a second
+forging path.  What it declassifies is the delivery of the capability's badge
+across the label boundary; no caller-supplied word crosses.  Witnesses:
+`tests/SyscallReturnAbiSuite.lean` §9i (an unbadged capability delivers 0; a
+capability minted with `0x1` delivers exactly `0x1` while MR0 asks for `0x2`; a
+length-0 signal is accepted) and `tests/DecodingSuite.lean` SAD-013.
+
 ### 8.10.4 IPC Extra Capability Resolution — seL4's `lookupExtraCaps`
 
 A sender names its extra capabilities in its IPC buffer: the first

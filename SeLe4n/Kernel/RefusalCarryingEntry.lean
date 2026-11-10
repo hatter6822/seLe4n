@@ -59,8 +59,8 @@ noncomputable def syscallEntryCheckedR (ctx : LabelingContext)
       | some (.tcb tcb) =>
         match SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
                 SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
-        | .signal capAddr badge =>
-          dispatchSignalCheckedR ctx capAddr (.ok { badge }) tid executingCore st
+        | .signal capAddr =>
+          dispatchSignalCheckedR ctx capAddr tid executingCore st
         | .wait capAddr =>
           dispatchWaitCheckedR ctx capAddr tid executingCore st
         -- WS-ZA ZA4.3: a yield reads no operand and checks nothing a write
@@ -313,18 +313,12 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
         have hRegs : lookupThreadRegisterContext tid st = .ok (tcb.registerContext, st) := by
           simp only [lookupThreadRegisterContext, hObj]
         split
-        · next capAddr badge hSigRegs =>
-          obtain ⟨decoded, hDec, hSig, hCap, hZero, h0, hBadge⟩ :=
+        · next capAddr hSigRegs =>
+          obtain ⟨decoded, hDec, hSig, hCap, hZero⟩ :=
             SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSignal
-              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr badge hSigRegs
+              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr hSigRegs
           subst hCap
-          have hArgs : (.ok { badge } : Except KernelError
-                Architecture.SyscallArgDecode.NotificationSignalArgs) =
-              Architecture.SyscallArgDecode.decodeNotificationSignalArgs decoded := by
-            simp only [Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
-              Architecture.SyscallArgDecode.requireMsgReg, h0, ↓reduceDIte, hBadge, bind,
-              Except.bind, pure, Except.pure]
-          rw [dispatchSignalCheckedR_eq ctx decoded _ tid executingCore hSig hArgs]
+          rw [dispatchSignalCheckedR_eq ctx decoded tid executingCore hSig]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
@@ -1425,9 +1419,9 @@ noncomputable def syscallEntryCheckedK {β : Type} (ctx : LabelingContext)
     | some (.tcb tcb) =>
       match SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
               SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
-      | .signal capAddr badge =>
+      | .signal capAddr =>
         dispatchOperandCheckedK capAddr tid executingCore
-          (signalOperandArmThenTaintR ctx (.ok { badge }) tid executingCore
+          (signalOperandArmThenTaintR ctx tid executingCore
             (syscallRequiredRight .notificationSignal)) st kGen kRes
           (kLook .notificationSignal capAddr)
       | .wait capAddr =>
@@ -1712,10 +1706,10 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
   · have hD := entryOperandOutcome_of_dispatch ctx executingCore st kGen kRes kLook tid tcb
     cases hRt : SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
         SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
-    | signal capAddr badge =>
+    | signal capAddr =>
       obtain ⟨decoded, hDec, hSid, hCap, -⟩ :=
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSignal
-          st tid _ _ 32 capAddr badge hRt
+          st tid _ _ 32 capAddr hRt
       subst hCap
       simp only [syscallEntryCheckedK, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]
       exact hD decoded _ _ hCur hObj hDec hSid (by

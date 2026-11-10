@@ -5936,6 +5936,22 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem syscallEntryCheckedK_eq_routed(
 run_check "INVARIANT" rg -n '^noncomputable def syscallEntryCheckedK($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem _root_\.SeLe4n\.Model\.SystemState\.popEntryReport_pushEntryReport($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Report.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def signalRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Signal.lean
+# A signal's badge is its capability's (seL4's `sendSignal(ntfn, capNtfnBadge)`):
+# the routed arm takes no badge word, every arm ORs in `cap.signalBadge`, and the
+# dispatch reads no word of the decode but its syscall (the `_badge_of_cap`
+# theorems: two decodes naming the signal dispatch identically).
+run_check "INVARIANT" rg -n '^@\[inline\] def signalBadge \(cap : Capability\) : SeLe4n\.Badge :=$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem signalBadge_eq_ofOption($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^    \(tid : SeLe4n\.ThreadId\) \(capWord : UInt64\) \(st : SystemState\) : SystemState :=$' SeLe4n/Kernel/RoutedArms/Signal.lean
+run_check "INVARIANT" rg -n '^  \| signal \(capAddr : CPtr\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_notificationSignal_badge_of_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_notificationSignal_badge_of_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_badge_of_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatch notifId cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'ctx\.declassificationPolicy notifId cap\.signalBadge executingCore st with$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap\.signalBadge$' SeLe4n/Kernel/RefusalCarryingDispatch.lean
+run_negative_check "INVARIANT" rg -n 'Badge\.ofWord \(auditedArgWord regs 0\)' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def waitRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Wait.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def yieldRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Yield.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def sendRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Send.lean

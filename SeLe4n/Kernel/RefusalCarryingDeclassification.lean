@@ -82,7 +82,7 @@ theorem dispatchWithCapChecked_eq_auditedArmSpec (ctx : LabelingContext)
   cases sid <;> simp only [routedAudited, Bool.false_eq_true] at h <;>
     simp (disch := decide) only [dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
       auditedGate, hR,
-      hRight, Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
+      hRight,
       Architecture.SyscallArgDecode.decodeAuditReadArgs,
       Architecture.SyscallArgDecode.decodeAuditDrainArgs]
 
@@ -1764,7 +1764,7 @@ theorem auditedArmSpec_declassifySignal_bound (ctx : LabelingContext) (capAddr :
             (!securityFlowsTo (ctx.objectLabelOf nid) (ctx.threadLabelOf t))
             (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
               (receiveCompleteTcb
-                { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) }))
+                { IpcMessage.empty with badge := some cap.signalBadge }))
               t executingCore).1))
         (some t) 0) := by
   simp only [declassifySignalBoundAdmitted, Bool.and_eq_true, decide_eq_true_eq,
@@ -1775,14 +1775,14 @@ theorem auditedArmSpec_declassifySignal_bound (ctx : LabelingContext) (capAddr :
     (declassifiedSignalReceiver?_bound st nid t epId hTarget)
   have hWait := notificationSignalWaiter?_of_boundDeliveryTarget st nid t epId hTarget
   have hS := notificationSignalBoundOnCore_bound_eq nid
-    (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st t epId ep tcb hTarget hE hTT hG
+    cap.signalBadge executingCore st t epId ep tcb hTarget hE hTT hG
   have hLen := congrArg List.length (notificationSignalBoundOnCore_declassificationAuditLog_eq nid
-    (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st)
+    cap.signalBadge executingCore st)
   rw [hS] at hLen
   simp only [SystemState.declassificationAuditLog, AuditRing.length_toList] at hLen
   generalize (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
       (receiveCompleteTcb
-        { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) }))
+        { IpcMessage.empty with badge := some cap.signalBadge }))
       t executingCore) = W at hS hLen ⊢
   have hRec := recordDeclassifiedHops_hopsRecord executingCore signaler
     (embedLegacyLabel (ctx.threadLabelOf signaler)) (embedLegacyLabel (ctx.objectLabelOf nid))
@@ -1790,9 +1790,7 @@ theorem auditedArmSpec_declassifySignal_bound (ctx : LabelingContext) (capAddr :
     (!securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid))
     (!securityFlowsTo (ctx.objectLabelOf nid) (ctx.threadLabelOf t)) W.1 (by rw [hLen]; exact hRoom)
   simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
-    Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
-    auditedDecoded_msgReg regs 0 (by decide), bind, Except.bind, pure, Except.pure,
-    ← SeLe4n.Badge.ofWord_eq_ofNatMasked, notificationSignalDeclassifiedCrossCoreDispatch,
+    notificationSignalDeclassifiedCrossCoreDispatch,
     notificationSignalDeclassifiedOnCore, hCur, hN, declassificationActorOf,
     liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
     declassifiedSignalHopAuthorization, liftLegacyContext_policy, legacyLattice_canFlow_embed,
@@ -1842,7 +1840,7 @@ writing the records its one or two downgrades owe), or else the general one
             withTaintWordsAt st nid fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
             .ok ((), declassifySignalStoredPerform executingCore tid
               (embedLegacyLabel (ctx.threadLabelOf tid)) (embedLegacyLabel (ctx.objectLabelOf nid))
-              nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+              nid cap.signalBadge
               (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
               st.declassificationAudit.epoch st.declassificationAudit.length
               a0 a1 a2 a3 a4 a5 a6 a7 ac as b0 b1 b2 b3 b4 b5 b6 b7 bc bs st)
@@ -1858,7 +1856,7 @@ writing the records its one or two downgrades owe), or else the general one
                     (embedLegacyLabel (ctx.threadLabelOf tid))
                     (embedLegacyLabel (ctx.objectLabelOf nid))
                     (embedLegacyLabel (ctx.threadLabelOf ⟨k⟩)) nid ⟨k⟩ (ntfnSuccessorCode st ⟨k⟩)
-                    (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+                    cap.signalBadge
                     (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
                     (!securityFlowsTo (ctx.objectLabelOf nid) (ctx.threadLabelOf ⟨k⟩))
                     st.declassificationAudit.epoch st.declassificationAudit.length
@@ -1881,7 +1879,7 @@ writing the records its one or two downgrades owe), or else the general one
                             (embedLegacyLabel (ctx.threadLabelOf tid))
                             (embedLegacyLabel (ctx.objectLabelOf nid))
                             (embedLegacyLabel (ctx.threadLabelOf ⟨k⟩)) nid ⟨k⟩
-                            ⟨tcb.ipcObjectCode⟩ ep tcb (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+                            ⟨tcb.ipcObjectCode⟩ ep tcb cap.signalBadge
                             (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
                             (!securityFlowsTo (ctx.objectLabelOf nid) (ctx.threadLabelOf ⟨k⟩))
                             st.declassificationAudit.epoch st.declassificationAudit.length
@@ -1904,7 +1902,7 @@ theorem auditedArmSpec_declassifySignal_stored (ctx : LabelingContext) (capAddr 
     (hCur : st.scheduler.currentOnCore executingCore = some signaler)
     (hA : declassifySignalStoredAdmitted ctx st tid signaler nid = true) :
     auditedArmSpec ctx .declassifySignal capAddr regs tid executingCore cap st =
-      match notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+      match notificationSignalBoundOnCore nid cap.signalBadge
           executingCore st with
       | (_, .error e) => .error e
       | (st1, .ok _) => .ok ((), declassifySignalRecord executingCore tid
@@ -1916,17 +1914,15 @@ theorem auditedArmSpec_declassifySignal_stored (ctx : LabelingContext) (capAddr 
   subst hSig
   obtain ⟨ntfn, hN⟩ := Option.isSome_iff_exists.mp hPresent
   simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
-    Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
-    auditedDecoded_msgReg regs 0 (by decide), bind, Except.bind, pure, Except.pure,
-    ← SeLe4n.Badge.ofWord_eq_ofNatMasked, notificationSignalDeclassifiedCrossCoreDispatch,
+    notificationSignalDeclassifiedCrossCoreDispatch,
     notificationSignalDeclassifiedOnCore, hCur, hN, declassificationActorOf,
     liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
     declassifiedSignalHopAuthorization, liftLegacyContext_policy, legacyLattice_canFlow_embed,
     declassifiedSignalReceiver?, hBound, hWait, Option.map_none]
   have hLen := congrArg List.length (notificationSignalBoundOnCore_declassificationAuditLog_eq nid
-    (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st)
+    cap.signalBadge executingCore st)
   simp only [SystemState.declassificationAuditLog, AuditRing.length_toList] at hLen
-  rcases hS : notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+  rcases hS : notificationSignalBoundOnCore nid cap.signalBadge
       executingCore st with ⟨st1, _ | sgi⟩
   · rw [hS] at hLen
     by_cases hFlow : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) = true
@@ -1968,7 +1964,7 @@ theorem auditedArmSpec_declassifySignal_woken (ctx : LabelingContext) (capAddr :
           (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
           (!securityFlowsTo (ctx.objectLabelOf nid) (ctx.threadLabelOf ⟨k⟩))
           (wakeThread (storeSignalWoken st nid ⟨k⟩ (ntfnSuccessor? st ⟨k⟩)
-            { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) })
+            { IpcMessage.empty with badge := some cap.signalBadge })
             ⟨k⟩ executingCore).1)
         (some ⟨k⟩) 0) := by
   simp only [declassifySignalWokenAdmitted, Bool.and_eq_true, decide_eq_true_eq,
@@ -1979,22 +1975,22 @@ theorem auditedArmSpec_declassifySignal_woken (ctx : LabelingContext) (capAddr :
     rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
   have hWait : notificationSignalWaiter? st nid = some ⟨k⟩ := by
     simp only [notificationSignalWaiter?, hN, hHead]
-  have hS : notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+  have hS : notificationSignalBoundOnCore nid cap.signalBadge
       executingCore st =
       ((wakeThread (storeSignalWoken st nid ⟨k⟩ (ntfnSuccessor? st ⟨k⟩)
-          { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) })
+          { IpcMessage.empty with badge := some cap.signalBadge })
           ⟨k⟩ executingCore).1,
         .ok (wakeThread (storeSignalWoken st nid ⟨k⟩ (ntfnSuccessor? st ⟨k⟩)
-          { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) })
+          { IpcMessage.empty with badge := some cap.signalBadge })
           ⟨k⟩ executingCore).2) := by
     simp only [notificationSignalBoundOnCore, hBound, notificationSignalOnCore_eq_impl,
       notificationSignalOnCoreImpl, hN, hHead, hW, ↓reduceIte]
   have hLen := congrArg List.length (notificationSignalBoundOnCore_declassificationAuditLog_eq nid
-    (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st)
+    cap.signalBadge executingCore st)
   rw [hS] at hLen
   simp only [SystemState.declassificationAuditLog, AuditRing.length_toList] at hLen
   generalize (wakeThread (storeSignalWoken st nid ⟨k⟩ (ntfnSuccessor? st ⟨k⟩)
-      { IpcMessage.empty with badge := some (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) })
+      { IpcMessage.empty with badge := some cap.signalBadge })
       ⟨k⟩ executingCore) = W at hS hLen ⊢
   have hRec := recordDeclassifiedHops_hopsRecord executingCore signaler
     (embedLegacyLabel (ctx.threadLabelOf signaler)) (embedLegacyLabel (ctx.objectLabelOf nid))
@@ -2003,9 +1999,7 @@ theorem auditedArmSpec_declassifySignal_woken (ctx : LabelingContext) (capAddr :
     (!securityFlowsTo (ctx.objectLabelOf nid) (ctx.threadLabelOf ⟨k⟩)) W.1
     (by rw [hLen]; exact hRoom)
   simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
-    Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
-    auditedDecoded_msgReg regs 0 (by decide), bind, Except.bind, pure, Except.pure,
-    ← SeLe4n.Badge.ofWord_eq_ofNatMasked, notificationSignalDeclassifiedCrossCoreDispatch,
+    notificationSignalDeclassifiedCrossCoreDispatch,
     notificationSignalDeclassifiedOnCore, hCur, hN, declassificationActorOf,
     liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
     declassifiedSignalHopAuthorization, liftLegacyContext_policy, legacyLattice_canFlow_embed,
@@ -2073,8 +2067,8 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
           simp only [declassifySignalStoredPerform, TaintWords.mk_fields, operandObjectId,
             capObjectId, hT]
           have hOk := notificationSignalBoundOnCore_stored_ok nid
-            (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st ntfn hN hBound hWait
-          rcases hS : notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+            cap.signalBadge executingCore st ntfn hN hBound hWait
+          rcases hS : notificationSignalBoundOnCore nid cap.signalBadge
               executingCore st with ⟨st1, e | sgi⟩
           · rw [hS] at hOk; cases hOk
           · rfl

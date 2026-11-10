@@ -6,7 +6,7 @@
 //! `.declassify` arm.  Added in WS-SM SM8.C.9.
 
 use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
-use sele4n_types::{Badge, CPtr, KernelResult, SyscallId};
+use sele4n_types::{CPtr, KernelResult, SyscallId};
 
 /// Authorize and record a declassification into the object named by
 /// `target_cap`.
@@ -64,8 +64,9 @@ pub fn declassify(target_cap: CPtr) -> KernelResult<SyscallResponse> {
 ///
 /// # What it does
 ///
-/// Everything the ordinary `notification_signal` does: the badge is written
-/// into the notification, a waiting thread (or the notification's bound TCB) is
+/// Everything the ordinary `notification_signal` does: the badge — the one
+/// minted into `notification_cap`, zero for an unbadged capability, never a
+/// caller-chosen word — is ORed into the notification, a waiting thread (or the notification's bound TCB) is
 /// woken on its own home core, and the badge is delivered to it.  Lean:
 /// `declassifiedSignal_delivers_badge` — the object store the transition
 /// commits is the ordinary signal's, so this is a real delivery rather than the
@@ -91,8 +92,12 @@ pub fn declassify(target_cap: CPtr) -> KernelResult<SyscallResponse> {
 ///
 /// # Arguments
 ///
-/// The notification capability and the badge.  No security domain is a
-/// parameter, for the reason `declassify` takes none: the source is read off
+/// The notification capability, and nothing else.  The badge is the
+/// capability's own (Lean: `Capability.signalBadge`,
+/// `dispatchWithCapChecked_declassifySignal_badge_of_cap`): what crosses the
+/// label boundary is the identity the capability was minted with, so a
+/// declassifying signal can no more forge another sender's badge bits than an
+/// ordinary one.  No security domain is a parameter, for the reason `declassify` takes none: the source is read off
 /// the subject the executing core is running, and the two destinations off the
 /// notification and its resolved receiver.  Requires the **write** right — the
 /// same authority the ordinary signal requires, which the declassification
@@ -116,13 +121,13 @@ pub fn declassify(target_cap: CPtr) -> KernelResult<SyscallResponse> {
 ///   record is refused rather than performed unaudited (Lean:
 ///   `declassifiedSignal_never_unaudited`).
 #[inline]
-pub fn declassify_signal(notification_cap: CPtr, badge: Badge) -> KernelResult<SyscallResponse> {
+pub fn declassify_signal(notification_cap: CPtr) -> KernelResult<SyscallResponse> {
     invoke_syscall(SyscallRequest {
         cap_addr: notification_cap,
-        // The ordinary signal's frame exactly (`decodeNotificationSignalArgs`
-        // reads MR[0]), because the declassifying variant reuses that decoder.
-        msg_info: MessageInfo::new_const(1, 0, 0),
-        msg_regs: [badge.into(), 0, 0, 0],
+        // The ordinary signal's frame exactly: an empty message, since the
+        // badge is the capability's and no message register is read.
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0; 4],
         syscall_id: SyscallId::DeclassifySignal,
     })
 }
