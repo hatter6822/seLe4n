@@ -1688,25 +1688,34 @@ reads it before handing the state to the switch. -/
   | some t => affinityAdmitsCore t c
   | none => false
 
+/-- The state `switchToThreadOnCore` commits when it admits `tid`: the preempt,
+the dequeue, the restore and the set-current, returned as a state. -/
+@[inline] def switchToThreadOnCoreState (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  let stRestored := restoreIncomingContextOnCoreUnlessCurrent
+    ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid) c tid
+  { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some tid) }
+
 theorem switchToThreadOnCore_of_admits (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
     (switchToThreadOnCoreAdmits st c tid = true →
-      ∃ st', switchToThreadOnCore st c tid = .ok st') ∧
+      switchToThreadOnCore st c tid = .ok (switchToThreadOnCoreState st c tid)) ∧
     (switchToThreadOnCoreAdmits st c tid = false →
       ∃ e, switchToThreadOnCore st c tid = .error e) := by
-  unfold switchToThreadOnCoreAdmits switchToThreadOnCore
+  unfold switchToThreadOnCoreAdmits switchToThreadOnCore switchToThreadOnCoreState
   cases st.getTcb? tid with
   | none => exact ⟨fun h => (by cases h), fun _ => ⟨_, rfl⟩⟩
   | some t =>
     dsimp only
     by_cases hA : affinityAdmitsCore t c = true
     · simp only [hA, ↓reduceIte, Bool.true_eq_false, false_implies, and_true]
-      exact fun _ => ⟨_, rfl⟩
+      exact fun _ => trivial
     · simp only [hA, Bool.false_eq_true, ↓reduceIte, false_implies, true_and]
       exact fun _ => ⟨_, rfl⟩
 
 /-- `deferResidentElsewhere` as compiled: whether the idle switch succeeds is
 read before the switch is handed the state, so the switch's branch holds no
-other reference to it and its writes land in place
+other reference to it and its writes land in place, and the switch commits its
+state with no result built around it
 (`deferResidentElsewhere_eq_impl`). -/
 def deferResidentElsewhereImpl (st : SystemState) (c : CoreId) : SystemState :=
   match st.scheduler.currentOnCore c with
@@ -1714,9 +1723,7 @@ def deferResidentElsewhereImpl (st : SystemState) (c : CoreId) : SystemState :=
     if residentElsewhere st c tid then
       let st0 := restoreIncomingContextOnCore st c tid
       if switchToThreadOnCoreAdmits st0 c (idleThreadId c) then
-        match switchToThreadOnCore st0 c (idleThreadId c) with
-        | .ok st' => st'
-        | .error _ => default
+        switchToThreadOnCoreState st0 c (idleThreadId c)
       else dropCurrentOnCore st0 c
     else st
   | none => st
@@ -1735,8 +1742,7 @@ def deferResidentElsewhereImpl (st : SystemState) (c : CoreId) : SystemState :=
       cases hA : switchToThreadOnCoreAdmits (restoreIncomingContextOnCore st c tid) c
           (idleThreadId c) with
       | true =>
-        obtain ⟨st', h⟩ := hT hA
-        simp only [h, ↓reduceIte]
+        simp only [hT hA, ↓reduceIte]
       | false =>
         obtain ⟨e, h⟩ := hF hA
         simp only [h, Bool.false_eq_true, ↓reduceIte]

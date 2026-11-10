@@ -1088,10 +1088,27 @@ filled. -/
 @[inline] def undoFillRefusal (held : Bool) (c : Concurrency.CoreId) (n0 : Nat)
     (r : Except (KernelError × SystemState) (Unit × SystemState)) :
     Except (KernelError × SystemState) (Unit × SystemState) :=
-  if held then r
-  else match r with
-    | .error (e, s) => .error (e, SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s c n0)
-    | .ok v => .ok v
+  match r with
+  | .error (e, s) =>
+    .error (e, if held then s else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s c n0)
+  | .ok v => .ok v
+
+/-- A continuation handed `undoFillRefusal`'s result, with the result's case
+asked first: the case a dispatch that commits builds is taken apart where it is
+built, so no result is built to be handed on. -/
+@[inline] def undoFillRefusalK {β : Type} (held : Bool) (c : Concurrency.CoreId) (n0 : Nat)
+    (k : Except (KernelError × SystemState) (Unit × SystemState) → β)
+    (r : Except (KernelError × SystemState) (Unit × SystemState)) : β :=
+  match r with
+  | .error (e, s) =>
+    k (.error (e, if held then s else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s c n0))
+  | .ok v => k (.ok v)
+
+theorem undoFillRefusalK_eq {β : Type} (held : Bool) (c : Concurrency.CoreId) (n0 : Nat)
+    (k : Except (KernelError × SystemState) (Unit × SystemState) → β) :
+    undoFillRefusalK held c n0 k = fun r => k (undoFillRefusal held c n0 r) := by
+  funext r
+  rcases r with ⟨e, s⟩ | v <;> rfl
 
 /-- **`dispatchOperandCheckedK` on the filled state**: the long routes' operand
 dispatch, run on `stF` (the state with this core's TLB holding the IPC
@@ -1106,8 +1123,8 @@ refusal is decoded again (`dispatchOperandFilledK_spec`). -/
     (kPre kArm : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (onLookup : KernelError → SystemState → β) : β :=
   dispatchOperandCheckedK capAddr tid executingCore arm stF
-    (fun r => kPre (undoFillRefusal held executingCore n0 r))
-    (fun r => kArm (undoFillRefusal held executingCore n0 r))
+    (undoFillRefusalK held executingCore n0 kPre)
+    (undoFillRefusalK held executingCore n0 kArm)
     (fun e s => onLookup e
       (if held then s else SeLe4n.Kernel.Architecture.tlbUndoFillOnCore s executingCore n0))
 
@@ -1166,6 +1183,7 @@ theorem dispatchOperandFilledK_spec {β : Type} (capAddr : SeLe4n.CPtr)
   have hGet : ∀ x, ({ st with perCoreTlb := t } : SystemState).getObject? x = st.getObject? x :=
     fun _ => rfl
   unfold dispatchOperandFilledK
+  rw [undoFillRefusalK_eq, undoFillRefusalK_eq]
   rcases dispatchOperandCheckedK_spec capAddr tid executingCore arm { st with perCoreTlb := t }
       (fun r => kPre (undoFillRefusal held executingCore n0 r))
       (fun r => kArm (undoFillRefusal held executingCore n0 r))
@@ -1189,7 +1207,6 @@ theorem dispatchOperandFilledK_spec {β : Type} (capAddr : SeLe4n.CPtr)
   · refine .inr ⟨e, _, hK, ?_, (syscallResolveCap_error_perCoreTlb _ st t e).mp hRes⟩
     unfold R undoFillRefusal
     rw [hE]
-    cases held <;> rfl
 
 /-- **A long route's operand dispatch, continued**: this core's TLB filled
 with the IPC buffer's translations for `n` overflow slots unless it holds them
@@ -1260,7 +1277,8 @@ theorem longOperandK_spec {β : Type} (capAddr : SeLe4n.CPtr) (tid : SeLe4n.Thre
     unfold undoFillRefusal longOperandSpecR
     cases SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid n
     · simp only [Bool.false_eq_true, ↓reduceIte]
-    · simp
+    · simp only [↓reduceIte]
+      split <;> (rename_i h; exact h.symm)
   obtain ⟨t, hF⟩ : ∃ t, (if SeLe4n.Kernel.Architecture.ipcBufferFillHeldIn st executingCore tid n
       then st else SeLe4n.Kernel.Architecture.tlbFillIpcBufferInOnCore st executingCore tid n) =
       { st with perCoreTlb := t } := by
@@ -1354,7 +1372,8 @@ theorem overflowOneOperandK_spec {β : Type} (capAddr : SeLe4n.CPtr) (tid : SeLe
     unfold undoFillRefusal overflowOneOperandSpecR
     cases SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid
     · simp only [Bool.false_eq_true, ↓reduceIte]
-    · simp
+    · simp only [↓reduceIte]
+      split <;> (rename_i h; exact h.symm)
   obtain ⟨t, hF⟩ : ∃ t, (if SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid
       then st else SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) =
       { st with perCoreTlb := t } := by
