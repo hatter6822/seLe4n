@@ -5206,7 +5206,10 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- WS-SM SM9.C.8: **the live data-carrying declassification.**
   --
   -- Structurally the `.notificationSignal` arm — same capability target, same
-  -- badge decode, same woken-stash clear, same WS-RA staging — with the
+  -- badge (the capability's, `Capability.signalBadge`: no message register is
+  -- read, so the declassified datum is the identity the capability was minted
+  -- with, never a caller-chosen word), same woken-stash clear, same WS-RA
+  -- staging — with the
   -- bound-aware cross-core dispatch replaced by the declassifying one.  Keeping
   -- the surrounding shape identical is deliberate: the transition really does
   -- perform the ordinary signal's writes

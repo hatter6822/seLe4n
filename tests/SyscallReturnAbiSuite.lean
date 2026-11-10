@@ -260,7 +260,7 @@ private def payloadCapability : Capability :=
     rights := AccessRightSet.ofList [.read] }
 
 /-- The notification minted three more ways, for the badge-from-capability
-witnesses (§9i): with the declassified badge, with badge `0x1`, and unbadged
+witnesses (§9s): with the declassified badge, with badge `0x1`, and unbadged
 (with a stale word in `badgeWord` that the clear `badged` flag must hide). -/
 private def declassCapPtr : Nat := 11
 private def badgeOneCapPtr : Nat := 12
@@ -513,7 +513,7 @@ private def waitThenSignalScenario :
     forgedBadge.toUInt64 0 0 st1
   pure (preStagedX0, stagedFrame st2 callerTid)
 
-/-- §9i: the waiter blocks on the boot core, then the peer signals from core 1
+/-- §9s: the waiter blocks on the boot core, then the peer signals from core 1
 through the capability at `sigCap`, writing `x2` to its first message register
 and `len` as its message length.  Returns the waiter's staged frame and the
 notification's pending word after a second, unwaited signal. -/
@@ -939,28 +939,28 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         (frame.x1 == 0)
       assertBool "9a: the staged frame decodes as the badge, end to end"
         (rustDecodeResponse (postTrapRegs frame) == .ok signalledBadge.toUInt64 #[0, 0, 0, 0])
-  -- 9i — a signal's badge is its capability's, never a register's (seL4's
+  -- 9s — a signal's badge is its capability's, never a register's (seL4's
   -- `sendSignal(ntfn, capNtfnBadge)`): an unbadged capability delivers 0, a
   -- capability minted with 0x1 delivers exactly 0x1 though MR0 asks for 0x2,
   -- and a signal of length 0 (no message register at all) is accepted.
   match badgeFromCapScenario unbadgedCapPtr 1 0x2 with
-  | .error e => assertBool s!"9i unbadged dispatches (got .error {reprStr e})" false
+  | .error e => assertBool s!"9s unbadged dispatches (got .error {reprStr e})" false
   | .ok (frame, pending) => do
-      assertBool "9i: an unbadged capability's signal wakes the waiter with badge 0"
+      assertBool "9s: an unbadged capability's signal wakes the waiter with badge 0"
         (frame.x0 == 0 && frame.x1 == 0)
-      assertBool "9i: an unbadged capability's pending word stays 0 (MR0 0x2 ignored)"
+      assertBool "9s: an unbadged capability's pending word stays 0 (MR0 0x2 ignored)"
         (pending == some (Badge.ofNatMasked 0))
   match badgeFromCapScenario badgeOneCapPtr 1 0x2 with
-  | .error e => assertBool s!"9i badge-0x1 dispatches (got .error {reprStr e})" false
+  | .error e => assertBool s!"9s badge-0x1 dispatches (got .error {reprStr e})" false
   | .ok (frame, pending) => do
-      assertBool "9i: a 0x1-badged capability wakes the waiter with exactly 0x1, not MR0's 0x2"
+      assertBool "9s: a 0x1-badged capability wakes the waiter with exactly 0x1, not MR0's 0x2"
         (frame.x0 == 0x1)
-      assertBool "9i: its pending word is exactly 0x1 (no 0x2 bit forged in)"
+      assertBool "9s: its pending word is exactly 0x1 (no 0x2 bit forged in)"
         (pending == some (Badge.ofNatMasked 0x1))
   match badgeFromCapScenario badgeOneCapPtr 0 0 with
-  | .error e => assertBool s!"9i length-0 signal dispatches (got .error {reprStr e})" false
+  | .error e => assertBool s!"9s length-0 signal dispatches (got .error {reprStr e})" false
   | .ok (frame, pending) => do
-      assertBool "9i: a signal of length 0 is accepted and delivers the capability's 0x1"
+      assertBool "9s: a signal of length 0 is accepted and delivers the capability's 0x1"
         (frame.x0 == 0x1 && pending == some (Badge.ofNatMasked 0x1))
   -- 9b — blocked receiver woken by a send
   match receiveThenSendScenario with

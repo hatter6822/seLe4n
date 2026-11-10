@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.11` (`lakefile.toml`) |
+| **Package version** | `0.37.12` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 620,860 across 620 Lean files |
 | **Test LoC** | 89,034 across 70 Lean test suites |
@@ -7619,7 +7619,7 @@ as notification badge bits, and a declassifying signal whose two hops are
 ordinary is the ordinary signal, so a register-supplied badge was a second
 forging path.  What it declassifies is the delivery of the capability's badge
 across the label boundary; no caller-supplied word crosses.  Witnesses:
-`tests/SyscallReturnAbiSuite.lean` §9i (an unbadged capability delivers 0; a
+`tests/SyscallReturnAbiSuite.lean` §9s (an unbadged capability delivers 0; a
 capability minted with `0x1` delivers exactly `0x1` while MR0 asks for `0x2`; a
 length-0 signal is accepted) and `tests/DecodingSuite.lean` SAD-013.
 
