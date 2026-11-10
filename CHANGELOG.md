@@ -55,12 +55,14 @@ capability, 0 for an unbadged one.  seLe4n now does exactly that
   by the decode.  No other caller-supplied badge was found.  Send and call use
   the capability's badge, reply and reply-receive the reply capability's, and
   interrupt delivery the notification capability in the line's node slot.
-- **CI: the cross build installs its assembler.**  The `ubuntu-26.04` image
-  that `ubuntu-latest` now names ships no `clang`, so the `aarch64 Cross Build`
-  job found no AArch64 assembler for the `.S` sources.  The job now installs
-  `gcc-aarch64-linux-gnu`, which `scripts/test_aarch64_cross_build.sh` prefers.  The `Lean aarch64
-  Archive` job and the nightly determinism workflow, which link the kernel
-  image, install it too.
+- **CI: every job runs on `ubuntu-24.04`.**  `ubuntu-latest` moved to
+  `ubuntu-26.04`, which ships no `clang` (the HAL's `.S` sources found no
+  AArch64 assembler) and QEMU 10.2.1, whose `virt` device tree no longer
+  matches `tests/fixtures/qemu_virt_dtb.hex`.  The workflows now name
+  `ubuntu-24.04`, the image every earlier result was measured on, so a
+  runner-image move happens only as its own change: install an assembler,
+  regenerate the device-tree fixture with that QEMU and re-run the board
+  suite.
 
 ## v0.37.11 — IPC and scheduler ordering coverage, and the reply-receive donation
 

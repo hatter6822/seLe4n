@@ -23,7 +23,7 @@ concurrency:
 jobs:
   test-fast:
     name: Tiered Tests / Fast (Tier 0 + Tier 1)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,8 +93,8 @@ jobs:
         run: ./scripts/install_git_hooks.sh --check
 
       # AF6-F: Install shellcheck so Tier 0 hygiene runs shell lint instead of
-      # skipping it. shellcheck is not in the default ubuntu-latest image.
-      # ripgrep is pre-installed on ubuntu-latest but not on ubuntu-24.04-arm;
+      # skipping it. shellcheck is not in the default ubuntu-24.04 image.
+      # ripgrep is pre-installed on ubuntu-24.04 but not on ubuntu-24.04-arm;
       # install it here defensively so both lanes share the same prereqs.
       #
       # AN11-E.8 (TST-M08): wrap apt-get in a 3-attempt retry with
@@ -153,7 +153,7 @@ jobs:
 
   test-smoke:
     name: Tiered Tests / Smoke (Tier 2)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: test-fast
 
     steps:
@@ -213,7 +213,7 @@ jobs:
 
   test-full:
     name: Tiered Tests / Full (Tier 3)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Tier 3 needs only what the fast lane built (the kernel, the staged tier
     # and the censuses), so it runs beside Tier 2 rather than after it.
     needs: test-fast
@@ -255,7 +255,7 @@ jobs:
 
   test-rust:
     name: Rust ABI Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -297,7 +297,7 @@ jobs:
 
   test-loom-concurrency-model:
     name: Loom Concurrency Model (deployed RwLock)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # WS-RR RR6.20: the plan's D-5 acceptance gate lists "`cfg(loom)`
     # exhaustive-interleaving runs pass on op-sequences of length <= 4",
@@ -349,7 +349,7 @@ jobs:
 
   test-aarch64-cross:
     name: aarch64 Cross Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # WS-RR RR1.7: the kernel HAL's real deployment target is
     # `aarch64-unknown-none-softfloat`, and until this job existed nothing in the
@@ -366,18 +366,13 @@ jobs:
     # The `.S` files need an assembler that can target AArch64.
     # `scripts/test_aarch64_cross_build.sh` probes for one (bare-metal
     # and Linux cross prefixes, then `clang`) and fails with an
-    # actionable message if none is present.  The `ubuntu-26.04` image
-    # that `ubuntu-latest` now names ships no `clang`, so the job
-    # installs `gcc-aarch64-linux-gnu`, which the probe prefers.
+    # actionable message if none is present.  On `ubuntu-24.04` it
+    # finds `clang`, which the runner image ships; if a future image
+    # drops it, add an `apt-get install -y gcc-aarch64-linux-gnu` step
+    # — the probe prefers that toolchain when both are available.
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install the AArch64 cross assembler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
-          aarch64-linux-gnu-gcc --version
 
       # Same SHA-pinned action and toolchain version as `test-rust`; see
       # the comment there.  `targets:` mirrors the `targets` key in
@@ -418,7 +413,7 @@ jobs:
 
   test-lean-aarch64-archive:
     name: Lean aarch64 Archive
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # WS-BP BP1: the kernel's Lean object code for the hardware target.
     # `aarch64 Cross Build` compiles the HAL; nothing compiled the Lean half
@@ -479,14 +474,11 @@ jobs:
       # QEMU's `virt` machine (`scripts/test_qemu.sh --lean-kernel`), and runs
       # it with `REQUIRE_QEMU=1`, so an absent emulator fails the job rather
       # than skipping the one run of the kernel a PR gets.
-      # The kernel image links the HAL, whose `.S` sources need an AArch64
-      # assembler; the `ubuntu-26.04` image ships no `clang`.
-      - name: Install QEMU and the AArch64 cross assembler
+      - name: Install QEMU
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-arm gcc-aarch64-linux-gnu
+          sudo apt-get install -y --no-install-recommends qemu-system-arm
           qemu-system-aarch64 --version
-          aarch64-linux-gnu-gcc --version
 
       - name: Build and reconcile the kernel's Lean archive for aarch64
         run: ./scripts/test_lean_aarch64_archive.sh
