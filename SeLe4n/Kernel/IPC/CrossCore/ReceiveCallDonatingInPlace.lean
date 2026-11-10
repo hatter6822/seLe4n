@@ -179,7 +179,14 @@ theorem receiveCallDonatingTake_delivered (st : SystemState) (endpointId : SeLe4
         performReceiveCallDonatingDelivered st endpointId s sTcb.queueNextCode receiver rid
           ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s) (determineTargetCore st receiver)
           core sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
-          sTcb.ipcBadged := by
+          sTcb.ipcBadged ∧
+      rendezvousDequeuedCall (receiveCallTakeState st endpointId s sTcb receiver rid) s = true ∧
+      applyRendezvousCallDonation (receiveCallTakeState st endpointId s sTcb receiver rid)
+          receiver s =
+        .ok (migrateSchedContextReplenishment
+          (donateSchedContextInPlace (receiveCallTakeState st endpointId s sTcb receiver rid)
+            s receiver ⟨sTcb.scBindingScCode - 1⟩) ⟨sTcb.scBindingScCode - 1⟩
+          (determineTargetCore st s) (determineTargetCore st receiver)) := by
   have hG' := hG
   simp only [receiveCallDonatesInPlace, Bool.and_eq_true] at hG'
   obtain ⟨hTR, hDR⟩ := hG'
@@ -279,7 +286,23 @@ theorem receiveCallDonatingTake_delivered (st : SystemState) (endpointId : SeLe4
   have hCall : rendezvousDequeuedCall T s = true := by
     unfold rendezvousDequeuedCall
     simp only [lookupTcb, hSRes, Bool.false_eq_true, ↓reduceIte, hx, hxI]
-  refine ⟨?_, ?_, ?_⟩
+  obtain ⟨sv, hsv⟩ := Option.isSome_iff_exists.mp
+    ((SeLe4n.ThreadId.toValid?_isSome_iff s).mpr hSRes)
+  obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp
+    ((SeLe4n.ThreadId.toValid?_isSome_iff receiver).mpr hRRes)
+  have hsv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hsv
+  have hrv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hrv
+  have hDonE : applyRendezvousCallDonation T receiver s =
+      .ok (migrateSchedContextReplenishment (donateSchedContextInPlace T s receiver ⟨k⟩) ⟨k⟩
+        (determineTargetCore st s) (determineTargetCore st receiver)) := by
+    unfold applyRendezvousCallDonation
+    simp only [hsv, hrv]
+    unfold applyCallDonationOnCore
+    rw [applyCallDonation_characterisation, hsv', hrv', hDonId]
+    dsimp only
+    rw [hDon]
+    simp only [hDs, hDr]
+  refine ⟨?_, ?_, ?_, hCall, hDonE⟩
   · have hSnd : receiveRendezvousSender? st endpointId = some s := by
       simp only [receiveRendezvousSender?, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE,
         Option.bind_some, hH]
@@ -292,21 +315,9 @@ theorem receiveCallDonatingTake_delivered (st : SystemState) (endpointId : SeLe4
     rw [hTake]
     simp only [hSnd, hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
     rfl
-  · obtain ⟨sv, hsv⟩ := Option.isSome_iff_exists.mp
-      ((SeLe4n.ThreadId.toValid?_isSome_iff s).mpr hSRes)
-    obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp
-      ((SeLe4n.ThreadId.toValid?_isSome_iff receiver).mpr hRRes)
-    have hsv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hsv
-    have hrv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hrv
-    unfold applyReceiveRendezvousHandoff
-    rw [applyReceiveRendezvousDonation_of_call _ _ _ hCall]
-    unfold applyRendezvousCallDonation
-    simp only [hsv, hrv]
-    unfold applyCallDonationOnCore
-    rw [applyCallDonation_characterisation, hsv', hrv', hDonId]
-    dsimp only
-    rw [hDon]
-    simp only [hCall, ↓reduceIte, hDs, hDr]
+  · unfold applyReceiveRendezvousHandoff
+    rw [applyReceiveRendezvousDonation_of_call _ _ _ hCall, hDonE]
+    simp only [hCall, ↓reduceIte]
   · have hNoS := storeReceiveCallReady_noResizeDue st endpointId s sTcb.queueNextCode receiver
       rid hNo
     have hNo4 : T.objects.noResizeDue := by

@@ -4124,7 +4124,7 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
               · next hG =>
                 simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
                 obtain ⟨hF, hG⟩ := hG
-                obtain ⟨h1, h2, h3⟩ := receiveCallDonatingTake_delivered st epId ep tid rid
+                obtain ⟨h1, h2, h3, -, -⟩ := receiveCallDonatingTake_delivered st epId ep tid rid
                   executingCore s sTcb capAddr mi
                   ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
                   ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hF hR
