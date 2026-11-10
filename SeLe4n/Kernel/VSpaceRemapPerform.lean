@@ -15,10 +15,12 @@ import SeLe4n.Kernel.VSpacePerform
 seL4's `seL4_ARM_Page_Map` on a frame capability whose recorded mapping is in
 place remaps it (`vspaceMapOrRemapFromFrameCap`): the mapping is taken down
 where it stands and the frame mapped again with the rights the call asks for.
-This module is the remap's compiled form: its checks read before any write
-(`vspaceRemapAdmittedAt`), then the unmap in place (`vspaceUnmapPerformAt`) and
-the map half on the state it leaves (`vspaceRemapMapAt`), proven equal to the
-specification (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).
+This module is the remap's compiled form: its refusals and in-place conditions
+read before any write (`vspaceRemapRefusal`, `vspaceRemapInPlaceAt`), then the
+unmap in place (`vspaceUnmapPerformAt`) and the map in place on the state it
+leaves (`vspaceMapPerformAt`, admitted there by
+`vspaceMapAdmittedAt_of_remapInPlace`), proven equal to the specification
+(`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).
 -/
 namespace SeLe4n.Kernel
 open SeLe4n.Model
@@ -85,92 +87,176 @@ theorem resolveVSpaceMapFrame_congr {s t : SystemState} (tid : SeLe4n.ThreadId)
             · simp only [h2, ↓reduceIte]
             · simp [h2]
 
-/-- **The remap's checks**, read before any write: the frame capability's
-recorded mapping is in place and names the address space and the address the
-call names (`vspaceMapOrRemapFromFrameCap`'s remap), the unmap of that address
-is admitted in place (`vspaceUnmapAdmittedAt`), and the map's checks that read
-nothing the unmap writes hold (`vspaceRemapChecks`).  Inline, so the decoded
-arguments are read as words and no record of them is built. -/
-@[inline] def vspaceRemapAdmittedAt (st : SystemState) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
-    (frameCap : Capability) (frame : FrameObject) (rootId : SeLe4n.ObjId) : Bool :=
-  capabilityMappingLive st frameCap && frameCap.mapAsid == args.asid &&
-    frameCap.mapVaddr == args.vaddr &&
-    vspaceUnmapAdmittedAt st args.asid args.vaddr rootId &&
-    vspaceRemapChecks st args frameCap frame
-
-/-- **The remap's map half where its in-place checks fail**: the fresh mapping
-as specified, or — where it refuses — the state the unmap left.  Out of line and
-handed the arguments as words, so the record of them is built only here, on a
-path a well-formed store does not reach, and not on every map. -/
-@[noinline] def vspaceRemapMapFallback (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
-    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (frame : SeLe4n.CPtr)
-    (perms : PagePermissions) (st0 : SystemState) : SystemState :=
-  match vspaceMapFromFrameCap tid ec { asid, vaddr, frame, perms } st0 with
-  | .ok ((), s) => s
-  | .error _ => st0
-
-theorem vspaceRemapMapFallback_eq (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
-    (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st0 : SystemState) :
-    vspaceRemapMapFallback tid ec args.asid args.vaddr args.frame args.perms st0 =
-      match vspaceMapFromFrameCap tid ec args st0 with
-      | .ok ((), s) => s
-      | .error _ => st0 := rfl
-
-/-- **The remap's map half, on the state the unmap left**: the frame mapped in
-place (`vspaceMapPerformAt`) when its checks hold there; otherwise the fresh
-mapping as specified, or — where it refuses — the state the unmap left. -/
-@[inline] def vspaceRemapMapAt (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
+/-- **The remap's in-place conditions**, read before any write: the unmap of
+the address is admitted in place (`vspaceUnmapAdmittedAt`), the root holds the
+address in one slot only, so the unmap's erase leaves it absent
+(`RHTable.keyOnlyAt`), and the frame's object is rewritten in its slot.  With
+the remap's refusals passed (`vspaceRemapRefusal`), these are what make the
+map half admitted on the state the unmap leaves
+(`vspaceMapAdmittedAt_of_remapInPlace`).  Inline, so the decoded arguments are
+read as words and no record of them is built. -/
+@[inline] def vspaceRemapInPlaceAt (st : SystemState)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (frameCap : Capability)
-    (frame : FrameObject) (rootId frameCnode : SeLe4n.ObjId) (frameSlot : SeLe4n.Slot)
-    (st0 : SystemState) : SystemState :=
-  if vspaceMapAdmittedAt st0 args frameCap frame rootId then
-    vspaceMapPerformAt ec args.asid args.vaddr frame.base args.perms rootId
-      (frameCapObjId frameCap) frameCnode frameSlot st0
-  else vspaceRemapMapFallback tid ec args.asid args.vaddr args.frame args.perms st0
+    (rootId : SeLe4n.ObjId) : Bool :=
+  vspaceUnmapAdmittedAt st args.asid args.vaddr rootId &&
+  (match st.getVSpaceRoot? rootId with
+   | some root => root.mappings.keyOnlyAt args.vaddr
+   | none => false) &&
+  st.objects.findsInPlace (frameCapObjId frameCap)
 
-/-- **A remap at another address space is refused**, before any write: the
-capability's mapping is in place in another ASID (seL4's `Page_Map`,
-`InvalidCapability`). -/
-theorem vspaceMapOrRemapFromFrameCap_of_otherAsid (tid : SeLe4n.ThreadId)
-    (ec : Concurrency.CoreId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
-    (st : SystemState) (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
-    (hRes : resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame))
-    (h : (capabilityMappingLive st frameCap && frameCap.mapAsid != args.asid) = true) :
-    vspaceMapOrRemapFromFrameCap tid ec args st = .error .invalidCapability := by
-  simp only [Bool.and_eq_true] at h
-  unfold vspaceMapOrRemapFromFrameCap
-  simp only [hRes, h.1, h.2, ↓reduceIte]
+/-- What a remap that passes its refusals has established, one fact per check. -/
+theorem vspaceRemapRefusal_ok {st : SystemState}
+    {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {frameCap : Capability}
+    {frame : FrameObject} (h : vspaceRemapRefusal st args frameCap frame = .ok ()) :
+    ∃ oid root, Architecture.resolveAsidRoot st args.asid = some (oid, root) ∧
+      Architecture.pageMappingAligned args.vaddr frame.base = true ∧
+      frameCap.mapAsid = args.asid ∧ frameCap.mapVaddr = args.vaddr ∧
+      root.translationReady args.vaddr = true ∧
+      frameMappingAdmissible frameCap frame args.perms = .ok () ∧
+      args.vaddr.inUserWindow = true ∧
+      (∃ p, Architecture.SyscallArgDecode.validateVSpaceMapPermsForMemoryKind frame.base
+        args.perms st.machine.memoryMap = .ok p) ∧
+      args.vaddr.isCanonical = true ∧
+      frame.base.toNat < 2 ^ st.machine.physicalAddressWidth ∧
+      args.perms.wxCompliant = true := by
+  unfold vspaceRemapRefusal at h
+  split at h
+  · cases h
+  next oid root hRes =>
+  split at h
+  · cases h
+  next h1 =>
+  split at h
+  · cases h
+  next h2 =>
+  split at h
+  · cases h
+  next h3 =>
+  split at h
+  · cases h
+  next h4 =>
+  split at h
+  · cases h
+  next hAd =>
+  split at h
+  · cases h
+  next h5 =>
+  split at h
+  · cases h
+  next p hV =>
+  split at h
+  · cases h
+  next h6 =>
+  split at h
+  · cases h
+  next h7 =>
+  split at h
+  · cases h
+  next h8 =>
+  exact ⟨oid, root, hRes, by simpa using h1, by simpa using h2, by simpa using h3,
+    by simpa using h4, hAd, by simpa using h5, ⟨p, hV⟩, by simpa using h6, by simpa using h7,
+    by simpa using h8⟩
 
-/-- **A remap at another address is refused**, before any write: the
-capability's mapping is in place at another virtual address of the same ASID
-(seL4's `Page_Map`, `InvalidArgument`). -/
-theorem vspaceMapOrRemapFromFrameCap_of_otherVaddr (tid : SeLe4n.ThreadId)
-    (ec : Concurrency.CoreId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
-    (st : SystemState) (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
-    (hRes : resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame))
-    (hN : (capabilityMappingLive st frameCap && frameCap.mapAsid != args.asid) = false)
-    (h : (capabilityMappingLive st frameCap && frameCap.mapVaddr != args.vaddr) = true) :
-    vspaceMapOrRemapFromFrameCap tid ec args st = .error .invalidArgument := by
-  simp only [Bool.and_eq_true] at h
-  rw [h.1, Bool.true_and] at hN
-  unfold vspaceMapOrRemapFromFrameCap
-  simp only [hRes, h.1, h.2, hN, ↓reduceIte, Bool.false_eq_true]
+/-- A capability whose recorded address its address space no longer maps has
+no live mapping. -/
+theorem capabilityMappingLive_of_lookup_none {st : SystemState} {cap : Capability}
+    {rootId : SeLe4n.ObjId} {root : VSpaceRoot}
+    (hRes : Architecture.resolveAsidRoot st cap.mapAsid = some (rootId, root))
+    (hL : root.lookup cap.mapVaddr = none) : capabilityMappingLive st cap = false := by
+  unfold capabilityMappingLive capabilityMappedPage
+  rw [Capability.mapping]
+  by_cases hM : cap.mapped = true
+  · simp only [hM, ↓reduceIte]
+    cases cap.target with
+    | object frameId =>
+      cases hF : st.getFrame? frameId with
+      | none => simp [hF]
+      | some f => simp [hF, mappedPageLive, hRes, hL]
+    | _ => rfl
+  · simp [hM]
 
 open SeLe4n.Kernel.RobinHood in
-/-- **An admitted remap is its writes**: the unmap in place, then the map half
-on the state it leaves. -/
+/-- **A remap's map half is admitted on the state its unmap leaves**: the
+refusals passed before the unmap, and the unmap clears exactly the two the
+fresh mapping adds — the capability's live record and the address already
+mapped — so nothing it leaves behind refuses the map. -/
+theorem vspaceMapAdmittedAt_of_remapInPlace (ec : Concurrency.CoreId)
+    (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st : SystemState)
+    (frameCap : Capability) (frame : FrameObject) (rootId : SeLe4n.ObjId)
+    (hRf : vspaceRemapRefusal st args frameCap frame = .ok ())
+    (hIn : vspaceRemapInPlaceAt st args frameCap rootId = true) :
+    vspaceMapAdmittedAt (vspaceUnmapPerformAt ec args.asid args.vaddr rootId st) args frameCap
+      frame rootId = true := by
+  obtain ⟨oid, root0, hRes0, hAl, hAs, hVa, hTr, hAd, hWin, ⟨p, hV⟩, hCan, hPa, hWx⟩ :=
+    vspaceRemapRefusal_ok hRf
+  unfold vspaceRemapInPlaceAt at hIn
+  simp only [Bool.and_eq_true] at hIn
+  obtain ⟨⟨hU, hK⟩, hFF⟩ := hIn
+  unfold vspaceUnmapAdmittedAt at hU
+  cases hGR : st.getVSpaceRoot? rootId with
+  | none => simp [hGR] at hU
+  | some root =>
+  have hR : st.objects[rootId]? = some (.vspaceRoot root) :=
+    (SystemState.getVSpaceRoot?_eq_some_iff st rootId root).1 hGR
+  simp only [hGR, Bool.and_eq_true, beq_iff_eq] at hU hK
+  obtain ⟨⟨⟨hRA, -⟩, hH⟩, hInR⟩ := hU
+  have hRes := resolveAsidRoot_of_holds hH hR hRA
+  rw [hRes] at hRes0
+  have hEq := Option.some.inj hRes0
+  simp only [Prod.mk.injEq] at hEq
+  obtain ⟨hE1, hE2⟩ := hEq
+  subst hE2
+  subst hE1
+  have hH' : st.asidTable.holds root.asid rootId = true := by rw [hRA]; exact hH
+  obtain ⟨hO, hA, hM⟩ := vspaceUnmapPerformAt_fields (ec := ec) (vaddr := args.vaddr)
+    (asid := args.asid) hR hH'
+  have hR0 : (vspaceUnmapPerformAt ec args.asid args.vaddr rootId st).objects[rootId]? =
+      some (.vspaceRoot (rootWithoutMapping args.vaddr root)) := by
+    rw [hO, RHTable_getElem?_eq_get?]
+    exact RHTable.get?_insert_self_of_findsInPlace _ hInR
+  have hGR0 : (vspaceUnmapPerformAt ec args.asid args.vaddr rootId st).getVSpaceRoot? rootId =
+      some (rootWithoutMapping args.vaddr root) :=
+    (SystemState.getVSpaceRoot?_eq_some_iff _ rootId _).2 hR0
+  have hH0 : (vspaceUnmapPerformAt ec args.asid args.vaddr rootId st).asidTable.holds
+      args.asid rootId = true := by rw [hA]; exact hH
+  have hRes0 := resolveAsidRoot_of_holds hH0 hR0 hRA
+  have hErase : (rootWithoutMapping args.vaddr root).mappings[args.vaddr]? = none := by
+    rw [RHTable_getElem?_eq_get?]
+    exact RHTable.get?_erase_self_of_keyOnlyAt _ _ hK
+  have hNotLive : capabilityMappingLive (vspaceUnmapPerformAt ec args.asid args.vaddr rootId st)
+      frameCap = false :=
+    capabilityMappingLive_of_lookup_none (by rw [hAs]; exact hRes0)
+      (by rw [hVa]; exact hErase)
+  have hTr0 : (rootWithoutMapping args.vaddr root).translationReady args.vaddr = true := hTr
+  have hA0 : (rootWithoutMapping args.vaddr root).asid = args.asid := hRA
+  unfold Architecture.pageMappingAligned at hAl
+  simp only [Bool.and_eq_true] at hAl
+  unfold vspaceMapAdmittedAt
+  rw [hAd, hNotLive, hM, hV, hGR0, hA, hO, RHTable.findsInPlace_insert_of_findsInPlace _ _ hInR,
+    RHTable.findsInPlace_insert_of_findsInPlace _ _ hInR]
+  simp [Architecture.asidTranslationReady, hRes0, hErase, hTr0, hWin, hCan, hPa, hWx,
+    Architecture.pageMappingAligned, hAl.1, hAl.2, hA0, hH, hInR, hFF]
+
+open SeLe4n.Kernel.RobinHood in
+/-- **An admitted remap is its writes**: the unmap in place, then the map in
+place on the state it leaves — no refusal after the first write. -/
 theorem vspaceMapOrRemapFromFrameCap_of_remapAdmitted (tid : SeLe4n.ThreadId)
     (ec : Concurrency.CoreId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
     (st : SystemState) (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
     (rootId : SeLe4n.ObjId)
     (hRes : resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame))
-    (hA : vspaceRemapAdmittedAt st args frameCap frame rootId = true) :
+    (hLive : capabilityMappingLive st frameCap = true)
+    (hRf : vspaceRemapRefusal st args frameCap frame = .ok ())
+    (hIn : vspaceRemapInPlaceAt st args frameCap rootId = true) :
     vspaceMapOrRemapFromFrameCap tid ec args st =
-      .ok ((), vspaceRemapMapAt tid ec args frameCap frame rootId frameSlot.cnode frameSlot.slot
+      .ok ((), vspaceMapPerformAt ec args.asid args.vaddr frame.base args.perms rootId
+        (frameCapObjId frameCap) frameSlot.cnode frameSlot.slot
         (vspaceUnmapPerformAt ec args.asid args.vaddr rootId st)) := by
-  unfold vspaceRemapAdmittedAt at hA
-  simp only [Bool.and_eq_true, beq_iff_eq] at hA
-  obtain ⟨⟨⟨⟨hLive, hAs⟩, hVa⟩, hU⟩, hC⟩ := hA
+  have hMA := vspaceMapAdmittedAt_of_remapInPlace ec args st frameCap frame rootId hRf hIn
+  have hIn' := hIn
+  unfold vspaceRemapInPlaceAt at hIn'
+  simp only [Bool.and_eq_true] at hIn'
+  obtain ⟨⟨hU, -⟩, -⟩ := hIn'
   have hU' := hU
   unfold vspaceUnmapAdmittedAt at hU'
   cases hGR : st.getVSpaceRoot? rootId with
@@ -179,7 +265,7 @@ theorem vspaceMapOrRemapFromFrameCap_of_remapAdmitted (tid : SeLe4n.ThreadId)
   have hR : st.objects[rootId]? = some (.vspaceRoot root) :=
     (SystemState.getVSpaceRoot?_eq_some_iff st rootId root).1 hGR
   simp only [hGR, Bool.and_eq_true, beq_iff_eq] at hU'
-  obtain ⟨⟨⟨hRA, -⟩, hH⟩, hIn⟩ := hU'
+  obtain ⟨⟨⟨hRA, -⟩, hH⟩, hInR⟩ := hU'
   have hH' : st.asidTable.holds root.asid rootId = true := by rw [hRA]; exact hH
   obtain ⟨hO, -, -⟩ := vspaceUnmapPerformAt_fields (ec := ec) (vaddr := args.vaddr)
     (asid := args.asid) hR hH'
@@ -191,8 +277,8 @@ theorem vspaceMapOrRemapFromFrameCap_of_remapAdmitted (tid : SeLe4n.ThreadId)
     rw [hO, RHTable_getElem?_eq_get?, RHTable_getElem?_eq_get?]
     by_cases hEq : rootId = id
     · subst hEq
-      exact .inr ⟨rfl, RHTable.get?_insert_self_of_findsInPlace _ hIn⟩
-    · exact .inl (RHTable.get?_insert_ne_of_findsInPlace _ _ hIn hEq)
+      exact .inr ⟨rfl, RHTable.get?_insert_self_of_findsInPlace _ hInR⟩
+    · exact .inl (RHTable.get?_insert_ne_of_findsInPlace _ _ hInR hEq)
   have hT : ∀ id, st0.getTcb? id = st.getTcb? id := by
     intro id; unfold SystemState.getTcb?
     rcases hGet id.toObjId with h | ⟨h0, h⟩
@@ -212,22 +298,10 @@ theorem vspaceMapOrRemapFromFrameCap_of_remapAdmitted (tid : SeLe4n.ThreadId)
     rw [resolveVSpaceMapFrame_congr tid args hT hCn hF]; exact hRes
   unfold vspaceMapOrRemapFromFrameCap
   rw [hRes]
-  simp only [hLive, hAs, hVa, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+  simp only [hLive, ↓reduceIte, hRf]
   rw [vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted ec args.asid args.vaddr rootId st hU]
-  simp only
-  unfold vspaceRemapMapAt
-  by_cases hM : vspaceMapAdmittedAt st0 args frameCap frame rootId = true
-  · rw [vspaceMapFromFrameCap_of_admitted tid ec args _ frameSlot frameCap frame rootId hRes0 hM]
-    exact congrArg (fun x => Except.ok ((), x)) (if_pos hM).symm
-  · have hM' : vspaceMapAdmittedAt st0 args frameCap frame rootId = false := by
-      simpa using hM
-    show _ = Except.ok ((), if vspaceMapAdmittedAt st0 args frameCap frame rootId = true then _ else _)
-    rw [hM']
-    simp only [Bool.false_eq_true, ↓reduceIte]
-    rw [vspaceRemapMapFallback_eq]
-    cases hFr : vspaceMapFromFrameCap tid ec args st0 with
-    | ok r => obtain ⟨⟨⟩, s⟩ := r; rfl
-    | error e => simp only [hC, ↓reduceIte]
+  exact vspaceMapFromFrameCap_of_admitted tid ec args _ frameSlot frameCap frame rootId hRes0 hMA
+
 /-- **An admitted fresh map through the remap's entry is its writes**: its
 checks read the capability's record as not in place, so the call is the fresh
 mapping (`vspaceMapFromFrameCap_of_admitted`). -/

@@ -167,11 +167,10 @@ theorem vspaceMapOrRemapFromFrameCap_mappingStage {tid : SeLe4n.ThreadId}
     {st st' : SystemState} (hW : teardownWellFormed st)
     (h : vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) :
     MappingStage st st' := by
-  rcases vspaceMapOrRemapFromFrameCap_cases h with hM | ⟨st0, hU, hM | rfl⟩
+  rcases vspaceMapOrRemapFromFrameCap_cases h with hM | ⟨st0, hU, hM⟩
   · exact vspaceMapFromFrameCap_mappingStage hW hM
   · exact (vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage hW hU).trans
       (vspaceMapFromFrameCap_mappingStage (vspaceUnmap_preserves_teardownWellFormed hW hU) hM)
-  · exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage hW hU
 
 theorem vspaceUnifyInstructionPage_mappingStage {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
     {st st' : SystemState} (h : Architecture.vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :

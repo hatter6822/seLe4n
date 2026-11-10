@@ -332,13 +332,11 @@ theorem vspaceMapOrRemapFromFrameCap_keyFrame (tid : SeLe4n.ThreadId) (ec : Core
     (hObjInv : st.objects.invExt)
     (hStep : vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  rcases vspaceMapOrRemapFromFrameCap_cases hStep with hM | ⟨st0, hU, hM | rfl⟩
+  rcases vspaceMapOrRemapFromFrameCap_cases hStep with hM | ⟨st0, hU, hM⟩
   · exact vspaceMapFromFrameCap_keyFrame tid ec args st st' hObjInv hM
   · have k0 := vspaceRootOnlyWrite_keyFrame
       (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hObjInv hU)
     exact k0.trans (vspaceMapFromFrameCap_keyFrame tid ec args st0 st' k0.2.2 hM)
-  · exact vspaceRootOnlyWrite_keyFrame
-      (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hObjInv hU)
 
 /-- **The carve's key frame** (WS-ZA ZA5.4 part 14): the carve moves no key input
 off the child's slot, which was empty before it; whatever it stores there — a

@@ -878,17 +878,21 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           resolveVSpaceMapFrameK tid args st (fun e => .error (e, st))
             (fun frameCnode frameSlot frameCap frame =>
               -- seL4's `Page_Map` on a capability whose mapping is in place:
-              -- refused at another ASID or address, read before any write
-              -- (`vspaceMapOrRemapFromFrameCap_of_otherAsid`, `_of_otherVaddr`);
-              -- at its own, the unmap in place, then the map half on the state
-              -- it leaves (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).
-              if capabilityMappingLive st frameCap && frameCap.mapAsid != args.asid then
-                .error (.invalidCapability, st)
-              else if capabilityMappingLive st frameCap && frameCap.mapVaddr != args.vaddr then
-                .error (.invalidArgument, st)
-              else if vspaceRemapAdmittedAt st args frameCap frame rootId then
-                .ok ((), vspaceRemapMapAt tid executingCore args frameCap frame rootId frameCnode
-                  frameSlot (vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st))
+              -- every refusal read before any write, in seL4's order
+              -- (`vspaceMapOrRemapFromFrameCap_of_remapRefused`); admitted, the
+              -- unmap in place, then the map in place on the state it leaves
+              -- (`vspaceMapOrRemapFromFrameCap_of_remapAdmitted`).
+              if capabilityMappingLive st frameCap then
+                match vspaceRemapRefusal st args frameCap frame with
+                | .error e => .error (e, st)
+                | .ok () =>
+                  if vspaceRemapInPlaceAt st args frameCap rootId then
+                    .ok ((), vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
+                      args.perms rootId (frameCapObjId frameCap) frameCnode frameSlot
+                      (vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st))
+                  else
+                    RefusalCarrying.ofChecked false (fun st => st)
+                      (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
               else
                 RefusalCarrying.ofChecked (vspaceMapAdmittedAt st args frameCap frame rootId)
                   (fun st => vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
@@ -1498,20 +1502,24 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
             obtain ⟨frameSlot, frameCap, frame⟩ := triple
             dsimp only
             split
-            · next hOA =>
-              simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
-                ↓reduceIte, vspaceMapOrRemapFromFrameCap_of_otherAsid tid executingCore args st
-                  frameSlot frameCap frame hRs hOA]
-            split
-            · next hOA hOV =>
-              simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
-                ↓reduceIte, vspaceMapOrRemapFromFrameCap_of_otherVaddr tid executingCore args st
-                  frameSlot frameCap frame hRs (by simpa using hOA) hOV]
-            split
-            · next hRm =>
-              simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
-                ↓reduceIte, vspaceMapOrRemapFromFrameCap_of_remapAdmitted tid executingCore args st
-                  frameSlot frameCap frame rootId hRs hRm]
+            · next hLive =>
+              cases hRf : vspaceRemapRefusal st args frameCap frame with
+              | error e =>
+                simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
+                  ↓reduceIte, vspaceMapOrRemapFromFrameCap_of_remapRefused tid executingCore args st
+                    frameSlot frameCap frame e hRs hLive hRf]
+              | ok u =>
+                cases u
+                dsimp only
+                split
+                · next hIn =>
+                  simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu,
+                    Bool.false_eq_true, ↓reduceIte,
+                    vspaceMapOrRemapFromFrameCap_of_remapAdmitted tid executingCore args st
+                      frameSlot frameCap frame rootId hRs hLive hRf hIn]
+                · apply RefusalCarrying.ofChecked_eq
+                  intro h
+                  cases h
             · apply RefusalCarrying.ofChecked_eq
               intro hA
               simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,

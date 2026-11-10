@@ -322,12 +322,11 @@ theorem vspaceMapOrRemapFromFrameCap_savedRegsKept {tid : SeLe4n.ThreadId} {ec :
     (hInv : st.objects.invExt)
     (hStep : vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) :
     savedRegsKept st st' := by
-  rcases vspaceMapOrRemapFromFrameCap_cases hStep with hM | ⟨st0, hU, hM | rfl⟩
+  rcases vspaceMapOrRemapFromFrameCap_cases hStep with hM | ⟨st0, hU, hM⟩
   · exact vspaceMapFromFrameCap_savedRegsKept hInv hM
   · exact (vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv hU).trans
       (vspaceMapFromFrameCap_savedRegsKept
         (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv hU).1 hM)
-  · exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv hU
 
 /-- **The instruction unification** is cache maintenance: it writes no object. -/
 theorem vspaceUnifyInstructionPage_savedRegsKept {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}

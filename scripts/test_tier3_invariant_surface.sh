@@ -3998,9 +3998,17 @@ run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?
 run_check "INVARIANT" rg -n '^              vspaceMapOrRemapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
 # seL4's Page_Map remap: a live mapping on the frame capability is remapped
 # only at the ASID and address it records — a different ASID is refused as an
-# invalid capability, a different address as an invalid argument.
+# invalid capability, a different address as an invalid argument — and every
+# refusal is decided in seL4's decode order (the ASID's root, the alignment,
+# the record's ASID, its address, the walk) before the unmap writes; a refused
+# map half no longer leaves the unmap standing.
 run_check "INVARIANT" rg -n '^def vspaceMapOrRemapFromFrameCap \(tid' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def vspaceMapOrRemapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*        if frameCap\.mapAsid != args\.asid then \.error \.invalidCapability\n        else if frameCap\.mapVaddr != args\.vaddr then \.error \.invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceRemapRefusal[^\n]*(\n([ \t][^\n]*)?)*  match Architecture\.resolveAsidRoot st args\.asid with\n  \| none => \.error \.asidNotBound\n  \| some \(_, root\) =>\n    if !Architecture\.pageMappingAligned args\.vaddr frame\.base then \.error \.alignmentError\n    else if frameCap\.mapAsid != args\.asid then \.error \.invalidCapability\n    else if frameCap\.mapVaddr != args\.vaddr then \.error \.invalidArgument\n    else if !root\.translationReady args\.vaddr then \.error \.translationFault' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapOrRemapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*      if capabilityMappingLive st frameCap then\n        match vspaceRemapRefusal st args frameCap frame with\n        \| \.error e => \.error e\n        \| \.ok \(\) =>\n          match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore\n              args\.asid args\.vaddr st with\n          \| \.error e => \.error e\n          \| \.ok \(\(\), st0\) => vspaceMapFromFrameCap tid executingCore args st0$' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'vspaceRemapChecks|vspaceRemapMapFallback|vspaceRemapAdmittedAt' SeLe4n tests
+run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_of_remapRefused($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapAdmittedAt_of_remapInPlace($|[ ({:\[\]])' SeLe4n/Kernel/VSpaceRemapPerform.lean
+run_check "INVARIANT" rg -n '^theorem RHTable\.get\?_erase_self_of_keyOnlyAt($|[ ({:\[\]])' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapOrRemapFromFrameCap_of_remapAdmitted($|[ ({:\[\]])' SeLe4n/Kernel/VSpaceRemapPerform.lean
