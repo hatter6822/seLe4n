@@ -2327,13 +2327,28 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
 /// OBSERVATION ONLY, removed before the PR: a trip whose answer is printed
 /// and accepted whatever it is, so one run reads the answers to pin.
 #[cfg(feature = "hw_target")]
-const OBSERVED_ANSWER: u64 = u64::MAX;
+/// `KernelError.objectNotFound`, `.illegalAuthority` and `.invalidTypeTag`'s
+/// discriminants (`sele4n-types`).
+#[cfg(feature = "hw_target")]
+const OBJECT_NOT_FOUND: u64 = 1;
+#[cfg(feature = "hw_target")]
+const ILLEGAL_AUTHORITY: u64 = 3;
+#[cfg(feature = "hw_target")]
+const INVALID_TYPE_TAG: u64 = 33;
 
 /// A call past its inline words (WS-UC coverage of the `overflowed` route),
 /// five words with the root task's IPC buffer mapped, on a capability whose
-/// kind the syscall does not take, so the arm refuses and changes nothing.
+/// kind or rights the syscall does not take (or, for the untyped calls, with
+/// an argument the decode or the object refuses), so the arm refuses with
+/// `code` and changes nothing.
 #[cfg(feature = "hw_target")]
-const fn overflowed(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) -> RoundTrip {
+const fn overflowed(
+    name: &'static str,
+    syscall: u64,
+    cptr: u64,
+    msg_len: u64,
+    code: u64,
+) -> RoundTrip {
     RoundTrip {
         name,
         syscall,
@@ -2343,7 +2358,7 @@ const fn overflowed(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) -
         primed: None,
         blocks: false,
         caps_or_badges: None,
-        returns: Some((OBSERVED_ANSWER, None)),
+        returns: refused(code),
     }
 }
 
@@ -3246,48 +3261,48 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         // not take, so its arm refuses and changes nothing: the untyped reset
         // on the untyped while its frame child lives, the declassifications on
         // the boot endpoint, whose flow the base lattice already permits.
-        overflowed("overflowed-receive", RECEIVE, CNODE_CAP, 5),
-        overflowed("overflowed-cspace-mint", CSPACE_MINT, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-cspace-copy", CSPACE_COPY, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-cspace-move", CSPACE_MOVE, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-cspace-delete", CSPACE_DELETE, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-cspace-revoke", CSPACE_REVOKE, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-vspace-map", VSPACE_MAP, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-vspace-unmap", VSPACE_UNMAP, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-vspace-unify-instruction", VSPACE_UNIFY_INSTRUCTION, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-service-revoke", SERVICE_REVOKE, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-service-query", SERVICE_QUERY, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-sched-context-bind", SCHED_CONTEXT_BIND, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-sched-context-unbind", SCHED_CONTEXT_UNBIND, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-sched-context-consumed", SCHED_CONTEXT_CONSUMED, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-sched-context-yield-to", SCHED_CONTEXT_YIELD_TO, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-tcb-suspend", TCB_SUSPEND, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-tcb-resume", TCB_RESUME, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-tcb-set-priority", TCB_SET_PRIORITY, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-tcb-set-ipc-buffer", TCB_SET_IPC_BUFFER, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-tcb-set-affinity", TCB_SET_AFFINITY, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-tcb-bind-notification", TCB_BIND_NOTIFICATION, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-tcb-unbind-notification", TCB_UNBIND_NOTIFICATION, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-tcb-set-fault-handler", TCB_SET_FAULT_HANDLER, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-tcb-set-space", TCB_SET_SPACE, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-mint-reply-cap", MINT_REPLY_CAP, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-irq-handler-ack", IRQ_HANDLER_ACK, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-irq-control-get", IRQ_CONTROL_GET, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-irq-handler-set-notification", IRQ_HANDLER_SET_NOTIFICATION, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-irq-handler-clear", IRQ_HANDLER_CLEAR, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-page-table-map", PAGE_TABLE_MAP, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-page-table-unmap", PAGE_TABLE_UNMAP, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-audit-read", AUDIT_READ, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-audit-drain", AUDIT_DRAIN, NOTIFICATION_CAP, 5),
-        overflowed("overflowed-service-register", SERVICE_REGISTER, NOTIFICATION_CAP, 6),
-        overflowed("overflowed-untyped-reset", UNTYPED_RESET, UNTYPED_CAP, 5),
-        overflowed("overflowed-declassify", DECLASSIFY, ENDPOINT_CAP, 5),
-        overflowed("overflowed-declassify-signal", DECLASSIFY_SIGNAL, ENDPOINT_CAP, 5),
+        overflowed("overflowed-receive", RECEIVE, CNODE_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-cspace-mint", CSPACE_MINT, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
+        overflowed("overflowed-cspace-copy", CSPACE_COPY, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
+        overflowed("overflowed-cspace-move", CSPACE_MOVE, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
+        overflowed("overflowed-cspace-delete", CSPACE_DELETE, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
+        overflowed("overflowed-cspace-revoke", CSPACE_REVOKE, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
+        overflowed("overflowed-vspace-map", VSPACE_MAP, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
+        overflowed("overflowed-vspace-unmap", VSPACE_UNMAP, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
+        overflowed("overflowed-vspace-unify-instruction", VSPACE_UNIFY_INSTRUCTION, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
+        overflowed("overflowed-service-revoke", SERVICE_REVOKE, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
+        overflowed("overflowed-service-query", SERVICE_QUERY, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
+        overflowed("overflowed-sched-context-bind", SCHED_CONTEXT_BIND, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-sched-context-unbind", SCHED_CONTEXT_UNBIND, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
+        overflowed("overflowed-sched-context-consumed", SCHED_CONTEXT_CONSUMED, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-sched-context-yield-to", SCHED_CONTEXT_YIELD_TO, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-tcb-suspend", TCB_SUSPEND, NOTIFICATION_CAP, 5, INVALID_ARGUMENT),
+        overflowed("overflowed-tcb-resume", TCB_RESUME, NOTIFICATION_CAP, 5, INVALID_ARGUMENT),
+        overflowed("overflowed-tcb-set-priority", TCB_SET_PRIORITY, NOTIFICATION_CAP, 5, INVALID_ARGUMENT),
+        overflowed("overflowed-tcb-set-ipc-buffer", TCB_SET_IPC_BUFFER, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
+        overflowed("overflowed-tcb-set-affinity", TCB_SET_AFFINITY, NOTIFICATION_CAP, 5, INVALID_ARGUMENT),
+        overflowed("overflowed-tcb-bind-notification", TCB_BIND_NOTIFICATION, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-tcb-unbind-notification", TCB_UNBIND_NOTIFICATION, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
+        overflowed("overflowed-tcb-set-fault-handler", TCB_SET_FAULT_HANDLER, NOTIFICATION_CAP, 5, OBJECT_NOT_FOUND),
+        overflowed("overflowed-tcb-set-space", TCB_SET_SPACE, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-mint-reply-cap", MINT_REPLY_CAP, NOTIFICATION_CAP, 5, ILLEGAL_AUTHORITY),
+        overflowed("overflowed-irq-handler-ack", IRQ_HANDLER_ACK, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-irq-control-get", IRQ_CONTROL_GET, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-irq-handler-set-notification", IRQ_HANDLER_SET_NOTIFICATION, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-irq-handler-clear", IRQ_HANDLER_CLEAR, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-page-table-map", PAGE_TABLE_MAP, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-page-table-unmap", PAGE_TABLE_UNMAP, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-audit-read", AUDIT_READ, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-audit-drain", AUDIT_DRAIN, NOTIFICATION_CAP, 5, INVALID_CAPABILITY),
+        overflowed("overflowed-service-register", SERVICE_REGISTER, NOTIFICATION_CAP, 6, OBJECT_NOT_FOUND),
+        overflowed("overflowed-untyped-reset", UNTYPED_RESET, UNTYPED_CAP, 5, REVOCATION_REQUIRED),
+        overflowed("overflowed-declassify", DECLASSIFY, ENDPOINT_CAP, 5, FLOW_DENIED),
+        overflowed("overflowed-declassify-signal", DECLASSIFY_SIGNAL, ENDPOINT_CAP, 5, INVALID_CAPABILITY),
         // The untyped retype past its inline words, its type tag one no
         // object kind has, refused by the argument decode.
         RoundTrip {
             msg: [0xff, 0, 0, 0],
-            ..overflowed("overflowed-untyped-retype", UNTYPED_RETYPE, UNTYPED_CAP, 5)
+            ..overflowed("overflowed-untyped-retype", UNTYPED_RETYPE, UNTYPED_CAP, 5, INVALID_TYPE_TAG)
         },
         invocation(
             "sched-context-bind",
@@ -11613,8 +11628,7 @@ fn dispatch_round_trip_at(
         // returns the fault's tag as its label, which the round trip names
         // exactly (`returns`).
         Ok(crate::svc_dispatch::SvcOutcome::Frame(regs))
-            if regs[1] >> 12 == 0
-                || trip.returns.is_some_and(|(x1, _)| regs[1] == x1 || x1 == OBSERVED_ANSWER) =>
+            if regs[1] >> 12 == 0 || trip.returns.is_some_and(|(x1, _)| regs[1] == x1) =>
         {
             Dispatched::Returned(regs)
         }
@@ -12675,7 +12689,7 @@ fn heap_allocations_round_trip_resuming(
         return Some(false);
     };
     if let (Dispatched::Returned(regs), Some((x1, x2))) = (&outcome, trip.returns) {
-        if (regs[1] != x1 && x1 != OBSERVED_ANSWER) || x2.is_some_and(|x2| regs[2] != x2) {
+        if regs[1] != x1 || x2.is_some_and(|x2| regs[2] != x2) {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: returned x1={:#x} x2={:#x}, \
                  expected x1={x1:#x} x2={x2:?}",

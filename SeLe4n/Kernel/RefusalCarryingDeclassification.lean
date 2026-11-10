@@ -1950,6 +1950,29 @@ builds no receiver (`declassifySignalPlanRefusal_eq_code`). -/
   · rfl
   · rcases declassifiedSignalReceiverCode st nid with _ | k <;> rfl
 
+/-- **The plan's refusal on a present notification**: `declassifySignalPlanRefusal`
+when the capability names a notification, `0` otherwise.  The notification's
+lookup is matched where it is made and its `some` discarded, so a caller that
+reads the notification again (the admitted forms below) holds no option across
+the test (`declassifySignalPresentRefusal_ne_zero`). -/
+@[inline] def declassifySignalPresentRefusal (ctx : LabelingContext) (st : SystemState)
+    (signaler : SeLe4n.ThreadId) (nid : SeLe4n.ObjId) : Nat :=
+  match st.getNotification? nid with
+  | some _ => declassifySignalPlanRefusal ctx st signaler nid
+  | none => 0
+
+theorem declassifySignalPresentRefusal_ne_zero {ctx : LabelingContext} {st : SystemState}
+    {signaler : SeLe4n.ThreadId} {nid : SeLe4n.ObjId}
+    (h : declassifySignalPresentRefusal ctx st signaler nid ≠ 0) :
+    (st.getNotification? nid).isSome = true ∧
+      declassifySignalPresentRefusal ctx st signaler nid =
+        declassifySignalPlanRefusal ctx st signaler nid ∧
+      declassifySignalPlanRefusal ctx st signaler nid ≠ 0 := by
+  unfold declassifySignalPresentRefusal at h ⊢
+  split at h
+  · next hN => exact ⟨by simp only [hN, Option.isSome_some], rfl, h⟩
+  · exact absurd rfl h
+
 /-- The error a refused plan's code names. -/
 @[inline] def declassifySignalPlanRefusalError (code : Nat) : KernelError :=
   if code = 1 then .declassificationDenied else .declassificationDeniedAtReceiver
@@ -2067,9 +2090,8 @@ writing the records its one or two downgrades owe), or else the general one
       else if cap.hasRight (syscallRequiredRight .declassifySignal) then
         match cap.target, st.scheduler.currentOnCore executingCore with
         | .object nid, some signaler =>
-          if (st.getNotification? nid).isSome && declassifySignalPlanRefusal ctx st signaler nid != 0
-          then
-            .error (declassifySignalPlanRefusalError (declassifySignalPlanRefusal ctx st signaler nid),
+          if declassifySignalPresentRefusal ctx st signaler nid != 0 then
+            .error (declassifySignalPlanRefusalError (declassifySignalPresentRefusal ctx st signaler nid),
               st)
           else
           if declassifySignalStoredAdmitted ctx st tid signaler nid then
@@ -2296,9 +2318,10 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
       · next nid signaler hT hCur =>
         split
         · next hR =>
-          simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hR
-          rw [auditedArmSpec_declassifySignal_planRefused ctx decoded.capAddr regs tid executingCore
-            cap st nid signaler hT hCur hR.1 hR.2]
+          simp only [bne_iff_ne, ne_eq] at hR
+          obtain ⟨hP, hEq, hR'⟩ := declassifySignalPresentRefusal_ne_zero hR
+          rw [hEq, auditedArmSpec_declassifySignal_planRefused ctx decoded.capAddr regs tid executingCore
+            cap st nid signaler hT hCur hP hR']
         · split
           · next hA =>
             have hA' := hA

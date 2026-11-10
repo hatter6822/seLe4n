@@ -131,6 +131,65 @@ theorem routedOverflowed_cases {sid : SyscallId} (h : routedOverflowed sid = tru
       sid = .schedContextConfigure ∨ sid = .serviceRegister ∨ sid = .yield := by
   cases sid <;> simp_all [routedOverflowed, routedOverflowOne]
 
+/-- **The overflowed route's operand arm**: the arm `dispatchOverflowedCheckedR`
+runs behind the operand check, for every kind of call the route admits but the
+yield, which has no operand (`dispatchOverflowedCheckedR_eq_operand`).  A
+specification: the compiled entry runs each kind's arm out of line
+(`RoutedArms.Overflowed`). -/
+noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (len : Nat) (w : UInt64)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) :
+    Option Capability → RefusalCarrying Unit :=
+  if routedInvocation sid then invocationOperandArmR ctx sid capAddr rf tid executingCore
+  else if routedAudited sid then auditedOperandArmR ctx sid rf capAddr tid executingCore
+  else
+  match sid with
+  | .notificationSignal =>
+    signalOperandArmThenTaintR ctx (.ok { badge := Badge.ofWord (readRegWord rf ⟨2⟩) }) tid
+      executingCore (syscallRequiredRight .notificationSignal)
+  | .notificationWait =>
+    waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait)
+  | .receive =>
+    receiveOperandArmThenTaintR ctx tid len (SeLe4n.CPtr.ofWord (readRegWord rf ⟨2⟩))
+      executingCore (syscallRequiredRight .receive)
+  | .schedContextConfigure => configureOperandArmR rf w tid
+  | .serviceRegister => serviceRegisterOperandArmR ctx tid rf w
+  | _ => fun _ st => .error (.invalidCapability, st)
+
+/-- Every overflowed call but the yield is the operand dispatch of its arm. -/
+theorem dispatchOverflowedCheckedR_eq_operand (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (len : Nat) (w : UInt64)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (h : routedOverflowed sid = true) (hY : sid ≠ .yield) :
+    dispatchOverflowedCheckedR ctx sid capAddr rf len w tid executingCore =
+      dispatchOperandCheckedR capAddr tid executingCore
+        (overflowedArmOf ctx sid capAddr rf len w tid executingCore) := by
+  unfold dispatchOverflowedCheckedR overflowedArmOf
+  by_cases hI : routedInvocation sid = true
+  · simp only [hI, ↓reduceIte]; rfl
+  by_cases hA : routedAudited sid = true
+  · simp only [hI, hA, ↓reduceIte, Bool.false_eq_true]; rfl
+  simp only [hI, hA, ↓reduceIte, Bool.false_eq_true]
+  rcases routedOverflowed_cases h (by simpa using hI) (by simpa using hA) with
+    rfl | rfl | rfl | rfl | rfl | rfl
+  all_goals first | rfl | exact absurd rfl hY
+
+/-- The overflowed arm refuses a missing operand as the operand check does. -/
+theorem overflowedArmOf_none (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (len : Nat) (w : UInt64)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (s : SystemState) :
+    overflowedArmOf ctx sid capAddr rf len w tid executingCore none s =
+      .error (.invalidCapability, s) := by
+  unfold overflowedArmOf
+  by_cases hI : routedInvocation sid = true
+  · simp only [hI, ↓reduceIte]; rfl
+  by_cases hA : routedAudited sid = true
+  · simp only [hI, hA, ↓reduceIte, Bool.false_eq_true]
+    unfold auditedOperandArmR
+    cases sid <;> first | rfl | exact absurd hA (by decide)
+  simp only [hI, hA, ↓reduceIte, Bool.false_eq_true]
+  cases sid <;> rfl
+
 /-- An overflowed decode's words read as the inline words below four, and as
 the inline words and then slot 0's word below five. -/
 theorem overflowedDecode_agree (S : SystemState) (tid : SeLe4n.ThreadId)

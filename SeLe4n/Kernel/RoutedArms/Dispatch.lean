@@ -180,7 +180,7 @@ compiled form `syscallEntryCheckedK` runs as. -/
   cases o with
   | tcb tcb =>
     dsimp only
-    cases Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
+    cases hRt : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout tcb.registerContext 32 with
     | signal capAddr badge =>
       simp only [signalRoutedArm, entryReportOutcome_operand]; rfl
     | wait capAddr => simp only [waitRoutedArm, entryReportOutcome_operand]; rfl
@@ -229,10 +229,20 @@ compiled form `syscallEntryCheckedK` runs as. -/
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl
     | overflowed sid capAddr len =>
-      simp only [overflowedRoutedArm_eq, overflowedArmWith_eq_spec, overflowedArmSpec, hO]
-      simp only [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
-        entryReportOutcome_general, overflowedOperandR_eq]
-      rfl
+      obtain ⟨-, -, -, -, -, hOv, -⟩ :=
+        Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowed st tid _ _ 32
+          sid capAddr len hRt
+      dsimp only
+      rw [overflowedRoutedArm_eq ctx executingCore tid sid capAddr.word len st hOv]
+      by_cases hY : sid = .yield
+      · subst hY
+        simp only [ne_eq, not_true_eq_false, ↓reduceIte, overflowedArmSpec, hO,
+          ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_general]
+        rfl
+      · simp only [hY, ne_eq, not_false_eq_true, ↓reduceIte, overflowedLongArmWith, hO,
+          ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_general,
+          entryReportOutcome_long]
+        rfl
     | shortArgs sid capAddr =>
       simp only [shortArgsRoutedArm, entryReportOutcome_operand]; rfl
     | refused e => simp only [entryReportOutcome_general]

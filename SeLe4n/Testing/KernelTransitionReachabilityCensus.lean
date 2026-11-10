@@ -1213,8 +1213,7 @@ def nonExecutedTransitionsPlain : List Name :=
   -- The overflowed and short-argument routes' specifications, which the
   -- compiled entry runs as the per-kind arms proven equal to them
   -- (`overflowedRoutedArm_eq`, `overflowedArmWith_eq_spec`,
-  -- `overflowedOperandR_eq`, `shortArgsRoutedArm`).
-  , `SeLe4n.Kernel.overflowedOperandR
+  -- `dispatchOverflowedCheckedR_eq_operand`, `shortArgsRoutedArm`).
   , `SeLe4n.Kernel.overflowedArmSpec
   , `SeLe4n.Kernel.dispatchShortArgsCheckedR
   -- The long and one-overflow-word routes' operand dispatches as the
