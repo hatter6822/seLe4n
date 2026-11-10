@@ -350,33 +350,35 @@ theorem applyPriorityChangeState_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
   rfl
 
 /-- WS-ZA ZA5.2: `setPriorityOnCore`'s state effect when it is admitted: the
-target's TCB read and the change applied (`applyPriorityChangeState`). -/
+target's TCB read and the change applied (`applyPriorityChangeState`), then,
+when the change demotes the thread the executing core runs, the local
+reschedule (seL4's `rescheduleRequired` on the current thread), which never
+refuses (`handleRescheduleSgiOnCore_eq_state`).  Whether it runs is read off
+the pre-state before the first write, so the state is not held across one. -/
 @[inline] def setPriorityPerform (st : SystemState) (tid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) (executingCore : CoreId) : SystemState :=
   match st.getTcb? tid with
-  | some tcb => applyPriorityChangeState st tid tcb newPriority executingCore
+  | some tcb =>
+    let here := decide (newPriority.val < (getCurrentPriority st tcb).val) &&
+      (runningCoreOf? st tid).isEqSome executingCore
+    let st' := applyPriorityChangeState st tid tcb newPriority executingCore
+    if here then handleRescheduleOnCoreState st' executingCore else st'
   | none => st
 
 /-- WS-ZA ZA5.2: `setPriorityOnCore`'s checks, read before anything is written:
 the caller is a stored TCB whose maximum controlled priority admits the new one,
-the target is a stored TCB, and the change does not demote a thread the executing
-core runs (that reschedule runs here and may refuse, so it takes the general
-path).  When they pass the operation's state is `setPriorityPerform`
-(`setPriorityOnCore_of_admitted`). -/
+and the target is a stored TCB.  When they pass the operation's state is
+`setPriorityPerform` (`setPriorityOnCore_of_admitted`): the local reschedule a
+demotion of the running thread takes never refuses. -/
 @[inline] def setPriorityAdmitted (st : SystemState)
     (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
-    (executingCore : CoreId) : Bool :=
+    (_executingCore : CoreId) : Bool :=
   match st.getTcb? vCallerTid.val with
   | none => false
   | some callerTcb =>
     match validatePriorityAuthority callerTcb newPriority with
     | .error _ => false
-    | .ok () =>
-      match st.getTcb? vTargetTid.val with
-      | none => false
-      | some targetTcb =>
-        !(decide (newPriority.val < (getCurrentPriority st targetTcb).val) &&
-          (runningCoreOf? st vTargetTid.val).isEqSome executingCore)
+    | .ok () => (st.getTcb? vTargetTid.val).isSome
 
 theorem setPriorityOnCore_of_admitted (st : SystemState)
     (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
@@ -394,22 +396,31 @@ theorem setPriorityOnCore_of_admitted (st : SystemState)
       cases hT : st.getTcb? vTargetTid.val with
       | none => simp [hC, hA, hT] at h
       | some targetTcb =>
-        simp only [hC, hA, hT] at h
         unfold setPriorityOnCore setPriorityPerform applyPriorityChangeOnCore
-        simp only [hC, hA, hT, applyPriorityChangeState_eq]
-        unfold priorityRescheduleOnCore
+        simp only [hC, hA, hT, ← applyPriorityChangeState_eq]
+        obtain ⟨sgi, hS⟩ := priorityRescheduleOnCore_eq_state
+          (applyPriorityChangeState st vTargetTid.val targetTcb newPriority executingCore)
+          (runningCoreOf? st vTargetTid.val) executingCore
+          (decide (newPriority.val < (getCurrentPriority st targetTcb).val))
+        refine ⟨sgi, ?_⟩
+        rw [hS]
+        congr 2
+        unfold priorityRescheduleOnCoreState
         by_cases hP : decide (newPriority.val < (getCurrentPriority st targetTcb).val) = true
-        · rw [if_pos hP]
-          rw [hP, Bool.true_and, Bool.not_eq_true'] at h
-          cases hR : runningCoreOf? st vTargetTid.val with
-          | none => exact ⟨none, rfl⟩
+        · rw [if_pos hP, hP, Bool.true_and]
+          cases runningCoreOf? st vTargetTid.val with
+          | none => rfl
           | some rc =>
-            rw [hR] at h
-            have hNe : (rc == executingCore) = false := h
-            simp only [hNe, Bool.false_eq_true, ↓reduceIte]
-            exact ⟨_, rfl⟩
+            by_cases hE : (rc == executingCore) = true
+            · have hE' : (some rc).isEqSome executingCore = true := by
+                simpa [Option.isEqSome] using hE
+              simp only [if_pos hE, if_pos hE']
+            · have hE' : (some rc).isEqSome executingCore = false := by
+                simpa [Option.isEqSome] using hE
+              simp only [hE, hE', Bool.false_eq_true, ↓reduceIte]
         · rw [if_neg hP]
-          exact ⟨none, rfl⟩
+          simp only [Bool.not_eq_true] at hP
+          rw [hP, Bool.false_and]; rfl
 
 /-- WS-SM SM8.B: a rejected authority check leaves the state untouched — both
 per-core ops are fail-closed, exactly as their single-core originals. -/

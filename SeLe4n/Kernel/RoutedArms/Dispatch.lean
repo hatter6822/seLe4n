@@ -134,6 +134,32 @@ private theorem entryReportOutcome_operand {β : Type}
   rw [dispatchOperandCheckedK_map (entryReportOutcome kGen kRes kLook)]
   simp only [entryReportOutcome_general, entryReportOutcome_resolved, entryReportOutcome_lookup]
 
+/-- A long route's arm, reported and handed on, is the continued entry's
+filled operand dispatch into its own continuations. -/
+private theorem entryReportOutcome_long {β : Type}
+    (kGen kRes : Except (KernelError × SystemState) (Unit × SystemState) → β)
+    (kLook : KernelError → SystemState → β) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
+    (n : Nat) (st : SystemState) :
+    entryReportOutcome kGen kRes kLook
+        (longOperandK capAddr tid executingCore arm n st entryReportGeneral
+          entryReportResolved entryReportLookup) =
+      longOperandK capAddr tid executingCore arm n st kGen kRes kLook := by
+  rw [longOperandK_map (entryReportOutcome kGen kRes kLook)]
+  simp only [entryReportOutcome_general, entryReportOutcome_resolved, entryReportOutcome_lookup]
+
+private theorem entryReportOutcome_overflowOne {β : Type}
+    (kGen kRes : Except (KernelError × SystemState) (Unit × SystemState) → β)
+    (kLook : KernelError → SystemState → β) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
+    (st : SystemState) :
+    entryReportOutcome kGen kRes kLook
+        (overflowOneOperandK capAddr tid executingCore arm st entryReportGeneral
+          entryReportResolved entryReportLookup) =
+      overflowOneOperandK capAddr tid executingCore arm st kGen kRes kLook := by
+  rw [overflowOneOperandK_map (entryReportOutcome kGen kRes kLook)]
+  simp only [entryReportOutcome_general, entryReportOutcome_resolved, entryReportOutcome_lookup]
+
 /-- **The routed entry is the continued entry**, for every continuation: the
 compiled form `syscallEntryCheckedK` runs as. -/
 @[csimp] theorem syscallEntryCheckedK_eq_routed :
@@ -176,28 +202,29 @@ compiled form `syscallEntryCheckedK` runs as. -/
     | overflowOne sid capAddr =>
       simp only [overflowOneRoutedArm, hO]
       rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
-      simp only [entryReportOutcome_general]; rfl
+      simp only [entryReportOutcome_general, entryReportOutcome_overflowOne]; rfl
     | sendLong capAddr msgInfo =>
       simp only [sendLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
-        entryReportOutcome_general]
+        entryReportOutcome_general, entryReportOutcome_long]
       rfl
     | callLong capAddr msgInfo =>
       simp only [callLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
-        entryReportOutcome_general]
+        entryReportOutcome_general, entryReportOutcome_long]
       rfl
     | replyLong capAddr msgInfo =>
       simp only [replyLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
-        entryReportOutcome_general]
+        entryReportOutcome_general, entryReportOutcome_long]
       rfl
     | replyRecvLong capAddr msgInfo =>
       simp only [replyRecvLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
-        entryReportOutcome_general]
+        entryReportOutcome_general, entryReportOutcome_long]
       rfl
     | transferring sid capAddr msgInfo =>
       by_cases hS : msgInfo.length ≤ 4
       · simp only [transferringRoutedArm, hO, hS, ↓reduceIte, entryReportOutcome_operand]; rfl
       · simp only [transferringRoutedArm, hO, hS, ↓reduceIte,
-          ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_general]
+          ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_general,
+          entryReportOutcome_long]
         rfl
     | audited sid capAddr =>
       simp only [auditedRoutedArm, hO, entryReportOutcome_operand]; rfl

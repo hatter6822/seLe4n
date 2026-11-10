@@ -31,7 +31,8 @@ open SeLe4n.Model
 /-- **The one-overflow-word arm**: the overflow word read, then
 `dispatchOverflowOneCheckedR` on the state with this core's TLB holding the
 buffer's translation, a refusal handing back the TLB the entry held; its
-result reported under the entry's first continuation. -/
+refusal reported under the entry's resolved or lookup continuation as the
+dispatch told them apart, a result under the first. -/
 @[noinline] def overflowOneRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (st : SystemState) :
     SystemState :=
@@ -39,18 +40,9 @@ result reported under the entry's first continuation. -/
   | some (.tcb tcb) =>
     SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
       (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
-      (fun w => entryReportGeneral (
-        if SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid then
-          dispatchOverflowOneCheckedR ctx sid (SeLe4n.CPtr.ofWord capWord) tcb.registerContext w
-            tid executingCore st
-        else
-          let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
-          match dispatchOverflowOneCheckedR ctx sid (SeLe4n.CPtr.ofWord capWord)
-              tcb.registerContext w tid executingCore
-              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) with
-          | .error (e, stF) =>
-            .error (e, SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
-          | .ok r => .ok r))
+      (fun w => overflowOneOperandK (SeLe4n.CPtr.ofWord capWord) tid executingCore
+        (overflowOneOperandArmR ctx sid tcb.registerContext w tid) st entryReportGeneral
+        entryReportResolved entryReportLookup)
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel
