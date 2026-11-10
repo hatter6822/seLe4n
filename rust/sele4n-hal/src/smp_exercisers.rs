@@ -7901,7 +7901,7 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
         [ROOT_ASID, FRAME_VADDR, MOVE_CAP, FRAME_PERMS],
     ),
     RoundTrip {
-        returns: refused(MAPPING_CONFLICT),
+        returns: refused(INVALID_CAPABILITY),
         ..invocation(
             "mapped-frame-remap",
             VSPACE_MAP,
@@ -8100,10 +8100,10 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 77] = [
 const fn refused(code: u64) -> Option<(u64, Option<u64>)> {
     Some(((crate::svc_dispatch::ERROR_LABEL_BASE + code) << 12, None))
 }
-/// `KernelError.mappingConflict`, `.translationFault` and
+/// `KernelError.invalidCapability`, `.translationFault` and
 /// `.revocationRequired`'s discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
-const MAPPING_CONFLICT: u64 = 11;
+const INVALID_CAPABILITY: u64 = 0;
 #[cfg(feature = "hw_target")]
 const TRANSLATION_FAULT: u64 = 12;
 #[cfg(feature = "hw_target")]
@@ -8111,7 +8111,7 @@ const REVOCATION_REQUIRED: u64 = 38;
 /// The ASID a carved VSpace root is given while the root task holds the first
 /// (`freshAsid?`, the least free one from 1).
 #[cfg(feature = "hw_target")]
-const CARVED_ROOT_ASID: u64 = 2;
+const CARVED_ROOT_ASID: u64 = 3;
 
 /// **WS-ZA ZA5.4 part 25: the final delete of a reply whose caller still waits
 /// on it**, run as the root task once the partner is suspended (so the roles
@@ -11292,17 +11292,15 @@ fn affinity_move_running() -> Option<bool> {
 
 /// The moved thread's own delete of its only capability, issued as that
 /// thread while it runs on core 0: the delete finalises the caller itself
-/// (its context still bound), so the dispatch restores the root task.
+/// (its context still bound), so the dispatch restores the root task, whose
+/// receive the thread's send completed.
 #[cfg(feature = "hw_target")]
-const SELF_TCB_DELETE: RoundTrip = RoundTrip {
-    blocks: true,
-    ..invocation(
-        "self-tcb-delete",
-        CSPACE_DELETE,
-        CNODE_CAP,
-        [CHAIN_TCB_SLOT, 0, 0, 0],
-    )
-};
+const SELF_TCB_DELETE: RoundTrip = invocation(
+    "self-tcb-delete",
+    CSPACE_DELETE,
+    CNODE_CAP,
+    [CHAIN_TCB_SLOT, 0, 0, 0],
+);
 /// The root task's delete of the moved thread's only capability while the
 /// thread runs on core 1: the finalisation takes it off that core
 /// (`finaliseThreadReleaseCores`) with its context still bound.
@@ -11313,6 +11311,51 @@ const REMOTE_TCB_DELETE: RoundTrip = invocation(
     CNODE_CAP,
     [CHAIN_TCB_SLOT, 0, 0, 0],
 );
+/// [`SELF_TCB_DELETE`] measured: the dispatch answers the success it computed
+/// for the caller, but the context it installed is the root task's, its
+/// receive's frame carrying the thread's marker (the trap layer returns through
+/// that context and drops the answer, `trap.rs`'s `take_restored`).
+#[cfg(feature = "hw_target")]
+fn heap_allocations_self_delete(which: &str) -> Option<bool> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    let name = SELF_TCB_DELETE.name;
+    let (outcome, before, after, resumed) = dispatch_round_trip(&SELF_TCB_DELETE);
+    let (Some(before), Some(after)) = (before, after) else {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"
+        );
+        return Some(false);
+    };
+    let Dispatched::Returned(regs) = outcome else {
+        crate::kprintln!("[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not return");
+        return Some(false);
+    };
+    if resumed.regs[2] != MOVE_MARKER {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the root task was not restored"
+        );
+        return Some(false);
+    }
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
+        regs[0],
+        regs[1]
+    );
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: deleted {:#x}/{}",
+        SELF_TCB_DELETE.cptr,
+        SELF_TCB_DELETE.msg[0]
+    );
+    if after < before {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the counter went back ({before} -> {after})"
+        );
+        return Some(false);
+    }
+    print_reading(name, core, which, before, after, window_start());
+    Some(true)
+}
+
 /// What the move's teardown leaves once the thread is gone: its context's
 /// delete, the page unmapped and deleted, and the tables taken out deepest
 /// first and deleted.
@@ -11359,7 +11402,7 @@ fn running_thread_delete(remote: bool, which: &str) -> Option<bool> {
         return Some(false);
     }
     if !remote {
-        if heap_allocations_round_trip(&SELF_TCB_DELETE, which) != Some(true) {
+        if heap_allocations_self_delete(which) != Some(true) {
             return Some(false);
         }
         return Some(deleted_thread_teardown());
@@ -11542,10 +11585,17 @@ fn heap_allocations_round_trip_resuming(
             "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: blocked, the other thread restored"
         ),
         Dispatched::Failed => return Some(false),
-        _ => {
-            let expected = if trip.blocks { "block" } else { "return" };
+        Dispatched::Returned(regs) => {
             crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not {expected}"
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not block, returned x0={:#x} x1={:#x}",
+                regs[0],
+                regs[1]
+            );
+            return Some(false);
+        }
+        Dispatched::Blocked => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not return"
             );
             return Some(false);
         }
