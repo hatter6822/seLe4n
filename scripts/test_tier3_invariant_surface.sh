@@ -5659,7 +5659,9 @@ run_check "INVARIANT" rg -n '^        frame\.spsr_el1 = sanitise_user_spsr\(word
 run_negative_check "INVARIANT" rg -n 'frame\.spsr_el1 = word\(33\)' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -U '^    if crate::trap::restore_commit\(kind, translation\)\.is_err\(\) \{\n        crate::gic::halt_all\(\);$' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n -U '^    if replaced \{\n        crate::user_translation::install_translation\(translation\);\n        crate::fp_context::set_trap_for_resume\(kind == RESTORE_KIND_USER_FP_LIVE\);$' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n -U '^    let _ = buf;\n    set_trap_for_resume\(false\);\n\}$' rust/sele4n-hal/src/fp_context.rs
+# The load's last step re-arms the trap: every statement of `load_commit`'s body
+# (indented) precedes it, and the function's closing brace follows it.
+run_check "INVARIANT" rg -n -U '^pub fn load_commit\(\) \{\n(    [^\n]*\n|\n)*    set_trap_for_resume\(false\);\n\}$' rust/sele4n-hal/src/fp_context.rs
 run_check "INVARIANT" rg -n 'switching away then keeps the result: the caller resumes with x0-x5 its syscall returned' tests/SmpSwitchToThreadSuite.lean
 # WS-BP BP7.5 (v0.36.18): a switch resumes the incoming thread with the frame
 # its TCB holds, and the two unblock paths each deliver their own error frame.

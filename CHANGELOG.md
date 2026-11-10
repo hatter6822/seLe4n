@@ -1,3 +1,54 @@
+## v0.37.11 — IPC and scheduler ordering coverage, and the reply-receive donation
+
+The coverage audit's IPC and scheduler items (13, 14, 17, 18, 19 and 22) each
+now have an exerciser scenario, measured on the first call and in the steady
+state, and every one reads 0 heap cells.  A `.replyRecv` whose pop returned
+nothing now donates a dequeued `Call` caller's context to a server holding
+none, as `.receive` and seL4-MCS's `receiveIPC` (`reply_push (canDonate)`)
+do.  This closes the third instance in `docs/REGISTERED_DEBT.md`'s WS-CB row.
+
+- **Exerciser scenarios** (`rust/sele4n-hal`, the heap gate):
+  - a queued caller under set-space, set-priority, and the root lowering
+    and raising itself where it serves no one;
+  - its `ReplyRecv`;
+  - long sends that block;
+  - queued faults of four kinds;
+  - overflow capability faults with the TLB-fill arms;
+  - IRQ get, ack and rebind on unbound handlers;
+  - yield-to that lowers, resumes and raises;
+  - remote-core ASID map and unmap, a syscall and a reschedule on a
+    vacated core, and FP/SIMD access deferred, retried and released;
+  - secondary-core ticks and reschedules on cores 1 to 3.
+- **Built in place, each proven equal to the specification**:
+  - the priority change (`setPriorityPerform`);
+  - the residency deferral (`deferResidentElsewhere`,
+    `switchToThreadOnCoreState`);
+  - the long and one-overflow operand routes' refusals (`longOperandK`,
+    `overflowOneOperandK`, `undoFillRefusalK`);
+  - a receive taking a donating caller
+    (`receiveCallDonatingTake_delivered`);
+  - a donated reply-receive taking a donating caller
+    (`replyRecvOnCore_donatedCallTake_delivered`);
+  - a reply-receive whose receive leg takes a donating caller
+    (`replyRecvOnCore_callTake_delivered`, routed as
+    `replyRecvCallTakeArmR`).
+- **The reply-receive donation** (`replyRecvPostReceiveDonation`): in its
+  `none` arm, a dequeued `Call` now runs `applyRendezvousCallDonation` and
+  then the priority walk.
+  - Nothing is donated in the same cases as seL4: a caller with no
+    context, or a receiver already bound.
+  - `replyRecvPostReceiveReplenishCores` and its write set are widened in
+    the same cut, and every consumer is restated over them.
+  - `endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation` now takes
+    the premise that the donation declined.
+  - `tests/SmpIpcSuite.lean` §3.29 (b): the two MEASURED rows are flipped
+    to the donation. The server is bound to the caller's context after the
+    `ReplyRecv`.
+- **Readings**: `queued-caller-reply-recv` went from 123 cells to 0,
+  `root-receives` from 98 to 0, `root-lowers-self` from 43 to 0, and
+  `fp-deferred-root-receives` from 18 to 0.  The overflow capability-fault
+  scenarios went from 12–16 to 0.
+
 ## v0.37.10 — seL4's frame remap, and the lifecycle branches in place
 
 A frame capability whose mapping is in place is now remapped, as seL4's ARM
