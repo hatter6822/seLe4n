@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "object-caps-backed",
-      "commit_sha": "fb9fa3b4a720ca214e5aed5eb3fcc77e3bf5f202",
-      "tree_sha": "d5ae62a309c1894dd57101bdb309cd04729c13a1",
-      "committed_at_utc": "2026-11-10T19:43:54+00:00"
+      "commit_sha": "d9de2f78be1514a91f7f809c6005cbbcf272b5d8",
+      "tree_sha": "f90aee4bf69ab3292f6414f5e768895611969c5a",
+      "committed_at_utc": "2026-11-10T19:45:49+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "daae1fc846ca3cc67a14f7b441535adf5fb46f1eb4b6b9d443ae39b454c6e5bd"
+    "source_digest": "6fa350d4b0936aef2cb4c8b68d9a9fdb4335b508b50e5e5d7465e504dc066a0c"
   },
   "summary": {
     "module_count": 690,
@@ -29,7 +29,7 @@
     "production_files": 620,
     "production_loc": 621147,
     "test_files": 70,
-    "test_loc": 89118,
+    "test_loc": 89126,
     "proved_theorem_lemma_decls": 23684,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -539806,6 +539806,7 @@
             "SeLe4n.Model.CNode.ofSlots",
             "SeLe4n.Model.CNode.slotsUnique_holds",
             "SeLe4n.Model.Capability",
+            "SeLe4n.Model.KernelObject",
             "SeLe4n.ObjId",
             "SeLe4n.PAddr.ofNat",
             "SeLe4n.Platform.Boot.ObjectEntry",
@@ -539828,7 +539829,7 @@
           "kind": "def",
           "name": "runBootInterruptHandlerChecks",
           "full_name": "SeLe4n.Testing.SmpIdle.runBootInterruptHandlerChecks",
-          "line": 1103,
+          "line": 1111,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.MachineConfig",
@@ -539859,7 +539860,7 @@
           "kind": "def",
           "name": "runObjectBudgetChecks",
           "full_name": "SeLe4n.Testing.SmpIdle.runObjectBudgetChecks",
-          "line": 1151,
+          "line": 1159,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.InterruptLineSet.capacity",
@@ -539885,7 +539886,7 @@
           "kind": "def",
           "name": "runInactiveFlagChecks",
           "full_name": "SeLe4n.Testing.SmpIdle.runInactiveFlagChecks",
-          "line": 1229,
+          "line": 1237,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.switchToThreadOnCore",
@@ -539906,7 +539907,7 @@
           "kind": "def",
           "name": "runBootInterfaceChecks",
           "full_name": "SeLe4n.Testing.SmpIdle.runBootInterfaceChecks",
-          "line": 1273,
+          "line": 1281,
           "called": [
             "SeLe4n.InterfaceId.ofNat",
             "SeLe4n.Model.InterfaceSpec",
@@ -539924,7 +539925,7 @@
           "kind": "def",
           "name": "runSmpIdleChecks",
           "full_name": "SeLe4n.Testing.SmpIdle.runSmpIdleChecks",
-          "line": 1298,
+          "line": 1306,
           "called": [
             "SeLe4n.Testing.SmpIdle.runBootCapabilityLiveChecks",
             "SeLe4n.Testing.SmpIdle.runBootIdleChecks",
@@ -539949,7 +539950,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1323,
+          "line": 1331,
           "called": [
             "SeLe4n.Testing.SmpIdle.runSmpIdleChecks"
           ]
