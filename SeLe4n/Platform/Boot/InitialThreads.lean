@@ -484,6 +484,52 @@ theorem startInitialThreads_capabilitiesLive (L : List SeLe4n.ThreadId)
       exact startInitialThreadOnCore_objectPresent i.state tid hInv o (hP r o hN))
     L ist ist' h hL
 
+/-- A start keeps every capability's target kind backed: it writes a thread over
+a thread, removes no object and adds no capability. -/
+theorem startInitialThreadOnCore_capTargetKindBacked (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (h : capTargetKindBacked st) :
+    capTargetKindBacked (startInitialThreadOnCore st tid) := by
+  -- an object that is not a thread is where it was
+  have hKeep : ∀ (k : SeLe4n.ObjId) (o : SeLe4n.Model.KernelObject), st.objects[k]? = some o → (∀ t, o ≠ .tcb t) →
+      (startInitialThreadOnCore st tid).objects[k]? = some o := by
+    intro k o hO hNT
+    obtain ⟨o', hO'⟩ := Option.ne_none_iff_exists'.mp
+      (startInitialThreadOnCore_objects_ne_none st tid hInv k (by rw [hO]; simp))
+    rcases startInitialThreadOnCore_objects_cases st tid hInv k o' hO' with hB | ⟨t, _, hT, _⟩
+    · rw [hO', ← hB, hO]
+    · rw [hO] at hT; cases hT; exact absurd rfl (hNT t)
+  intro oid o slot c hO hc
+  have hS : (startInitialThreadOnCore st tid).slotCapAt ⟨oid, slot⟩ = some c := by
+    rw [SystemState.slotCapAt_of_object hO]; exact hc
+  rw [startInitialThreadOnCore_slotCapAt_of_ne_none st tid hInv ⟨oid, slot⟩
+    (by rw [hS]; exact Option.some_ne_none _)] at hS
+  refine capTargetKindBackedAt_mono (fun rid hR => ?_) (fun cn hC => ?_) _ (h.slotCapAt hS)
+  · unfold SystemState.getReply? at hR ⊢
+    cases e : st.objects[rid.toObjId]? with
+    | none => rw [e] at hR; exact absurd rfl hR
+    | some o0 =>
+      cases o0 with
+      | reply r => rw [hKeep _ _ e (fun _ h => by cases h)]; simp
+      | _ => rw [e] at hR; exact absurd rfl hR
+  · unfold SystemState.getCNode? at hC ⊢
+    cases e : st.objects[cn]? with
+    | none => rw [e] at hC; exact absurd rfl hC
+    | some o0 =>
+      cases o0 with
+      | cnode c0 => rw [hKeep _ _ e (fun _ h => by cases h)]; simp
+      | _ => rw [e] at hC; exact absurd rfl hC
+
+/-- The starts keep every capability's target kind backed. -/
+theorem startInitialThreads_capTargetKindBacked (L : List SeLe4n.ThreadId)
+    (ist ist' : IntermediateState) (h : startInitialThreads L ist = .ok ist')
+    (hK : capTargetKindBacked ist.state) : capTargetKindBacked ist'.state :=
+  startInitialThreads_induct (fun i => capTargetKindBacked i.state)
+    (fun i tid _ hP => by
+      show capTargetKindBacked (startInitialThread i tid).state
+      rw [startInitialThread_state]
+      exact startInitialThreadOnCore_capTargetKindBacked i.state tid i.hAllTables.objects.1 hP)
+    L ist ist' h hK
+
 /-- **WS-ZA ZA5.4 part 19**: a start keeps every untyped record: it writes a
 thread over a thread and removes no object. -/
 theorem startInitialThreadOnCore_getUntyped? (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -613,6 +659,8 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
       _ _ _ hStart
       (bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config base hBase)))
     hListed hLive hUnique hUncarved hNamedU
+    (installIrqNodes_capTargetKindBacked hFresh (startInitialThreads_capTargetKindBacked _ _ _ hStart
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_capTargetKindBacked cores config base hBase)))
 
 /-- **WS-BP BP7.11**: **the state the started boot installs satisfies the
 proof-layer invariant bundle** — the idle boot's argument, applied to the state

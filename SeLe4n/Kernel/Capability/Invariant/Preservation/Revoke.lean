@@ -258,22 +258,33 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
     rw [hCdt] at hRef
     obtain ⟨o, hO, hL⟩ := h.2.1 ref hRef
     exact ⟨o, by rw [hNamedKey ref hRef]; exact hO, hL⟩
-  have hRCPV' : replyCapPointsToValidReply st' := by
-    intro oid o' slot cap rid hO' hL hTg
+  have hRCPV' : capTargetKindBacked st' := by
+    intro oid o' slot cap hO' hL
     have hS : st.slotCapAt ⟨oid, slot⟩ = some cap := by
       rw [← hCap, SystemState.slotCapAt_of_object (r := ⟨oid, slot⟩) hO']; exact hL
-    cases hO : st.objects[oid]? with
-    | none =>
-      rw [SystemState.slotCapAt_eq_bind] at hS
-      simp only at hS; rw [hO] at hS; cases hS
-    | some o =>
-      have hR := h.2.2.2.2.2.1 oid o slot cap rid hO
-        (by rw [← SystemState.slotCapAt_of_object (r := ⟨oid, slot⟩) hO]; exact hS) hTg
-      unfold SystemState.getReply? at hR ⊢
+    have hK := h.targetKindBacked.slotCapAt hS
+    -- the retired object is named by no slot, so a capability's Reply or CNode
+    -- is not it, and a key the retire turned into an untyped held an untyped
+    cases hTg : cap.target with
+    | replyCap rid =>
+      rw [hTg] at hK
+      change st.getReply? rid ≠ none at hK
+      show st'.getReply? rid ≠ none
+      unfold SystemState.getReply? at hK ⊢
       rcases hW rid.toObjId with e | ⟨hxo, -, -⟩ | ⟨U, -, -, hU, -⟩
       · rwa [e]
       · exact absurd ⟨cap, hS, by unfold Capability.namedObject; rw [hTg]; exact congrArg some hxo⟩ (hx ⟨oid, slot⟩)
-      · rw [hU] at hR; exact absurd rfl hR
+      · rw [hU] at hK; exact absurd rfl hK
+    | cnodeSlot cn s =>
+      rw [hTg] at hK
+      change st.getCNode? cn ≠ none at hK
+      show st'.getCNode? cn ≠ none
+      unfold SystemState.getCNode? at hK ⊢
+      rcases hW cn with e | ⟨hxo, -, -⟩ | ⟨U, -, -, hU, -⟩
+      · rwa [e]
+      · exact absurd ⟨cap, hS, by unfold Capability.namedObject; rw [hTg]; exact congrArg some hxo⟩ (hx ⟨oid, slot⟩)
+      · rw [hU] at hK; exact absurd rfl hK
+    | _ => trivial
   have hL : cdtLinksAgree st' := by
     refine cdtLinksAgree_of_named h.2.2.2.2.2.2.1 hCdt (fun r f hm => ?_) (fun r f hm => ?_)
     · rw [SystemState.slotLinkAt_def, SystemState.slotLinkAt_def, hNamedKey r hm]

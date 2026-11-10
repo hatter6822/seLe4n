@@ -79,15 +79,20 @@ theorem storeObject_absent_preserves_capabilityBundleOffLinks
     by_cases e : oid = k
     · rw [e, hSelf] at hO; exact hDepth cn (Option.some.inj hO)
     · rw [hNe _ e] at hO; exact hDep oid cn hO
-  · intro oid o' slot cap rid hO hL hT
+  · intro oid o' slot cap hO hL
     have e : oid ≠ k := fun e => by
       rw [e, hSelf] at hO; cases hO; rw [hCaps] at hL; cases hL
     rw [hNe _ e] at hO
-    have hR := hRCPV oid o' slot cap rid hO hL hT
-    unfold SystemState.getReply? at hR ⊢
-    by_cases e' : rid.toObjId = k
-    · rw [e', hAbsent] at hR; exact absurd rfl hR
-    · rw [hNe _ e']; exact hR
+    refine capTargetKindBackedAt_mono (fun rid hR => ?_) (fun cn hC => ?_) _
+      (hRCPV oid o' slot cap hO hL)
+    · unfold SystemState.getReply? at hR ⊢
+      by_cases e' : rid.toObjId = k
+      · rw [e', hAbsent] at hR; exact absurd rfl hR
+      · rw [hNe _ e']; exact hR
+    · unfold SystemState.getCNode? at hC ⊢
+      by_cases e' : cn = k
+      · rw [e', hAbsent] at hC; exact absurd rfl hC
+      · rw [hNe _ e']; exact hC
 
 /-- Storing an object holding no capability at an id that held nothing keeps
 every slot's capability. -/
@@ -597,8 +602,7 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
     simpa only [SystemState.getObject?, hObjZ] using hSrc1
   have hObjInvZ := hInvZ.2.2.2.2.1
   have hBundle2 := cspaceInsertSlot_preserves_capabilityBundleOffCoverage _ st2 dst _
-    hInvZ.offCoverage (fun rid hT => by
-      rw [CarveRequest.capability_eq] at hT; cases hT) hIns
+    hInvZ.offCoverage (by rw [CarveRequest.capability_eq]; trivial) hIns
   have hCdt := cdt_addEdge_after_insert _ st2 src dst _ .retype hInvZ.2.1 hInvZ.2.2.1 hObjInvZ
     hSrc hIns hInvZ.linksAgree
   -- The carved object's id held nothing, so no slot named it (`live`), and the
@@ -640,7 +644,7 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
   exact capabilityInvariantBundle_of_linkReach
     ⟨cspaceLookupSound_holds _, hCdt.1, hCdt.2.1,
       cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal, hObjFinal ▸ hObjInv2,
-      replyCapPointsToValidReply_of_objects_eq hObjFinal hRCPV2⟩
+      capTargetKindBacked_of_objects_eq hObjFinal hRCPV2⟩
     (SystemState.cdtAddChild_reach st2 src dst .retype) hObjInv2 hCdt.2.2 hShape
 
 end SeLe4n.Kernel

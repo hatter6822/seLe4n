@@ -31,7 +31,7 @@ every slot the tree names still has link words, and the links still agree. -/
 def capabilityInvariantBundleOff (st : SystemState) (gone : SlotRef → Prop) : Prop :=
   cspaceLookupSound st ∧
     cdtCompletenessOff st gone ∧ cdtAcyclicity st ∧
-    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st ∧
+    cspaceDepthConsistent st ∧ st.objects.invExt ∧ capTargetKindBacked st ∧
     cdtLinksAgree st ∧ ∀ r, st.cdt.mentions r → st.slotInObject r
 
 theorem capabilityBundleOffCoverage.off {st : SystemState} (h : capabilityBundleOffCoverage st)
@@ -121,7 +121,7 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff
   exact ⟨cspaceLookupSound_holds st', hComp',
     cdtAcyclicity_of_cdt_eq st st' hAcyclic hCdt, hDepth',
     storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore,
-    cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply st st' addr hRCPV hObjInv hStep,
+    cspaceDeleteSlotCore_preserves_capTargetKindBacked st st' addr hRCPV hObjInv hStep,
     cdtLinksAgree_of_eq hLinks hCdt hLinksEq,
     fun r hM => (SystemState.slotInObject_storeObject_of_hasSlot hObjInv hPre
       (KernelObject.hasSlot_removeSlotCap o addr.slot) hStore r).mpr
@@ -167,7 +167,7 @@ theorem capabilityInvariantBundle_of_off_cdt_update
   have hObjEq : ({ st with cdt := cdt' } : SystemState).objects = st.objects := rfl
   exact ⟨cspaceLookupSound_holds _, (hComp.of_cdt cdt' hSub).complete hGone, hAcyclic',
     cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq,
-    hObjEq ▸ hObjInvPre, replyCapPointsToValidReply_of_objects_eq hObjEq hRCPV⟩
+    hObjEq ▸ hObjInvPre, capTargetKindBacked_of_objects_eq hObjEq hRCPV⟩
 
 /-- Helper: CDT-only state updates preserve capabilityInvariantBundle,
 given that the new CDT is acyclic and names no slot the old one did not. -/
@@ -366,16 +366,17 @@ theorem cspaceDeleteSlot_mentions_sub (addr : CSpaceAddr) (st st' : SystemState)
   rw [spliceDeletedCdtNode_cdt] at hM
   exact CapDerivationTree.spliceNode_mentions _ _ _ hM
 
-/-- WS-SM SM6.D / PR #822 Phase H (#1.a): `cspaceRevoke` preserves `replyCapPointsToValidReply`.
+/-- WS-SM SM6.D / PR #822 Phase H (#1.a): `cspaceRevoke` preserves `capTargetKindBacked`.
 Revoke only *removes* caps with the revoked target from the local CNode (`revokeTargetLocal`), so
-every reply cap surviving in the post-state was already present pre-revoke (backed by the pre-invariant),
-and `getReply?` frames through the single CNode store (`lookup_revokeTargetLocal_sub`). -/
-theorem cspaceRevoke_preserves_replyCapPointsToValidReply
+every cap surviving in the post-state was already present pre-revoke (backed by the pre-invariant),
+and `getReply?` and `getCNode?` frame through the single CNode store
+(`lookup_revokeTargetLocal_sub`). -/
+theorem cspaceRevoke_preserves_capTargetKindBacked
     (st st' : SystemState) (addr : CSpaceAddr)
-    (hRCPV : replyCapPointsToValidReply st)
+    (hRCPV : capTargetKindBacked st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
-    replyCapPointsToValidReply st' := by
+    capTargetKindBacked st' := by
   unfold cspaceRevoke SystemState.getCNode? at hStep
   cases hLookup2 : cspaceLookupSlot addr st with
   | error e => simp [hLookup2] at hStep
@@ -397,7 +398,7 @@ theorem cspaceRevoke_preserves_replyCapPointsToValidReply
           -- `hStep : detachRevokedSlots stMid … = st'`, which frames the objects
           have hInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
           subst hStep
-          refine replyCapPointsToValidReply_of_agree (detachRevokedSlots_agree hInvMid _ _ _ _).1 ?_
+          refine capTargetKindBacked_of_agree (detachRevokedSlots_agree hInvMid _ _ _ _).1 ?_
           have hObjFrame : stMid.objects = stMid.objects := rfl
           have hMidSelf : stMid.objects[addr.cnode]? = some (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) :=
             storeObject_objects_eq st stMid addr.cnode _ hObjInv hStore
@@ -409,8 +410,14 @@ theorem cspaceRevoke_preserves_replyCapPointsToValidReply
             by_cases hc : rid.toObjId = addr.cnode
             · rw [hc, hMidSelf, hPre]
             · rw [hMidNe rid.toObjId hc]
-          intro oid cn slot cap' rid hObj hLook hTgt
-          rw [hGetReply]
+          have hGetCNode : ∀ cn : SeLe4n.ObjId, st.getCNode? cn ≠ none → stMid.getCNode? cn ≠ none := by
+            intro cn hC
+            simp only [SystemState.getCNode?] at hC ⊢
+            by_cases hc : cn = addr.cnode
+            · rw [hc, hMidSelf]; simp
+            · rw [hMidNe cn hc]; exact hC
+          have hKind := capTargetKindBackedAt_mono (fun rid h => by rw [hGetReply]; exact h) hGetCNode
+          intro oid cn slot cap' hObj hLook
           by_cases hc : oid = addr.cnode
           · subst hc
             rw [hObjFrame, hMidSelf] at hObj
@@ -419,9 +426,9 @@ theorem cspaceRevoke_preserves_replyCapPointsToValidReply
             have hLookPre : preCn.lookup slot = some cap' :=
               CNode.lookup_revokeTargetLocal_sub preCn addr.slot parent.target slot cap'
                 (CNode.slotsUnique_holds preCn) hLook
-            exact hRCPV addr.cnode (.cnode preCn) slot cap' rid hPre hLookPre hTgt
+            exact hKind _ (hRCPV addr.cnode (.cnode preCn) slot cap' hPre hLookPre)
           · rw [hObjFrame, hMidNe oid hc] at hObj
-            exact hRCPV oid cn slot cap' rid hObj hLook hTgt
+            exact hKind _ (hRCPV oid cn slot cap' hObj hLook)
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceRevoke`.
 WS-RC R4.A close-out: slot-uniqueness is now carried structurally on
@@ -507,7 +514,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
                   (CNode.slotsUnique_holds _) hL hK)
   exact ⟨cspaceLookupSound_holds st',
     hComp', hAcyclic', hDepth', hObjInv',
-    cspaceRevoke_preserves_replyCapPointsToValidReply st st' addr hRCPV hObjInv hStep, hLinks', hShape'⟩
+    cspaceRevoke_preserves_capTargetKindBacked st st' addr hRCPV hObjInv hStep, hLinks', hShape'⟩
 
 
 end SeLe4n.Kernel

@@ -1077,6 +1077,26 @@ private def runBootCapabilityLiveChecks : IO Unit := do
   assertBool "NEGATIVE: a slot capability into a CNode the boot does not install is refused"
     (danglingSlot.wellFormed == false &&
       SeLe4n.Platform.Boot.bootCapabilitiesNameInstalledObjects danglingSlot == false)
+  -- A slot capability into an installed object that is not a CNode names an object
+  -- the boot installs, so the presence check passes it; the kind check refuses it.
+  -- The object is an endpoint: a slot capability naming the untyped would also be
+  -- a second capability to it, which the untyped-uniqueness conjunct refuses first.
+  let epId : SeLe4n.ObjId := ⟨112⟩
+  let epEntry : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := epId, obj := .endpoint {},
+      hSlots := fun _ h => KernelObject.noConfusion h,
+      hMappings := fun _ h => KernelObject.noConfusion h }
+  let wrongKindSlot : SeLe4n.Platform.Boot.PlatformConfig :=
+    { machineConfig := mc, initialObjects := [utEntry, epEntry,
+        cnEntry [(SeLe4n.Slot.ofNat 0, { target := .cnodeSlot epId (SeLe4n.Slot.ofNat 0), rights })]] }
+  assertBool "NEGATIVE: a slot capability into an installed non-CNode is refused by its kind"
+    (wrongKindSlot.wellFormed == false &&
+      SeLe4n.Platform.Boot.bootCapabilitiesNameInstalledObjects wrongKindSlot == true &&
+      SeLe4n.Platform.Boot.bootCapabilitiesNameObjectsOfTheirKind wrongKindSlot == false &&
+      SeLe4n.Platform.Boot.wellFormedDiagnostic wrongKindSlot ==
+        SeLe4n.Platform.Boot.bootCapabilityKindBootError)
+  assertBool "CONTROL: the slot capability into the configured CNode passes the kind check"
+    (SeLe4n.Platform.Boot.bootCapabilitiesNameObjectsOfTheirKind live == true)
   assertBool "...and the refusal names the dangling capability, not another conjunct"
     (SeLe4n.Platform.Boot.wellFormedDiagnostic dangling ==
       SeLe4n.Platform.Boot.bootCapabilityDanglingBootError)
