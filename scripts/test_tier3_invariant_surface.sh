@@ -5319,7 +5319,7 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_copyThreadSpacesZombie_covers
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_cases ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_closed ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '^def copyThreadSpacesZombie [^\n]*\n[^\n]*\n  if copyThreadSpacesAdmitted st vtid cnSrc vrSrc then\n    \.ok \(copyThreadSpacesZombiePerform ' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if copyThreadSpacesAdmitted s vtid cnSrc vrSrc then\n    copyThreadSpacesPerform executingCore s ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if copyThreadSpacesAdmitted s vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩ then\n    copyThreadSpacesPerform executingCore s ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s : SeLe4n\.Slot, s\.toNat < 2 → ∀ c o,' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
