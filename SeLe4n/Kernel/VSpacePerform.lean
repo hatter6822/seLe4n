@@ -920,6 +920,45 @@ def pageTableUnmapAdmittedAt (st : SystemState) (tableId : SeLe4n.ObjId) : Bool 
      | none => true)
   | none => false
 
+/-- **The table removal's in-use refusal**, read before any write on the
+table's words: the table is installed in a root that still holds its slot and
+something translates through it, so `pageTableUnmap` answers
+`revocationRequired` (`pageTableUnmap_of_inUseAt`).  The arm answers it with no
+install record and no slot built. -/
+def pageTableUnmapInUseAt (st : SystemState) (tableId : SeLe4n.ObjId) : Bool :=
+  match st.getPageTable? tableId with
+  | some table =>
+    table.installed &&
+      (match st.getVSpaceRoot? table.installRoot with
+       | some root =>
+         VSpaceRoot.slotHeldIn table.installLevel table.installIndex tableId root.tables &&
+           Architecture.pageTableInUse root
+             ⟨table.installRoot, table.installLevel, table.installIndex⟩
+       | none => false)
+  | none => false
+
+/-- A removal the in-use check reads is refused with `revocationRequired`. -/
+theorem pageTableUnmap_of_inUseAt {tableId : SeLe4n.ObjId} {st : SystemState}
+    (h : pageTableUnmapInUseAt st tableId = true) :
+    Architecture.pageTableUnmap tableId st = .error .revocationRequired := by
+  unfold pageTableUnmapInUseAt at h
+  cases hT : st.getPageTable? tableId with
+  | none => rw [hT] at h; cases h
+  | some table =>
+    rw [hT] at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨hI, h⟩ := h
+    cases hR : st.getVSpaceRoot? table.installRoot with
+    | none => rw [hR] at h; cases h
+    | some root =>
+      rw [hR] at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨hHeld, hUse⟩ := h
+      refine Architecture.pageTableUnmap_refuses_in_use tableId st table
+        ⟨table.installRoot, table.installLevel, table.installIndex⟩ root hT ?_ hR ?_ hUse
+      · simp [PageTableObject.installedIn, hI]
+      · rw [VSpaceRoot.slotHeldIn_eq] at hHeld; exact hHeld
+
 open SeLe4n.Kernel.RobinHood in
 /-- **WS-ZA ZA5.4: an admitted table removal is its writes.** -/
 theorem pageTableUnmap_of_admitted (tableId : SeLe4n.ObjId) (st : SystemState)

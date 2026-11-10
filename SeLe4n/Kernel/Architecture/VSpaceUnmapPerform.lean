@@ -252,4 +252,38 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted (ec : Concurr
   simp only [Architecture.tlbShootdownBroadcastPage_eq]
   cases Architecture.unmapIcacheOperand st asid vaddr <;> rfl
 
+/-- **The unmap's refusal of an address nothing is mapped at**, read before any
+write: the root at `rootId` is the one the ASID table names for `asid`, and it
+maps nothing at `vaddr`, so the unmap answers `translationFault`
+(`vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_unmappedAt`).  The arm
+answers it without running the unmap's instruction-cache operand or its
+wrappers. -/
+def vspaceUnmapUnmappedAt (st : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (rootId : SeLe4n.ObjId) : Bool :=
+  (match st.getVSpaceRoot? rootId with
+   | some root => root.asid == asid && (root.mappings[vaddr]?).isNone
+   | none => false) &&
+  st.asidTable.holds asid rootId
+
+/-- An unmap the check reads is refused with `translationFault`. -/
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_unmappedAt (ec : Concurrency.CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (rootId : SeLe4n.ObjId) (st : SystemState)
+    (h : vspaceUnmapUnmappedAt st asid vaddr rootId = true) :
+    Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st =
+      .error .translationFault := by
+  unfold vspaceUnmapUnmappedAt at h
+  cases hGR : st.getVSpaceRoot? rootId with
+  | none => simp [hGR] at h
+  | some root =>
+  have hR : st.objects[rootId]? = some (.vspaceRoot root) :=
+    (SystemState.getVSpaceRoot?_eq_some_iff st rootId root).1 hGR
+  simp only [hGR, Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none] at h
+  obtain ⟨⟨hAs, hN⟩, hH⟩ := h
+  have hRes := resolveAsidRoot_of_holds hH hR hAs
+  rw [Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast_error_iff]
+  unfold Architecture.vspaceUnmapPageWithShootdownPerCore
+    Architecture.vspaceUnmapPageWithShootdown Architecture.vspaceUnmapPageWithFlush
+    Architecture.vspaceUnmapPage
+  simp only [hRes, VSpaceRoot.unmapPage, hN]
+
 end SeLe4n.Kernel

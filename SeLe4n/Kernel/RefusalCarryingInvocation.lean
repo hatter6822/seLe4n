@@ -888,6 +888,10 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .error e => .error (e, st)
       | .ok args =>
         if !vspaceCapAuthorizesAsid cap args.asid st then .error (.illegalAuthority, st)
+        -- An address nothing is mapped at is refused on the root's words
+        -- (`vspaceUnmapUnmappedAt`), before the unmap's wrappers run.
+        else if vspaceUnmapUnmappedAt st args.asid args.vaddr rootId then
+          .error (.translationFault, st)
         else
           RefusalCarrying.ofChecked (vspaceUnmapAdmittedAt st args.asid args.vaddr rootId)
             (fun st => vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st)
@@ -917,12 +921,16 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
               (fun st => pageTableMapPerformAt objId rootId args.vaddr st)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
+  -- The in-use refusal is read on the table's words (`pageTableUnmapInUseAt`),
+  -- so it builds no install record or slot.
   | .pageTableUnmap =>
     match cap.target with
     | .object objId =>
-      RefusalCarrying.ofChecked (pageTableUnmapAdmittedAt st objId)
-        (fun st => pageTableUnmapPerformAt objId st)
-        (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+      if pageTableUnmapInUseAt st objId then .error (.revocationRequired, st)
+      else
+        RefusalCarrying.ofChecked (pageTableUnmapAdmittedAt st objId)
+          (fun st => pageTableUnmapPerformAt objId st)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .untypedRetype =>
     match cap.target with
@@ -1492,11 +1500,16 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         split
         · next hAu => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu]
         · next hAu =>
-          apply RefusalCarrying.ofChecked_eq
-          intro hA
-          simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
-            vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted executingCore args.asid
-              args.vaddr rootId st hA]
+          split
+          · next hU =>
+            simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
+              ↓reduceIte, vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_unmappedAt executingCore
+                args.asid args.vaddr rootId st hU]
+          · apply RefusalCarrying.ofChecked_eq
+            intro hA
+            simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
+              vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted executingCore args.asid
+                args.vaddr rootId st hA]
     all_goals rfl
   case vspaceUnifyInstruction =>
     cases target
@@ -1537,9 +1550,12 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     cases target
     case object objId =>
       dsimp only
-      apply RefusalCarrying.ofChecked_eq
-      intro hA
-      simp only [dispatchInvocationBy, pageTableUnmap_of_admitted objId st hA]
+      split
+      · next hU =>
+        simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, pageTableUnmap_of_inUseAt hU]
+      · apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [dispatchInvocationBy, pageTableUnmap_of_admitted objId st hA]
     all_goals rfl
   case untypedRetype =>
     cases target

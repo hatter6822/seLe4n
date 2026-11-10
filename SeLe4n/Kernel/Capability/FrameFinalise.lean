@@ -1734,12 +1734,13 @@ longer passes the checks — the passes may have finalised it, its last
 capability inside the CNode they emptied — the passes' work stands and nothing
 else is written: the caller sees the thread's roots unchanged.  Out of line:
 only a space change replacing the last capability to a populated CNode takes
-it. -/
+it.  The source slots cross as words, so the call builds no address record. -/
 @[noinline] def copyThreadSpacesAfterZombie (executingCore : Concurrency.CoreId) (st : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) : SystemState :=
+    (vtid : SeLe4n.ValidThreadId) (cnCNode : SeLe4n.ObjId) (cnSlot : SeLe4n.Slot)
+    (vrCNode : SeLe4n.ObjId) (vrSlot : SeLe4n.Slot) : SystemState :=
   let s := zombiePasses executingCore vtid.val.toObjId TCB.cspaceRootSlot (zombieFuel st) st
-  if copyThreadSpacesAdmitted s vtid cnSrc vrSrc then
-    copyThreadSpacesPerform executingCore s vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot
+  if copyThreadSpacesAdmitted s vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩ then
+    copyThreadSpacesPerform executingCore s vtid.val cnCNode cnSlot vrCNode vrSlot
   else s
 
 /-- **An admitted space change's writes, the old CSpace root deleted as
@@ -1753,7 +1754,7 @@ no slots, so the VSpace slot's old capability never needs the loop. -/
   if zombieSlotClass st vtid.val.toObjId TCB.cspaceRootSlot vtid.val.toObjId TCB.cspaceRootSlot = 0 then
     copyThreadSpacesPerform executingCore st vtid.val cnCNode cnSlot vrCNode vrSlot
   else
-    copyThreadSpacesAfterZombie executingCore st vtid ⟨cnCNode, cnSlot⟩ ⟨vrCNode, vrSlot⟩
+    copyThreadSpacesAfterZombie executingCore st vtid cnCNode cnSlot vrCNode vrSlot
 
 /-- **`.tcbSetSpace`: seL4's `TCB_SetSpace`**, the old roots deleted through the
 zombie delete: refused, committing nothing, as `copyThreadSpaces` refuses
