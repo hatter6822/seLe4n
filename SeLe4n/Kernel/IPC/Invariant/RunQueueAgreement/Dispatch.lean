@@ -984,8 +984,6 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
       exact registerService_runQueueStage h
     · cases h
   case none.notificationSignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -1021,8 +1019,6 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     refine RunQueueStage.entry ?_
     exact RunQueueStage.of_frame rfl rfl rfl
   case none.declassifySignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -1168,8 +1164,6 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     refine RunQueueStage.entry ?_
     exact registerService_runQueueStage h
   case none.notificationSignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

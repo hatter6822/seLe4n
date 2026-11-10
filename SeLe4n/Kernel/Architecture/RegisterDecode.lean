@@ -765,9 +765,10 @@ theorem decodeSyscallArgsFromState_size_invariant
     decode record or message array exists, with the operands each reads
     there.  Every other call goes through the decode (`viaDecode`). -/
 inductive RegisterRoutedSyscall where
-  /-- A signal: its operand address and the badge in the first message
-      register. -/
-  | signal (capAddr : CPtr) (badge : Badge)
+  /-- A signal: its operand address, and nothing else — the badge it ORs in
+      is the capability's (`Capability.signalBadge`), so no message register
+      is read, as seL4's `sendSignal` reads none. -/
+  | signal (capAddr : CPtr)
   /-- A wait: its operand address. -/
   | wait (capAddr : CPtr)
   /-- WS-ZA ZA4.3: a yield, which reads no operand. -/
@@ -1055,9 +1056,7 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
   | .ok msgInfo =>
     if msgInfo.length ≤ layout.msgRegs.size then
       if (readReg regs layout.syscallNumReg).val = SyscallId.notificationSignal.toNat then
-        if h0 : 0 < layout.msgRegs.size then
-          .signal capAddr (Badge.ofWord (readRegWord regs layout.msgRegs[0]))
-        else .viaDecode
+        .signal capAddr
       else if (readReg regs layout.syscallNumReg).val = SyscallId.notificationWait.toNat then
         .wait capAddr
       else if (readReg regs layout.syscallNumReg).val = SyscallId.yield.toNat then

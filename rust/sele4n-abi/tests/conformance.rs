@@ -384,23 +384,22 @@ fn xval_014_service_query() {
 
 /// RUST-XVAL-015: Notification signal register layout.
 ///
-/// Badge is passed via MR[0] (x2), per Lean `decodeNotificationSignalArgs`
-/// (SyscallArgDecode.lean:869-872) which reads `badge := Badge.ofNatMasked
-/// (requireMsgReg msgRegs 0).val`. MessageInfo.length=1 to indicate one
-/// message register is populated.
+/// seL4's `seL4_Signal`: the notification capability in x0 and an empty
+/// message.  The badge is not an operand — the kernel ORs in the badge minted
+/// into the capability (Lean `Capability.signalBadge`) and reads no message
+/// register — so the request carries none.
 #[test]
 fn xval_015_notification_signal() {
-    let badge_val: u64 = 0xDEAD_BEEF;
     let req = SyscallRequest {
         cap_addr: CPtr::from(500u64),
-        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
-        msg_regs: [badge_val, 0, 0, 0],
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::NotificationSignal,
     };
     let regs = encode_syscall(&req).unwrap();
     assert_eq!(regs[0], 500, "x0=CPtr(notification)");
-    assert_eq!(regs[1], 1, "x1=MessageInfo(length=1)");
-    assert_eq!(regs[2], badge_val, "x2=msg_regs[0] carries badge value");
+    assert_eq!(regs[1], 0, "x1=MessageInfo(empty)");
+    assert_eq!(regs[2], 0, "x2=msg_regs[0] carries no badge");
     assert_eq!(regs[3], 0, "x3=msg_regs[1] must be zero");
     assert_eq!(regs[4], 0, "x4=msg_regs[2] must be zero");
     assert_eq!(regs[5], 0, "x5=msg_regs[3] must be zero");
@@ -1220,19 +1219,19 @@ fn abi_constants_match_lean() {
 }
 
 /// W1-F-1: notification_signal encodes SyscallId::NotificationSignal (14)
-/// and places badge in msg_regs[0].
+/// with an empty message: the badge is the capability's, not an operand.
 #[test]
 fn notification_signal_encoding() {
-    let badge_val: u64 = 0xCAFE_BABE;
     let req = SyscallRequest {
         cap_addr: CPtr::from(42u64),
-        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
-        msg_regs: [badge_val, 0, 0, 0],
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::NotificationSignal,
     };
     let regs = encode_syscall(&req).unwrap();
     assert_eq!(regs[6], 14, "x7=SyscallId::NotificationSignal must be 14");
-    assert_eq!(regs[2], badge_val, "x2=msg_regs[0] must carry badge");
+    assert_eq!(regs[1], 0, "x1=MessageInfo(empty)");
+    assert_eq!(regs[2], 0, "x2=msg_regs[0] carries no badge");
 }
 
 /// W1-F-1: notification_wait encodes SyscallId::NotificationWait (15).
@@ -2572,6 +2571,20 @@ fn wrappers_name_their_syscalls() {
         covered.borrow_mut()[sid.to_u64() as usize] = true;
     };
 
+    // A signal's wrapper sends length 0 and leaves every message register
+    // zero: no word of it can stand in for the capability's badge.
+    let assert_no_badge_operand = |name: &str| {
+        let regs = host_capture::last_request();
+        let mi = MessageInfo::decode(regs[1])
+            .unwrap_or_else(|_| panic!("{name}: wrapper x1 must decode as MessageInfo"));
+        assert_eq!(mi.length(), 0, "{name}: a signal sends an empty message");
+        assert_eq!(
+            &regs[2..6],
+            &[0u64; 4],
+            "{name}: a signal carries no badge word"
+        );
+    };
+
     let cap = CPtr::from(1u64);
     let empty = sele4n_sys::ipc::IpcMessage::empty(0);
     let mut buf = IpcBuffer::default();
@@ -2588,8 +2601,11 @@ fn wrappers_name_their_syscalls() {
     assert_names("endpoint_reply", SyscallId::Reply);
     let _ = sele4n_sys::ipc::endpoint_reply_recv(cap, cap, &empty);
     assert_names("endpoint_reply_recv", SyscallId::ReplyRecv);
-    let _ = sele4n_sys::ipc::notification_signal(cap, Badge::from(1u64));
+    let _ = sele4n_sys::ipc::notification_signal(cap);
     assert_names("notification_signal", SyscallId::NotificationSignal);
+    // seL4's `seL4_Signal`: the real wrapper sends an empty message and no
+    // badge word, since the kernel ORs in the capability's own badge.
+    assert_no_badge_operand("notification_signal");
     let _ = sele4n_sys::ipc::notification_wait(cap);
     assert_names("notification_wait", SyscallId::NotificationWait);
 
@@ -2800,8 +2816,9 @@ fn wrappers_name_their_syscalls() {
 
     let _ = sele4n_sys::declassify::declassify(cap);
     assert_names("declassify", SyscallId::Declassify);
-    let _ = sele4n_sys::declassify::declassify_signal(cap, Badge::from(0x2bu64));
+    let _ = sele4n_sys::declassify::declassify_signal(cap);
     assert_names("declassify_signal", SyscallId::DeclassifySignal);
+    assert_no_badge_operand("declassify_signal");
 
     let _ = sele4n_sys::audit::audit_read(cap, sele4n_sys::audit::AuditReadOpcode::Status, 0, 0);
     assert_names("audit_read", SyscallId::AuditRead);

@@ -566,6 +566,22 @@ field kept — seL4's `cap_untyped_cap_set_capFreeIndex`. -/
 @[inline] def badge (cap : Capability) : Option SeLe4n.Badge :=
   if cap.badged then some cap.badgeWord else none
 
+/-- **The badge a signal through this capability ORs into its notification**:
+the badge minted into the capability, and the zero badge for an unbadged one —
+seL4's `sendSignal` argument `cap_notification_cap_get_capNtfnBadge(cap)`.  The
+caller has no say in it: no message register is read.  Read from the word and
+the flag, so a signal that reads them from the slot in place builds no
+`Option`. -/
+@[inline] def signalBadge (cap : Capability) : SeLe4n.Badge :=
+  if cap.badged then cap.badgeWord else SeLe4n.Badge.zero
+
+/-- A signal's badge is the capability's badge, the zero badge when it has
+none. -/
+theorem signalBadge_eq_ofOption (cap : Capability) :
+    cap.signalBadge = SeLe4n.Badge.ofOption cap.badge := by
+  unfold signalBadge badge
+  cases cap.badged <;> rfl
+
 /-- The capability with its badge replaced: the word and flag of `b`. -/
 @[inline] def withBadge (cap : Capability) (b : Option SeLe4n.Badge) : Capability :=
   { cap with badgeWord := SeLe4n.Badge.ofOption b, badged := b.isSome }

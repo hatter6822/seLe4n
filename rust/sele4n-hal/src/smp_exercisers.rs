@@ -1513,8 +1513,9 @@ struct RoundTrip {
     msg_len: u64,
     /// The message registers `x2` to `x5`.
     msg: [u64; 4],
-    /// A signal of this badge issued first and not measured, so a wait finds
-    /// the badge pending and consumes it without blocking.
+    /// A signal through this notification capability issued first and not
+    /// measured, so a wait finds the capability's badge pending and consumes
+    /// it without blocking.
     primed: Option<u64>,
     /// Whether the caller blocks: the dispatch answers `Blocked` and restores
     /// the other thread, instead of a frame to the caller.
@@ -1938,15 +1939,17 @@ const PAGE_TABLE_CAPS: [u64; 3] = [
     cap_address(PAGE_TABLE_SLOTS[2]),
 ];
 
-/// A signal on the interrupt notification with `badge`.
+/// A signal on the interrupt notification: seL4's `seL4_Signal`, an empty
+/// message, the badge ORed in the one minted into the capability (the boot's
+/// notification capability is unbadged, so 0), never a caller-chosen word.
 #[cfg(feature = "hw_target")]
-const fn signal(name: &'static str, badge: u64) -> RoundTrip {
+const fn signal(name: &'static str) -> RoundTrip {
     RoundTrip {
         name,
         syscall: SIGNAL,
         cptr: NOTIFICATION_CAP,
-        msg_len: 1,
-        msg: [badge, 0, 0, 0],
+        msg_len: 0,
+        msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
         caps_or_badges: None,
@@ -1954,22 +1957,62 @@ const fn signal(name: &'static str, badge: u64) -> RoundTrip {
     }
 }
 
+/// The notification capability minted, unmeasured, into the mint slot with a
+/// badge that does not fit a scalar `Nat` ([`WIDE_SIGNAL_BADGE`]) for the
+/// round trips one thread makes alone, and deleted before the partner setup
+/// mints the badged endpoint there ([`WIDE_BADGE_SETUP`],
+/// [`WIDE_BADGE_TEARDOWN`]).
+#[cfg(feature = "hw_target")]
+const WIDE_BADGED_NOTIFICATION_CAP: u64 = cap_address(MINT_SLOT);
+/// Its badge: `2^63`, so a badge carried as a number would box.  A signal
+/// through the capability ORs exactly this word in (seL4's `capNtfnBadge`).
+#[cfg(feature = "hw_target")]
+const WIDE_SIGNAL_BADGE: u64 = 1 << 63;
+/// Read and write: a signal needs the write right.
+#[cfg(feature = "hw_target")]
+const NOTIFICATION_MINT_RIGHTS: u64 = 0x3;
+/// The badged notification capability's mint (unmeasured, before the round
+/// trips one thread makes alone).
+#[cfg(feature = "hw_target")]
+const WIDE_BADGE_SETUP: [RoundTrip; 1] = [invocation(
+    "mint-wide-badged-notification",
+    CSPACE_MINT,
+    CNODE_CAP,
+    [
+        NOTIFICATION_SLOT,
+        MINT_SLOT,
+        NOTIFICATION_MINT_RIGHTS,
+        WIDE_SIGNAL_BADGE,
+    ],
+)];
+/// Its delete (unmeasured, after them), so the mint slot is empty again.
+#[cfg(feature = "hw_target")]
+const WIDE_BADGE_TEARDOWN: [RoundTrip; 1] = [invocation(
+    "delete-wide-badged-notification",
+    CSPACE_DELETE,
+    CNODE_CAP,
+    [MINT_SLOT, 0, 0, 0],
+)];
+
 /// The round trips one thread makes alone (WS-ZA ZA4.1): the signal, a signal
-/// whose badge does not fit a scalar `Nat` (`≥ 2^63`), a wait that consumes a
-/// pending badge, and a yield (WS-ZA ZA4.3), which invokes no capability: the
-/// root task is unbound and alone on its core while these run, so it ends its
-/// time slice and is chosen again.  Each continues its caller.
+/// whose capability's badge does not fit a scalar `Nat` (`≥ 2^63`), a wait
+/// that consumes a pending badge, and a yield (WS-ZA ZA4.3), which invokes no
+/// capability: the root task is unbound and alone on its core while these run,
+/// so it ends its time slice and is chosen again.  Each continues its caller.
 #[cfg(feature = "hw_target")]
 const ROUND_TRIPS: [RoundTrip; 4] = [
-    signal("signal", 1),
-    signal("signal-wide-badge", 1 << 63),
+    signal("signal"),
+    RoundTrip {
+        cptr: WIDE_BADGED_NOTIFICATION_CAP,
+        ..signal("signal-wide-badge")
+    },
     RoundTrip {
         name: "wait-pending",
         syscall: WAIT,
         cptr: NOTIFICATION_CAP,
         msg_len: 1,
         msg: [0, 0, 0, 0],
-        primed: Some(1),
+        primed: Some(NOTIFICATION_CAP),
         blocks: false,
         caps_or_badges: None,
         returns: None,
@@ -2111,8 +2154,8 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
             "signal-to-waiter",
             SIGNAL,
             NOTIFICATION_CAP,
-            1,
-            [1, 0],
+            0,
+            [0, 0],
             false,
         ),
     ],
@@ -3297,7 +3340,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         },
         RoundTrip {
             msg_len: 5,
-            ..signal("signal-long-message", 1)
+            ..signal("signal-long-message")
         },
         RoundTrip {
             name: "wait-long-message",
@@ -3323,12 +3366,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             caps_or_badges: None,
             returns: REFUSED_MESSAGE_INFO,
             msg_len: BAD_MESSAGE_LENGTH,
-            ..signal("bad-message-info", 1)
+            ..signal("bad-message-info")
         },
         RoundTrip {
             caps_or_badges: None,
             msg_len: HIGH_MESSAGE_INFO,
-            ..signal("high-message-info", 1)
+            ..signal("high-message-info")
         },
         RoundTrip {
             name: "yield-long-message",
@@ -3813,7 +3856,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             msg_len: TAIL_MESSAGE_LENGTH,
-            ..signal("signal-tail-buffer", 1)
+            ..signal("signal-tail-buffer")
         },
         RoundTrip {
             name: "wait-tail-buffer",
@@ -5256,7 +5299,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         INSTALLING_REPLY,
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("grant-reply-installed-signal", 1)
+            ..signal("grant-reply-installed-signal")
         },
         RoundTrip {
             name: "grant-reply-installed-wait",
@@ -5308,7 +5351,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("grant-long-reply-installed-signal", 1)
+            ..signal("grant-long-reply-installed-signal")
         },
         RoundTrip {
             name: "grant-long-reply-installed-wait",
@@ -5366,7 +5409,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("grant-reply-recv-cap-installed-signal", 1)
+            ..signal("grant-reply-recv-cap-installed-signal")
         },
         RoundTrip {
             name: "grant-reply-recv-cap-installed-wait",
@@ -5431,7 +5474,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("grant-long-reply-recv-cap-installed-signal", 1)
+            ..signal("grant-long-reply-recv-cap-installed-signal")
         },
         RoundTrip {
             name: "grant-long-reply-recv-cap-installed-wait",
@@ -5647,7 +5690,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("donated-reply-installed-signal", 1)
+            ..signal("donated-reply-installed-signal")
         },
         RoundTrip {
             name: "donated-reply-installed-wait",
@@ -5860,7 +5903,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("chain-reply-recv-installed-signal", 1)
+            ..signal("chain-reply-recv-installed-signal")
         },
         RoundTrip {
             name: "chain-reply-recv-installed-wait",
@@ -5927,7 +5970,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("chain-long-reply-recv-installed-signal", 1)
+            ..signal("chain-long-reply-recv-installed-signal")
         },
         RoundTrip {
             name: "chain-long-reply-recv-installed-wait",
@@ -6066,7 +6109,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             true,
         ),
         partner_step("head-partner-calls", CALL, ENDPOINT_CAP, 1, [0x68, 0], true),
-        signal("head-server-wakes-root", 0x10),
+        signal("head-server-wakes-root"),
         partner_step("head-server-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
         invocation(
             "head-reply-cap-delete",
@@ -6099,7 +6142,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
         ),
-        signal("waited-wake-server", 0x11),
+        signal("waited-wake-server"),
         partner_step("waited-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
         invocation(
             "waited-server-resumes-partner",
@@ -6123,7 +6166,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0x69, 0],
             true,
         ),
-        signal("waited-server-wakes-root", 0x12),
+        signal("waited-server-wakes-root"),
         partner_step(
             "waited-server-waits",
             WAIT,
@@ -6237,7 +6280,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0x6a, 0],
             true,
         ),
-        signal("unheld-caps-server-wakes-root", 0x18),
+        signal("unheld-caps-server-wakes-root"),
         partner_step(
             "unheld-caps-server-waits",
             WAIT,
@@ -6271,7 +6314,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("unheld-reply-installed-signal", 1)
+            ..signal("unheld-reply-installed-signal")
         },
         RoundTrip {
             name: "unheld-reply-installed-wait",
@@ -6392,7 +6435,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0x72, 0],
             true,
         ),
-        signal("orphan-recv-server-wakes-root", 0x17),
+        signal("orphan-recv-server-wakes-root"),
         partner_step(
             "orphan-recv-server-waits",
             WAIT,
@@ -6529,7 +6572,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0x9c, 0],
             true,
         ),
-        signal("unheld-recv-caps-server-wakes-root", 0x19),
+        signal("unheld-recv-caps-server-wakes-root"),
         partner_step(
             "unheld-recv-caps-server-waits",
             WAIT,
@@ -6563,7 +6606,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("unheld-reply-recv-installed-signal", 1)
+            ..signal("unheld-reply-recv-installed-signal")
         },
         RoundTrip {
             name: "unheld-reply-recv-installed-wait",
@@ -6692,7 +6735,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0xb7, 0],
             true,
         ),
-        signal("unheld-long-recv-server-wakes-root", 0x1c),
+        signal("unheld-long-recv-server-wakes-root"),
         partner_step(
             "unheld-long-recv-server-waits",
             WAIT,
@@ -6820,7 +6863,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0xb4, 0],
             true,
         ),
-        signal("unheld-long-recv-caps-server-wakes-root", 0x1b),
+        signal("unheld-long-recv-caps-server-wakes-root"),
         partner_step(
             "unheld-long-recv-caps-server-waits",
             WAIT,
@@ -6854,7 +6897,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("unheld-long-recv-caps-installed-signal", 1)
+            ..signal("unheld-long-recv-caps-installed-signal")
         },
         RoundTrip {
             name: "unheld-long-recv-caps-installed-wait",
@@ -6982,7 +7025,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0, 0],
             true,
         ),
-        signal("queued-sender-sender-wakes-root", 0xa1),
+        signal("queued-sender-sender-wakes-root"),
         partner_step(
             "queued-sender-sender-sends",
             SEND,
@@ -7047,7 +7090,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0, 0],
             true,
         ),
-        signal("queued-sender-caps-sender-wakes-root", 0xa5),
+        signal("queued-sender-caps-sender-wakes-root"),
         partner_step(
             "queued-sender-caps-sender-sends",
             SEND,
@@ -7075,7 +7118,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         RoundTrip {
             cptr: cap_address(EMPTY_SLOT),
-            ..signal("queued-sender-caps-installed-signal", 1)
+            ..signal("queued-sender-caps-installed-signal")
         },
         RoundTrip {
             name: "queued-sender-caps-installed-wait",
@@ -7177,7 +7220,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0, 0],
             true,
         ),
-        signal("queued-caller-caller-wakes-root", 0xb1),
+        signal("queued-caller-caller-wakes-root"),
         partner_step(
             "queued-caller-calls",
             CALL,
@@ -7256,7 +7299,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             ROOT_TCB_CAP,
             [PARTNER_PRIORITY, 0, 0, 0],
         ),
-        signal("queued-caller-root-wakes-caller", 0xb9),
+        signal("queued-caller-root-wakes-caller"),
         invocation(
             "queued-caller-suspend-lowered",
             TCB_SUSPEND,
@@ -7311,7 +7354,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0, 0],
             true,
         ),
-        signal("queued-caller-caller-wakes-root-again", 0xb8),
+        signal("queued-caller-caller-wakes-root-again"),
         partner_step(
             "queued-caller-calls-again",
             CALL,
@@ -7642,7 +7685,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0x6e, 0],
             true,
         ),
-        signal("contextless-top-wakes-root", 0x13),
+        signal("contextless-top-wakes-root"),
         partner_step(
             "contextless-top-waits",
             WAIT,
@@ -7702,7 +7745,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0; 4],
         ),
         partner_step("queue-top-receives", RECEIVE, MOVE_SC_CAP, 0, [0, 0], true),
-        signal("queue-partner-wakes-root", 0x14),
+        signal("queue-partner-wakes-root"),
         partner_step(
             "queue-partner-receives",
             RECEIVE,
@@ -7834,7 +7877,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0x70, 0],
             true,
         ),
-        signal("orphan-top-wakes-root", 0x15),
+        signal("orphan-top-wakes-root"),
         partner_step("orphan-top-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
         invocation(
             "orphan-holder-delete",
@@ -7870,7 +7913,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             [0, 0],
             true,
         ),
-        signal("orphan-server-wakes-root", 0x16),
+        signal("orphan-server-wakes-root"),
         partner_step(
             "orphan-server-waits",
             WAIT,
@@ -8994,8 +9037,8 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         name: "declassified-signal",
         syscall: DECLASSIFY_SIGNAL,
         cptr: FRAME_CAP,
-        msg_len: 1,
-        msg: [1, 0, 0, 0],
+        msg_len: 0,
+        msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
         caps_or_badges: None,
@@ -9027,8 +9070,8 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         "declassified-signal-wakes",
         DECLASSIFY_SIGNAL,
         FRAME_CAP,
-        1,
-        [2, 0],
+        0,
+        [0, 0],
         false,
     ),
 ];
@@ -9420,8 +9463,8 @@ const DECLASSIFIED_SIGNAL_BOUND: RoundTrip = partner_step(
     "declassified-signal-bound",
     DECLASSIFY_SIGNAL,
     MOVE_CAP,
-    1,
-    [3, 0],
+    0,
+    [0, 0],
     false,
 );
 /// The low thread's plain signal to the root task, bound and blocked.
@@ -9459,8 +9502,8 @@ const DECLASSIFIED_SIGNAL_TWO_HOP: RoundTrip = partner_step(
     "declassified-signal-two-hop",
     DECLASSIFY_SIGNAL,
     FRAME_CAP,
-    1,
-    [4, 0],
+    0,
+    [0, 0],
     false,
 );
 /// The root task's yield, which runs the woken low thread, unmeasured.
@@ -9495,8 +9538,8 @@ const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     name: "declassified-signal-refused-at-receiver",
     syscall: DECLASSIFY_SIGNAL,
     cptr: MOVE_CAP,
-    msg_len: 1,
-    msg: [5, 0, 0, 0],
+    msg_len: 0,
+    msg: [0, 0, 0, 0],
     primed: None,
     blocks: false,
     caps_or_badges: None,
@@ -10136,10 +10179,19 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     if !secondary_core_windows(" (first call)") {
         return Some(false);
     }
+    for step in WIDE_BADGE_SETUP.iter() {
+        if !unmeasured(step, "the wide-badge mint failed") {
+            return Some(false);
+        }
+    }
     for trip in ROUND_TRIPS.iter() {
         for first in [true, false] {
-            if let Some(badge) = trip.primed {
-                if !unmeasured(&signal(trip.name, badge), "the priming signal failed") {
+            if let Some(ntfn) = trip.primed {
+                let priming = RoundTrip {
+                    cptr: ntfn,
+                    ..signal(trip.name)
+                };
+                if !unmeasured(&priming, "the priming signal failed") {
                     return Some(false);
                 }
             }
@@ -10147,6 +10199,11 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             if heap_allocations_round_trip(trip, which) != Some(true) {
                 return Some(false);
             }
+        }
+    }
+    for step in WIDE_BADGE_TEARDOWN.iter() {
+        if !unmeasured(step, "the wide-badge delete failed") {
+            return Some(false);
         }
     }
     for step in PARTNER_SETUP.iter() {

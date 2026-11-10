@@ -1404,8 +1404,6 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
       exact registerService_runQueueStage h
     · cases h
   case none.notificationSignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -1447,8 +1445,6 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     refine readyKeptStage.of_stage ?_
     exact SystemState.RunQueueStage.of_frame rfl rfl rfl
   case none.declassifySignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

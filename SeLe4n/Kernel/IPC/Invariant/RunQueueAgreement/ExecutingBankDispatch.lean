@@ -441,8 +441,6 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
           (hBank := banksKeptOffCore_of_eq (by rw [registerService_preserves_machine _ _ _ h])))
     · cases h
   case none.notificationSignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -490,8 +488,6 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1]
     exact (bankFrame.of_frame rfl rfl rfl).bankAgree hA
   case none.declassifySignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

@@ -110,8 +110,7 @@ noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : Sysc
   else
   match sid with
   | .notificationSignal =>
-    dispatchSignalCheckedR ctx capAddr (.ok { badge := Badge.ofWord (readRegWord rf ⟨2⟩) }) tid
-      executingCore
+    dispatchSignalCheckedR ctx capAddr tid executingCore
   | .notificationWait => dispatchWaitCheckedR ctx capAddr tid executingCore
   | .receive =>
     dispatchReceiveCheckedR ctx capAddr len (SeLe4n.CPtr.ofWord (readRegWord rf ⟨2⟩)) tid
@@ -146,8 +145,7 @@ noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
   else
   match sid with
   | .notificationSignal =>
-    signalOperandArmThenTaintR ctx (.ok { badge := Badge.ofWord (readRegWord rf ⟨2⟩) }) tid
-      executingCore (syscallRequiredRight .notificationSignal)
+    signalOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationSignal)
   | .notificationWait =>
     waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait)
   | .receive =>
@@ -217,8 +215,9 @@ theorem overflowedDecode_agree (S : SystemState) (tid : SeLe4n.ThreadId)
     exact h
 
 /-- **The overflowed dispatch is the checked dispatch of the decode the long
-message reads to**, refusing in the state it was handed: the signal's badge and
-the receive's reply address are the first inline word, as the decode's; an
+message reads to**, refusing in the state it was handed: the signal reads no
+word (its badge is its capability's); the receive's reply address is the first
+inline word, as the decode's; an
 invocation's and an audited call's arguments the inline words; and a five-word
 invocation's fifth argument slot 0's word. -/
 theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
@@ -259,24 +258,10 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
   rcases routedOverflowed_cases hRt (Bool.eq_false_iff.mpr hI) (Bool.eq_false_iff.mpr hAu) with
     rfl | rfl | rfl | rfl | rfl | rfl
   · -- the signal
-    have hS : 0 < (overflowedDecode S tid rf .notificationSignal capAddr mi).msgRegs.size := by
-      simp only [overflowedDecode, Architecture.regMessageRegs, Array.size_append, Array.size_map]
-      exact Nat.lt_of_lt_of_le (by decide) (Nat.le_add_right _ _)
-    have hG : (overflowedDecode S tid rf .notificationSignal capAddr mi).msgRegs[0]'hS =
-        readReg rf ⟨2⟩ := by
-      rw [Array.getElem?_eq_getElem hS] at h0
-      exact Option.some.inj h0
-    have hArgs : (.ok { badge := Badge.ofWord (readRegWord rf ⟨2⟩) } : Except KernelError
-          Architecture.SyscallArgDecode.NotificationSignalArgs) =
-        Architecture.SyscallArgDecode.decodeNotificationSignalArgs
-          (overflowedDecode S tid rf .notificationSignal capAddr mi) := by
-      simp only [Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
-        Architecture.SyscallArgDecode.requireMsgReg, dif_pos hS, hG, readReg_eq_word, bind,
-        Except.bind, pure, Except.pure, SeLe4n.Badge.ofWord_eq_ofNatMasked]
     unfold dispatchOverflowedCheckedR
     rw [if_neg hI, if_neg hAu]
     exact dispatchSignalCheckedR_eq ctx (overflowedDecode S tid rf .notificationSignal capAddr mi)
-      _ tid executingCore rfl hArgs
+      tid executingCore rfl
   · -- the wait
     unfold dispatchOverflowedCheckedR
     rw [if_neg hI, if_neg hAu]

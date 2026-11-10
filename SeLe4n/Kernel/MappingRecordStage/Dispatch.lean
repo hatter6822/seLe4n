@@ -671,8 +671,6 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     · exact registerService_mappingStage h
     · cases h
   case none.notificationSignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -699,8 +697,6 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
   case none.declassify.object targetId =>
     exact declassifyObjectFromCore_mappingStage h
   case none.declassifySignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig
@@ -845,8 +841,6 @@ theorem dispatchWithCap_mappingStage (decoded : SyscallDecodeResult)
     all_goals first | (cases h; done) | skip
     exact registerService_mappingStage h
   case none.notificationSignal.object notifId =>
-    split at h
-    · cases h
     try dsimp only at h
     split at h
     · rename_i hSig

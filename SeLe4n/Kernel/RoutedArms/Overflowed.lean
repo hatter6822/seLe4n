@@ -169,9 +169,8 @@ dispatch told them apart, so the entry never resolves the operand again
     (capWord : UInt64) (length : Nat) (st : SystemState) : SystemState :=
   match sid with
   | .notificationSignal =>
-    overflowedLongArmWith executingCore tid length (SeLe4n.CPtr.ofWord capWord) (fun _ rf =>
-      signalOperandArmThenTaintR ctx (.ok { badge := Badge.ofWord (readRegWord rf ⟨2⟩) }) tid
-        executingCore (syscallRequiredRight .notificationSignal)) st
+    overflowedLongArmWith executingCore tid length (SeLe4n.CPtr.ofWord capWord) (fun _ _ =>
+      signalOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationSignal)) st
   | .notificationWait =>
     overflowedLongArmWith executingCore tid length (SeLe4n.CPtr.ofWord capWord) (fun _ _ =>
       waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait)) st

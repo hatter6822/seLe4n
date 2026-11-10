@@ -13,8 +13,10 @@ import SeLe4n.Kernel.RoutedArms.Report
 # The signal route's arm, out of line
 
 The routed entry's `.signal` arm (`syscallEntryCheckedK`) as its own function:
-the operand's address and the badge cross as words, the state owned, and the
-result is the state with its report pushed (`RoutedArms.Report`).
+the operand's address crosses as a word, the state owned, and the result is the
+state with its report pushed (`RoutedArms.Report`).  No badge crosses: the one
+the signal ORs in is read from the operand's capability in its slot
+(`Capability.signalBadge`).
 -/
 
 namespace SeLe4n.Kernel
@@ -24,10 +26,9 @@ open SeLe4n.Model
 /-- **The signal arm**: `dispatchOperandCheckedK` on the operand, the signal's
 gate, arm and taint step (`signalOperandArmThenTaintR`), its results reported. -/
 @[noinline] def signalRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (capWord badgeWord : UInt64) (st : SystemState) : SystemState :=
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (st : SystemState) : SystemState :=
   dispatchOperandCheckedK (SeLe4n.CPtr.ofWord capWord) tid executingCore
-    (signalOperandArmThenTaintR ctx (.ok { badge := SeLe4n.Badge.ofWord badgeWord }) tid
-      executingCore (syscallRequiredRight .notificationSignal))
+    (signalOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationSignal))
     st entryReportGeneral entryReportResolved entryReportLookup
 
 end SeLe4n.Kernel

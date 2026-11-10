@@ -526,27 +526,24 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     rw [hT] at hDisp
     simp only at hDisp
     split at hDisp
-    · exact absurd hDisp (by simp)
-    · rename_i args hArgs
+    · rename_i st₁ r hSig
       split at hDisp
-      · rename_i st₁ r hSig
-        split at hDisp
-        · exact absurd hDisp (by simp)
-        · rename_i st₂ hClr
-          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
-          subst hDisp
-          have h₁ := notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok ctx nId tid
-            args.badge e st st₁ r hSig
-          refine footprintCoversWrites_trans S ?_ (footprintCoversWrites_trans S
-            (footprintCoversWrites_of_scheduler_eq S hTable
-              (clearWokenReceiverStash_scheduler_eq _ _ _ hClr))
-            (footprintCoversWrites_of_scheduler_eq S hTable
-              (by rw [Architecture.stageWokenDelivery_scheduler_eq,
-                Architecture.stageWokenDelivery_scheduler_eq])))
-          rw [← h₁]
-          exact schedLockSet_notificationSignalBoundOnCore_coversWrites nId args.badge e st S
-            hObjInv hSched
       · exact absurd hDisp (by simp)
+      · rename_i st₂ hClr
+        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+        subst hDisp
+        have h₁ := notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok ctx nId tid
+          cap.signalBadge e st st₁ r hSig
+        refine footprintCoversWrites_trans S ?_ (footprintCoversWrites_trans S
+          (footprintCoversWrites_of_scheduler_eq S hTable
+            (clearWokenReceiverStash_scheduler_eq _ _ _ hClr))
+          (footprintCoversWrites_of_scheduler_eq S hTable
+            (by rw [Architecture.stageWokenDelivery_scheduler_eq,
+              Architecture.stageWokenDelivery_scheduler_eq])))
+        rw [← h₁]
+        exact schedLockSet_notificationSignalBoundOnCore_coversWrites nId cap.signalBadge e st S
+          hObjInv hSched
+    · exact absurd hDisp (by simp)
   -- ---- `.notificationWait` ------------------------------------------------
   case notificationWait =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps

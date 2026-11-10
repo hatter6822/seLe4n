@@ -146,7 +146,7 @@ checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
 
 [[package]]
 name = "sele4n-abi"
-version = "0.37.11"
+version = "0.37.12"
 dependencies = [
  "sele4n-sys",
  "sele4n-types",
@@ -154,7 +154,7 @@ dependencies = [
 
 [[package]]
 name = "sele4n-hal"
-version = "0.37.11"
+version = "0.37.12"
 dependencies = [
  "cc",
  "loom",
@@ -164,14 +164,14 @@ dependencies = [
 
 [[package]]
 name = "sele4n-lean-boundary"
-version = "0.37.11"
+version = "0.37.12"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "sele4n-sys"
-version = "0.37.11"
+version = "0.37.12"
 dependencies = [
  "sele4n-abi",
  "sele4n-types",
@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "sele4n-types"
-version = "0.37.11"
+version = "0.37.12"
 
 [[package]]
 name = "sharded-slab"
