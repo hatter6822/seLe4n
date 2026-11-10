@@ -33,7 +33,7 @@ registers, its results reported. -/
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    dispatchOperandCheckedK (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    dispatchOperandCheckedK .send (SeLe4n.CPtr.ofWord capWord) tid executingCore
       (sendOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext length tid
         executingCore (syscallRequiredRight .send))
       st entryReportGeneral entryReportResolved entryReportLookup

@@ -40,7 +40,7 @@ dispatch told them apart, a result under the first. -/
   | some (.tcb tcb) =>
     SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
       (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
-      (fun w => overflowOneOperandK (SeLe4n.CPtr.ofWord capWord) tid executingCore
+      (fun w => overflowOneOperandK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
         (overflowOneOperandArmR ctx sid tcb.registerContext w tid) st entryReportGeneral
         entryReportResolved entryReportLookup)
   | _ => entryReportGeneral (.error (.illegalState, st))

@@ -3022,13 +3022,16 @@ capability lookup that failed on a syscall that faults
 The decision re-runs the dispatcher's own prologue on the same state: decode
 the arguments from the spilled registers, build the gate
 `dispatchSyscallChecked` builds (the caller's CSpace root, the root's depth,
-the syscall's required right), and run the **resolution half** of its lookup,
-`syscallResolveCap`.  The fault is produced only when that resolution fails
-**with the very error the dispatcher returned**: seL4 raises the `CapFault`
-from `lookupCapAndSlot`, and a capability that resolved but lacks the right
-(`syscallLookupCap`'s `.illegalAuthority`, seL4's `decodeInvocation` refusing
-an endpoint capability without send) is a syscall *error*, as is every
-arm-level refusal on a resolved capability (a wrong-kind target, a full
+the syscall's required right), and run the lookup a fault reads,
+`syscallOperandLookup`: the **resolution half** of the lookup,
+`syscallResolveCap`, and, on a syscall that receives on its capability, the
+capability's type and its right, as seL4's `handleRecv` checks them before it
+raises the fault.  The fault is produced only when that lookup fails **with the
+very error the dispatcher returned**: seL4 raises the `CapFault` from
+`lookupCapAndSlot` and from `handleRecv`, and on every other syscall a
+capability that resolved but lacks the right (seL4's `decodeInvocation`
+refusing an endpoint capability without send) is a syscall *error*, as is
+every arm-level refusal on a resolved capability (a wrong-kind target, a full
 queue).  Matching on the error, not only on the arm, is what keeps a refusal
 raised *before* the lookup — the insecure-context rejection, a decode
 failure — from being delivered as a fault the CSpace did not raise.
@@ -3064,7 +3067,7 @@ def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
           let gate : SyscallGate :=
             { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
               capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-          match syscallResolveCap gate st with
+          match syscallOperandLookup decoded.syscallId gate st with
           | .error e =>
               if e = ke then some (.capFault decoded.capAddr.word inRecv e)
               else none
@@ -3121,24 +3124,31 @@ theorem syscallCapFaultOf_none_of_no_fault_phase (layout : SeLe4n.SyscallRegiste
     syscallCapFaultOf layout st tid ke = none := by
   simp [syscallCapFaultOf, hTcb, hDec, hNot]
 
-/-- …and neither does a refusal whose capability **resolved**: the fault is
-the lookup's, never the invocation's — a resolved capability refused on
-rights or by its arm returns the error. -/
-theorem syscallCapFaultOf_none_of_resolve_ok (layout : SeLe4n.SyscallRegisterLayout)
+/-- …and neither does a refusal whose capability **passed the lookup a fault
+reads**: the fault is the lookup's, never the invocation's — a capability
+refused by its arm returns the error. -/
+theorem syscallCapFaultOf_none_of_lookup_ok (layout : SeLe4n.SyscallRegisterLayout)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (tcb : TCB)
     (decoded : SeLe4n.Model.SyscallDecodeResult) (inRecv : Bool)
-    (rootCn : CNode) (cap : Capability)
+    (rootCn : CNode)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
         st tid layout tcb.registerContext 32 = .ok decoded)
     (hIpc : capFaultReceivePhase? decoded.syscallId = some inRecv)
     (hRoot : st.objects[tcb.cspaceRoot]? = some (.cnode rootCn))
-    (hResolve : syscallResolveCap
+    (hLookup : syscallOperandLookup decoded.syscallId
         { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-        st = .ok (cap, st)) :
+        st = .ok ()) :
     syscallCapFaultOf layout st tid ke = none := by
-  simp [syscallCapFaultOf, hTcb, hDec, hIpc, hRoot, hResolve]
+  simp [syscallCapFaultOf, hTcb, hDec, hIpc, hRoot, hLookup]
+
+/-- The syscalls whose type and right the fault's lookup checks are the ones
+that fault in the receive phase: `syscallReceivesOnCap` and
+`capFaultReceivePhase?` answer one question. -/
+theorem syscallReceivesOnCap_iff_receivePhase (sid : SyscallId) :
+    syscallReceivesOnCap sid = true ↔ capFaultReceivePhase? sid = some true := by
+  cases sid <;> decide
 
 /-- WS-RC R2.B.1 (restated at the WS-RA type): the pure typed-ABI entry
     point behind the `lean_syscall_dispatch_cross_core` export
@@ -3334,8 +3344,8 @@ theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
         | none => rfl
         | some inRecv =>
           simp only []
-          cases hG : syscallResolveCap ⟨tid, tcb.cspaceRoot, decoded.capAddr, rootCn.depth,
-              syscallRequiredRight decoded.syscallId⟩ s with
+          cases hG : syscallOperandLookup decoded.syscallId ⟨tid, tcb.cspaceRoot,
+              decoded.capAddr, rootCn.depth, syscallRequiredRight decoded.syscallId⟩ s with
           | ok _ => rfl
           | error e => simp only [hNe' e hG, ↓reduceIte]
       simp only [syscallArmOutcome, syscallRefusalOutcome, hNone]

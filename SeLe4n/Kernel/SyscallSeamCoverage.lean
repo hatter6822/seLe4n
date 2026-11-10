@@ -252,6 +252,12 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
   simp only at hOps
   rw [hLk] at hOps
   simp only at hOps
+  -- the operands were declared, so the receive's gate did not refuse
+  have hRecv : receiveGateRefuses decoded.syscallId st cap = false := by
+    cases hG : receiveGateRefuses decoded.syscallId st cap
+    · rfl
+    · rw [hG] at hOps; simp at hOps
+  simp only [hRecv, Bool.false_eq_true, ↓reduceIte] at hOps
   unfold dispatchWithCapChecked dispatchCapabilityOnly dispatchCapabilityOnlyChecked at hDisp
   cases hId : decoded.syscallId <;> rw [hId] at hOps hSched hDisp <;> simp only at hDisp
   all_goals try (simp only [schedLockSetForSyscall, reduceCtorEq] at hSched; done)
@@ -728,7 +734,7 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
         simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
         subst hDisp
         exact schedLockSet_yieldOnCore_coversWrites e st stY S hSched hYieldOk
-  obtain ⟨tcb, gate, cap, hGate, hLk⟩ :=
+  obtain ⟨tcb, gate, cap, hGate, hLk, -⟩ :=
     abiEntryLockOperands_gate_lookup decoded tid st ops hY hOps
   obtain ⟨hTcb, rootCn, hRoot, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
   have hTcbObj : st.getObject? tid.toObjId = some (.tcb tcb) :=
@@ -853,7 +859,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
       by_cases hY : decoded.syscallId = .yield
       · exact Platform.FFI.syscallCapFaultOf_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _
           tid ke tcb decoded hTcbRegs hDec (by rw [hY]; rfl)
-      obtain ⟨tcbF, gate, cap, hGate, hLk⟩ :=
+      obtain ⟨tcbF, gate, cap, hGate, hLk, hRecv⟩ :=
         abiEntryLockOperands_gate_lookup decoded tid stFilled ops hY hOps
       obtain ⟨hTcbF, rootCn, hRoot, hGateEq⟩ :=
         abiEntryGate_components decoded tid stFilled tcbF gate hGate
@@ -876,8 +882,13 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
         exact Platform.FFI.syscallCapFaultOf_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _ tid
           ke tcb decoded hTcbRegs' hDec hPhase
       | some inRecv =>
-        exact Platform.FFI.syscallCapFaultOf_none_of_resolve_ok SeLe4n.arm64DefaultLayout _ tid ke
-          tcb decoded inRecv rootCn cap hTcbRegs' hDec hPhase hRootRegs hResolve
+        have hRecv' : receiveGateRefuses decoded.syscallId
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) cap = false := by
+          rw [← hRecv]; unfold receiveGateRefuses syscallTargetAccepted objectKindIs
+          simp only [SystemState.getObject?, hFillObj]
+        exact Platform.FFI.syscallCapFaultOf_none_of_lookup_ok SeLe4n.arm64DefaultLayout _ tid ke
+          tcb decoded inRecv rootCn hTcbRegs' hDec hPhase hRootRegs
+          (by simp [syscallOperandLookup, hResolve, hRecv'])
     rw [hNoFault] at hD
     simp only at hD
     rw [syscallDispatchCrossCoreStep_of_ok hD]

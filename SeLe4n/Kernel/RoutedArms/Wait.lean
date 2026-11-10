@@ -25,7 +25,7 @@ open SeLe4n.Model
 arm and taint step (`waitOperandArmThenTaintR`), its results reported. -/
 @[noinline] def waitRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (st : SystemState) : SystemState :=
-  dispatchOperandCheckedK (SeLe4n.CPtr.ofWord capWord) tid executingCore
+  dispatchOperandCheckedK .notificationWait (SeLe4n.CPtr.ofWord capWord) tid executingCore
     (waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait))
     st entryReportGeneral entryReportResolved entryReportLookup
 

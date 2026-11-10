@@ -1042,6 +1042,51 @@ def syscallInvokeTyped (sid : SyscallId) (gate : SyscallGate)
       else if cap.hasRight gate.requiredRight then op cap st'
       else .error (syscallMissingRightError sid)
 
+
+/-- **The syscalls that receive on the invoked capability**, seL4's
+`handleRecv`: the receive, the notification wait, and the receive half of the
+reply-receive.  No wildcard: a new syscall states its answer.  Pinned against
+`Platform.FFI.capFaultReceivePhase?` (`syscallReceivesOnCap_iff_receivePhase`). -/
+@[inline] def syscallReceivesOnCap : SyscallId → Bool
+  | .receive | .notificationWait | .replyRecv => true
+  | .send | .call | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  | .cspaceRevoke | .untypedRetype | .untypedReset | .vspaceMap | .vspaceUnmap
+  | .vspaceUnifyInstruction | .declassify | .auditRead | .auditDrain | .declassifySignal
+  | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .tcbSuspend
+  | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
+  | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
+  | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
+  | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
+  | .tcbUnbindNotification | .mintReplyCap => false
+
+/-- Whether a receive refuses the capability it resolved as seL4's `handleRecv`
+does: a receive-phase syscall whose capability is not of its type or lacks its
+right.  seL4 raises a capability fault there, with the lookup failure
+`missing_capability`, exactly as for a failed lookup. -/
+def receiveGateRefuses (sid : SyscallId) (st : SystemState) (cap : Capability) : Bool :=
+  syscallReceivesOnCap sid &&
+    (!syscallTargetAccepted sid st cap || !cap.hasRight (syscallRequiredRight sid))
+
+/-- **The lookup a capability fault reads**: the resolution, then, for a
+receive-phase syscall, the type and the right (`receiveGateRefuses`), whose
+failure is the lookup failure `.invalidCapability`, seL4's
+`missing_capability`.  On every other syscall it fails exactly as the
+resolution does (`syscallOperandLookup_error_of_not_receive`). -/
+def syscallOperandLookup (sid : SyscallId) (gate : SyscallGate) (st : SystemState) :
+    Except KernelError Unit :=
+  match syscallResolveCap gate st with
+  | .error e => .error e
+  | .ok (cap, _) => if receiveGateRefuses sid st cap then .error .invalidCapability else .ok ()
+
+theorem syscallOperandLookup_error_of_not_receive (sid : SyscallId) (gate : SyscallGate)
+    (st : SystemState) (e : KernelError) (h : syscallReceivesOnCap sid = false) :
+    syscallOperandLookup sid gate st = .error e ↔ syscallResolveCap gate st = .error e := by
+  unfold syscallOperandLookup
+  rcases syscallResolveCap gate st with e' | ⟨cap, _⟩
+  · simp only [Except.error.injEq]
+  · simp [receiveGateRefuses, h]
+
 /-- A successful typed gate resolved a capability of the syscall's type that
 carries the required right, at the state it was handed, and ran the arm on it. -/
 theorem syscallInvokeTyped_ok (sid : SyscallId) (gate : SyscallGate)

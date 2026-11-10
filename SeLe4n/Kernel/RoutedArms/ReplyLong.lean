@@ -46,7 +46,7 @@ apart, a result under the first. -/
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
             (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
-            (fun _ => longOperandK (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => longOperandK .reply (SeLe4n.CPtr.ofWord capWord) tid executingCore
                   (replyLongOperandArmThenTaintR ctx tcb.registerContext length extraCaps label tid
                     executingCore (syscallRequiredRight .reply))
                   (length - 4) st entryReportGeneral entryReportResolved entryReportLookup))

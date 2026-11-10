@@ -181,13 +181,13 @@ theorem entryReportOutcome_lookup {β : Type}
 function of what it hands on is what it hands on to the continuations composed
 with that function.  The routed arms run it into the report continuations and
 the entry hands the report on, so this is what makes the two runs one. -/
-theorem dispatchOperandCheckedK_map {β γ : Type} (g : β → γ) (capAddr : SeLe4n.CPtr)
+theorem dispatchOperandCheckedK_map {β γ : Type} (g : β → γ) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (arm : Option Capability → RefusalCarrying Unit) (st : SystemState)
     (kPre kArm : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (onLookup : KernelError → SystemState → β) :
-    g (dispatchOperandCheckedK capAddr tid executingCore arm st kPre kArm onLookup) =
-      dispatchOperandCheckedK capAddr tid executingCore arm st (fun r => g (kPre r))
+    g (dispatchOperandCheckedK sid capAddr tid executingCore arm st kPre kArm onLookup) =
+      dispatchOperandCheckedK sid capAddr tid executingCore arm st (fun r => g (kPre r))
         (fun r => g (kArm r)) (fun e s => g (onLookup e s)) := by
   unfold dispatchOperandCheckedK
   split
@@ -199,36 +199,33 @@ theorem dispatchOperandCheckedK_map {β γ : Type} (g : β → γ) (capAddr : Se
       · rfl
       · split
         · rfl
-        · unfold noCapRefusal
-          split
-          · split <;> rfl
-          · rfl
+        · split <;> (unfold noCapRefusal; split <;> (try split) <;> rfl)
     all_goals rfl
   all_goals rfl
 
 /-- **`longOperandK` commutes with a function of its result**, as
 `dispatchOperandCheckedK` does. -/
-theorem longOperandK_map {β γ : Type} (g : β → γ) (capAddr : SeLe4n.CPtr)
+theorem longOperandK_map {β γ : Type} (g : β → γ) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (arm : Option Capability → RefusalCarrying Unit) (n : Nat) (st : SystemState)
     (kPre kArm : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (onLookup : KernelError → SystemState → β) :
-    g (longOperandK capAddr tid executingCore arm n st kPre kArm onLookup) =
-      longOperandK capAddr tid executingCore arm n st (fun r => g (kPre r))
+    g (longOperandK sid capAddr tid executingCore arm n st kPre kArm onLookup) =
+      longOperandK sid capAddr tid executingCore arm n st (fun r => g (kPre r))
         (fun r => g (kArm r)) (fun e s => g (onLookup e s)) := by
   unfold longOperandK dispatchOperandFilledK
-  exact dispatchOperandCheckedK_map g _ _ _ _ _ _ _ _
+  exact dispatchOperandCheckedK_map g _ _ _ _ _ _ _ _ _
 
 /-- **`overflowOneOperandK` commutes with a function of its result**. -/
-theorem overflowOneOperandK_map {β γ : Type} (g : β → γ) (capAddr : SeLe4n.CPtr)
+theorem overflowOneOperandK_map {β γ : Type} (g : β → γ) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (arm : Option Capability → RefusalCarrying Unit) (st : SystemState)
     (kPre kArm : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (onLookup : KernelError → SystemState → β) :
-    g (overflowOneOperandK capAddr tid executingCore arm st kPre kArm onLookup) =
-      overflowOneOperandK capAddr tid executingCore arm st (fun r => g (kPre r))
+    g (overflowOneOperandK sid capAddr tid executingCore arm st kPre kArm onLookup) =
+      overflowOneOperandK sid capAddr tid executingCore arm st (fun r => g (kPre r))
         (fun r => g (kArm r)) (fun e s => g (onLookup e s)) := by
   unfold overflowOneOperandK dispatchOperandFilledK
-  exact dispatchOperandCheckedK_map g _ _ _ _ _ _ _ _
+  exact dispatchOperandCheckedK_map g _ _ _ _ _ _ _ _ _
 
 end SeLe4n.Kernel

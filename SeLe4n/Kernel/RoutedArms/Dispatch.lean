@@ -122,41 +122,41 @@ continuations are compiled once. -/
 
 /-- An operand route's arm, reported and handed on, is the continued entry's
 operand dispatch into its own continuations. -/
-private theorem entryReportOutcome_operand {β : Type}
+private theorem entryReportOutcome_operand {β : Type} (sid : SyscallId)
     (kGen kRes : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kLook : KernelError → SystemState → β) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
     (st : SystemState) :
     entryReportOutcome kGen kRes kLook
-        (dispatchOperandCheckedK capAddr tid executingCore arm st entryReportGeneral
+        (dispatchOperandCheckedK sid capAddr tid executingCore arm st entryReportGeneral
           entryReportResolved entryReportLookup) =
-      dispatchOperandCheckedK capAddr tid executingCore arm st kGen kRes kLook := by
+      dispatchOperandCheckedK sid capAddr tid executingCore arm st kGen kRes kLook := by
   rw [dispatchOperandCheckedK_map (entryReportOutcome kGen kRes kLook)]
   simp only [entryReportOutcome_general, entryReportOutcome_resolved, entryReportOutcome_lookup]
 
 /-- A long route's arm, reported and handed on, is the continued entry's
 filled operand dispatch into its own continuations. -/
-private theorem entryReportOutcome_long {β : Type}
+private theorem entryReportOutcome_long {β : Type} (sid : SyscallId)
     (kGen kRes : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kLook : KernelError → SystemState → β) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
     (n : Nat) (st : SystemState) :
     entryReportOutcome kGen kRes kLook
-        (longOperandK capAddr tid executingCore arm n st entryReportGeneral
+        (longOperandK sid capAddr tid executingCore arm n st entryReportGeneral
           entryReportResolved entryReportLookup) =
-      longOperandK capAddr tid executingCore arm n st kGen kRes kLook := by
+      longOperandK sid capAddr tid executingCore arm n st kGen kRes kLook := by
   rw [longOperandK_map (entryReportOutcome kGen kRes kLook)]
   simp only [entryReportOutcome_general, entryReportOutcome_resolved, entryReportOutcome_lookup]
 
-private theorem entryReportOutcome_overflowOne {β : Type}
+private theorem entryReportOutcome_overflowOne {β : Type} (sid : SyscallId)
     (kGen kRes : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kLook : KernelError → SystemState → β) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (arm : Option Capability → RefusalCarrying Unit)
     (st : SystemState) :
     entryReportOutcome kGen kRes kLook
-        (overflowOneOperandK capAddr tid executingCore arm st entryReportGeneral
+        (overflowOneOperandK sid capAddr tid executingCore arm st entryReportGeneral
           entryReportResolved entryReportLookup) =
-      overflowOneOperandK capAddr tid executingCore arm st kGen kRes kLook := by
+      overflowOneOperandK sid capAddr tid executingCore arm st kGen kRes kLook := by
   rw [overflowOneOperandK_map (entryReportOutcome kGen kRes kLook)]
   simp only [entryReportOutcome_general, entryReportOutcome_resolved, entryReportOutcome_lookup]
 
