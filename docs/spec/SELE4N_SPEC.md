@@ -7766,6 +7766,61 @@ channel.
   `decodeSyscallArgsFromState`.
 - `SeLe4n/Kernel/API.lean` — `syscallEntry`, `syscallEntryChecked`.
 
+### 8.10.5a Truncated messages (`seL4_TruncatedMessage`)
+
+An invocation whose message is shorter than the arguments its decode reads is
+refused `KernelError.truncatedMessage` (discriminant 58; Rust
+`KernelError::TruncatedMessage`).  This mirrors seL4's `seL4_TruncatedMessage`,
+which seL4 numbers 7.  The check runs where seL4's does.  The capability is
+looked up first, so an unresolvable CPtr is the lookup's fault or error.  Then
+the capability's reserved-object check, its right and the kind its target must
+be are checked, and only then the length.  The check reads the message-info
+word's length (`routedLength`, `requireMessageLength`), never a decoded
+record, so the refusal allocates nothing.  The HAL's inline-argument prefilter
+is retired: every short message reaches the kernel.
+
+The minimum is the number of words the model's decode reads.  seL4's own
+figures differ because its ABI passes a capability argument as an extra
+capability plus an index-and-depth pair, where this ABI passes one word.
+
+| Syscall | Minimum | seL4 counterpart and its check |
+|---------|---------|--------------------------------|
+| `cspaceMint` | 4 | `decodeCNodeInvocation`, Mint `length < 6` |
+| `cspaceCopy`, `cspaceMove` | 2 | `decodeCNodeInvocation`, `length < 4` |
+| `cspaceDelete`, `cspaceRevoke` | 1 | `decodeCNodeInvocation`, `length < 2` |
+| `untypedRetype` | 4 | `decodeUntypedInvocation`, `length < 6` |
+| `vspaceMap` | 4 | `decodeARMFrameInvocation`, Map `length < 3` |
+| `vspaceUnmap`, `vspaceUnifyInstruction` | 2 | `decodeARMFrameInvocation`, Unify `length < 2` |
+| `pageTableMap` | 2 | `decodeARMPageTableInvocation`, `length < 2` |
+| `tcbSetPriority`, `tcbSetMCPriority`, `tcbSetIPCBuffer`, `tcbSetAffinity` | 1 | `decodeSetPriority` / `decodeSetMCPriority` / `decodeSetIPCBuffer`, `length < 1` |
+| `tcbSetSpace` | 2 | MCS `decodeSetSpace`, `length < 2` |
+| `tcbSetFaultHandler` | 1 | the fault endpoint word |
+| `schedContextConfigure` | 5 | `decodeSchedControl_ConfigureFlags`, `length < 5` |
+| `irqControlGet` | 3 | `Arch_decodeIRQControlInvocation`, IssueIRQHandler `length < 3` |
+| `schedContextBind`, `tcbBindNotification`, `irqHandlerSetNotification` | 1 | none: seL4 checks only for the extra capability, which this ABI passes as a word |
+| `serviceRegister` 5, `mintReplyCap` 2, `auditRead` 3, `auditDrain` 1 | | model calls with no seL4 counterpart |
+
+The IPC calls, the signal (`notificationSignal`) and the declassifications
+have minimum 0, because seL4 checks no length for an IPC or a signal.
+
+**One owner.** `truncationMinimum` (`SyscallArgDecode`) is the table.  The
+router (`routedShortTail`), every decode's first action and the audit arms
+(`auditTruncated`) all read it.  `#assert_decoder_arities`
+(`Architecture/DecoderArity.lean`, invoked at the end of `API.lean`) reads the
+elaborated bodies and fails the build unless:
+
+- each listed decode's first action is the check at its syscall's minimum;
+- each decode reads exactly words `0 … minimum − 1`, and reads them only
+  through `requireMsgReg`;
+- every syscall with a nonzero minimum is listed;
+- in the checked dispatch (`dispatchWithCapChecked`), each syscall's arm calls
+  exactly its listed decode, and no minimum-0 syscall's arm calls a decode
+  that has a check.
+
+The compiled routed arms are tied to that dispatch by their equality proofs
+(`dispatchShortArgsCheckedR_eq`, `dispatchInvocationCheckedR_eq`,
+`dispatchAuditedCheckedR_eq`).
+
 ### 8.10.6 IPC Capability-Transfer NI Symmetry
 The three IPC capability-transfer wrappers in
 `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` —

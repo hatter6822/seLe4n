@@ -2369,8 +2369,12 @@ private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
     ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
   · intro _ _ _ hRes
-    simp only [resolveSchedContextBindThread, decodeSchedContextBindArgs, hRegs,
-      requireMsgReg, bind, Except.bind] at hRes
+    have hErr : ∃ e, decodeSchedContextBindArgs decoded = .error e := by
+      simp only [decodeSchedContextBindArgs, hRegs, requireMessageLength, requireMsgReg, bind,
+        Except.bind]
+      split <;> simp
+    obtain ⟨e, he⟩ := hErr
+    simp only [resolveSchedContextBindThread, he] at hRes
     cases hRes
   · intro objId _ hTgt vtid hVal
     injection hTgt with hObj
@@ -2529,7 +2533,7 @@ decoder's thread id -- the sentinel, so that field refuses at validation),
 dstSlot 999 (also the retype decoder's type tag -- invalid, so that decoder
 refuses), rights word 3, badge word 5. -/
 private def witnessDecodedMint : SyscallDecodeResult :=
-  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 4, extraCaps := 0, label := 0 },
     syscallId := .cspaceMint, msgRegs := #[⟨0⟩, ⟨999⟩, ⟨3⟩, ⟨5⟩] }
 
 private def witnessGateMint : SyscallGate :=
@@ -2557,7 +2561,8 @@ theorem syscallDispatchQuiescence_inhabited_mint :
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp only [Architecture.SyscallArgDecode.decodeCSpaceMintArgs,
-      witnessDecodedMint, requireMsgReg, bind, Except.bind, pure,
+      witnessDecodedMint, Architecture.SyscallArgDecode.requireMessageLength,
+      Architecture.SyscallArgDecode.truncationMinimum, requireMsgReg, bind, Except.bind, pure,
       Except.pure] at hDec
     split at hDec
     · cases hDec

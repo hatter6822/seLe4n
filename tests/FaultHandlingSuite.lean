@@ -1466,6 +1466,14 @@ private def runSyscallCapFaultChecks : IO Unit := do
       (.capFault 3 false .invalidCapability))
   assertBool "a TCB invocation at the same CPtr faults too — handleInvocation raises CapFault for every blocking invocation"
     (seamCapFault (seamDispatch seamCtx .tcbSuspend 3) (.capFault 3 false .invalidCapability))
+  -- A short message: the lookup comes first, as in seL4, so an unresolvable
+  -- CPtr is the lookup's fault and a resolving one is `.truncatedMessage`.
+  assertBool "a delete whose message is shorter than its argument, at the same unresolvable CPtr, faults on the lookup first"
+    (seamCapFault (seamDispatch seamCtx .cspaceDelete 3) (.capFault 3 false .invalidCapability))
+  assertBool "a delete whose message is shorter than its argument, through a capability that resolves and carries its right, is refused truncatedMessage"
+    (seamErrorFrame (seamDispatch seamCtx .cspaceDelete 0) .truncatedMessage)
+  assertBool "a delete through a resolving capability that lacks its right is refused on the right before the length"
+    (seamErrorFrame (seamDispatch seamCtx .cspaceDelete 1) .illegalAuthority)
   -- …and what is NOT a capability fault.
   assertBool "a Call on a capability that RESOLVES but lacks send is the invocation's error, not the lookup's fault"
     (seamErrorFrame (seamDispatch seamCtx .call 1) .illegalAuthority)

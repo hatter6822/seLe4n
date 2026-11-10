@@ -269,7 +269,7 @@ private def runRegisterDecodeTests : IO Unit := do
 /-- Helper: create a SyscallDecodeResult stub with given message registers. -/
 private def mkStub (regs : Array RegValue) : SyscallDecodeResult :=
   { capAddr := CPtr.ofNat 0
-    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    msgInfo := { length := regs.size, extraCaps := 0, label := 0 }
     syscallId := .send
     msgRegs := regs }
 

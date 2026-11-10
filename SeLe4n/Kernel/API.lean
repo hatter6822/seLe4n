@@ -7381,11 +7381,13 @@ and any decode success passes the original state unmodified to the delegated
 kernel operation.
 
 Proved by showing that two `SyscallDecodeResult` values with the same
-`msgRegs` field produce identical decode results for all 6 structures —
-confirming that decode depends only on `msgRegs`, not on `capAddr`,
-`msgInfo`, or `syscallId`. -/
+`msgRegs` field and the same message length produce identical decode results
+for all 6 structures — confirming that decode depends only on `msgRegs` and
+the length its truncation check reads (`requireMessageLength`), not on
+`capAddr`, the rest of `msgInfo`, or `syscallId`. -/
 theorem dispatchWithCap_layer2_decode_pure
-    (d₁ d₂ : SyscallDecodeResult) (hRegs : d₁.msgRegs = d₂.msgRegs) :
+    (d₁ d₂ : SyscallDecodeResult) (hRegs : d₁.msgRegs = d₂.msgRegs)
+    (hLen : d₁.msgInfo.length = d₂.msgInfo.length) :
     (decodeCSpaceMintArgs d₁ = decodeCSpaceMintArgs d₂) ∧
     (decodeCSpaceCopyArgs d₁ = decodeCSpaceCopyArgs d₂) ∧
     (decodeCSpaceMoveArgs d₁ = decodeCSpaceMoveArgs d₂) ∧
@@ -7395,9 +7397,9 @@ theorem dispatchWithCap_layer2_decode_pure
     (decodeVSpaceUnmapArgs d₁ = decodeVSpaceUnmapArgs d₂) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     (try simp only [decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs,
-      decodeCSpaceDeleteArgs, requireMsgReg, hRegs]) <;>
+      decodeCSpaceDeleteArgs, requireMessageLength, requireMsgReg, hRegs, hLen]) <;>
     (try funext maxASID; simp only [decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
-      requireMsgReg, hRegs])
+      requireMessageLength, requireMsgReg, hRegs, hLen])
 
 /-- WS-K-F4: Composition verification — `syscallEntry_preserves_proofLayerInvariantBundle`
 composes decode purity (no state change), read-only cap lookup (state unchanged),
@@ -9342,5 +9344,34 @@ theorem dispatchCapabilityOnly_schedContextBind_idle_capability_refused
   simp only [Option.map_some, hRes]
 
 
+
+/-! **The truncation table is the decodes' word counts** (`truncationMinimum`):
+each syscall with a nonzero minimum is listed with the decode its dispatch
+reads its arguments through, and the check reads that decode's body, failing
+the build unless its first action is the truncation check at the syscall's
+minimum and the words it reads are exactly `0, …, minimum - 1`
+(`DecoderArity`).  The pairing is pinned against the checked dispatch
+(`dispatchWithCapChecked`): each listed syscall's arm calls exactly its listed
+decode, and no other syscall's arm calls one.  The signal, the receives and the declassifications have
+minimum 0, as seL4 checks no length for an IPC or a signal. -/
+#assert_decoder_arities truncationMinimum requireMessageLength requireMsgReg
+    SyscallDecodeResult.msgRegs SyscallDecodeResult.syscallId dispatchWithCapChecked [
+  (.cspaceMint, decodeCSpaceMintArgs), (.cspaceCopy, decodeCSpaceCopyArgs),
+  (.cspaceMove, decodeCSpaceMoveArgs), (.cspaceDelete, decodeCSpaceDeleteArgs),
+  (.cspaceRevoke, decodeCSpaceDeleteArgs), (.mintReplyCap, decodeCSpaceCopyArgs),
+  (.untypedRetype, decodeUntypedRetypeArgs), (.vspaceMap, decodeVSpaceMapArgs),
+  (.vspaceUnmap, decodeVSpaceUnmapArgs),
+  (.vspaceUnifyInstruction, decodeVSpaceUnifyInstructionArgs),
+  (.serviceRegister, decodeServiceRegisterArgs),
+  (.schedContextConfigure, decodeSchedContextConfigureArgs),
+  (.schedContextBind, decodeSchedContextBindArgs),
+  (.tcbBindNotification, decodeTcbBindNotificationArgs),
+  (.irqControlGet, decodeIrqControlGetArgs),
+  (.irqHandlerSetNotification, decodeIrqHandlerSetNotificationArgs),
+  (.tcbSetPriority, decodeSetPriorityArgs), (.tcbSetMCPriority, decodeSetMCPriorityArgs),
+  (.tcbSetIPCBuffer, decodeSetIPCBufferArgs), (.tcbSetAffinity, decodeSetAffinityArgs),
+  (.tcbSetFaultHandler, decodeSetFaultHandlerArgs), (.tcbSetSpace, decodeSetSpaceArgs),
+  (.pageTableMap, decodePageTableMapArgs), (.auditRead, decodeAuditReadArgs),
+  (.auditDrain, decodeAuditDrainArgs)]
 
 end SeLe4n.Kernel

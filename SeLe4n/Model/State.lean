@@ -2408,6 +2408,43 @@ theorem RefusalCarrying.ofChecked_eq (admitted : Bool) (perform : SystemState �
     cases k st <;> rfl
   | true => simp only [↓reduceIte, RefusalCarrying.ofKernel, h rfl]
 
+/-- `ofChecked` whose refused path runs the operation `k` the kernel computation
+`K` wraps, and `next` on its result, rather than `K` itself
+(`ofCheckedThen_eq`).  `K` hands `k`'s refusal on as a refusal of another type,
+which builds a cell whenever `k`'s refusal is a shared constant; here `k`'s
+refusal meets the caller's own match and is never rebuilt. -/
+@[inline] def RefusalCarrying.ofCheckedThen (admitted : Bool)
+    (perform : SystemState → SystemState) (k : SystemState → Except KernelError β)
+    (next : β → Except KernelError (Unit × SystemState)) : RefusalCarrying Unit :=
+  fun st =>
+    if admitted then .ok ((), perform st)
+    else
+      match k st with
+      | .error e => .error (e, st)
+      | .ok b =>
+        match next b with
+        | .error e => .error (e, st)
+        | .ok r => .ok r
+
+/-- `ofCheckedThen` is `ofKernel K` when `K` is `k` then `next`, and an
+admitted `K` is `perform`. -/
+theorem RefusalCarrying.ofCheckedThen_eq (admitted : Bool)
+    (perform : SystemState → SystemState) (k : SystemState → Except KernelError β)
+    (next : β → Except KernelError (Unit × SystemState)) (K : Kernel Unit) (st : SystemState)
+    (hK : K st = match k st with
+      | .error e => .error e
+      | .ok b => next b)
+    (h : admitted = true → K st = .ok ((), perform st)) :
+    RefusalCarrying.ofCheckedThen admitted perform k next st = RefusalCarrying.ofKernel K st := by
+  unfold RefusalCarrying.ofCheckedThen
+  cases admitted with
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel, hK]
+    cases k st with
+    | error e => rfl
+    | ok b => dsimp only; cases next b <;> rfl
+  | true => simp only [↓reduceIte, RefusalCarrying.ofKernel, h rfl]
+
 -- ============================================================================
 -- S4-A/S4-B: Object capacity bounds
 -- ============================================================================

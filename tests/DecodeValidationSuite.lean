@@ -37,7 +37,7 @@ namespace SeLe4n.Testing.DecodeValidation
 /-- Helper: build a decode stub from raw register values. -/
 def stubOf (vals : Array Nat) : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    msgInfo := { length := vals.size, extraCaps := 0, label := 0 }
     syscallId := .send
     msgRegs := vals.map (fun v => ⟨v⟩) }
 

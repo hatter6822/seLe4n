@@ -398,17 +398,17 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
         · next sid capAddr hInvRegs =>
-          obtain ⟨decoded, hDec, hSid, hRouted, hCap, hZero, hRegs'⟩ :=
+          obtain ⟨decoded, hDec, hSid, hRouted, hCap, hZero, hRegs', hLenT⟩ :=
             SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedInvoke
               st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 sid capAddr hInvRegs
           subst hCap hSid
           rw [dispatchInvocationCheckedR_eq ctx decoded tcb.registerContext tid executingCore
-            hRouted (.of_eq hRegs' 4)]
+            hRouted (.of_eq hRegs' 4) hLenT]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
         · next sid capAddr hCfgRegs =>
-          obtain ⟨hRouted, msgInfo, hDec⟩ :=
+          obtain ⟨hRouted, msgInfo, hMl, hDec⟩ :=
             SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowOne
               st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 sid capAddr hCfgRegs
           rw [SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK_eq]
@@ -424,6 +424,7 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
                   #[(⟨w.toNat⟩ : RegValue)],
                 inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 1 }
               tcb.registerContext w tid executingCore hRouted (.of_eq rfl 5)
+              (show 5 ≤ msgInfo.length by rw [hMl]; decide)
             simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
               SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord, hR,
               Bool.false_eq_true, ↓reduceIte]
@@ -844,12 +845,12 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
                   · simp only [SeLe4n.Kernel.Architecture.tlbUndoFillOnCore_tlbFillIpcBufferOnCore]
                   · rfl
         · next sid capAddr hAudRegs =>
-          obtain ⟨decoded, hDec, hSid, hRouted, hCap, hZero, hRegs'⟩ :=
+          obtain ⟨decoded, hDec, hSid, hRouted, hCap, hZero, hRegs', hMIa⟩ :=
             SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedAudited
               st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 sid capAddr hAudRegs
           subst hCap hSid
           rw [dispatchAuditedCheckedR_eq ctx decoded tcb.registerContext tid executingCore
-            hRouted (.of_eq hRegs' 4)]
+            hRouted (.of_eq hRegs' 4) (routedLength_of_decode hMIa).symm]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
@@ -894,7 +895,7 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
                 msgInfo hMI hOvRegs hRead
               have hW : overflowWordAt st tid 0 = w0 := by rw [overflowWordAt_eq, hR0]
               have hDisp := dispatchOverflowedCheckedR_eq ctx st tid tcb.registerContext sid
-                capAddr msgInfo executingCore hRt (by omega)
+                capAddr msgInfo executingCore hRt (by omega) (routedLength_of_decode hMI)
               simp only [hW] at hDisp
               simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hD,
                 Bool.false_eq_true, ↓reduceIte, overflowedDecode_overflowCount,
@@ -914,12 +915,11 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
                 · simp only [SeLe4n.Kernel.Architecture.tlbUndoFillOnCore_tlbFillIpcBufferOnCore]
                 · rfl
         · next sid capAddr hShortRegs =>
-          obtain ⟨decoded, hDec, hSid, hRouted, hCap, hZero, hRegs'⟩ :=
+          obtain ⟨decoded, hDec, hSid, hRouted, hCap, hZero, -, hT⟩ :=
             SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedShortArgs
               st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 sid capAddr hShortRegs
           subst hCap hSid
-          rw [dispatchShortArgsCheckedR_eq ctx decoded tcb.registerContext tid executingCore
-            hRouted hRegs']
+          rw [dispatchShortArgsCheckedR_eq ctx decoded tid executingCore hRouted hT]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
@@ -1805,7 +1805,7 @@ theorem syscallEntryCheckedK_spec {β : Type} (ctx : LabelingContext)
           revert hRA
           cases sid <;> intro hRA <;> first | rfl | exact absurd hRA (by decide))
     | overflowOne sid capAddr =>
-      obtain ⟨hRouted, msgInfo, hDecM⟩ :=
+      obtain ⟨hRouted, msgInfo, -, hDecM⟩ :=
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowOne
           st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 sid capAddr hRt
       simp only [syscallEntryCheckedK, hCtx, hCur, hObj, hRt, Bool.false_eq_true, ↓reduceIte]

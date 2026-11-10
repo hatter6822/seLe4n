@@ -25,9 +25,10 @@ walk is that one page's, so the call is the short route's dispatch on the
 decode the long message reads to (`overflowedDecode`), which refuses in the
 state it was handed (`dispatchOverflowedCheckedR_eq`).
 
-A configure or a service register whose message fits the inline words
-(`RegisterRoutedSyscall.shortArgs`) is short of its fifth argument: its
-argument decode refuses once its capability is found and checked
+An invocation whose message is shorter than its arguments
+(`RegisterRoutedSyscall.shortArgs`, `truncationMinimum`) is refused
+`.truncatedMessage` once its capability is found and checked, before any
+argument word is read, as seL4's decode refuses `seL4_TruncatedMessage`
 (`dispatchShortArgsCheckedR_eq`).
 -/
 
@@ -223,7 +224,8 @@ invocation's fifth argument slot 0's word. -/
 theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (mi : MessageInfo) (executingCore : Concurrency.CoreId)
-    (hRt : routedOverflowed sid = true) (hLen : 4 < mi.length) (st : SystemState)
+    (hRt : routedOverflowed sid = true) (hLen : 4 < mi.length)
+    (hMl : routedLength rf = mi.length) (st : SystemState)
     (hCur : st.scheduler.currentOnCore executingCore = some tid) :
     dispatchOverflowedCheckedR ctx sid capAddr rf mi.length (overflowWordAt S tid 0) tid
         executingCore st =
@@ -244,11 +246,12 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     rw [if_pos hI]
     exact dispatchInvocationCheckedR_eq ctx (overflowedDecode S tid rf sid capAddr mi) rf tid
       executingCore hI hA4
+      (Nat.le_trans (truncationMinimum_le_five sid) (show 5 ≤ mi.length by omega))
   by_cases hAu : routedAudited sid = true
   · unfold dispatchOverflowedCheckedR
     rw [if_neg hI, if_pos hAu]
     exact dispatchAuditedCheckedR_eq ctx (overflowedDecode S tid rf sid capAddr mi) rf tid
-      executingCore hAu hA4
+      executingCore hAu hA4 hMl.symm
   have h0 : (overflowedDecode S tid rf sid capAddr mi).msgRegs[0]? = some (readReg rf ⟨2⟩) := by
     simp only [overflowedDecode, Architecture.regMessageRegs]
     rw [Array.getElem?_append_left (by simp [SeLe4n.arm64DefaultLayout])]
@@ -297,61 +300,68 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     unfold dispatchOverflowedCheckedR
     rw [if_neg hI, if_neg hAu]
     exact dispatchConfigureCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
-      executingCore rfl hA5
+      executingCore rfl hA5 (show 5 ≤ mi.length by omega)
   · -- the service register
     unfold dispatchOverflowedCheckedR
     rw [if_neg hI, if_neg hAu]
     exact dispatchServiceRegisterCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
-      executingCore rfl hA5
+      executingCore rfl hA5 (show 5 ≤ mi.length by omega)
   · exact absurd rfl hY
 
-/-! ## A five-word invocation short of its fifth word -/
+/-! ## An invocation short of its arguments (seL4's `seL4_TruncatedMessage`) -/
 
-/-- The target a five-word invocation reads its arguments under: a core's
-scheduling control for the configure, an object for the service register.  Any
-other is refused before its arguments are read. -/
-@[inline] def fiveWordArgsTarget (sid : SyscallId) (t : CapTarget) : Bool :=
+/-- The target an invocation reads its arguments under: a core's scheduling
+control for the configure, the interrupt control for the handler issue, an
+interrupt handler for its notification binding, and an object for every other
+invocation.  Any other target is refused `.invalidCapability` before the
+arguments are read, as seL4's capability kind chooses the decode before the
+decode checks the length. -/
+@[inline] def truncationTarget (sid : SyscallId) (t : CapTarget) : Bool :=
   match sid, t with
   | .schedContextConfigure, .schedControl _ => true
-  | .serviceRegister, .object _ => true
+  | .schedContextConfigure, _ => false
+  | .irqControlGet, .irqControl _ => true
+  | .irqControlGet, _ => false
+  | .irqHandlerSetNotification, .irqHandler _ => true
+  | .irqHandlerSetNotification, _ => false
+  | _, .object _ => true
   | _, _ => false
 
-/-- A five-word invocation's argument decode refuses a message of the inline
-words alone: the four words read, and the fifth is past them. -/
-theorem decodeFiveWordArgs_short (decoded : SyscallDecodeResult) (rf : SeLe4n.RegisterFile)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf)) :
-    decodeSchedContextConfigureArgsChecked decoded = .error .invalidMessageInfo ∧
-    decodeServiceRegisterArgs decoded = .error .invalidMessageInfo := by
-  constructor
-  · unfold decodeSchedContextConfigureArgsChecked decodeSchedContextConfigureArgs
-    rw [hRegs]
-    simp [requireMsgReg, SeLe4n.arm64DefaultLayout, bind, Except.bind]
-  · unfold decodeServiceRegisterArgs
-    rw [hRegs]
-    simp [requireMsgReg, SeLe4n.arm64DefaultLayout, bind, Except.bind]
-
-/-- `dispatchWithCapChecked` at a five-word invocation of the inline words alone:
-refused, as missing its argument where the target is the one it reads its
-arguments under, and as the wrong capability otherwise. -/
-theorem dispatchWithCapChecked_eq_shortArgs (ctx : LabelingContext)
-    (decoded : SyscallDecodeResult) (rf : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId)
+/-- `dispatchWithCapChecked` at an invocation whose message is shorter than its
+arguments (`truncationMinimum`): refused `.truncatedMessage` where the target is
+the one it reads its arguments under, and as the wrong capability otherwise. -/
+theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
-    (st : SystemState) (hR : routedOverflowOne decoded.syscallId = true)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf)) :
+    (st : SystemState)
+    (hR : (routedInvocation decoded.syscallId || routedOverflowOne decoded.syscallId) = true)
+    (hT : decoded.msgInfo.length < truncationMinimum decoded.syscallId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      .error (if fiveWordArgsTarget decoded.syscallId cap.target then .invalidMessageInfo
+      .error (if truncationTarget decoded.syscallId cap.target then .truncatedMessage
         else .invalidCapability) := by
-  obtain ⟨hC, hS⟩ := decodeFiveWordArgs_short decoded rf hRegs
-  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
-  simp only at hR
-  cases sid <;> simp only [routedOverflowOne, Bool.false_eq_true] at hR <;>
+  unfold dispatchWithCapChecked dispatchCapabilityOnly
+  cases hS : decoded.syscallId <;> rw [hS] at hR hT <;>
+    simp only [routedInvocation, routedOverflowOne, Bool.false_eq_true, Bool.or_false,
+      Bool.false_or, truncationMinimum, Nat.not_lt_zero] at hR hT <;>
+    have hL := fun k => @requireMessageLength_of_lt decoded k <;>
     cases target <;>
-    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hC, hS, fiveWordArgsTarget]
-  all_goals rfl
+    simp only [hS, truncationTarget, ↓reduceIte, Bool.false_eq_true, Option.some.injEq,
+      decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs, decodeCSpaceDeleteArgs,
+      decodeUntypedRetypeArgs, decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
+      decodeVSpaceUnifyInstructionArgs, decodeServiceRegisterArgs,
+      decodeSchedContextConfigureArgsChecked, decodeSchedContextConfigureArgs,
+      decodeSchedContextBindArgs, decodeTcbBindNotificationArgs, decodeIrqControlGetArgs,
+      decodeIrqHandlerSetNotificationArgs, decodeSetPriorityArgs, decodeSetMCPriorityArgs,
+      decodeSetIPCBufferArgs, decodeSetAffinityArgs, decodeSetFaultHandlerArgs,
+      decodeSetSpaceArgs, decodePageTableMapArgs, truncationMinimum, hL _ hT, bind,
+      Except.bind, dispatchCapabilityOnlyChecked]
+  all_goals first | rfl | skip
 
-/-- A five-word invocation short of its fifth word, behind the operand check:
-the rights gate `syscallLookupCap` applies, then the refusal. -/
+/-- An invocation short of its arguments, behind the operand check: the rights
+gate `syscallLookupCap` applies, then the target the arguments are read under,
+then the refusal, `.truncatedMessage` — the order seL4's decode reads them in,
+the capability found first and the length checked before any argument word. -/
 @[inline] def shortArgsOperandArmR (sid : SyscallId) : Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
@@ -359,20 +369,20 @@ the rights gate `syscallLookupCap` applies, then the refusal. -/
     | some cap =>
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
         else if cap.hasRight (syscallRequiredRight sid) then
-          .error (if fiveWordArgsTarget sid cap.target then .invalidMessageInfo
+          .error (if truncationTarget sid cap.target then .truncatedMessage
             else .invalidCapability, st)
         else .error (.illegalAuthority, st)
 
-/-- `dispatchSyscallChecked` for a five-word invocation of the inline words alone
-(`dispatchShortArgsCheckedR_eq`). -/
+/-- `dispatchSyscallChecked` for an invocation whose message is shorter than its
+arguments (`dispatchShortArgsCheckedR_eq`). -/
 @[inline] def dispatchShortArgsCheckedR (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore (shortArgsOperandArmR sid)
 
 theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult)
-    (rf : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (hR : routedOverflowOne decoded.syscallId = true)
-    (hRegs : decoded.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf)) :
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (hR : (routedInvocation decoded.syscallId || routedOverflowOne decoded.syscallId) = true)
+    (hT : decoded.msgInfo.length < truncationMinimum decoded.syscallId) :
     dispatchShortArgsCheckedR decoded.syscallId decoded.capAddr tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hFirst : syscallChecksTargetFirst decoded.syscallId = false := by
@@ -382,10 +392,13 @@ theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallD
   have hTaint : ∀ st pe pl pt post,
       applySyscallTaintAfter (syscallTaintPlan st tid decoded) pe pl pt post = post := by
     intro st pe pl pt post
-    cases h : decoded.syscallId <;> rw [h] at hR <;> first | (cases hR; done) | skip
-    all_goals first
-      | exact applySyscallTaintAfter_configure st tid decoded h pe pl pt post
-      | exact applySyscallTaintAfter_serviceRegister st tid decoded h pe pl pt post
+    cases hI : routedInvocation decoded.syscallId
+    · rw [hI, Bool.false_or] at hR
+      cases h : decoded.syscallId <;> rw [h] at hR <;> first | (cases hR; done) | skip
+      all_goals first
+        | exact applySyscallTaintAfter_configure st tid decoded h pe pl pt post
+        | exact applySyscallTaintAfter_serviceRegister st tid decoded h pe pl pt post
+    · exact applySyscallTaintAfter_routed st tid decoded hI pe pl pt post
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb rootCn ref _ _ hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
@@ -399,7 +412,7 @@ theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallD
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
-        rw [dispatchWithCapChecked_eq_shortArgs ctx decoded rf tid executingCore _ cap st hR hRegs]
+        rw [dispatchWithCapChecked_eq_truncated ctx decoded tid executingCore _ cap st hR hT]
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
 
 end SeLe4n.Kernel

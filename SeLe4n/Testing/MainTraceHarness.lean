@@ -3013,7 +3013,8 @@ private def runRustXvalVectors : IO Unit := do
     { srcSlot := SeLe4n.Slot.ofNat 10, dstSlot := SeLe4n.Slot.ofNat 20, rights := .ofNat 0x07, badge := Badge.ofNatMasked 999 }
   let mintEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs mintArgs
   let mintStub : SyscallDecodeResult :=
-    { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := mintEncoded.size, extraCaps := 0, label := 0 },
       syscallId := .send, msgRegs := mintEncoded }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs mintStub with
   | .ok decoded =>
@@ -3038,7 +3039,8 @@ private def runRustXvalVectors : IO Unit := do
     { bufferAddr := (SeLe4n.VAddr.ofNat 1024) }   -- 1024 is aligned to ipcBufferAlignment (1024)
   let ibEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs ibArgs
   let ibStub : SyscallDecodeResult :=
-    { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := ibEncoded.size, extraCaps := 0, label := 0 },
       syscallId := .tcbSetIPCBuffer, msgRegs := ibEncoded }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs ibStub with
   | .ok decoded =>

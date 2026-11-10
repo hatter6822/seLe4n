@@ -423,7 +423,8 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (st : SystemState) (h : routedInvocation decoded.syscallId = true)
-    (hRegs : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (hRegs : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum decoded.syscallId ≤ decoded.msgInfo.length) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       dispatchInvocationBy ctx decoded.syscallId decoded.capAddr
         layout regs tid executingCore cap st := by
@@ -447,11 +448,14 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hIrqNtfn := decodeIrqHandlerSetNotificationArgs_eq_by layout regs decoded hRegs
   rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
+  simp only [truncationMinimum] at *
   cases sid <;> simp only [routedInvocation, Bool.false_eq_true] at h <;>
+    simp only [truncationMinimum] at hLen <;>
     cases target <;>
-    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hMint,
-      hCopy, hMove, hDelete, hRetype, hMap, hUnmap, hScBind, hNtfn, hPrio, hMcp,
-      hIpcBuf, hAff, hFault, hSpace, hPt, hIrqGet, hIrqNtfn, decodeVSpaceUnifyInstructionArgs,
+    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hLen,
+      hMint, hCopy, hMove, hDelete, hRetype, hMap, hUnmap,
+      hScBind, hNtfn, hPrio, hMcp, hIpcBuf, hAff, hFault,
+      hSpace, hPt, hIrqGet, hIrqNtfn, decodeVSpaceUnifyInstructionArgs,
       dispatchCapabilityOnlyChecked]
   all_goals first | rfl | (split <;> rfl)
 
@@ -495,7 +499,10 @@ write has been split into its checks and its in-slot write
 (`RefusalCarrying.ofChecked`) reading the checks first and handing the state to
 the write alone.  An arm whose checks refuse, and every arm not yet split, is
 `ofKernel` of `dispatchInvocationBy`, whose refusal precedes any write
-(`dispatchInvocationByR_eq`). -/
+(`dispatchInvocationByR_eq`).  Where that arm of `dispatchInvocationBy` hands
+an operation's refusal on as a refusal of another type, the refused path runs
+the operation itself (`RefusalCarrying.ofCheckedThen`), so the operation's
+refusal is read where it is, never rebuilt. -/
 @[inline] def dispatchInvocationByR (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
@@ -514,12 +521,14 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
           | .error e => .error (e, st)
           | .ok vTargetTid =>
-            RefusalCarrying.ofChecked
+            RefusalCarrying.ofCheckedThen
               (SchedContext.PriorityManagement.setPriorityAdmitted st vCallerTid vTargetTid
                 (Priority.ofNat args.newPriority) executingCore)
               (fun st => SchedContext.PriorityManagement.setPriorityPerform st vTargetTid.val
                 (Priority.ofNat args.newPriority) executingCore)
-              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+              (fun st => SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid
+                vTargetTid (Priority.ofNat args.newPriority) executingCore)
+              (fun r => .ok ((), r.1)) st
     | _ => .error (.invalidCapability, st)
   | .tcbSetMCPriority =>
     match cap.target with
@@ -533,12 +542,14 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
           | .error e => .error (e, st)
           | .ok vTargetTid =>
-            RefusalCarrying.ofChecked
+            RefusalCarrying.ofCheckedThen
               (SchedContext.PriorityManagement.setMCPriorityAdmitted st vCallerTid vTargetTid
                 (Priority.ofNat args.newMCP))
               (fun st => st.updateTcb vTargetTid.val
                 (fun t => { t with maxControlledPriority := Priority.ofNat args.newMCP }))
-              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+              (fun st => SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid
+                vTargetTid (Priority.ofNat args.newMCP) executingCore)
+              (fun r => .ok ((), r.1)) st
     | _ => .error (.invalidCapability, st)
   | .tcbSetIPCBuffer =>
     match cap.target with
@@ -549,10 +560,11 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error (e, st)
         | .ok vtid =>
-          RefusalCarrying.ofChecked
+          RefusalCarrying.ofCheckedThen
             (Architecture.IpcBufferValidation.setIPCBufferAdmitted st vtid args.bufferAddr)
             (fun st => st.updateTcb vtid.val (fun t => { t with ipcBuffer := args.bufferAddr }))
-            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+            (fun st => Architecture.IpcBufferValidation.setIPCBufferOp st vtid args.bufferAddr)
+            (fun st' => .ok ((), st')) st
     | _ => .error (.invalidCapability, st)
   | .tcbSetAffinity =>
     match cap.target with
@@ -565,9 +577,10 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         | .ok vtid =>
           decodeAffinityK args.affinityRaw
             (fun affinity =>
-              RefusalCarrying.ofChecked (setAffinityAdmitted st vtid.val affinity)
+              RefusalCarrying.ofCheckedThen (setAffinityAdmitted st vtid.val affinity)
                 (fun st => setAffinityPerform st vtid.val affinity)
-                (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+                (fun st => setThreadCpuAffinityOnCore st vtid affinity executingCore)
+                (fun r => .ok ((), r.1)) st)
             (fun e => .error (e, st))
     | _ => .error (.invalidCapability, st)
   | .tcbSuspend =>
@@ -576,9 +589,10 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
       | .error e => .error (e, st)
       | .ok vtid =>
-        RefusalCarrying.ofChecked (Lifecycle.Suspend.suspendAdmitted st vtid.val)
+        RefusalCarrying.ofCheckedThen (Lifecycle.Suspend.suspendAdmitted st vtid.val)
           (fun st => Lifecycle.Suspend.suspendPerform st vtid executingCore)
-          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+          (fun st => Lifecycle.Suspend.suspendThreadOnCore st vtid executingCore)
+          (fun r => .ok ((), r.1)) st
     | _ => .error (.invalidCapability, st)
   | .tcbResume =>
     match cap.target with
@@ -586,10 +600,12 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
       | .error e => .error (e, st)
       | .ok vtid =>
-        RefusalCarrying.ofChecked (Lifecycle.Suspend.resumeAdmitted st vtid.val)
+        RefusalCarrying.ofCheckedThen (Lifecycle.Suspend.resumeAdmitted st vtid.val)
           (fun st => Lifecycle.Suspend.resumePerform
             (retirePendingFaultForResume st vtid.val) vtid.val executingCore)
-          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+          (fun st => Lifecycle.Suspend.resumeThreadOnCore
+            (retirePendingFaultForResume st vtid.val) vtid executingCore)
+          (fun r => .ok ((), r.1)) st
     | _ => .error (.invalidCapability, st)
   | .tcbSetFaultHandler =>
     match cap.target with
@@ -600,10 +616,11 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error (e, st)
         | .ok vtid =>
-          RefusalCarrying.ofChecked (setThreadFaultHandlerAdmitted st vtid args.handlerCPtr)
+          RefusalCarrying.ofCheckedThen (setThreadFaultHandlerAdmitted st vtid args.handlerCPtr)
             (fun st => st.updateTcb vtid.val
               (fun t => { t with faultHandlerSet := true, faultHandlerWord := args.handlerCPtr }))
-            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+            (fun st => setThreadFaultHandlerOp st vtid args.handlerCPtr)
+            (fun st' => .ok ((), st')) st
     | _ => .error (.invalidCapability, st)
   | .tcbSetSpace =>
     match cap.target with
@@ -665,9 +682,14 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       match validateObjIdArg scObjId with
       | .error e => .error (e, st)
       | .ok vScId =>
-        RefusalCarrying.ofChecked (SchedContextOps.schedContextUnbindAdmitted st vScId)
+        RefusalCarrying.ofCheckedThen (SchedContextOps.schedContextUnbindAdmitted st vScId)
           (fun st => SchedContextOps.schedContextUnbindOnCorePerform st vScId executingCore)
-          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+          (SchedContextOps.schedContextUnbind vScId)
+          (fun r =>
+            match SchedContext.PriorityManagement.priorityRescheduleOnCore r.2
+                (SchedContextOps.schedContextRunningCore? st vScId.val) executingCore true with
+            | .ok (st', _) => .ok ((), st')
+            | .error e => .error e) st
     | _ => .error (.invalidCapability, st)
   | .schedContextConsumed =>
     match cap.target with
@@ -675,11 +697,12 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       match validateObjIdArg scObjId with
       | .error e => .error (e, st)
       | .ok vScId =>
-        RefusalCarrying.ofChecked
+        RefusalCarrying.ofCheckedThen
           (schedContextConsumedAdmitted st (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
           (fun st => schedContextConsumedPerform st (SeLe4n.SchedContextId.ofObjId vScId.val)
             executingCore)
-          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+          (schedContextConsumedOnCore (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
+          (fun st' => .ok ((), st')) st
     | _ => .error (.invalidCapability, st)
   | .schedContextYieldTo =>
     match cap.target with
@@ -687,12 +710,14 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       match validateObjIdArg scObjId with
       | .error e => .error (e, st)
       | .ok vScId =>
-        RefusalCarrying.ofChecked
+        RefusalCarrying.ofCheckedThen
           (SchedContextOps.schedContextYieldToAdmitted st
             (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
           (fun st => SchedContextOps.schedContextYieldToPerform st
             (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
-          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+          (SchedContextOps.schedContextYieldToOnCore
+            (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
+          (fun st' => .ok ((), st')) st
     | _ => .error (.invalidCapability, st)
   -- WS-ZA ZA6.32: the acknowledge refuses only a line that is no device line
   -- of this board (`deviceInterruptLine`, the board's line count), read
@@ -1000,10 +1025,12 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
   | .serviceQuery =>
     match cap.target with
     | .object epId =>
-      RefusalCarrying.ofChecked
+      RefusalCarrying.ofCheckedThen
         (serviceEndpointReadAdmitted ctx tid epId && recordedRegistrationPresent st epId)
         (fun st => serviceQueryPerform st tid epId)
-        (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+        (lookupServiceChecked ctx tid epId)
+        (fun r => .ok ((), Architecture.writeReturnFrameToTcb r.2 tid
+          (Architecture.returnFrameOfWord r.1.sid.val.toUInt64))) st
     | _ => .error (.invalidCapability, st)
   | _ =>
     match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
@@ -1034,7 +1061,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hT]
           | ok vT =>
             dsimp only
-            apply RefusalCarrying.ofChecked_eq
+            refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+            · simp only [dispatchInvocationBy, hD, hC, hT]
+              split <;> simp_all
             intro hA
             obtain ⟨sgi, hS⟩ :=
               SchedContext.PriorityManagement.setPriorityOnCore_of_admitted _ _ _ _ _ hA
@@ -1054,7 +1083,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hT]
           | ok vT =>
             dsimp only
-            apply RefusalCarrying.ofChecked_eq
+            refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+            · simp only [dispatchInvocationBy, hD, hC, hT]
+              split <;> simp_all
             intro hA
             simp only [dispatchInvocationBy, hD, hC, hT,
               SchedContext.PriorityManagement.setMCPriorityOnCore_of_admitted _ _ _ _ _ hA]
@@ -1070,7 +1101,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
         | ok vT =>
           dsimp only
-          apply RefusalCarrying.ofChecked_eq
+          refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+          · simp only [dispatchInvocationBy, hD, hT]
+            split <;> simp_all
           intro hA
           simp only [dispatchInvocationBy, hD, hT,
             Architecture.IpcBufferValidation.setIPCBufferOp_of_admitted _ _ _ hA]
@@ -1091,7 +1124,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT, hF]
           | ok affinity =>
             dsimp only
-            apply RefusalCarrying.ofChecked_eq
+            refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+            · simp only [dispatchInvocationBy, hD, hT, hF]
+              split <;> simp_all
             intro hA
             obtain ⟨sgi, hS⟩ := setThreadCpuAffinityOnCore_of_admitted _ _ _ executingCore hA
             simp only [dispatchInvocationBy, hD, hT, hF, hS]
@@ -1104,7 +1139,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hT]
       | ok vT =>
         dsimp only
-        apply RefusalCarrying.ofChecked_eq
+        refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+        · simp only [dispatchInvocationBy, hT]
+          split <;> simp_all
         intro hA
         obtain ⟨sgi, hS⟩ := Lifecycle.Suspend.suspendThreadOnCore_of_admitted _ _ executingCore hA
         simp only [dispatchInvocationBy, hT, hS]
@@ -1117,7 +1154,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hT]
       | ok vT =>
         dsimp only
-        apply RefusalCarrying.ofChecked_eq
+        refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+        · simp only [dispatchInvocationBy, hT]
+          split <;> simp_all
         intro hA
         obtain ⟨sgi, hS⟩ := Lifecycle.Suspend.resumeThreadOnCore_of_admitted _ _ executingCore
           (resumeAdmitted_retirePendingFault hA)
@@ -1134,7 +1173,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
         | ok vT =>
           dsimp only
-          apply RefusalCarrying.ofChecked_eq
+          refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+          · simp only [dispatchInvocationBy, hD, hT]
+            split <;> simp_all
           intro hA
           simp only [dispatchInvocationBy, hD, hT, setThreadFaultHandlerOp_of_admitted _ _ _ hA]
     all_goals rfl
@@ -1241,7 +1282,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hS]
       | ok vScId =>
         dsimp only
-        apply RefusalCarrying.ofChecked_eq
+        refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+        · simp only [dispatchInvocationBy, hS, SchedContextOps.schedContextUnbindOnCore]
+          rcases SchedContextOps.schedContextUnbind vScId st with _ | ⟨⟨⟩, st'⟩ <;> rfl
         intro hA
         obtain ⟨sgi, hU⟩ := SchedContextOps.schedContextUnbindOnCore_of_admitted st vScId
           executingCore hA
@@ -1255,7 +1298,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hS]
       | ok vScId =>
         dsimp only
-        apply RefusalCarrying.ofChecked_eq
+        refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+        · simp only [dispatchInvocationBy, hS]
+          split <;> simp_all
         intro hA
         simp only [dispatchInvocationBy, hS, schedContextConsumedOnCore_of_admitted _ _ _ hA]
     all_goals rfl
@@ -1267,7 +1312,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hS]
       | ok vScId =>
         dsimp only
-        apply RefusalCarrying.ofChecked_eq
+        refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+        · simp only [dispatchInvocationBy, hS]
+          split <;> simp_all
         intro hA
         simp only [dispatchInvocationBy, hS,
           SchedContextOps.schedContextYieldToOnCore_of_admitted _ _ _ hA]
@@ -1668,7 +1715,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     cases target
     case object epId =>
       dsimp only
-      apply RefusalCarrying.ofChecked_eq
+      refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
+      · simp only [dispatchInvocationBy, serviceQueryStaged]
+        split <;> simp_all
       intro hA
       simp only [dispatchInvocationBy, serviceQueryStaged_of_admitted ctx tid epId st hA]
     all_goals rfl
@@ -1710,7 +1759,8 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId)
     (hRouted : routedInvocation decoded.syscallId = true)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4) :
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum decoded.syscallId ≤ decoded.msgInfo.length) :
     dispatchInvocationCheckedR ctx decoded.syscallId decoded.capAddr regs tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   obtain ⟨-, -, hFirst, hNotYield⟩ := routedInvocation_classic _ hRouted
@@ -1733,7 +1783,7 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
           tid executingCore
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-          cap st hRouted hRegs]
+          cap st hRouted hRegs hLen]
         rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
@@ -1777,10 +1827,11 @@ theorem dispatchWithCapChecked_eq_configureBy (ctx : LabelingContext)
     (gate : SyscallGate) (cap : Capability) (st : SystemState)
     (h : decoded.syscallId = .schedContextConfigure)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5) :
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+    (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       dispatchConfigureBy layout regs w tid cap st := by
-  have hDec := decodeSchedContextConfigureArgsChecked_eq_by layout regs w decoded hRegs
+  have hDec := decodeSchedContextConfigureArgsChecked_eq_by layout regs w decoded hRegs hLen
   rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
   simp only at h
@@ -1876,7 +1927,8 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .schedContextConfigure)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5) :
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+    (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchConfigureCheckedR decoded.capAddr regs w tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hFirst : syscallChecksTargetFirst decoded.syscallId = false := by
@@ -1902,7 +1954,7 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
           tid executingCore
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight .schedContextConfigure }
-          cap st hSid hRegs]
+          cap st hSid hRegs hLen]
         rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
@@ -1940,10 +1992,11 @@ theorem dispatchWithCapChecked_eq_serviceRegisterBy (ctx : LabelingContext)
     (gate : SyscallGate) (cap : Capability) (st : SystemState)
     (h : decoded.syscallId = .serviceRegister)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5) :
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+    (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
       dispatchServiceRegisterBy ctx tid layout regs w cap st := by
-  have hDec := decodeServiceRegisterArgs_eq_by layout regs w decoded hRegs
+  have hDec := decodeServiceRegisterArgs_eq_by layout regs w decoded hRegs hLen
   rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, inlineCount, overflowCount⟩
   rcases cap with ⟨target, rights, badge, mapping⟩
   simp only at h
@@ -2020,10 +2073,78 @@ def registerServiceWordsPerform (st : SystemState) (epId : SeLe4n.ObjId)
       (serviceRecordOfWords ifaceId methodCount maxMessageSize maxResponseSize requiresGrant cap))
   | none => st
 
+/-- **The register's refusal, on its words**: `0` when every check of
+`registerServiceChecked` passes on the endpoint `epId` the capability names,
+otherwise the first that fails, in its order — the flow (`1`), a registration
+already recorded (`2`), an unknown interface (`3`), the endpoint's write right
+(`4`), the endpoint already registered (`2`), no endpoint there (`5`).  Read off
+the decoded words and the capability, so no registration is built
+(`registerServiceRefusalError`, `dispatchServiceRegisterByR_eq_impl`). -/
+@[inline] def registerServiceRefusalCode (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) (ifaceId : SeLe4n.InterfaceId) (cap : Capability)
+    (st : SystemState) : Nat :=
+  if !serviceEndpointWriteAdmitted ctx tid epId then 1
+  else if recordedRegistrationPresent st
+      (SeLe4n.ObjId.ofNat (ServiceId.ofNat epId.toNat).toNat) then 2
+  else if (st.interfaceRegistry[ifaceId]?).isNone then 3
+  else
+    match st.getObject? epId with
+    | some (.endpoint ep) =>
+      if !Capability.hasRight cap .write then 4
+      else if ep.serviceRegistered then 2
+      else 0
+    | _ => 5
+
+/-- The error a register's refusal code names. -/
+@[inline] def registerServiceRefusalError (code : Nat) : KernelError :=
+  if code = 1 then .flowDenied
+  else if code = 2 then .illegalState
+  else if code = 3 then .objectNotFound
+  else if code = 4 then .illegalAuthority
+  else .invalidCapability
+
+/-- A register the checks refuse is refused with the error its code names. -/
+theorem registerServiceChecked_refused (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (reg : ServiceRegistration) (epId : SeLe4n.ObjId) (st : SystemState)
+    (hT : reg.endpointCap.target = .object epId)
+    (hA : (registrationWriteAdmitted ctx tid reg && registerServiceAdmitted st reg) = false) :
+    registerServiceChecked ctx tid reg st =
+      .error (registerServiceRefusalError
+        (registerServiceRefusalCode ctx tid epId reg.iface.ifaceId reg.endpointCap st)) := by
+  have hSid : reg.sid = ServiceId.ofNat epId.toNat := by
+    simp only [ServiceRegistration.sid, hT]
+  unfold registerServiceChecked registerService registerServiceRefusalCode registrationWriteAdmitted
+  unfold registrationWriteAdmitted registerServiceAdmitted at hA
+  simp only [hT, hSid] at hA ⊢
+  cases hF : serviceEndpointWriteAdmitted ctx tid epId
+  · simp only [Bool.not_false, ↓reduceIte, Bool.false_eq_true, registerServiceRefusalError]
+  simp only [hF, Bool.true_and, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hA ⊢
+  cases hR : recordedRegistrationPresent st (SeLe4n.ObjId.ofNat (ServiceId.ofNat epId.toNat).toNat)
+  · simp only [hR, Bool.not_false, Bool.true_and, Bool.false_eq_true, ↓reduceIte] at hA ⊢
+    cases hI : st.interfaceRegistry[reg.iface.ifaceId]?
+    · simp only [Option.isNone_none, ↓reduceIte, registerServiceRefusalError]; rfl
+    simp only [hI, Option.isSome_some, Option.isNone_some, Bool.true_and, Bool.false_eq_true,
+      ↓reduceIte, reduceCtorEq] at hA ⊢
+    split
+    · next hO => simp only [hO, registerServiceRefusalError]; rfl
+    · next ep hO =>
+      simp only [hO] at hA ⊢
+      cases hW : reg.endpointCap.hasRight .write <;> cases hS : ep.serviceRegistered <;>
+        simp only [hW, hS, Bool.not_true, Bool.not_false, Bool.true_and, Bool.false_and,
+          Bool.and_true, Bool.and_false, Bool.false_eq_true, ↓reduceIte,
+          registerServiceRefusalError] at hA ⊢ <;> first | rfl | exact absurd hA (by decide)
+    · next val hNe hO =>
+      split
+      · next ep hE =>
+        rw [hO] at hE
+        exact absurd (Option.some.inj hE) (hNe ep)
+      · rfl
+  · simp only [↓reduceIte, registerServiceRefusalError]; rfl
+
 /-- **WS-ZA ZA5.9: the register arm as compiled** — its checks read off the
 decoded words and the invoked capability, and its write
-`registerServiceWordsPerform`, so the arm builds no registration on an admitted
-call; only a refusal builds one, to run the specification for its error.  Equal
+`registerServiceWordsPerform`, and its refusal read off the same words
+(`registerServiceRefusalCode`), so the arm builds no registration.  Equal
 to `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq_impl`). -/
 @[inline] def dispatchServiceRegisterByRImpl (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability) :
@@ -2044,21 +2165,15 @@ to `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq_impl`). -/
         .ok ((), registerServiceWordsPerform st epId args.interfaceId args.methodCount
           args.maxMessageSize args.maxResponseSize args.requiresGrant cap)
       else
-        match registerServiceChecked ctx tid
-            { iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
-                         maxMessageSize := args.maxMessageSize
-                         maxResponseSize := args.maxResponseSize
-                         requiresGrant := args.requiresGrant }
-              endpointCap := cap } st with
-        | .error e => .error (e, st)
-        | .ok r => .ok r
+        .error (registerServiceRefusalError
+          (registerServiceRefusalCode ctx tid epId args.interfaceId cap st), st)
   | _ => .error (.invalidCapability, st)
 
 @[csimp] theorem dispatchServiceRegisterByR_eq_impl :
     @dispatchServiceRegisterByR = @dispatchServiceRegisterByRImpl := by
   funext ctx tid layout regs w cap st
   unfold dispatchServiceRegisterByR dispatchServiceRegisterByRImpl RefusalCarrying.ofChecked
-  rcases cap with ⟨target, rights, badge, mapping⟩
+  rcases cap with ⟨target, rights, badge, badged, mAsid, mVaddr, mEpoch, mapped, freeIndex⟩
   cases target with
   | object epId =>
     dsimp only
@@ -2067,7 +2182,35 @@ to `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq_impl`). -/
     | ok args =>
       dsimp only
       simp only [registerServicePerform_eq_impl]
-      rfl
+      let cap : Capability := ⟨.object epId, rights, badge, badged, mAsid, mVaddr, mEpoch, mapped,
+        freeIndex⟩
+      let reg : ServiceRegistration :=
+        { iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
+                     maxMessageSize := args.maxMessageSize
+                     maxResponseSize := args.maxResponseSize
+                     requiresGrant := args.requiresGrant }
+          endpointCap := cap }
+      have hC : (registrationWriteAdmitted ctx tid reg && registerServiceAdmitted st reg) =
+          (serviceEndpointWriteAdmitted ctx tid epId &&
+            (!recordedRegistrationPresent st
+                (SeLe4n.ObjId.ofNat (ServiceId.ofNat epId.toNat).toNat) &&
+              (st.interfaceRegistry[args.interfaceId]?).isSome &&
+              match st.getObject? epId with
+              | some (.endpoint ep) => Capability.hasRight cap .write && !ep.serviceRegistered
+              | _ => false)) := rfl
+      change (if (registrationWriteAdmitted ctx tid reg && registerServiceAdmitted st reg) = true
+        then _ else _) = _
+      rw [hC]
+      by_cases hA : (serviceEndpointWriteAdmitted ctx tid epId &&
+            (!recordedRegistrationPresent st
+                (SeLe4n.ObjId.ofNat (ServiceId.ofNat epId.toNat).toNat) &&
+              (st.interfaceRegistry[args.interfaceId]?).isSome &&
+              match st.getObject? epId with
+              | some (.endpoint ep) => Capability.hasRight cap .write && !ep.serviceRegistered
+              | _ => false)) = true
+      · rw [if_pos hA, if_pos hA]; rfl
+      · rw [if_neg hA, if_neg hA,
+          registerServiceChecked_refused ctx tid reg epId st rfl (by rw [hC]; simpa using hA)]
   | _ => rfl
 
 /-- A service register's taint step leaves the state as its arm left it. -/
@@ -2107,7 +2250,8 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .serviceRegister)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5) :
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+    (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchServiceRegisterCheckedR ctx decoded.capAddr regs w tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hFirst : syscallChecksTargetFirst decoded.syscallId = false := by
@@ -2133,7 +2277,7 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
           regs w tid executingCore
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight .serviceRegister }
-          cap st hSid hRegs]
+          cap st hSid hRegs hLen]
         rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
@@ -2159,13 +2303,14 @@ theorem dispatchOverflowOneCheckedR_eq (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hR : Architecture.RegisterDecode.routedOverflowOne decoded.syscallId = true)
     (hRegs : MsgRegsAgreeBelow decoded.msgRegs
-      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5) :
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+    (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchOverflowOneCheckedR ctx decoded.syscallId decoded.capAddr regs w tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   cases hSid : decoded.syscallId <;> rw [hSid] at hR <;>
     first
     | (cases hR; done)
-    | exact dispatchConfigureCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs
-    | exact dispatchServiceRegisterCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs
+    | exact dispatchConfigureCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
+    | exact dispatchServiceRegisterCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs hLen
 
 end SeLe4n.Kernel

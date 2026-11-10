@@ -258,6 +258,10 @@ _MACHINERY = (
 # cannot mint declarations; the `run_cmd`/`initialize` sites can, which is
 # exactly why their files are pinned by count.
 MACHINERY_PINS = {
+    # The `#assert_decoder_arities` command, which reads the syscall decoders'
+    # and the checked dispatch's bodies and fails the build on a drift between
+    # the truncation table and the words they read; it mints no declaration.
+    ("SeLe4n/Kernel/Architecture/DecoderArity.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean", "macro"): 1,
     ("SeLe4n/Kernel/Concurrency/Locks/DeadlockInventory.lean", "macro_rules"): 1,
     ("SeLe4n/Kernel/Concurrency/Locks/DeadlockInventory.lean", "syntax"): 1,

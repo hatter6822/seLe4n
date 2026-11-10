@@ -4532,6 +4532,12 @@ fn emit_kernel_entry_sites() {
             out.display()
         )
     });
+    // The table's whole path, so the include names it in one literal-free
+    // `env!` rather than a `concat!` (which the TLBI gate cannot read).
+    println!(
+        "cargo:rustc-env=SELE4N_KERNEL_ENTRY_SITES={}",
+        out.display()
+    );
 }
 
 /// The site table's scanner, held to its relation: a canonical bracket is a
@@ -10077,7 +10083,7 @@ fn handler_faulted_arm_halts(trap: &str) -> Result<(), String> {
 /// the dispatch itself?  Its initializer must be
 /// `match u32::try_from(frame.x7()) { … }` (the full-width syscall number of
 /// review round 3) with exactly two arms: `Ok(syscall_id)` evaluating to
-/// `crate::svc_dispatch::dispatch_svc(syscall_id, &args)` and `Err(_)` to
+/// `crate::svc_dispatch::dispatch_svc(syscall_id)` and `Err(_)` to
 /// `Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)`.
 fn dispatched_binding_status(statement: &str) -> Result<(), String> {
     let (pattern, init) = let_binding_parts(strip_leading_attributes(statement))
@@ -10118,13 +10124,13 @@ fn dispatched_binding_status(statement: &str) -> Result<(), String> {
         ),
         (
             "Ok(syscall_id)".to_string(),
-            "crate::svc_dispatch::dispatch_svc(syscall_id, &args)".to_string(),
+            "crate::svc_dispatch::dispatch_svc(syscall_id)".to_string(),
         ),
     ];
     if pairs != expected {
         return Err(format!(
             "`dispatched` is bound from a match whose arms are {pairs:?}; the routed value \
-             must be `crate::svc_dispatch::dispatch_svc(syscall_id, &args)` on \
+             must be `crate::svc_dispatch::dispatch_svc(syscall_id)` on \
              `Ok(syscall_id)` and the unknown-syscall error on `Err(_)`"
         ));
     }
@@ -10151,9 +10157,8 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                     frame.x7(),
                 );
             }
-            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
             let dispatched = match u32::try_from(frame.x7()) {
-                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
+                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),
                 Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
             };
             if crate::trap::take_restored() {
@@ -10171,9 +10176,6 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 Err(crate::svc_dispatch::DispatchError::InvalidSyscallId) => {
                     deliver_unknown_syscall(frame);
                 }
-                Err(e) => frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
-                    e.kernel_error_discriminant(),
-                )),
             }
         }
         sync_class::KERNEL_ABORT => {
@@ -10200,7 +10202,7 @@ pub enum SvcOutcome {
     Blocked,
     Faulted,
 }
-pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, DispatchError> {
+pub fn dispatch_svc(syscall_id: u32) -> Result<SvcOutcome, DispatchError> {
     let sid = match SyscallId::from_u32(syscall_id) {
         Some(sid) => sid,
         None => return Err(DispatchError::InvalidSyscallId),
@@ -10284,8 +10286,8 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         ),
         (
             "a frame written after the dispatch routing",
-            "                )),\n            }\n        }\n        sync_class::KERNEL_ABORT => {\n",
-            "                )),\n            }\n            frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n        }\n        sync_class::KERNEL_ABORT => {\n",
+            "                    deliver_unknown_syscall(frame);\n                }\n            }\n        }\n        sync_class::KERNEL_ABORT => {\n",
+            "                    deliver_unknown_syscall(frame);\n                }\n            }\n            frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n        }\n        sync_class::KERNEL_ABORT => {\n",
         ),
         (
             "the dispatch result shadowed before the routing",
@@ -10294,8 +10296,8 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         ),
         (
             "the routed value not the dispatch's result (the dispatch kept in a string)",
-            "                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),\n",
-            "                Ok(syscall_id) => {\n                    let _ = \"crate::svc_dispatch::dispatch_svc(syscall_id, &args)\";\n                    Ok(crate::svc_dispatch::SvcOutcome::Blocked)\n                }\n",
+            "                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),\n",
+            "                Ok(syscall_id) => {\n                    let _ = \"crate::svc_dispatch::dispatch_svc(syscall_id)\";\n                    Ok(crate::svc_dispatch::SvcOutcome::Blocked)\n                }\n",
         ),
         (
             "a statement after the terminal routing match",
@@ -10306,8 +10308,8 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         // mutation keeps the gate's tokens and breaks the relation.
         (
             "the readiness gate after the dispatched binding (the narrowing runs ungated)",
-            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);\n            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n",
-            "            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);\n            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n",
+            "            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n",
         ),
         (
             "the readiness gate nested under an unrelated condition",
@@ -10326,8 +10328,8 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         ),
         (
             "the readiness gate ending in a frame write instead of the halt",
-            "                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let args",
-            "                let _ = \"crate::svc_dispatch::halt_syscall_before_lean_ready\";\n                frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n            }\n            let args",
+            "                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let dispatched",
+            "                let _ = \"crate::svc_dispatch::halt_syscall_before_lean_ready\";\n                frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n            }\n            let dispatched",
         ),
     ];
     for (what, from, to) in trap_mutations {

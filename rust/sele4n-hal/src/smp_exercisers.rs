@@ -2377,6 +2377,30 @@ const REFUSED_MESSAGE_INFO: Option<(u64, Option<u64>)> = Some((
     None,
 ));
 
+/// `KernelError.truncatedMessage`'s discriminant (`sele4n-types`'
+/// `TruncatedMessage`, seL4's `seL4_TruncatedMessage`).
+#[cfg(feature = "hw_target")]
+const TRUNCATED_MESSAGE: u64 = 58;
+
+/// An invocation `msg_len` words long, shorter than its arguments
+/// (`truncationMinimum`), on a capability of the kind it reads them under: the
+/// capability is found, then the message refused `TruncatedMessage` before any
+/// argument word is read, and nothing changes.
+#[cfg(feature = "hw_target")]
+const fn truncated(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall,
+        cptr,
+        msg_len,
+        msg: [0; 4],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        returns: refused(TRUNCATED_MESSAGE),
+    }
+}
+
 /// A message length past the most message registers a message has (120),
 /// which the message-info decode refuses.
 #[cfg(feature = "hw_target")]
@@ -3185,18 +3209,81 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         // The long, short-argument and refused forms, each routed past the
         // named syscalls, the root task's IPC buffer mapped for the words
-        // past the fourth: a register one word short, refused; a configure
-        // one word long (the HAL refuses a short one before the kernel,
-        // `SyscallId::min_inline_args`); a signal and a wait one word long,
-        // the wait taking the badge the signal left; an invocation one word
-        // long; a message-info word whose length no message has, refused;
-        // one whose top bit is set, refused; and a yield one word long.
-        RoundTrip {
-            caps_or_badges: None,
-            returns: REFUSED_MESSAGE_INFO,
-            msg_len: 4,
-            ..service_register("service-register-short", ENDPOINT_CAP, SERVICE_INTERFACE)
-        },
+        // past the fourth: every invocation one word shorter than its
+        // arguments (`truncationMinimum`), refused `TruncatedMessage` once its
+        // capability is found (seL4's `seL4_TruncatedMessage`; the interrupt
+        // invocations' are measured where their capabilities exist,
+        // `interrupt_handlers_issued`); a configure one word long; a signal
+        // and a wait one word long, the wait taking the badge the signal
+        // left; an invocation one word long; a message-info word whose length
+        // no message has, refused; one whose top bit is set, refused; and a
+        // yield one word long.
+        truncated("service-register-short", SERVICE_REGISTER, ENDPOINT_CAP, 4),
+        truncated(
+            "sched-context-configure-short",
+            SCHED_CONTEXT_CONFIGURE,
+            SCHED_CONTROL_CAP,
+            4,
+        ),
+        truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 3),
+        truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
+        truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
+        truncated("cspace-delete-short", CSPACE_DELETE, CNODE_CAP, 0),
+        truncated("cspace-revoke-short", CSPACE_REVOKE, CNODE_CAP, 0),
+        truncated("mint-reply-cap-short", MINT_REPLY_CAP, CNODE_CAP, 1),
+        truncated("untyped-retype-short", UNTYPED_RETYPE, UNTYPED_CAP, 3),
+        truncated("vspace-map-short", VSPACE_MAP, VSPACE_CAP, 3),
+        truncated("vspace-unmap-short", VSPACE_UNMAP, VSPACE_CAP, 1),
+        truncated(
+            "vspace-unify-instruction-short",
+            VSPACE_UNIFY_INSTRUCTION,
+            VSPACE_CAP,
+            1,
+        ),
+        truncated("page-table-map-short", PAGE_TABLE_MAP, VSPACE_CAP, 1),
+        truncated(
+            "sched-context-bind-short",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-bind-notification-short",
+            TCB_BIND_NOTIFICATION,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-priority-short",
+            TCB_SET_PRIORITY,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-mc-priority-short",
+            TCB_SET_MC_PRIORITY,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-ipc-buffer-short",
+            TCB_SET_IPC_BUFFER,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-affinity-short",
+            TCB_SET_AFFINITY,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-fault-handler-short",
+            TCB_SET_FAULT_HANDLER,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 1),
         RoundTrip {
             msg_len: 6,
             ..configure(
@@ -8981,7 +9068,12 @@ const FLOW_DENIED: u64 = 13;
 /// refused declassification's slot, and the causality verdicts; then the
 /// whole trail drained and the carved notification's only capability deleted.
 #[cfg(feature = "hw_target")]
-const AUDIT_SCENARIO: [RoundTrip; 20] = [
+const AUDIT_SCENARIO: [RoundTrip; 22] = [
+    // A drain and a read a word short of their arguments, through the audit
+    // capability: refused `TruncatedMessage` once the target and the right
+    // are checked, the trail untouched.
+    truncated("audit-drain-short", AUDIT_DRAIN, AUDIT_CAP, 0),
+    truncated("audit-read-short", AUDIT_READ, AUDIT_CAP, 2),
     RoundTrip {
         name: "audit-drain-first",
         syscall: AUDIT_DRAIN,
@@ -10622,8 +10714,19 @@ fn interrupt_handlers_issued(which: &str) -> bool {
         cap_address(IRQ_BOUND_HANDLER_SLOT),
         [NOTIFICATION_CAP, 0, 0, 0],
     );
-    heap_allocations_round_trip(&get_bound, which) == Some(true)
+    // Each one word shorter than its arguments, on the capability it reads
+    // them under: refused `TruncatedMessage` once the capability is found.
+    let get_short = truncated("irq-control-get-short", IRQ_CONTROL_GET, IRQ_CONTROL_CAP, 2);
+    let bind_short = truncated(
+        "irq-handler-set-notification-short",
+        IRQ_HANDLER_SET_NOTIFICATION,
+        cap_address(IRQ_BOUND_HANDLER_SLOT),
+        0,
+    );
+    heap_allocations_round_trip(&get_short, which) == Some(true)
+        && heap_allocations_round_trip(&get_bound, which) == Some(true)
         && heap_allocations_round_trip(&get_unbound, which) == Some(true)
+        && heap_allocations_round_trip(&bind_short, which) == Some(true)
         && heap_allocations_round_trip(&bind, which) == Some(true)
 }
 
@@ -11824,7 +11927,6 @@ fn dispatch_round_trip_at(
     frame.gprs[4] = trip.msg[2];
     frame.gprs[5] = trip.msg[3];
     frame.gprs[7] = trip.syscall;
-    let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(&frame);
     let saved_daif = crate::interrupts::disable_interrupts();
     let before = own_heap_allocations(core);
     let (dispatched, restored) = {
@@ -11832,7 +11934,7 @@ fn dispatch_round_trip_at(
         // The `SVC` arm's own order: the classification, then the dispatch.
         let class = crate::trap::classify_synchronous_exception(ROUND_TRIP_ESR);
         let dispatched = if class == crate::trap::sync_class::SVC {
-            crate::svc_dispatch::dispatch_svc(trip.syscall as u32, &args)
+            crate::svc_dispatch::dispatch_svc(trip.syscall as u32)
         } else {
             Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)
         };

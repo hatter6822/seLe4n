@@ -43,7 +43,7 @@ far as its arm reads it: the syscall, the operand address and the layout's
 message registers read from the caller's file (`dispatchWithCapChecked_eq_auditedArmSpec`). -/
 def auditedDecoded (sid : SyscallId) (capAddr : SeLe4n.CPtr) (regs : SeLe4n.RegisterFile) :
     SyscallDecodeResult :=
-  { capAddr, msgInfo := ⟨0, 0, 0, 0⟩, syscallId := sid,
+  { capAddr, msgInfo := ⟨routedLength regs, 0, 0, 0⟩, syscallId := sid,
     msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs),
     inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size }
 
@@ -70,6 +70,7 @@ theorem dispatchWithCapChecked_eq_auditedArmSpec (ctx : LabelingContext)
     (h : routedAudited decoded.syscallId = true)
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
+    (hLen : decoded.msgInfo.length = routedLength regs)
     (hRight : gate.requiredRight = syscallRequiredRight decoded.syscallId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
       auditedArmSpec ctx decoded.syscallId decoded.capAddr regs tid executingCore cap := by
@@ -77,11 +78,11 @@ theorem dispatchWithCapChecked_eq_auditedArmSpec (ctx : LabelingContext)
   have hR : ∀ i, i < 4 → Architecture.SyscallArgDecode.requireMsgReg msgRegs i =
       Architecture.SyscallArgDecode.requireMsgReg
         (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) i := hRegs
-  simp only at h hRight
+  simp only at h hRight hLen
   unfold auditedArmSpec
   cases sid <;> simp only [routedAudited, Bool.false_eq_true] at h <;>
     simp (disch := decide) only [dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
-      auditedGate, hR,
+      auditedGate, hR, hLen, Architecture.SyscallArgDecode.requireMessageLength,
       hRight, Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
       Architecture.SyscallArgDecode.decodeAuditReadArgs,
       Architecture.SyscallArgDecode.decodeAuditDrainArgs]
@@ -286,6 +287,7 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
     (hSid : decoded.syscallId = .declassify)
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
+    (hLen : decoded.msgInfo.length = routedLength regs)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
     (hRoot : st.getObject? tcb.cspaceRoot = some (.cnode rootCn))
@@ -312,7 +314,7 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
       have hSpec := dispatchWithCapChecked_eq_auditedArmSpec ctx decoded regs tid executingCore
         { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } cap
-        (by rw [hSid]; rfl) hRegs rfl
+        (by rw [hSid]; rfl) hRegs hLen rfl
       rw [hSid] at hSpec
       rw [hSpec]
       split
@@ -456,6 +458,50 @@ theorem validatedAuditMonitorClearance_eq_some (ctx : LabelingContext) (m : Secu
   simp only [validatedAuditMonitorClearance, hM, legacySubjectLabels, List.all_cons, List.all_nil,
     embedLegacyLabel, h0, h1, h2, h3, Bool.and_true, ↓reduceIte]
 
+/-- Whether an audit call through `cap` is refused `.truncatedMessage`: the
+target is the trail and the capability carries the call's right, the checks
+its arm makes first, and the frame's message is shorter than the call's
+arguments (`truncationMinimum`), read off the message-info word
+(`routedLength`). -/
+@[inline] def auditTruncated (sid : SyscallId) (regs : SeLe4n.RegisterFile) (cap : Capability) :
+    Bool :=
+  match cap.target with
+  | .auditTrail _ =>
+    cap.hasRight (syscallRequiredRight sid) &&
+      decide (routedLength regs < Architecture.SyscallArgDecode.truncationMinimum sid)
+  | _ => false
+
+/-- A call `auditTruncated` does not refuse, on the trail with its right, is
+long enough. -/
+theorem auditTruncated_false_le {sid : SyscallId} {regs : SeLe4n.RegisterFile} {cap : Capability}
+    {code : Nat} (hTr : auditTruncated sid regs cap = false) (hT : cap.target = .auditTrail code)
+    (hRight : cap.hasRight (syscallRequiredRight sid) = true) :
+    Architecture.SyscallArgDecode.truncationMinimum sid ≤ routedLength regs := by
+  unfold auditTruncated at hTr
+  rw [hT] at hTr
+  simp only [hRight, Bool.true_and, decide_eq_false_iff_not, Nat.not_lt] at hTr
+  exact hTr
+
+/-- **A truncated audit call is the specification's refusal**: its target and
+right checked, its decode refuses `.truncatedMessage` before any argument. -/
+theorem auditedArmSpec_audit_truncated (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) (st : SystemState)
+    (hSid : sid = .auditRead ∨ sid = .auditDrain) (hTr : auditTruncated sid regs cap = true) :
+    auditedArmSpec ctx sid capAddr regs tid executingCore cap st = .error .truncatedMessage := by
+  unfold auditTruncated at hTr
+  split at hTr
+  · next code hT =>
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hTr
+    obtain ⟨hRight, hLt⟩ := hTr
+    rcases hSid with rfl | rfl <;>
+      simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
+        hT, extractAuditAuthority, auditedGate, hRight, ↓reduceIte,
+        Architecture.SyscallArgDecode.decodeAuditReadArgs,
+        Architecture.SyscallArgDecode.decodeAuditDrainArgs,
+        Architecture.SyscallArgDecode.requireMessageLength, hLt, bind, Except.bind]
+  · cases hTr
+
 /-- Whether an `.auditDrain` through `cap` is admitted: the target is the trail,
 the capability carries the drain's right, the configured clearance validates,
 the core runs a subject the clearance dominates, and that subject sees every
@@ -485,6 +531,7 @@ return registers as words (`writeReturnFrameToTcb_ofWord_eq_words`). -/
 theorem auditedArmSpec_auditDrain_admitted (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) (st : SystemState)
+    (hTr : auditTruncated .auditDrain regs cap = false)
     (hA : auditDrainAdmitted ctx st executingCore cap = true) :
     auditedArmSpec ctx .auditDrain capAddr regs tid executingCore cap st =
       .ok ((), auditDrainPerform tid (auditedArgWord regs 0).toNat st) := by
@@ -493,6 +540,7 @@ theorem auditedArmSpec_auditDrain_admitted (ctx : LabelingContext) (capAddr : Se
   · next m reader hT hM hCur =>
     simp only [Bool.and_eq_true] at hA
     obtain ⟨⟨⟨hRight, hDom⟩, hMon⟩, hAll⟩ := hA
+    have hL := Nat.not_lt.mpr (auditTruncated_false_le hTr hT hRight)
     have hV := validatedAuditMonitorClearance_eq_some ctx m hM hDom
     rw [auditWindowAllVisible_eq, ← AuditRing.toList_eq_window, List.all_eq_true] at hAll
     have hComplete : auditLogVisibleTo (liftLegacyContext ctx)
@@ -506,6 +554,7 @@ theorem auditedArmSpec_auditDrain_admitted (ctx : LabelingContext) (capAddr : Se
     simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
       extractAuditAuthority, auditedGate, hRight, ↓reduceIte,
       Architecture.SyscallArgDecode.decodeAuditDrainArgs,
+      Architecture.SyscallArgDecode.requireMessageLength, hL,
       auditedDecoded_msgReg regs 0 (by decide), bind, Except.bind, pure,
       Except.pure, hV, auditDrainVisiblePrefix, auditMonitorGate, auditReaderDomain, hCur,
       Option.map_some, auditMonitorAuthorized, auditDrainViewComplete, liftLegacyContext_policy,
@@ -525,6 +574,47 @@ def auditGeneralR (ctx : LabelingContext) (sid : SyscallId) (regs : SeLe4n.Regis
     | .error e => .error (e, st)
     | .ok r => .ok r
 
+/-- An audit call on a capability that does not target the audit trail is
+refused `.invalidCapability` before anything else is read
+(`extractAuditAuthority`, the target checked first). -/
+theorem auditedArmSpec_audit_not_trail (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) (st : SystemState)
+    (hSid : sid = .auditRead ∨ sid = .auditDrain)
+    (hT : ∀ code, cap.target ≠ .auditTrail code) :
+    auditedArmSpec ctx sid capAddr regs tid executingCore cap st = .error .invalidCapability := by
+  have hA : extractAuditAuthority cap = .error .invalidCapability := by
+    unfold extractAuditAuthority
+    cases h : cap.target <;> first | rfl | exact absurd h (hT _)
+  rcases hSid with rfl | rfl <;>
+    simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded,
+      auditedGate, hA]
+
+/-- **An audit call's general form, its target read first**: a capability that
+does not target the audit trail is refused here, in the state it was handed,
+so the specification's arm (whose decode and gate are records) runs only on an
+audit capability (`auditTargetGeneralR_eq`). -/
+@[inline] def auditTargetGeneralR (ctx : LabelingContext) (sid : SyscallId)
+    (regs : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .auditTrail _ => auditGeneralR ctx sid regs capAddr tid executingCore cap st
+    | _ => .error (.invalidCapability, st)
+
+theorem auditTargetGeneralR_eq (ctx : LabelingContext) (sid : SyscallId)
+    (regs : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) (st : SystemState)
+    (hSid : sid = .auditRead ∨ sid = .auditDrain) :
+    auditTargetGeneralR ctx sid regs capAddr tid executingCore cap st =
+      auditGeneralR ctx sid regs capAddr tid executingCore cap st := by
+  unfold auditTargetGeneralR
+  cases hT : cap.target with
+  | auditTrail _ => rfl
+  | _ =>
+    simp only [auditGeneralR, auditedArmSpec_audit_not_trail ctx sid capAddr regs tid
+      executingCore cap st hSid (by intro code; rw [hT]; exact fun h => by cases h)]
+
 /-- **`.auditDrain` behind its operand check**: the resolve-only lookup's
 idle-object check (the target is checked before the right,
 `syscallChecksTargetFirst`), then the admitted form — the drain and the staged
@@ -537,9 +627,10 @@ length written in place — or the general one (`auditDrainOperandArmR_eq`). -/
     | none => .error (.invalidCapability, st)
     | some cap =>
       if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+      else if auditTruncated .auditDrain regs cap then .error (.truncatedMessage, st)
       else if auditDrainAdmitted ctx st executingCore cap then
         .ok ((), auditDrainPerform tid (auditedArgWord regs 0).toNat st)
-      else auditGeneralR ctx .auditDrain regs capAddr tid executingCore cap st
+      else auditTargetGeneralR ctx .auditDrain regs capAddr tid executingCore cap st
 
 /-- What an audit call's operand check leaves to its arm: the specification's
 arm and taint step, through the resolve-only lookup, is the arm alone on a
@@ -549,6 +640,7 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
     (hSid : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
+    (hLen : decoded.msgInfo.length = routedLength regs)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
     RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
@@ -574,7 +666,7 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
     · simp only [hIdle, ↓reduceIte]
     · simp only [hIdle, Bool.false_eq_true, ↓reduceIte, auditGeneralR]
       rw [dispatchWithCapChecked_eq_auditedArmSpec ctx decoded regs tid executingCore _ cap hR
-        hRegs rfl]
+        hRegs hLen rfl]
       rcases auditedArmSpec ctx decoded.syscallId decoded.capAddr regs tid executingCore cap st with
         _ | ⟨⟨⟩, post⟩ <;> rfl
 
@@ -585,6 +677,7 @@ theorem auditDrainOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
     (hSid : decoded.syscallId = .auditDrain)
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
+    (hLen : decoded.msgInfo.length = routedLength regs)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
     auditDrainOperandArmR ctx regs decoded.capAddr tid executingCore
@@ -594,19 +687,23 @@ theorem auditDrainOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
-  rw [auditOperand_spec ctx decoded regs tid executingCore (.inr hSid) hRegs st tcb rootCn ref hRef,
+  rw [auditOperand_spec ctx decoded regs tid executingCore (.inr hSid) hRegs hLen st tcb rootCn ref hRef,
     hSid]
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
   · simp only [auditDrainOperandArmR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · simp only [hIdle, Bool.false_eq_true, ↓reduceIte]
+    by_cases hTr : auditTruncated .auditDrain regs cap = true
+    · simp only [hIdle, hTr, Bool.false_eq_true, ↓reduceIte, auditGeneralR,
+        auditedArmSpec_audit_truncated ctx .auditDrain decoded.capAddr regs tid executingCore cap
+          st (.inr rfl) hTr]
+    · simp only [hIdle, hTr, Bool.false_eq_true, ↓reduceIte]
       split
       · next hA =>
         simp only [auditGeneralR, auditedArmSpec_auditDrain_admitted ctx decoded.capAddr regs tid
-          executingCore cap st hA]
-      · rfl
+          executingCore cap st (Bool.eq_false_iff.mpr hTr) hA]
+      · exact auditTargetGeneralR_eq ctx _ regs _ tid executingCore cap st (.inr rfl)
 
 /-! ## `.auditRead` -/
 
@@ -1362,6 +1459,7 @@ theorem auditedArmSpec_auditRead_admitted (ctx : LabelingContext) (capAddr : SeL
     (cap : Capability) (st : SystemState) (m : SecurityDomain) (reader : SeLe4n.ThreadId)
     {code : Nat} (hT : cap.target = .auditTrail code) (hM : ctx.auditMonitorClearance = some m)
     (hCur : st.scheduler.currentOnCore executingCore = some reader)
+    (hTr : auditTruncated .auditRead regs cap = false)
     (hA : auditReadAdmitted cap m (embedLegacyLabel (ctx.threadLabelOf reader))
       (auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs) = true) :
     auditedArmSpec ctx .auditRead capAddr regs tid executingCore cap st =
@@ -1369,6 +1467,7 @@ theorem auditedArmSpec_auditRead_admitted (ctx : LabelingContext) (capAddr : SeL
         (auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs - 1) st) := by
   simp only [auditReadAdmitted, Bool.and_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at hA
   obtain ⟨⟨⟨⟨hRight, hDom⟩, hMon⟩, hCode⟩, hFit⟩ := hA
+  have hL := Nat.not_lt.mpr (auditTruncated_false_le hTr hT hRight)
   have hV := validatedAuditMonitorClearance_eq_some ctx m hM hDom
   obtain ⟨w, hw⟩ : ∃ w, auditReadCode ctx (embedLegacyLabel (ctx.threadLabelOf reader)) st regs =
       w + 1 := Nat.exists_eq_succ_of_ne_zero hCode
@@ -1378,7 +1477,8 @@ theorem auditedArmSpec_auditRead_admitted (ctx : LabelingContext) (capAddr : SeL
       (embedLegacyLabel (ctx.threadLabelOf reader)) = true := hMon
   simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
     extractAuditAuthority, auditedGate, hRight, ↓reduceIte,
-    Architecture.SyscallArgDecode.decodeAuditReadArgs, auditedDecoded_msgReg regs 0 (by decide),
+    Architecture.SyscallArgDecode.decodeAuditReadArgs,
+    Architecture.SyscallArgDecode.requireMessageLength, hL, auditedDecoded_msgReg regs 0 (by decide),
     auditedDecoded_msgReg regs 1 (by decide), auditedDecoded_msgReg regs 2 (by decide), bind,
     Except.bind, pure, Except.pure, hV]
   revert hSpec
@@ -1405,6 +1505,7 @@ ring's live window and staged in place — or the general one
     | none => .error (.invalidCapability, st)
     | some cap =>
       if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+      else if auditTruncated .auditRead regs cap then .error (.truncatedMessage, st)
       else
         match cap.target, ctx.auditMonitorClearance, st.scheduler.currentOnCore executingCore with
         | .auditTrail _, some m, some reader =>
@@ -1412,7 +1513,7 @@ ring's live window and staged in place — or the general one
           if auditReadAdmitted cap m (embedLegacyLabel (ctx.threadLabelOf reader)) code then
             .ok ((), auditReadPerform tid (code - 1) st)
           else auditGeneralR ctx .auditRead regs capAddr tid executingCore cap st
-        | _, _, _ => auditGeneralR ctx .auditRead regs capAddr tid executingCore cap st
+        | _, _, _ => auditTargetGeneralR ctx .auditRead regs capAddr tid executingCore cap st
 
 /-- `.auditRead` behind its operand check is the specification's arm and taint
 step, on every capability the operand resolves to. -/
@@ -1421,6 +1522,7 @@ theorem auditReadOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecode
     (hSid : decoded.syscallId = .auditRead)
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
+    (hLen : decoded.msgInfo.length = routedLength regs)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref) :
     auditReadOperandArmR ctx regs decoded.capAddr tid executingCore
@@ -1430,22 +1532,26 @@ theorem auditReadOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecode
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
-  rw [auditOperand_spec ctx decoded regs tid executingCore (.inl hSid) hRegs st tcb rootCn ref hRef,
+  rw [auditOperand_spec ctx decoded regs tid executingCore (.inl hSid) hRegs hLen st tcb rootCn ref hRef,
     hSid]
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
   · simp only [auditReadOperandArmR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · simp only [hIdle, Bool.false_eq_true, ↓reduceIte]
+    by_cases hTr : auditTruncated .auditRead regs cap = true
+    · simp only [hIdle, hTr, Bool.false_eq_true, ↓reduceIte, auditGeneralR,
+        auditedArmSpec_audit_truncated ctx .auditRead decoded.capAddr regs tid executingCore cap
+          st (.inl rfl) hTr]
+    · simp only [hIdle, hTr, Bool.false_eq_true, ↓reduceIte]
       split
       · next m reader hT hM hCur =>
         split
         · next hA =>
           simp only [auditGeneralR, auditedArmSpec_auditRead_admitted ctx decoded.capAddr regs tid
-            executingCore cap st m reader hT hM hCur hA]
+            executingCore cap st m reader hT hM hCur (Bool.eq_false_iff.mpr hTr) hA]
         · rfl
-      · rfl
+      · exact auditTargetGeneralR_eq ctx _ regs _ tid executingCore cap st (.inl rfl)
 
 /-! ## `.declassifySignal` -/
 
@@ -1973,6 +2079,27 @@ theorem declassifySignalPresentRefusal_ne_zero {ctx : LabelingContext} {st : Sys
   · next hN => exact ⟨by simp only [hN, Option.isSome_some], rfl, h⟩
   · exact absurd rfl h
 
+/-- **A `.declassifySignal` whose capability names no notification**: `1` when
+the object it names is present but of another kind, `2` when nothing is there,
+`0` when it names a notification.  The lookup is matched where it is made, so
+no option is held across the test; the specification answers it as the
+ordinary signal does (`auditedArmSpec_declassifySignal_absent`). -/
+@[inline] def declassifySignalAbsentRefusal (st : SystemState) (nid : SeLe4n.ObjId) : Nat :=
+  match st.getNotification? nid with
+  | some _ => 0
+  | none => if (st.getObjectType? nid).isSome then 1 else 2
+
+/-- The error an absent notification's code names. -/
+@[inline] def declassifySignalAbsentRefusalError (code : Nat) : KernelError :=
+  if code = 1 then .invalidCapability else .objectNotFound
+
+theorem declassifySignalAbsentRefusal_ne_zero {st : SystemState} {nid : SeLe4n.ObjId}
+    (h : declassifySignalAbsentRefusal st nid ≠ 0) : st.getNotification? nid = none := by
+  unfold declassifySignalAbsentRefusal at h
+  split at h
+  · exact absurd rfl h
+  · assumption
+
 /-- The error a refused plan's code names. -/
 @[inline] def declassifySignalPlanRefusalError (code : Nat) : KernelError :=
   if code = 1 then .declassificationDenied else .declassificationDeniedAtReceiver
@@ -2074,6 +2201,24 @@ def declassifySignalGeneralR (ctx : LabelingContext) (regs : SeLe4n.RegisterFile
           (st.taintWordsAt tid.toObjId) (st.taintWordsAt (capObjectId cap))
           st.declassificationAuditEpoch st.declassificationAudit.length post)
 
+/-- A `.declassifySignal` whose capability names no notification is the
+specification's refusal, with the error its code names. -/
+theorem auditedArmSpec_declassifySignal_absent (ctx : LabelingContext)
+    (capAddr : SeLe4n.CPtr) (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) (st : SystemState)
+    (nid : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
+    (hT : cap.target = .object nid)
+    (hCur : st.scheduler.currentOnCore executingCore = some signaler)
+    (hAbsent : st.getNotification? nid = none) :
+    auditedArmSpec ctx .declassifySignal capAddr regs tid executingCore cap st =
+      .error (declassifySignalAbsentRefusalError (declassifySignalAbsentRefusal st nid)) := by
+  simp only [auditedArmSpec, dispatchWithCapChecked, dispatchCapabilityOnly, auditedDecoded, hT,
+    Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
+    auditedDecoded_msgReg regs 0 (by decide), bind, Except.bind, pure, Except.pure,
+    notificationSignalDeclassifiedCrossCoreDispatch, notificationSignalDeclassifiedOnCore, hCur,
+    hAbsent, declassifySignalAbsentRefusal, declassifySignalAbsentRefusalError]
+  by_cases hO : (st.getObjectType? nid).isSome = true <;> simp [hO]
+
 /-- **`.declassifySignal` behind its operand check**: the idle-object check and
 the rights gate of the classic lookup, then the admitted in-place form, the
 badge stored, the head waiter woken or the bound thread delivered to (each
@@ -2090,6 +2235,9 @@ writing the records its one or two downgrades owe), or else the general one
       else if cap.hasRight (syscallRequiredRight .declassifySignal) then
         match cap.target, st.scheduler.currentOnCore executingCore with
         | .object nid, some signaler =>
+          if declassifySignalAbsentRefusal st nid != 0 then
+            .error (declassifySignalAbsentRefusalError (declassifySignalAbsentRefusal st nid), st)
+          else
           if declassifySignalPresentRefusal ctx st signaler nid != 0 then
             .error (declassifySignalPlanRefusalError (declassifySignalPresentRefusal ctx st signaler nid),
               st)
@@ -2284,6 +2432,7 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
     (hSid : decoded.syscallId = .declassifySignal)
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
       (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
+    (hLen : decoded.msgInfo.length = routedLength regs)
     (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
     (hRoot : st.getObject? tcb.cspaceRoot = some (.cnode rootCn))
@@ -2311,104 +2460,113 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
       have hSpec := dispatchWithCapChecked_eq_auditedArmSpec ctx decoded regs tid executingCore
         { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } cap
-        (by rw [hSid]; rfl) hRegs rfl
+        (by rw [hSid]; rfl) hRegs hLen rfl
       rw [hSid] at hSpec
       rw [hSpec]
       split
       · next nid signaler hT hCur =>
         split
-        · next hR =>
-          simp only [bne_iff_ne, ne_eq] at hR
-          obtain ⟨hP, hEq, hR'⟩ := declassifySignalPresentRefusal_ne_zero hR
-          rw [hEq, auditedArmSpec_declassifySignal_planRefused ctx decoded.capAddr regs tid executingCore
-            cap st nid signaler hT hCur hP hR']
+        · next hAb =>
+          simp only [bne_iff_ne, ne_eq] at hAb
+          rw [auditedArmSpec_declassifySignal_absent ctx decoded.capAddr regs tid executingCore
+            cap st nid signaler hT hCur (declassifySignalAbsentRefusal_ne_zero hAb)]
         · split
-          · next hA =>
-            have hA' := hA
-            simp only [declassifySignalStoredAdmitted, Bool.and_eq_true, decide_eq_true_eq,
-              Option.isNone_iff_eq_none] at hA'
-            obtain ⟨⟨⟨⟨-, hPresent⟩, hBound⟩, hWait⟩, -⟩ := hA'
-            obtain ⟨ntfn, hN⟩ := Option.isSome_iff_exists.mp hPresent
-            have hCase : signalTaintCaseOf st (some cap) = .stored := by
-              simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound, hWait]
-            rw [auditedArmSpec_declassifySignal_stored ctx decoded.capAddr regs tid executingCore cap
-              st nid signaler hT hCur hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase]
-            simp only [declassifySignalStoredPerform, TaintWords.mk_fields, operandObjectId,
-              capObjectId, hT]
-            have hOk := notificationSignalBoundOnCore_stored_ok nid
-              (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st ntfn hN hBound hWait
-            rcases hS : notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
-                executingCore st with ⟨st1, e | sgi⟩
-            · rw [hS] at hOk; cases hOk
-            · rfl
+          · next hR =>
+            simp only [bne_iff_ne, ne_eq] at hR
+            obtain ⟨hP, hEq, hR'⟩ := declassifySignalPresentRefusal_ne_zero hR
+            rw [hEq, auditedArmSpec_declassifySignal_planRefused ctx decoded.capAddr regs tid executingCore
+              cap st nid signaler hT hCur hP hR']
           · split
-            · next ntfn hN =>
-              split
-              · next k hK =>
+            · next hA =>
+              have hA' := hA
+              simp only [declassifySignalStoredAdmitted, Bool.and_eq_true, decide_eq_true_eq,
+                Option.isNone_iff_eq_none] at hA'
+              obtain ⟨⟨⟨⟨-, hPresent⟩, hBound⟩, hWait⟩, -⟩ := hA'
+              obtain ⟨ntfn, hN⟩ := Option.isSome_iff_exists.mp hPresent
+              have hCase : signalTaintCaseOf st (some cap) = .stored := by
+                simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound, hWait]
+              rw [auditedArmSpec_declassifySignal_stored ctx decoded.capAddr regs tid executingCore cap
+                st nid signaler hT hCur hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase]
+              simp only [declassifySignalStoredPerform, TaintWords.mk_fields, operandObjectId,
+                capObjectId, hT]
+              have hOk := notificationSignalBoundOnCore_stored_ok nid
+                (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st ntfn hN hBound hWait
+              rcases hS : notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+                  executingCore st with ⟨st1, e | sgi⟩
+              · rw [hS] at hOk; cases hOk
+              · rfl
+            · split
+              · next ntfn hN =>
                 split
-                · next hA =>
-                  have hA' := hA
-                  simp only [declassifySignalWokenAdmitted, Bool.and_eq_true, decide_eq_true_eq,
-                    Option.isNone_iff_eq_none] at hA'
-                  obtain ⟨⟨⟨⟨⟨-, hBound⟩, hW⟩, -⟩, -⟩, -⟩ := hA'
-                  have hHead : ntfn.waitHead = some ⟨k⟩ := by
-                    rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
-                  have hWait : notificationSignalWaiter? st nid = some ⟨k⟩ := by
-                    simp only [notificationSignalWaiter?, hN, hHead]
-                  have hCase : signalTaintCaseOf st (some cap) = .toWaiter ⟨k⟩ := by
-                    simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound,
-                      hWait]
-                  have hNo : st.objects.noResizeDue := by
-                    simp only [signalWakesInPlace, Bool.and_eq_true] at hW
-                    exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.2
-                  rw [auditedArmSpec_declassifySignal_woken ctx decoded.capAddr regs tid executingCore
-                    cap st nid signaler ntfn k hT hCur hN hK hA, withTaintWordsAt_eq,
-                    withTaintWordsAt_eq, hCase, declassifySignalWoken_eq_writes _ _ _ _ _ _ _ _ _ _ _ st hNo,
-                    ← optCode_ntfnSuccessor?]
-                  simp only [declassifySignalWokenPerform, TaintWords.mk_fields, operandObjectId,
-                    capObjectId, hT]
-                · unfold declassifySignalGeneralR
-                  rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore
-                    cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
-              · next hK0 =>
-                split
-                · next k hB =>
+                · next k hK =>
                   split
-                  · next tcb hTT0 =>
-                    have hTT := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTT0
+                  · next hA =>
+                    have hA' := hA
+                    simp only [declassifySignalWokenAdmitted, Bool.and_eq_true, decide_eq_true_eq,
+                      Option.isNone_iff_eq_none] at hA'
+                    obtain ⟨⟨⟨⟨⟨-, hBound⟩, hW⟩, -⟩, -⟩, -⟩ := hA'
+                    have hHead : ntfn.waitHead = some ⟨k⟩ := by
+                      rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
+                    have hWait : notificationSignalWaiter? st nid = some ⟨k⟩ := by
+                      simp only [notificationSignalWaiter?, hN, hHead]
+                    have hCase : signalTaintCaseOf st (some cap) = .toWaiter ⟨k⟩ := by
+                      simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound,
+                        hWait]
+                    have hNo : st.objects.noResizeDue := by
+                      simp only [signalWakesInPlace, Bool.and_eq_true] at hW
+                      exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.2
+                    rw [auditedArmSpec_declassifySignal_woken ctx decoded.capAddr regs tid executingCore
+                      cap st nid signaler ntfn k hT hCur hN hK hA, withTaintWordsAt_eq,
+                      withTaintWordsAt_eq, hCase, declassifySignalWoken_eq_writes _ _ _ _ _ _ _ _ _ _ _ st hNo,
+                      ← optCode_ntfnSuccessor?]
+                    simp only [declassifySignalWokenPerform, TaintWords.mk_fields, operandObjectId,
+                      capObjectId, hT]
+                  · unfold declassifySignalGeneralR
+                    rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore
+                      cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
+                · next hK0 =>
+                  split
+                  · next k hB =>
                     split
-                    · next hSt =>
+                    · next tcb hTT0 =>
+                      have hTT := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTT0
                       split
-                      · next ep hE0 =>
-                        have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE0
+                      · next hSt =>
                         split
-                        · next hA =>
-                          have hBT : boundDeliveryTarget? st nid =
-                              some (⟨k⟩, ⟨tcb.ipcObjectCode⟩) := by
-                            have hBl := (blockedOnQueueSide_ipcState
-                              (isReceiveQ := true) (endpointId := ⟨tcb.ipcObjectCode⟩) (t := tcb)
-                              (by simp only [blockedOnQueueSide, ↓reduceIte, hSt, beq_self_eq_true,
-                                Bool.and_self])).1 rfl
-                            have hTg : st.getTcb? ⟨k⟩ = some tcb :=
-                              (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTT
-                            simp only [boundDeliveryTarget?, hN, hK0, ↓reduceIte, Notification.boundTCB,
-                              hB, SeLe4n.ThreadId.ofOptCode, hTg, hBl]
-                          have hCase : signalTaintCaseOf st (some cap) = .toBound ⟨k⟩ := by
-                            simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBT]
-                          have hNo : st.objects.noResizeDue := by
-                            have hA' := hA
-                            simp only [declassifySignalBoundAdmitted, Bool.and_eq_true] at hA'
-                            obtain ⟨⟨⟨⟨-, hQ⟩, -⟩, -⟩, -⟩ := hA'
-                            unfold queueRemoveInPlace at hQ
-                            simp only [Bool.and_eq_true] at hQ
-                            obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩, -⟩ := hQ
-                            exact RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
-                          rw [auditedArmSpec_declassifySignal_bound ctx decoded.capAddr regs tid
-                            executingCore cap st nid signaler ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb hT hCur hBT
-                            hE hTT hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase,
-                            declassifySignalBound_eq_writes _ _ _ _ _ _ _ _ _ _ _ _ _ st hNo]
-                          simp only [declassifySignalBoundPerform, TaintWords.mk_fields, operandObjectId,
-                            capObjectId, hT]
+                        · next ep hE0 =>
+                          have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE0
+                          split
+                          · next hA =>
+                            have hBT : boundDeliveryTarget? st nid =
+                                some (⟨k⟩, ⟨tcb.ipcObjectCode⟩) := by
+                              have hBl := (blockedOnQueueSide_ipcState
+                                (isReceiveQ := true) (endpointId := ⟨tcb.ipcObjectCode⟩) (t := tcb)
+                                (by simp only [blockedOnQueueSide, ↓reduceIte, hSt, beq_self_eq_true,
+                                  Bool.and_self])).1 rfl
+                              have hTg : st.getTcb? ⟨k⟩ = some tcb :=
+                                (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTT
+                              simp only [boundDeliveryTarget?, hN, hK0, ↓reduceIte, Notification.boundTCB,
+                                hB, SeLe4n.ThreadId.ofOptCode, hTg, hBl]
+                            have hCase : signalTaintCaseOf st (some cap) = .toBound ⟨k⟩ := by
+                              simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBT]
+                            have hNo : st.objects.noResizeDue := by
+                              have hA' := hA
+                              simp only [declassifySignalBoundAdmitted, Bool.and_eq_true] at hA'
+                              obtain ⟨⟨⟨⟨-, hQ⟩, -⟩, -⟩, -⟩ := hA'
+                              unfold queueRemoveInPlace at hQ
+                              simp only [Bool.and_eq_true] at hQ
+                              obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩, -⟩ := hQ
+                              exact RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
+                            rw [auditedArmSpec_declassifySignal_bound ctx decoded.capAddr regs tid
+                              executingCore cap st nid signaler ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb hT hCur hBT
+                              hE hTT hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase,
+                              declassifySignalBound_eq_writes _ _ _ _ _ _ _ _ _ _ _ _ _ st hNo]
+                            simp only [declassifySignalBoundPerform, TaintWords.mk_fields, operandObjectId,
+                              capObjectId, hT]
+                          all_goals
+                            unfold declassifySignalGeneralR
+                            rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid
+                              executingCore cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
                         all_goals
                           unfold declassifySignalGeneralR
                           rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid
@@ -2423,15 +2581,11 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
                         executingCore cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
                   all_goals
                     unfold declassifySignalGeneralR
-                    rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid
-                      executingCore cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
-                all_goals
-                  unfold declassifySignalGeneralR
-                  rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore
-                    cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
-            · unfold declassifySignalGeneralR
-              rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
-                with _ | ⟨⟨⟩, post⟩ <;> rfl
+                    rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore
+                      cap st with _ | ⟨⟨⟩, post⟩ <;> rfl
+              · unfold declassifySignalGeneralR
+                rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
+                  with _ | ⟨⟨⟩, post⟩ <;> rfl
       · unfold declassifySignalGeneralR
         rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
           with _ | ⟨⟨⟩, post⟩ <;> rfl
@@ -2466,7 +2620,8 @@ theorem dispatchAuditedCheckedR_eq (ctx : LabelingContext) (decoded : SyscallDec
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hRouted : routedAudited decoded.syscallId = true)
     (hRegs : Architecture.SyscallArgDecode.MsgRegsAgreeBelow decoded.msgRegs
-      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4) :
+      (SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs)) 4)
+    (hLen : decoded.msgInfo.length = routedLength regs) :
     dispatchAuditedCheckedR ctx decoded.syscallId decoded.capAddr regs tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   have hNotYield : decoded.syscallId ≠ .yield := by
@@ -2476,16 +2631,16 @@ theorem dispatchAuditedCheckedR_eq (ctx : LabelingContext) (decoded : SyscallDec
   rcases hs : decoded.syscallId <;> rw [hs] at hRouted <;>
     simp only [routedAudited, Bool.false_eq_true] at hRouted <;> simp only [auditedOperandArmR]
   all_goals first
-    | (have h := declassifyOperandArmR_eq ctx decoded regs tid executingCore hs hRegs st tcb rootCn
+    | (have h := declassifyOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb rootCn
         ref hTcb hRoot hRef
        rw [hs] at h; exact h)
-    | (have h := declassifySignalOperandArmR_eq ctx decoded regs tid executingCore hs hRegs st tcb
+    | (have h := declassifySignalOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb
         rootCn ref hTcb hRoot hRef
        rw [hs] at h; exact h)
-    | (have h := auditReadOperandArmR_eq ctx decoded regs tid executingCore hs hRegs st tcb rootCn
+    | (have h := auditReadOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb rootCn
         ref hRef
        rw [hs] at h; exact h)
-    | (have h := auditDrainOperandArmR_eq ctx decoded regs tid executingCore hs hRegs st tcb rootCn
+    | (have h := auditDrainOperandArmR_eq ctx decoded regs tid executingCore hs hRegs hLen st tcb rootCn
         ref hRef
        rw [hs] at h; exact h)
 

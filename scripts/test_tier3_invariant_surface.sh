@@ -4145,7 +4145,7 @@ run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^            Self::UntypedRetype => 4,$' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '^  \| \.cspaceMint \| \.untypedRetype \| \.vspaceMap => 4$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
 run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
@@ -9935,7 +9935,7 @@ run_check "INVARIANT" rg -n '^theorem onCore_declassificationRefusals($|[ ({:\[\
 run_check "INVARIANT" rg -n '\| declassificationRefusalLedger' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '\| .declassificationRefusalLedger =>' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^inductive RefusalReadField($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^def refusalTagsWord($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def refusalTagsWord($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalTagsWord_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalTagsWord_reason_is_abi_discriminant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalStatusWord_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
@@ -10138,7 +10138,7 @@ run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscal
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
 run_check "INVARIANT" rg -n '^pub fn declassify_signal' rust/sele4n-sys/src/declassify.rs
-run_check "INVARIANT" rg -n 'assert_clears\("declassify_signal", SyscallId::DeclassifySignal\)' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'assert_names\("declassify_signal", SyscallId::DeclassifySignal\)' rust/sele4n-abi/tests/conformance.rs
 run_check "INVARIANT" rg -n '\| \.declassify \| \.declassifySignal => \.records' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^theorem refusalSeamClass_records_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 
@@ -12552,14 +12552,17 @@ run_check "INVARIANT" rg -n '^theorem returnMessageInfo_extraCaps_le_capInfo($|[
 run_negative_check "INVARIANT" rg -n 'extraCaps := min msg.caps.size' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # PR #866 round-2: the query wrapper returns the typed ServiceId.
 run_check "INVARIANT" rg -n 'pub fn service_query\(endpoint_cap: CPtr\) -> KernelResult<ServiceId>' rust/sele4n-sys/src/service.rs
-# PR #866 round-3: the prefilter conformance sweep drives the REAL wrappers
-# (host-capture mock trap) against the REAL HAL minima (dev-dep) — the
-# hand-duplicated table that drifted twice must not come back, and the
-# `.message`-shaped call wrapper carries the badge tuple like its siblings.
+# PR #866 round-3: the conformance sweep drives the REAL wrappers
+# (host-capture mock trap), and the `.message`-shaped call wrapper carries the
+# badge tuple like its siblings.  The HAL's inline-argument prefilter is
+# retired: a short message reaches the kernel, which refuses it
+# `.truncatedMessage` after the capability lookup, as seL4 does.
 run_check "INVARIANT" rg -n 'pub mod host_capture' rust/sele4n-abi/src/trap.rs
-run_check "INVARIANT" rg -n 'fn wrapper_lengths_clear_prefilter_minimums' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'fn wrappers_name_their_syscalls' rust/sele4n-abi/tests/conformance.rs
 run_check "INVARIANT" rg -n 'host_capture::last_request' rust/sele4n-abi/tests/conformance.rs
-run_check "INVARIANT" rg -n 'min_inline_args' rust/sele4n-abi/tests/conformance.rs
+run_negative_check "INVARIANT" rg -n 'min_inline_args' rust/sele4n-hal/src
+run_check "INVARIANT" rg -n 'TruncatedMessage = 58' rust/sele4n-types/src/error.rs
+run_check "INVARIANT" rg -n '^#assert_decoder_arities ' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'pub fn endpoint_call\(dest: CPtr, msg: &IpcMessage\) -> KernelResult<\(Badge, SyscallResponse\)>' rust/sele4n-sys/src/ipc.rs
 # PR #866 round-3: the three wrappers the ABI documented but never had —
 # implemented so the sweep covers the whole canonical syscall surface.

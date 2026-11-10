@@ -298,7 +298,7 @@ pub fn release_kernel_entry() {
 pub mod entered_sites {
     use core::sync::atomic::{AtomicU32, Ordering};
 
-    include!(concat!(env!("OUT_DIR"), "/kernel_entry_sites.rs"));
+    include!(env!("SELE4N_KERNEL_ENTRY_SITES"));
 
     /// The cores tallied: every core the heap counts.
     pub const CORES: usize = crate::smp::MAX_SECONDARY_CORES + 1;
@@ -385,9 +385,10 @@ pub fn with_kernel_entry<F, R>(core_id: usize, f: F) -> R
 where
     F: FnOnce() -> R,
 {
-    let _ticket = acquire_kernel_entry(core_id);
+    // The tally is this core's own relaxed counter, so it needs no lock.
     #[cfg(feature = "smp_exercisers")]
     entered_sites::note(core_id, core::panic::Location::caller());
+    let _ticket = acquire_kernel_entry(core_id);
     // The entry decides on the committed state, so a remote commit's stall
     // request against this core is met by this decision.
     crate::remote_stall::clear_stall_request(core_id);

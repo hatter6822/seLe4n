@@ -1499,8 +1499,8 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // correctness path.
             let _ = crate::per_cpu_stats::record_syscall();
             // PR #889 review: the readiness decision precedes **every** SVC
-            // outcome — the full-width narrowing below, the id and
-            // argument-count prefilters inside `dispatch_svc`, and the
+            // outcome — the full-width narrowing below, the id prefilter
+            // inside `dispatch_svc`, and the
             // unknown-syscall delivery — because the halt's reason (a thread on
             // a not-ready core is never preempted again, so any frame returned
             // to it is the CPU forever) does not depend on which of those
@@ -1517,13 +1517,12 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                     frame.x7(),
                 );
             }
-            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
             // PR #887 review round 3: the syscall number is the FULL 64-bit
             // `x7`.  Narrowing first would make `0x1_0000_0002` syscall 2; a
             // word the ABI cannot name is an unknown syscall, delivered to the
             // thread's fault handler like any other, with the full word.
             let dispatched = match u32::try_from(frame.x7()) {
-                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
+                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id),
                 Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
             };
             // WS-BP BP7.6: the Lean dispatch installed what this core resumes —
@@ -1576,9 +1575,6 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 Err(crate::svc_dispatch::DispatchError::InvalidSyscallId) => {
                     deliver_unknown_syscall(frame);
                 }
-                Err(e) => frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
-                    e.kernel_error_discriminant(),
-                )),
             }
         }
         sync_class::KERNEL_ABORT => {

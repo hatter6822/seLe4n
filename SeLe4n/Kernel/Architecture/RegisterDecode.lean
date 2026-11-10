@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Architecture.IpcBufferRead
+import SeLe4n.Kernel.Architecture.SyscallArgDecode
 
 /-! # Register Decode Layer
 
@@ -33,6 +34,7 @@ namespace SeLe4n.Kernel.Architecture.RegisterDecode
 
 open SeLe4n
 open SeLe4n.Model
+open SeLe4n.Kernel.Architecture.SyscallArgDecode (truncationMinimum)
 
 -- ============================================================================
 -- Encoding helpers (for round-trip proofs)
@@ -982,25 +984,29 @@ theorem unroutedSyscall_eq {n : Nat} {r : RegisterRoutedSyscall} (h : unroutedSy
 /-- The short message's route past the named syscalls, read off one decode of
 the syscall number: `registerRoutedSyscallOf`'s tail, equal to reading it once per
 route (`routedShortTail_eq`). -/
-@[inline] def routedShortTail (capAddr : CPtr) (n : Nat) : RegisterRoutedSyscall :=
+@[inline] def routedShortTail (capAddr : CPtr) (len n : Nat) : RegisterRoutedSyscall :=
   match SyscallId.ofNat? n with
   | some sid =>
-    if routedInvocation sid then .invoke sid capAddr
+    if routedInvocation sid then
+      if len < truncationMinimum sid then .shortArgs sid capAddr else .invoke sid capAddr
     else if routedAudited sid then .audited sid capAddr
-    else if routedOverflowOne sid then .shortArgs sid capAddr
+    else if routedOverflowOne sid then
+      if len < truncationMinimum sid then .shortArgs sid capAddr else .viaDecode
     else .viaDecode
   | none => .refused .invalidSyscallNumber
 
-theorem routedShortTail_eq (capAddr : CPtr) (n : Nat) :
-    routedShortTail capAddr n =
+theorem routedShortTail_eq (capAddr : CPtr) (len n : Nat) :
+    routedShortTail capAddr len n =
       match routedInvocationSid? n with
-      | some sid => .invoke sid capAddr
+      | some sid =>
+        if len < truncationMinimum sid then .shortArgs sid capAddr else .invoke sid capAddr
       | none =>
         match routedAuditedSid? n with
         | some sid => .audited sid capAddr
         | none =>
           match routedOverflowOneSid? n with
-          | some sid => .shortArgs sid capAddr
+          | some sid =>
+            if len < truncationMinimum sid then .shortArgs sid capAddr else .viaDecode
           | none => unroutedSyscall n := by
   unfold routedShortTail routedInvocationSid? routedAuditedSid? routedOverflowOneSid?
     unroutedSyscall
@@ -1071,7 +1077,7 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
       else if (readReg regs layout.syscallNumReg).val = SyscallId.replyRecv.toNat then
         .replyRecv capAddr msgInfo
       else
-        routedShortTail capAddr (readReg regs layout.syscallNumReg).val
+        routedShortTail capAddr msgInfo.length (readReg regs layout.syscallNumReg).val
     else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat then
       if msgInfo.extraCaps = 0 then .sendLong capAddr msgInfo
       else .transferring .send capAddr msgInfo
@@ -1144,4 +1150,35 @@ theorem registerRoutedSyscall_viaDecode (rf : RegisterFile) :
       | (cases h; done)
       | (simp_all; done)
       | omega
+      | (have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := by decide
+         simp only [truncationMinimum] at *; omega)
 end SeLe4n.Kernel.Architecture.RegisterDecode
+
+namespace SeLe4n.Kernel
+
+open SeLe4n.Model
+
+/-- The message length a register-routed frame names: bits 0–6 of its
+message-info word (`decodeMsgInfoWord`), read as a word so an arm that reads
+it builds no message info. -/
+@[inline] def routedLength (rf : SeLe4n.RegisterFile) : Nat :=
+  (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg &&& 0x7F).toNat
+
+/-- The length a decoded message info carries is the frame's `routedLength`. -/
+theorem routedLength_of_decodeWord {rf : SeLe4n.RegisterFile} {mi : MessageInfo}
+    (h : Architecture.RegisterDecode.decodeMsgInfoWord
+      (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi) :
+    routedLength rf = mi.length := by
+  unfold Architecture.RegisterDecode.decodeMsgInfoWord at h
+  split at h
+  · cases h; rfl
+  · cases h
+
+theorem routedLength_of_decode {rf : SeLe4n.RegisterFile} {mi : MessageInfo}
+    (h : Architecture.RegisterDecode.decodeMsgInfo
+      (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi) :
+    routedLength rf = mi.length := by
+  rw [← Architecture.RegisterDecode.decodeMsgInfoWord_readReg] at h
+  exact routedLength_of_decodeWord h
+
+end SeLe4n.Kernel

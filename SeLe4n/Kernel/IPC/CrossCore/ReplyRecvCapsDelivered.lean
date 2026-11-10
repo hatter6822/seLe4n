@@ -91,6 +91,8 @@ theorem routedExtraCaps_eq_of_replyRecv {rf : SeLe4n.RegisterFile} {capAddr : Se
     have hm : m = mi := by
       simp only [Architecture.RegisterDecode.routedShortTail_eq,
         Architecture.RegisterDecode.routedLongTail_eq] at hR
+      by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size <;>
+        first | rw [if_pos hLen] at hR | rw [if_neg hLen] at hR
       repeat' split at hR
       all_goals first
         | (cases hR; rfl)

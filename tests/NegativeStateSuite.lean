@@ -2690,7 +2690,7 @@ private def runWSKGCSpaceChecks : IO Unit := do
   -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 4) → invalidMessageInfo
   let shortDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .cspaceMint
     msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 4
   }
@@ -2701,7 +2701,7 @@ private def runWSKGCSpaceChecks : IO Unit := do
   -- K-G-NEG-02: decodeCSpaceCopyArgs with insufficient msgRegs (< 2) → invalidMessageInfo
   let oneRegDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    msgInfo := { length := 2, extraCaps := 0, label := 0 }
     syscallId := .cspaceCopy
     msgRegs := #[⟨10⟩]  -- only 1, need 2
   }
@@ -2717,13 +2717,27 @@ private def runWSKGCSpaceChecks : IO Unit := do
   -- K-G-NEG-04: decodeCSpaceDeleteArgs with zero msgRegs → invalidMessageInfo
   let emptyDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    msgInfo := { length := 1, extraCaps := 0, label := 0 }
     syscallId := .cspaceDelete
     msgRegs := #[]  -- empty
   }
   expectErr "K-G-NEG-04 cspaceDelete decode empty msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs emptyDecode)
     .invalidMessageInfo
+
+  -- A message shorter than the mint's four argument words is refused
+  -- `.truncatedMessage` before any register is read (seL4's
+  -- `seL4_TruncatedMessage`), whatever the registers hold.
+  expectErr "K-G-NEG-TRUNC cspaceMint decode of a three-word message"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs
+      { shortDecode with msgInfo := { length := 3, extraCaps := 0, label := 0 },
+                         msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩] })
+    .truncatedMessage
+  expectErr "K-G-NEG-TRUNC cspaceDelete decode of an empty message"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs
+      { emptyDecode with msgInfo := { length := 0, extraCaps := 0, label := 0 },
+                         msgRegs := #[⟨1⟩] })
+    .truncatedMessage
 
   -- K-G-NEG-05: cspaceMint dispatch fails — CNode not found
   let noCnodeState : SystemState := BootstrapBuilder.empty.buildChecked
@@ -2755,7 +2769,7 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- K-G-NEG-07: decodeUntypedRetypeArgs with insufficient msgRegs (< 4) → invalidMessageInfo
   let threeRegCarve : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .untypedRetype
     msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
   }
@@ -2800,7 +2814,7 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
   let threeRegDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .vspaceMap
     msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
   }

@@ -5878,7 +5878,9 @@ code may assume:
   must not read the SVC seam's not-ready arm as recoverable.
 
   The gate precedes **every** SVC outcome (PR #889 review): `dispatch_svc`
-  consults it before its id and argument-count prefilters, and the trap's SVC
+  consults it before its id prefilter (the argument-count prefilter is retired:
+  a short message reaches the kernel, which answers `.truncatedMessage` after
+  the capability lookup, as seL4 does), and the trap's SVC
   arm consults it before the full-width `x7` narrowing and the unknown-syscall
   delivery — the halt's reason is the resume (a thread on a not-ready core is
   never preempted again), which no prefilter rejection escapes.  `build.rs`'s
