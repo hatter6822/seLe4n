@@ -760,9 +760,10 @@ not donate: `doReplyTransfer`, then `receiveIPC` taking a caller queued by a
 server): in place when `replyRecvCallTakeAdmits` passes
 (`performReplyRecvCallTakeDelivered`, `replyRecvOnCore_callTake_delivered`),
 every context, core and word it takes read on the pre-state;
-`replyRecvCapsArmR` otherwise.  Out of line: the arms routed before it inline
-this one, and with it inline their chain grows past what the compiler unfolds. -/
-@[noinline] def replyRecvCallTakeArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+`replyRecvCapsArmR` otherwise.  An admitted shape whose reads then disagree,
+which `replyRecvCallTakeAdmits` rules out, takes the specification's path, so
+the next arm is reached from one site and is inlined once. -/
+@[inline] def replyRecvCallTakeArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
@@ -781,10 +782,14 @@ this one, and with it inline their chain grows past what the compiler unfolds. -
                 ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s) (determineTargetCore st tid)
                 executingCore layout rf len badge sTcb.registerContext mi.length
                 (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged)
-            | _ => replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st
-          | none => replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st
-        | none => replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st
-      | none => replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st
+            | _ =>
+                replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st
+          | none =>
+              replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st
+        | none =>
+            replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st
+      | none =>
+          replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st
     else replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st
 
 theorem replyRecvCallTakeArmR_of_not_admits (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
