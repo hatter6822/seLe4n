@@ -2082,7 +2082,7 @@ def runWSH11Checks : IO Unit := do
 
   IO.println "all WS-H11 VSpace & Architecture checks passed"
 
--- S2-J: Migrated from deprecated api* wrappers to syscallInvoke path.
+-- S2-J: Migrated from deprecated api* wrappers to the syscall gate.
 /-- WS-H15e: Negative tests for syscall capability-checking wrappers. -/
 private def runWSH15Checks : IO Unit := do
   -- Build a state with a CNode (radixWidth=4, 16 slots) with known capabilities.
@@ -2143,13 +2143,15 @@ private def runWSH15Checks : IO Unit := do
   | .error err =>
       throw <| IO.userError s!"H15 syscallLookupCap: expected success, got {toString err}"
 
-  -- H15-NEG-05: S2-J: Replaced deprecated apiEndpointSend with syscallInvoke path
+  -- H15-NEG-05: S2-J: Replaced deprecated apiEndpointSend with the typed gate.
+  -- An endpoint capability without the send right answers seL4's
+  -- `InvalidCapability` (`syscallMissingRightError .send`).
   let msg : IpcMessage := { registers := #[⟨42⟩], badge := none }
   expectErr "H15 syscall endpoint send insufficient rights"
-    (SeLe4n.Kernel.syscallInvoke { wrongRightGate with requiredRight := .write } (fun cap =>
+    (SeLe4n.Kernel.syscallInvokeTyped .send { wrongRightGate with requiredRight := .write } (fun cap =>
       if cap.target ≠ .object epId then fun _ => .error .invalidCapability
       else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false)) st)
-    .illegalAuthority
+    .invalidCapability
 
   -- H15-NEG-06: syscallLookupCap with zero depth → illegalState
   let zeroDepthGate : SeLe4n.Kernel.SyscallGate := {

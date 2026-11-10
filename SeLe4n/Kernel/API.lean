@@ -211,8 +211,8 @@ The raw kernel operations above (e.g., `endpointSendDual`, `cspaceMint`) are
 IPC subsystem, lifecycle engine). They do not perform capability checks because
 the kernel itself is the trusted computing base.
 
-The production syscall path is `syscallEntry → dispatchSyscall → syscallInvoke
-→ dispatchWithCap`, which reads the caller's register file, decodes typed
+The production syscall path is `syscallEntry → dispatchSyscall →
+syscallInvokeTyped → dispatchWithCap`, which reads the caller's register file, decodes typed
 arguments, resolves capabilities, and dispatches to the appropriate internal
 operation. The legacy `api*` wrappers were removed in S5-A (v0.19.4).
 
@@ -278,10 +278,9 @@ Performs the full seL4 syscall capability-checking sequence:
 3. Verifies the capability grants the required access right.
 
 Returns the resolved capability if all checks pass; an error otherwise.
-The state is unchanged (capability lookup is read-only).  Since PR #870
-round 5 the resolution half is the shared `syscallResolveCap`; the syscalls
-that check the target first (`syscallChecksTargetFirst`) take that half alone
-and own both authority checks in their arms. -/
+The state is unchanged (capability lookup is read-only).  The resolution half
+is the shared `syscallResolveCap`; the dispatchers' gate, `syscallInvokeTyped`,
+checks the capability's type between the resolution and the right. -/
 def syscallLookupCap (gate : SyscallGate) : Kernel Capability :=
   fun st =>
     match syscallResolveCap gate st with
@@ -290,26 +289,6 @@ def syscallLookupCap (gate : SyscallGate) : Kernel Capability :=
       if cap.hasRight gate.requiredRight
       then .ok (cap, st')
       else .error .illegalAuthority
-
-/-- WS-H15c/A-42: Gated operation combinator. Resolves and validates a
-capability, then invokes the operation with the resolved capability. -/
-def syscallInvoke (gate : SyscallGate) (op : Capability → Kernel α) : Kernel α :=
-  fun st =>
-    match syscallLookupCap gate st with
-    | .error e => .error e
-    | .ok (cap, st') => op cap st'
-
-/-- PR #870 round 5: gated operation combinator over the **resolve-only**
-lookup — for arms that own *both* authority checks themselves, target first.
-The audit arms are the consumers: their authority is a dedicated `CapTarget`,
-so the informative refusal for a wrong-kind capability is `.invalidCapability`
-regardless of what rights it happens to carry, and only an arm that sees the
-capability before any rights verdict can promise that. -/
-def syscallInvokeResolved (gate : SyscallGate) (op : Capability → Kernel α) : Kernel α :=
-  fun st =>
-    match syscallResolveCap gate st with
-    | .error e => .error e
-    | .ok (cap, st') => op cap st'
 
 /-- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): extract the
 single-use `ReplyId` a reply capability authorizes.  Fails `.invalidCapability`
@@ -352,13 +331,10 @@ executable page in a different address space; the fix there was
 `vspaceCapAuthorizesAsid`, and the fix here is the same shape and cheaper,
 because the trail is a singleton with no operand to bind against.
 
-Written in the shape `extractReplyId` already uses.  Unlike the reply arms —
-whose full lookup answers a missing right before `extractReplyId` runs — the
-audit arms really are target-first on the composed path: since PR #870
-round 5 the checked dispatch routes them through the resolve-only lookup
-(`syscallChecksTargetFirst` → `syscallInvokeResolved`), so the target is
-checked first and the right second, with
-`dispatchSyscallChecked_audit_target_first` the composed witness. -/
+Written in the shape `extractReplyId` already uses.  On the composed path the
+gate checks the same type first (`syscallTargetAccepted`), so the target is
+checked before the right for the audit pair as for every syscall, with
+`dispatchSyscallChecked_type_before_rights` the composed witness. -/
 def extractAuditAuthority (cap : Capability) : Except KernelError Unit :=
   match cap.target with
   | .auditTrail _ => .ok ()
@@ -825,39 +801,6 @@ theorem syscallLookupCap_implies_capability_held
     rw [hRes] at hOk
     simp [hR] at hOk
 
-/-- WS-H15c/A-42: If `syscallInvoke` succeeds, the caller held the required
-capability. -/
-theorem syscallInvoke_requires_right
-    (gate : SyscallGate) (op : Capability → Kernel α) (st : SystemState)
-    (a : α) (st' : SystemState)
-    (hOk : syscallInvoke gate op st = .ok (a, st')) :
-    ∃ cap ref, resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref ∧
-               SystemState.lookupSlotCap st ref = some cap ∧
-               cap.hasRight gate.requiredRight = true := by
-  unfold syscallInvoke at hOk
-  split at hOk
-  · simp at hOk
-  next cap stLookup hLookupOk =>
-    obtain ⟨ref, hResolve, hSlot, hRight, hStEq⟩ :=
-      syscallLookupCap_implies_capability_held gate st cap stLookup hLookupOk
-    exact ⟨cap, ref, hResolve, hSlot, hRight⟩
-
-/-- V3-F (M-PRF-3): All callers of `resolveCapAddress` perform post-resolution
-    rights checks. Any successful `syscallInvoke` — the sole gateway used by
-    both `dispatchSyscall` and `dispatchSyscallChecked` — implies the resolved
-    capability holds the required access right. The gate architecture ensures
-    every syscall path composes `resolveCapAddress` → `lookupSlotCap` →
-    `hasRight` before any operation is executed. -/
-theorem resolveCapAddress_callers_check_rights
-    (gate : SyscallGate) (op : Capability → Kernel α)
-    (st : SystemState) (a : α) (st' : SystemState)
-    (hOk : syscallInvoke gate op st = .ok (a, st')) :
-    ∃ cap ref,
-      resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref ∧
-      SystemState.lookupSlotCap st ref = some cap ∧
-      cap.hasRight gate.requiredRight = true :=
-  syscallInvoke_requires_right gate op st a st' hOk
-
 -- ============================================================================
 -- S5-A: Deprecated api* wrappers removed (v0.19.4)
 --
@@ -866,7 +809,7 @@ theorem resolveCapAddress_callers_check_rights
 -- apiCspaceMove, apiCspaceDelete, apiLifecycleRetype, apiVspaceMap,
 -- apiVspaceUnmap, apiServiceRegister, apiServiceRevoke, apiServiceQuery)
 -- were removed in S5-A. The production syscall path is:
---   syscallEntry → dispatchSyscall → syscallInvoke → dispatchWithCap
+--   syscallEntry → dispatchSyscall → syscallInvokeTyped → dispatchWithCap
 -- Test migration was completed in S2-J (v0.19.1).
 -- ============================================================================
 
@@ -882,7 +825,7 @@ point that:
 2. Decodes raw register values into typed kernel references via
    `decodeSyscallArgs`.
 3. Dispatches to the appropriate kernel operation through capability-gated
-   `syscallInvoke`.
+   `syscallInvokeTyped`.
 
 This closes the gap where the prior model accepted pre-typed arguments directly,
 bypassing the register file entirely. -/
@@ -1004,82 +947,155 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .irqHandlerSetNotification => .write
   | .irqHandlerClear       => .write
 
-/-- PR #870 round 5: **which syscalls validate the capability's target before
-its rights.**
+/-- Whether the object `id` names is of kind `kind`, read in place.
 
-Exactly the audit pair.  Their authority is a dedicated `CapTarget`
-(`extractAuditAuthority`), so the informative refusal for a wrong-kind
-capability is `.invalidCapability` regardless of what rights it happens to
-carry — and the only way to promise that is to route them through the
-resolve-only lookup (`syscallInvokeResolved`) and let the arm check target
-first, right second.  Every other syscall keeps the classic order: the full
-lookup's rights gate, then whatever operand binding its arm performs.
+An absent object answers `true`: the arm the capability reaches answers it as it
+always has.  Under `capabilityInvariantBundle` the case is unreachable, since
+`SystemState.CapTreeShape`'s `live` field makes every object a slot's
+capability names present. -/
+@[inline] def objectKindIs (st : SystemState) (id : SeLe4n.ObjId)
+    (kind : KernelObjectType) : Bool :=
+  match st.getObject? id with
+  | some o => o.objectType == kind
+  | none => true
 
-No wildcard, matching `syscallRequiredRight`: a new syscall is a missing case
-at elaboration and must state its choice. -/
-def syscallChecksTargetFirst : SyscallId → Bool
-  | .send            => false
-  | .receive         => false
-  | .call            => false
-  | .reply           => false
-  | .cspaceMint      => false
-  | .cspaceCopy      => false
-  | .cspaceMove      => false
-  | .cspaceDelete    => false
-  -- **WS-RR RR8.16 (`v0.35.190`)**: classic order.  The authority is an ordinary
-  -- CNode capability rather than a dedicated `CapTarget`, so there is no
-  -- wrong-kind refusal to sequence ahead of the rights gate.
-  | .cspaceRevoke    => false
-  -- **WS-BP BP7.1 (`v0.36.5`)**: classic order.  An untyped capability is an
-  -- ordinary `.object` capability, so there is no wrong-kind refusal to
-  -- sequence ahead of the rights gate.
-  | .untypedRetype   => false
-  | .untypedReset    => false
-  | .vspaceMap       => false
-  | .vspaceUnmap     => false
-  | .vspaceUnifyInstruction => false
-  | .declassify         => false
-  -- WS-SM SM9.C.8: classic order.  The authority is an ordinary notification
-  -- capability, not a dedicated `CapTarget`, so there is no wrong-kind refusal
-  -- to sequence ahead of the rights gate.
-  | .declassifySignal   => false
-  | .auditRead          => true
-  | .auditDrain         => true
-  | .serviceRegister    => false
-  | .serviceRevoke      => false
-  | .serviceQuery       => false
-  | .notificationSignal => false
-  | .notificationWait   => false
-  | .replyRecv          => false
-  | .schedContextConfigure => false
-  | .schedContextBind      => false
-  | .schedContextUnbind    => false
-  | .tcbSuspend            => false
-  | .tcbResume             => false
-  | .tcbSetPriority        => false
-  | .tcbSetMCPriority      => false
-  | .tcbSetIPCBuffer       => false
-  | .tcbSetAffinity        => false
-  | .tcbSetFaultHandler    => false
-  | .tcbSetSpace           => false
-  | .pageTableMap          => false
-  | .pageTableUnmap        => false
-  | .yield                 => false
-  | .schedContextConsumed  => false
-  | .schedContextYieldTo   => false
-  | .irqHandlerAck         => false
-  | .irqControlGet         => false
-  | .irqHandlerSetNotification => false
-  | .irqHandlerClear       => false
-  | .tcbBindNotification   => false
-  | .tcbUnbindNotification => false
-  | .mintReplyCap          => false
+/-- **The kind of object each syscall invokes through an `.object`
+capability**, or `none` where it invokes none: `.declassify` releases into any
+object (`syscallTargetAccepted`), and the other `none` syscalls invoke a
+capability of another target.  No wildcard: a new syscall states its kind. -/
+def syscallObjectKind? : SyscallId → Option KernelObjectType
+  | .send | .receive | .call | .replyRecv | .serviceRegister | .serviceRevoke
+  | .serviceQuery => some .endpoint
+  | .notificationSignal | .notificationWait | .declassifySignal => some .notification
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  | .mintReplyCap => some .cnode
+  | .untypedRetype | .untypedReset => some .untyped
+  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => some .vspaceRoot
+  | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .schedContextYieldTo => some .schedContext
+  | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
+  | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .tcbBindNotification
+  | .tcbUnbindNotification => some .tcb
+  | .pageTableMap | .pageTableUnmap => some .pageTable
+  | .declassify | .reply | .auditRead | .auditDrain | .schedContextConfigure
+  | .irqControlGet | .irqHandlerAck | .irqHandlerSetNotification | .irqHandlerClear
+  | .yield => none
 
-/-- PR #870 round 5: the classifier's semantics, pinned — target-first is
-exactly the audit pair. -/
-theorem syscallChecksTargetFirst_iff (id : SyscallId) :
-    syscallChecksTargetFirst id = true ↔ id = .auditRead ∨ id = .auditDrain := by
-  cases id <;> simp [syscallChecksTargetFirst]
+/-- **The target type each syscall invokes**, seL4's `decodeInvocation`
+dispatch on the capability's type.  The type is the capability's `CapTarget`
+constructor and, for an `.object` capability, the kind of the object it names,
+read in place (`objectKindIs`).  The gate checks it after the lookup and before
+any right (`syscallInvokeTyped`), so a capability of the wrong type answers
+`.invalidCapability` whatever rights it carries.  `.declassify` releases into
+any object, so any `.object` capability is its type; the yield invokes no
+capability and accepts none.  Out of line, with the state and the capability
+borrowed: every arm calls the one copy, and the arm keeps its state unshared. -/
+@[noinline] def syscallTargetAccepted (sid : SyscallId) (st : @& SystemState)
+    (cap : @& Capability) : Bool :=
+  match cap.target with
+  | .object id =>
+      match syscallObjectKind? sid with
+      | some kind => objectKindIs st id kind
+      | none => sid == .declassify
+  | .replyCap _ => sid == .reply
+  | .auditTrail _ => sid == .auditRead || sid == .auditDrain
+  | .schedControl _ => sid == .schedContextConfigure
+  | .irqControl _ => sid == .irqControlGet
+  | .irqHandler _ =>
+      sid == .irqHandlerAck || sid == .irqHandlerSetNotification || sid == .irqHandlerClear
+  | .cnodeSlot _ _ => false
+
+/-- **The answer to a capability of the right type without the syscall's
+right.**  seL4's `decodeInvocation` refuses an endpoint or notification
+capability without `CanSend` as `InvalidCapability` (invalid capability number
+0), so `.send`, `.call` and `.notificationSignal` answer `.invalidCapability`,
+and so does `.declassifySignal`, which signals a notification.  seL4's
+`handleRecv` raises a capability fault for an endpoint or notification without
+`CanReceive`; the receive-phase syscalls answer `.invalidCapability`, which the
+entry delivers as that fault (`syscallCapFaultOf`).  Every other right is an
+seLe4n extension, checked after the type and before the length, and answers
+`.illegalAuthority`.  No wildcard: a new syscall states its answer. -/
+def syscallMissingRightError : SyscallId → KernelError
+  | .send | .call | .notificationSignal | .declassifySignal => .invalidCapability
+  | .receive | .notificationWait | .replyRecv => .invalidCapability
+  | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  | .untypedRetype | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
+  | .declassify | .auditRead | .auditDrain | .serviceRegister | .serviceRevoke
+  | .serviceQuery | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
+  | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap
+  | .pageTableUnmap | .yield | .schedContextConsumed | .schedContextYieldTo
+  | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
+  | .tcbBindNotification | .tcbUnbindNotification | .mintReplyCap => .illegalAuthority
+
+/-- **The syscall gate, in seL4's order**: resolve the capability, then check
+its type (`syscallTargetAccepted`, `.invalidCapability`), then the syscall's
+right (`syscallMissingRightError`), then run the arm, which checks the
+message length and the arguments.  Every check precedes every write. -/
+def syscallInvokeTyped (sid : SyscallId) (gate : SyscallGate)
+    (op : Capability → Kernel α) : Kernel α :=
+  fun st =>
+    match syscallResolveCap gate st with
+    | .error e => .error e
+    | .ok (cap, st') =>
+      if !syscallTargetAccepted sid st' cap then .error .invalidCapability
+      else if cap.hasRight gate.requiredRight then op cap st'
+      else .error (syscallMissingRightError sid)
+
+/-- A successful typed gate resolved a capability of the syscall's type that
+carries the required right, at the state it was handed, and ran the arm on it. -/
+theorem syscallInvokeTyped_ok (sid : SyscallId) (gate : SyscallGate)
+    (op : Capability → Kernel α) (st : SystemState) (a : α) (st' : SystemState)
+    (hOk : syscallInvokeTyped sid gate op st = .ok (a, st')) :
+    ∃ cap, syscallLookupCap gate st = .ok (cap, st) ∧
+      syscallTargetAccepted sid st cap = true ∧ op cap st = .ok (a, st') := by
+  unfold syscallInvokeTyped at hOk
+  cases hR : syscallResolveCap gate st with
+  | error e => rw [hR] at hOk; exact absurd hOk (by simp)
+  | ok p =>
+    obtain ⟨cap, stR⟩ := p
+    obtain ⟨_, _, _, hSt⟩ := syscallResolveCap_implies_capability_at_slot gate st cap stR hR
+    subst hSt
+    rw [hR] at hOk
+    simp only at hOk
+    by_cases hT : syscallTargetAccepted sid stR cap = true
+    · by_cases hRt : cap.hasRight gate.requiredRight = true
+      · simp only [hT, hRt, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hOk
+        exact ⟨cap, by simp only [syscallLookupCap, hR, hRt, ↓reduceIte], hT, hOk⟩
+      · simp only [hT, hRt, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hOk
+        exact absurd hOk (by simp)
+    · simp only [hT, Bool.not_false, ↓reduceIte] at hOk
+      exact absurd hOk (by simp)
+
+/-- The typed gate's success implies a resolved capability with the required
+right. -/
+theorem syscallInvokeTyped_requires_right (sid : SyscallId)
+    (gate : SyscallGate) (op : Capability → Kernel α) (st : SystemState)
+    (a : α) (st' : SystemState)
+    (hOk : syscallInvokeTyped sid gate op st = .ok (a, st')) :
+    ∃ cap ref, resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref ∧
+               SystemState.lookupSlotCap st ref = some cap ∧
+               cap.hasRight gate.requiredRight = true := by
+  obtain ⟨cap, hL, _, _⟩ := syscallInvokeTyped_ok sid gate op st a st' hOk
+  obtain ⟨ref, hRes, hSlot, hRight, _⟩ :=
+    syscallLookupCap_implies_capability_held gate st cap st hL
+  exact ⟨cap, ref, hRes, hSlot, hRight⟩
+
+/-- V3-F (M-PRF-3): All callers of `resolveCapAddress` perform post-resolution
+    rights checks. Any successful `syscallInvokeTyped` — the sole gateway used
+    by both `dispatchSyscall` and `dispatchSyscallChecked` — implies the
+    resolved capability holds the required access right. The gate composes
+    `resolveCapAddress` → `lookupSlotCap` → the type → `hasRight` before any
+    operation is executed. -/
+theorem resolveCapAddress_callers_check_rights (sid : SyscallId)
+    (gate : SyscallGate) (op : Capability → Kernel α)
+    (st : SystemState) (a : α) (st' : SystemState)
+    (hOk : syscallInvokeTyped sid gate op st = .ok (a, st')) :
+    ∃ cap ref,
+      resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref ∧
+      SystemState.lookupSlotCap st ref = some cap ∧
+      cap.hasRight gate.requiredRight = true :=
+  syscallInvokeTyped_requires_right sid gate op st a st' hOk
 
 /-- AN7-E (API-M01): the resolver on an empty address array resolves
     nothing, granted or not. -/
@@ -4264,7 +4280,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
 kernel operation using the resolved capability's target. Called after cap
-resolution succeeds inside `syscallInvoke`.
+resolution succeeds inside `syscallInvokeTyped`.
 
 WS-K-C: Accepts full `SyscallDecodeResult` so dispatch arms can extract
 per-syscall arguments from `decoded.msgRegs` via the typed decode functions
@@ -5246,14 +5262,11 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- WS-SM SM9.A.10: **the live audit read.**
   --
   -- The authority is `extractAuditAuthority` — the capability must *target* the
-  -- audit trail — checked before anything else, and since PR #870 round 5 that
-  -- is true of the whole path, not just this arm: the checked dispatch routes
-  -- the audit ids through the resolve-only lookup (`syscallChecksTargetFirst`
-  -- → `syscallInvokeResolved`), so no rights verdict front-runs the target
-  -- check and a wrong-kind capability is `.invalidCapability` whatever rights
-  -- it carries (the v0.32.97 confused-deputy class is the reason the target
-  -- gate exists at all).  The right is the second gate, checked HERE rather
-  -- than in the lookup.
+  -- audit trail.  The gate checks the same type, then the right, before this
+  -- arm runs (`syscallInvokeTyped`), so a wrong-kind capability is
+  -- `.invalidCapability` whatever rights it carries (the v0.32.97
+  -- confused-deputy class is the reason the target gate exists at all); the
+  -- arm's own checks restate the gate's.
   --
   -- The reader's clearance is not an operand: `auditReadFromCore` reads it off
   -- the subject the executing core is running.  A caller that could name its own
@@ -5407,10 +5420,7 @@ def dispatchSyscallChecked (ctx : LabelingContext)
         -- (`.invalidCapability` for every non-audit target, whatever its
         -- rights), right second.  Everything else keeps the classic
         -- rights-gated lookup.
-        match (if syscallChecksTargetFirst decoded.syscallId then
-                 syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid executingCore gate)
-               else
-                 syscallInvoke gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+        match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
         | .error e => .error e
         | .ok ((), stPost) =>
             .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
@@ -5429,10 +5439,7 @@ non-inlined function so its arguments are read before the arm runs. -/
     (plan : TaintPlan) (preEpoch : Nat) (preLength : Nat)
     (preTaint : TaintMap) : Kernel Unit :=
   fun st =>
-    match (if syscallChecksTargetFirst decoded.syscallId then
-             syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid executingCore gate)
-           else
-             syscallInvoke gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+    match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
     | .error e => .error e
     | .ok ((), stPost) => .ok ((), applySyscallTaintAfter plan preEpoch preLength preTaint stPost)
 
@@ -5444,10 +5451,7 @@ and the audit epoch and trail length read before the arm. -/
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (nrB : Bool) (nrId : SeLe4n.ObjId) (preEpoch preLength : Nat) : Kernel Unit :=
   fun st =>
-    match (if syscallChecksTargetFirst decoded.syscallId then
-             syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid executingCore gate)
-           else
-             syscallInvoke gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+    match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
     | .error e => .error e
     | .ok ((), stPost) => .ok ((), declassifyTaintStep nrB nrId preEpoch preLength stPost)
 
@@ -5463,10 +5467,7 @@ and the audit epoch and trail length — all read before the arm. -/
     (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool)
     (preEpoch preLength : Nat) : Kernel Unit :=
   fun st =>
-    match (if syscallChecksTargetFirst decoded.syscallId then
-             syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid executingCore gate)
-           else
-             syscallInvoke gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+    match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
     | .error e => .error e
     | .ok ((), stPost) =>
         .ok ((), declassifySignalTaintStep (SignalTaintCase.ofCode taintCode) nid tid
@@ -5479,10 +5480,7 @@ and the audit epoch and trail length — all read before the arm. -/
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) : Kernel Unit :=
   fun st =>
-    match (if syscallChecksTargetFirst decoded.syscallId then
-             syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid executingCore gate)
-           else
-             syscallInvoke gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+    match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
     | .error e => .error e
     | .ok ((), stPost) => .ok ((), stPost)
 
@@ -6213,7 +6211,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
 kernel operation. Looks up the caller's TCB and CSpace root, constructs a
-`SyscallGate`, and dispatches via `syscallInvoke`.
+`SyscallGate`, and dispatches via `syscallInvokeTyped`.
 
 **Note (T6-I)**: This is the UNCHECKED dispatch path. It does not perform
 information-flow checks. For production user-space entry points, use
@@ -6254,7 +6252,7 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           capDepth     := rootCn.depth
           requiredRight := syscallRequiredRight decoded.syscallId
         }
-        match (syscallInvoke gate (dispatchWithCap decoded tid executingCore gate)) st with
+        match (syscallInvokeTyped decoded.syscallId gate (dispatchWithCap decoded tid executingCore gate)) st with
         | .error e => .error e
         | .ok ((), stPost) =>
             .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
@@ -6351,7 +6349,7 @@ theorem syscallEntry_requires_valid_decode
 
 /-- WS-J1-C: If `dispatchSyscall` succeeds, the caller held a capability
 with the required access right for the invoked syscall. Threads through
-`syscallInvoke_requires_right`. -/
+`syscallInvokeTyped_requires_right`. -/
 theorem dispatchSyscall_requires_right
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (st : SystemState) (st' : SystemState)
@@ -6381,7 +6379,7 @@ theorem dispatchSyscall_requires_right
       split at hOk
       · simp at hOk
       next stPost hInvokeOk =>
-        have hInvoke := syscallInvoke_requires_right
+        have hInvoke := syscallInvokeTyped_requires_right decoded.syscallId
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
           (dispatchWithCap decoded tid executingCore
@@ -6397,7 +6395,7 @@ theorem dispatchSyscall_requires_right
 
 /-- WS-J1-C: If `syscallEntry` succeeds for a capability-gated operation,
 the caller held the required access right. Threads through the existing
-`syscallInvoke_requires_right` theorem via `dispatchSyscall_requires_right`.
+`syscallInvokeTyped_requires_right` theorem via `dispatchSyscall_requires_right`.
 
 The conclusion proves the full chain: there exists a current thread with a
 valid TCB and CSpace root CNode, the register decode succeeded, and a
@@ -7762,32 +7760,11 @@ theorem dispatchSyscallChecked_preserves_projection
         have hSt : st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
           simpa using hStep.symm
         rw [hSt, applySyscallTaint_preserves_projection]
-        -- PR #870 round 5: the target-first syscalls take the resolve-only
-        -- lookup, everything else the classic rights-gated one.  The inner-NI
-        -- hypothesis is stated over the resolve (the weaker premise, so the
-        -- stronger hypothesis) and covers both branches — a full-lookup success
-        -- is a resolve success (`syscallResolveCap_of_lookup`).
-        split at hInvoke
-        · -- target-first branch: resolve-only lookup
-          unfold syscallInvokeResolved at hInvoke
-          split at hInvoke
-          · -- syscallResolveCap returned error
-            simp at hInvoke
-          · rename_i cap stCap hCap
-            have ⟨_, _, _, hStEq⟩ :=
-              syscallResolveCap_implies_capability_at_slot _ st cap stCap hCap
-            rw [hStEq] at hInvoke hCap
-            exact hInnerProj _ cap hCap stPost hInvoke
-        · -- classic branch: full lookup
-          unfold syscallInvoke at hInvoke
-          split at hInvoke
-          · -- syscallLookupCap returned error
-            simp at hInvoke
-          · rename_i cap stCap hCap
-            have ⟨_, _, _, _, hStEq⟩ :=
-              syscallLookupCap_implies_capability_held _ st cap stCap hCap
-            rw [hStEq] at hInvoke hCap
-            exact hInnerProj _ cap (syscallResolveCap_of_lookup _ st cap st hCap) stPost hInvoke
+        -- The typed gate ran the arm only on a capability the full lookup
+        -- returned, so the inner-NI hypothesis, stated over the resolve, covers
+        -- it (`syscallResolveCap_of_lookup`).
+        obtain ⟨cap, hCap, _, hArm⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hInvoke
+        exact hInnerProj _ cap (syscallResolveCap_of_lookup _ st cap st hCap) stPost hArm
     · -- some (not .cnode): error
       simp at hStep
     · -- none: error
@@ -8086,122 +8063,57 @@ theorem dispatchWithCapChecked_audit_insufficient_right_denied
   rcases hSyscall with h | h <;> rw [h] <;>
     simp only [extractAuditAuthority, hTarget, hRight, if_false, Bool.false_eq_true]
 
-/-- **WS-SM SM9.A.9 (PR #870 round 5, THE ordering contract, at the dispatch
-the syscall actually takes)**: a resolvable capability that does not target
-the audit trail is refused `.invalidCapability` on the audit syscalls
-**whatever rights it carries** — there is no `hasRight` hypothesis, which is
-the theorem's point.
-
-Before this round the full lookup's rights gate front-ran the arm, so a
-capability wrong on *both* axes was answered `.illegalAuthority` — the
-documented target-first order held only for rights-bearing capabilities.  The
-checked dispatch now routes the audit ids through the resolve-only lookup
-(`syscallChecksTargetFirst` → `syscallInvokeResolved`), and this theorem is
-the composed path's witness. -/
-theorem dispatchSyscallChecked_audit_target_first
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
-    (oid : SeLe4n.ObjId) (st : SystemState)
-    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+/-- **The type check precedes every right, at the dispatch the syscall takes**:
+a resolvable capability that is not of the syscall's type
+(`syscallTargetAccepted`) is refused `.invalidCapability` **whatever rights it
+carries**, as seL4's `decodeInvocation` dispatches on the capability's type
+before any decoder checks a right.  There is no `hasRight` hypothesis, which is
+the theorem's point. -/
+theorem dispatchSyscallChecked_type_before_rights
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId)
+    (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability) (st : SystemState)
+    (hNotYield : decoded.syscallId ≠ .yield)
     (hCur : st.scheduler.currentOnCore executingCore = some tid)
     (hTcb : st.getTcb? tid = some tcb)
     (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
     (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
-    (hTarget : cap.target = .object oid) :
+    (hType : syscallTargetAccepted decoded.syscallId st cap = false) :
     dispatchSyscallChecked ctx decoded tid executingCore st = .error .invalidCapability := by
-  -- PR #873 round 6: the taint seam wraps the invoke inside the dispatcher, so
-  -- the arm's refusal is rewritten under the wrapping `match` rather than being
-  -- the goal outright — and the gate is spelled out, because a `_` under that
-  -- match no longer determines itself.
-  rcases hSyscall with h | h
-  · have hArm := dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid executingCore
-      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-      cap oid st (Or.inl h) hTarget
-    rw [h] at hArm
-    simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte,
-      SystemState.getObject?,
-      (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
-      (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
-      h, syscallChecksTargetFirst,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    -- PR #889 review round 2: the resolution now refuses a capability naming a
-    -- reserved idle object before the arm runs; either way the answer is
-    -- `.invalidCapability`.
-    by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true <;> simp [hRes, hArm]
-  · have hArm := dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid executingCore
-      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-      cap oid st (Or.inr h) hTarget
-    rw [h] at hArm
-    simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte,
-      SystemState.getObject?,
-      (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
-      (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
-      h, syscallChecksTargetFirst,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    -- PR #889 review round 2: the resolution now refuses a capability naming a
-    -- reserved idle object before the arm runs; either way the answer is
-    -- `.invalidCapability`.
-    by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true <;> simp [hRes, hArm]
+  simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte, hNotYield,
+    SystemState.getObject?,
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
+    (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
+    syscallInvokeTyped, syscallResolveCap, hResolve, hLookup]
+  by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true <;>
+    simp [hRes, hType]
 
-/-- **WS-SM SM9.A.9 (PR #870 round 5, the order's other half)**: an audit-target
-capability lacking the required right is refused `.illegalAuthority` — after
-the target check, from the arm.  Together with
-`dispatchSyscallChecked_audit_target_first` this pins the composed order: the
-refusal class depends on the *target* first, and on the rights only once the
-target is the audit trail. -/
-theorem dispatchSyscallChecked_audit_right_checked_second
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
-    (st : SystemState)
-    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+/-- **The right is checked after the type**: a capability of the syscall's
+type without the syscall's right is refused with the syscall's missing-right
+answer (`syscallMissingRightError`) before the arm runs.  Together with
+`dispatchSyscallChecked_type_before_rights` this pins the composed order. -/
+theorem dispatchSyscallChecked_right_after_type
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId)
+    (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability) (st : SystemState)
+    (hNotYield : decoded.syscallId ≠ .yield)
     (hCur : st.scheduler.currentOnCore executingCore = some tid)
     (hTcb : st.getTcb? tid = some tcb)
     (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
     (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
-    {code : Nat} (hTarget : cap.target = .auditTrail code)
+    (hNotReserved : SeLe4n.Kernel.capTargetsReservedKernelObject cap = false)
+    (hType : syscallTargetAccepted decoded.syscallId st cap = true)
     (hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = false) :
-    dispatchSyscallChecked ctx decoded tid executingCore st = .error .illegalAuthority := by
-  -- PR #873 round 6: as above — the refusal is rewritten under the seam's
-  -- `match`, and the gate is named rather than inferred.
-  rcases hSyscall with h | h
-  · have hArm := dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid executingCore
-      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-      cap st (Or.inl h) hTarget hRight
-    rw [h] at hArm
-    simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte,
-      SystemState.getObject?,
-      (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
-      (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
-      h, syscallChecksTargetFirst,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    -- PR #889 review round 2: an audit-trail capability names no reserved idle
-    -- object, so the resolution's reservation refusal does not fire and the
-    -- arm's rights verdict is the answer.
-    have hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = false := by
-      simp [SeLe4n.Kernel.capTargetsReservedKernelObject, hTarget]
-    simp [hRes, hArm]
-  · have hArm := dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid executingCore
-      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-      cap st (Or.inr h) hTarget hRight
-    rw [h] at hArm
-    simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte,
-      SystemState.getObject?,
-      (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
-      (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
-      h, syscallChecksTargetFirst,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    -- PR #889 review round 2: an audit-trail capability names no reserved idle
-    -- object, so the resolution's reservation refusal does not fire and the
-    -- arm's rights verdict is the answer.
-    have hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = false := by
-      simp [SeLe4n.Kernel.capTargetsReservedKernelObject, hTarget]
-    simp [hRes, hArm]
+    dispatchSyscallChecked ctx decoded tid executingCore st =
+      .error (syscallMissingRightError decoded.syscallId) := by
+  simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte, hNotYield,
+    SystemState.getObject?,
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
+    (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
+    syscallInvokeTyped, syscallResolveCap, hResolve, hLookup]
+  simp [hNotReserved, hType, hRight]
 
 
 -- ============================================================================
@@ -8216,47 +8128,15 @@ theorem dispatchSyscallChecked_audit_right_checked_second
 -- `dispatchSyscallChecked`, and nothing covered it.  These are the analogues,
 -- parameterized over the executing core rather than the boot core.
 --
--- The checked dispatcher has two gate shapes and the guarantee holds through
--- both: the 31 ordinary arms take the rights-checking `syscallInvoke`, and the
--- two `syscallChecksTargetFirst` arms take the resolve-only
--- `syscallInvokeResolved` and check the right in the arm, after the target.
--- The second half is what the first attempt at this theorem would have missed —
--- a rights conclusion read off the gate alone is false for the audit pair.
+-- Every arm runs behind one gate, `syscallInvokeTyped`: the type, then the
+-- right, then the arm.
 -- ============================================================================
-
-/-- **WS-RR RR7.3**: a successful audit arm of the flow-checked dispatch implies
-the capability carried the required right.
-
-The arm's own gate, stated in the direction the entry-point guarantee needs.
-`dispatchWithCapChecked_audit_insufficient_right_denied` is the contrapositive
-for a capability that already targets the audit trail; this form takes no
-`hTarget` hypothesis, because `extractAuditAuthority` is total and a
-non-audit-trail target refuses before the rights test is reached. -/
-theorem dispatchWithCapChecked_audit_success_requires_right
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability) (st : SystemState) (st' : SystemState)
-    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
-    (hOk : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
-    cap.hasRight gate.requiredRight = true := by
-  by_cases hRight : cap.hasRight gate.requiredRight
-  · exact hRight
-  · exfalso
-    simp only [Bool.not_eq_true] at hRight
-    simp only [dispatchWithCapChecked, dispatchCapabilityOnly] at hOk
-    rcases hSyscall with h | h <;> rw [h] at hOk <;>
-      · simp only [extractAuditAuthority] at hOk
-        cases hTgt : cap.target <;> rw [hTgt] at hOk <;>
-          simp only [hRight, if_false, Bool.false_eq_true] at hOk <;>
-          exact absurd hOk (by simp)
 
 /-- **WS-RR RR7.3**: if the **flow-checked** dispatch succeeds, the caller held a
 capability with the required access right for the invoked syscall.
 
-The live-path analogue of `dispatchSyscall_requires_right`.  Both gate shapes
-are covered: the ordinary arms through `syscallInvoke_requires_right`, and the
-target-first (audit) pair through `syscallResolveCap`'s resolution plus
-`dispatchWithCapChecked_audit_success_requires_right` — the arm's own rights
-test, which is where the audit pair's second gate lives since PR #870 round 5. -/
+The live-path analogue of `dispatchSyscall_requires_right`, through the typed
+gate every arm runs behind (`syscallInvokeTyped_requires_right`). -/
 theorem dispatchSyscallChecked_requires_right
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (st : SystemState) (st' : SystemState)
@@ -8281,28 +8161,12 @@ theorem dispatchSyscallChecked_requires_right
       split at hOk
       · simp at hOk
       next stPost hInvokeOk =>
-        -- The gate the dispatcher chose is the `if` inside the invoke's own
-        -- `match`; split it so each shape supplies its own rights witness.
-        split at hInvokeOk
-        next hTargetFirst =>
-          -- The audit pair: resolve-only lookup, rights checked in the arm.
-          simp only [syscallInvokeResolved] at hInvokeOk
-          split at hInvokeOk
-          · simp at hInvokeOk
-          next cap stRes hResolveOk =>
-            obtain ⟨ref, hResolve, hSlot, hStEq⟩ :=
-              syscallResolveCap_implies_capability_at_slot _ _ cap stRes hResolveOk
-            subst hStEq
-            refine ⟨cap, ref, hResolve, hSlot, ?_⟩
-            exact dispatchWithCapChecked_audit_success_requires_right ctx decoded tid executingCore _ cap
-              _ stPost ((syscallChecksTargetFirst_iff decoded.syscallId).mp hTargetFirst)
-              hInvokeOk
-        next =>
-          -- Every other arm: the classic rights-gated lookup.
-          obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ :=
-            syscallInvoke_requires_right _ (dispatchWithCapChecked ctx decoded tid executingCore _)
-              _ () stPost hInvokeOk
-          exact ⟨cap, ref, hResolve, hSlot, hRight⟩
+        -- Every arm runs behind the typed gate, which checks the right after
+        -- the type and before the arm.
+        obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ :=
+          syscallInvokeTyped_requires_right decoded.syscallId _
+            (dispatchWithCapChecked ctx decoded tid executingCore _) _ () stPost hInvokeOk
+        exact ⟨cap, ref, hResolve, hSlot, hRight⟩
     · simp at hOk
     · simp at hOk
   · simp at hOk

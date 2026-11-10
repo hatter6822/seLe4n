@@ -2327,19 +2327,14 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
 /// OBSERVATION ONLY, removed before the PR: a trip whose answer is printed
 /// and accepted whatever it is, so one run reads the answers to pin.
 #[cfg(feature = "hw_target")]
-/// `KernelError.objectNotFound`, `.illegalAuthority` and `.invalidTypeTag`'s
-/// discriminants (`sele4n-types`).
-#[cfg(feature = "hw_target")]
-const OBJECT_NOT_FOUND: u64 = 1;
-#[cfg(feature = "hw_target")]
-const ILLEGAL_AUTHORITY: u64 = 3;
+/// `KernelError.invalidTypeTag`'s discriminant (`sele4n-types`).
 #[cfg(feature = "hw_target")]
 const INVALID_TYPE_TAG: u64 = 33;
 
 /// A call past its inline words (WS-UC coverage of the `overflowed` route),
 /// five words with the root task's IPC buffer mapped, on a capability whose
-/// kind or rights the syscall does not take (or, for the untyped calls, with
-/// an argument the decode or the object refuses), so the arm refuses with
+/// type the syscall does not take (or, for the untyped calls, with an argument
+/// the decode or the object refuses), so the gate or the arm refuses with
 /// `code` and changes nothing.
 #[cfg(feature = "hw_target")]
 const fn overflowed(
@@ -2596,6 +2591,10 @@ const NO_GRANT_ENDPOINT_CAP: u64 = cap_address(NO_GRANT_ENDPOINT_SLOT);
 /// Read and write without grant, as a mint's rights word.
 #[cfg(feature = "hw_target")]
 const READ_WRITE_RIGHTS: u64 = 0x3;
+/// Write alone, as a mint's rights word: an endpoint capability that may send
+/// and may not receive.
+#[cfg(feature = "hw_target")]
+const WRITE_ONLY_RIGHTS: u64 = 0x2;
 /// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
 /// `AlignmentError`), and the refusal frame's `x1` that carries it.
 #[cfg(feature = "hw_target")]
@@ -3344,86 +3343,81 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         },
         // Every other syscall the router takes past its inline words
         // (`overflowed`), five words (six for the service register, whose
-        // fifth is its own argument), each on a capability of a kind it does
-        // not take, so its arm refuses and changes nothing: the untyped reset
+        // fifth is its own argument), each on a capability of a type it does
+        // not take, so the gate refuses it `InvalidCapability` before any
+        // right and changes nothing (the receive's, a fault, is queued with
+        // the other capability faults, `overflow_cap_faults`): the untyped reset
         // on the untyped while its frame child lives, the declassifications on
         // the boot endpoint, whose flow the base lattice already permits.
-        overflowed(
-            "overflowed-receive",
-            RECEIVE,
-            CNODE_CAP,
-            5,
-            INVALID_CAPABILITY,
-        ),
         overflowed(
             "overflowed-cspace-mint",
             CSPACE_MINT,
             NOTIFICATION_CAP,
             5,
-            ILLEGAL_AUTHORITY,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-cspace-copy",
             CSPACE_COPY,
             NOTIFICATION_CAP,
             5,
-            ILLEGAL_AUTHORITY,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-cspace-move",
             CSPACE_MOVE,
             NOTIFICATION_CAP,
             5,
-            ILLEGAL_AUTHORITY,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-cspace-delete",
             CSPACE_DELETE,
             NOTIFICATION_CAP,
             5,
-            OBJECT_NOT_FOUND,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-cspace-revoke",
             CSPACE_REVOKE,
             NOTIFICATION_CAP,
             5,
-            OBJECT_NOT_FOUND,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-vspace-map",
             VSPACE_MAP,
             NOTIFICATION_CAP,
             5,
-            ILLEGAL_AUTHORITY,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-vspace-unmap",
             VSPACE_UNMAP,
             NOTIFICATION_CAP,
             5,
-            ILLEGAL_AUTHORITY,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-vspace-unify-instruction",
             VSPACE_UNIFY_INSTRUCTION,
             NOTIFICATION_CAP,
             5,
-            ILLEGAL_AUTHORITY,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-service-revoke",
             SERVICE_REVOKE,
             NOTIFICATION_CAP,
             5,
-            OBJECT_NOT_FOUND,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-service-query",
             SERVICE_QUERY,
             NOTIFICATION_CAP,
             5,
-            OBJECT_NOT_FOUND,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-sched-context-bind",
@@ -3437,7 +3431,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             SCHED_CONTEXT_UNBIND,
             NOTIFICATION_CAP,
             5,
-            OBJECT_NOT_FOUND,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-sched-context-consumed",
@@ -3458,35 +3452,35 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             TCB_SUSPEND,
             NOTIFICATION_CAP,
             5,
-            INVALID_ARGUMENT,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-tcb-resume",
             TCB_RESUME,
             NOTIFICATION_CAP,
             5,
-            INVALID_ARGUMENT,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-tcb-set-priority",
             TCB_SET_PRIORITY,
             NOTIFICATION_CAP,
             5,
-            INVALID_ARGUMENT,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-tcb-set-ipc-buffer",
             TCB_SET_IPC_BUFFER,
             NOTIFICATION_CAP,
             5,
-            OBJECT_NOT_FOUND,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-tcb-set-affinity",
             TCB_SET_AFFINITY,
             NOTIFICATION_CAP,
             5,
-            INVALID_ARGUMENT,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-tcb-bind-notification",
@@ -3500,14 +3494,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             TCB_UNBIND_NOTIFICATION,
             NOTIFICATION_CAP,
             5,
-            OBJECT_NOT_FOUND,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-tcb-set-fault-handler",
             TCB_SET_FAULT_HANDLER,
             NOTIFICATION_CAP,
             5,
-            OBJECT_NOT_FOUND,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-tcb-set-space",
@@ -3521,7 +3515,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             MINT_REPLY_CAP,
             NOTIFICATION_CAP,
             5,
-            ILLEGAL_AUTHORITY,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-irq-handler-ack",
@@ -3584,7 +3578,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             SERVICE_REGISTER,
             NOTIFICATION_CAP,
             6,
-            OBJECT_NOT_FOUND,
+            INVALID_CAPABILITY,
         ),
         overflowed(
             "overflowed-untyped-reset",
@@ -11339,6 +11333,77 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             "reply-long-send-cap-fault",
             which,
         )
+        // A receive past its inline words on the CNode capability: seL4's
+        // `handleRecv` faults on a capability that is not an endpoint or
+        // notification, in the receive phase, as on a failed lookup.
+        && queued_overflow_cap_fault(
+            &TrapTrip {
+                x0: CNODE_CAP,
+                ..overflow_cap_fault("overflowed-receive-cap-fault", RECEIVE, 5)
+            },
+            "receive-overflowed-receive-cap-fault",
+            "reply-overflowed-receive-cap-fault",
+            which,
+        )
+        && receive_phase_cap_faults(which)
+}
+
+/// A receive-phase trap: the root task's `SVC` with `x7` the syscall, `x0`
+/// the capability it receives on and no message words.
+#[cfg(feature = "hw_target")]
+const fn receive_phase_cap_fault(name: &'static str, syscall: u64, cptr: u64) -> TrapTrip {
+    TrapTrip {
+        x0: cptr,
+        x1: 0,
+        x7: syscall,
+        ..cap_fault(name)
+    }
+}
+
+/// **The receive phase's capability faults** (seL4's `handleRecv`): a
+/// receive, a wait and a reply-receive whose capability resolves but is not an
+/// endpoint or notification, and a receive on an endpoint capability without
+/// the right to receive, each raise a capability fault in the receive phase
+/// exactly as a failed lookup does, queued on the handler's endpoint and
+/// answered.  The capability without the right is an endpoint capability
+/// minted with the write right alone, deleted after.
+#[cfg(feature = "hw_target")]
+fn receive_phase_cap_faults(which: &str) -> bool {
+    let mint_no_receive = invocation(
+        "receive-no-right-mint",
+        CSPACE_MINT,
+        CNODE_CAP,
+        [ENDPOINT_SLOT, NO_GRANT_ENDPOINT_SLOT, WRITE_ONLY_RIGHTS, 0],
+    );
+    let delete_no_receive = invocation(
+        "receive-no-right-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [NO_GRANT_ENDPOINT_SLOT, 0, 0, 0],
+    );
+    queued_overflow_cap_fault(
+        &receive_phase_cap_fault("receive-wrong-type-cap-fault", RECEIVE, CNODE_CAP),
+        "receive-receive-wrong-type-cap-fault",
+        "reply-receive-wrong-type-cap-fault",
+        which,
+    ) && queued_overflow_cap_fault(
+        &receive_phase_cap_fault("wait-wrong-type-cap-fault", WAIT, CNODE_CAP),
+        "receive-wait-wrong-type-cap-fault",
+        "reply-wait-wrong-type-cap-fault",
+        which,
+    ) && queued_overflow_cap_fault(
+        &receive_phase_cap_fault("reply-recv-wrong-type-cap-fault", REPLY_RECV, CNODE_CAP),
+        "receive-reply-recv-wrong-type-cap-fault",
+        "reply-reply-recv-wrong-type-cap-fault",
+        which,
+    ) && heap_allocations_round_trip(&mint_no_receive, which) == Some(true)
+        && queued_overflow_cap_fault(
+            &receive_phase_cap_fault("receive-no-right-cap-fault", RECEIVE, NO_GRANT_ENDPOINT_CAP),
+            "receive-receive-no-right-cap-fault",
+            "reply-receive-no-right-cap-fault",
+            which,
+        )
+        && heap_allocations_round_trip(&delete_no_receive, which) == Some(true)
 }
 
 /// Each kind's queued scenario: the trap raised while no handler waits, the

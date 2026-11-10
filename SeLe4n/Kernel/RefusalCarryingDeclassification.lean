@@ -266,6 +266,7 @@ over the ring's next slot in place — or its refusal, read before any write
     | none => .error (.invalidCapability, st)
     | some cap =>
       if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+      else if !syscallTargetAccepted .declassify st cap then .error (.invalidCapability, st)
       else if cap.hasRight (syscallRequiredRight .declassify) then
         match cap.target, st.scheduler.currentOnCore executingCore with
         | .object targetId, some actorTid =>
@@ -278,7 +279,7 @@ over the ring's next slot in place — or its refusal, read before any write
                 st.declassificationAudit.length a0 a1 a2 a3 a4 a5 a6 a7 ac as st)
           else .error (declassifyRefusal ctx st actorTid targetId, st)
         | _, _ => declassifyGeneralR ctx regs capAddr tid executingCore cap st
-      else .error (.illegalAuthority, st)
+      else .error (syscallMissingRightError .declassify, st)
 
 /-- `.declassify` behind its operand check is the specification's arm and taint
 step, on every capability the operand resolves to. -/
@@ -300,8 +301,8 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
   have hOp := syscallOperandCap?_of_resolved st tid decoded.capAddr tcb rootCn ref hTcb hRoot hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hSid, syscallChecksTargetFirst,
-    Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hSid,
+    syscallInvokeTyped, syscallResolveCap, hRef,
     declassifyTaintStep_eq st tid decoded hSid, hOp]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
@@ -309,8 +310,11 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
   · simp only [declassifyOperandArmR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
+    by_cases hType : syscallTargetAccepted .declassify st cap = false
+    · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+    replace hType : syscallTargetAccepted .declassify st cap = true := by simpa using hType
     by_cases hRight : cap.hasRight (syscallRequiredRight .declassify) = true
-    · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+    · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
       have hSpec := dispatchWithCapChecked_eq_auditedArmSpec ctx decoded regs tid executingCore
         { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } cap
@@ -330,7 +334,7 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
       · unfold declassifyGeneralR
         rcases auditedArmSpec ctx .declassify decoded.capAddr regs tid executingCore cap st with
           _ | ⟨⟨⟩, post⟩ <;> rfl
-    · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+    · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-! ## Walking the ring's live window -/
 
@@ -615,9 +619,8 @@ theorem auditTargetGeneralR_eq (ctx : LabelingContext) (sid : SyscallId)
     simp only [auditGeneralR, auditedArmSpec_audit_not_trail ctx sid capAddr regs tid
       executingCore cap st hSid (by intro code; rw [hT]; exact fun h => by cases h)]
 
-/-- **`.auditDrain` behind its operand check**: the resolve-only lookup's
-idle-object check (the target is checked before the right,
-`syscallChecksTargetFirst`), then the admitted form — the drain and the staged
+/-- **`.auditDrain` behind its operand check**: the idle-object check (the
+target is checked before the right, as the gate checks it), then the admitted form — the drain and the staged
 length written in place — or the general one (`auditDrainOperandArmR_eq`). -/
 @[inline] def auditDrainOperandArmR (ctx : LabelingContext) (regs : SeLe4n.RegisterFile)
     (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) :
@@ -633,8 +636,9 @@ length written in place — or the general one (`auditDrainOperandArmR_eq`). -/
       else auditTargetGeneralR ctx .auditDrain regs capAddr tid executingCore cap st
 
 /-- What an audit call's operand check leaves to its arm: the specification's
-arm and taint step, through the resolve-only lookup, is the arm alone on a
-capability that resolves (`auditTaintStep_eq`). -/
+arm and taint step, through the typed gate, is the arm alone on a capability
+that resolves (`auditTaintStep_eq`): the arm checks the type and the right in
+the gate's order. -/
 theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSid : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
@@ -653,12 +657,10 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
       | some cap =>
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
         else auditGeneralR ctx decoded.syscallId regs decoded.capAddr tid executingCore cap st := by
-  have hFirst : syscallChecksTargetFirst decoded.syscallId = true := by
-    rcases hSid with h | h <;> rw [h] <;> rfl
   have hR : routedAudited decoded.syscallId = true := by
     rcases hSid with h | h <;> rw [h] <;> rfl
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst, ↓reduceIte,
-    syscallInvokeResolved, syscallResolveCap, hRef, auditTaintStep_eq st tid decoded hSid]
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+    syscallInvokeTyped, syscallResolveCap, hRef, auditTaintStep_eq st tid decoded hSid]
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
   · simp only []
@@ -667,8 +669,28 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
     · simp only [hIdle, Bool.false_eq_true, ↓reduceIte, auditGeneralR]
       rw [dispatchWithCapChecked_eq_auditedArmSpec ctx decoded regs tid executingCore _ cap hR
         hRegs hLen rfl]
-      rcases auditedArmSpec ctx decoded.syscallId decoded.capAddr regs tid executingCore cap st with
-        _ | ⟨⟨⟩, post⟩ <;> rfl
+      -- The gate's type and right restate the arm's own target-first checks.
+      by_cases hT : ∃ code, cap.target = .auditTrail code
+      · obtain ⟨code, hTc⟩ := hT
+        have hAcc : syscallTargetAccepted decoded.syscallId st cap = true := by
+          rcases hSid with h | h <;> simp [syscallTargetAccepted, syscallObjectKind?, h, hTc]
+        by_cases hRt : cap.hasRight (syscallRequiredRight decoded.syscallId) = true
+        · simp only [hAcc, hRt, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+          rcases auditedArmSpec ctx decoded.syscallId decoded.capAddr regs tid executingCore cap
+            st with _ | ⟨⟨⟩, post⟩ <;> rfl
+        · have hNo := dispatchWithCapChecked_audit_insufficient_right_denied ctx
+            (auditedDecoded decoded.syscallId decoded.capAddr regs) tid executingCore
+            (auditedGate tid decoded.capAddr decoded.syscallId) cap st hSid hTc
+            (by simpa [auditedGate] using hRt)
+          simp only [auditedArmSpec] at hNo
+          simp only [hAcc, hRt, Bool.not_true, Bool.false_eq_true, ↓reduceIte, auditedArmSpec, hNo]
+          rcases hSid with h | h <;> simp [h, syscallMissingRightError]
+      · have hNA : syscallTargetAccepted decoded.syscallId st cap = false := by
+          rcases hSid with h | h <;> cases hTc : cap.target <;>
+            simp_all [syscallTargetAccepted, syscallObjectKind?]
+        rw [auditedArmSpec_audit_not_trail ctx decoded.syscallId decoded.capAddr regs tid
+          executingCore cap st hSid (fun code h => hT ⟨code, h⟩)]
+        simp [hNA]
 
 /-- `.auditDrain` behind its operand check is the specification's arm and taint
 step, on every capability the operand resolves to. -/
@@ -1493,8 +1515,7 @@ theorem auditedArmSpec_auditRead_admitted (ctx : LabelingContext) (capAddr : SeL
     rw [Architecture.writeReturnFrameToTcb_ofWord_eq_words]
     rfl
 
-/-- **`.auditRead` behind its operand check**: the resolve-only lookup's
-idle-object check, then the admitted form — the word computed by walking the
+/-- **`.auditRead` behind its operand check**: the idle-object check, then the admitted form — the word computed by walking the
 ring's live window and staged in place — or the general one
 (`auditReadOperandArmR_eq`). -/
 @[inline] def auditReadOperandArmR (ctx : LabelingContext) (regs : SeLe4n.RegisterFile)
@@ -2232,6 +2253,7 @@ writing the records its one or two downgrades owe), or else the general one
     | none => .error (.invalidCapability, st)
     | some cap =>
       if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+      else if !syscallTargetAccepted .declassifySignal st cap then .error (.invalidCapability, st)
       else if cap.hasRight (syscallRequiredRight .declassifySignal) then
         match cap.target, st.scheduler.currentOnCore executingCore with
         | .object nid, some signaler =>
@@ -2298,7 +2320,7 @@ writing the records its one or two downgrades owe), or else the general one
                 | 0 => declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
             | none => declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
         | _, _ => declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
-      else .error (.illegalAuthority, st)
+      else .error (syscallMissingRightError .declassifySignal, st)
 
 /-- An admitted stored `.declassifySignal` is the specification's: the signal,
 then the record its one hop owes when it is a downgrade. -/
@@ -2445,8 +2467,8 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
   have hOp := syscallOperandCap?_of_resolved st tid decoded.capAddr tcb rootCn ref hTcb hRoot hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hSid, syscallChecksTargetFirst,
-    Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hSid,
+    syscallInvokeTyped, syscallResolveCap, hRef,
     declassifySignalTaintStep_eq st tid decoded hSid _ _ _ _ _ (decode_taintWordsAt st tid.toObjId)
       (decode_taintWordsAt st _), hOp]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -2455,8 +2477,11 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
   · simp only [declassifySignalOperandArmR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
+    by_cases hType : syscallTargetAccepted .declassifySignal st cap = false
+    · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+    replace hType : syscallTargetAccepted .declassifySignal st cap = true := by simpa using hType
     by_cases hRight : cap.hasRight (syscallRequiredRight .declassifySignal) = true
-    · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+    · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
       have hSpec := dispatchWithCapChecked_eq_auditedArmSpec ctx decoded regs tid executingCore
         { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } cap
@@ -2589,7 +2614,7 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
       · unfold declassifySignalGeneralR
         rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
           with _ | ⟨⟨⟩, post⟩ <;> rfl
-    · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+    · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-! ## The routed dispatch -/
 

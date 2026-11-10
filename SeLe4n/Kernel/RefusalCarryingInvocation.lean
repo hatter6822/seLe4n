@@ -398,12 +398,12 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | _ => .error .illegalState
 
 /-- What routing an invocation rests on: it is inert, records no
-declassification, checks its rights in the classic order, and is not the yield. -/
+declassification, and is not the yield. -/
 theorem routedInvocation_classic (sid : SyscallId) (h : routedInvocation sid = true) :
     contentFlowClass sid = .inert ∧ syscallRecordsDeclassification sid = false ∧
-      syscallChecksTargetFirst sid = false ∧ sid ≠ .yield := by
+      sid ≠ .yield := by
   cases sid <;> simp only [routedInvocation, Bool.false_eq_true] at h <;>
-    exact ⟨rfl, rfl, rfl, fun h => SyscallId.noConfusion h⟩
+    exact ⟨rfl, rfl, fun h => SyscallId.noConfusion h⟩
 
 /-- A routed invocation's taint step leaves the state as its arm left it. -/
 theorem applySyscallTaintAfter_routed (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -412,7 +412,7 @@ theorem applySyscallTaintAfter_routed (st : SystemState) (tid : SeLe4n.ThreadId)
     (post : SystemState) :
     applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
       post := by
-  obtain ⟨hC, hR, -, -⟩ := routedInvocation_classic _ h
+  obtain ⟨hC, hR, -⟩ := routedInvocation_classic _ h
   simp only [applySyscallTaintAfter, syscallTaintPlan, hC, hR, Bool.false_eq_true,
     ↓reduceIte, applyOrigination, applyTaintFlow, applyTaintClears, applyTaintStep, List.foldl,
     List.filter]
@@ -1725,8 +1725,8 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     dsimp only [RefusalCarrying.ofKernel]
     split <;> next h => rw [h]
 
-/-- A routed invocation's arm behind the operand check: the rights gate
-`syscallLookupCap` applies, then `dispatchInvocationBy` reading the caller's own
+/-- A routed invocation's arm behind the operand check: the gate's type and
+right (`syscallInvokeTyped`), then `dispatchInvocationBy` reading the caller's own
 registers.  Its taint step is the identity (`applySyscallTaintAfter_routed`), so
 there is none. -/
 @[inline] def invocationOperandArmR (ctx : LabelingContext) (sid : SyscallId)
@@ -1738,10 +1738,11 @@ there is none. -/
     | none => .error (.invalidCapability, st)
     | some cap =>
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if !syscallTargetAccepted sid st cap then .error (.invalidCapability, st)
         else if cap.hasRight (syscallRequiredRight sid) then
           dispatchInvocationByR ctx sid capAddr SeLe4n.arm64DefaultLayout regs tid
             executingCore cap st
-        else .error (.illegalAuthority, st)
+        else .error (syscallMissingRightError sid, st)
 
 /-- `dispatchSyscallChecked` for a routed invocation, its operand address, syscall
 and arguments read from the caller's register file (`dispatchInvocationCheckedR_eq`).
@@ -1763,11 +1764,11 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
     (hLen : truncationMinimum decoded.syscallId ≤ decoded.msgInfo.length) :
     dispatchInvocationCheckedR ctx decoded.syscallId decoded.capAddr regs tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
-  obtain ⟨-, -, hFirst, hNotYield⟩ := routedInvocation_classic _ hRouted
+  obtain ⟨-, -, hNotYield⟩ := routedInvocation_classic _ hRouted
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb rootCn ref _ _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
-    Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, 
+    syscallInvokeTyped, syscallResolveCap, hRef,
     applySyscallTaintAfter_routed st tid decoded hRouted]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
@@ -1775,8 +1776,11 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
   · simp only [invocationOperandArmR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · by_cases hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+    · by_cases hType : syscallTargetAccepted decoded.syscallId st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted decoded.syscallId st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = true
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
         rw [dispatchInvocationByR_eq]
         simp only [RefusalCarrying.ofKernel]
         rw [← dispatchWithCapChecked_eq_invocationBy ctx decoded SeLe4n.arm64DefaultLayout regs
@@ -1786,7 +1790,7 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
           cap st hRouted hRegs hLen]
         rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-! ## The scheduling-context configure
 
@@ -1902,8 +1906,8 @@ theorem applySyscallTaintAfter_configure (st : SystemState) (tid : SeLe4n.Thread
     syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,
     applyTaintFlow, applyTaintClears, applyTaintStep, List.foldl, List.filter]
 
-/-- The configure's arm behind the operand check: the rights gate
-`syscallLookupCap` applies, then `dispatchConfigureByR`. -/
+/-- The configure's arm behind the operand check: the gate's type and right,
+then `dispatchConfigureByR`. -/
 @[inline] def configureOperandArmR (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId) :
     Option Capability → RefusalCarrying Unit :=
   fun operand st =>
@@ -1911,9 +1915,10 @@ theorem applySyscallTaintAfter_configure (st : SystemState) (tid : SeLe4n.Thread
     | none => .error (.invalidCapability, st)
     | some cap =>
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if !syscallTargetAccepted .schedContextConfigure st cap then .error (.invalidCapability, st)
         else if cap.hasRight (syscallRequiredRight .schedContextConfigure) then
           dispatchConfigureByR SeLe4n.arm64DefaultLayout regs w tid cap st
-        else .error (.illegalAuthority, st)
+        else .error (syscallMissingRightError .schedContextConfigure, st)
 
 /-- `dispatchSyscallChecked` for a configure whose fifth word is `w`
 (`dispatchConfigureCheckedR_eq`). -/
@@ -1931,14 +1936,12 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchConfigureCheckedR decoded.capAddr regs w tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
-  have hFirst : syscallChecksTargetFirst decoded.syscallId = false := by
-    rw [hSid]; rfl
   have hNotYield : decoded.syscallId ≠ .yield := by
     rw [hSid]; exact fun h => SyscallId.noConfusion h
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb rootCn ref _ _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
-    Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, 
+    syscallInvokeTyped, syscallResolveCap, hRef,
     applySyscallTaintAfter_configure st tid decoded hSid]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
@@ -1946,8 +1949,11 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
   · simp only [configureOperandArmR, hSid]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · by_cases hRight : cap.hasRight (syscallRequiredRight .schedContextConfigure) = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+    · by_cases hType : syscallTargetAccepted .schedContextConfigure st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted .schedContextConfigure st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight (syscallRequiredRight .schedContextConfigure) = true
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
         rw [dispatchConfigureByR_eq]
         simp only [RefusalCarrying.ofKernel]
         rw [← dispatchWithCapChecked_eq_configureBy ctx decoded SeLe4n.arm64DefaultLayout regs w
@@ -1957,7 +1963,7 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
           cap st hSid hRegs hLen]
         rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-! ## The service register
 
@@ -2224,8 +2230,8 @@ theorem applySyscallTaintAfter_serviceRegister (st : SystemState) (tid : SeLe4n.
     syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,
     applyTaintFlow, applyTaintClears, applyTaintStep, List.foldl, List.filter]
 
-/-- The service register's arm behind the operand check: the rights gate
-`syscallLookupCap` applies, then `dispatchServiceRegisterByR`. -/
+/-- The service register's arm behind the operand check: the gate's type and
+right, then `dispatchServiceRegisterByR`. -/
 @[inline] def serviceRegisterOperandArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (regs : RegisterFile) (w : UInt64) :
     Option Capability → RefusalCarrying Unit :=
@@ -2234,9 +2240,10 @@ theorem applySyscallTaintAfter_serviceRegister (st : SystemState) (tid : SeLe4n.
     | none => .error (.invalidCapability, st)
     | some cap =>
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if !syscallTargetAccepted .serviceRegister st cap then .error (.invalidCapability, st)
         else if cap.hasRight (syscallRequiredRight .serviceRegister) then
           dispatchServiceRegisterByR ctx tid SeLe4n.arm64DefaultLayout regs w cap st
-        else .error (.illegalAuthority, st)
+        else .error (syscallMissingRightError .serviceRegister, st)
 
 /-- `dispatchSyscallChecked` for a service register whose fifth word is `w`
 (`dispatchServiceRegisterCheckedR_eq`). -/
@@ -2254,14 +2261,12 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
     (hLen : 5 ≤ decoded.msgInfo.length) :
     dispatchServiceRegisterCheckedR ctx decoded.capAddr regs w tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
-  have hFirst : syscallChecksTargetFirst decoded.syscallId = false := by
-    rw [hSid]; rfl
   have hNotYield : decoded.syscallId ≠ .yield := by
     rw [hSid]; exact fun h => SyscallId.noConfusion h
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb rootCn ref _ _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
-    Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, 
+    syscallInvokeTyped, syscallResolveCap, hRef,
     applySyscallTaintAfter_serviceRegister st tid decoded hSid]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
@@ -2269,8 +2274,11 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
   · simp only [serviceRegisterOperandArmR, hSid]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · by_cases hRight : cap.hasRight (syscallRequiredRight .serviceRegister) = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+    · by_cases hType : syscallTargetAccepted .serviceRegister st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted .serviceRegister st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight (syscallRequiredRight .serviceRegister) = true
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
         rw [dispatchServiceRegisterByR_eq]
         simp only [RefusalCarrying.ofKernel]
         rw [← dispatchWithCapChecked_eq_serviceRegisterBy ctx decoded SeLe4n.arm64DefaultLayout
@@ -2280,7 +2288,7 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
           cap st hSid hRegs hLen]
         rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-! ## The one-overflow-word invocations
 

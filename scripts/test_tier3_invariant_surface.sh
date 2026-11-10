@@ -236,11 +236,11 @@ run_check "INVARIANT" rg -n '^theorem rpi5MachineConfig_wellFormed($|[ ({:\[\]])
 # WS-H15c: Syscall capability-checking wrappers
 run_check "INVARIANT" rg -n '^structure SyscallGate($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallLookupCap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallInvoke($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallInvokeTyped($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallLookupCap_implies_capability_held($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # W3: syscallLookupCap_state_unchanged removed as dead code (trivially follows from
 # syscallLookupCap_implies_capability_held which provides the same state-unchanged guarantee).
-run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallInvokeTyped_requires_right($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # S5-A: Deprecated api* wrappers removed in v0.19.4. Verify removal and
 # presence of production syscall dispatch path.
 run_check "INVARIANT" rg -n '^def dispatchSyscall($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -4905,7 +4905,7 @@ run_check "INVARIANT" rg -n '^      exact hW \(notificationSignalArm_savedRegsWr
 run_check "INVARIANT" rg -n '^      exact hW \(declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(notificationWaitArm_savedRegsWrittenFree _ P hN hWt\)\.2$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^  rw \[yieldChargeOnCore_currentOnCore hCharge, hCur\] at ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
-run_check "INVARIANT" rg -n '^        \(applySyscallTaint_objectsAgreeOffTaint _ _ _\)\) t id\)\.trans$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      \(applySyscallTaint_objectsAgreeOffTaint _ _ _\)\) t id\)\.trans$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^    \(\(E\.of_ipcFrame hF \(IpcFrame\.of_frame rfl fun _ => rfl\)\)\.arm hCur \(hNI tid hCur\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact offCoreFree_of_receiveHead E\.dequeued E\.queueHeads hRT hBNR ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n -U '^    \(h : Platform\.FFI\.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5\n      ipcBufferAddr elr spsr spEl0 x30 st = \.ok \(outcome, st.\)\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
@@ -8926,18 +8926,19 @@ run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_has_no_audit_reader
 # in an unconfigured deployment.
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_auditRead_default_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_audit_never_succeeds($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-# PR #870 round 5: the audit pair validates the capability's TARGET before its
-# rights — the checked dispatch routes them through the resolve-only lookup
-# (one shared resolution, so lookup and resolve cannot drift), and the arms
-# own both gates in the documented order.  The composed-path witnesses are the
-# two dispatchSyscallChecked-level theorems.
+# Every syscall's gate checks the capability's type (its target constructor and
+# the kind of the object it names) before its right, as seL4's
+# decodeInvocation does: one gate, syscallInvokeTyped, in every dispatcher.
+# The composed-path witnesses are the two dispatchSyscallChecked-level theorems.
 run_check "INVARIANT" rg -n '^def syscallResolveCap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallChecksTargetFirst($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'syscallChecksTargetFirst decoded.syscallId' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def syscallTargetAccepted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallMissingRightError($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^def syscallInvokeTyped [^\n]*\n[^\n]*\n  fun st =>\n    match syscallResolveCap gate st with\n    \| \.error e => \.error e\n    \| \.ok \(cap, st'"'"'\) =>\n      if !syscallTargetAccepted sid st'"'"' cap then \.error \.invalidCapability\n      else if cap\.hasRight gate\.requiredRight then op cap st'"'"'\n      else \.error \(syscallMissingRightError sid\)' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n '\bsyscallInvoke\b' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem syscallResolveCap_of_lookup($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_audit_insufficient_right_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_target_first($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_right_checked_second($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_type_before_rights($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_right_after_type($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # PR #870 round 4: the cross-core inventory's audit entries map to the
 # DISPATCH-level composition — transition plus WS-RA return-frame staging,
 # the state the checked dispatch actually commits.  The transition-only

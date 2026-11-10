@@ -358,20 +358,32 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
       Except.bind, dispatchCapabilityOnlyChecked]
   all_goals first | rfl | skip
 
-/-- An invocation short of its arguments, behind the operand check: the rights
-gate `syscallLookupCap` applies, then the target the arguments are read under,
-then the refusal, `.truncatedMessage` — the order seL4's decode reads them in,
-the capability found first and the length checked before any argument word. -/
+/-- A capability of the type of a routed invocation that reads arguments is one
+its arguments are read under, so a short message reaching the arm is refused
+`.truncatedMessage`. -/
+theorem truncationTarget_of_accepted (sid : SyscallId) (st : SystemState) (cap : Capability)
+    (hR : (routedInvocation sid || routedOverflowOne sid) = true)
+    (hM : 0 < truncationMinimum sid)
+    (hA : syscallTargetAccepted sid st cap = true) :
+    truncationTarget sid cap.target = true := by
+  rcases cap with ⟨target, rights, badge, mapping⟩
+  cases sid <;> first | (cases hR; done) | skip
+  all_goals cases target <;>
+    simp_all [syscallTargetAccepted, syscallObjectKind?, truncationTarget, truncationMinimum]
+
+/-- An invocation short of its arguments, behind the operand check: the gate's
+type, then its right, then the refusal, `.truncatedMessage` — the order seL4's
+decode reads them in, the capability's type first and the length checked
+before any argument word. -/
 @[inline] def shortArgsOperandArmR (sid : SyscallId) : Option Capability → RefusalCarrying Unit :=
   fun operand st =>
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if cap.hasRight (syscallRequiredRight sid) then
-          .error (if truncationTarget sid cap.target then .truncatedMessage
-            else .invalidCapability, st)
-        else .error (.illegalAuthority, st)
+        else if !syscallTargetAccepted sid st cap then .error (.invalidCapability, st)
+        else if cap.hasRight (syscallRequiredRight sid) then .error (.truncatedMessage, st)
+        else .error (syscallMissingRightError sid, st)
 
 /-- `dispatchSyscallChecked` for an invocation whose message is shorter than its
 arguments (`dispatchShortArgsCheckedR_eq`). -/
@@ -385,8 +397,6 @@ theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallD
     (hT : decoded.msgInfo.length < truncationMinimum decoded.syscallId) :
     dispatchShortArgsCheckedR decoded.syscallId decoded.capAddr tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
-  have hFirst : syscallChecksTargetFirst decoded.syscallId = false := by
-    cases h : decoded.syscallId <;> rw [h] at hR <;> first | (cases hR; done) | rfl
   have hNotYield : decoded.syscallId ≠ .yield := by
     intro h; rw [h] at hR; cases hR
   have hTaint : ∀ st pe pl pt post,
@@ -401,18 +411,22 @@ theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallD
     · exact applySyscallTaintAfter_routed st tid decoded hI pe pl pt post
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb rootCn ref _ _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
-    Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
-    hTaint]
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+    syscallInvokeTyped, syscallResolveCap, hRef, hTaint]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
   · simp only [shortArgsOperandArmR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · by_cases hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
-        rw [dispatchWithCapChecked_eq_truncated ctx decoded tid executingCore _ cap st hR hT]
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+    · by_cases hType : syscallTargetAccepted decoded.syscallId st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted decoded.syscallId st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = true
+      · simp only [hIdle, hType, Bool.not_true, hRight, ↓reduceIte, Bool.false_eq_true]
+        rw [dispatchWithCapChecked_eq_truncated ctx decoded tid executingCore _ cap st hR hT,
+          truncationTarget_of_accepted _ st cap hR (Nat.lt_of_le_of_lt (Nat.zero_le _) hT) hType]
+        rfl
+      · simp only [hIdle, hType, Bool.not_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 end SeLe4n.Kernel

@@ -94,7 +94,7 @@
 [UMT-023] retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
 [SGT-001] H15e syscall gate send (correct): ok
 [SGT-004] H15e syscall gate send (bad root): SeLe4n.Model.KernelError.objectNotFound
-[SGT-006] H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.illegalAuthority
+[SGT-006] H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.invalidCapability
 [SGT-008] H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability
 [SGT-009] H15e syscall gate retype: ok
 [RCF-001] F7 timerOnly timer success: 3

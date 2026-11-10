@@ -362,7 +362,7 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
      | _ => false)
   assertInvariants "chain8: interleaved send/receive queue integrity" st10
 
--- S2-J: Migrated from deprecated apiCspaceMint to syscallInvoke path.
+-- S2-J: Migrated from deprecated apiCspaceMint to the syscall gate.
 private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   let targetId : SeLe4n.ObjId := ⟨2900⟩
   let rootCNode : SeLe4n.ObjId := ⟨2901⟩
@@ -407,13 +407,16 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   expectErr "chain9: grandchild syscall gate has no grant right"
     (SeLe4n.Kernel.syscallLookupCap noGrantGate st2)
     .illegalAuthority
-  -- S2-J: Replaced deprecated apiCspaceMint with equivalent syscallInvoke path
+  -- S2-J: Replaced deprecated apiCspaceMint with the equivalent typed gate.  The
+  -- grandchild capability names an endpoint, not a CNode, so the gate refuses
+  -- its type before its right (spec §8.10.5b); the missing grant right is the
+  -- lookup's refusal above.
   expectErr "chain9: grandchild cannot mint via syscall gate without grant"
-    (SeLe4n.Kernel.syscallInvoke { noGrantGate with requiredRight := .grant } (fun cap =>
+    (SeLe4n.Kernel.syscallInvokeTyped .cspaceMint { noGrantGate with requiredRight := .grant } (fun cap =>
       if cap.target ≠ .object grandSlot.cnode then fun _ => .error .invalidCapability
       else SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := (SeLe4n.Slot.ofNat 1) }
         (AccessRightSet.ofList [.read]) none) st2)
-    .illegalAuthority
+    .invalidCapability
 
   let (_, st3) ← expectOkSt "chain9: revoke root cascades descendants"
     (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st2)
@@ -2423,12 +2426,17 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
   let tid : SeLe4n.ThreadId := ⟨500⟩
   let cnodeId : SeLe4n.ObjId := ⟨501⟩
   let vsId : SeLe4n.ObjId := ⟨502⟩
+  -- The message length (`x1`) names every argument register x2.. the call
+  -- writes, so the kernel's length check reads the words it decodes; an
+  -- explicit `x1` in `args` overrides it.
+  let msgLen := (args.filter (fun (idx, _) => 2 ≤ idx && idx ≤ 5)).foldl
+    (fun m (idx, _) => max m (idx - 1)) 0
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     let v := if r.val == 0 then capAddr
              else if r.val == 7 then syscallNum
              else match args.find? (fun (idx, _) => idx == r.val) with
                   | some (_, val) => val
-                  | none => 0
+                  | none => if r.val == 1 then msgLen else 0
     ⟨v⟩
   let mut builder := BootstrapBuilder.empty
     |>.withObject tid.toObjId (.tcb {

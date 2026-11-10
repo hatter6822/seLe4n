@@ -273,7 +273,7 @@ WS-J1 addresses this modeling gap in 6 phases (J1-A through J1-F):
    with round-trip lemmas, determinism theorem, and error exclusivity proofs.
 3. **Syscall entry point** (WS-J1-C — **completed**, v0.15.6): `syscallEntry` reads
    arguments from the current thread's register context and dispatches through
-   the decode layer to `api*` wrappers via `SyscallGate`/`syscallInvoke`.
+   the decode layer to `api*` wrappers via `SyscallGate`/`syscallInvokeTyped`.
 4. **Invariant/NI integration** (WS-J1-D — **completed**, v0.15.8):
    `registerDecodeConsistent` predicate, invariant preservation through
    `syscallEntry`, NI bridge theorems (`syscallDecodeError`, `syscallDispatchHigh`).
@@ -289,7 +289,7 @@ WS-J1 addresses this modeling gap in 6 phases (J1-A through J1-F):
 
 ```
 User space → hardware trap → RegisterDecode.decodeSyscallArgs → syscallEntry
-    → SyscallGate → syscallInvoke → dispatchWithCap → internal kernel operation
+    → SyscallGate → syscallInvokeTyped → dispatchWithCap → internal kernel operation
 ```
 
 (The `api*` wrapper layer this section originally described was removed in

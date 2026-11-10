@@ -756,23 +756,15 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
     rw [hRootObj] at hDisp
     simp only at hDisp
     rw [← hGateEq] at hDisp
-    by_cases hTF : syscallChecksTargetFirst decoded.syscallId = true
-    · rw [if_pos hTF] at hDisp
-      simp only [syscallInvokeResolved, hRes] at hDisp
-      split at hDisp
-      · exact absurd hDisp (by simp)
-      · rename_i stPost hD
-        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
-        subst hDisp
-        exact key stPost hD
-    · rw [if_neg hTF] at hDisp
-      simp only [syscallInvoke, hLk] at hDisp
-      split at hDisp
-      · exact absurd hDisp (by simp)
-      · rename_i stPost hD
-        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
-        subst hDisp
-        exact key stPost hD
+    split at hDisp
+    · exact absurd hDisp (by simp)
+    · rename_i stPost hD
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+      subst hDisp
+      obtain ⟨cap', hLk', -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+      rw [hLk] at hLk'
+      cases hLk'
+      exact key stPost hD
 
 -- ============================================================================
 -- §3  The ABI syscall seam

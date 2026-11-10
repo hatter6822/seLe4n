@@ -454,33 +454,18 @@ theorem dispatchSyscallChecked_savedRegsKeptOffCore {ctx : LabelingContext}
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
-  cases hTF : syscallChecksTargetFirst decoded.syscallId <;>
-    simp only [hTF, Bool.false_eq_true, ↓reduceIte] at h
-  all_goals
-    split at h
-    · cases h
-    rename_i stPost hD
-    cases h
-    suffices hP : savedRegsKeptOffCore e st stPost from fun d hd t ht =>
-      ((savedRegsKeptExcept.of_objectsAgreeOffTaint (W := fun _ => False)
-        (applySyscallTaint_objectsAgreeOffTaint _ _ _)) t id).trans
-        (hP d hd t (by rwa [applySyscallTaint_scheduler, applySyscallTaint_machine] at ht))
-  · unfold syscallInvoke at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hR
-      cases syscallLookupCap_preserves_state _ _ _ _ hR
-      have hC := (dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD).1
-      exact dispatchWithCapChecked_savedRegsKeptOffCore P hRT hN hB hBNR hYA hYN hD
-        hC.currentKept hC.residentKept
-  · unfold syscallInvokeResolved at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hR
-      cases syscallResolveCap_state hR
-      have hC := (dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD).1
-      exact dispatchWithCapChecked_savedRegsKeptOffCore P hRT hN hB hBNR hYA hYN hD
-        hC.currentKept hC.residentKept
+  split at h
+  · cases h
+  rename_i stPost hD
+  cases h
+  suffices hP : savedRegsKeptOffCore e st stPost from fun d hd t ht =>
+    ((savedRegsKeptExcept.of_objectsAgreeOffTaint (W := fun _ => False)
+      (applySyscallTaint_objectsAgreeOffTaint _ _ _)) t id).trans
+      (hP d hd t (by rwa [applySyscallTaint_scheduler, applySyscallTaint_machine] at ht))
+  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  have hC := (dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD).1
+  exact dispatchWithCapChecked_savedRegsKeptOffCore P hRT hN hB hBNR hYA hYN hD
+    hC.currentKept hC.residentKept
 
 
 /-! ### The entry -/

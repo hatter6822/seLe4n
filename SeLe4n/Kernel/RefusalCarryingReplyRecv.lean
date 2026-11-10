@@ -1668,6 +1668,7 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
     | none => .error (.invalidCapability, st)
     | some cap =>
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           let callerCode := replyRecvTaintCallerCodeOf st tid cap layout rf len
@@ -1680,7 +1681,7 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
               .ok ((), replyRecvTaintStep sourceCode callerCode tid
                 ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
                 stPost)
-        else .error (.illegalAuthority, st)
+        else .error (syscallMissingRightError .replyRecv, st)
 
 theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -1702,8 +1703,7 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   have hOperand := syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hRR, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
-    syscallLookupCap, syscallResolveCap, hRef]
+    hRR, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
   simp only [replyRecvTaintStep_eq st tid decoded hRR layout rf tcb rootCn hTcb hRoot #[] (Or.inl rfl)
     (by rw [Array.append_empty]; exact hRegs)
     (wS := fun cap => st.taintWordsAt (threadObjOfCode (receiveTaintSourceCode st cap)))
@@ -1715,8 +1715,11 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
   · simp only [replyRecvOperandArmThenTaintR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · by_cases hRight : cap.hasRight (syscallRequiredRight .replyRecv) = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+    · by_cases hType : syscallTargetAccepted .replyRecv st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted .replyRecv st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight (syscallRequiredRight .replyRecv) = true
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
           TaintWords.mk_fields]
         rw [endpointReplyRecvCheckedArmR_eq ctx decoded tid executingCore
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -1728,7 +1731,7 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight .replyRecv }
           cap st with _ | ⟨⟨⟩, stPost⟩ <;> rfl
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-- WS-ZA ZA4.7: the reply-receive's dispatch: `dispatchOperandCheckedR` with
 the reply-receive's arm (`dispatchReplyRecvCheckedR_eq`).
@@ -2324,6 +2327,7 @@ the state it was handed (`replyRecvLongOperandArmThenTaintR_eq`). -/
     | none => .error (.invalidCapability, st)
     | some cap =>
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           let callerCode := replyRecvTaintCallerCodeOf st tid cap SeLe4n.arm64DefaultLayout rf len
@@ -2336,7 +2340,7 @@ the state it was handed (`replyRecvLongOperandArmThenTaintR_eq`). -/
               .ok ((), replyRecvTaintStep sourceCode callerCode tid
                 ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
                 stPost)
-        else .error (.illegalAuthority, st)
+        else .error (syscallMissingRightError .replyRecv, st)
 
 theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -2363,8 +2367,7 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   have hOperand := syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hRR, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
-    syscallLookupCap, syscallResolveCap, hRef]
+    hRR, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
   simp only [replyRecvTaintStep_eq st tid decoded hRR SeLe4n.arm64DefaultLayout rf tcb rootCn hTcb
     hRoot _ (Or.inr (by decide)) hRegs
     (wS := fun cap => st.taintWordsAt (threadObjOfCode (receiveTaintSourceCode st cap)))
@@ -2376,8 +2379,11 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
   · simp only [replyRecvLongOperandArmThenTaintR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · by_cases hRight : cap.hasRight (syscallRequiredRight .replyRecv) = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+    · by_cases hType : syscallTargetAccepted .replyRecv st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted .replyRecv st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight (syscallRequiredRight .replyRecv) = true
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
           TaintWords.mk_fields]
         rw [endpointReplyRecvLongCheckedArmR_eq ctx decoded tid executingCore
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -2389,7 +2395,7 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight .replyRecv }
           cap st with _ | ⟨⟨⟩, stPost⟩ <;> rfl
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-- The long reply-receive's operand dispatch (`dispatchReplyRecvLongCheckedR_eq`).
 A specification: the compiled entry runs the arm out of line. -/

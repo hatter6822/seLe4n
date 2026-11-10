@@ -1474,18 +1474,18 @@ set_option maxRecDepth 8192
 #check @extractAuditAuthority
 #check @extractAuditAuthority_eq_ok_iff
 #check @extractAuditAuthority_rejects_non_audit_capability
--- PR #870 round 5: target-first for the audit pair — the checked dispatch
--- routes them through the resolve-only lookup, so no rights verdict front-runs
--- the target check and the refusal class depends on the target first.
+-- The type before the right, for every syscall: the gate checks the
+-- capability's type, then its right, so the refusal class depends on the type
+-- first.
 #check @syscallResolveCap
 #check @syscallResolveCap_implies_capability_at_slot
 #check @syscallResolveCap_of_lookup
-#check @syscallInvokeResolved
-#check @syscallChecksTargetFirst
-#check @syscallChecksTargetFirst_iff
+#check @syscallTargetAccepted
+#check @syscallInvokeTyped
+#check @syscallInvokeTyped_ok
 #check @dispatchWithCapChecked_audit_insufficient_right_denied
-#check @dispatchSyscallChecked_audit_target_first
-#check @dispatchSyscallChecked_audit_right_checked_second
+#check @dispatchSyscallChecked_type_before_rights
+#check @dispatchSyscallChecked_right_after_type
 #check @Capability.auditTrailRead
 #check @Capability.auditTrailManage
 #check @Capability.auditTrailRead_cannot_drain

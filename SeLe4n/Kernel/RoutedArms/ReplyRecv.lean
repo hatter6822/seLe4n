@@ -26,9 +26,12 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+set_option maxHeartbeats 400000 in
 /-- **The reply-receive arm**: `dispatchOperandCheckedK` on the operand and
 the reply-receive's arm and taint step (`replyRecvOperandArmThenTaintR`) over
-the caller's message registers, its results reported. -/
+the caller's message registers, its results reported.  The arm inlines the
+reply-receive's whole checked transition, whose compilation takes more than
+the default heartbeats. -/
 @[noinline] def replyRecvRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (length extraCaps label : Nat)
     (st : SystemState) : SystemState :=

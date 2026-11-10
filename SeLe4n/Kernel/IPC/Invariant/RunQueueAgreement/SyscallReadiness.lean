@@ -1484,39 +1484,21 @@ theorem dispatchSyscallChecked_readyKeptStage (ctx : LabelingContext)
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
-  cases hTF : syscallChecksTargetFirst decoded.syscallId <;>
-    simp only [hTF, Bool.false_eq_true, ↓reduceIte] at h
-  all_goals
-    split at h
-    · cases h
-    rename_i stPost hD
-    cases h
-    suffices hP : SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st executingCore)
-        st stPost ∧ readyKeptStage (· = tid) st stPost from
-      readyKeptStage.trans_links hP.1.1.links hP.2 (readyKeptStage.of_stage
-        (SystemState.RunQueueStage.of_objectsAgreeOffTaint
-          (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
-          (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
-          (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])))
-  · unfold syscallInvoke at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hLk
-      have hRz := syscallResolveCap_of_lookup _ st cap s1 hLk
-      obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
-      subst hStEq
-      exact ⟨dispatchWithCapChecked_runQueueEntryStageOn ctx decoded tid executingCore _ cap _
-        stPost P hD,
-        dispatchWithCapChecked_readyKeptStage ctx decoded tid executingCore _ cap _ stPost P hD⟩
-  · unfold syscallInvokeResolved at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hRz
-      obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
-      subst hStEq
-      exact ⟨dispatchWithCapChecked_runQueueEntryStageOn ctx decoded tid executingCore _ cap _
-        stPost P hD,
-        dispatchWithCapChecked_readyKeptStage ctx decoded tid executingCore _ cap _ stPost P hD⟩
+  split at h
+  · cases h
+  rename_i stPost hD
+  cases h
+  suffices hP : SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st executingCore)
+      st stPost ∧ readyKeptStage (· = tid) st stPost from
+    readyKeptStage.trans_links hP.1.1.links hP.2 (readyKeptStage.of_stage
+      (SystemState.RunQueueStage.of_objectsAgreeOffTaint
+        (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
+        (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+        (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])))
+  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  exact ⟨dispatchWithCapChecked_runQueueEntryStageOn ctx decoded tid executingCore _ cap _
+    stPost P hD,
+    dispatchWithCapChecked_readyKeptStage ctx decoded tid executingCore _ cap _ stPost P hD⟩
 
 
 /-! ### The syscall entry -/
