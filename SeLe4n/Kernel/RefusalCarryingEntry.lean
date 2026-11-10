@@ -714,18 +714,24 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
                 rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_of_held hHeld]
                 exact dispatchReplyRecvLongCheckedR_eq ctx
                   (longMessageDecode .replyRecv st tid tcb.registerContext capAddr msgInfo)
-                  tcb.registerContext capAddr tid executingCore st rfl hReplyRecvLongRegs rfl
+                  tcb.registerContext capAddr tid executingCore st rfl hReplyRecvLongRegs rfl hRead
+                  (frameOf hObj)
               · obtain ⟨tl, hTl⟩ := SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb
                   st executingCore tid (msgInfo.length - 4)
                 have hAg : ipcBufferReadsAgree (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st
                     executingCore tid (msgInfo.length - 4)) st := by
                   rw [hTl]; exact .of_eq rfl rfl
+                have hFrameF : ∀ t, (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st
+                    executingCore tid (msgInfo.length - 4)).getTcb? tid = some t →
+                    t.registerContext = tcb.registerContext := by
+                  rw [hTl]; exact frameOf hObj
                 have hDisp := dispatchReplyRecvLongCheckedR_eq ctx
                   (longMessageDecode .replyRecv st tid tcb.registerContext capAddr msgInfo)
                   tcb.registerContext capAddr tid executingCore
                   (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
                     (msgInfo.length - 4)) rfl hReplyRecvLongRegs
                   (by simp only [longReplyRegs, longMessageDecode, hAg.overflowRegsFrom])
+                  (fun j hj => by rw [hAg.ipcBufferReadMr]; exact hRead j hj) hFrameF
                 have hC : (longMessageDecode .replyRecv st tid tcb.registerContext capAddr msgInfo).capAddr =
                     capAddr := rfl
                 have hMi : (longMessageDecode .replyRecv st tid tcb.registerContext capAddr msgInfo).msgInfo =

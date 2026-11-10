@@ -24,6 +24,7 @@ import SeLe4n.Kernel.IPC.CrossCore.CallCapsDelivered
 import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsDelivered
 import SeLe4n.Kernel.IPC.CrossCore.LongCapsDelivered
 import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsLongDelivered
+import SeLe4n.Kernel.IPC.CrossCore.LongFaultAnswerInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -3338,8 +3339,12 @@ the long frame (`performReplyCapsDeliveredLong`,
 (`replyPopsInPlace`) or to a caller recording no server
 (`replyUnheldPopsInPlace`) hands the context back in place, then runs the
 transfer and the long frame (`performReplyDonatedCapsDeliveredLong`,
-`performReplyUnheldCapsDeliveredLong`).  Any other reply, which a faulted caller
-or a check failing makes, takes the general arm. -/
+`performReplyUnheldCapsDeliveredLong`).  A reply to a caller carrying a fault
+answers it in place on each of those shapes, as seL4's `handleFaultReply` does,
+its restart words past the fourth read from the replier's IPC buffer
+(`performFaultReplyAnswerLong`, `performFaultReplyDonatedAnswerLong`,
+`performFaultReplyUnheldAnswerLong`).  Any other reply, which a check failing
+makes, takes the general arm. -/
 @[inline] def endpointReplyLongCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
     (len extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) : RefusalCarrying Unit :=
@@ -3357,8 +3362,22 @@ or a check failing makes, takes the general arm. -/
                         match ct.replyObject with
                         | some rid =>
                             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
-                                !server.isReserved && !ct.faultWords.isFault then
-                              if replyWakesInPlace st c ct rid then
+                                !server.isReserved then
+                              if ct.faultWords.isFault then
+                                if replyWakesInPlace st c ct rid then
+                                  .ok ((), performFaultReplyAnswerLong st c server rid executingCore
+                                    ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0
+                                    ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
+                                    ct.faultX6 ct.faultX7 tid rf len)
+                                else if replyPopsInPlace st c ct.scBindingScCode server rid then
+                                  .ok ((), performFaultReplyDonatedAnswerLong st c server rid
+                                    ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
+                                    executingCore ct.faultKind label ct.faultIp ct.faultSp
+                                    ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3
+                                    ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 tid rf len)
+                                else endpointReplyLongGeneralR ctx rf len extraCaps label tid
+                                  executingCore cap st
+                              else if replyWakesInPlace st c ct rid then
                                 if replyTransferInertW st tid ct (cap.rights.mem .grant) then
                                   .ok ((), performReplyDeliveredLong st c server rid rf len tid
                                     cap.badgeWord cap.badged executingCore)
@@ -3393,17 +3412,24 @@ or a check failing makes, takes the general arm. -/
                         match ct.replyObject with
                         | some rid =>
                             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
-                                !ct.faultWords.isFault && replyUnheldPopsInPlace st c rid then
-                              match st.getTcb? tid with
-                              | some stcb =>
-                                  .ok ((), performReplyUnheldCapsDeliveredLong st c rid
-                                    ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
-                                    rf len tid cap.badgeWord cap.badged stcb.vspaceRoot
-                                    stcb.ipcBuffer stcb.cspaceRoot
-                                    (if cap.rights.mem .grant then routedExtraCaps rf else 0)
-                                    ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot)
-                              | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid
-                                  executingCore cap st
+                                replyUnheldPopsInPlace st c rid then
+                              if ct.faultWords.isFault then
+                                .ok ((), performFaultReplyUnheldAnswerLong st c rid
+                                  ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
+                                  ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0
+                                  ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
+                                  ct.faultX6 ct.faultX7 tid rf len)
+                              else
+                                match st.getTcb? tid with
+                                | some stcb =>
+                                    .ok ((), performReplyUnheldCapsDeliveredLong st c rid
+                                      ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
+                                      rf len tid cap.badgeWord cap.badged stcb.vspaceRoot
+                                      stcb.ipcBuffer stcb.cspaceRoot
+                                      (if cap.rights.mem .grant then routedExtraCaps rf else 0)
+                                      ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot)
+                                | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid
+                                    executingCore cap st
                             else endpointReplyLongGeneralR ctx rf len extraCaps label tid
                               executingCore cap st
                         | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid
@@ -3459,44 +3485,58 @@ theorem endpointReplyLongCheckedArmR_eq_general (ctx : LabelingContext)
               split
               · next hG =>
                 simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
-                obtain ⟨⟨hFlow, hSRes⟩, hNoF⟩ := hG
+                obtain ⟨hFlow, hSRes⟩ := hG
                 simp only [endpointReplyLongGeneralR, endpointReplyCheckedArmGeneralR, hTgt, hAns,
                   hFlow, ↓reduceIte, longReplyRegs, hX, hMsg]
                 split
-                · next hW =>
+                · next hF =>
                   split
-                  · next hI =>
-                    rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid
-                      { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
-                      _ (longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length cap.badge)
-                      _ executingCore
-                      (by rw [longSendMessage_size _ _ _ _ _ _ hSz4 (by omega)]; omega)
-                      hT' hIpc hRO hSRes hW hNoF (replyTransferInert_of_W hI) hFlow]
-                    exact congrArg (fun x => Except.ok ((), x))
-                      (performReplyRendezvous_eq_deliveredLong st c server rid rf mi.length tid
-                        cap.badgeWord cap.badged executingCore (replyWakesInPlace_noResizeDue hW)
-                        (by omega)).symm
+                  · next hW =>
+                    rw [faultReplyTransferChecked_inPlaceLong ctx st tid c server ct ep rid mi.length
+                      mi.extraCaps mi.label rf _ _ executingCore (by omega) hT' hIpc hRO hSRes hW hF]
                   · split
-                    · next stcb hS =>
-                      rw [show cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged from rfl,
-                        replyTransferChecked_capsLong_inPlace ctx st tid c server ct stcb
-                        ep rid { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
-                        _ rf cap.badgeWord cap.badged
-                        executingCore capAddr mi .reply (cap.rights.mem .grant) hT' hIpc hRO hSRes
-                        hW hNoF hFlow hS (hRf stcb hS) hRL hRead]
+                    · next hP =>
+                      rw [faultReplyTransferChecked_donated_inPlaceLong ctx st tid c server ct ep rid
+                        mi.length mi.extraCaps mi.label rf _ _ executingCore (by omega) hT' hIpc hRO
+                        hSRes hP hF]
                     · rfl
-                · split
-                  · next hP =>
+                · next hF =>
+                  have hNoF : ct.faultWords.isFault = false := Bool.eq_false_iff.mpr hF
+                  split
+                  · next hW =>
                     split
-                    · next stcb hS =>
-                      rw [show cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged from rfl,
-                        replyTransferChecked_donatedCapsLong_inPlace ctx st tid c server ct
-                        stcb ep rid { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
-                        _ rf cap.badgeWord cap.badged
-                        executingCore capAddr mi .reply (cap.rights.mem .grant) hT' hIpc hRO hSRes
-                        hP hNoF hFlow hS (hRf stcb hS) hRL hRead]
+                    · next hI =>
+                      rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid
+                        { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
+                        _ (longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length cap.badge)
+                        _ executingCore
+                        (by rw [longSendMessage_size _ _ _ _ _ _ hSz4 (by omega)]; omega)
+                        hT' hIpc hRO hSRes hW hNoF (replyTransferInert_of_W hI) hFlow]
+                      exact congrArg (fun x => Except.ok ((), x))
+                        (performReplyRendezvous_eq_deliveredLong st c server rid rf mi.length tid
+                          cap.badgeWord cap.badged executingCore (replyWakesInPlace_noResizeDue hW)
+                          (by omega)).symm
+                    · split
+                      · next stcb hS =>
+                        rw [show cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged from rfl,
+                          replyTransferChecked_capsLong_inPlace ctx st tid c server ct stcb
+                          ep rid { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
+                          _ rf cap.badgeWord cap.badged
+                          executingCore capAddr mi .reply (cap.rights.mem .grant) hT' hIpc hRO hSRes
+                          hW hNoF hFlow hS (hRf stcb hS) hRL hRead]
+                      · rfl
+                  · split
+                    · next hP =>
+                      split
+                      · next stcb hS =>
+                        rw [show cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged from rfl,
+                          replyTransferChecked_donatedCapsLong_inPlace ctx st tid c server ct
+                          stcb ep rid { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
+                          _ rf cap.badgeWord cap.badged
+                          executingCore capAddr mi .reply (cap.rights.mem .grant) hT' hIpc hRO hSRes
+                          hP hNoF hFlow hS (hRf stcb hS) hRL hRead]
+                      · rfl
                     · rfl
-                  · rfl
               · rfl
             · rfl
           · next ep hIpc =>
@@ -3504,19 +3544,25 @@ theorem endpointReplyLongCheckedArmR_eq_general (ctx : LabelingContext)
             · next rid hRO =>
               split
               · next hG =>
-                simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
-                obtain ⟨⟨hFlow, hNoF⟩, hP⟩ := hG
+                simp only [Bool.and_eq_true] at hG
+                obtain ⟨hFlow, hP⟩ := hG
                 simp only [endpointReplyLongGeneralR, endpointReplyCheckedArmGeneralR, hTgt, hAns,
                   hFlow, ↓reduceIte, longReplyRegs, hX, hMsg]
                 split
-                · next stcb hS =>
-                  rw [show cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged from rfl,
-                        replyTransferChecked_unheldCapsLong_inPlace ctx st tid c ct stcb ep rid
-                    { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
-                    _ rf cap.badgeWord cap.badged
-                    executingCore capAddr mi .reply (cap.rights.mem .grant) hT' hIpc hRO hP hNoF
-                    hFlow hS (hRf stcb hS) hRL hRead]
-                · rfl
+                · next hF =>
+                  rw [faultReplyTransferChecked_unheld_inPlaceLong ctx st tid c ct ep rid mi.length
+                    mi.extraCaps mi.label rf _ _ executingCore (by omega) hT' hIpc hRO hP hF]
+                · next hF =>
+                  have hNoF : ct.faultWords.isFault = false := Bool.eq_false_iff.mpr hF
+                  split
+                  · next stcb hS =>
+                    rw [show cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged from rfl,
+                          replyTransferChecked_unheldCapsLong_inPlace ctx st tid c ct stcb ep rid
+                      { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
+                      _ rf cap.badgeWord cap.badged
+                      executingCore capAddr mi .reply (cap.rights.mem .grant) hT' hIpc hRO hP hNoF
+                      hFlow hS (hRf stcb hS) hRL hRead]
+                  · rfl
               · rfl
             · rfl
           · rfl
