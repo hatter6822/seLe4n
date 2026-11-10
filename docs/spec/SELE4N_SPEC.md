@@ -8868,13 +8868,16 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   `…_covers_postReceiveDonation`), and the empty segment is exact in both
   directions (`…_no_replenishQueue_of_no_donation`,
   `endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation`, over the reply leg's new
-  frame `endpointReplyOnCore_replenishQueueOnCore`).  That last licence pins a
-  divergence deliberately: a `.replyRecv` whose pop returned nothing does **not**
-  donate a dequeued `Call` caller's context to an `.unbound` receiver, where
-  `.receive` and seL4-MCS's `receiveIPC` would — the register's WS-CB row records
-  it as the third instance of the passive/legacy split, `tests/SmpIpcSuite.lean`
-  §3.29 (b) measures it beside the `.receive` step, and a cut that closes it must
-  widen the segment in the same cut.  `maxLockSetSize` is unmoved.
+  frame `endpointReplyOnCore_replenishQueueOnCore`), now under the premise that
+  the post-receive donation declines.  Since `v0.37.11` a `.replyRecv` whose pop
+  returned nothing donates a dequeued `Call` caller's context exactly as `.receive`
+  and seL4-MCS's `receiveIPC` → `reply_push (canDonate)` do
+  (`replyRecvPostReceiveDonation`'s `none` arm runs `applyRendezvousCallDonation`
+  then the priority walk), and `replyRecvPostReceiveReplenishCores`'s `none` arm
+  declares that donation's pair; `tests/SmpIpcSuite.lean` §3.29 (b) measures the
+  two receiving arms agreeing and the passive server bound to the caller's context
+  after the `.replyRecv`, and the in-place form is
+  `replyRecvOnCore_callTake_delivered`.  `maxLockSetSize` is unmoved.
 
   **And the `.call` and `.reply` arms declare theirs, over write sets that now live
   in production** (WS-RR RR8.12 Cut C3a, `v0.35.163`).

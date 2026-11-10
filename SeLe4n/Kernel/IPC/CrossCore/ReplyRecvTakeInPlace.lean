@@ -428,9 +428,12 @@ theorem replyRecvOnCore_take_transfer (st : SystemState) (epId : SeLe4n.ObjId)
   have hEp2 : S2.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
   obtain ⟨hRecv, -, -⟩ := receiveTake_delivered S2 epId ep tid (some rid) core s sTcb2 capAddr mi
     hE2 hH hT2 hG2 hR hF
+  have hNoCall := receiveTake_dequeuedNoCall S2 epId ep tid core s sTcb2
+    (blockedSenderMessage (storePopHead S2 epId false s sTcb2.queueNext) s sTcb2) hE2 hH hT2 hG2
   unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
   simp only [hRec, Option.getD_some, hEq, hPop, hXf', hRecv, hEp2, Option.bind_some, hH]
-  simp [replyRecvPostReceiveDonation, replyRecvAnswerCaller]
+  simp only [replyRecvPostReceiveDonation, hNoCall, Bool.false_eq_true, ↓reduceIte]
+  simp [replyRecvAnswerCaller]
 
 /-- The take's writes before the server's own frame: the sender popped, made
 ready and woken, the server made ready, its priority walk, then the caller's

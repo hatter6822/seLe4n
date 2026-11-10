@@ -172,7 +172,11 @@ theorem replyRecvOnCore_blocks_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     simp only [hSnd, ↓reduceIte]
   unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
   simp only [hRec, Option.getD_some, hEq, hPop, hXf', hRecv, hEp2, Option.bind_some, hS]
-  simp [replyRecvPostReceiveDonation, applyReceiveLegPipHandoff,
+  have hRes : tid.isReserved = false := by
+    have h := hG2
+    simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
+    exact h.1.1.1.1.1.1.1
+  simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff,
     Architecture.stageWokenSendCompletion_none, replyRecvAnswerCaller]
 
 /-- The receive leg that blocks, after the reply's transfer: the server's block
@@ -648,7 +652,11 @@ theorem replyRecvOnCore_unheld_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     simp only [hSnd, ↓reduceIte]
   unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
   simp only [hRecS, Option.getD_none, hEq, hPopR, hXf', hRecv, hEp2, Option.bind_some, hS]
-  simp [replyRecvPostReceiveDonation, applyReceiveLegPipHandoff,
+  have hRes : tid.isReserved = false := by
+    have h := hG2
+    simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
+    exact h.1.1.1.1.1.1.1
+  simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff,
     Architecture.stageWokenSendCompletion_none, replyRecvAnswerCaller]
 
 /-- **The unheld reply-receive whose reply leg transfers, delivered**: the reply

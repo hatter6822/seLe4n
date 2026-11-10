@@ -452,10 +452,14 @@ theorem replyRecvAnsweringOnCore_unheld_inPlace
   obtain ⟨tb, hTb, hBk⟩ := receiveBlock_receiver_blocked P epId ep tid rt1 (some rid) core hE1 hR1
     hA1 hG1
   refine ⟨?_, tb, hTb, hBk⟩
+  have hRes : tid.isReserved = false := by
+    have h := hG1
+    simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
+    exact h.1.1.1.1.1.1.1
   unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_none, hEq, hPopR, hXf, hRecv, hEp1, Option.bind_some, hS]
-  simp [replyRecvPostReceiveDonation, applyReceiveLegPipHandoff,
-    Architecture.stageWokenSendCompletion_none]
+  simp only [hRecS, Option.getD_none, hEq, hPopR, hXf, hRecv, hEp1, Option.bind_some, hS,
+    replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
+  simp [applyReceiveLegPipHandoff, Architecture.stageWokenSendCompletion_none]
 
 theorem replyRecvOnCore_unheld_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)

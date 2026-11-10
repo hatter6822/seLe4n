@@ -1217,6 +1217,15 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.overflowedOperandR
   , `SeLe4n.Kernel.overflowedArmSpec
   , `SeLe4n.Kernel.dispatchShortArgsCheckedR
+  -- The long and one-overflow-word routes' operand dispatches as the
+  -- specification runs them, a refusal handing back the TLB the entry held,
+  -- which the compiled entry runs as the continuation forms proven to hand on
+  -- what each returns (`longOperandK_spec`, `overflowOneOperandK_spec`,
+  -- `undoFillRefusalK_eq`, `dispatchOverflowOneCheckedR_eq_operand`).
+  , `SeLe4n.Kernel.longOperandSpecR
+  , `SeLe4n.Kernel.overflowOneOperandSpecR
+  , `SeLe4n.Kernel.undoFillRefusal
+  , `SeLe4n.Kernel.dispatchOverflowOneCheckedR
   -- WS-ZA ZA6.31: specifications of in-place fault forms the entries run in
   -- their place: the checked delivery's (`faultDeliverCheckedWords_eq`) and a
   -- receive's take of a queued caller (`receiveCallTake_inPlace`,

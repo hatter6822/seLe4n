@@ -677,9 +677,23 @@ theorem replyRecvPostReceiveDonation_confinedToCores
   cases returned? with
   | none =>
     simp only [] at hStep ⊢
-    rw [← hOkInj hStep]
-    exact propagatePipChainCrossCore_confinedToCores serverCore st.objectIndex.length st
-      recordedServer
+    split
+    · next hCall =>
+      simp only [hCall, if_true] at hStep
+      split
+      · next e hDon => simp only [hDon] at hStep; exact absurd hStep (by simp)
+      · next st2 hDon =>
+        simp only [hDon] at hStep
+        rw [← hOkInj hStep]
+        exact observableSlotsConfinedToCores_trans
+          (applyRendezvousCallDonation_confinedToCores _ st2 _ _ hDon)
+          (propagatePipChainCrossCore_confinedToCores serverCore
+            st2.objectIndex.length st2 recordedServer)
+    · next hCall =>
+      simp only [hCall, Bool.false_eq_true, if_false] at hStep
+      rw [← hOkInj hStep]
+      exact propagatePipChainCrossCore_confinedToCores serverCore st.objectIndex.length st
+        recordedServer
   | some pair =>
     obtain ⟨_scId, holder⟩ := pair
     simp only [] at hStep ⊢

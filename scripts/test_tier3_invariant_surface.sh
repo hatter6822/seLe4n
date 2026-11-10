@@ -2124,7 +2124,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDona
 # ...and both arms reach the one step that resolves placement itself.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacement st holder" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacement[^\n]*(\n([ \t][^\n]*)?)*placedCoreOf\? st tid" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st tid nextThread" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+# Bounded to the pop's `some` arm: the `none` arm, where no holder was unbound,
+# donates at `st` itself, as `.receive` does.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*\| some \(_, holder\) =>(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st tid nextThread" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # ...and the write set names the cores that deschedule writes, or it is false of
 # exactly that arm.
 run_check "INVARIANT" rg -n '^def replyRecvHolderDescheduleWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
@@ -4542,7 +4544,21 @@ run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_eq($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_blocks_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_donated_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_unheld_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '          executingCore st\n    else replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '          executingCore st\n    else replyRecvCallTakeArmR epId tid c rid badge grant layout rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# A reply-receive on a server holding no context whose receive leg takes a caller
+# queued by a `Call` is donated that caller's context (seL4-MCS receiveIPC ->
+# reply_push canDonate) in place: the take's and the donation's guard read on the
+# pre-state and carried across the reply leg, proven the specification's and
+# routed after the send-take arm, falling through to the capability arm.
+run_check "INVARIANT" rg -n '^theorem storeReplyRendezvous_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastReply_eq_impl' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvCallTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_callTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmR_of_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmR_of_not_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '            \| \.call _ mi =>\n              \.ok \(\(\), performReplyRecvCallTakeDelivered st c tid rid epId s sTcb\.queueNextCode' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U 'executingCore st\n    else replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st\n\ntheorem replyRecvCallTakeArmR_of_not_admits' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # A reply-receive whose receive leg meets a waiting sender (the server loop under
 # load) takes it in place after the reply leg and its transfer: the sender's
 # message words kept across the reply's writes, the take's guard carried across
@@ -13046,11 +13062,15 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenishCores[^\
 # `returned?`, the dequeued `Call`, and the donation's OWN resolver at the
 # post-deschedule state -- never on a pre-state proxy.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveReplenishCores[^\n]*(\n([ \t][^\n]*)?)*if rendezvousDequeuedCall st nextThread then\n *rendezvousCallDonationReplenishCores \(replyRecvHolderDeschedule tid holder st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+# A reply that popped nothing donates a dequeued `Call` as `.receive` does, so the
+# `none` arm declares the same donation's pair, at the receive leg's post-state.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| none =>\n *if rendezvousDequeuedCall st nextThread then\n *rendezvousCallDonationReplenishCores st tid nextThread" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation [^\n]*(\n([ \t][^\n]*)?)*\| none =>\s*(--[^\n]*\s*)*if rendezvousDequeuedCall st nextThread then\n *match applyRendezvousCallDonation st tid nextThread with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def rendezvousCallDonationReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match callDonationSchedContext\? st donor receiver with\n *\| some _ => \[determineTargetCore st donor, determineTargetCore st receiver\]" SeLe4n/Kernel/IPC/Operations/Donation.lean'
 # ...and the `.replyRecv` segment must not read the `.receive` arm's pre-state
-# segment or its donating-sender resolver: tests/SmpIpcSuite.lean §3.29 (b) is the
-# reachable state on which that reading declares two cores for a migration this arm
-# does not perform.  Declaration-bounded.  Mutation: replace the receive-leg
+# segment or its donating-sender resolver: it derives each pair from its own gates,
+# and tests/SmpIpcSuite.lean §3.29 (b) measures the two readings agreeing on the
+# reachable never-donated state.  Declaration-bounded.  Mutation: replace the receive-leg
 # component with `endpointReceiveHandoffReplenishCores st1p endpointId receiver`.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*(endpointReceiveHandoffReplenishCores|receiveRendezvousDonatingSender\?)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # ...nor take a core as a PARAMETER (the shape Cut 8a-ii's first form had).
@@ -13157,11 +13177,12 @@ run_check "INVARIANT" rg -n '\(d\) the arm.s footprint IS the dispatch.s on an u
 run_check "INVARIANT" rg -n '\(e\) PAYOFF: the live ..reply. moves no replenishment on any core' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'C3a: an abandon deschedules the faulted thread on its home core' tests/FaultHandlingSuite.lean
 # The witness drives three shapes through the live operations and computes the
-# `.receive` reading beside the live one on the shape where the two part; its two
-# MEASURED rows pin the register's WS-CB divergence and must flip when it closes.
-run_check "INVARIANT" rg -n '\(b\) NEGATIVE: the ..receive. arm.s pre-state segment declares TWO cores on this state' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '\(b\) MEASURED \(register, WS-CB\): the ..replyRecv. never-donated arm hands NO context' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '\(b\) PAYOFF: the live ..replyRecv. moves NO replenishment on any core' tests/SmpIpcSuite.lean
+# `.receive` reading beside the live one on the never-donated shape, where the two
+# receiving arms agree: the dequeued `Call` donates to the passive server.
+run_check "INVARIANT" rg -n '\(b\) AGREEMENT: the ..receive. arm.s pre-state segment declares the same two cores' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(b\) PAYOFF \(seL4-MCS reply_push canDonate\): the passive server is bound to the second client.s context' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(b\) PAYOFF: the donation migrated the second context to the server.s home \(2 -> 1\)' tests/SmpIpcSuite.lean
+run_negative_check "INVARIANT" rg -n 'MEASURED \(register, WS-CB\)' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(c\) the segment is the pop.s pair, then the block-path return.s pair' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointSendOnCore_contains_executing_runQueue_write \(' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationSignalOnCore_contains_waiter_runQueue_write$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
@@ -22504,9 +22525,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvPostReceiveDonation_
 run_check "INVARIANT" rg -n '^theorem descheduleAtPlacement_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 # The frame MEASURED, in the direction the segment assertions structurally cannot
 # see: the arm writes no replenish queue on a core the segment does not name.  (b)
-# is the decisive shape -- an empty segment is a claim about every core, where (a)
-# leaves only one outside.
-run_check "INVARIANT" rg -n 'C6e: with an empty segment the arm leaves EVERY core' tests/SmpIpcSuite.lean
+# leaves two cores outside its segment, (a) one.
+run_check "INVARIANT" rg -n 'C6e: cores 0 and 3 are outside the segment' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'C6e: core 3 is outside the segment' tests/SmpIpcSuite.lean
 
 # ============================================================================

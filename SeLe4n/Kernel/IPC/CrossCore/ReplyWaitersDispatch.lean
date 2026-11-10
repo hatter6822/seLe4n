@@ -545,7 +545,15 @@ theorem replyRecvPostReceiveDonation_replyViews_eq {t srv nxt : SeLe4n.ThreadId}
     st'.replyViews = st.replyViews := by
   unfold replyRecvPostReceiveDonation at h
   split at h
-  · cases h; exact propagatePipChainCrossCore_replyViews_eq _ _ _ _ hInv
+  · split at h
+    · split at h
+      · cases h
+      · rename_i _ st2 hD
+        cases h
+        rw [propagatePipChainCrossCore_replyViews_eq _ _ _ _
+          (applyRendezvousCallDonation_preserves_objects_invExt _ _ _ _ hInv hD),
+          applyRendezvousCallDonation_replyViews_eq hInv hD]
+    · cases h; exact propagatePipChainCrossCore_replyViews_eq _ _ _ _ hInv
   · split at h
     · split at h
       · cases h

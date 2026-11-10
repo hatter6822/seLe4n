@@ -4742,17 +4742,15 @@ code may assume:
   writes none (`endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation`, composed from
   the reply leg's new frame `endpointReplyOnCore_replenishQueueOnCore`, the pop's
   `none` arm being the identity, the receive leg's `…_of_no_preReturn` frame and
-  the two walks' frames).  (5) **That licence pins a divergence, deliberately.**
-  On a `.replyRecv` whose pop returned nothing, a dequeued `Call` caller's context
-  is **not** donated to an `.unbound` receiver — `replyRecvPostReceiveDonation`'s
-  never-donated arm walks only — where this kernel's own `.receive` arm
-  (`applyReceiveRendezvousHandoff`, unconditional) and seL4-MCS's `receiveIPC`
-  would donate.  Reachable with one legacy `.unbound` client, measured in
-  `tests/SmpIpcSuite.lean` §3.29 (b) beside the `.receive` step on the same
-  state, and recorded in the register's WS-CB row as the third instance of the
-  passive/legacy split; a cut that makes the arm donate widens
-  `replyRecvPostReceiveReplenishCores`'s `none` arm and breaks the licence, so the
-  footprint and the transition move together or not at all.  (6) **The two chain
+  the two walks' frames).  (5) **The divergence that licence pinned is closed at
+  `v0.37.11`.**  On a `.replyRecv` whose pop returned nothing, a dequeued `Call`
+  caller's context is now donated to an `.unbound` receiver exactly as this
+  kernel's own `.receive` arm and seL4-MCS's `receiveIPC` → `reply_push
+  (canDonate)` donate (`replyRecvPostReceiveDonation`'s `none` arm runs
+  `applyRendezvousCallDonation` then the walk); `replyRecvPostReceiveReplenishCores`'s
+  `none` arm widened in the same cut, the licence takes the declined-donation
+  premise, and `tests/SmpIpcSuite.lean` §3.29 (b)'s rows are flipped to the
+  donation.  (6) **The two chain
   walks are in the run segment**: `endpointReplyRecvWriteSet` re-runs the spine to the
   state each walk starts from and appends `pipChainWriteSet` there, so the walked
   members' run queues are static members, and the `pipChainStart_replyRecv*`

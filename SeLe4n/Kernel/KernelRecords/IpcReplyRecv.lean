@@ -71,8 +71,15 @@ theorem replyRecvPostReceiveDonation {tid recordedServer nextThread : SeLe4n.Thr
     RecordsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.replyRecvPostReceiveDonation at h
   split at h
-  · cases h
-    exact propagatePipChainCrossCore st recordedServer serverCore _ hInv
+  · split at h
+    · split at h
+      · cases h
+      · rename_i st2 hD
+        cases h
+        have D := applyRendezvousCallDonation hInv hD
+        exact D.trans (propagatePipChainCrossCore st2 recordedServer serverCore _ D.invExt)
+    · cases h
+      exact propagatePipChainCrossCore st recordedServer serverCore _ hInv
   · rename_i holder
     split at h
     · split at h
