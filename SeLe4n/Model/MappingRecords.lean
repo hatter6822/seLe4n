@@ -557,10 +557,10 @@ theorem SystemState.liveMappingsRecorded_of_epochsVacant {st : SystemState}
 theorem SystemState.default_liveMappingsRecorded : (default : SystemState).liveMappingsRecorded :=
   SystemState.liveMappingsRecorded_of_epochsVacant
     (fun rid root h => by
-      rw [show (default : SystemState).objects[rid]? = none from RHTable_get?_empty 16 (by omega)] at h
+      rw [show (default : SystemState).objects[rid]? = none from RHTable_get?_empty _ _] at h
       cases h)
     fun tid t s cap h => by
-      rw [show (default : SystemState).objects[tid]? = none from RHTable_get?_empty 16 (by omega)] at h
+      rw [show (default : SystemState).objects[tid]? = none from RHTable_get?_empty _ _] at h
       cases h
 
 end SeLe4n.Model

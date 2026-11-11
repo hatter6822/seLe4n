@@ -134,7 +134,7 @@ WS-ZA ZA5.3: what a lookup answers after each smart constructor, stated over
 `get?` so a CNode's slot array can be shown to agree with its map. -/
 
 theorem get?_empty (s : SeLe4n.Slot) : (empty : UniqueSlotMap V).get? s = none :=
-  RHTable.getElem?_empty 16 (by omega) s
+  RHTable.getElem?_empty _ _ s
 
 theorem get?_insert (u : UniqueSlotMap V) (k s : SeLe4n.Slot) (c : V) :
     (u.insert k c).get? s = if k = s then some c else u.get? s := by

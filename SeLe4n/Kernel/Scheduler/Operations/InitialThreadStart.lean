@@ -205,6 +205,13 @@ theorem startInitialThreadOnCore_onlyObjectsSchedulerDiffer (st : SystemState)
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact .refl _
   | some tcb => rw [SystemState.updateTcb_eq_of_some hT]; rfl
 
+/-- WS-UC UC3: the start never shrinks the object store. -/
+@[simp] theorem le_startInitialThreadOnCore_objects_capacity {n : Nat} (st : SystemState)
+    (tid : SeLe4n.ThreadId) (h : n ≤ st.objects.capacity) :
+    n ≤ (startInitialThreadOnCore st tid).objects.capacity := by
+  unfold startInitialThreadOnCore
+  simp [h]
+
 /-- **WS-BP BP7.11**: on a thread that resolves to nothing the start is the
 identity — both steps look the thread up and find nothing. -/
 theorem startInitialThreadOnCore_eq_of_none {st : SystemState} {tid : SeLe4n.ThreadId}
@@ -470,6 +477,11 @@ theorem startInitialThreadOnCore_frame (st : SystemState) (tid : SeLe4n.ThreadId
       { st with objects := (startInitialThreadOnCore st tid).objects,
                 scheduler := (startInitialThreadOnCore st tid).scheduler } :=
   startInitialThreadOnCore_onlyObjectsSchedulerDiffer st tid
+
+/-- WS-UC UC3: the start leaves the ASID table alone. -/
+@[simp] theorem startInitialThreadOnCore_asidTable (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (startInitialThreadOnCore st tid).asidTable = st.asidTable :=
+  (congrArg SystemState.asidTable (startInitialThreadOnCore_onlyObjectsSchedulerDiffer st tid) :)
 
 /-- **WS-BP BP7.11**: the start preserves the object store's `invExt`. -/
 theorem startInitialThreadOnCore_preserves_objects_invExt (st : SystemState)

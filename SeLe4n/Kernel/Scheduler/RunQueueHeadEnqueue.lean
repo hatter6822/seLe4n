@@ -255,6 +255,16 @@ theorem runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : 
   · exact runEnqueueHeadAdmitted_onlyObjectsSchedulerDiffer st c t p
   · exact .refl _
 
+/-- WS-UC UC3: the head enqueue keeps the store's capacity. -/
+@[simp] theorem runEnqueueHeadOnCore_objects_capacity (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runEnqueueHeadOnCore c t p).objects.capacity = st.objects.capacity := by
+  unfold runEnqueueHeadOnCore; split
+  · rw [runEnqueueHeadAdmitted_objects]; split
+    · rfl
+    · simp [runPrependLinks]
+  · rfl
+
 @[simp] theorem runEnqueueHeadOnCore_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : (st.runEnqueueHeadOnCore c t p).machine = st.machine := by
   have h := runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer st c t p

@@ -1135,6 +1135,7 @@ theorem popUnheldReplyHead_preserves_capabilityInvariantBundle {st st' : SystemS
     · exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hRetB.objectsInvExt
     · exact (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
         (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving
+        (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _).ghostsKept
 
 /-- WS-RR RR8.16 (`v0.35.199`): **the reply path's donation pop preserves the base
 SMP scheduler invariant.**

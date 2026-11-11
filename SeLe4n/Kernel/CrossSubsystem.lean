@@ -439,7 +439,7 @@ theorem default_lifecycleObjectTypeLockstep :
   intro oid obj h
   simp only [RHTable_getElem?_eq_get?] at h
   have : (default : SystemState).objects.get? oid = none :=
-    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid
+    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ oid
   simp [this] at h
 
 /-- WS-AM AM1-B (AL6-C hygiene): `storeObject` preserves the
@@ -582,7 +582,7 @@ theorem default_untypedRegionsDisjoint :
   intro oid₁ oid₂ ut₁ ut₂ h₁ _ _ _ _
   simp only [RHTable_getElem?_eq_get?] at h₁
   have : (default : SystemState).objects.get? oid₁ = none :=
-    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid₁
+    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ oid₁
   simp [this] at h₁
 
 /-- AK8-A: Frame lemma — if `st'.objects = st.objects` (no object-store
@@ -829,25 +829,25 @@ theorem default_crossSubsystemInvariant :
   · intro oid ep h
     simp only [RHTable_getElem?_eq_get?] at h
     have : (default : SystemState).objects.get? oid = none :=
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ oid
     simp [this] at h
   · -- T5-H: noStaleNotificationWaitReferences — vacuously true for empty objects
     intro oid notif h
     simp only [RHTable_getElem?_eq_get?] at h
     have : (default : SystemState).objects.get? oid = none :=
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ oid
     simp [this] at h
   · -- Z9-A: schedContextStoreConsistent — vacuously true for empty objects
     intro tid tcb h
     simp only [RHTable_getElem?_eq_get?] at h
     have : (default : SystemState).objects.get? tid.toObjId = none :=
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) tid.toObjId
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ tid.toObjId
     simp [this] at h
   · -- Z9-B: schedContextNotDualBound — vacuously true for empty objects
     intro tid₁ tid₂ tcb₁ tcb₂ scId h₁
     simp only [RHTable_getElem?_eq_get?] at h₁
     have : (default : SystemState).objects.get? tid₁.toObjId = none :=
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) tid₁.toObjId
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ tid₁.toObjId
     simp [this] at h₁
   · -- Z9-C: schedContextRunQueueConsistent — vacuously true (empty runnable list)
     intro tid hMem
@@ -3567,7 +3567,7 @@ theorem default_untypedAncestorRegionsDisjoint :
   intro oid₁ oid₂ ut₁ ut₂ h₁ _ _ _ _
   simp only [RHTable_getElem?_eq_get?] at h₁
   have : (default : SystemState).objects.get? oid₁ = none :=
-    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid₁
+    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ oid₁
   simp [this] at h₁
 
 /-- AN6-C.4 (H-09) operational soundness: on a state where every

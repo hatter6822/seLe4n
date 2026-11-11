@@ -272,6 +272,34 @@ theorem updatePipBoostOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : 
       · exact (markKeyChangeFor_onlyObjectsSchedulerDiffer _ _ _).trans (hW _ _)
   · exact .refl _
 
+/-- WS-UC UC3: the boost never shrinks the object store. -/
+@[simp] theorem le_updatePipBoostOnCore_objects_capacity {n : Nat} (st : SystemState)
+    (c : CoreId) (tid : ThreadId) (h : n ≤ st.objects.capacity) :
+    n ≤ (updatePipBoostOnCore st c tid).objects.capacity := by
+  simp only [updatePipBoostOnCore]
+  repeat' split
+  all_goals simp [h]
+
+/-- WS-UC UC3: the boost's run-queue moves after its write shrink no object table. -/
+theorem pipBoostWrite_capacity_le_updatePipBoostOnCore (st : SystemState) (c : CoreId)
+    (tid : ThreadId) :
+    (pipBoostWrite st tid).objects.capacity ≤ (updatePipBoostOnCore st c tid).objects.capacity := by
+  simp only [updatePipBoostOnCore, pipBoostWrite]
+  split
+  · repeat' split
+    all_goals simp
+  · exact Nat.le_refl _
+
+/-- ...and it writes no ASID table. -/
+@[simp] theorem pipBoostWrite_asidTable (st : SystemState) (tid : ThreadId) :
+    (pipBoostWrite st tid).asidTable = st.asidTable := by
+  unfold pipBoostWrite
+  split
+  · dsimp only; split
+    · rfl
+    · exact SystemState.rewriteObject_asidTable _ _ _ _
+  · rfl
+
 theorem updatePipBoostOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hInv : st.objects.invExt) :
     (updatePipBoostOnCore st c tid).objects.invExt := by
@@ -1721,5 +1749,23 @@ theorem propagatePipChainCrossCore_onlyObjectsSchedulerDiffer :
     cases PriorityInheritance.blockingServer st s with
     | none => exact h1
     | some nx => exact (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer n _ nx ec).trans h1
+
+/-- WS-UC UC3: the priority-inheritance walk never shrinks the object store. -/
+theorem le_propagatePipChainCrossCore_objects_capacity :
+    ∀ (fuel : Nat) (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.CoreId) {n : Nat},
+      n ≤ st.objects.capacity →
+      n ≤ (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1.objects.capacity
+  | 0, st, _, _, _, h => by rw [PriorityInheritance.propagatePipChainCrossCore_zero]; exact h
+  | k + 1, st, s, ec, _, h => by
+    rw [PriorityInheritance.propagatePipChainCrossCore_step]
+    simp only
+    have h1 := PriorityInheritance.le_updatePipBoostOnCore_objects_capacity st
+      (determineTargetCore st s) s h
+    rw [← PriorityInheritance.pipBoostWithWake_state] at h1
+    cases PriorityInheritance.blockingServer st s with
+    | none => exact h1
+    | some nx => exact le_propagatePipChainCrossCore_objects_capacity k _ nx ec h1
+
+attribute [simp] le_propagatePipChainCrossCore_objects_capacity
 
 end SeLe4n.Kernel

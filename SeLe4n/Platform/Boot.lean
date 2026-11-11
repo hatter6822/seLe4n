@@ -225,6 +225,11 @@ def bootEntryAsidTable (tbl : RHTable SeLe4n.ASID SeLe4n.ObjId) (entry : ObjectE
   | .vspaceRoot vsr => tbl.insert vsr.asid entry.id
   | _ => tbl
 
+/-- WS-UC UC3: the boot's ASID registration shrinks no ASID table. -/
+@[simp] theorem le_bootEntryAsidTable_capacity {n : Nat} (tbl : RHTable SeLe4n.ASID SeLe4n.ObjId)
+    (entry : ObjectEntry) (h : n ≤ tbl.capacity) : n ≤ (bootEntryAsidTable tbl entry).capacity := by
+  unfold bootEntryAsidTable; split <;> simp [h]
+
 /-- **WS-BP BP3.5**: the ASID an entry registers — its root's, if it is a
     VSpace root.  One definition for the two places that ask: the boot's ASID
     gate (`bootVSpaceAsids`) and the proof that the table the boot builds is
@@ -5635,7 +5640,7 @@ private theorem bootFromPlatform_objects_bootSafe
   · -- Base: mkEmpty objects = empty → vacuous
     intro oid obj hLookup
     have hEmpty : mkEmptyIntermediateState.state.objects[oid]? = none := by
-      rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty 16 (by omega)
+      rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty _ _
     rw [hEmpty] at hLookup; exact absurd hLookup (by simp)
   · exact hSafe
 
@@ -5709,7 +5714,7 @@ theorem idleSlotsFreshAt_of_initialObjects_below_base
     · -- The base (the empty intermediate state) has no objects.
       rw [mkEmpty_state_eq_default] at hBase
       have hEmpty : (default : SystemState).objects[(idleThreadId c).toObjId]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
       rw [hEmpty] at hBase
       simp at hBase
 
@@ -5739,7 +5744,7 @@ theorem idleSlotsFreshAt_of_idleSlotsReserved
     · exact idleThreadId_toObjId_ne_of_not_isIdleObjId e.id (hObjs e hMem) c hId.symm
     · rw [mkEmpty_state_eq_default] at hBase
       have hEmpty : (default : SystemState).objects[(idleThreadId c).toObjId]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
       rw [hEmpty] at hBase
       simp at hBase
 
@@ -5775,11 +5780,11 @@ private theorem bootFromPlatform_untypedRegionsDisjoint
       exact hUntypedDisj e₁ e₂ ut₁ ut₂ hMem₁ hMem₂ hIdNe hObj₁ hObj₂ hChildrenE₁ hChildrenE₂
     · -- oid₂ in the empty base — impossible.
       have hEmpty : mkEmptyIntermediateState.state.objects[oid₂]? = none := by
-        rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty 16 (by omega)
+        rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty _ _
       rw [hEmpty] at hBase₂; exact absurd hBase₂ (by simp)
   · -- oid₁ in the empty base — impossible.
     have hEmpty : mkEmptyIntermediateState.state.objects[oid₁]? = none := by
-      rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty 16 (by omega)
+      rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty _ _
     rw [hEmpty] at hBase₁; exact absurd hBase₁ (by simp)
 
 -- ============================================================================
@@ -6748,7 +6753,7 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
     exact (bootSafeObjectCheck_sound _ hCheck).2.2.2.1 tcb rfl
   · rw [mkEmpty_state_eq_default] at hBase
     have hEmpty : (default : SystemState).objects[oid]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
     rw [hEmpty] at hBase
     simp at hBase
 
@@ -6843,7 +6848,7 @@ theorem bootFromPlatformChecked_ok_tcb_not_idle (config : PlatformConfig)
     exact this
   · rw [mkEmpty_state_eq_default] at hBase
     have hEmpty : (default : SystemState).objects[oid]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
     rw [hEmpty] at hBase
     simp at hBase
 
@@ -7555,12 +7560,12 @@ private theorem bootFromPlatform_asidTableConsistent (config : PlatformConfig)
       mkEmptyIntermediateState.state.objects[oid]? = none := by
     intro oid
     rw [mkEmpty_state_eq_default]
-    exact RHTable_get?_empty 16 (by omega)
+    exact RHTable_get?_empty _ _
   have hEmptyAsid : ∀ a : SeLe4n.ASID,
       mkEmptyIntermediateState.state.asidTable[a]? = none := by
     intro a
     rw [mkEmpty_state_eq_default]
-    exact RHTable_get?_empty 16 (by omega)
+    exact RHTable_get?_empty _ _
   have hBaseCons : Architecture.asidTableConsistent
       mkEmptyIntermediateState.state := by
     constructor
@@ -7596,7 +7601,7 @@ private theorem bootFromPlatform_asidTable_configured (config : PlatformConfig)
     exact congrArg some hRA
   · rw [mkEmpty_state_eq_default] at hBase
     have hEmpty : (default : SystemState).objects[oid]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
     rw [hEmpty] at hBase
     cases hBase
 
@@ -7645,7 +7650,7 @@ theorem bootFromPlatformChecked_ok_asidTableConsistent (config : PlatformConfig)
             exact hDist e hMem hId
           · rw [mkEmpty_state_eq_default] at hB
             have hEmpty : (default : SystemState).objects[entry.id]? = none := by
-              simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+              simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
             rw [hEmpty] at hB
             cases hB
       · -- The binding's root ASID is no configured root's.
@@ -7761,7 +7766,7 @@ theorem bootFromPlatform_objects_of_config (config : PlatformConfig) (oid : SeLe
   · exact hE
   · rw [mkEmpty_state_eq_default] at hE
     have hEmpty : (default : SystemState).objects[oid]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
     rw [hEmpty] at hE; cases hE
 
 /-- **WS-ZA ZA5.4**: **every object the checked boot holds that holds a

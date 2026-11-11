@@ -178,6 +178,60 @@ theorem endpointSendDualOnCore_preserves_objects_invExt
             (storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 sender _ _
               hObjInv1 hStore)
 
+/-- WS-UC UC3: the cross-core send shrinks no object table, so a boot-sized
+store stays boot-sized across it. -/
+theorem endpointSendDualOnCore_objects_capacity_le
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
+    st.objects.capacity ≤
+      (endpointSendDualOnCore endpointId sender payload executingCore st).1.objects.capacity := by
+  unfold endpointSendDualOnCore
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact Nat.le_refl _
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | some receiver =>
+      simp only
+      cases hSnd : st.getTcb? sender with
+      | none => simp only; exact Nat.le_refl _
+      | some senderTcb =>
+        simp only
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp only; exact Nat.le_refl _
+        | ok popRes =>
+          obtain ⟨popped, poppedTcb, st1⟩ := popRes
+          simp only
+          have hK1 := endpointQueuePopHead_kindPreservingWrite hObjInv hPop
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
+            st st1 popped poppedTcb hObjInv hPop
+          cases hStore : storeTcbReceiveComplete st1 popped (some (sendPayloadMessage st sender payload)) with
+          | error e => simp only; exact Nat.le_refl _
+          | ok st2 =>
+            simp only
+            have hK2 := storeTcbReceiveComplete_kindPreservingWrite hObjInv1 hStore
+            have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2 popped
+              (some (sendPayloadMessage st sender payload)) hObjInv1 hStore
+            exact Nat.le_trans (Nat.le_trans hK1.ghosts.objectsCapacity hK2.ghosts.objectsCapacity)
+              (wakeThread_kindPreservingWrite st2 popped executingCore hObjInv2).ghosts.objectsCapacity
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false sender st with
+      | error e => simp only; exact Nat.le_refl _
+      | ok st1 =>
+        simp only
+        have hK1 := endpointQueueEnqueue_kindPreservingWrite hObjInv hEnq
+        have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender
+          st st1 hObjInv hEnq
+        cases hStore : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId)
+            none with
+        | error e => simp only; exact Nat.le_refl _
+        | ok st2 =>
+          simp only
+          have hK2 := storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hStore
+          simpa [recordSendCap] using
+            Nat.le_trans hK1.ghosts.objectsCapacity hK2.ghosts.objectsCapacity
+
 -- ============================================================================
 -- §4 RR2.14 — the whole-bundle theorem the live `.send` arm was missing
 -- ============================================================================

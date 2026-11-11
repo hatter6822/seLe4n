@@ -1472,7 +1472,7 @@ theorem donateSchedContext_kindPreservingWrite
     storeObject_kindPreservingWrite hInv3 hS4 (lookupTcb_some_objects s3 serverTid serverTcb hL2)
       rfl (by simp [KernelObject.objectType])
   have hLast : kindPreservingWrite s4 st' :=
-    kindPreservingWrite.of_objects_eq (by rw [hEq]) (by rw [hEq]; exact ⟨rfl, rfl, rfl⟩)
+    kindPreservingWrite.of_objects_eq (by rw [hEq]) (by rw [hEq]; exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
   exact ((((hW1.trans hW2).trans hW3).trans hW4).trans hLast)
 
 /-- WS-ZA ZA6.3: the donation push holds the release queues — its context

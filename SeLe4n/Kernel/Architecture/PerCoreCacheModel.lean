@@ -2137,7 +2137,7 @@ theorem vspaceUnifyInstructionPage_ghostsKept {st st' : SystemState}
           rw [vspaceUnifyInstructionPage_ok hres hlk] at h
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
           subst h
-          exact ⟨rfl, rfl, rfl⟩
+          ghosts_kept
 
 /-- **WS-SM SM7.D**: the unify records the *unify* operand — the runtime emits
 the full data-to-instruction sequence, not a bare invalidate, so the caller's

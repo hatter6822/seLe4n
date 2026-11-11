@@ -571,6 +571,17 @@ def removeFromNotificationWaitQueue (st : SystemState) (tid : SeLe4n.ThreadId) :
       | _ => st
   | none => st
 
+/-- WS-UC UC3: the unlink never shrinks the object store. -/
+@[simp] theorem le_removeFromNotificationWaitQueue_objects_capacity {n : Nat} (st : SystemState)
+    (tid : SeLe4n.ThreadId) (h : n ≤ st.objects.capacity) :
+    n ≤ (removeFromNotificationWaitQueue st tid).objects.capacity := by
+  unfold removeFromNotificationWaitQueue
+  repeat' split
+  all_goals first
+    | exact h
+    | exact le_unlinkNtfnNeighbours_objects_capacity _ _ _ (le_clearNtfnLinks_objects_capacity _ _
+        (SystemState.le_rewriteObject_objects_capacity _ _ _ _ h))
+
 /-- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying a thread.
 If the thread has `.donated` binding, return the SchedContext to the original
 owner. Otherwise, return the state unchanged. Only modifies `objects`.

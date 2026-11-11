@@ -394,6 +394,20 @@ theorem retypeFromUntyped_capacity_gated
     | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp at hOk
 
+/-- WS-UC UC3: **a carve's insert does not resize a boot-sized store.**  A
+successful retype started below `maxObjects` objects
+(`retypeFromUntyped_capacity_gated`), so on a store at least the boot capacity
+an insert into it is the no-resize insert. -/
+theorem retypeFromUntyped_insert_eq_insertNoResize
+    (authority : CSpaceAddr) (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
+    (allocSize : Nat) (st st' : SystemState) (hP : st.tablesPresized)
+    (hOk : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st'))
+    (k : SeLe4n.ObjId) (v : KernelObject) :
+    st.objects.insert k v = st.objects.insertNoResize k v :=
+  st.objects_insert_eq_insertNoResize hP
+    (Nat.le_of_lt (retypeFromUntyped_capacity_gated authority untypedId childId newObj
+      allocSize st st' hOk)) k v
+
 /-- AJ2-D (M-09): Allocation freshness — if `retypeFromUntyped` succeeds, the
     `childId` was NOT in the object store before allocation. This is the formal
     foundation for typed ID namespace disjointness: since every new object
@@ -1294,6 +1308,16 @@ resizes it, and nothing otherwise. -/
 def rhInsertResizeHeapBytes {α β : Type} (t : SeLe4n.Kernel.RobinHood.RHTable α β) : Nat :=
   if t.size * 4 ≥ t.capacity * 3 then t.capacity * 2 * rhSlotHeapBytes else 0
 
+/-- WS-UC UC3: **a boot-sized store's insert takes no resize heap**: on a store
+at least the boot capacity, holding at most `maxObjects` objects, the load check
+reads `4 · size < 3 · capacity`, so the resize term is 0. -/
+theorem rhInsertResizeHeapBytes_objects_eq_zero {st : SystemState} (hP : st.tablesPresized)
+    (hS : st.objects.size ≤ SeLe4n.Model.maxObjects) : rhInsertResizeHeapBytes st.objects = 0 := by
+  unfold rhInsertResizeHeapBytes
+  have := hP.objects
+  unfold SeLe4n.Model.bootTableCapacity at this; unfold SeLe4n.Model.maxObjects at hS
+  rw [if_neg (by omega)]
+
 /-- The bytes of kernel heap the object a request carves takes: a CNode's
 scale with its slot count, every other kind's are fixed. -/
 def CarveRequest.objectHeapBytes : CarveRequest → Nat
@@ -1460,7 +1484,7 @@ theorem retypeFromUntyped_ok_sizeAligned
 theorem CarveRequest.scrub_ghostsKept (st : SystemState) (ut : UntypedObject) (idx : Nat)
     (req : CarveRequest) : SystemState.ghostsKept (req.scrub st ut idx) st := by
   cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;>
-    exact ⟨rfl, rfl, rfl⟩
+    exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
 
 /-- ...and no scheduler state. -/
 @[simp] theorem CarveRequest.scrub_scheduler (st : SystemState) (ut : UntypedObject) (idx : Nat)

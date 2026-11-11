@@ -74,6 +74,15 @@ open SeLe4n.Model
     With AS=1: 16-bit ASIDs, range [0, 65535]. -/
 def maxAsidValue : Nat := 65536
 
+/-- WS-UC UC3: **an ASID-table insert on a boot-sized table holding at most
+`maxAsidValue` ASIDs does not resize** — the ASID table's twin of
+`SystemState.objects_insert_eq_insertNoResize`: `4 · 65536 < 3 · 131072`. -/
+theorem _root_.SeLe4n.Model.SystemState.asidTable_insert_eq_insertNoResize {st : SystemState}
+    (hP : st.tablesPresized) (hS : st.asidTable.size ≤ maxAsidValue) (a : SeLe4n.ASID)
+    (oid : SeLe4n.ObjId) : st.asidTable.insert a oid = st.asidTable.insertNoResize a oid :=
+  st.asidTable.insert_eq_insertNoResize_of_load a oid (by
+    have := hP.asid; unfold bootTableCapacity at this; unfold maxAsidValue at hS; omega)
+
 /-- AK3-A (A-C01 / CRITICAL) — AsidPool TLB-maintenance contract:
 
     1. On `allocate`, if `requiresFlush := true`, the HAL must invoke

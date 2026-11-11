@@ -141,12 +141,12 @@ theorem serviceRecordRewrite_mappingStage {st st' : SystemState}
 theorem registerService_mappingStage {reg : ServiceRegistration} {st st' : SystemState}
     (h : registerService reg st = .ok ((), st')) : MappingStage st st' :=
   serviceRecordRewrite_mappingStage (registerService_serviceRecordRewrite h) (by
-    obtain ⟨_, _, _, _, _, _, rfl⟩ := registerService_ok h; exact ⟨rfl, rfl, rfl⟩)
+    obtain ⟨_, _, _, _, _, _, rfl⟩ := registerService_ok h; exact ⟨rfl, rfl, rfl, by capacity_kept, Nat.le_refl _⟩)
 
 theorem revokeService_mappingStage {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) : MappingStage st st' :=
   serviceRecordRewrite_mappingStage (revokeService_serviceRecordRewrite h) (by
-    obtain ⟨_, _, _, rfl⟩ := revokeService_ok h; exact ⟨rfl, rfl, rfl⟩)
+    obtain ⟨_, _, _, rfl⟩ := revokeService_ok h; exact ⟨rfl, rfl, rfl, by capacity_kept, Nat.le_refl _⟩)
 
 theorem revokeServiceByRecordedRegistration_mappingStage {epId : SeLe4n.ObjId} {st st' : SystemState}
     (h : revokeServiceByRecordedRegistration epId st = .ok ((), st')) : MappingStage st st' := by

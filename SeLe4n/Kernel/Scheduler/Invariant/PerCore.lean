@@ -2099,7 +2099,7 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
 private theorem default_objects_getElem_none (oid : SeLe4n.ObjId) :
     (default : SystemState).objects[oid]? = none := by
   simp only [RHTable_getElem?_eq_get?]
-  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid
+  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ oid
 
 /-- Local helper: `getTcb?` is `none` for every thread on the default state. -/
 private theorem default_getTcb?_none (tid : SeLe4n.ThreadId) :

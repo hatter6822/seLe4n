@@ -322,11 +322,9 @@ private theorem sc_proj {α : Sort _} (f : KernelObject → α) (hf : ∀ o, f o
   show f (.schedContext sc'.withoutRelease) = f (.schedContext sc.withoutRelease)
   rw [e]
 
-/-- A step that writes only scheduler links rewrites each object to one of its
-own kind. -/
-theorem kindPreserving (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
-    SeLe4n.Model.kindPreservingWrite st st' := by
-  refine ⟨fun oid => ?_, hG⟩
+/-- A step that writes only scheduler links rewrites the object at each key to
+one of its own kind. -/
+theorem kindPreservingAt (oid : SeLe4n.ObjId) : SeLe4n.Model.kindPreservingWriteAt st st' oid := by
   unfold SeLe4n.Model.kindPreservingWriteAt
   rcases h.pointwise oid with e | ⟨t, t', ht, ht', e⟩ | ⟨sc, sc', hs, hs', e⟩
   · exact Or.inl e
@@ -343,6 +341,12 @@ theorem kindPreserving (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
       sc_proj KernelObject.bindingCodes (fun o => by cases o <;> rfl) e,
       sc_proj KernelObject.tableBackLinks (fun o => by cases o <;> rfl) e,
       sc_proj KernelObject.mappingView (fun o => by cases o <;> rfl) e⟩
+
+/-- A step that writes only scheduler links rewrites each object to one of its
+own kind. -/
+theorem kindPreserving (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
+    SeLe4n.Model.kindPreservingWrite st st' :=
+  ⟨h.kindPreservingAt, hG⟩
 
 omit h in
 /-- Two objects agreeing off the scheduler links hold the same capability slots

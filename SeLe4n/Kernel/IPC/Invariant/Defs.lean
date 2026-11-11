@@ -2374,7 +2374,7 @@ theorem default_notificationWaiterConsistent :
     notificationWaiterConsistent (default : SystemState) := by
   have h : ∀ oid : SeLe4n.ObjId, (default : SystemState).objects[oid]? = none := by
     intro oid
-    simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+    simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
   refine ⟨fun oid ntfn hObj => ?_, fun tid tcb _ hObj _ => ?_, fun tid tcb _ hObj _ => ?_,
     fun oid _ _ _ hObj _ _ => ?_, fun tid tcb hObj _ => ?_⟩
   all_goals (rw [h] at hObj; exact absurd hObj (by simp))

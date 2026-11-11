@@ -75,7 +75,7 @@ theorem of_kindPreservingWrite (hI : st.objects.invExt → st'.objects.invExt)
 theorem of_objects_eq (hO : st'.objects = st.objects)
     (hG : ghostsKept st' st := by ghosts_kept) : MappingStage st st' :=
   fun h => ⟨hO ▸ h, fun hL => hL.of_objects_eq hO,
-    fun hB => hB.of_kept (.of_objects_eq hO hG.index hG.indexSet hG.types)⟩
+    fun hB => hB.of_kept (.of_objects_eq hO hG.index hG.indexSet hG.types hG.asidCapacity)⟩
 
 /-- A stage from a state with the same objects and ghosts is a stage from this
 one: the relation reads the objects and the ghosts alone. -/
@@ -83,7 +83,8 @@ theorem of_objects_eq_left {st0 : SystemState} (hO : st0.objects = st.objects)
     (h : MappingStage st0 st') (hG : ghostsKept st0 st := by ghosts_kept) : MappingStage st st' :=
   fun hI => let ⟨hI', hL, hB⟩ := h (hO ▸ hI)
     ⟨hI', fun hL0 => hL (hL0.of_objects_eq hO),
-      fun hB0 => hB (hB0.of_kept (.of_objects_eq hO hG.index hG.indexSet hG.types))⟩
+      fun hB0 => hB (hB0.of_kept (.of_objects_eq hO hG.index hG.indexSet hG.types
+        hG.asidCapacity))⟩
 
 /-- A step whose objects agree with the pre-state's off the threads' run-queue
 links. -/
@@ -109,7 +110,7 @@ theorem of_mappingFactsKept (hI : st.objects.invExt → st'.objects.invExt)
     ⟨hG.index, hG.indexSet, hG.types, fun x => by
       rcases hK h x with e | ⟨pre, post, hp, hq, ht, -⟩
       · rw [e]
-      · rw [hp, hq]; simp [ht]⟩⟩
+      · rw [hp, hq]; simp [ht], hG.objectsCapacity, hG.asidCapacity⟩⟩
 
 /-- WS-ZA ZA5.11: a step whose store agrees with the pre-state's off the taint
 words — the taint step. -/

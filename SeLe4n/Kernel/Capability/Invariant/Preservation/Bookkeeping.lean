@@ -53,13 +53,13 @@ theorem cdtAddChild_preserves_bookkeepingAgrees {st : SystemState} {p c : SlotRe
     {op : DerivationOp} (hInv : st.objects.invExt) (hB : st.bookkeepingAgrees) :
     (st.cdtAddChild p c op).bookkeepingAgrees :=
   (SystemState.cdtAddChild_reach st p c op).bookkeepingAgrees hInv
-    (hB.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩)
+    (hB.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
 
 theorem cdtMove_preserves_bookkeepingAgrees {st : SystemState} {old new : SlotRef}
     (hInv : st.objects.invExt) (hB : st.bookkeepingAgrees) :
     (st.cdtMove old new).bookkeepingAgrees :=
   (SystemState.cdtMove_reach st old new).bookkeepingAgrees hInv
-    (hB.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩)
+    (hB.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
 
 theorem cspaceDeleteSlotCore_preserves_bookkeepingAgrees {addr : CSpaceAddr}
     {st st' : SystemState} (hInv : st.objects.invExt) (hB : st.bookkeepingAgrees)
@@ -78,7 +78,7 @@ theorem cspaceDeleteSlot_preserves_bookkeepingAgrees {addr : CSpaceAddr}
   exact ⟨(spliceDeletedCdtNode_reach stC addr).invExt hIC,
     (spliceDeletedCdtNode_reach stC addr).bookkeepingAgrees hIC
       ((cspaceDeleteSlotCore_preserves_bookkeepingAgrees hInv hB hC).of_objects_ghosts rfl
-        ⟨rfl, rfl, rfl⟩)⟩
+        ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)⟩
 
 theorem cspaceCopy_preserves_bookkeepingAgrees {src dst : CSpaceAddr} {st st' : SystemState}
     (hInv : st.objects.invExt) (hB : st.bookkeepingAgrees)
@@ -193,7 +193,7 @@ theorem _root_.SeLe4n.Model.SystemState.bookkeepingAgrees.of_vspaceRootOnlyWrite
   h.of_kept ⟨hG.index, hG.indexSet, hG.types, fun x => by
     rcases hW x with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
     · rw [e]
-    · rw [hr, hr']; rfl⟩
+    · rw [hr, hr']; rfl, hG.objectsCapacity, hG.asidCapacity⟩
 
 /-- A store over an object of the same kind moves no ghost. -/
 theorem storeObjectState_ghostsKept {id : SeLe4n.ObjId} {obj old : KernelObject}
@@ -218,9 +218,9 @@ theorem unmapPageState_ghostsKept (ec : Concurrency.CoreId) (asid : SeLe4n.ASID)
           st :=
         (storeObjectState_ghostsKept (old := .vspaceRoot root) (obj := .vspaceRoot root')
           (st := Architecture.recordPhysicalWrites st (Architecture.mappingStore? st root' vaddr).toList)
-          (by rw [Architecture.recordPhysicalWrites_objects]; exact hO) rfl).trans ⟨rfl, rfl, rfl⟩
+          (by rw [Architecture.recordPhysicalWrites_objects]; exact hO) rfl).trans ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
       dsimp only
-      split <;> exact ⟨hG.index, hG.indexSet, hG.types⟩
+      split <;> exact ⟨hG.index, hG.indexSet, hG.types, hG.objectsCapacity, hG.asidCapacity⟩
 
 theorem unmapLivePagesState_ghostsKept (ec : Concurrency.CoreId) :
     ∀ (ps : List MappedPage) (st : SystemState),
@@ -246,7 +246,7 @@ theorem detachPageTablesState_ghostsKept :
         ((storeObjectState_ghostsKept (old := .vspaceRoot root)
           (obj := .vspaceRoot (root.withoutTablesBeneath o.2 o.1))
           (st := Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1))
-          (by rw [Architecture.recordPhysicalWrites_objects]; exact hO) rfl).trans ⟨rfl, rfl, rfl⟩)
+          (by rw [Architecture.recordPhysicalWrites_objects]; exact hO) rfl).trans ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
 
 /-- **The teardown keeps the agreement**: it writes roots as roots and no ghost. -/
 theorem finaliseDestroyedCapabilities_preserves_bookkeepingAgrees (ec : Concurrency.CoreId)
@@ -307,7 +307,10 @@ theorem retireCarvedObject_preserves_bookkeepingAgrees (st : SystemState) (id : 
   unfold retireCarvedObject
   split
   · exact (withObjectErased_preserves_bookkeepingAgrees st id hB hInv hSz).of_objects_ghosts rfl
-      ⟨rfl, rfl, rfl⟩
+      ⟨rfl, rfl, rfl, Nat.le_refl _, by
+        show st.asidTable.capacity ≤ (match st.getVSpaceRoot? id with
+          | some root => st.asidTable.erase root.asid | none => st.asidTable).capacity
+        split <;> simp⟩
   · exact hB
 
 theorem retireRecordedObject_preserves_bookkeepingAgrees (ec : Concurrency.CoreId)
@@ -320,7 +323,8 @@ theorem retireRecordedObject_preserves_bookkeepingAgrees (ec : Concurrency.CoreI
   unfold retireRecordedObject
   dsimp only
   split
-  · exact hB2.of_objects_ghosts (asidReleaseRound_objects _ _ _) ⟨rfl, rfl, rfl⟩
+  · exact hB2.of_objects_ghosts (asidReleaseRound_objects _ _ _) ⟨rfl, rfl, rfl, by rw [asidReleaseRound_objects]; exact Nat.le_refl _,
+      by capacity_kept⟩
   · exact hB2
 
 theorem retireFinalObject_preserves_bookkeepingAgrees (ec : Concurrency.CoreId)
@@ -355,10 +359,13 @@ theorem cspaceDeleteSlotFinalising_preserves_bookkeepingAgrees (ec : Concurrency
       (slotRetireRecorder st addr.cnode addr.slot) st2 with ⟨-, hR⟩ | ⟨-, hR⟩
   · rw [hR]
     refine ⟨by rw [retireIrqNode_objects]; exact hI2,
-      hB2.of_objects_ghosts (retireIrqNode_objects _ _) ⟨?_, ?_, ?_⟩⟩
+      hB2.of_objects_ghosts (retireIrqNode_objects _ _) ⟨?_, ?_, ?_, ?_, ?_⟩⟩
     · exact Architecture.setIrqLineSignal_objectIndex _ _ _
     · exact Architecture.setIrqLineSignal_objectIndexSet _ _ _
     · exact congrArg (·.objectTypes) (Architecture.setIrqLineSignal_lifecycle _ _ _)
+    · rw [retireIrqNode_objects]; exact Nat.le_refl _
+    · exact Nat.le_of_eq (congrArg RobinHood.RHTable.capacity
+        (Architecture.setIrqLineSignal_asidTable _ _ _)).symm
   · rw [hR]
     have hFr := finaliseReleased_frame (slotRetireTarget st addr.cnode addr.slot) st2 hI2
     exact ⟨(retireFinalObject_frame ec _ _ _ hFr.invExt).1,
@@ -403,7 +410,7 @@ theorem threadSlotCopied_preserves_bookkeepingAgrees {st : SystemState} {tid : S
   have hBC := storeObject_preserves_bookkeepingAgrees _ _ _ _ hB hInv hS
   have hR := spliceDeletedCdtNode_reach (threadSlotCleared tid.toObjId slot st)
     { cnode := tid.toObjId, slot := slot }
-  have hBD := hR.bookkeepingAgrees hInvC (hBC.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩)
+  have hBD := hR.bookkeepingAgrees hInvC (hBC.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
   have hID := hR.invExt hInvC
   rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
   · rw [e]; exact hBD

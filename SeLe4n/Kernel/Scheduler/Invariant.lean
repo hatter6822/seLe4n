@@ -661,7 +661,7 @@ theorem default_schedContextsWellFormed :
     schedContextsWellFormed (default : SystemState) := by
   intro oid sc hObj
   have hNone : (default : SystemState).objects.get? oid = none :=
-    RobinHood.RHTable.getElem?_empty 16 (by omega) oid
+    RobinHood.RHTable.getElem?_empty _ _ oid
   simp [GetElem?.getElem?] at hObj
   rw [hNone] at hObj
   exact absurd hObj (by simp)
@@ -955,12 +955,12 @@ theorem default_schedContextBindingConsistent :
   constructor
   · intro tid tcb hObj
     have hNone : (default : SystemState).objects.get? tid.toObjId = none :=
-      RobinHood.RHTable.getElem?_empty 16 (by omega) tid.toObjId
+      RobinHood.RHTable.getElem?_empty _ _ tid.toObjId
     simp [GetElem?.getElem?] at hObj
     rw [hNone] at hObj; exact absurd hObj (by simp)
   · intro scId sc hObj
     have hNone : (default : SystemState).objects.get? scId.toObjId = none :=
-      RobinHood.RHTable.getElem?_empty 16 (by omega) scId.toObjId
+      RobinHood.RHTable.getElem?_empty _ _ scId.toObjId
     simp [GetElem?.getElem?] at hObj
     rw [hNone] at hObj; exact absurd hObj (by simp)
 
@@ -1060,7 +1060,7 @@ theorem default_boundThreadDomainConsistent :
   intro tid _scId
   -- Default object store is empty — all lookups return none
   have hNone : (default : SystemState).objects.get? tid.toObjId = none :=
-    RobinHood.RHTable.getElem?_empty 16 (by omega) tid.toObjId
+    RobinHood.RHTable.getElem?_empty _ _ tid.toObjId
   simp only [show (default : SystemState).objects[tid.toObjId]? =
     (default : SystemState).objects.get? tid.toObjId from rfl, hNone]
 

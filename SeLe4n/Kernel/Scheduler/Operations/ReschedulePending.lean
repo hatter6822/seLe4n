@@ -388,9 +388,10 @@ theorem markKeyChangeFrom_extract_frame {F : Type} (extract : SystemState → F)
 theorem markKeyChangeFrom_ghostsKept (pre post : SystemState) (tid : SeLe4n.ThreadId) :
     SystemState.ghostsKept (markKeyChangeFrom pre post tid) post :=
   have e := markKeyChangeFrom_extract_frame
-    (fun s => (s.objectIndex, s.objectIndexSet, s.lifecycle.objectTypes)) pre post tid
-    (fun _ _ => rfl)
-  ⟨congrArg (·.1) e, congrArg (·.2.1) e, congrArg (·.2.2) e⟩
+    (fun s => (s.objectIndex, s.objectIndexSet, s.lifecycle.objectTypes, s.objects.capacity,
+      s.asidTable.capacity)) pre post tid (fun _ _ => rfl)
+  ⟨congrArg (·.1) e, congrArg (·.2.1) e, congrArg (·.2.2.1) e,
+    Nat.le_of_eq (congrArg (·.2.2.2.1) e).symm, Nat.le_of_eq (congrArg (·.2.2.2.2) e).symm⟩
 
 /-- The `.reschedule` SGIs a step owes, from the flag vector captured before
 dispatch and the committed state's: one per core whose flag went

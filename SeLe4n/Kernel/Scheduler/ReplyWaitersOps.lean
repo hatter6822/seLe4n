@@ -551,6 +551,16 @@ theorem unlinkReplyWaiter_eq_objects (st : SystemState) (w s : ThreadId) :
     st.unlinkReplyWaiter w s = { st with objects := (st.unlinkReplyWaiter w s).objects } := by
   unfold unlinkReplyWaiter updateTcbAtCode mapTcbInPlace; dsimp only; split <;> split <;> rfl
 
+/-- WS-UC UC3: the link keeps the store's capacity. -/
+@[simp] theorem linkReplyWaiter_objects_capacity (st : SystemState) (w s : ThreadId) :
+    (st.linkReplyWaiter w s).objects.capacity = st.objects.capacity := by
+  simp [linkReplyWaiter]
+
+/-- WS-UC UC3: the unlink keeps the store's capacity. -/
+@[simp] theorem unlinkReplyWaiter_objects_capacity (st : SystemState) (w s : ThreadId) :
+    (st.unlinkReplyWaiter w s).objects.capacity = st.objects.capacity := by
+  simp [unlinkReplyWaiter]
+
 theorem linkReplyWaiter_objects_invExt (st : SystemState) (w s : ThreadId)
     (h : st.objects.invExt) : (st.linkReplyWaiter w s).objects.invExt := by
   unfold linkReplyWaiter; dsimp only
@@ -603,16 +613,24 @@ variable (st : SystemState) (w s : ThreadId)
 @[simp] theorem unlinkReplyWaiter_objectIndexSet :
     (st.unlinkReplyWaiter w s).objectIndexSet = st.objectIndexSet :=
   (congrArg SystemState.objectIndexSet (unlinkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_asidTable :
+    (st.unlinkReplyWaiter w s).asidTable = st.asidTable :=
+  (congrArg SystemState.asidTable (unlinkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem linkReplyWaiter_asidTable :
+    (st.linkReplyWaiter w s).asidTable = st.asidTable :=
+  (congrArg SystemState.asidTable (linkReplyWaiter_eq_objects st w s) :)
 
 end Fields
 
 theorem linkReplyWaiter_kindPreservingWrite (st : SystemState) (w s : ThreadId) :
     kindPreservingWrite st (st.linkReplyWaiter w s) :=
   (linkReplyWaiter_objectsAgreeOffRunLinks st w s).kindPreserving
+    (.of_objectsOnly (linkReplyWaiter_eq_objects st w s) (Nat.le_of_eq (linkReplyWaiter_objects_capacity st w s).symm))
 
 theorem unlinkReplyWaiter_kindPreservingWrite (st : SystemState) (w s : ThreadId) :
     kindPreservingWrite st (st.unlinkReplyWaiter w s) :=
   (unlinkReplyWaiter_objectsAgreeOffRunLinks st w s).kindPreserving
+    (.of_objectsOnly (unlinkReplyWaiter_eq_objects st w s) (Nat.le_of_eq (unlinkReplyWaiter_objects_capacity st w s).symm))
 
 theorem mapTcbInPlace_runQueueRefined_of_runLinks (st : SystemState) (t : ThreadId)
     {g : TCB → TCB} (hg : ∀ x c, (g x).runLinkOn c = x.runLinkOn c)
@@ -675,6 +693,9 @@ theorem unlinkReplyWaiterOpt_eq_objects :
 @[simp] theorem unlinkReplyWaiterOpt_objectIndexSet :
     (st.unlinkReplyWaiterOpt w s?).objectIndexSet = st.objectIndexSet := by
   rw [unlinkReplyWaiterOpt_eq_objects]
+@[simp] theorem unlinkReplyWaiterOpt_asidTable :
+    (st.unlinkReplyWaiterOpt w s?).asidTable = st.asidTable := by
+  rw [unlinkReplyWaiterOpt_eq_objects]
 
 theorem unlinkReplyWaiterOpt_objects_invExt (h : st.objects.invExt) :
     (st.unlinkReplyWaiterOpt w s?).objects.invExt := by
@@ -682,10 +703,15 @@ theorem unlinkReplyWaiterOpt_objects_invExt (h : st.objects.invExt) :
   | none => exact h
   | some s => exact unlinkReplyWaiter_objects_invExt st w s h
 
+/-- WS-UC UC3: the optional unlink keeps the store's capacity. -/
+@[simp] theorem unlinkReplyWaiterOpt_objects_capacity :
+    (st.unlinkReplyWaiterOpt w s?).objects.capacity = st.objects.capacity := by
+  cases s? <;> simp [unlinkReplyWaiterOpt]
+
 theorem unlinkReplyWaiterOpt_kindPreservingWrite :
     kindPreservingWrite st (st.unlinkReplyWaiterOpt w s?) :=
   (unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st w s?).kindPreserving
-    (.of_objectsOnly (unlinkReplyWaiterOpt_eq_objects st w s?))
+    (.of_objectsOnly (unlinkReplyWaiterOpt_eq_objects st w s?) (by capacity_kept))
 
 theorem unlinkReplyWaiterOpt_runQueueRefined (h : st.runQueueRefined) :
     (st.unlinkReplyWaiterOpt w s?).runQueueRefined := by

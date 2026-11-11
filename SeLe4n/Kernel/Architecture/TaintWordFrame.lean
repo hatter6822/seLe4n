@@ -846,11 +846,12 @@ theorem releaseQueueRefined_of_objectsAgreeOffTaint
 
 /-- **WS-ZA ZA5.11: the whole invariant bundle carries across a taint-word
 write.**  A store that agrees with `st`'s off the taint words, keeps its table
-invariant and its size, satisfies every conjunct `st` does: no conjunct reads a
+invariant and its size, and is no smaller a table, satisfies every conjunct `st` does: no conjunct reads a
 taint word. -/
 theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     (hA : st.objectsAgreeOffTaint { st with objects := O })
     (hI : st.objects.invExt → O.invExt) (hS : O.size = st.objects.size)
+    (hC : st.objects.capacity ≤ O.capacity)
     (h : proofLayerInvariantBundle st) : proofLayerInvariantBundle { st with objects := O } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
@@ -875,6 +876,6 @@ theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     refillsSound_of_objectsAgreeOffTaint hA (releaseQueueRefined_of_objectsAgreeOffTaint hA bRel)
       bRefill,
     yieldLinksAgree_of_objectsAgreeOffTaint hA bYield,
-    bBook.of_kept (.of_map KernelObject.eraseTaint (fun o => by cases o <;> rfl) hA rfl rfl rfl)⟩
+    bBook.of_kept (.of_map KernelObject.eraseTaint (fun o => by cases o <;> rfl) hA rfl rfl rfl hC)⟩
 
 end SeLe4n.Kernel.Architecture

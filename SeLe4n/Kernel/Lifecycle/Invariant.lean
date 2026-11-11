@@ -150,7 +150,7 @@ because no untyped objects exist. -/
 theorem default_systemState_untypedMemoryInvariant :
     untypedMemoryInvariant (default : SystemState) := by
   have hNone : ∀ oid : SeLe4n.ObjId, (default : SystemState).objects[oid]? = none :=
-    fun _ => RHTable_get?_empty 16 (by omega)
+    fun _ => RHTable_get?_empty _ _
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · intro _ _ oid _ _ _ hObj; rw [hNone] at hObj; cases hObj
   · intro _ _ oid _ _ _ hObj; rw [hNone] at hObj; cases hObj

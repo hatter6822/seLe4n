@@ -57,7 +57,7 @@ theorem default_serviceRegistry_none (sid : ServiceId) :
     (default : SystemState).serviceRegistry[sid]? = none := by
   rw [SystemState.serviceRegistry_getElem?]
   have : (default : SystemState).objects[SeLe4n.ObjId.ofNat sid.toNat]? = none :=
-    RHTable_get?_empty 16 (by omega)
+    RHTable_get?_empty _ _
   rw [this]
 
 theorem default_registryInvariant :

@@ -232,9 +232,9 @@ theorem trans {s1 s2 s3 : SystemState}
 
 /-- The two states carry the same bookkeeping ghosts: the object index, its
 membership set and the recorded object kinds all agree. -/
-theorem ghostsKept {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
-    SystemState.ghostsKept s2 s1 :=
-  ⟨h.objectIndex, h.objectIndexSet, by rw [h.lifecycle]⟩
+theorem ghostsKept {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2)
+    (hC : s1.objects.capacity ≤ s2.objects.capacity) : SystemState.ghostsKept s2 s1 :=
+  ⟨h.objectIndex, h.objectIndexSet, by rw [h.lifecycle], hC, by rw [h.asidTable]; exact Nat.le_refl _⟩
 
 /-- WS-SM SM9.D.5: **the declassification taint agrees** — the provenance
 analogue of the trail and ledger clauses, and load-bearing for the same reason:

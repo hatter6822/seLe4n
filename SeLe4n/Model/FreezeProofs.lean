@@ -223,7 +223,7 @@ theorem freezeMap_get?_eq [BEq κ] [Hashable κ] [LawfulBEq κ]
       exact hAbsent p.2 (eq_of_beq hBeq ▸ hP)
     have hIdxNone := freezeMap_indexMap_absent rt.toList k
       (RHTable.empty 16) 0 (RHTable.empty_invExt 16 (by omega))
-      (RHTable.getElem?_empty 16 (by omega) k)
+      (RHTable.getElem?_empty _ _ k)
       hAbsentEntries
     rw [hIdxNone]
   | some v =>
@@ -235,7 +235,7 @@ theorem freezeMap_get?_eq [BEq κ] [Hashable κ] [LawfulBEq κ]
       toList_noDupKeys rt hExt
     have hInitAbsent : ∀ p, p ∈ rt.toList →
         (RHTable.empty 16 (by omega) : RHTable κ Nat).get? p.1 = none :=
-      fun p _ => RHTable.getElem?_empty 16 (by omega) p.1
+      fun p _ => RHTable.getElem?_empty _ _ p.1
     -- Get the position and indexMap value
     have ⟨pos, hPos, hEntry, hIdx⟩ := freezeMap_indexMap_at_pos
       rt.toList k v hMem hNoDup
@@ -822,7 +822,7 @@ theorem freezeMap_wellFormed [BEq κ] [Hashable κ] [LawfulBEq κ]
   have hInitBound : ∀ k' idx',
       (RHTable.empty 16 (by omega) : RHTable κ Nat).get? k' = some idx' → idx' < 0 := by
     intro k' idx' hGetInit
-    rw [RHTable.getElem?_empty 16 (by omega) k'] at hGetInit
+    rw [RHTable.getElem?_empty _ _ k'] at hGetInit
     cases hGetInit
   have := freezeMap_foldl_values_bounded rt.toList
     (RHTable.empty 16 (by omega)) 0 k idx hEmpty hInitBound hGet
@@ -840,7 +840,7 @@ theorem freezeMap_total_coverage [BEq κ] [Hashable κ] [LawfulBEq κ]
   have hNoDup := toList_noDupKeys rt hExt
   have hInitAbsent : ∀ p, p ∈ rt.toList →
       (RHTable.empty 16 (by omega) : RHTable κ Nat).get? p.1 = none :=
-    fun p _ => RHTable.getElem?_empty 16 (by omega) p.1
+    fun p _ => RHTable.getElem?_empty _ _ p.1
   have ⟨pos, hPos, _, hIdx⟩ := freezeMap_indexMap_at_pos
     rt.toList k v hMem hNoDup
     (RHTable.empty 16) 0 (RHTable.empty_invExt 16 (by omega)) hInitAbsent

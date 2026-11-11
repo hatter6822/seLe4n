@@ -656,7 +656,7 @@ theorem default_releaseQueueRefined : (default : SystemState).releaseQueueRefine
     (fun c => PerCoreVector.replicate_get _ _ c)
     (fun c s => by
       have h : (default : SystemState).objects[s.toObjId]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
       unfold releaseQueuedOn getSchedContext?; rw [h])
 
 /-- ...in particular one that writes neither the objects nor the scheduler. -/
@@ -2219,24 +2219,26 @@ theorem _root_.SeLe4n.Model.SchedulerState.releaseOnly.setReplenishQueueOnCore {
 
 
 /-- WS-ZA ZA6.3: `st'` is `st` with at most its objects and its release-queue
-slots rewritten. -/
-def releaseOnlyWrite (st' st : SystemState) : Prop :=
-  st' = { st with objects := st'.objects, scheduler := st'.scheduler } ∧
-    st'.scheduler.releaseOnly st.scheduler
+slots rewritten.  WS-UC UC3: and its object table no smaller. -/
+structure releaseOnlyWrite (st' st : SystemState) : Prop where
+  fields : st' = { st with objects := st'.objects, scheduler := st'.scheduler }
+  sched : st'.scheduler.releaseOnly st.scheduler
+  objectsCapacity : st.objects.capacity ≤ st'.objects.capacity
 
 namespace releaseOnlyWrite
 
-theorem refl (st : SystemState) : releaseOnlyWrite st st := ⟨rfl, rfl⟩
+theorem refl (st : SystemState) : releaseOnlyWrite st st := ⟨rfl, rfl, Nat.le_refl _⟩
 
 theorem trans {a b d : SystemState} (h₂ : releaseOnlyWrite d b) (h₁ : releaseOnlyWrite b a) :
     releaseOnlyWrite d a := by
-  refine ⟨?_, SchedulerState.releaseOnly.trans h₂.2 h₁.2⟩
+  refine ⟨?_, SchedulerState.releaseOnly.trans h₂.2 h₁.2,
+    Nat.le_trans h₁.objectsCapacity h₂.objectsCapacity⟩
   calc d = { b with objects := d.objects, scheduler := d.scheduler } := h₂.1
     _ = _ := by rw [h₁.1]
 
 /-- WS-UC UC2: a release-only write moves no bookkeeping ghost. -/
 theorem ghostsKept {st' st : SystemState} (h : releaseOnlyWrite st' st) : ghostsKept st' st :=
-  ⟨by rw [h.1], by rw [h.1], by rw [h.1]⟩
+  ⟨by rw [h.1], by rw [h.1], by rw [h.1], h.objectsCapacity, by rw [h.1]; exact Nat.le_refl _⟩
 
 /-- WS-ZA ZA6.4: a release-only write leaves every core's run queue, current
 thread and domain state. -/
@@ -2261,11 +2263,11 @@ theorem domainScheduleIndexOnCore {st' st : SystemState} (h : releaseOnlyWrite s
 
 theorem mapSchedContextInPlace (st : SystemState) (s : SeLe4n.SchedContextId)
     (g : SchedContext → SchedContext) : releaseOnlyWrite (st.mapSchedContextInPlace s g) st :=
-  ⟨rfl, rfl⟩
+  ⟨rfl, rfl, Nat.le_of_eq (RHTable.mapValueAt_capacity _ _ _).symm⟩
 
 theorem withScheduler {a b : SystemState} (h : releaseOnlyWrite b a) {sch : SchedulerState}
     (hs : sch.releaseOnly b.scheduler) : releaseOnlyWrite { b with scheduler := sch } a := by
-  refine ⟨?_, SchedulerState.releaseOnly.trans hs h.2⟩
+  refine ⟨?_, SchedulerState.releaseOnly.trans hs h.2, h.objectsCapacity⟩
   show { b with scheduler := sch } = _
   conv => lhs; rw [h.1]
 

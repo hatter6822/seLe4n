@@ -88,7 +88,7 @@ theorem saveOutgoingContextOnCore_mappingStage (st : SystemState) (c : CoreId) :
 /-- The context restore writes registers alone. -/
 theorem restoreIncomingContextOnCore_ghostsKept (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : SystemState.ghostsKept (restoreIncomingContextOnCore st c tid) st := by
-  unfold restoreIncomingContextOnCore; split <;> exact ⟨rfl, rfl, rfl⟩
+  unfold restoreIncomingContextOnCore; split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
 
 /-- The switch, after its preempt, dequeues, restores and sets the current
 thread: none of it moves a ghost. -/
@@ -104,7 +104,7 @@ theorem switchToThreadOnCore_ghostsKept {st st' : SystemState} {c : CoreId}
           ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid) c tid)).trans
         ((?_ : SystemState.ghostsKept _ ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid)).trans
           (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)
-      · exact ⟨rfl, rfl, rfl⟩
+      · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
       · unfold restoreIncomingContextOnCoreUnlessCurrent
         split
         · exact .refl _
