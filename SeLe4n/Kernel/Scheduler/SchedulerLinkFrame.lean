@@ -90,6 +90,17 @@ theorem trans {st st' st'' : SystemState} (h₂ : objectsAgreeOffSchedulerLinks 
     (h₁ : objectsAgreeOffSchedulerLinks st' st) : objectsAgreeOffSchedulerLinks st'' st :=
   fun x => (h₂ x).trans (h₁ x)
 
+/-- WS-UC UC2: the two stores hold the same identifiers, so they count the same
+objects. -/
+theorem objects_size_eq {st st' : SystemState} (h : objectsAgreeOffSchedulerLinks st' st)
+    (hInv' : st'.objects.invExt) (hInv : st.objects.invExt) :
+    st'.objects.size = st.objects.size :=
+  SeLe4n.Model.size_eq_of_present_iff _ _ hInv' hInv fun x => by
+    have hx := congrArg Option.isSome (h x)
+    simp only [Option.isSome_map] at hx
+    change st'.objects[x]? ≠ none ↔ st.objects[x]? ≠ none
+    rw [← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hx]
+
 /-- The relation reads the object stores alone. -/
 theorem congr {a a' b b' : SystemState} (ha : a'.objects = a.objects)
     (hb : b'.objects = b.objects) (h : objectsAgreeOffSchedulerLinks a b) :
@@ -97,6 +108,16 @@ theorem congr {a a' b b' : SystemState} (ha : a'.objects = a.objects)
 
 theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
     objectsAgreeOffSchedulerLinks st' st := fun x => by rw [h]
+
+/-- Objects that agree off the scheduler's links are of the same kind (WS-UC UC2:
+what the store's kind check reads). -/
+theorem getObjectType? {st st' : SystemState} (h : objectsAgreeOffSchedulerLinks st' st)
+    (x : SeLe4n.ObjId) : st'.getObjectType? x = st.getObjectType? x := by
+  have e := congrArg (Option.map KernelObject.objectType) (h x)
+  have hk : ∀ o : KernelObject, o.withoutSchedulerLinks.objectType = o.objectType := by
+    intro o; cases o <;> rfl
+  simp only [Option.map_map, Function.comp_def, hk] at e
+  exact e
 
 /-- A run-link step agrees off every scheduler link. -/
 theorem of_runLinks {st st' : SystemState} (h : objectsAgreeOffRunLinks st' st) :
@@ -303,8 +324,10 @@ private theorem sc_proj {α : Sort _} (f : KernelObject → α) (hf : ∀ o, f o
 
 /-- A step that writes only scheduler links rewrites each object to one of its
 own kind. -/
-theorem kindPreserving : SeLe4n.Model.kindPreservingWrite st st' := by
-  intro oid
+theorem kindPreserving (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
+    SeLe4n.Model.kindPreservingWrite st st' := by
+  refine ⟨fun oid => ?_, hG⟩
+  unfold SeLe4n.Model.kindPreservingWriteAt
   rcases h.pointwise oid with e | ⟨t, t', ht, ht', e⟩ | ⟨sc, sc', hs, hs', e⟩
   · exact Or.inl e
   · exact Or.inr ⟨_, _, ht, ht', by simp [KernelObject.objectType], by

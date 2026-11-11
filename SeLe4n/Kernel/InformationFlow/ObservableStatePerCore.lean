@@ -743,9 +743,10 @@ def ObservableState.onCoreByLinks (ctx : LabelingContext) (c : CoreId) (L : Secu
   projectStateOnCoreByLinks ctx (IfObserver.ofLabel L) s c
 
 theorem onCoreByLinks_eq (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
-    {s : SystemState} (h : s.runQueueRefinedOnCore c) :
+    {s : SystemState} (h : s.runQueueRefinedOnCore c) (hA : s.bookkeepingAgrees)
+    (hInv : s.objects.invExt) :
     ObservableState.onCoreByLinks ctx c L s = ObservableState.onCore ctx c L s :=
-  projectStateOnCoreByLinks_eq ctx _ h
+  projectStateOnCoreByLinks_eq ctx _ h hA hInv
 
 /-- `ObservableState.sliceOnCore`, read along the links. -/
 def ObservableState.sliceOnCoreByLinks (ctx : LabelingContext) (c : CoreId)
@@ -753,10 +754,11 @@ def ObservableState.sliceOnCoreByLinks (ctx : LabelingContext) (c : CoreId)
   (ObservableState.onCoreByLinks ctx c L s).perCoreSlice
 
 theorem sliceOnCoreByLinks_eq (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
-    {s : SystemState} (h : s.runQueueRefinedOnCore c) :
+    {s : SystemState} (h : s.runQueueRefinedOnCore c) (hA : s.bookkeepingAgrees)
+    (hInv : s.objects.invExt) :
     ObservableState.sliceOnCoreByLinks ctx c L s = ObservableState.sliceOnCore ctx c L s := by
   unfold ObservableState.sliceOnCoreByLinks ObservableState.sliceOnCore
-  rw [onCoreByLinks_eq ctx c L h]
+  rw [onCoreByLinks_eq ctx c L h hA hInv]
 
 /-- `lowEquivalentSliceOnCoreCheckWithRegs`, read along the links. -/
 def lowEquivalentSliceOnCoreCheckWithRegsByLinks (ctx : LabelingContext) (c : CoreId)
@@ -768,13 +770,15 @@ def lowEquivalentSliceOnCoreCheckWithRegsByLinks (ctx : LabelingContext) (c : Co
 
 theorem lowEquivalentSliceOnCoreCheckWithRegsByLinks_eq (ctx : LabelingContext)
     (c : CoreId) (L : SecurityLabel) {s₁ s₂ : SystemState}
-    (h₁ : s₁.runQueueRefinedOnCore c) (h₂ : s₂.runQueueRefinedOnCore c) :
+    (h₁ : s₁.runQueueRefinedOnCore c) (h₂ : s₂.runQueueRefinedOnCore c)
+    (hA₁ : s₁.bookkeepingAgrees) (hA₂ : s₂.bookkeepingAgrees)
+    (hInv₁ : s₁.objects.invExt) (hInv₂ : s₂.objects.invExt) :
     lowEquivalentSliceOnCoreCheckWithRegsByLinks ctx c L s₁ s₂
       = lowEquivalentSliceOnCoreCheckWithRegs ctx c L s₁ s₂ := by
   unfold lowEquivalentSliceOnCoreCheckWithRegsByLinks lowEquivalentSliceOnCoreCheckWithRegs
     lowEquivalentSliceOnCore
-  rw [sliceOnCoreByLinks_eq ctx c L h₁, sliceOnCoreByLinks_eq ctx c L h₂,
-    onCoreByLinks_eq ctx c L h₁, onCoreByLinks_eq ctx c L h₂]
+  rw [sliceOnCoreByLinks_eq ctx c L h₁ hA₁ hInv₁, sliceOnCoreByLinks_eq ctx c L h₂ hA₂ hInv₂,
+    onCoreByLinks_eq ctx c L h₁ hA₁ hInv₁, onCoreByLinks_eq ctx c L h₂ hA₂ hInv₂]
 
 -- ============================================================================
 -- §5  SM8.A.4 — per-core independence (the read set of the per-core view)
@@ -1557,8 +1561,10 @@ theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : 
     intro irq hIrq
     simp only [onCore_irqSignalLines, projectIrqSignalLines, Bool.and_eq_true] at hIrq ⊢
     exact ⟨objectObservable_monotone ctx hFlow _ hIrq.1, hIrq.2⟩
-  · -- objectIndex: likewise a sublist of the same underlying index
+  · -- objectIndex: likewise a sublist of the same underlying index (sorting
+    -- commutes with the filter, WS-UC UC2)
     simp only [onCore_objectIndex, projectObjectIndex]
+    rw [sortObjIds_filter, sortObjIds_filter]
     exact filter_sublist_filter_of_imp _ _ _
       (fun oid hoid => objectObservable_monotone ctx hFlow oid hoid)
   · -- domainTimeRemaining: unfiltered (CC-1)

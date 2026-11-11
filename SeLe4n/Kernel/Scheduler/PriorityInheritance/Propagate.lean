@@ -211,6 +211,25 @@ theorem pipBoostWrite_objects_at (st : SystemState) (tid : ThreadId) (tcb : TCB)
   · exact ⟨tcb.pipBoostCode, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
   · exact ⟨_, SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv⟩
 
+/-- WS-UC UC2: the boost adds and removes no object, so the store's size (the
+PIP fuel) is unchanged. -/
+theorem pipBoostWrite_objects_size (st : SystemState) (tid : ThreadId)
+    (hInv : st.objects.invExt) : (pipBoostWrite st tid).objects.size = st.objects.size := by
+  refine SeLe4n.Model.size_eq_of_present_iff _ _ (pipBoostWrite_objects_invExt st tid hInv)
+    hInv fun k => ?_
+  change (pipBoostWrite st tid).objects[k]? ≠ none ↔ st.objects[k]? ≠ none
+  by_cases hk : (tid.toObjId == k) = true
+  · have hk' : tid.toObjId = k := beq_iff_eq.mp hk
+    subst hk'
+    cases hT : st.getTcb? tid with
+    | none => rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hT]
+    | some t =>
+      obtain ⟨_, hP⟩ := pipBoostWrite_objects_at st tid t hT hInv
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hP,
+        (SystemState.getTcb?_eq_some_iff _ _ _).mp hT]
+      simp
+  · rw [pipBoostWrite_objects_ne st tid k hk hInv]
+
 /-- WS-ZA ZA4.5: the boost's store is its object write's, off the run-queue
 links its bucket re-key rewrites. -/
 theorem updatePipBoostOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
@@ -318,9 +337,9 @@ theorem updatePipBoostOnCore_runQueueStage (st : SystemState) (c : CoreId) (tid 
 another server via Reply, continues propagation upward.
 
 Terminates when fuel exhausted, thread not blocked, or no server found.
-Default fuel = objectIndex.length (sufficient by D4-E). -/
+Default fuel = objects.size (sufficient by D4-E). -/
 def propagatePriorityInheritance (st : SystemState) (startTid : ThreadId)
-    (fuel : Nat := st.objectIndex.length) : SystemState :=
+    (fuel : Nat := st.objects.size) : SystemState :=
   match fuel with
   | 0 => st
   | fuel' + 1 =>
@@ -348,7 +367,7 @@ Structurally identical to propagation: the `updatePipBoost` function
 uniformly handles both boost and reversion because it always recomputes
 from the current `waitersOf`. -/
 def revertPriorityInheritance (st : SystemState) (tid : ThreadId)
-    (fuel : Nat := st.objectIndex.length) : SystemState :=
+    (fuel : Nat := st.objects.size) : SystemState :=
   match fuel with
   | 0 => st
   | fuel' + 1 =>
@@ -685,7 +704,7 @@ state (boost updates never touch `ipcState`, so the chain topology is fixed —
 AF1-J).  Functionally identical for propagation and reversion (both recompute
 from current `waitersOf`), matching `revert_eq_propagate`. -/
 def propagatePipChainCrossCore (st : SystemState) (startTid : ThreadId)
-    (executingCore : CoreId) (fuel : Nat := st.objectIndex.length)
+    (executingCore : CoreId) (fuel : Nat := st.objects.size)
     : SystemState × List (CoreId × SgiKind) :=
   match fuel with
   | 0 => (st, [])
@@ -722,7 +741,7 @@ core's — and it steers only the dropped SGI list, never the state
 (`propagatePipChainCrossCore_state_core_independent`).
 
 `fuel` bounds the walk as every chain walk's fuel does; a caller passes its
-**pre-state's** `objectIndex.length`, so the walk and the write set its
+**pre-state's** `objects.size`, so the walk and the write set its
 footprint declares from that pre-state (`waiterChainWriteSet`) run the same
 number of steps by construction. -/
 def repropagateFromWaiter (st : SystemState) (tid : ThreadId) (ec : CoreId) (fuel : Nat) :
@@ -776,7 +795,7 @@ def propagatePipChainSgis (st : SystemState) (startTid : ThreadId) (executingCor
 walked apart.  Inlined, so a caller that keeps only the state (every executed
 caller does) compiles to `propagatePipChainStateWalk` and builds no SGI list. -/
 @[inline] def propagatePipChainCrossCoreImpl (st : SystemState) (startTid : ThreadId)
-    (executingCore : CoreId) (fuel : Nat := st.objectIndex.length) :
+    (executingCore : CoreId) (fuel : Nat := st.objects.size) :
     SystemState × List (CoreId × SgiKind) :=
   (propagatePipChainStateWalk st startTid fuel,
    propagatePipChainSgis st startTid executingCore fuel)
@@ -1684,5 +1703,23 @@ def waiterChainWriteSet (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
   match blockingServer st tid with
   | some server => pipChainWriteSet st server ec fuel
   | none => []
+
+/-- **The priority-inheritance walk writes only the object store and the
+scheduler.** -/
+theorem propagatePipChainCrossCore_onlyObjectsSchedulerDiffer :
+    ∀ (fuel : Nat) (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.CoreId),
+      SystemState.onlyObjectsSchedulerDiffer
+        (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1 st
+  | 0, st, _, _ => by rw [PriorityInheritance.propagatePipChainCrossCore_zero]; exact .refl st
+  | n + 1, st, s, ec => by
+    rw [PriorityInheritance.propagatePipChainCrossCore_step]
+    simp only
+    have h1 : SystemState.onlyObjectsSchedulerDiffer
+        (PriorityInheritance.pipBoostWithWake st s ec).1 st := by
+      rw [PriorityInheritance.pipBoostWithWake_state]
+      exact PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer _ _ _
+    cases PriorityInheritance.blockingServer st s with
+    | none => exact h1
+    | some nx => exact (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer n _ nx ec).trans h1
 
 end SeLe4n.Kernel

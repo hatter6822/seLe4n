@@ -172,6 +172,9 @@ def setIrqLineSignal (st : SystemState) (line : Nat) (signal : Bool) : SystemSta
 @[simp] theorem setIrqLineSignal_lifecycle (st : SystemState) (line : Nat) (signal : Bool) :
     (setIrqLineSignal st line signal).lifecycle = st.lifecycle := rfl
 
+@[simp] theorem setIrqLineSignal_objectIndexSet (st : SystemState) (line : Nat) (signal : Bool) :
+    (setIrqLineSignal st line signal).objectIndexSet = st.objectIndexSet := rfl
+
 /-- **seL4's `invokeIRQHandler_AckIRQ`**: the line the handler capability names
 unmasked at the controller.  A line that is no device line is refused
 (`deviceInterruptLine`, a line inside the board's count), so a capability

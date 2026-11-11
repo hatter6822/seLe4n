@@ -181,8 +181,27 @@ rewrites it there.
   - §5's table is filled in from this reading.
   - Every other reading stays 0.
 
-### UC2 — The bookkeeping tables become ghosts (D3)
+### UC2 — The bookkeeping tables become ghosts (D3) — **LANDED `v0.37.15`**
 
+- **Done.** The three fields are `SeLe4n.Erased` ghosts (`objectIndexGhost`,
+  `objectIndexSetGhost`, `LifecycleMetadata.objectTypesGhost`, and their frozen
+  forms), read only through `noncomputable` readers.  Their agreement with the
+  object table is `SystemState.bookkeepingAgrees`, carried by the boot's
+  `IntermediateState` and the kernel invariant bundle's 22nd component, which
+  every kernel entry keeps (`MappingStage.bookkeeping`;
+  `syscallDispatchEntryState_preserves_bookkeepingAgrees` and its twins for the
+  other entries).  The reply-receive's capability-transfer store guard, true on
+  every state once an in-place store asks only for the key's kind, is deleted
+  and the dispatch equivalences re-proven without it.  The capacity
+  check reads `objects.size`; the PIP fuel, the information-flow index
+  (sorted, `sortObjIds`; executable form `projectObjectIndexByTable`, proven
+  equal), the SGI and admission walks, `storeIsFresh` and the store-locality
+  kind checks read the object table, each walk proven order-independent.
+  `storeFresh` writes the object and ASID tables only; `withObjectIndexed`,
+  `withObjectIndexSet`, `withObjectType`, `objIdListDrop` and the retire's
+  per-table erases are deleted.  The boundary is tested
+  (`runObjectStoreCapacityBoundaryChecks`).  Every carve pin fell by 5 cells /
+  120 bytes, every other reading 0 (CHANGELOG `v0.37.15`).
 - **Work.**
   - Retype `objectIndex`, `objectIndexSet` and `lifecycle.objectTypes` as
     `SeLe4n.Erased` (`SeLe4n/Model/Erased.lean`), as WS-ZA did for the run
@@ -447,7 +466,8 @@ attributed by disassembling the traced image.
   pin 14 / 376.
 - **Ghost tables** (UC2): the index row's cons cell (24 B), and a `some` cell
   (16 B) and an `RHEntry` (32 B) in each of the index-set and type tables
-  (`withObjectIndexed`, `withObjectIndexSet`, `withObjectType`).
+  (`withObjectIndexed`, `withObjectIndexSet`, `withObjectType`).  Gone since
+  `v0.37.15` (UC2): every pin is 5 / 120 below this table's.
 - **Entry**: the object table's `some` cell and `RHEntry` (`withObjectInserted`).
   A VSpace root also has an entry of the same shape in the ASID table
   (`withAsidRegistered`).

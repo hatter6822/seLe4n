@@ -1080,7 +1080,7 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
                     boundTid boundTcb hBound priority domain) boundTid = X at hX ⊢
               have hRe := PriorityInheritance.repropagateFromWaiter_preserves
                 (fun s => stepCovers e X s ∧ s.objects.invExt) X boundTid
-                (determineTargetCore st boundTid) st.objectIndex.length
+                (determineTargetCore st boundTid) st.objects.size
                 (fun server _ => propagatePipChainCrossCore_stepCovers e _ _ _ server hX.2)
                 ⟨stepCovers_refl e _, hX.2⟩
               exact ⟨stepCovers_trans (stepCovers_trans hX.1 hRe.1)
@@ -1882,10 +1882,10 @@ theorem applyPriorityChangeOnCore_stepCovers (st st' : SystemState) (tid : SeLe4
   -- The waiter-side chain re-walk: the identity, or one chain walk.
   have hRe : stepCovers e (markKeyChangeFor mid tid (effectiveSchedParams st tcb))
         (PriorityInheritance.repropagateFromWaiter
-          (markKeyChangeFor mid tid (effectiveSchedParams st tcb)) tid e st.objectIndex.length) ∧
+          (markKeyChangeFor mid tid (effectiveSchedParams st tcb)) tid e st.objects.size) ∧
       (PriorityInheritance.repropagateFromWaiter
           (markKeyChangeFor mid tid (effectiveSchedParams st tcb)) tid e
-          st.objectIndex.length).objects.invExt :=
+          st.objects.size).objects.invExt :=
     PriorityInheritance.repropagateFromWaiter_preserves
       (fun s => stepCovers e (markKeyChangeFor mid tid (effectiveSchedParams st tcb)) s ∧
         s.objects.invExt) _ tid _ _

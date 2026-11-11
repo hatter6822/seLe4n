@@ -1269,7 +1269,7 @@ def receiveRendezvousHandoffWriteSet (st : SystemState)
     (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
     (chainState : SystemState) : List CoreId :=
   if rendezvousDequeuedCall st dequeued then
-    pipChainWriteSet chainState receiver executingCore chainState.objectIndex.length
+    pipChainWriteSet chainState receiver executingCore chainState.objects.size
   else []
 
 /-- **WS-OD OD3.14**: the hand-off's per-core writes stay inside that set.
@@ -1307,7 +1307,7 @@ theorem applyReceiveRendezvousHandoff_confinedToCores (st stDon st' : SystemStat
       unfold applyReceiverPipHandoff
       exact observableSlotsConfinedToCores_trans hDonConf
         (propagatePipChainCrossCore_confinedToCores executingCore
-          stDon'.objectIndex.length stDon' receiver)
+          stDon'.objects.size stDon' receiver)
 
 -- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `receiveLegPipHandoffWriteSet` moved to `Kernel/IPC/Operations/Donation.lean`, beside the
 -- transition it describes.  A write set declared in a STAGED module is one the
@@ -1327,7 +1327,7 @@ theorem applyReceiveLegPipHandoff_confinedToCores (st : SystemState)
   split
   · exact observableSlotsConfinedToCores_refl st []
   · split
-    · exact propagatePipChainCrossCore_confinedToCores executingCore st.objectIndex.length st
+    · exact propagatePipChainCrossCore_confinedToCores executingCore st.objects.size st
         receiver
     · exact observableSlotsConfinedToCores_refl st []
 
@@ -1360,7 +1360,7 @@ def endpointCallLiveWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
     (chainStart : SeLe4n.ThreadId) : List CoreId :=
   endpointCallWriteSet st endpointId executingCore
     ++ pipChainWriteSet chainState chainStart executingCore
-        chainState.objectIndex.length
+        chainState.objects.size
 
 /-- SM8.B.2: the live write set contains the below-API one, so a core outside it
 is outside both. The composition rule that makes the union the right premise. -/
@@ -1376,7 +1376,7 @@ theorem pipChainWriteSet_subset_live (st : SystemState) (endpointId : SeLe4n.Obj
     (c : CoreId)
     (h : c ∉ endpointCallLiveWriteSet st endpointId executingCore chainState chainStart) :
     c ∉ pipChainWriteSet chainState chainStart executingCore
-          chainState.objectIndex.length :=
+          chainState.objects.size :=
   fun hm => h (List.mem_append.mpr (Or.inr hm))
 
 /-- SM8.B.2: **the composition rule for the live `.call` legs.**
@@ -1397,13 +1397,13 @@ theorem endpointCallLive_confinedToCores (st stTrans stDon : SystemState)
     (hDonation : observableSlotsConfinedToCores stTrans stDon []) :
     observableSlotsConfinedToCores st
       (propagatePipChainCrossCore stDon chainStart executingCore
-        stDon.objectIndex.length).1
+        stDon.objects.size).1
       (endpointCallLiveWriteSet st endpointId executingCore stDon chainStart) :=
   observableSlotsConfinedToCores_trans
     (observableSlotsConfinedToCores_mono
       (by intro c hc; simpa using hc)
       (observableSlotsConfinedToCores_trans hTrans hDonation))
     (propagatePipChainCrossCore_confinedToCores executingCore
-      stDon.objectIndex.length stDon chainStart)
+      stDon.objects.size stDon chainStart)
 
 end SeLe4n.Kernel

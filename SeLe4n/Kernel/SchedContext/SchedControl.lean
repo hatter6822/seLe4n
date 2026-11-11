@@ -11,6 +11,7 @@ import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 import SeLe4n.Kernel.Scheduler.SchedulerLinkFrame
 import SeLe4n.Kernel.IPC.Operations.Endpoint
+import SeLe4n.Kernel.RobinHood.Invariant.InPlaceCommute
 
 /-!
 # Configure through a core's scheduling control
@@ -46,6 +47,7 @@ open SeLe4n
 open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 open SeLe4n.Kernel
+open SeLe4n.Kernel.RobinHood
 
 /-- **The thread a configure through core `core`'s control moves**: the context's
 bound thread, when it is homed on another core; `none` when the context is bound
@@ -140,26 +142,244 @@ scheduling context's budget and period. -/
     | .schedContext sc => some (sc.budget, sc.period)
     | _ => none)
 
+/-- WS-UC UC2: what the configure's checks read of an object table, slot by
+slot: each slot's key and what `configureAdmissionView` reads of its object.
+The admission sum walks the table's slots, so two tables with one slot view sum
+alike — with no invariant on either (`admissionUtilizationFrom_eq_of_slotView`). -/
+def admissionSlotView (t : RHTable SeLe4n.ObjId KernelObject) :
+    List (Option (SeLe4n.ObjId × (KernelObjectType × Option (Budget × Period)))) :=
+  t.slots.toList.map (Option.map fun e => (e.key, configureAdmissionView e.value))
+
+/-- WS-UC UC2: a slot write that keeps what the checks read of the object there
+keeps the slot view. -/
+theorem admissionSlotView_mapValueAt (t : RHTable SeLe4n.ObjId KernelObject)
+    (k : SeLe4n.ObjId) (f : KernelObject → KernelObject)
+    (h : ∀ v, t.get? k = some v → configureAdmissionView (f v) = configureAdmissionView v) :
+    admissionSlotView (t.mapValueAt k f) = admissionSlotView t := by
+  cases hk : t.get? k with
+  | none => rw [RHTable.mapValueAt_of_get?_none hk]
+  | some v =>
+    obtain ⟨e, he, hev⟩ := RHTable.slot_of_get? hk
+    unfold admissionSlotView
+    rw [RHTable.mapValueAt_slots]
+    apply List.ext_getElem
+    · simp
+    · intro n h1 h2
+      simp only [List.getElem_map, Array.getElem_toList, Array.getElem_modify]
+      split
+      · next hn =>
+        subst hn
+        have hlt : t.probe k < t.slots.size := by simpa using h2
+        have : t.slots[t.probe k]'hlt = some e := by
+          rw [Array.getElem?_eq_getElem hlt] at he
+          exact Option.some.inj he
+        rw [this]
+        simp only [RHEntry.mapValue, Option.map_some, Option.some.injEq, Prod.mk.injEq, true_and]
+        rw [hev]; exact h v hk
+      · rfl
+
+/-- WS-UC UC2: the admission sum reads the slot view alone. -/
+theorem admissionUtilizationFrom_eq_slotView (st : SystemState) (hasEx : Bool)
+    (ex : SeLe4n.ObjId) :
+    admissionUtilizationFrom st hasEx ex =
+      (admissionSlotView st.objects).foldl (fun acc slot =>
+        match slot with
+        | some (k, (_, some (b, p))) =>
+          if hasEx && ex == k then acc else acc + (Bandwidth.mk b.val p.val).utilization
+        | _ => acc) 0 := by
+  unfold admissionUtilizationFrom admissionSlotView RHTable.fold
+  rw [← Array.foldl_toList, List.foldl_map]
+  congr 1
+  funext acc slot
+  cases slot with
+  | none => rfl
+  | some e =>
+    obtain ⟨k, o⟩ := e
+    simp only [Option.map_some, admissionStep]
+    by_cases hx : (hasEx && ex == k) = true <;>
+      cases o <;> simp [hx, configureAdmissionView, SchedContext.utilizationPerMille,
+        SchedContext.bandwidth]
+
+/-- WS-UC UC2: two tables with one slot view sum alike. -/
+theorem admissionUtilizationFrom_eq_of_slotView {st' st : SystemState}
+    (h : admissionSlotView st'.objects = admissionSlotView st.objects) (hasEx : Bool)
+    (ex : SeLe4n.ObjId) :
+    admissionUtilizationFrom st' hasEx ex = admissionUtilizationFrom st hasEx ex := by
+  rw [admissionUtilizationFrom_eq_slotView, admissionUtilizationFrom_eq_slotView, h]
+
+/-- WS-UC UC2: a thread written in its slot keeps the slot view. -/
+theorem admissionSlotView_mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId)
+    (g : TCB → TCB) :
+    admissionSlotView (st.mapTcbInPlace t g).objects = admissionSlotView st.objects :=
+  admissionSlotView_mapValueAt _ _ _ fun v _ => by cases v <;> rfl
+
+/-- WS-UC UC2: a context's release links written in its slot keep the slot view. -/
+theorem admissionSlotView_mapSchedContextInPlace (st : SystemState)
+    (s : SeLe4n.SchedContextId) (g : SchedContext → SchedContext)
+    (hg : ∀ sc, (g sc).budget = sc.budget ∧ (g sc).period = sc.period) :
+    admissionSlotView (st.mapSchedContextInPlace s g).objects = admissionSlotView st.objects :=
+  admissionSlotView_mapValueAt _ _ _ fun v _ => by
+    cases v with
+    | schedContext sc =>
+      simp only [SystemState.mapSchedContextObject, configureAdmissionView,
+        KernelObject.objectType, (hg sc).1, (hg sc).2]
+    | _ => rfl
+
+/-! WS-UC UC2: the run-queue and release-queue writes keep the slot view: each
+is a chain of slot writes of threads' run links or contexts' release links. -/
+
+section AdmissionSlotView
+variable (st : SystemState)
+
+theorem admissionSlotView_updateTcbAtCode (k : Nat) (g : TCB → TCB) :
+    admissionSlotView (st.updateTcbAtCode k g).objects = admissionSlotView st.objects := by
+  unfold SystemState.updateTcbAtCode; split
+  · rfl
+  · exact admissionSlotView_mapTcbInPlace _ _ _
+
+theorem admissionSlotView_runAppendLinks (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    admissionSlotView (st.runAppendLinks c t p).objects = admissionSlotView st.objects := by
+  unfold SystemState.runAppendLinks
+  dsimp only
+  rw [admissionSlotView_updateTcbAtCode, admissionSlotView_updateTcbAtCode,
+    admissionSlotView_mapTcbInPlace]
+
+theorem admissionSlotView_runUnlinkLinks (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat) :
+    admissionSlotView (st.runUnlinkLinks t pv nx bpv bnx).objects =
+      admissionSlotView st.objects := by
+  unfold SystemState.runUnlinkLinks
+  dsimp only
+  rw [admissionSlotView_mapTcbInPlace, admissionSlotView_updateTcbAtCode,
+    admissionSlotView_updateTcbAtCode, admissionSlotView_updateTcbAtCode,
+    admissionSlotView_updateTcbAtCode]
+
+theorem admissionSlotView_runEnqueueAdmitted (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    admissionSlotView (st.runEnqueueAdmitted c t p).objects = admissionSlotView st.objects := by
+  unfold SystemState.runEnqueueAdmitted
+  dsimp only
+  split
+  · rfl
+  · exact admissionSlotView_runAppendLinks _ _ _ _
+
+theorem admissionSlotView_runEnqueueOnCore (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    admissionSlotView (st.runEnqueueOnCore c t p).objects = admissionSlotView st.objects := by
+  unfold SystemState.runEnqueueOnCore; split
+  · exact admissionSlotView_runEnqueueAdmitted _ _ _ _
+  · rfl
+
+theorem admissionSlotView_runRemoveOnCore (c : Concurrency.CoreId) (t : SeLe4n.ThreadId) :
+    admissionSlotView (st.runRemoveOnCore c t).objects = admissionSlotView st.objects := by
+  unfold SystemState.runRemoveOnCore
+  dsimp only
+  split
+  · exact admissionSlotView_runUnlinkLinks _ _ _ _ _ _
+  · rfl
+
+theorem admissionSlotView_releaseUnlinkOn (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    admissionSlotView (st.releaseUnlinkOn c s).objects = admissionSlotView st.objects := by
+  unfold SystemState.releaseUnlinkOn
+  have h1 := admissionSlotView_mapSchedContextInPlace st s SchedContext.leaveRelease
+    fun _ => ⟨rfl, rfl⟩
+  split
+  · dsimp only
+    split
+    · exact h1
+    · exact (admissionSlotView_mapSchedContextInPlace (st.mapSchedContextInPlace s
+        SchedContext.leaveRelease) _ (SchedContext.withReleaseNext _) fun _ => ⟨rfl, rfl⟩).trans h1
+  · rfl
+
+theorem admissionSlotView_releaseLinkIn (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (t : Nat) :
+    admissionSlotView (st.releaseLinkIn c s t).objects = admissionSlotView st.objects := by
+  unfold SystemState.releaseLinkIn
+  have h1 : ∀ n, admissionSlotView (st.mapSchedContextInPlace s
+      (SchedContext.joinRelease c n t)).objects = admissionSlotView st.objects := fun n =>
+    admissionSlotView_mapSchedContextInPlace st s (SchedContext.joinRelease c n t)
+      fun _ => ⟨rfl, rfl⟩
+  dsimp only
+  split
+  · exact h1 _
+  · exact (admissionSlotView_mapSchedContextInPlace (st.mapSchedContextInPlace s
+      (SchedContext.joinRelease c _ t)) _ (SchedContext.withReleaseNext _)
+      fun _ => ⟨rfl, rfl⟩).trans (h1 _)
+
+theorem admissionSlotView_releaseRemoveOn (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    admissionSlotView (st.releaseRemoveOn c s).objects = admissionSlotView st.objects :=
+  admissionSlotView_releaseUnlinkOn st c s
+
+theorem admissionSlotView_releaseInsertOn (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (t : Nat) :
+    admissionSlotView (st.releaseInsertOn c s t).objects = admissionSlotView st.objects := by
+  unfold SystemState.releaseInsertOn; split
+  · rfl
+  · exact admissionSlotView_releaseLinkIn st c s t
+
+theorem admissionSlotView_migrateSchedContextReplenishment (scId : SeLe4n.SchedContextId)
+    (fromCore toCore : Concurrency.CoreId) :
+    admissionSlotView (migrateSchedContextReplenishment st scId fromCore toCore).objects =
+      admissionSlotView st.objects := by
+  unfold migrateSchedContextReplenishment
+  split
+  · rfl
+  · dsimp only
+    split
+    · rw [admissionSlotView_releaseInsertOn, admissionSlotView_releaseRemoveOn]
+    · rfl
+
+theorem admissionSlotView_migrateRunQueueOnAffinityChange (tid : SeLe4n.ThreadId)
+    (fromCore toCore : Concurrency.CoreId) :
+    admissionSlotView (migrateRunQueueOnAffinityChange st tid fromCore toCore).objects =
+      admissionSlotView st.objects := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · dsimp only
+        rw [admissionSlotView_runEnqueueAdmitted, admissionSlotView_runRemoveOnCore]
+      · rfl
+
+theorem admissionSlotView_requeueVacatedOnNewHome (tid : SeLe4n.ThreadId)
+    (newCore : Concurrency.CoreId) (vacated : Bool) :
+    admissionSlotView (requeueVacatedOnNewHome st tid newCore vacated).objects =
+      admissionSlotView st.objects := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · exact admissionSlotView_runEnqueueOnCore _ _ _ _
+    · rfl
+  · rfl
+
+end AdmissionSlotView
+
 /-- **A step the configure's checks cannot see**: it writes only the object store
 and the scheduler, and keeps every object's kind and every context's budget and
-period. -/
+period — read by key, and (WS-UC UC2) slot by slot, as the admission sum walks
+the table. -/
 structure ConfigureAdmissionFrame (st' st : SystemState) : Prop where
   shape : SystemState.onlyObjectsSchedulerDiffer st' st
   view : ∀ x : SeLe4n.ObjId,
     (st'.objects[x]?).map configureAdmissionView = (st.objects[x]?).map configureAdmissionView
+  slots : admissionSlotView st'.objects = admissionSlotView st.objects
 
 namespace ConfigureAdmissionFrame
 
-theorem refl (st : SystemState) : ConfigureAdmissionFrame st st := ⟨.refl st, fun _ => rfl⟩
+theorem refl (st : SystemState) : ConfigureAdmissionFrame st st := ⟨.refl st, fun _ => rfl, rfl⟩
 
 theorem trans {a b c : SystemState} (h₂ : ConfigureAdmissionFrame c b)
     (h₁ : ConfigureAdmissionFrame b a) : ConfigureAdmissionFrame c a :=
-  ⟨h₂.shape.trans h₁.shape, fun x => (h₂.view x).trans (h₁.view x)⟩
+  ⟨h₂.shape.trans h₁.shape, fun x => (h₂.view x).trans (h₁.view x), h₂.slots.trans h₁.slots⟩
 
 /-- A step holding every object off the scheduler's links is one. -/
 theorem of_schedulerLinks {st' st : SystemState} (hS : SystemState.onlyObjectsSchedulerDiffer st' st)
-    (hA : SystemState.objectsAgreeOffSchedulerLinks st' st) : ConfigureAdmissionFrame st' st := by
-  refine ⟨hS, fun x => ?_⟩
+    (hA : SystemState.objectsAgreeOffSchedulerLinks st' st)
+    (hSl : admissionSlotView st'.objects = admissionSlotView st.objects) :
+    ConfigureAdmissionFrame st' st := by
+  refine ⟨hS, fun x => ?_, hSl⟩
   have hx := hA x
   cases e : st.objects[x]? with
   | none =>
@@ -180,9 +400,6 @@ theorem of_schedulerLinks {st' st : SystemState} (hS : SystemState.onlyObjectsSc
 variable {st' st : SystemState} (h : ConfigureAdmissionFrame st' st)
 include h
 
-theorem objectIndex : st'.objectIndex = st.objectIndex := by rw [h.shape]
-theorem objectIndexSet : st'.objectIndexSet = st.objectIndexSet := by rw [h.shape]
-theorem lifecycle : st'.lifecycle = st.lifecycle := by rw [h.shape]
 
 /-- A context's budget and period are read off its slot. -/
 theorem getSchedContext?_params (s : SeLe4n.SchedContextId) :
@@ -203,32 +420,17 @@ theorem getSchedContext?_params (s : SeLe4n.SchedContextId) :
       simp only [Option.map_some, Option.some.injEq, configureAdmissionView] at hx
       cases o <;> cases o' <;> simp_all [KernelObject.objectType]
 
-/-- The admission sum reads the contexts' budgets and periods alone. -/
+/-- The admission sum reads the contexts' budgets and periods alone, slot by
+slot. -/
 theorem admissionUtilizationFrom_eq (hasEx : Bool) (ex : SeLe4n.ObjId) :
-    ∀ (l : List SeLe4n.ObjId) (acc : Nat),
-      admissionUtilizationFrom st' hasEx ex l acc = admissionUtilizationFrom st hasEx ex l acc
-  | [], _ => rfl
-  | oid :: rest, acc => by
-    simp only [admissionUtilizationFrom]
-    rw [admissionUtilizationFrom_eq hasEx ex rest]
-    congr 1
-    have hp := h.getSchedContext?_params (SchedContextId.ofObjId oid)
-    split
-    · rfl
-    · cases e : st.getSchedContext? (SchedContextId.ofObjId oid) <;>
-        cases e' : st'.getSchedContext? (SchedContextId.ofObjId oid) <;>
-        rw [e, e'] at hp <;> simp only [Option.map_some, Option.map_none, reduceCtorEq,
-          Option.some.injEq, Prod.mk.injEq] at hp <;>
-        first
-        | rfl
-        | simp only [SchedContext.utilizationPerMille, SchedContext.bandwidth, hp.1, hp.2]
+    admissionUtilizationFrom st' hasEx ex = admissionUtilizationFrom st hasEx ex :=
+  admissionUtilizationFrom_eq_of_slotView h.slots hasEx ex
 
-/-- The store check reads the index, the kind table and the slot's kind. -/
+/-- The store check reads the slot's kind. -/
 theorem storeLeavesIndexAndTypes_eq (id : SeLe4n.ObjId) (ty : KernelObjectType) :
     storeLeavesIndexAndTypes st' id ty = storeLeavesIndexAndTypes st id ty := by
   have hx := h.view id
-  unfold storeLeavesIndexAndTypes
-  rw [h.objectIndexSet, h.lifecycle]
+  unfold storeLeavesIndexAndTypes storeKeepsKind
   cases e : st.objects[id]? with
   | none =>
     cases e' : st'.objects[id]? with
@@ -259,7 +461,7 @@ theorem schedContextConfigureAdmitted_eq (vScId : ValidObjId)
       first
       | rfl
       | (dsimp only
-         rw [h.objectIndex, h.admissionUtilizationFrom_eq, h.storeLeavesIndexAndTypes_eq])
+         rw [h.admissionUtilizationFrom_eq, h.storeLeavesIndexAndTypes_eq])
 
 end ConfigureAdmissionFrame
 
@@ -267,15 +469,19 @@ namespace ConfigureAdmissionFrame
 
 theorem withScheduler {a b : SystemState} (h : ConfigureAdmissionFrame b a) (s : SchedulerState) :
     ConfigureAdmissionFrame { b with scheduler := s } a :=
-  ⟨h.shape.withScheduler s, h.view⟩
+  ⟨h.shape.withScheduler s, h.view, h.slots⟩
 
 theorem of_runLinks {st' st : SystemState} (hS : SystemState.onlyObjectsSchedulerDiffer st' st)
-    (hA : SystemState.objectsAgreeOffRunLinks st' st) : ConfigureAdmissionFrame st' st :=
-  of_schedulerLinks hS (.of_runLinks hA)
+    (hA : SystemState.objectsAgreeOffRunLinks st' st)
+    (hSl : admissionSlotView st'.objects = admissionSlotView st.objects) :
+    ConfigureAdmissionFrame st' st :=
+  of_schedulerLinks hS (.of_runLinks hA) hSl
 
 theorem of_releaseOnlyWrite {st' st : SystemState} (hW : SystemState.releaseOnlyWrite st' st)
-    (hA : SystemState.objectsAgreeOffReleaseLinks st' st) : ConfigureAdmissionFrame st' st :=
-  of_schedulerLinks hW.1 (.of_releaseLinks hA)
+    (hA : SystemState.objectsAgreeOffReleaseLinks st' st)
+    (hSl : admissionSlotView st'.objects = admissionSlotView st.objects) :
+    ConfigureAdmissionFrame st' st :=
+  of_schedulerLinks hW.1 (.of_releaseLinks hA) hSl
 
 /-- A thread rewritten in its slot, found where it stands, stays a thread, and
 every other slot is left. -/
@@ -283,7 +489,16 @@ theorem updateTcb_of_findsInPlace {st : SystemState} {tid : SeLe4n.ThreadId} {t 
     (f : TCB → TCB) (hT : st.getTcb? tid = some t)
     (hF : st.objects.findsInPlace tid.toObjId = true) :
     ConfigureAdmissionFrame (st.updateTcb tid f) st := by
-  refine ⟨by rw [SystemState.updateTcb_eq_of_some hT f]; rfl, fun x => ?_⟩
+  refine ⟨by rw [SystemState.updateTcb_eq_of_some hT f]; rfl, fun x => ?view, ?slots⟩
+  case slots =>
+    rw [SystemState.updateTcb_eq_of_some hT f]
+    show admissionSlotView (st.objects.insert tid.toObjId (.tcb (f t))) = _
+    rw [RHTable.insert_eq_mapValueAt _ hF]
+    refine admissionSlotView_mapValueAt _ _ _ fun v hv => ?_
+    have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+    rw [show st.objects.get? tid.toObjId = st.objects[tid.toObjId]? from rfl, hT'] at hv
+    cases hv; rfl
+  case view =>
   by_cases hx : tid.toObjId = x
   · subst hx
     have h1 := updateTcb_getTcb?_self_of_findsInPlace f hT hF
@@ -309,6 +524,7 @@ theorem migrateRunQueueOnAffinityChange_configureAdmissionFrame (st : SystemStat
             (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer _ _ _))
           ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
             (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _))
+          (by rw [admissionSlotView_runEnqueueAdmitted, admissionSlotView_runRemoveOnCore])
       · exact .refl _
 
 /-- The vacated thread's requeue holds the configure's checks. -/
@@ -317,6 +533,7 @@ theorem requeueVacatedOnNewHome_configureAdmissionFrame (st : SystemState)
     ConfigureAdmissionFrame (requeueVacatedOnNewHome st tid newCore vacated) st := by
   refine ConfigureAdmissionFrame.of_runLinks ?_
     (requeueVacatedOnNewHome_objectsAgreeOffRunLinks st tid newCore vacated)
+    (admissionSlotView_requeueVacatedOnNewHome st tid newCore vacated)
   unfold requeueVacatedOnNewHome
   split
   · split
@@ -351,7 +568,8 @@ theorem setAffinityPerform_configureAdmissionFrame {st : SystemState} {tid : SeL
   split
   · exact (ConfigureAdmissionFrame.of_releaseOnlyWrite
       (migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _)
-      (migrateSchedContextReplenishment_agree _ _ _ _)).trans h1
+      (migrateSchedContextReplenishment_agree _ _ _ _)
+      (admissionSlotView_migrateSchedContextReplenishment _ _ _ _)).trans h1
   · exact h1
 
 /-- An admitted affinity change succeeds, and its state is the perform's (the
@@ -694,15 +912,17 @@ theorem setThreadCpuAffinityWithMigration_releaseCoresMoveOnlyTo {st stM : Syste
   · exact hS
 
 /-- WS-ZA ZA6.4: **the affinity change keeps every context off its release
-fields and the object index**: it writes one thread's affinity, the scheduler
-and the scheduler links. -/
+fields and the object count**: it writes one thread's affinity, the scheduler
+and the scheduler links (WS-UC UC2: the count `objects.size` is the PIP-chain
+fuel the write set reads). -/
 theorem setThreadCpuAffinityWithMigration_scView {st stM : SystemState}
     {tid : SeLe4n.ThreadId} {affinity : Option Concurrency.CoreId} {ec : Concurrency.CoreId}
     {sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (hInvM : stM.objects.invExt)
     (h : setThreadCpuAffinityWithMigration st tid affinity ec = .ok (stM, sgi)) :
     (∀ s, (stM.getSchedContext? s).map SchedContext.withoutRelease =
       (st.getSchedContext? s).map SchedContext.withoutRelease) ∧
-    stM.objectIndex = st.objectIndex := by
+    stM.objects.size = st.objects.size := by
   obtain ⟨tcb, stSet, hT, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape h
   have hInvV : (vacateForAffinityChange st tid (determineTargetCore st tid)
       (affinity.getD bootCoreId)).objects.invExt := by
@@ -714,28 +934,27 @@ theorem setThreadCpuAffinityWithMigration_scView {st stM : SystemState}
       (affinity.getD bootCoreId)).getSchedContext? s = st.getSchedContext? s := fun s => by
     unfold SystemState.getSchedContext?; rw [vacateForAffinityChange_objects]
   have hIdxV : (vacateForAffinityChange st tid (determineTargetCore st tid)
-      (affinity.getD bootCoreId)).objectIndex = st.objectIndex := by
-    unfold vacateForAffinityChange
-    split
-    · rfl
-    · rfl
+      (affinity.getD bootCoreId)).objects.size = st.objects.size := by
+    rw [vacateForAffinityChange_objects]
   generalize vacateForAffinityChange st tid (determineTargetCore st tid)
-    (affinity.getD bootCoreId) = sv at hSet hInvV hTV hGetV hIdxV
+    (affinity.getD bootCoreId) = sv at hSet hInvV hTV hGetV hIdxV hInvM
   have hSetEq : stSet = sv.updateTcb tid (fun t => { t with cpuAffinity := affinity }) := by
     unfold setThreadCpuAffinity at hSet
     rw [SystemState.getTcbWitnessed?_eq_some hTV] at hSet
     rw [← (Except.ok.inj hSet)]
     exact SystemState.rewriteObject_tcb_eq_updateTcb hTV (fun t => { t with cpuAffinity := affinity }) _
   subst hSetEq
-  have key : ∀ sM : SystemState, SystemState.objectsAgreeOffSchedulerLinks sM
+  have key : ∀ sM : SystemState, sM.objects.invExt →
+      SystemState.objectsAgreeOffSchedulerLinks sM
       (sv.updateTcb tid (fun t => { t with cpuAffinity := affinity })) →
       ConfigureAdmissionFrame sM (sv.updateTcb tid (fun t => { t with cpuAffinity := affinity })) →
       (∀ s, (sM.getSchedContext? s).map SchedContext.withoutRelease =
         (st.getSchedContext? s).map SchedContext.withoutRelease) ∧
-      sM.objectIndex = st.objectIndex := fun sM hAg hF =>
+      sM.objects.size = st.objects.size := fun sM hInvS hAg _ =>
     ⟨fun s => by rw [hAg.getSchedContext? s, SystemState.updateTcb_getSchedContext? _ _ _ hInvV, hGetV],
-     hF.objectIndex.trans ((SystemState.updateTcb_objectIndex _ _ _).trans hIdxV)⟩
-  apply key
+     (hAg.objects_size_eq hInvS (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInvV)).trans
+       ((SystemState.updateTcb_objects_size _ _ _ hInvV).trans hIdxV)⟩
+  apply key _ hInvM
   · refine (SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
       (requeueVacatedOnNewHome_objectsAgreeOffRunLinks _ _ _ _)).trans
       ((SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
@@ -749,6 +968,7 @@ theorem setThreadCpuAffinityWithMigration_scView {st stM : SystemState}
     · exact ConfigureAdmissionFrame.of_releaseOnlyWrite
         (migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _)
         (migrateSchedContextReplenishment_agree _ _ _ _)
+        (admissionSlotView_migrateSchedContextReplenishment _ _ _ _)
     · exact .refl _
 
 end SeLe4n.Kernel.SchedContextOps

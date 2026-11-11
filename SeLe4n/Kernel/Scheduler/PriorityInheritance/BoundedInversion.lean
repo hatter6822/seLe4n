@@ -35,11 +35,11 @@ theorem pip_chain_composition (wcrt : WCRT) (chainDepth : Nat) :
   rfl
 
 /-- D4-Q: Bounded inversion theorem — priority inversion for any thread
-is bounded by `objectIndex.length × WCRT`. This is a conservative bound
+is bounded by `objects.size × WCRT`. This is a conservative bound
 using the maximum possible chain depth (from D4-E). -/
 theorem pip_bounded_inversion (st : SystemState) (tid : ThreadId) (wcrt : WCRT) :
-    pipSingleLinkBound wcrt (blockingChain st tid st.objectIndex.length).length
-    ≤ st.objectIndex.length * wcrt := by
+    pipSingleLinkBound wcrt (blockingChain st tid st.objects.size).length
+    ≤ st.objects.size * wcrt := by
   simp [pipSingleLinkBound]
   exact Nat.mul_le_mul_right wcrt (blockingChain_bounded st tid)
 

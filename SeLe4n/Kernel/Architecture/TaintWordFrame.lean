@@ -739,7 +739,7 @@ theorem crossSubsystemInvariant_of_objectsAgreeOffTaint
     fun tid t hT scId hb => ?_, fun t1 t2 a b scId h1 h2 hb1 hb2 => ?_,
     fun tid hr t hT scId hb => ?_,
     PriorityInheritance.blockingAcyclic_frame st _ d8
-      (blockingServer_of_objectsAgreeOffTaint hA) rfl,
+      (blockingServer_of_objectsAgreeOffTaint hA) hS,
     fun oid o hO => ?_, fun o1 o2 u1 u2 a b => d10 o1 o2 u1 u2
       ((objectsAgreeOffTaint.inert_iff hA _ rfl).mp a)
       ((objectsAgreeOffTaint.inert_iff hA _ rfl).mp b)⟩
@@ -854,7 +854,7 @@ theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     (h : proofLayerInvariantBundle st) : proofLayerInvariantBundle { st with objects := O } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield⟩ := h
+          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook⟩ := h
   have hI' := hI bCap.2.2.2.2.1
   exact ⟨schedulerInvariantBundleFull_of_objectsAgreeOffTaint hA bSched,
     capabilityInvariantBundle_of_objectsAgreeOffTaint hA hI' bCap,
@@ -874,6 +874,7 @@ theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     releaseQueueRefined_of_objectsAgreeOffTaint hA bRel,
     refillsSound_of_objectsAgreeOffTaint hA (releaseQueueRefined_of_objectsAgreeOffTaint hA bRel)
       bRefill,
-    yieldLinksAgree_of_objectsAgreeOffTaint hA bYield⟩
+    yieldLinksAgree_of_objectsAgreeOffTaint hA bYield,
+    bBook.of_kept (.of_map KernelObject.eraseTaint (fun o => by cases o <;> rfl) hA rfl rfl rfl)⟩
 
 end SeLe4n.Kernel.Architecture

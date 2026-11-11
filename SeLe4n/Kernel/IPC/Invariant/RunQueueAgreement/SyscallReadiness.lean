@@ -350,7 +350,7 @@ theorem applyPriorityChangeOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       (determineTargetCore st tid))).trans
     ((markKeyChangeFor_runQueueStage _ tid (effectiveSchedParams st tcb)).trans
       (PriorityInheritance.repropagateFromWaiter_runQueueStage _ tid ec
-        st.objectIndex.length)))
+        st.objects.size)))
   exact (readyKeptStage.of_stage A).trans A.1 (priorityRescheduleOnCore_readyKeptStage h)
 
 theorem setPriorityOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop} {st st' : SystemState}

@@ -1092,12 +1092,12 @@ theorem endpointReplyCrossCoreDispatchChecked_eq_unchecked_of_flow
 /-- WS-SM SM6.C.9 (reply chain length bound): the cross-core priority-inheritance
 **reversion** the reply dispatch runs (`propagatePipChainCrossCore` over the
 unblocked caller's blocking chain) emits **at most `fuel`** cross-core SGIs —
-with the default `fuel := objectIndex.length`, at most one per kernel object.  A
+with the default `fuel := objects.size`, at most one per kernel object.  A
 deep donation chain (k > 2 nested passive servers) therefore terminates and pokes
 a bounded number of remote cores: the chain walk is structurally recursive on
 fuel, and the acyclicity invariant
 (`propagatePipChainCrossCore_preserves_blockingAcyclic`) guarantees it never
-revisits a holder, so `objectIndex.length` fuel always exhausts the chain. -/
+revisits a holder, so `objects.size` fuel always exhausts the chain. -/
 theorem endpointReply_donation_chain_length_bounded
     (st : SystemState) (caller : SeLe4n.ThreadId) (executingCore : CoreId) (fuel : Nat) :
     (PriorityInheritance.propagatePipChainCrossCore st caller executingCore fuel).2.length ≤ fuel := by
@@ -1171,7 +1171,7 @@ def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcM
               match answeredReplyObject? st target with
               | none =>
                   ([determineTargetCore st target]
-                    ++ pipChainWriteSet st1 expected executingCore st1.objectIndex.length)
+                    ++ pipChainWriteSet st1 expected executingCore st1.objects.size)
               | some rid =>
                 match SeLe4n.ThreadId.toValid? target with
                 | none => []
@@ -1197,7 +1197,7 @@ def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcM
                       ([determineTargetCore st target]
                         ++ replyDonationDescheduleCores st1 rid
                         ++ pipChainWriteSet st2 expected executingCore
-                             st2.objectIndex.length)
+                             st2.objects.size)
           | none => []
       | none =>
           -- WS-ZA ZA6.34: the caller recording no server -- the reply leg and

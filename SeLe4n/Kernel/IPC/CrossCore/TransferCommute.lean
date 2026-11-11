@@ -252,7 +252,7 @@ theorem storeObject_cnode_mapTcbInPlace (Z : SystemState) (k : SeLe4n.ObjId) (cn
   have hg : Z.objects.get? k = some (.cnode cn0) := by
     simpa only [RHTable_getElem?_eq_get?] using hk
   unfold storeObject
-  simp only [hk, hk']
+  simp only [hk, hk', storeKeepsKind, Option.isSome_some, ↓reduceIte]
   unfold SystemState.mapTcbInPlace
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and]
   rw [RHTable.insert_mapValueAt_comm _ _ _ _ _ _ hNo hg rfl]
@@ -276,8 +276,8 @@ theorem storeLeavesIndexAndTypes_mapTcbInPlace (Z : SystemState) (k : SeLe4n.Obj
       storeLeavesIndexAndTypes Z k ty := by
   have hk' : (Z.mapTcbInPlace x G).objects[k]? = some (.cnode cn0) := by
     rw [SystemState.objects_mapTcbInPlace, hk]; split <;> rfl
-  unfold storeLeavesIndexAndTypes
-  rw [hk, hk']; rfl
+  unfold storeLeavesIndexAndTypes storeKeepsKind
+  rw [hk, hk']
 
 omit G x in
 theorem storeCNodeWith_of_not_cnode (Z : SystemState) (k : SeLe4n.ObjId) (f : CNode → CNode)

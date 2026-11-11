@@ -571,7 +571,6 @@ theorem consumeReplyLink_preserves_projection_high
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
-    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (Lifecycle.Suspend.consumeReplyLink st tid tcb)
       = projectState ctx observer st := by
@@ -580,7 +579,7 @@ theorem consumeReplyLink_preserves_projection_high
   | none => rfl
   | some rid =>
     exact consumeCallerReply_preserves_projection ctx observer st _ tid rid hTidObjHigh
-      hIdxComplete hObjInv (SystemState.consumeCallerReply_eq_link st tid rid)
+      hObjInv (SystemState.consumeCallerReply_eq_link st tid rid)
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return's own writes are
 invisible to **every** observer, high or low.
@@ -626,34 +625,20 @@ theorem returnDonationToCancelledCaller_preserves_projection
       have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
       have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _
         hObjSetInv hS1
-      have hSet2 := storeDonationHeadPop_preserves_objectIndexSet_invExt hSet1 hClear
-      have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
       have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInv
         hObjSetInv hIdxComplete hS1
-      have hC2 := storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
-      have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
-        hSet2 hC2 hS3
       have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
         scId.toObjId _ (.schedContext sc) hSc
         (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
-        (hIdxComplete scId.toObjId (by rw [hSc]; intro hx; cases hx))
         hObjInv hS1
       have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
       have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
         victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
         (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
-        (hC2 victim.toObjId (by
-          rw [lookupTcb_some_objects s2 victim clientTcb hL1]
-          intro hx
-          cases hx))
         hInv2 hS3
       have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
         holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 holder serverTcb hL2)
         (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
-        (hC3 holder.toObjId (by
-          rw [lookupTcb_some_objects s3 holder serverTcb hL2]
-          intro hx
-          cases hx))
         hInv3 hS4
       have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
         rw [hEq]
@@ -730,12 +715,6 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   -- WS-RR RR8.5: the teardown is the reply path's consume, whose projection
   -- theorem reads the index completeness of the state it runs on — carried
   -- here through the splice and the restore, neither of which touches the index.
-  have hCompD : SeLe4n.Model.objectIndexSetComplete
-      (Lifecycle.Suspend.restoreToReadyCancelled
-        (cutThreadReplyFrameOut
-          (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim) :=
-    Lifecycle.Suspend.restoreToReadyCancelled_preserves_objectIndexSetComplete _ victim hInvD
-      (cutThreadReplyFrameOut_preserves_objectIndexSetComplete _ tcb hInvR hSetInvR hCompR)
   have h1 : projectState ctx observer
       (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
@@ -746,7 +725,7 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
         (Lifecycle.Suspend.restoreToReadyCancelled
           (cutThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim) :=
-    consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh hCompD
+    consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh
       (restoreToReadyCancelled_preserves_objects_invExt _ victim hInvD)
   -- WS-ZA ZA4.6: the arm's last write unlinks the victim from its server's
   -- reply-waiter queue, which the projection erases.

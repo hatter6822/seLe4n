@@ -157,7 +157,8 @@ theorem schedContextBoundThread?_of_move {st stM : SystemState} {core : CoreId}
     (hM : setThreadCpuAffinityWithMigration st t (some core) core = .ok (stM, sgi)) :
     ∃ scM, stM.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) = some scM ∧
       scM.boundThread = sc.boundThread := by
-  have hV := (SchedContextOps.setThreadCpuAffinityWithMigration_scView hInv hM).1
+  have hV := (SchedContextOps.setThreadCpuAffinityWithMigration_scView hInv
+    (setThreadCpuAffinityWithMigration_preserves_objects_invExt _ _ _ _ hInv _ hM) hM).1
     (SeLe4n.SchedContextId.ofObjId scObjId)
   rw [hSc] at hV
   cases hS : stM.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) with
@@ -180,8 +181,8 @@ theorem schedContextConfigureWriteSet_of_move {st stM : SystemState} {core : Cor
     d = core ∨ d ∈ schedContextConfigureWriteSet st scObjId := by
   obtain ⟨hHomeNe, hHomeT, hEdge⟩ :=
     SchedContextOps.setThreadCpuAffinityWithMigration_chainShape hInv hM
-  have hIdx := (SchedContextOps.setThreadCpuAffinityWithMigration_scView hInv hM).2
   have hInvM := setThreadCpuAffinityWithMigration_preserves_objects_invExt _ _ _ _ hInv _ hM
+  have hIdx := (SchedContextOps.setThreadCpuAffinityWithMigration_scView hInv hInvM hM).2
   obtain ⟨scM, hScM, hBM⟩ := schedContextBoundThread?_of_move hInv hSc hM
   have hBT : SchedContextOps.schedContextBoundThread? stM scObjId = some t := by
     unfold SchedContextOps.schedContextBoundThread?; rw [hScM]; exact hBM.trans hB

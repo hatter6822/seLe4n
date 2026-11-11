@@ -510,6 +510,23 @@ theorem migrateSchedContextReplenishment_preserves_objects_invExt (st : SystemSt
     (migrateSchedContextReplenishment st scId fromCore toCore).cdt = st.cdt := by
   rw [(migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).1]
 
+/-- WS-UC UC2: ...and none of the bookkeeping ghosts. -/
+@[simp] theorem migrateSchedContextReplenishment_lifecycle (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).lifecycle = st.lifecycle := by
+  rw [(migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).1]
+
+@[simp] theorem migrateSchedContextReplenishment_objectIndex (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).objectIndex = st.objectIndex := by
+  rw [(migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).1]
+
+@[simp] theorem migrateSchedContextReplenishment_objectIndexSet (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).objectIndexSet =
+      st.objectIndexSet := by
+  rw [(migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).1]
+
 /-- WS-SM SM5.H.4: the migration never advances the machine timer. -/
 @[simp] theorem migrateSchedContextReplenishment_machine (st : SystemState)
     (scId : SchedContextId) (fromCore toCore : CoreId) :

@@ -294,7 +294,7 @@ def retypeFromUntyped
     | none => .error .objectNotFound
     | some (.untyped ut) =>
         -- S4-B: Capacity check — reject allocation when object store is at capacity
-        if st.objectIndex.length ≥ maxObjects then
+        if st.objects.size ≥ maxObjects then
           .error .objectStoreCapacityExceeded
         -- WS-H2/H-06: childId must not equal untypedId (self-overwrite guard)
         else if childId = untypedId then
@@ -368,7 +368,7 @@ def retypeFromUntyped
 
 /-- AF2-A2: The `storeObject` call that creates a new object in
     `retypeFromUntyped` (line 668) is gated by the capacity check at line 626.
-    If `retypeFromUntyped` succeeds, then `st.objectIndex.length < maxObjects`
+    If `retypeFromUntyped` succeeds, then `st.objects.size < maxObjects`
     held at entry. This is the allocation-boundary half of the capacity safety
     proof; the in-place-mutation half is `storeObject_capacity_safe_of_existing`
     (Model/State.lean). -/
@@ -379,7 +379,7 @@ theorem retypeFromUntyped_capacity_gated
     (allocSize : Nat)
     (st st' : SystemState)
     (hOk : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
-    st.objectIndex.length < maxObjects := by
+    st.objects.size < maxObjects := by
   unfold retypeFromUntyped SystemState.getObject? at hOk
   cases h1 : st.objects[untypedId]? with
   | none => simp [h1] at hOk
@@ -649,7 +649,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
     (allocSize : Nat) (ut : UntypedObject)
     (hObj : st.objects[untypedId]? = some (.untyped ut))
-    (hCapOk : st.objectIndex.length < maxObjects)
+    (hCapOk : st.objects.size < maxObjects)
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hNotNode : isIrqNodeObjId InterruptLineSet.capacity childId = false)
@@ -660,7 +660,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedAllocSizeTooSmall := by
   unfold retypeFromUntyped SystemState.getObject?
-  have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
+  have hCapF : ¬(st.objects.size ≥ maxObjects) := by omega
   simp [hObj, hCapF, hNeSelf, hNoCollision, hNotNode, hFreshChildren]
   cases hNotDev with
   | inl hFalse => simp [hFalse, hExt, hSmall]
@@ -676,7 +676,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
     (allocSize : Nat) (ut : UntypedObject) (cap : Capability)
     (hObj : st.objects[untypedId]? = some (.untyped ut))
-    (hCapOk : st.objectIndex.length < maxObjects)
+    (hCapOk : st.objects.size < maxObjects)
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hNotNode : isIrqNodeObjId InterruptLineSet.capacity childId = false)
@@ -692,7 +692,7 @@ theorem retypeFromUntyped_error_regionExhausted
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedRegionExhausted := by
   unfold retypeFromUntyped SystemState.getObject?
-  have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
+  have hCapF : ¬(st.objects.size ≥ maxObjects) := by omega
   simp only [hObj, hCapF, ↓reduceIte, hNeSelf, hNoCollision, hNotNode, Bool.or_false,
     hFreshChildren]
   cases hNotDev with
@@ -1304,13 +1304,12 @@ def CarveRequest.objectHeapBytes : CarveRequest → Nat
 
 /-- **What a carve needs of the kernel heap**, over-approximated: the reserve,
 the carved object, and the doubled table of each Robin Hood table the store's
-inserts would resize — the object table, the index set and the type table for
-every carve, and the ASID table for a VSpace root. -/
+inserts would resize — the object table for every carve, and the ASID table for
+a VSpace root.  WS-UC UC2: the index set and the type table are ghost state, so
+no insert into them allocates. -/
 def CarveRequest.heapBytes (st : SystemState) (req : CarveRequest) : Nat :=
   retypeHeapReserveBytes + req.objectHeapBytes
     + rhInsertResizeHeapBytes st.objects
-    + rhInsertResizeHeapBytes st.objectIndexSet.table
-    + rhInsertResizeHeapBytes st.lifecycle.objectTypes
     + (match req with
        | .vspaceRoot _ => rhInsertResizeHeapBytes st.asidTable
        | _ => 0)
@@ -1456,6 +1455,12 @@ theorem retypeFromUntyped_ok_sizeAligned
 @[simp] theorem CarveRequest.scrub_objects (st : SystemState) (ut : UntypedObject) (idx : Nat)
     (req : CarveRequest) : (req.scrub st ut idx).objects = st.objects := by
   cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
+
+/-- ...and none of the bookkeeping ghosts. -/
+theorem CarveRequest.scrub_ghostsKept (st : SystemState) (ut : UntypedObject) (idx : Nat)
+    (req : CarveRequest) : SystemState.ghostsKept (req.scrub st ut idx) st := by
+  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;>
+    exact ⟨rfl, rfl, rfl⟩
 
 /-- ...and no scheduler state. -/
 @[simp] theorem CarveRequest.scrub_scheduler (st : SystemState) (ut : UntypedObject) (idx : Nat)

@@ -141,18 +141,18 @@ theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
       executingCore shouldPreempt = .ok (st', sgi)) :
     observableSlotsConfinedToCores base st'
       ([determineTargetCore base tid, executingCore] ++
-        waiterChainWriteSet base tid executingCore base.objectIndex.length) := by
+        waiterChainWriteSet base tid executingCore base.objects.size) := by
   have hA := observableSlotsConfinedToCores_then_flagOnly
     (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
     (markKeyChangeFor_confinedToCores _ tid (effectiveSchedParams base tcb))
   have hW := priorityChangeMid_chainShape base tid tcb p (determineTargetCore base tid)
-    (effectiveSchedParams base tcb) executingCore base.objectIndex.length hObjInv
+    (effectiveSchedParams base tcb) executingCore base.objects.size hObjInv
   unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at hStep
   generalize hMid : markKeyChangeFor
       (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
         (SchedContext.PriorityManagement.updatePrioritySource base tid tcb p) tid p
         (determineTargetCore base tid)) tid (effectiveSchedParams base tcb) = mid at hStep hA hW
-  have hB := repropagateFromWaiter_confinedToCores mid tid executingCore base.objectIndex.length
+  have hB := repropagateFromWaiter_confinedToCores mid tid executingCore base.objects.size
   rw [hW] at hB
   have hC := priorityRescheduleOnCore_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep
   refine observableSlotsConfinedToCores_mono ?_
@@ -278,7 +278,9 @@ theorem setMCPriorityOnCore_confinedToCores (st st' : SystemState)
             rcases hc with (hc | hc) | hc
             · exact Or.inl (Or.inl (hc ▸ hHome _ _ rfl rfl))
             · exact Or.inl (Or.inr hc)
-            · rw [hChain _ { targetTcb with maxControlledPriority := newMCP } _ _ rfl rfl rfl] at hc
+            · rw [hChain _ { targetTcb with maxControlledPriority := newMCP } _ _ rfl rfl rfl,
+                SystemState.objects_size_insert_of_present st _ _ hObjInv
+                  (by rw [RHTable_getElem?_eq_get?, hRaw]; exact Option.some_ne_none _)] at hc
               exact Or.inr hc
           · rfl
           · rfl

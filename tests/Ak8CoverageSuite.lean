@@ -153,10 +153,10 @@ private def emptyFrozenState : FrozenSystemState :=
         domainScheduleIndex := 0
         configDefaultTimeSlice := 5
         replenishQueue := { entries := [], size := 0 } }
-    objectTypes := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    objectTypesGhost := SeLe4n.Erased.mk (freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16))
     machine := default
-    objectIndex := []
-    objectIndexSet := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    objectIndexGhost := SeLe4n.Erased.mk []
+    objectIndexSetGhost := SeLe4n.Erased.mk (freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16))
     tlb := TlbState.empty
     perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
     declassificationAuditLog := []

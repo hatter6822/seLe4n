@@ -363,7 +363,7 @@ theorem replyRecvOnCore_blocks_deliveredLong (st : SystemState) (epId : SeLe4n.O
     (storeReceiveBlock_noResizeDue _ epId tid ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid)) h1)
   obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid
     { registers := longReplyRecvRegs rf st tid len, badge := badge } ct rp
-    epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+    epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   obtain ⟨t, hT1, hB⟩ := receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1
     hA1 hG1
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, storeReceiveBlock_msg _ _ _ _ _ _ _ h1 hNe,

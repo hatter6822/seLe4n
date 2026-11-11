@@ -48,7 +48,7 @@ SM8.B.2's write set, moved here from the staged
 def priorityControlWriteSet (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) : List CoreId :=
   [determineTargetCore st tid, executingCore] ++
-    waiterChainWriteSet st tid executingCore st.objectIndex.length
+    waiterChainWriteSet st tid executingCore st.objects.size
 
 /-- `v0.35.167`: the model-level preemption seam writes no replenish queue — it
 either returns its input or runs the reschedule handler, which writes run queues

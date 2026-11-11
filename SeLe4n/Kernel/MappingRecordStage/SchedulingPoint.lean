@@ -28,26 +28,31 @@ theorem runEnqueueOnCore_mappingStage (st : SystemState) (c : CoreId) (t : SeLe4
     (p : SeLe4n.Priority) : MappingStage st (st.runEnqueueOnCore c t p) :=
   MappingStage.of_objectsAgreeOffRunLinks (SystemState.runEnqueueOnCore_objects_invExt st c t p)
     (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
+    (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p).ghostsKept
 
 theorem runEnqueueAdmitted_mappingStage (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : MappingStage st (st.runEnqueueAdmitted c t p) :=
   MappingStage.of_objectsAgreeOffRunLinks (SystemState.runEnqueueAdmitted_objects_invExt st c t p)
     (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks st c t p)
+    (SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer st c t p).ghostsKept
 
 theorem runRemoveOnCore_mappingStage (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
     MappingStage st (st.runRemoveOnCore c t) :=
   MappingStage.of_objectsAgreeOffRunLinks (SystemState.runRemoveOnCore_objects_invExt st c t)
     (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks st c t)
+    (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer st c t).ghostsKept
 
 theorem runDescheduleOnCore_mappingStage (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
     MappingStage st (st.runDescheduleOnCore c t) :=
   MappingStage.of_objectsAgreeOffRunLinks (SystemState.runDescheduleOnCore_objects_invExt st c t)
     (SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks st c t)
+    (SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st c t).ghostsKept
 
 theorem runRequeueOnCore_mappingStage (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : MappingStage st (st.runRequeueOnCore c t p) :=
   MappingStage.of_objectsAgreeOffRunLinks (SystemState.runRequeueOnCore_objects_invExt st c t p)
     (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
+    (SystemState.runRequeueOnCore_onlyObjectsSchedulerDiffer st c t p).ghostsKept
 
 theorem removeRunnableOnCore_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     MappingStage st (removeRunnableOnCore st tid c) :=
@@ -80,9 +85,37 @@ theorem saveOutgoingContextOnCore_mappingStage (st : SystemState) (c : CoreId) :
   · exact MappingStage.refl _
   · exact updateTcb_mappingStage _ _ _
 
+/-- The context restore writes registers alone. -/
+theorem restoreIncomingContextOnCore_ghostsKept (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState.ghostsKept (restoreIncomingContextOnCore st c tid) st := by
+  unfold restoreIncomingContextOnCore; split <;> exact ⟨rfl, rfl, rfl⟩
+
+/-- The switch, after its preempt, dequeues, restores and sets the current
+thread: none of it moves a ghost. -/
+theorem switchToThreadOnCore_ghostsKept {st st' : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} (h : switchToThreadOnCore st c tid = .ok st') :
+    SystemState.ghostsKept st' (preemptCurrentOnCore st c tid) := by
+  unfold switchToThreadOnCore at h
+  split at h
+  · split at h
+    · rw [← Except.ok.inj h]
+      refine (?_ : SystemState.ghostsKept _
+        (restoreIncomingContextOnCoreUnlessCurrent
+          ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid) c tid)).trans
+        ((?_ : SystemState.ghostsKept _ ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid)).trans
+          (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)
+      · exact ⟨rfl, rfl, rfl⟩
+      · unfold restoreIncomingContextOnCoreUnlessCurrent
+        split
+        · exact .refl _
+        · exact restoreIncomingContextOnCore_ghostsKept _ _ _
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
 theorem restoreIncomingContextOnCore_mappingStage (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : MappingStage st (restoreIncomingContextOnCore st c tid) :=
   MappingStage.of_objects_eq (restoreIncomingContextOnCore_objects st c tid)
+    (restoreIncomingContextOnCore_ghostsKept st c tid)
 
 theorem preemptCurrentOnCore_mappingStage (st : SystemState) (c : CoreId)
     (incoming : SeLe4n.ThreadId) : MappingStage st (preemptCurrentOnCore st c incoming) := by
@@ -103,7 +136,8 @@ theorem switchToThreadOnCore_mappingStage {st st' : SystemState} {c : CoreId}
       (fun hI => by
         have := switchToThreadOnCore_ok_objects st st' c tid h
         rw [this]; exact SystemState.runRemoveOnCore_objects_invExt _ _ _ hI)
-      (switchToThreadOnCore_objectsAgreeOffRunLinks_preempt st c tid st' h))
+      (switchToThreadOnCore_objectsAgreeOffRunLinks_preempt st c tid st' h)
+      (switchToThreadOnCore_ghostsKept h))
 
 theorem dropCurrentOnCore_mappingStage (st : SystemState) (c : CoreId) :
     MappingStage st (dropCurrentOnCore st c) :=

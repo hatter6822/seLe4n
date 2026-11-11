@@ -556,7 +556,7 @@ theorem replyRecvTransferOnCore_fault_blocks_inPlaceLong (st : SystemState)
     have hCT : c.toObjId ≠ tid.toObjId :=
       fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
     obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid
-      IpcMessage.empty ct rp epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+      IpcMessage.empty ct rp epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
     obtain ⟨t, hT1, hB⟩ := receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1
       hA1 hG1
     have h0 : (storeReplyRendezvous st c tid rid IpcMessage.empty).objects.noResizeDue := by

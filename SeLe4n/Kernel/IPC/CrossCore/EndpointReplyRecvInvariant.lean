@@ -1636,7 +1636,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
   · rw [hH]
     unfold applyReceiverPipHandoff
     rw [(PriorityInheritance.propagatePipChainCrossCore_replenish_readings st3 receiver
-      executingCore st3.objectIndex.length hInv3).1 c, hR3, hR2, hR1]
+      executingCore st3.objects.size hInv3).1 c, hR3, hR2, hR1]
 
 
 /-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the live `.replyRecv` arm
@@ -1751,7 +1751,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
               · rw [hH]
                 unfold applyReceiverPipHandoff
                 rw [(PriorityInheritance.propagatePipChainCrossCore_replenish_readings st3 receiver
-                  executingCore st3.objectIndex.length hInv3).1 c, hR3, hR2, hR1p, hR1]
+                  executingCore st3.objects.size hInv3).1 c, hR3, hR2, hR1p, hR1]
 
 
 /-- **WS-RR RR8.12 Cut C6f (the exactness frame)**: the `.receive` arm's leg and

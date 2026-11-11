@@ -82,6 +82,17 @@ theorem settleReturnedContext_releaseOnlyWrite (st : SystemState)
   · exact (SystemState.releasePlace_releaseOnlyWrite _ c s).trans
       (purgeReplenishment_releaseOnlyWrite st s)
 
+/-- WS-UC UC2: the settle moves no bookkeeping ghost. -/
+@[simp] theorem settleReturnedContext_lifecycle (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
+    (settleReturnedContext st c s).lifecycle = st.lifecycle := by
+  rw [(settleReturnedContext_releaseOnlyWrite st c s).1]
+@[simp] theorem settleReturnedContext_objectIndex (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
+    (settleReturnedContext st c s).objectIndex = st.objectIndex :=
+  (settleReturnedContext_releaseOnlyWrite st c s).ghostsKept.index
+@[simp] theorem settleReturnedContext_objectIndexSet (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
+    (settleReturnedContext st c s).objectIndexSet = st.objectIndexSet :=
+  (settleReturnedContext_releaseOnlyWrite st c s).ghostsKept.indexSet
+
 @[simp] theorem settleReturnedContext_machine (st : SystemState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
     (settleReturnedContext st c s).machine = st.machine :=

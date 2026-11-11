@@ -427,15 +427,19 @@ structure FrozenSystemState where
   -- Scheduler
   scheduler         : FrozenSchedulerState
 
-  -- Lifecycle metadata (FrozenMap)
-  objectTypes       : FrozenMap SeLe4n.ObjId KernelObjectType
+  -- Lifecycle metadata (FrozenMap).  WS-UC UC2: a ghost, like the live table
+  -- it mirrors (`objectTypes` reads it).
+  objectTypesGhost  : SeLe4n.Erased (FrozenMap SeLe4n.ObjId KernelObjectType)
 
   -- Non-map fields (retained as-is)
   machine           : SeLe4n.MachineState
-  objectIndex       : List SeLe4n.ObjId
-  /-- WS-G2/F-P10: Frozen shadow set for O(1) objectIndex membership checks.
-  Mirrors `SystemState.objectIndexSet` (RHSet → FrozenSet). -/
-  objectIndexSet    : FrozenSet SeLe4n.ObjId
+  /-- WS-UC UC2: the object index, a ghost like the live one it mirrors
+  (`objectIndex` reads it). -/
+  objectIndexGhost  : SeLe4n.Erased (List SeLe4n.ObjId)
+  /-- WS-G2/F-P10: Frozen shadow set of the object index.  Mirrors
+  `SystemState.objectIndexSet` (RHSet → FrozenSet).  WS-UC UC2: a ghost
+  (`objectIndexSet` reads it). -/
+  objectIndexSetGhost : SeLe4n.Erased (FrozenSet SeLe4n.ObjId)
   /-- T2-D (M-NEW-1): Abstract TLB state, transferred from `SystemState.tlb`
   during freeze. The TLB is immutable in the frozen phase (no frozen TLB
   operations), so this is a direct field copy for completeness. -/
@@ -507,6 +511,21 @@ structure FrozenSystemState where
       is the entire purpose of the ledger.  Complemented by the
       `freeze_preserves_declassificationRefusals := rfl` value-level guard. -/
   declassificationRefusals : SeLe4n.Kernel.RefusalLedger
+
+/-- WS-UC UC2: the frozen lifecycle metadata (a ghost). -/
+@[reducible] noncomputable def FrozenSystemState.objectTypes (st : FrozenSystemState) :
+    FrozenMap SeLe4n.ObjId KernelObjectType :=
+  st.objectTypesGhost.out
+
+/-- WS-UC UC2: the frozen object index (a ghost). -/
+@[reducible] noncomputable def FrozenSystemState.objectIndex (st : FrozenSystemState) :
+    List SeLe4n.ObjId :=
+  st.objectIndexGhost.out
+
+/-- WS-UC UC2: the frozen object-index set (a ghost). -/
+@[reducible] noncomputable def FrozenSystemState.objectIndexSet (st : FrozenSystemState) :
+    FrozenSet SeLe4n.ObjId :=
+  st.objectIndexSetGhost.out
 
 /-- WS-ZA ZA6.32: each interrupt line's state (IRQSignal or IRQInactive), read
 from the frozen derivation tree, where `SystemState.irqSignalLines` reads it; the
@@ -685,10 +704,10 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     interfaceRegistry := freezeMap st.interfaceRegistry
     cdt := st.cdt
     scheduler := freezeScheduler st
-    objectTypes := freezeMap st.lifecycle.objectTypes
+    objectTypesGhost := st.lifecycle.objectTypesGhost.map freezeMap
     machine := st.machine
-    objectIndex := st.objectIndex
-    objectIndexSet := freezeMap st.objectIndexSet.table
+    objectIndexGhost := st.objectIndexGhost
+    objectIndexSetGhost := st.objectIndexSetGhost.map (freezeMap ·.table)
     tlb := st.tlb
     -- WS-SM SM7.C.1: forward every core's TLB view unchanged (the SMP
     -- generalisation of `tlb := st.tlb`; no silent per-core drop).
@@ -950,7 +969,8 @@ theorem frozenMap_set_preserves_size [BEq κ] [Hashable κ] [LawfulBEq κ]
 
 /-- Q5-C: `freeze` preserves the objectIndexSet (frozen version). -/
 theorem freeze_preserves_objectIndexSet (ist : IntermediateState) :
-    (freeze ist).objectIndexSet = freezeMap ist.state.objectIndexSet.table := rfl
+    (freeze ist).objectIndexSet = freezeMap ist.state.objectIndexSet.table :=
+  SeLe4n.Erased.out_map _ _
 
 /-! ## The frozen object-store accessors
 

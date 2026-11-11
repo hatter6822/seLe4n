@@ -45,8 +45,8 @@ private theorem storeObject_preserves_projectObjectIndex
     (hOidHigh : objectObservable ctx observer oid = false)
     (hStore : storeObject oid obj st = .ok ((), st')) :
     projectObjectIndex ctx observer st' = projectObjectIndex ctx observer st := by
-  unfold storeObject at hStore; cases hStore
   simp only [projectObjectIndex]
+  rw [storeObject_objectIndex hStore]
   split
   · rfl
   · rw [List.filter_cons]; simp [hOidHigh]
@@ -748,16 +748,13 @@ only instance: the argument never depended on the field being `Reply.caller`, on
 on `projectKernelObject` erasing whatever changed.  Stating it once means a new
 projection-stripped field (`schedContextBinding` and `SchedContext.boundThread`,
 for the donation hand-off) is a two-line corollary rather than a second copy of
-this case analysis.
-
-`hIdxContains` is what keeps `objectIndex` still: the key already exists, so
-`storeObject` does not extend the identity registry. -/
+this case analysis.  The key already holds an object, so `storeObject` does not
+extend the object index. -/
 theorem storeObject_projectionStable_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj old : KernelObject)
     (hPrev : st.objects[oid]? = some old)
     (hProj : projectKernelObject ctx observer obj = projectKernelObject ctx observer old)
-    (hIdxContains : st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject oid obj st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -777,8 +774,9 @@ theorem storeObject_projectionStable_preserves_projection
   · simp [projectCurrent, storeObject_scheduler_eq st st' oid _ hStore]
   · simp [projectActiveDomain, storeObject_scheduler_eq st st' oid _ hStore]
   · funext irq; simp only [projectIrqSignalLines, storeObject_irqSignalLines_eq st st' oid _ hStore]
-  · unfold storeObject at hStore; cases hStore
-    simp only [projectObjectIndex, hIdxContains, if_true]
+  · simp only [projectObjectIndex]
+    rw [storeObject_objectIndex hStore, hPrev]
+    rfl
   · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st st' oid _ hStore]
   · simp [projectDomainSchedule, storeObject_scheduler_eq st st' oid _ hStore]
   · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st st' oid _ hStore]
@@ -807,7 +805,6 @@ theorem storeDonationHeadClear_preserves_projection
   · exact storeObject_projectionStable_preserves_projection ctx observer st st' rid.toObjId
       _ (.reply r) hRead
       (projectKernelObject_reply_stackLinks_invariant ctx observer r none none)
-      (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
       hObjInv hS
 
 /-- **Recording a Reply's stasher is invisible to every observer.**  It is
@@ -817,7 +814,6 @@ Reply is low-visible. -/
 theorem recordReplyStasher_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId)
-    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (st.recordReplyStasher code recv) = projectState ctx observer st := by
   rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, hRead, hS⟩
@@ -825,7 +821,6 @@ theorem recordReplyStasher_preserves_projection
   · exact storeObject_projectionStable_preserves_projection ctx observer st _ rid.toObjId
       _ (.reply r) hRead
       (projectKernelObject_reply_stasher_invariant ctx observer r _)
-      (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
       hObjInv hS
 
 /-- `v0.35.4`: the pop's re-head of the frame below preserves the projection for
@@ -842,7 +837,6 @@ theorem storeReplyReHead_preserves_projection
   · exact storeObject_projectionStable_preserves_projection ctx observer st st' rid.toObjId
       _ (.reply r) hRead
       (projectKernelObject_reply_next_invariant ctx observer r (some (.head scId)))
-      (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
       hObjInv hS
 
 /-- `v0.35.4`: the whole pop — the unlink and the re-head — preserves the
@@ -874,8 +868,6 @@ theorem storeDonationFramePush_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
     {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
-    (hSetInv : st.objectIndexSet.table.invExt)
     (hObjInv : st.objects.invExt)
     (hPre : st.getReply? pushRid = some pushReply)
     (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
@@ -887,18 +879,14 @@ theorem storeDonationFramePush_preserves_projection
       _ (.reply pushReply) hPreObj
       (projectKernelObject_reply_stackLinks_invariant ctx observer pushReply oldHead?
         (some (.head scId)))
-      (hIdxComplete pushRid.toObjId (by rw [hPreObj]; intro hx; cases hx))
       hObjInv hS1
   rcases hRest with ⟨_, rfl⟩ | ⟨old, oldR, _, hOldR, hS2⟩
   · exact hP1
   · have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-    have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
-      hSetInv hIdxComplete hS1
     have hOldObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hOldR
     rw [storeObject_projectionStable_preserves_projection ctx observer s1 st' old.toObjId
       _ (.reply oldR) hOldObj
       (projectKernelObject_reply_next_invariant ctx observer oldR (some (.frame pushRid)))
-      (hC1 old.toObjId (by rw [hOldObj]; intro hx; cases hx))
       hInv1 hS2, hP1]
 
 /-- `v0.35.4`: the `O(1)` removal preserves the projection — **WS-HP HP6.5**: its
@@ -928,11 +916,8 @@ theorem cutReplyFrameOut_preserves_projection
       storeObject_projectionStable_preserves_projection ctx observer st s1 below.toObjId
         _ (.reply b) hBObj
         (projectKernelObject_reply_next_invariant ctx observer b none)
-        (hIdxComplete below.toObjId (by rw [hBObj]; intro hx; cases hx))
         hObjInv hS1
     have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-    have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
-      hSetInv hIdxComplete hS1
     have hRObj1 : s1.objects[rid.toObjId]? = some (.reply r) := by
       rw [SeLe4n.Model.storeObject_objects_ne st s1 below.toObjId rid.toObjId _
         (fun e => severReplyFrameBelow_ne hR hN hB hBn e.symm) hObjInv hS1]
@@ -940,7 +925,6 @@ theorem cutReplyFrameOut_preserves_projection
     rw [storeObject_projectionStable_preserves_projection ctx observer s1 st' rid.toObjId
       _ (.reply r) hRObj1
       (projectKernelObject_reply_prev_invariant ctx observer r none)
-      (hC1 rid.toObjId (by rw [hRObj1]; intro hx; cases hx))
       hInv1 hS2, hP1]
   · have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
     rcases cutReplyFrameStores_cases hS with ⟨s1, _, hS1, hS2⟩ |
@@ -950,17 +934,13 @@ theorem cutReplyFrameOut_preserves_projection
           _ (.reply a) hAObj
           (by rw [Reply.unlinkedFrom_eq]
               exact projectKernelObject_reply_stackLinks_invariant ctx observer a _ _)
-          (hIdxComplete above.toObjId (by rw [hAObj]; intro hx; cases hx))
           hObjInv hS1
       have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
-        hSetInv hIdxComplete hS1
       rcases cutReplyFrameStores_sever_cut_read hObjInv hR hA hS1 with hR1 | hR1
       · have hRObj1 := (SystemState.getReply?_eq_some_iff _ _ _).mp hR1
         rw [storeObject_projectionStable_preserves_projection ctx observer s1 st' rid.toObjId
           _ (.reply r) hRObj1
           (projectKernelObject_reply_stackLinks_invariant ctx observer r none none)
-          (hC1 rid.toObjId (by rw [hRObj1]; intro hx; cases hx))
           hInv1 hS2, hP1]
       · have hRObj1 := (SystemState.getReply?_eq_some_iff _ _ _).mp hR1
         rw [storeObject_projectionStable_preserves_projection ctx observer s1 st' rid.toObjId
@@ -968,7 +948,6 @@ theorem cutReplyFrameOut_preserves_projection
           ((projectKernelObject_reply_stackLinks_invariant ctx observer r none none).trans
             (by rw [Reply.unlinkedFrom_eq]
                 exact (projectKernelObject_reply_stackLinks_invariant ctx observer r _ _).symm))
-          (hC1 rid.toObjId (by rw [hRObj1]; intro hx; cases hx))
           hInv1 hS2, hP1]
     · obtain ⟨_, hNe, hB, _⟩ := cutFrameBelow?_eq_some hBelow
       have hNeBR : below ≠ rid := cutFrameBelow?_ne_cut hR hN hBelow
@@ -979,13 +958,8 @@ theorem cutReplyFrameOut_preserves_projection
           _ (.reply a) hAObj
           (by rw [Reply.unlinkedFrom_eq]
               exact projectKernelObject_reply_stackLinks_invariant ctx observer a _ _)
-          (hIdxComplete above.toObjId (by rw [hAObj]; intro hx; cases hx))
           hObjInv hS1
       have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-      have hSetInv1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _
-        hSetInv hS1
-      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
-        hSetInv hIdxComplete hS1
       have hBObj1 : s1.objects[below.toObjId]? = some (.reply b) := by
         rw [SeLe4n.Model.storeObject_objects_ne st s1 above.toObjId below.toObjId _
           (fun hEq => hNe (SeLe4n.ReplyId.toObjId_injective _ _ hEq)) hObjInv hS1]
@@ -994,11 +968,8 @@ theorem cutReplyFrameOut_preserves_projection
         storeObject_projectionStable_preserves_projection ctx observer s1 s2 below.toObjId
           _ (.reply b) hBObj1
           (projectKernelObject_reply_next_invariant ctx observer b none)
-          (hC1 below.toObjId (by rw [hBObj1]; intro hx; cases hx))
           hInv1 hS2
       have hInv2 := SeLe4n.Model.storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
-      have hC2 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s1 s2 _ _ hInv1
-        hSetInv1 hC1 hS2
       have hRObj2 : s2.objects[rid.toObjId]? = some (.reply r) := by
         rw [SeLe4n.Model.storeObject_objects_ne s1 s2 below.toObjId rid.toObjId _
           (fun hEq => hNeBR (SeLe4n.ReplyId.toObjId_injective _ _ hEq).symm) hInv1 hS2,
@@ -1008,7 +979,6 @@ theorem cutReplyFrameOut_preserves_projection
       rw [storeObject_projectionStable_preserves_projection ctx observer s2 st' rid.toObjId
         _ (.reply r) hRObj2
         (projectKernelObject_reply_stackLinks_invariant ctx observer r none none)
-        (hC2 rid.toObjId (by rw [hRObj2]; intro hx; cases hx))
         hInv2 hS3, hP2, hP1]
 
 /-- WS-SM SM6.D (#7.1 fold): writing only a Reply object's `caller` back-link (the
@@ -1023,12 +993,11 @@ theorem storeObject_reply_caller_preserves_projection
     (st st' : SystemState) (rid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
     (c : Option SeLe4n.ThreadId)
     (hPrev : st.objects[rid]? = some (.reply r))
-    (hIdxContains : st.objectIndexSet.contains rid = true)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject rid (.reply { r with callerCode := SeLe4n.ThreadId.optCode c }) st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st :=
   storeObject_projectionStable_preserves_projection ctx observer st st' rid _ _ hPrev
-    (projectKernelObject_reply_caller_invariant ctx observer r c) hIdxContains hObjInv hStore
+    (projectKernelObject_reply_caller_invariant ctx observer r c) hObjInv hStore
 
 /-- WS-SM SM6.D (#7.1 fold): the fold's atomic `linkCallerReply` (the reply-link
 the receive transition now performs in-line) preserves `projectState` whenever the
@@ -1036,14 +1005,12 @@ linked **caller** is high (`hCallerObjHigh`) — its two writes are both invisib
 any observer: the `.reply` `caller := some caller` write is projection-stripped
 (`storeObject_reply_caller_preserves_projection`), and the caller-TCB
 `replyObject := some rid` write is on a high TCB (`storeObject_preserves_projection`).
-`hIdxComplete` supplies the `objectIndex` membership of the (already-present) Reply.
 Used by the receive-transition non-interference proof at the Call rendezvous, where
 the dequeued caller is high. -/
 theorem linkCallerReply_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
-    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -1064,8 +1031,7 @@ theorem linkCallerReply_preserves_projection
         · have hRidPrev : st.objects[rid.toObjId]? = some (.reply r) :=
             (SystemState.getReply?_eq_some_iff st rid r).mp hGetR
           exact storeObject_reply_caller_preserves_projection ctx observer st st1
-            rid.toObjId r (some caller) hRidPrev
-            (hIdxComplete rid.toObjId (by rw [hRidPrev]; exact Option.some_ne_none _)) hObjInv hLink
+            rid.toObjId r (some caller) hRidPrev hObjInv hLink
         · simp at hLink
     cases hT : st1.getTcb? caller with
     | none => simp [hT] at hStep
@@ -1082,14 +1048,12 @@ preserves `projectState` whenever the answered **caller** is high
 `.reply` `caller := none` write is projection-stripped
 (`storeObject_reply_caller_preserves_projection` — `projectKernelObject` erases
 `Reply.caller` structurally), and the caller-TCB `replyObject := none` write is
-on a high TCB (`storeObject_preserves_projection`).  `hIdxComplete` supplies the
-`objectIndex` membership of the (already-present) Reply.  The non-interference
+on a high TCB (`storeObject_preserves_projection`).  The non-interference
 building block for the reply primitives' in-transition consume. -/
 theorem consumeCallerReply_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
-    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -1110,8 +1074,7 @@ theorem consumeCallerReply_preserves_projection
           (SystemState.getReply?_eq_some_iff st rid r).mp hGet
         exact storeObject_projectionStable_preserves_projection ctx observer st st1
           rid.toObjId _ (.reply r) hRidPrev
-          (projectKernelObject_reply_consumed_invariant ctx observer r)
-          (hIdxComplete rid.toObjId (by rw [hRidPrev]; exact Option.some_ne_none _)) hObjInv hCons
+          (projectKernelObject_reply_consumed_invariant ctx observer r) hObjInv hCons
     cases hT : st1.getTcb? caller with
     | none =>
       simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
@@ -1207,8 +1170,6 @@ theorem removeCallerReplyFrame_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   rw [removeCallerReplyFrame_eq] at hStep
   rw [consumeCallerReply_preserves_projection ctx observer _ st' caller rid hCallerObjHigh
-      (cutReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
-        hIdxComplete)
       (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep]
   exact cutReplyFrameOutOrSelf_preserves_projection ctx observer st rid hIdxComplete
     hObjSetInv hObjInv
@@ -1223,7 +1184,6 @@ theorem linkServerStashedReply_preserves_projection
     (st st' : SystemState) (caller server : SeLe4n.ThreadId)
     (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
     (hServerObjHigh : objectObservable ctx observer server.toObjId = false)
-    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -1239,7 +1199,7 @@ theorem linkServerStashedReply_preserves_projection
       simp only [hLink] at hStep
       have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
       have hProj1 : projectState ctx observer st1 = projectState ctx observer st :=
-        linkCallerReply_preserves_projection ctx observer st st1 caller rid hCallerObjHigh hIdxComplete hObjInv hLink
+        linkCallerReply_preserves_projection ctx observer st st1 caller rid hCallerObjHigh hObjInv hLink
       cases hT : st1.getTcb? server with
       | none =>
         simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1503,13 +1463,8 @@ theorem cspaceRevoke_preserves_lowEquivalent
   · -- objectIndex
     simp only [projectObjectIndex]
     have hIdx := congrArg ObservableState.objectIndex hLow
-    -- Both sides: if objectIndexSet.contains addr.cnode then idx else addr.cnode :: idx
-    -- Since hCNodeHigh filters addr.cnode out, prepending it is invisible
-    split <;> split
-    · exact hIdx
-    · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
-    · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
-    · rw [List.filter_cons, List.filter_cons]; simp [hCNodeHigh]; exact hIdx
+    -- The CNode is stored on both sides, so the store leaves each index as it is
+    exact hIdx
   · -- domainTimeRemaining
     simp only [projectDomainTimeRemaining]
     exact congrArg ObservableState.domainTimeRemaining hLow

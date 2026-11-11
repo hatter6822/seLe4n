@@ -9,6 +9,7 @@
 
 import SeLe4n.Machine
 import SeLe4n.Model.Erased
+import SeLe4n.Model.TableToList
 import SeLe4n.Model.Object
 import SeLe4n.Model.Object.Unshare
 import SeLe4n.Kernel.Scheduler.RunQueue
@@ -1122,7 +1123,23 @@ decision.
 WS-G2/WS-H7: metadata maps are HashMap-backed for O(1) amortized lookup,
 eliminating closure-chain growth from repeated updates. -/
 structure LifecycleMetadata where
-  objectTypes : RHTable SeLe4n.ObjId KernelObjectType
+  /-- The type table, as ghost state (`LifecycleMetadata.objectTypes`): proofs
+  read it, and the compiled kernel stores none of it (WS-UC UC2).  It agrees
+  with the object table on every reachable state
+  (`SystemState.bookkeepingAgrees`), so a compiled type read asks the object
+  table (`SystemState.getObjectType?`). -/
+  objectTypesGhost : SeLe4n.Erased (RHTable SeLe4n.ObjId KernelObjectType)
+
+/-- **The type table** (WS-UC UC2: a ghost).  Only proofs read it. -/
+@[reducible] noncomputable def LifecycleMetadata.objectTypes (m : LifecycleMetadata) :
+    RHTable SeLe4n.ObjId KernelObjectType :=
+  m.objectTypesGhost.out
+
+@[simp] theorem LifecycleMetadata.objectTypes_mk (g : SeLe4n.Erased (RHTable SeLe4n.ObjId KernelObjectType)) :
+    (LifecycleMetadata.mk g).objectTypes = g.out := rfl
+
+@[simp] theorem LifecycleMetadata.objectTypesGhost_out (m : LifecycleMetadata) :
+    m.objectTypesGhost.out = m.objectTypes := rfl
 
 /-- R7-A.1/M-17: A single TLB entry caching an address translation.
 
@@ -1284,28 +1301,22 @@ structure SystemState where
       by `ObjId` with O(1) lookup, so insertion order does not affect
       semantics. No order-dependent iteration patterns exist. -/
   objects : RHTable SeLe4n.ObjId KernelObject
-  /-- L-05/WS-E6: Index of the object IDs in the store. `storeObject` prepends
-      a new ID and never removes one (`storeObject_objectIndex_monotone`), and
-      the retire of an object removes its ID with its object-table entry
-      (`eraseRetiredObject`, `retireCarvedObject`), so every ID it holds names a
-      stored object (`objectIndexLive`).
+  /-- L-05/WS-E6: Index of the object IDs in the store, as ghost state
+      (`SystemState.objectIndex`).  `storeObject` prepends a new ID and never
+      removes one (`storeObject_objectIndex_monotone`), and the retire of an
+      object removes its ID with its object-table entry (`retireCarvedObject`).
 
-      **Design rationale:** A membership witness (`id ∈ st.objectIndex`) carries
-      across every store, so cross-transition carryover over a store is
-      immediate; across a retire it holds for every ID but the retired one.
-      Consumers still read `st.objects[id]?` for the object itself.
-
-      **S4-A: Growth analysis.** The capacity check (`objectStoreCapacityExceeded`)
-      reads this list's length, so it holds at most `maxObjects` IDs, one list
-      cell each (`objectIndexBounded`). WS-UC
-      (`docs/planning/UNTYPED_BACKED_CELLS_PLAN.md`) makes this index an erased
-      ghost proven to agree with `objects`. -/
-  objectIndex : List SeLe4n.ObjId
-  /-- WS-G2/F-P10: Shadow hash set for O(1) objectIndex membership checks.
-      Maintained in parallel with `objectIndex` — `storeObject` inserts into
-      both. The list remains the proof anchor (monotonic, append-only);
-      this set is the runtime fast path. -/
-  objectIndexSet : RHSet SeLe4n.ObjId := default
+      WS-UC UC2: a ghost.  The compiled kernel stores none of it; it agrees
+      with the object table on every reachable state
+      (`SystemState.bookkeepingAgrees`: its members are exactly the stored
+      IDs, each once), so the capacity check reads `objects.size` and every
+      walk the kernel makes walks the object table. -/
+  objectIndexGhost : SeLe4n.Erased (List SeLe4n.ObjId)
+  /-- WS-G2/F-P10: the index as a hash set, as ghost state
+      (`SystemState.objectIndexSet`, WS-UC UC2).  It agrees with the object
+      table on every reachable state (`SystemState.bookkeepingAgrees`), so a
+      compiled membership read asks the object table. -/
+  objectIndexSetGhost : SeLe4n.Erased (RHSet SeLe4n.ObjId) := SeLe4n.Erased.mk default
   scheduler : SchedulerState
   lifecycle : LifecycleMetadata
   /-- WS-G3/F-P06: ASID→ObjId resolution table for O(1) VSpace lookups.
@@ -1692,6 +1703,32 @@ structure SystemState where
       (`refusalLedger_records_gate_unsound`). -/
   declassificationRefusals : SeLe4n.Kernel.RefusalLedger := SeLe4n.Kernel.RefusalLedger.initial
 
+/-- **The object index** (WS-UC UC2: a ghost): the stored IDs, newest first.
+Only proofs read it; the kernel reads the object table, which it agrees with on
+every reachable state (`SystemState.bookkeepingAgrees`). -/
+@[reducible] noncomputable def SystemState.objectIndex (st : SystemState) : List SeLe4n.ObjId :=
+  st.objectIndexGhost.out
+
+/-- **The object index as a hash set** (WS-UC UC2: a ghost).  Only proofs read
+it; the kernel asks the object table. -/
+@[reducible] noncomputable def SystemState.objectIndexSet (st : SystemState) : RHSet SeLe4n.ObjId :=
+  st.objectIndexSetGhost.out
+
+/-! The ghost readers reduce on a built record and fold back on a state's own
+ghost, so `simp` reads a store's ghost write as the value written. -/
+
+@[simp] theorem SystemState.objectIndex_mk {f_machine f_objects f_objectIndexGhost f_objectIndexSetGhost f_scheduler f_lifecycle f_asidTable f_interfaceRegistry f_cdt f_tlb f_tlbShootdown f_shootdownDescriptorSpare f_shootdownOpsSpare f_shootdownAsidDescriptorSpare f_shootdownAsidOpsSpare f_perCoreTlb f_perCoreTlbSpare f_perCoreICache f_pendingIcacheMaintenance f_icacheLedgerSpare f_physicalWrites f_physicalWritesDrained f_declassificationAudit f_declassificationRefusals} :
+    (SystemState.mk f_machine f_objects f_objectIndexGhost f_objectIndexSetGhost f_scheduler f_lifecycle f_asidTable f_interfaceRegistry f_cdt f_tlb f_tlbShootdown f_shootdownDescriptorSpare f_shootdownOpsSpare f_shootdownAsidDescriptorSpare f_shootdownAsidOpsSpare f_perCoreTlb f_perCoreTlbSpare f_perCoreICache f_pendingIcacheMaintenance f_icacheLedgerSpare f_physicalWrites f_physicalWritesDrained f_declassificationAudit f_declassificationRefusals).objectIndex = f_objectIndexGhost.out := rfl
+
+@[simp] theorem SystemState.objectIndexSet_mk {f_machine f_objects f_objectIndexGhost f_objectIndexSetGhost f_scheduler f_lifecycle f_asidTable f_interfaceRegistry f_cdt f_tlb f_tlbShootdown f_shootdownDescriptorSpare f_shootdownOpsSpare f_shootdownAsidDescriptorSpare f_shootdownAsidOpsSpare f_perCoreTlb f_perCoreTlbSpare f_perCoreICache f_pendingIcacheMaintenance f_icacheLedgerSpare f_physicalWrites f_physicalWritesDrained f_declassificationAudit f_declassificationRefusals} :
+    (SystemState.mk f_machine f_objects f_objectIndexGhost f_objectIndexSetGhost f_scheduler f_lifecycle f_asidTable f_interfaceRegistry f_cdt f_tlb f_tlbShootdown f_shootdownDescriptorSpare f_shootdownOpsSpare f_shootdownAsidDescriptorSpare f_shootdownAsidOpsSpare f_perCoreTlb f_perCoreTlbSpare f_perCoreICache f_pendingIcacheMaintenance f_icacheLedgerSpare f_physicalWrites f_physicalWritesDrained f_declassificationAudit f_declassificationRefusals).objectIndexSet = f_objectIndexSetGhost.out := rfl
+
+@[simp] theorem SystemState.objectIndexGhost_out (st : SystemState) :
+    st.objectIndexGhost.out = st.objectIndex := rfl
+
+@[simp] theorem SystemState.objectIndexSetGhost_out (st : SystemState) :
+    st.objectIndexSetGhost.out = st.objectIndexSet := rfl
+
 /-- WS-ZA ZA6.32: **the lines an interrupt-handler capability has been issued
 for**, seL4's `intStateIRQTable` entries at `IRQSignal`: a line is added by
 `seL4_IRQControl_Get` and removed when its last handler capability is finalised
@@ -2040,11 +2077,11 @@ instance : Inhabited SystemState where
   default := {
     machine := default
     objects := {}
-    objectIndex := []
-    objectIndexSet := default
+    objectIndexGhost := SeLe4n.Erased.mk []
+    objectIndexSetGhost := SeLe4n.Erased.mk default
     scheduler := default
     lifecycle := {
-      objectTypes := {}
+      objectTypesGhost := SeLe4n.Erased.mk {}
     }
     asidTable := {}
     interfaceRegistry := {}
@@ -2094,6 +2131,17 @@ instance : Inhabited SystemState where
     declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
   }
 
+/-- WS-UC UC2: the default state's ghost bookkeeping is empty. -/
+@[simp] theorem default_objectIndex : (default : SystemState).objectIndex = [] :=
+  SeLe4n.Erased.out_mk _
+
+@[simp] theorem default_objectIndexSet : (default : SystemState).objectIndexSet = default :=
+  SeLe4n.Erased.out_mk _
+
+@[simp] theorem default_objectTypes :
+    (default : SystemState).lifecycle.objectTypes = ({} : RHTable SeLe4n.ObjId KernelObjectType) :=
+  SeLe4n.Erased.out_mk _
+
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
 positive length before installing the schedule. Returns `.error` on invalid
 input to prevent `switchDomain` from setting `domainTimeRemaining` to 0.
@@ -2137,9 +2185,12 @@ empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
 theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
+  constructor
+  · show (SeLe4n.Erased.mk ({} : RHTable SeLe4n.ObjId KernelObjectType)).out.invExtK
+    rw [SeLe4n.Erased.out_mk]; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
-  exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
+  show (SeLe4n.Erased.mk (default : RHSet SeLe4n.ObjId)).out.table.invExtK
+  rw [SeLe4n.Erased.out_mk]; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
 
 /-- The default state's object store has an empty `toList`. -/
 theorem default_objects_toList_empty :
@@ -2454,23 +2505,27 @@ theorem RefusalCarrying.ofCheckedThen_eq (admitted : Bool)
     when the object index reaches this capacity. -/
 def maxObjects : Nat := 65536
 
-/-- S4-A: Advisory predicate — the object index size is bounded by `maxObjects`.
-    After S4-B enforcement, this holds for any reachable state (assuming it
-    holds at boot and `storeObject` is the only path to add new objects). -/
-def objectIndexBounded (st : SystemState) : Prop :=
-  st.objectIndex.length ≤ maxObjects
+/-- S4-A: the object count is bounded by `maxObjects`.  After S4-B
+    enforcement this holds for any reachable state (it holds at boot, and
+    `storeObject` is the only path that adds an object).  WS-UC UC2: stated
+    over the object table, the count the capacity check reads; the ghost index
+    has the same length on every reachable state
+    (`SystemState.bookkeepingAgrees.objectIndex_length`). -/
+def objectCountBounded (st : SystemState) : Prop :=
+  st.objects.size ≤ maxObjects
 
 /-- S4-B: Invariant alias — the object count does not exceed `maxObjects`.
-    This is definitionally equal to `objectIndexBounded` but named per the
+    This is definitionally equal to `objectCountBounded` but named per the
     workstream plan (U-M12) for traceability. Enforced at the allocation
     boundary (`retypeFromUntyped`) rather than in `storeObject`. -/
-abbrev objectCount_le_maxObjects := objectIndexBounded
+abbrev objectCount_le_maxObjects := objectCountBounded
 
 /-- S4-B: The default (empty) system state satisfies the object capacity bound. -/
 theorem default_objectCount_le_maxObjects :
     objectCount_le_maxObjects (default : SystemState) := by
-  unfold objectCount_le_maxObjects objectIndexBounded maxObjects
-  simp [List.length]
+  unfold objectCount_le_maxObjects objectCountBounded maxObjects
+  show (RHTable.empty 16 (by omega) : RHTable SeLe4n.ObjId KernelObject).size ≤ 65536
+  simp [RHTable.empty]
 
 /-- WS-ZA ZA5.4: **a store that leaves the ASID table as it is.**  A VSpace root
 replaces a VSpace root of the same ASID, at the id the table already names for
@@ -2485,12 +2540,25 @@ resolved is one of these, which is what lets the root be rewritten in its slot. 
      | _ => false) && st.asidTable.holds newRoot.asid id
   | _ => false
 
+/-- WS-UC UC2: **the store keeps the kind at `id`**: the object table already
+holds an object of type `ty` there.  It reads the object table alone, so the
+ghost bookkeeping a store maintains (`storeObject`) is decided by the table the
+kernel holds: a store over an object of the same kind leaves the type ghost as
+it is, and a store at a stored ID leaves the index ghosts as they are. -/
+@[inline] def storeKeepsKind (st : SystemState) (id : SeLe4n.ObjId) (ty : KernelObjectType) : Bool :=
+  match st.objects[id]? with
+  | some o => o.objectType == ty
+  | none => false
+
 /-- Replace the object stored at `id` with `obj`.
 
 WS-G2/F-P01: Uses `HashMap.insert` instead of closure wrapping, eliminating
 the O(k) closure-chain accumulation on every lookup.
-WS-G2/F-P10: Uses `objectIndexSet.contains` for O(1) membership check instead
-of O(n) list membership scan.
+WS-UC UC2: the object index, the index set and the type table are ghosts,
+erased from the compiled kernel; the store keeps them in agreement with the
+object table (`SystemState.bookkeepingAgrees`), deciding each write by the
+object table alone, so a store at a stored ID leaves the index ghosts and a
+store over an object of the same kind leaves the type ghost (`storeKeepsKind`).
 WS-G3/F-P06: Maintains `asidTable` — erases old ASID when overwriting a
 VSpaceRoot, inserts new ASID when storing a VSpaceRoot.
 WS-ZA ZA5.4: a root stored over a root of the same ASID, at the id the table
@@ -2506,7 +2574,7 @@ which is what a capability insert, delete, mutate, or revoke should cost.
 
 S4-B/U2-L: Capacity enforcement is performed at the allocation boundary
 (`retypeFromUntyped` in Lifecycle/Operations.lean), not here. The
-`objectCount_le_maxObjects` invariant (alias for `objectIndexBounded`,
+`objectCount_le_maxObjects` invariant (alias for `objectCountBounded`,
 defined above) is preserved by allocation-time checking, and `storeObject`
 remains infallible for internal use by IPC, scheduler, and capability
 operations.
@@ -2515,7 +2583,7 @@ V5-K (L-FND-1): **Design rationale for infallibility.** `storeObject` always
 returns `.ok` — it never fails. This is intentional: the object store is an
 in-memory map (`RHTable`) with unbounded capacity at the model level. Capacity
 enforcement is deferred to `retypeFromUntyped`, which checks
-`objectIndexBounded` before creating new objects. Internal mutations (IPC,
+`objectCountBounded` before creating new objects. Internal mutations (IPC,
 scheduler, capability operations) overwrite existing keys and do not grow the
 index. This split keeps the common-path kernel operations (`endpointSend`,
 `schedule`, etc.) free of error-handling overhead while concentrating capacity
@@ -2538,12 +2606,16 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
     .ok ((), {
       st with
         objects := st.objects.insert id obj
-        objectIndex := if st.objectIndexSet.contains id then st.objectIndex
-                       else id :: st.objectIndex
-        objectIndexSet := st.objectIndexSet.insert id
-        lifecycle := {
-          objectTypes := st.lifecycle.objectTypes.insert id obj.objectType
-        }
+        objectIndexGhost :=
+          if (st.objects[id]?).isSome then st.objectIndexGhost
+          else SeLe4n.Erased.mk (id :: st.objectIndex)
+        objectIndexSetGhost :=
+          if (st.objects[id]?).isSome then st.objectIndexSetGhost
+          else SeLe4n.Erased.mk (st.objectIndexSet.insert id)
+        lifecycle :=
+          if storeKeepsKind st id obj.objectType then st.lifecycle
+          else { objectTypesGhost :=
+            SeLe4n.Erased.mk (st.lifecycle.objectTypes.insert id obj.objectType) }
         asidTable :=
           if storeKeepsAsid st id obj then st.asidTable else
           let cleared := match st.objects[id]? with
@@ -2554,23 +2626,32 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
           | _ => cleared
     })
 
-/-- WS-ZA ZA1.4: **the store changes only `objects`.**  The key is in the object
-index and already has the new object's type, neither the old nor the new object
-is a VSpace root, and both side tables are below their resize threshold — the
-case of every store to an existing object of the same kind, which is every store
-a syscall makes to an object it did not create.  It reads the new object's type
-only, so a caller asks it before building the object. -/
+/-- WS-ZA ZA1.4: **the store changes only `objects`.**  The key already holds an
+object of the new object's type, and neither the old nor the new object is a
+VSpace root — the case of every store to an existing object of the same kind,
+which is every store a syscall makes to an object it did not create.  It reads
+the new object's type only, so a caller asks it before building the object.
+WS-UC UC2: it reads the object table alone (`storeKeepsKind`); the index and
+type ghosts the store maintains are left as they are in this case by the
+store's own definition. -/
 @[inline] def storeLeavesIndexAndTypes (st : SystemState) (id : SeLe4n.ObjId)
     (ty : KernelObjectType) : Bool :=
-  ty != .vspaceRoot &&
-  st.objectIndexSet.table.holds id () &&
-  st.lifecycle.objectTypes.holds id ty &&
-  (match st.objects[id]? with | some (.vspaceRoot _) => false | _ => true)
+  ty != .vspaceRoot && storeKeepsKind st id ty
 
-/-- WS-ZA ZA5.4: **the store names a new object**: `id` is in neither the object
-index nor the object table — the store a retype makes for the object it carves. -/
+/-- WS-UC UC2: a store check that passes names the kind already stored. -/
+theorem storeLeavesIndexAndTypes_kind {st : SystemState} {id : SeLe4n.ObjId}
+    {ty : KernelObjectType} {o : KernelObject} (h : storeLeavesIndexAndTypes st id ty = true)
+    (ho : st.objects[id]? = some o) : o.objectType = ty := by
+  unfold storeLeavesIndexAndTypes storeKeepsKind at h
+  rw [ho] at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  exact h.2
+
+/-- WS-ZA ZA5.4: **the store names a new object**: `id` is not in the object
+table — the store a retype makes for the object it carves.  WS-UC UC2: it reads
+the object table alone. -/
 @[inline] def storeIsFresh (st : SystemState) (id : SeLe4n.ObjId) : Bool :=
-  !st.objectIndexSet.contains id && (st.objects[id]?).isNone
+  (st.objects[id]?).isNone
 
 /-- WS-ZA ZA5.4: the object table with `obj` at `id`, out of line, so the state
 is handed over and its table written in place. -/
@@ -2578,19 +2659,15 @@ is handed over and its table written in place. -/
     SystemState :=
   { st with objects := st.objects.insert id obj }
 
-/-- WS-ZA ZA5.4: `id` consed onto the object index, out of line. -/
-@[noinline] def withObjectIndexed (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
-  { st with objectIndex := id :: st.objectIndex }
-
-/-- WS-ZA ZA5.4: `id` added to the index set, out of line. -/
-@[noinline] def withObjectIndexSet (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
-  { st with objectIndexSet := st.objectIndexSet.insert id }
-
-/-- WS-ZA ZA5.4: `id`'s type recorded, the lifecycle record updated rather than
-rebuilt, so its type table is written in place. -/
-@[noinline] def withObjectType (st : SystemState) (id : SeLe4n.ObjId) (ty : KernelObjectType) :
+/-- WS-UC UC2: **the ghost bookkeeping of a new object's store** — its ID consed
+onto the index, added to the index set, and its type recorded.  Every field it
+writes is erased, so it computes nothing. -/
+@[inline] def withFreshBookkeeping (st : SystemState) (id : SeLe4n.ObjId) (ty : KernelObjectType) :
     SystemState :=
-  { st with lifecycle := { st.lifecycle with objectTypes := st.lifecycle.objectTypes.insert id ty } }
+  { st with
+      objectIndexGhost := SeLe4n.Erased.mk (id :: st.objectIndex)
+      objectIndexSetGhost := SeLe4n.Erased.mk (st.objectIndexSet.insert id)
+      lifecycle := { objectTypesGhost := SeLe4n.Erased.mk (st.lifecycle.objectTypes.insert id ty) } }
 
 /-- WS-ZA ZA5.4: `asid` registered to `id`, out of line. -/
 @[noinline] def withAsidRegistered (st : SystemState) (asid : SeLe4n.ASID) (id : SeLe4n.ObjId) :
@@ -2599,24 +2676,24 @@ rebuilt, so its type table is written in place. -/
 
 /-- WS-ZA ZA5.4: **the store of a new object** (`storeIsFresh`) as one write per
 table, each out of line over the state it is handed, so every table is written in
-place and the state record is reused (`storeObject_eq_storeFresh`). -/
+place and the state record is reused (`storeObject_eq_impl`).  WS-UC UC2: it
+writes the object table and, for a VSpace root, the ASID table; the index, index
+set and type table are ghosts (`withFreshBookkeeping`), so a carve builds no cell
+for them. -/
 @[inline] def storeFresh (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject) :
     SystemState :=
-  let ty := obj.objectType
-  let st4 := withObjectType (withObjectIndexSet (withObjectIndexed
-    (withObjectInserted st id obj) id) id) id ty
+  let st2 := withFreshBookkeeping (withObjectInserted st id obj) id obj.objectType
   match obj with
-  | .vspaceRoot r => withAsidRegistered st4 r.asid id
-  | _ => st4
+  | .vspaceRoot r => withAsidRegistered st2 r.asid id
+  | _ => st2
 
 /-- WS-ZA ZA1.4: the compiled `storeObject`.  When the store changes only
 `objects` (`storeLeavesIndexAndTypes`), only `objects` is written: one record
 update over an exclusively owned state, so the object table is written in place
-and the index, type and ASID tables are neither probed again nor rebuilt (the
-specification rebuilds the lifecycle record, which shares its type table with
-the old one and so copies it whole).  Otherwise it runs the specification's
-body, spelled out because this definition replaces `storeObject` in compiled
-code. -/
+and the ASID table is neither probed again nor rebuilt.  A store of a new object
+writes one table at a time (`storeFresh`).  Otherwise it runs the
+specification's body, spelled out because this definition replaces
+`storeObject` in compiled code. -/
 def storeObjectImpl (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
     if storeLeavesIndexAndTypes st id obj.objectType then
@@ -2626,12 +2703,16 @@ def storeObjectImpl (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
     .ok ((), {
       st with
         objects := st.objects.insert id obj
-        objectIndex := if st.objectIndexSet.contains id then st.objectIndex
-                       else id :: st.objectIndex
-        objectIndexSet := st.objectIndexSet.insert id
-        lifecycle := {
-          objectTypes := st.lifecycle.objectTypes.insert id obj.objectType
-        }
+        objectIndexGhost :=
+          if (st.objects[id]?).isSome then st.objectIndexGhost
+          else SeLe4n.Erased.mk (id :: st.objectIndex)
+        objectIndexSetGhost :=
+          if (st.objects[id]?).isSome then st.objectIndexSetGhost
+          else SeLe4n.Erased.mk (st.objectIndexSet.insert id)
+        lifecycle :=
+          if storeKeepsKind st id obj.objectType then st.lifecycle
+          else { objectTypesGhost :=
+            SeLe4n.Erased.mk (st.lifecycle.objectTypes.insert id obj.objectType) }
         asidTable :=
           if storeKeepsAsid st id obj then st.asidTable else
           let cleared := match st.objects[id]? with
@@ -2673,25 +2754,31 @@ theorem storeKeepsAsid_congr {s1 s2 : SystemState} {id : SeLe4n.ObjId} {obj : Ke
   by_cases h : storeLeavesIndexAndTypes st id obj.objectType = true
   · rw [if_pos h]
     simp only [storeLeavesIndexAndTypes, Bool.and_eq_true] at h
-    obtain ⟨⟨⟨hNew, hSet⟩, hTy⟩, hOld⟩ := h
-    have hNew' : ∀ r, obj ≠ .vspaceRoot r := by
-      intro r hr; subst hr; simp [KernelObject.objectType] at hNew
-    have hOld' : ∀ r, st.objects[id]? ≠ some (.vspaceRoot r) := by
-      intro r hr; rw [hr] at hOld; simp at hOld
-    have hC : st.objectIndexSet.contains id = true :=
-      RHTable.contains_of_holds _ _ _ hSet
-    have hI : st.objectIndexSet.insert id = st.objectIndexSet := by
-      unfold RHSet.insert; rw [RHTable.insert_eq_self_of_holds _ _ _ hSet]
-    have hT := RHTable.insert_eq_self_of_holds _ _ _ hTy
-    simp only [hC, ↓reduceIte, hI, hT, ite_self]
+    obtain ⟨hNew, hKind⟩ := h
+    have hKind' := hKind
+    unfold storeKeepsKind at hKind'
+    cases hO : st.objects[id]? with
+    | none => rw [hO] at hKind'; cases hKind'
+    | some old =>
+      rw [hO] at hKind'
+      have hTy : old.objectType = obj.objectType := by simpa using hKind'
+      have hK : storeKeepsAsid st id obj = false := by
+        unfold storeKeepsAsid
+        cases obj <;> simp_all [KernelObject.objectType]
+      have hOldNR : ∀ r, old ≠ .vspaceRoot r := by
+        intro r hr; subst hr; cases obj <;> simp_all [KernelObject.objectType]
+      simp only [hKind, hK, Option.isSome_some, ↓reduceIte, Bool.false_eq_true]
+      congr 1; congr 1
+      cases old <;> first | (exfalso; exact hOldNR _ rfl) | (cases obj <;> simp_all [KernelObject.objectType])
   · rw [if_neg h]
     by_cases hF : storeIsFresh st id = true
     · rw [if_pos hF]
-      simp only [storeIsFresh, Bool.and_eq_true, Bool.not_eq_true', Option.isNone_iff_eq_none] at hF
-      obtain ⟨hC, hO⟩ := hF
+      simp only [storeIsFresh, Option.isNone_iff_eq_none] at hF
       have hK : storeKeepsAsid st id obj = false := by
-        unfold storeKeepsAsid; cases obj <;> simp [hO]
-      simp only [hC, hK, hO, Bool.false_eq_true, ↓reduceIte]
+        unfold storeKeepsAsid; cases obj <;> simp [hF]
+      have hKK : storeKeepsKind st id obj.objectType = false := by
+        unfold storeKeepsKind; rw [hF]
+      simp only [hF, hK, hKK, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
       cases obj <;> rfl
     · rw [if_neg hF]
 
@@ -2715,101 +2802,115 @@ theorem storeObject_inserted_object_lookup (st : SystemState)
   exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects id obj
     hObjInv
 
-/-- The store adds at most one index entry: a key already in the index leaves
-    it alone, a new key is consed onto it.  Hypothesis-free — the bound is a
+/-- WS-UC UC2: **the index ghost after a store**: a stored ID leaves it, a new ID
+is consed onto it. -/
+theorem storeObject_objectIndex {st st' : SystemState} {id : SeLe4n.ObjId} {obj : KernelObject}
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objectIndex = if (st.objects[id]?).isSome then st.objectIndex else id :: st.objectIndex := by
+  unfold storeObject at hStore; cases hStore
+  cases (st.objects[id]?).isSome <;> simp
+
+/-- WS-UC UC2: **the index-set ghost after a store**: a stored ID leaves it, a
+new ID is inserted. -/
+theorem storeObject_objectIndexSet {st st' : SystemState} {id : SeLe4n.ObjId} {obj : KernelObject}
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objectIndexSet =
+      if (st.objects[id]?).isSome then st.objectIndexSet else st.objectIndexSet.insert id := by
+  unfold storeObject at hStore; cases hStore
+  cases (st.objects[id]?).isSome <;> simp
+
+/-- WS-UC UC2: **the type ghost after a store**: a store over an object of the
+same kind leaves it, any other store records the new type. -/
+theorem storeObject_objectTypes {st st' : SystemState} {id : SeLe4n.ObjId} {obj : KernelObject}
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.lifecycle.objectTypes =
+      if storeKeepsKind st id obj.objectType then st.lifecycle.objectTypes
+      else st.lifecycle.objectTypes.insert id obj.objectType := by
+  unfold storeObject at hStore; cases hStore
+  cases storeKeepsKind st id obj.objectType <;> simp
+
+/-- The store adds at most one index entry: a key already stored leaves the
+    index alone, a new key is consed onto it.  Hypothesis-free — the bound is a
     fact about the write, not about the pre-state's capacity — so a pure
     transition built on `withObjectStored` (the boot's idle store, through
     `withObjectStored_objectIndex_length_le`) can read it without carrying
-    `objectIndexBounded`, which it neither has nor needs. -/
+    `objectCountBounded`, which it neither has nor needs. -/
 theorem storeObject_objectIndex_length_le
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objectIndex.length ≤ st.objectIndex.length + 1 := by
-  unfold storeObject at hStore; cases hStore
-  simp only
-  split <;> simp [List.length] <;> omega
+  rw [storeObject_objectIndex hStore]
+  split <;> simp
 
-/-- S4-B: `storeObject` preserves `objectCount_le_maxObjects` — overwriting an
-    existing object does not increase the object index length, and inserting
-    a new object increments it by at most 1 (which is bounded by the
-    allocation-time capacity check in `retypeFromUntyped`).  The bound itself
-    is `storeObject_objectIndex_length_le`; this is its instance at a bounded
-    pre-state, kept under the name its consumers cite. -/
-theorem storeObject_preserves_objectIndexBounded
+/-- S4-B / WS-UC UC2: the store adds at most one object-table entry, the count
+    `objectCountBounded` bounds and the capacity check reads. -/
+theorem storeObject_objects_size_le
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (_hBound : objectIndexBounded st)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objectIndex.length ≤ st.objectIndex.length + 1 :=
-  storeObject_objectIndex_length_le st st' id obj hStore
+    st'.objects.size ≤ st.objects.size + 1 := by
+  unfold storeObject at hStore; cases hStore
+  exact RHTable.size_insert_le _ _ _ hObjInv.1
 
 /-- AC3-E / F-03: Capacity-checked variant of `storeObject`. Rejects new object
     insertions that would exceed `maxObjects`. Updates to existing objects are
-    always allowed (they don't grow the index).
+    always allowed (they don't grow the store).  WS-UC UC2: it reads the object
+    table, as the retype's capacity check does.
 
     Use this in new code paths that are not covered by the `retypeFromUntyped`
     capacity gate. Use `storeObject` only in proof-layer code where
-    `objectIndexBounded` is an established precondition. -/
+    `objectCountBounded` is an established precondition. -/
 def storeObjectChecked (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
-    if st.objectIndex.length ≥ maxObjects && !st.objectIndexSet.contains id then
+    if st.objects.size ≥ maxObjects && storeIsFresh st id then
       .error .objectStoreCapacityExceeded
     else
       storeObject id obj st
 
-/-- AC3-E: `storeObjectChecked` preserves `objectIndexBounded` on success. -/
-theorem storeObjectChecked_preserves_objectIndexBounded
+/-- AC3-E: `storeObjectChecked` preserves `objectCountBounded` on success. -/
+theorem storeObjectChecked_preserves_objectCountBounded
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (hBound : objectIndexBounded st)
+    (hObjInv : st.objects.invExt)
+    (hBound : objectCountBounded st)
     (hStore : storeObjectChecked id obj st = .ok ((), st')) :
-    objectIndexBounded st' := by
+    objectCountBounded st' := by
   unfold storeObjectChecked at hStore
-  -- Case-split on the capacity guard
-  cases hIf : (st.objectIndex.length ≥ maxObjects && !st.objectIndexSet.contains id) with
-  | true => simp [hIf] at hStore
-  | false =>
-    simp [hIf] at hStore
-    -- hStore : storeObject id obj st = .ok ((), st')
-    unfold objectIndexBounded at hBound ⊢
+  unfold objectCountBounded at hBound ⊢
+  cases hO : st.objects[id]? with
+  | some w =>
+    rw [if_neg (by simp [storeIsFresh, hO])] at hStore
     unfold storeObject at hStore; cases hStore
-    simp only
-    split
-    · exact hBound
-    · -- New object: index grows by 1
-      rename_i hNotContains
-      -- hIf : (len ≥ max && !contains) = false and hNotContains : contains = false
-      -- So !contains = true, meaning len ≥ max must be false, i.e., len < max
-      have hLt : st.objectIndex.length < maxObjects := by
-        have : (!st.objectIndexSet.contains id) = true := by simp [hNotContains]
-        simp [this] at hIf
-        exact hIf
-      unfold maxObjects at hLt
-      show (id :: st.objectIndex).length ≤ 65536
-      simp only [List.length_cons]
-      exact hLt
+    have := RHTable.size_insert_le_of_get? st.objects id obj w hObjInv
+      (by rw [← RHTable_getElem?_eq_get?]; exact hO)
+    exact Nat.le_trans this hBound
+  | none =>
+    by_cases hLt : st.objects.size < maxObjects
+    · rw [if_neg (by simp [storeIsFresh, hO]; omega)] at hStore
+      have := storeObject_objects_size_le st st' id obj hObjInv hStore
+      omega
+    · rw [if_pos (by simp [storeIsFresh, hO]; omega)] at hStore; cases hStore
 
 /-- AC3-E: `storeObjectChecked` delegates to `storeObject` when the object
     already exists in the store (in-place update). This covers the common case
     for IPC, scheduler, and capability operations that overwrite existing objects. -/
 theorem storeObjectChecked_existing_eq_storeObject
     (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (hExists : st.objectIndexSet.contains id = true) :
+    (hExists : (st.objects[id]?).isSome = true) :
     storeObjectChecked id obj st = storeObject id obj st := by
   unfold storeObjectChecked
-  simp [hExists]
+  have : (st.objects[id]?).isNone = false := by
+    cases h : st.objects[id]? <;> simp_all
+  rw [if_neg (by simp [storeIsFresh, this])]
 
 /-- AC3-E: `storeObjectChecked` delegates to `storeObject` when the store has
     capacity headroom (strictly less than `maxObjects`). This covers the case
     for new object insertions within the capacity bound. -/
 theorem storeObjectChecked_headroom_eq_storeObject
     (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (hHeadroom : st.objectIndex.length < maxObjects) :
+    (hHeadroom : st.objects.size < maxObjects) :
     storeObjectChecked id obj st = storeObject id obj st := by
-  unfold storeObjectChecked maxObjects at *
-  split
-  · rename_i hGuard
-    simp [Bool.and_eq_true] at hGuard
-    omega
-  · rfl
+  unfold storeObjectChecked
+  rw [if_neg (by simp only [Bool.and_eq_true, decide_eq_true_eq]; omega)]
 
 -- ============================================================================
 -- WS-AL AL6 (cascades AK7-F): storeObject kind-guard wrapper.
@@ -2902,20 +3003,18 @@ theorem storeObjectKindChecked_crossKind_rejected
 -- ============================================================================
 
 /-- AF2-A1: `storeObject` on an existing ObjId preserves `objectIndex.length`
-    exactly. The key is already in `objectIndexSet`, so the conditional
-    `if st.objectIndexSet.contains id then st.objectIndex else id :: st.objectIndex`
-    takes the identity branch. This single lemma covers all 25+ in-place
-    mutation callsites generically (IPC, scheduler, capability, VSpace ops). -/
+    exactly: the key is already stored, so the index ghost is left as it is.
+    This single lemma covers all 25+ in-place mutation callsites generically
+    (IPC, scheduler, capability, VSpace ops). -/
 theorem storeObject_existing_preserves_objectIndex_length
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (hExists : st.objectIndexSet.contains id = true)
+    (hExists : (st.objects[id]?).isSome = true)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objectIndex.length = st.objectIndex.length := by
-  unfold storeObject at hStore; cases hStore
-  simp [hExists]
+  rw [storeObject_objectIndex hStore, if_pos hExists]
 
 /-- AF2-A3: Capacity safety for in-place mutations. Every `storeObject` call
-    on an existing ObjId preserves `objectIndexBounded`. This covers all 25+
+    on an existing ObjId preserves `objectCountBounded`. This covers all 25+
     in-place mutation callsites (IPC, scheduler, capability, VSpace ops).
 
     The allocation boundary is separately gated by `retypeFromUntyped`
@@ -2926,14 +3025,16 @@ theorem storeObject_existing_preserves_objectIndex_length
     - Allocation: `retypeFromUntyped_capacity_gated` (Lifecycle/Operations.lean)
     - Boot: `default_objectCount_le_maxObjects` (above) -/
 theorem storeObject_capacity_safe_of_existing
-    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (hBound : objectIndexBounded st)
-    (hExists : st.objectIndexSet.contains id = true)
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject) (w : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hBound : objectCountBounded st)
+    (hExists : st.objects[id]? = some w)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    objectIndexBounded st' := by
-  unfold objectIndexBounded at hBound ⊢
-  have hLen := storeObject_existing_preserves_objectIndex_length st st' id obj hExists hStore
-  omega
+    objectCountBounded st' := by
+  unfold objectCountBounded at hBound ⊢
+  unfold storeObject at hStore; cases hStore
+  exact Nat.le_trans (RHTable.size_insert_le_of_get? st.objects id obj w hObjInv
+    (by rw [← RHTable_getElem?_eq_get?]; exact hExists)) hBound
 
 -- AF2-A4: `storeObjectChecked` is UNUSED in operational code by design.
 -- Capacity enforcement occurs at the allocation boundary in
@@ -3191,6 +3292,57 @@ theorem storeObject_cdt_eq
 -- It lives in the model, upstream of both invariants, because it is a relation
 -- between two object stores and mentions neither.
 
+/-- WS-UC UC2: **a step that moves none of the bookkeeping ghosts** — the
+object index, its set and the type table read as they did. -/
+structure SystemState.ghostsKept (st' st : SystemState) : Prop where
+  index : st'.objectIndex = st.objectIndex
+  indexSet : st'.objectIndexSet = st.objectIndexSet
+  types : st'.lifecycle.objectTypes = st.lifecycle.objectTypes
+
+theorem SystemState.ghostsKept.refl (st : SystemState) : SystemState.ghostsKept st st :=
+  ⟨rfl, rfl, rfl⟩
+
+theorem SystemState.ghostsKept.trans {st st' st'' : SystemState}
+    (h2 : SystemState.ghostsKept st'' st') (h1 : SystemState.ghostsKept st' st) :
+    SystemState.ghostsKept st'' st :=
+  ⟨h2.index.trans h1.index, h2.indexSet.trans h1.indexSet, h2.types.trans h1.types⟩
+
+/-- Two states equal off the objects and the scheduler — or off any fields but
+the three ghosts — keep them. -/
+theorem SystemState.ghostsKept.of_eq {st st' : SystemState} (h : st' = st) :
+    SystemState.ghostsKept st' st := h ▸ .refl st
+
+/-- A step that rewrites the objects alone keeps the ghosts. -/
+theorem SystemState.ghostsKept.of_objectsOnly {st st' : SystemState}
+    (h : st' = { st with objects := st'.objects }) : SystemState.ghostsKept st' st :=
+  ⟨by rw [h], by rw [h], by rw [h]⟩
+
+/-- Closes a `ghostsKept` goal for a step written as a record update that keeps
+the ghost fields, or from a hypothesis in context. -/
+macro "ghosts_kept" : tactic => `(tactic| first
+  | exact SeLe4n.Model.SystemState.ghostsKept.refl _
+  | exact ⟨rfl, rfl, rfl⟩
+  | assumption
+  | exact SeLe4n.Model.SystemState.ghostsKept.of_eq (by assumption)
+  | (refine ⟨?_, ?_, ?_⟩ <;> simp <;> done)
+  | (subst_vars; exact ⟨rfl, rfl, rfl⟩)
+  | (subst_vars; refine ⟨?_, ?_, ?_⟩ <;> simp <;> done))
+
+/-- **A store over an object of the same kind moves no ghost**: the key is
+already indexed, and its type does not change. -/
+theorem SystemState.ghostsKept.storeObject_sameKind {st st' : SystemState} {id : SeLe4n.ObjId}
+    {obj old : KernelObject} (hStore : storeObject id obj st = .ok ((), st'))
+    (hOld : st.objects[id]? = some old) (hK : old.objectType = obj.objectType) :
+    SystemState.ghostsKept st' st := by
+  have hIdx := storeObject_objectIndex hStore
+  have hSet := storeObject_objectIndexSet hStore
+  have hTy := storeObject_objectTypes hStore
+  have hKeep : storeKeepsKind st id obj.objectType = true := by
+    unfold storeKeepsKind; rw [hOld]; simp [hK]
+  rw [hOld] at hIdx hSet
+  rw [hKeep] at hTy
+  exact ⟨by simpa using hIdx, by simpa using hSet, by simpa using hTy⟩
+
 /-- **`kindPreservingWrite` without its binding-code clause**: at every key the
 store is unchanged or holds an object of the same non-`cnode` kind with the same
 space slots and untyped record.  What the capability bundle reads, and what a
@@ -3339,9 +3491,16 @@ And it keeps the object's mapping facts (`KernelObject.mappingView`: a root's
 ASID, translations and mapping epochs, a frame's base), which the mapping
 records read (`SystemState.liveMappingsRecorded`): only the address-space
 operations, the carve and the final delete write them, and none of those is a
-kind-preserving chain step. -/
-def kindPreservingWrite (st st' : SystemState) : Prop :=
-  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+kind-preserving chain step.
+
+WS-UC UC2: and it moves none of the bookkeeping ghosts
+(`SystemState.ghostsKept`): the object index, its set and the type table are
+written only by a store to a fresh key or of a new kind and by an erase, and
+none of those is a kind-preserving chain step.  A kind-preserving write
+therefore keeps the bookkeeping in agreement with the objects
+(`SystemState.bookkeepingAgrees.of_kindPreservingWrite`). -/
+def kindPreservingWriteAt (st st' : SystemState) (oid : SeLe4n.ObjId) : Prop :=
+  st'.objects[oid]? = st.objects[oid]? ∨
     ∃ pre post : KernelObject,
       st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
       post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode ∧
@@ -3349,14 +3508,26 @@ def kindPreservingWrite (st st' : SystemState) : Prop :=
       post.bindingCodes = pre.bindingCodes ∧ post.tableBackLinks = pre.tableBackLinks ∧
       post.mappingView = pre.mappingView
 
+/-- **A kind-preserving write** (see `kindPreservingWriteAt`): at every key the
+store is unchanged or holds an object of the same non-`cnode` kind with the same
+slots, untyped record, binding codes, table back-links and mapping facts, and
+the bookkeeping ghosts are unchanged.  It applies as a function of the key. -/
+structure kindPreservingWrite (st st' : SystemState) : Prop where
+  objectsAt : ∀ oid : SeLe4n.ObjId, kindPreservingWriteAt st st' oid
+  ghosts : SystemState.ghostsKept st' st
+
+instance {st st' : SystemState} :
+    CoeFun (kindPreservingWrite st st') (fun _ => ∀ oid : SeLe4n.ObjId, kindPreservingWriteAt st st' oid) :=
+  ⟨kindPreservingWrite.objectsAt⟩
+
 namespace kindPreservingWrite
 
-theorem refl (st : SystemState) : kindPreservingWrite st st := fun _ => Or.inl rfl
+theorem refl (st : SystemState) : kindPreservingWrite st st := ⟨fun _ => Or.inl rfl, .refl st⟩
 
 theorem trans {st st' st'' : SystemState}
     (h₁ : kindPreservingWrite st st') (h₂ : kindPreservingWrite st' st'') :
     kindPreservingWrite st st'' := by
-  intro oid
+  refine ⟨fun oid => ?_, h₂.ghosts.trans h₁.ghosts⟩
   rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁, hm₁⟩
   · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
     · exact Or.inl (e₂.trans e₁)
@@ -3424,9 +3595,10 @@ theorem slotCap_fwd {st st' : SystemState} (h : kindPreservingWrite st st') {oid
   h.upToBindings.slotCap_fwd hO
 
 /-- WS-RR RR8.16 (`v0.35.199`): the degenerate instance — a step that writes no
-object at all. -/
-theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
-    kindPreservingWrite st st' := fun _ => Or.inl (by rw [h])
+object at all, and none of the ghosts. -/
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects)
+    (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
+    kindPreservingWrite st st' := ⟨fun _ => Or.inl (by rw [h]), hG⟩
 
 end kindPreservingWrite
 
@@ -3454,7 +3626,9 @@ theorem storeObject_kindPreservingWrite
         | rfl
         | (dsimp only; split <;> rfl)) :
     kindPreservingWrite st st' := by
-  intro k
+  refine ⟨fun k => ?_, ?_⟩
+  rotate_left
+  · exact .storeObject_sameKind hStore hPre hKind.symm
   by_cases hEq : k = oid
   · subst hEq
     exact Or.inr ⟨pre, obj, hPre,
@@ -3596,16 +3770,24 @@ theorem storeObject_preserves_objectIndexSetComplete
     (hComplete : objectIndexSetComplete st)
     (hStore : storeObject id obj st = .ok ((), st')) :
     objectIndexSetComplete st' := by
+  have hSet := storeObject_objectIndexSet hStore
   unfold storeObject at hStore; cases hStore
   intro oid hNe
-  simp only at hNe ⊢
+  rw [hSet]
+  simp only at hNe
   by_cases hEq : (id == oid) = true
   · have hIdEq : id = oid := eq_of_beq hEq
-    rw [← hIdEq]; exact RHSet.contains_insert_self st.objectIndexSet id hObjSetInv
-  · rw [RHSet.contains_insert_ne st.objectIndexSet id oid hEq hObjSetInv]
-    apply hComplete
-    rwa [show (st.objects.insert id obj)[oid]? = st.objects[oid]? from
-      RHTable.getElem?_insert_ne st.objects id oid obj hEq hObjInv] at hNe
+    subst hIdEq
+    split
+    · next hS => exact hComplete id (by simpa [Option.isSome_iff_ne_none] using hS)
+    · exact RHSet.contains_insert_self st.objectIndexSet id hObjSetInv
+  · have hO : st.objects[oid]? ≠ none := by
+      rwa [show (st.objects.insert id obj)[oid]? = st.objects[oid]? from
+        RHTable.getElem?_insert_ne st.objects id oid obj hEq hObjInv] at hNe
+    split
+    · exact hComplete oid hO
+    · rw [RHSet.contains_insert_ne st.objectIndexSet id oid hEq hObjSetInv]
+      exact hComplete oid hO
 
 /-- TPI-D1: storeObject preserves objectIndexSet.table.invExt. -/
 theorem storeObject_preserves_objectIndexSet_invExt
@@ -3613,18 +3795,32 @@ theorem storeObject_preserves_objectIndexSet_invExt
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objectIndexSet.table.invExt := by
-  unfold storeObject at hStore; cases hStore
-  exact RHSet.insert_preserves_invExt st.objectIndexSet id hObjSetInv
+  rw [storeObject_objectIndexSet hStore]
+  split
+  · exact hObjSetInv
+  · exact RHSet.insert_preserves_invExt st.objectIndexSet id hObjSetInv
 
+/-- The type ghost records the stored object's type at its ID.  WS-UC UC2: a
+store over an object of the same kind leaves the ghost, so the claim reads the
+ghost's agreement at `oid` before the store (`hKind`). -/
 theorem storeObject_updates_objectTypeMeta
     (st st' : SystemState)
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
+    (hKind : ∀ o, st.objects[oid]? = some o → st.lifecycle.objectTypes[oid]? = some o.objectType)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     st'.lifecycle.objectTypes[oid]? = some obj.objectType := by
-  unfold storeObject at hStep; cases hStep
-  simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjTypesInv]
+  rw [storeObject_objectTypes hStep]
+  split
+  · next hK =>
+    unfold storeKeepsKind at hK
+    cases hO : st.objects[oid]? with
+    | none => rw [hO] at hK; cases hK
+    | some o =>
+      rw [hO] at hK
+      rw [hKind o hO]; simpa using hK
+  · simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjTypesInv]
 
 namespace SystemState
 
@@ -4101,6 +4297,24 @@ view: this one reads the store, so it agrees by construction with any transition
 that derives behaviour from the stored object. -/
 def getObjectType? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
   (st.objects[id]?).map KernelObject.objectType
+
+/-- WS-UC UC2: two states holding objects of the same kind at `id` hold an
+object there alike. -/
+theorem objects_isSome_of_getObjectType? {s s' : SystemState} {id : SeLe4n.ObjId}
+    (h : s'.getObjectType? id = s.getObjectType? id) :
+    (s'.objects[id]?).isSome = (s.objects[id]?).isSome := by
+  have e := congrArg Option.isSome h
+  simpa only [getObjectType?, Option.isSome_map] using e
+
+/-- WS-UC UC2: the store's kind check (`storeKeepsKind`) reads only the kind at
+`id`, so two states holding objects of the same kind there answer it alike. -/
+theorem storeKeepsKind_of_getObjectType? {s s' : SystemState} {id : SeLe4n.ObjId}
+    (h : s'.getObjectType? id = s.getObjectType? id) (ty : KernelObjectType) :
+    storeKeepsKind s' id ty = storeKeepsKind s id ty := by
+  unfold getObjectType? at h
+  unfold storeKeepsKind
+  cases a : s'.objects[id]? <;> cases b : s.objects[id]? <;> rw [a, b] at h <;>
+    simp_all
 
 /-- `getObjectType?` as compiled: through `objectEntry?`. -/
 @[inline] def getObjectTypeByEntry? (st : SystemState) (id : SeLe4n.ObjId) :
@@ -6074,7 +6288,7 @@ noncomputable def ownedSlots (st : SystemState) (owner : CSpaceOwner) : List (Se
   | none => []
 
 /-- Lifecycle metadata view of object identity typing. -/
-def lookupObjectTypeMeta (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
+noncomputable def lookupObjectTypeMeta (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
   st.lifecycle.objectTypes[id]?
 
 /-- `lookupSlotCap` is determined entirely by the object store. -/
@@ -6231,18 +6445,27 @@ theorem storeObject_preserves_objectTypeMetadataConsistent
     (hStep : storeObject oid obj st = .ok ((), st')) :
     SystemState.objectTypeMetadataConsistent st' := by
   intro oid'
+  have hT := storeObject_objectTypes hStep
+  have hKind : ∀ o, st.objects[oid]? = some o →
+      st.lifecycle.objectTypes[oid]? = some o.objectType := by
+    intro o hO; have := hConsistent oid; simp only [SystemState.lookupObjectTypeMeta] at this
+    rw [this, hO]; rfl
+  have hU := storeObject_updates_objectTypeMeta st st' oid obj hObjTypesInv hKind hStep
   unfold storeObject at hStep; cases hStep
   simp only [SystemState.lookupObjectTypeMeta] at *
   by_cases hEq : oid' = oid
   · subst hEq
+    rw [hU]
     simp only [RHTable_getElem?_eq_get?]
-    rw [RHTable.getElem?_insert_self _ _ _ hObjTypesInv,
-        RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
+    rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
   · have h1 : ¬((oid == oid') = true) := by intro heq; exact hEq (eq_of_beq heq).symm
+    rw [hT]
     simp only [RHTable_getElem?_eq_get?]
-    rw [RHTable.getElem?_insert_ne _ _ _ _ h1 hObjTypesInv,
-        RHTable.getElem?_insert_ne _ _ _ _ h1 hObjInv]
-    exact hConsistent oid'
+    rw [RHTable.getElem?_insert_ne _ _ _ _ h1 hObjInv]
+    split
+    · simpa [RHTable_getElem?_eq_get?] using hConsistent oid'
+    · rw [RHTable.getElem?_insert_ne _ _ _ _ h1 hObjTypesInv]
+      simpa [RHTable_getElem?_eq_get?] using hConsistent oid'
 
 -- ============================================================================
 -- T2-G (M-NEW-2): Bundled storeObject preserves allTablesInvExt
@@ -6266,6 +6489,8 @@ theorem storeObject_preserves_allTablesInvExtK
     (hAll : st.allTablesInvExtK)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.allTablesInvExtK := by
+  have hSetEq := storeObject_objectIndexSet hStore
+  have hTyEq := storeObject_objectTypes hStore
   unfold storeObject at hStore; cases hStore
   -- Extract components from pre-state invariant
   have hObj := hAll.objects
@@ -6275,14 +6500,18 @@ theorem storeObject_preserves_allTablesInvExtK
   have hObjIdxSet := hAll.objectIndexSet
   unfold SystemState.allTablesInvExtK
   simp only
-  -- Prove objectIndexSet insert preserves invExtK
-  have hObjIdxSet' := RHSet.insert_preserves_invExtK st.objectIndexSet id hObjIdxSet
+  -- Prove the index-set ghost keeps invExtK
+  have hObjIdxSet' : (if (st.objects[id]?).isSome then st.objectIndexSet
+      else st.objectIndexSet.insert id).table.invExtK := by
+    split
+    · exact hObjIdxSet
+    · exact RHSet.insert_preserves_invExtK st.objectIndexSet id hObjIdxSet
   -- Prove asidTable preserves invExtK (erase + insert depending on obj type)
   have hAsid' : (if storeKeepsAsid st id obj then st.asidTable else
       let cleared := match st.objects[id]? with
         | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
         | _ => st.asidTable
-      match obj with
+      match (generalizing := false) obj with
       | .vspaceRoot newRoot => cleared.insert newRoot.asid id
       | _ => cleared).invExtK := by
     split
@@ -6299,10 +6528,16 @@ theorem storeObject_preserves_allTablesInvExtK
     | _ => exact hCleared
   -- Prove objects insert preserves invExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
-  -- Prove objectTypes insert preserves invExtK
-  have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
+  -- Prove the type ghost keeps invExtK
+  have hObjTypes' : (if storeKeepsKind st id obj.objectType then st.lifecycle.objectTypes
+      else st.lifecycle.objectTypes.insert id obj.objectType).invExtK := by
+    split
+    · exact hObjTypes
+    · exact RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
   -- Compose all 6 components
-  exact ⟨hObj', hAsid', hObjTypes', hIfaceReg, hObjIdxSet'⟩
+  refine ⟨hObj', hAsid', ?_, hIfaceReg, ?_⟩
+  · rw [hTyEq]; exact hObjTypes'
+  · rw [hSetEq]; exact hObjIdxSet'
 
 -- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proof
@@ -6317,8 +6552,8 @@ theorem default_systemState_objectTypeMetadataConsistent :
     SystemState.objectTypeMetadataConsistent (default : SystemState) := by
   intro oid
   simp only [SystemState.lookupObjectTypeMeta]
-  have h₁ : (default : SystemState).lifecycle.objectTypes[oid]? = none :=
-    RHTable.getElem?_empty _ _ _
+  have h₁ : (default : SystemState).lifecycle.objectTypes[oid]? = none := by
+    rw [default_objectTypes]; exact RHTable.getElem?_empty _ _ _
   have h₂ : (default : SystemState).objects[oid]? = none :=
     RHTable.getElem?_empty _ _ _
   rw [h₁, h₂]; rfl
@@ -6335,9 +6570,12 @@ theorem storeObject_metadata_sync_type_change
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
+    (hConsistent : SystemState.objectTypeMetadataConsistent st)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     st'.lifecycle.objectTypes[oid]? = some obj.objectType :=
-  storeObject_updates_objectTypeMeta st st' oid obj hObjTypesInv hStep
+  storeObject_updates_objectTypeMeta st st' oid obj hObjTypesInv (fun o hO => by
+    have := hConsistent oid; simp only [SystemState.lookupObjectTypeMeta] at this
+    rw [this, hO]; rfl) hStep
 
 -- ============================================================================
 -- L-05/WS-E6: objectIndex monotonicity
@@ -6354,11 +6592,10 @@ theorem storeObject_objectIndex_monotone
     (hMem : id ∈ st.objectIndex)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     id ∈ st'.objectIndex := by
-  unfold storeObject at hStep; cases hStep
-  simp only []
-  cases h : st.objectIndexSet.contains oid
-  · simp; exact Or.inr hMem
-  · simp; exact hMem
+  rw [storeObject_objectIndex hStep]
+  split
+  · exact hMem
+  · exact List.mem_cons_of_mem _ hMem
 
 -- ============================================================================
 -- WS-H16/A-13: objectIndex liveness — index membership implies object existence
@@ -6392,30 +6629,270 @@ theorem storeObject_preserves_objectIndexLive
     (hObjInv : st.objects.invExt)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     objectIndexLive st' := by
+  have hIdx := storeObject_objectIndex hStep
   unfold storeObject at hStep; cases hStep
   intro id hMem
-  simp only [] at hMem
-  cases h : st.objectIndexSet.contains oid
-  · -- oid was not in objectIndexSet, so objectIndex = oid :: st.objectIndex
-    simp [h] at hMem
-    cases hMem with
-    | inl heq =>
-      subst heq
-      simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
-    | inr hOld =>
-      have hOldLive := hLive id hOld
-      by_cases hEq : (oid == id) = true
-      · have : oid = id := eq_of_beq hEq; subst this
-        simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
-      · simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_ne _ _ _ _ hEq hObjInv]
-        exact hOldLive
-  · -- oid was already in objectIndexSet, so objectIndex unchanged
-    simp [h] at hMem
-    by_cases hEq : (oid == id) = true
-    · have : oid = id := eq_of_beq hEq; subst this
-      simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
-    · simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_ne _ _ _ _ hEq hObjInv]
-      exact hLive id hMem
+  rw [hIdx] at hMem
+  simp only [RHTable_getElem?_eq_get?]
+  by_cases hEq : (oid == id) = true
+  · have : oid = id := eq_of_beq hEq; subst this
+    rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
+  · rw [RHTable.getElem?_insert_ne _ _ _ _ hEq hObjInv]
+    have hOld : id ∈ st.objectIndex := by
+      split at hMem
+      · exact hMem
+      · rcases List.mem_cons.mp hMem with h | h
+        · exact absurd (by rw [h]; exact beq_self_eq_true _) hEq
+        · exact h
+    simpa [RHTable_getElem?_eq_get?] using hLive id hOld
+
+-- ============================================================================
+-- WS-UC UC2: the ghost bookkeeping agrees with the object table
+-- ============================================================================
+
+/-- WS-UC UC2: **the ghost bookkeeping agrees with the object table** — the
+index lists exactly the stored IDs, each once; the index set holds exactly the
+stored IDs; and the type table records each stored object's type and nothing
+else; and the index set's and the type table's own table invariants hold, so a
+store or a retire keeps them.  It holds on every reachable state: at boot, and
+through every store (`storeObject_preserves_bookkeepingAgrees`), rewrite and
+retire, so every kernel entry keeps it (`RunQueueLinkStage.bookkeeping`, the
+22nd conjunct of `proofLayerInvariantBundle`).  It is what
+lets the compiled kernel read the object table where the specification read a
+ghost: the object count (`objectIndex_length`), membership and type. -/
+structure SystemState.bookkeepingAgrees (st : SystemState) : Prop where
+  index : ∀ id, id ∈ st.objectIndex ↔ st.objects[id]? ≠ none
+  nodup : st.objectIndex.Nodup
+  indexSet : ∀ id, st.objectIndexSet.contains id = true ↔ st.objects[id]? ≠ none
+  types : SystemState.objectTypeMetadataConsistent st
+  indexSetInv : st.objectIndexSet.table.invExtK
+  typesInv : st.lifecycle.objectTypes.invExtK
+
+/-- WS-UC UC2: the default state's bookkeeping agrees: every table is empty. -/
+theorem default_bookkeepingAgrees : SystemState.bookkeepingAgrees (default : SystemState) where
+  index id := by
+    have : (default : SystemState).objects[id]? = none := RHTable.getElem?_empty _ _ _
+    simp [this, default_objectIndex]
+  nodup := by rw [default_objectIndex]; exact List.nodup_nil
+  indexSet id := by
+    have : (default : SystemState).objects[id]? = none := RHTable.getElem?_empty _ _ _
+    simp only [this, ne_eq, not_true_eq_false, iff_false, default_objectIndexSet]
+    exact Bool.eq_false_iff.mp (RHSet.contains_empty id)
+  types := default_systemState_objectTypeMetadataConsistent
+  indexSetInv := default_allTablesInvExtK.2.2.2.2
+  typesInv := default_allTablesInvExtK.2.2.1
+
+/-- WS-UC UC2: **the index is as long as the object table is large** on a state
+whose bookkeeping agrees: what lets the capacity check and every fuel the
+specification took from the index's length read `objects.size`. -/
+theorem SystemState.bookkeepingAgrees.objectIndex_length {st : SystemState} (h : SystemState.bookkeepingAgrees st)
+    (hK : st.objects.invExtK) : st.objectIndex.length = st.objects.size := by
+  apply Nat.le_antisymm
+  · exact RHTable.length_le_size_of_nodup_present st.objects hK.1 _ h.nodup
+      (fun k hk => by simpa [RHTable_getElem?_eq_get?] using (h.index k).mp hk)
+  · have hInj : ∀ a b : SeLe4n.ObjId, a.val = b.val → a = b := fun a b e => SeLe4n.ObjId.ext e
+    have hS := RHTable.size_le_length_of_keys_mem (fun o : SeLe4n.ObjId => o.val) hInj
+      (st.objectIndex.map (·.val)) (List.Pairwise.map _ (fun a b hab e => hab (hInj a b e)) h.nodup)
+      st.objects hK.1 hK.2.1 (fun k v hkv => List.mem_map.mpr
+        ⟨k, (h.index k).mpr (by simp [RHTable_getElem?_eq_get?, hkv]), rfl⟩)
+    simpa using hS
+
+/-- WS-UC UC2: **the bookkeeping still agrees after a step that keeps the ghosts
+and the stored IDs**, given the type table still agrees: what every in-place
+step (a thread write, a run-queue link, a taint word) discharges. -/
+theorem SystemState.bookkeepingAgrees.of_frame {st st' : SystemState}
+    (h : SystemState.bookkeepingAgrees st)
+    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
+    (hP : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).isSome = (st.objects[x]?).isSome)
+    (hT : SystemState.objectTypeMetadataConsistent st')
+    (hTI : st'.lifecycle.objectTypes = st.lifecycle.objectTypes := by first | rfl | assumption) :
+    SystemState.bookkeepingAgrees st' where
+  index id := by
+    rw [hI, h.index id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
+  nodup := hI ▸ h.nodup
+  indexSet id := by
+    rw [hS, h.indexSet id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
+  types := hT
+  indexSetInv := hS ▸ h.indexSetInv
+  typesInv := hTI ▸ h.typesInv
+
+/-- WS-UC UC2: **the stored object IDs, read from the object table** — the
+executable reading of the ghost index, in the table's slot order.  On a state
+whose bookkeeping agrees it is a permutation of the index
+(`SystemState.bookkeepingAgrees.objectIds_perm`), so a walk whose result does
+not depend on order may read either. -/
+def SystemState.objectIds (st : SystemState) : List SeLe4n.ObjId :=
+  st.objects.toList.map Prod.fst
+
+theorem SystemState.bookkeepingAgrees.objectIds_perm {st : SystemState}
+    (h : SystemState.bookkeepingAgrees st) (hInv : st.objects.invExt) :
+    st.objectIds.Perm st.objectIndex :=
+  SeLe4n.Model.perm_of_nodup_of_mem_iff (SeLe4n.Model.toList_keys_nodup _ hInv) h.nodup
+    fun a => by
+      rw [SystemState.objectIds, SeLe4n.Model.mem_toList_keys_iff _ hInv, h.index a]
+      exact Iff.rfl
+
+/-- WS-UC UC2: a stored ID is in the index set on a state whose bookkeeping
+agrees, and an ID the object table does not hold is not. -/
+theorem SystemState.bookkeepingAgrees.contains_iff {st : SystemState} (h : SystemState.bookkeepingAgrees st)
+    (id : SeLe4n.ObjId) :
+    st.objectIndexSet.contains id = (st.objects[id]?).isSome := by
+  have := h.indexSet id
+  cases hc : st.objectIndexSet.contains id <;> cases ho : st.objects[id]? <;> simp_all
+
+/-- WS-UC UC2: **a step that moves no bookkeeping** — it writes none of the
+three ghosts and keeps every slot's kind: an empty slot stays empty and a stored
+object keeps its type.  Every step that writes objects in place (a thread or
+context field, a run-queue link, a taint word) is one, and it keeps the
+agreement (`SystemState.bookkeepingAgrees.of_kept`). -/
+structure SystemState.BookkeepingKept (st' st : SystemState) : Prop where
+  index : st'.objectIndex = st.objectIndex
+  indexSet : st'.objectIndexSet = st.objectIndexSet
+  types : st'.lifecycle.objectTypes = st.lifecycle.objectTypes
+  kinds : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).map KernelObject.objectType =
+    (st.objects[x]?).map KernelObject.objectType
+
+theorem SystemState.BookkeepingKept.refl (st : SystemState) : SystemState.BookkeepingKept st st :=
+  ⟨rfl, rfl, rfl, fun _ => rfl⟩
+
+theorem SystemState.BookkeepingKept.trans {st st' st'' : SystemState}
+    (h2 : SystemState.BookkeepingKept st'' st') (h1 : SystemState.BookkeepingKept st' st) :
+    SystemState.BookkeepingKept st'' st :=
+  ⟨h2.index.trans h1.index, h2.indexSet.trans h1.indexSet, h2.types.trans h1.types,
+    fun x => (h2.kinds x).trans (h1.kinds x)⟩
+
+/-- A step that writes no object and none of the ghosts moves no bookkeeping. -/
+theorem SystemState.BookkeepingKept.of_objects_eq {st st' : SystemState}
+    (hO : st'.objects = st.objects) (hI : st'.objectIndex = st.objectIndex)
+    (hS : st'.objectIndexSet = st.objectIndexSet)
+    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
+    SystemState.BookkeepingKept st' st :=
+  ⟨hI, hS, hT, fun x => by rw [hO]⟩
+
+/-- A step whose objects agree, through a kind-keeping reading `f`, with the old
+ones at every key — and which writes none of the ghosts — moves no bookkeeping. -/
+theorem SystemState.BookkeepingKept.of_map {st st' : SystemState} (f : KernelObject → KernelObject)
+    (hf : ∀ o, (f o).objectType = o.objectType)
+    (hA : ∀ k : SeLe4n.ObjId, (st'.objects[k]?).map f = (st.objects[k]?).map f)
+    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
+    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
+    SystemState.BookkeepingKept st' st :=
+  ⟨hI, hS, hT, fun x => by
+    have e := congrArg (Option.map KernelObject.objectType) (hA x)
+    simpa only [Option.map_map, Function.comp_def, hf] using e⟩
+
+theorem SystemState.BookkeepingKept.of_kindPreserving {st st' : SystemState}
+    (h : kindPreservingWrite st st') : SystemState.BookkeepingKept st' st :=
+  ⟨h.ghosts.index, h.ghosts.indexSet, h.ghosts.types, fun x => by
+    rcases h x with e | ⟨pre, post, hp, hq, ht, -⟩
+    · rw [e]
+    · rw [hp, hq]; simp [ht]⟩
+
+/-- WS-UC UC2: **the bookkeeping still agrees after a step that moves none of
+it.** -/
+theorem SystemState.bookkeepingAgrees.of_kept {st st' : SystemState}
+    (h : SystemState.bookkeepingAgrees st) (k : SystemState.BookkeepingKept st' st) :
+    SystemState.bookkeepingAgrees st' :=
+  have hP : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).isSome = (st.objects[x]?).isSome := fun x => by
+    rw [← Option.isSome_map (f := KernelObject.objectType), k.kinds x, Option.isSome_map]
+  { index := fun id => by
+      rw [k.index, h.index id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
+    nodup := k.index ▸ h.nodup
+    indexSet := fun id => by
+      rw [k.indexSet, h.indexSet id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
+    types := fun oid => by
+      simp only [SystemState.lookupObjectTypeMeta] at *
+      rw [k.types, k.kinds oid]; exact h.types oid
+    indexSetInv := k.indexSet ▸ h.indexSetInv
+    typesInv := k.types ▸ h.typesInv }
+
+/-- A step that writes no object and none of the ghosts keeps the agreement. -/
+theorem SystemState.bookkeepingAgrees.of_objects_ghosts {st st' : SystemState}
+    (h : SystemState.bookkeepingAgrees st) (hO : st'.objects = st.objects)
+    (hG : SystemState.ghostsKept st' st) : SystemState.bookkeepingAgrees st' :=
+  h.of_kept (.of_objects_eq hO hG.index hG.indexSet hG.types)
+
+/-- WS-UC UC2: `storeObject` keeps the bookkeeping in agreement. -/
+theorem storeObject_preserves_bookkeepingAgrees
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (h : SystemState.bookkeepingAgrees st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    SystemState.bookkeepingAgrees st' := by
+  have hSetInv := h.indexSetInv.1
+  have hIdx := storeObject_objectIndex hStore
+  have hSet := storeObject_objectIndexSet hStore
+  have hTypes := storeObject_preserves_objectTypeMetadataConsistent st st' id obj h.types
+    hObjInv h.typesInv.1 hStore
+  have hObjs : ∀ k : SeLe4n.ObjId, st'.objects[k]? = (st.objects.insert id obj)[k]? := by
+    unfold storeObject at hStore; cases hStore; intro k; rfl
+  have hAt : ∀ k, st'.objects[k]? ≠ none ↔ (k = id ∨ st.objects[k]? ≠ none) := by
+    intro k
+    rw [hObjs k]
+    simp only [RHTable_getElem?_eq_get?]
+    by_cases hk : (id == k) = true
+    · have := eq_of_beq hk; subst this
+      rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
+    · rw [RHTable.getElem?_insert_ne _ _ _ _ hk hObjInv]
+      have : k ≠ id := fun e => hk (by rw [e]; exact beq_self_eq_true _)
+      simp [this]
+  refine ⟨fun k => ?_, ?_, fun k => ?_, hTypes, ?_, ?_⟩
+  · rw [hIdx, hAt k]
+    split
+    · next hS =>
+      rw [h.index k]
+      constructor
+      · exact Or.inr
+      · rintro (rfl | hk)
+        · simpa [Option.isSome_iff_ne_none] using hS
+        · exact hk
+    · rw [List.mem_cons, h.index k]
+  · rw [hIdx]
+    split
+    · exact h.nodup
+    · next hS =>
+      refine List.nodup_cons.mpr ⟨fun hm => ?_, h.nodup⟩
+      have := (h.index id).mp hm
+      simp [Option.isSome_iff_ne_none] at hS
+      exact this hS
+  · rw [hSet, hAt k]
+    split
+    · next hS =>
+      rw [h.indexSet k]
+      constructor
+      · exact Or.inr
+      · rintro (rfl | hk)
+        · simpa [Option.isSome_iff_ne_none] using hS
+        · exact hk
+    · by_cases hk : (id == k) = true
+      · have := eq_of_beq hk; subst this
+        simp [RHSet.contains_insert_self _ _ hSetInv]
+      · rw [RHSet.contains_insert_ne _ _ _ hk hSetInv, h.indexSet k]
+        have : k ≠ id := fun e => hk (by rw [e]; exact beq_self_eq_true _)
+        simp [this]
+  · rw [hSet]; split
+    · exact h.indexSetInv
+    · exact RHSet.insert_preserves_invExtK _ _ h.indexSetInv
+  · rw [storeObject_objectTypes hStore]; split
+    · exact h.typesInv
+    · exact RHTable_insert_preserves_invExtK _ _ _ h.typesInv
+
+/-- WS-UC UC2: **a store over an object of the same kind moves no
+bookkeeping**: the key is already indexed, and its type does not change. -/
+theorem SystemState.BookkeepingKept.storeObject_sameKind {st st' : SystemState} {id : SeLe4n.ObjId}
+    {obj old : KernelObject} (hStore : storeObject id obj st = .ok ((), st'))
+    (hOld : st.objects[id]? = some old) (hK : old.objectType = obj.objectType)
+    (hObjInv : st.objects.invExt) : SystemState.BookkeepingKept st' st := by
+  have hG := SystemState.ghostsKept.storeObject_sameKind hStore hOld hK
+  refine ⟨hG.index, hG.indexSet, hG.types, fun x => ?_⟩
+  unfold storeObject at hStore; cases hStore
+  simp only [RHTable_getElem?_eq_get?]
+  by_cases hx : (id == x) = true
+  · have := eq_of_beq hx; subst this
+    rw [RHTable.getElem?_insert_self _ _ _ hObjInv]
+    simp only [RHTable_getElem?_eq_get?] at hOld
+    rw [hOld]; simp [hK]
+  · rw [RHTable.getElem?_insert_ne _ _ _ _ hx hObjInv]
 
 -- ============================================================================
 -- The in-place rewrite — a store write that carries no bookkeeping, by proof
@@ -6619,7 +7096,8 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
     (hMapping : ∀ old, st.objects[id]? = some old →
       new.mappingView = old.mappingView := by intro old _; cases old <;> rfl) :
     kindPreservingWrite st (st.rewriteObject id new h) := by
-  intro k
+  refine ⟨fun k => ?_, ⟨rfl, rfl, rfl⟩⟩
+  unfold SeLe4n.Model.kindPreservingWriteAt
   by_cases hEq : id = k
   · subst hEq
     have hAdm := h
@@ -6655,11 +7133,13 @@ theorem rewriteObject_tcb_kindPreservingWrite {st : SystemState} {tid : SeLe4n.T
 
 -- The bookkeeping, unconditionally.
 
-theorem rewriteObject_preserves_objectIndexBounded (st : SystemState) (id : SeLe4n.ObjId)
-    (new : KernelObject) (h : st.rewriteAdmissible id new)
-    (hB : objectIndexBounded st) :
-    objectIndexBounded (st.rewriteObject id new h) :=
-  hB
+theorem rewriteObject_preserves_objectCountBounded (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt)
+    (hB : objectCountBounded st) :
+    objectCountBounded (st.rewriteObject id new h) := by
+  obtain ⟨old, hOld, -, -⟩ := h
+  exact Nat.le_trans (RHTable.size_insert_le_of_get? st.objects id new old hInv
+    (by rw [← RHTable_getElem?_eq_get?]; exact hOld)) hB
 
 theorem rewriteObject_preserves_objectIndexSetSync (st : SystemState) (id : SeLe4n.ObjId)
     (new : KernelObject) (h : st.rewriteAdmissible id new)
@@ -6707,6 +7187,29 @@ theorem rewriteObject_preserves_objectTypeMetadataConsistent (st : SystemState)
     simp only [Option.map_some, hKind]
   · rw [rewriteObject_objects_ne st id oid new h hEq hInv]
     exact hC'
+
+/-- WS-UC UC2: **an in-place rewrite moves no bookkeeping**: it writes none of
+the ghosts, and the object it rewrites keeps its kind. -/
+theorem rewriteObject_bookkeepingKept (st : SystemState)
+    (id : SeLe4n.ObjId) (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (hInv : st.objects.invExt) :
+    SystemState.BookkeepingKept (st.rewriteObject id new h) st :=
+  ⟨rfl, rfl, rfl, fun k => by
+    by_cases hEq : id = k
+    · subst hEq
+      obtain ⟨old, hOld, hTy, hN⟩ := h
+      rw [rewriteObject_objects_self st id new ⟨old, hOld, hTy, hN⟩ hInv, hOld]
+      simp [hTy]
+    · rw [rewriteObject_objects_ne st id k new h hEq hInv]⟩
+
+/-- WS-UC UC2: a rewrite keeps the bookkeeping in agreement: it writes one stored
+key with an object of the same kind, so the stored IDs and their types are
+unchanged. -/
+theorem rewriteObject_preserves_bookkeepingAgrees (st : SystemState)
+    (id : SeLe4n.ObjId) (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (hInv : st.objects.invExt) (hA : bookkeepingAgrees st) :
+    bookkeepingAgrees (st.rewriteObject id new h) :=
+  hA.of_kept (rewriteObject_bookkeepingKept st id new h hInv)
 
 
 -- ----------------------------------------------------------------------------
@@ -7072,14 +7575,14 @@ by `storeReplyWith`, so a stash builds no Reply record. -/
   | .vspaceRoot r => .vspaceRoot (f r)
   | o => o
 
-/-- WS-ZA ZA5.4: **a root store that changes only `objects`.**  The key is in the
-object index with the VSpace-root type, and the ASID table already names `id` for
-the root's ASID — the case of every store an address-space operation makes to the
-root it resolved, by an update that keeps the ASID (`storeKeepsAsid`). -/
+/-- WS-ZA ZA5.4: **a root store that changes only `objects`.**  The ASID table
+already names `id` for the root's ASID — the case of every store an
+address-space operation makes to the root it resolved (the root stored at `id`,
+`storeVSpaceRootWith`), by an update that keeps the ASID (`storeKeepsAsid`).
+WS-UC UC2: the index and type tables are ghosts, which a store over a stored
+root leaves as they are, so only the ASID table is read. -/
 @[inline] def storeLeavesRootTables (st : SystemState) (id : SeLe4n.ObjId) (r : VSpaceRoot) :
     Bool :=
-  st.objectIndexSet.table.holds id () &&
-  st.lifecycle.objectTypes.holds id .vspaceRoot &&
   st.asidTable.holds r.asid id
 
 /-- WS-ZA ZA5.4: **the store of `f` of the VSpace root at `id`, written in its
@@ -7109,19 +7612,15 @@ theorem storeObject_vspaceRoot_eq_storeVSpaceRootWith {st : SystemState} {id : S
   rw [h]
   dsimp only
   split
-  · next hL =>
-    simp only [storeLeavesRootTables, Bool.and_eq_true] at hL
-    obtain ⟨⟨hSet, hTy⟩, hA⟩ := hL
+  · next hA =>
+    unfold storeLeavesRootTables at hA
     have hK : storeKeepsAsid st id (.vspaceRoot (f r)) = true := by
       simp only [storeKeepsAsid, h, hf, beq_self_eq_true, Bool.true_and]; exact hA
-    have hC : st.objectIndexSet.contains id = true :=
-      RHTable.contains_of_holds _ _ _ hSet
-    have hI : st.objectIndexSet.insert id = st.objectIndexSet := by
-      unfold RHSet.insert; rw [RHTable.insert_eq_self_of_holds _ _ _ hSet]
-    have hT := RHTable.insert_eq_self_of_holds _ _ _ hTy
+    have hKK : storeKeepsKind st id (KernelObject.vspaceRoot (f r)).objectType = true := by
+      simp [storeKeepsKind, h, KernelObject.objectType]
     unfold storeObject modifyObject
     rw [RHTable.modify_of_get? h]
-    simp only [hC, ↓reduceIte, hI, hK, KernelObject.objectType, hT]
+    simp only [h, Option.isSome_some, ↓reduceIte, hK, hKK]
     rfl
   · obtain ⟨st', hS⟩ := storeObject_isOk st id (.vspaceRoot (f r))
     rw [hS]
@@ -7384,6 +7883,40 @@ theorem updateTcb_objects_ne (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB
   · exact rewriteObject_objects_ne _ _ _ _ _ hNe hInv
   · rfl
 
+/-- WS-UC UC2: `updateTcb` keeps the object count — it rewrites a stored TCB in
+place or leaves the table as it is — so the PIP-chain fuel (`objects.size`) is
+the same on both sides. -/
+theorem updateTcb_objects_size (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) :
+    (st.updateTcb tid f).objects.size = st.objects.size := by
+  refine SeLe4n.Model.size_eq_of_present_iff _ _
+    (updateTcb_preserves_objects_invExt st tid f hInv) hInv fun k => ?_
+  change (st.updateTcb tid f).objects[k]? ≠ none ↔ st.objects[k]? ≠ none
+  by_cases hk : tid.toObjId = k
+  · subst hk
+    cases hT : st.getTcb? tid with
+    | none => rw [updateTcb_eq_self_of_none hT]
+    | some t =>
+      rw [updateTcb_eq_of_some hT f, (getTcb?_eq_some_iff st tid t).mp hT]
+      simp only [RHTable_getElem?_eq_get?]
+      rw [RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+      simp
+  · rw [updateTcb_objects_ne st tid f k hk hInv]
+
+/-- WS-UC UC2: an insert over an occupied key keeps the object count. -/
+theorem objects_size_insert_of_present (st : SystemState) (k : SeLe4n.ObjId) (o : KernelObject)
+    (hInv : st.objects.invExt) (h : st.objects[k]? ≠ none) :
+    (st.objects.insert k o).size = st.objects.size := by
+  refine SeLe4n.Model.size_eq_of_present_iff _ _
+    (RHTable.insert_preserves_invExt st.objects k o hInv) hInv fun x => ?_
+  by_cases hk : (k == x) = true
+  · have hk' : k = x := beq_iff_eq.mp hk
+    subst hk'
+    rw [RHTable.getElem?_insert_self st.objects k _ hInv]
+    simp only [ne_eq, reduceCtorEq, not_false_eq_true, true_iff]
+    exact h
+  · rw [RHTable.getElem?_insert_ne st.objects k x _ hk hInv]
+
 theorem updateTcb_preserves_objectIndexSetComplete (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : TCB → TCB) (hInv : st.objects.invExt) (hC : objectIndexSetComplete st) :
     objectIndexSetComplete (st.updateTcb tid f) := by
@@ -7405,6 +7938,13 @@ theorem updateTcb_preserves_objectTypeMetadataConsistent (st : SystemState)
   unfold updateTcb; split
   · exact rewriteObject_preserves_objectTypeMetadataConsistent _ _ _ _ hInv hC
   · exact hC
+
+/-- WS-UC UC2: a TCB rewrite moves no bookkeeping. -/
+theorem BookkeepingKept.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) : BookkeepingKept (st.updateTcb tid f) st := by
+  unfold SystemState.updateTcb; split
+  · exact rewriteObject_bookkeepingKept _ _ _ _ hInv
+  · exact .refl st
 
 /-- Rewrite the SchedContext at `scId` in place through `f`; the identity when
 `scId` resolves to no SchedContext.  `updateTcb`'s twin, for the same reason. -/
@@ -7528,6 +8068,14 @@ theorem updateSchedContext_preserves_objectTypeMetadataConsistent (st : SystemSt
   unfold updateSchedContext; split
   · exact rewriteObject_preserves_objectTypeMetadataConsistent _ _ _ _ hInv hC
   · exact hC
+
+/-- WS-UC UC2: a SchedContext rewrite moves no bookkeeping. -/
+theorem BookkeepingKept.updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt) :
+    BookkeepingKept (st.updateSchedContext scId f) st := by
+  unfold SystemState.updateSchedContext; split
+  · exact rewriteObject_bookkeepingKept _ _ _ _ hInv
+  · exact .refl st
 
 
 -- ============================================================================
@@ -7896,6 +8444,13 @@ theorem withObjectStored_preserves_objectTypeMetadataConsistent (st : SystemStat
     (hObjTypesInv : st.lifecycle.objectTypes.invExt) (hC : objectTypeMetadataConsistent st) :
     objectTypeMetadataConsistent (st.withObjectStored id obj) :=
   storeObject_preserves_objectTypeMetadataConsistent st _ id obj hC hInv hObjTypesInv
+    (storeObject_eq_withObjectStored st id obj)
+
+/-- WS-UC UC2: the pure store keeps the bookkeeping in agreement. -/
+theorem withObjectStored_preserves_bookkeepingAgrees (st : SystemState)
+    (id : SeLe4n.ObjId) (obj : KernelObject) (hAll : st.allTablesInvExtK)
+    (h : bookkeepingAgrees st) : bookkeepingAgrees (st.withObjectStored id obj) :=
+  storeObject_preserves_bookkeepingAgrees st _ id obj h hAll.objects.1
     (storeObject_eq_withObjectStored st id obj)
 
 theorem withObjectStored_preserves_allTablesInvExtK (st : SystemState) (id : SeLe4n.ObjId)

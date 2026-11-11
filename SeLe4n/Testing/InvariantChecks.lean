@@ -61,7 +61,7 @@ private def intrusiveQueueWellFormedB (st : SystemState) (q : IntrusiveQueue) : 
           headTcb.queuePrev.isNone
             && headTcb.queuePPrev = some .endpointHead
             && tailTcb.queueNext.isNone
-            && intrusiveQueueReachable st tail none (some .endpointHead) (some head) [] (st.objectIndex.length + 1)
+            && intrusiveQueueReachable st tail none (some .endpointHead) (some head) [] (st.objects.size + 1)
       | _, _ => false
   | _, _ => false
 
@@ -137,7 +137,7 @@ inferred={reprStr inferred}",
 /-- **WS-RR RR7.36**: the same relation as a single boolean, for suites that
 want to assert it of a state directly. -/
 def threadInactiveFlagConsistentBool (st : SystemState) : Bool :=
-  (threadInactiveFlagConsistentChecks st.objectIndex st).all (·.2)
+  (threadInactiveFlagConsistentChecks st.objectIds st).all (·.2)
 
 /-- **WS-RR RR8.3**: `queuePPrevAgreesWithPrev`, the fourth conjunct of
 `dualQueueSystemInvariant`, as a runtime check.
@@ -171,7 +171,7 @@ pprev={reprStr tcb.queuePPrev}", ok) :: acc
 it of a state directly — and for the witnesses that show a corrupted back-pointer
 fails it. -/
 def queuePPrevAgreesWithPrevBool (st : SystemState) : Bool :=
-  (queuePPrevAgreesWithPrevChecks st.objectIndex st).all (·.2)
+  (queuePPrevAgreesWithPrevChecks st.objectIds st).all (·.2)
 
 /-- **PR #897 review (`v0.35.108`)**: the FIFTH `dualQueueSystemInvariant`
 conjunct — a thread heads at most one endpoint queue, counting a send queue and a
@@ -215,7 +215,7 @@ recvQ={e.2.1} collides={others.map (fun f => (f.1.toNat, f.2.1))}", others.isEmp
 suites that assert it of a state directly — and for the witness that shows a
 shared singleton head fails it while every queue stays well formed. -/
 def endpointQueueHeadDisjointBool (st : SystemState) : Bool :=
-  (endpointQueueHeadDisjointChecks st.objectIndex st).all (·.2)
+  (endpointQueueHeadDisjointChecks st.objectIds st).all (·.2)
 
 /-- **WS-ZA ZA5.4 part 27**: `endpointQueueLinksOnlyBlocked`, the 21st
 `ipcInvariantFull` conjunct, as a runtime check: a thread with an endpoint-queue
@@ -238,7 +238,7 @@ next={reprStr tcb.queueNext} ipcState={reprStr tcb.ipcState}",
 /-- **WS-ZA ZA5.4 part 27**: the same relation as a single boolean, for the
 witness that shows a ready thread carrying a queue successor fails it. -/
 def endpointQueueLinksOnlyBlockedBool (st : SystemState) : Bool :=
-  (endpointQueueLinksOnlyBlockedChecks st.objectIndex st).all (·.2)
+  (endpointQueueLinksOnlyBlockedChecks st.objectIds st).all (·.2)
 
 /-- **WS-ZA ZA5.4 part 27**: `donationChainWellFormed.nextLinkReciprocal` as a
 runtime check: a reply frame linking up to a frame above is answered by that
@@ -381,14 +381,16 @@ private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st
       | none => true
     (s!"capability badge implies non-empty rights: oid={oid} slot={slot}", ok)
 
-/-- M-11 Lifecycle metadata consistency: when lifecycle objectType metadata is present
-for a materialized object, it must agree with the actual object type. -/
+/-- M-11 Lifecycle metadata consistency: the type reader `getObjectType?` agrees
+with the kind of the object stored at each id (the recorded type table is a
+proof-only ghost since WS-UC UC2). -/
 private def lifecycleMetadataChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match st.getObject? oid, st.lifecycle.objectTypes[oid]? with
-    | some obj, some metaTy =>
-        (s!"lifecycle objectType metadata consistent: oid={oid}", metaTy == obj.objectType) :: acc
-    | _, _ => acc) []
+    match st.getObject? oid with
+    | some obj =>
+        (s!"lifecycle objectType metadata consistent: oid={oid}",
+          st.getObjectType? oid == some obj.objectType) :: acc
+    | none => acc) []
 
 /-- M-11 VSpace ASID uniqueness: no two VSpace root objects share the same ASID. -/
 private def vspaceAsidUniquenessChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
@@ -831,12 +833,12 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState) :
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.
-Discovers materialized objects from `st.objectIndex` (the finite object store's
-monotonic ID list) rather than scanning a hardcoded range.  See audit finding
+Discovers materialized objects from `st.objectIds` (the keys the finite object
+store enumerates) rather than scanning a hardcoded range.  See audit finding
 F-10 and WS-D5.
 -/
 def stateInvariantChecks (st : SystemState) : List (String × Bool) :=
-  stateInvariantChecksFor st.objectIndex st
+  stateInvariantChecksFor st.objectIds st
 
 private def failedChecks (checks : List (String × Bool)) : List String :=
   checks.filterMap fun (label, ok) => if ok then none else some label
@@ -890,7 +892,7 @@ def assertLiveThreadStateInvariantsFor (label : String) (objectIds : List SeLe4n
 
 /-- `assertLiveThreadStateInvariantsFor` over the state's own object index. -/
 def assertLiveThreadStateInvariants (label : String) (st : SystemState) : IO Unit :=
-  assertLiveThreadStateInvariantsFor label st.objectIndex st
+  assertLiveThreadStateInvariantsFor label st.objectIds st
 
 -- ============================================================================
 -- AG1-F + WS-AM AM4 audit remediation: Runtime crossSubsystemInvariant
@@ -919,7 +921,7 @@ private def collectQueueMembersB
 /-- AG1-F-i: Check noStaleEndpointQueueReferences — every thread ID in
 endpoint queues (head, tail, AND interior members) has a live TCB. -/
 private def checkNoStaleEndpointQueueRefs (st : SystemState) : Bool :=
-  st.objectIndex.all fun oid =>
+  st.objectIds.all fun oid =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
     match st.getEndpoint? oid with
     | some ep =>
@@ -928,7 +930,7 @@ private def checkNoStaleEndpointQueueRefs (st : SystemState) : Bool :=
         (ep.sendQ.head.all checkTid) && (ep.sendQ.tail.all checkTid) &&
         (ep.receiveQ.head.all checkTid) && (ep.receiveQ.tail.all checkTid)
       -- T5-I: Interior member validation via queueNext traversal
-      let fuel := st.objectIndex.length
+      let fuel := st.objects.size
       let sendInteriorOk := match collectQueueMembersB st ep.sendQ.head fuel with
         | some members => members.all fun tid => (st.getTcb? tid).isSome
         | none => false  -- fuel exhaustion signals invariant violation
@@ -941,7 +943,7 @@ private def checkNoStaleEndpointQueueRefs (st : SystemState) : Bool :=
 /-- AG1-F-i: Check noStaleNotificationWaitReferences — each end of every
 notification wait queue is a live TCB. -/
 private def checkNoStaleNotificationWaitRefs (st : SystemState) : Bool :=
-  st.objectIndex.all fun oid =>
+  st.objectIds.all fun oid =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
     match st.getNotification? oid with
     | some ntfn =>
@@ -951,7 +953,7 @@ private def checkNoStaleNotificationWaitRefs (st : SystemState) : Bool :=
 /-- AG1-F-ii: Check schedContextStoreConsistent — every SchedContext referenced
 by a TCB binding exists in the store. -/
 private def checkSchedContextStoreConsistent (st : SystemState) : Bool :=
-  st.objectIndex.all fun oid =>
+  st.objectIds.all fun oid =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
     match st.getTcb? ⟨oid.toNat⟩ with
     | some tcb =>
@@ -964,7 +966,7 @@ private def checkSchedContextStoreConsistent (st : SystemState) : Bool :=
 any given SchedContext. Uses a simple O(n²) pairwise check. -/
 private def checkSchedContextNotDualBound (st : SystemState) : Bool :=
   -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
-  let bindings := st.objectIndex.filterMap fun oid =>
+  let bindings := st.objectIds.filterMap fun oid =>
     match st.getTcb? ⟨oid.toNat⟩ with
     | some tcb =>
       match tcb.schedContextBinding.scId? with
@@ -993,8 +995,8 @@ private def checkSchedContextRunQueueConsistent (st : SystemState) : Bool :=
 /-- AG1-F-iii: Check blockingAcyclic via bounded cycle detection.
 Uses fuel = number of objects to bound the walk. -/
 private def checkBlockingAcyclic (st : SystemState) : Bool :=
-  let fuel := st.objectIndex.length
-  st.objectIndex.all fun oid =>
+  let fuel := st.objects.size
+  st.objectIds.all fun oid =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
     match st.getTcb? ⟨oid.toNat⟩ with
     | some tcb =>
@@ -1044,19 +1046,15 @@ private def checkRegistryInterfaceValid (st : SystemState) : Bool :=
 
 /-- AM4 audit remediation: Runtime check for the AL6-C
 `lifecycleObjectTypeLockstep` conjunct of `crossSubsystemInvariant`.
-For every populated ObjId, the stored object's `objectType` must match
-the recorded entry in `lifecycle.objectTypes`. Walks `objectIndex` once
-and compares each entry pair; `true` when all match. -/
+Since WS-UC UC2 the recorded type table is a proof-only ghost (its
+agreement with the store is the proven `bookkeepingAgrees.types`), so the
+runtime half checks what a compiled read can see: for every entry the store
+enumerates, the type reader `getObjectType?` (which every compiled kind read
+now goes through) finds that entry under its own key with the entry's kind.
+`true` when all agree. -/
 private def checkLifecycleObjectTypeLockstep (st : SystemState) : Bool :=
-  -- Variant-agnostic by intent, so the kind-agnostic member of the typed
-  -- accessor family is the reader that says it.
-  st.objectIndex.all fun oid =>
-    match st.getObject? oid with
-    | some obj =>
-      match st.lifecycle.objectTypes[oid]? with
-      | some ty => ty == obj.objectType
-      | none => false
-    | none => true
+  st.objects.toList.all fun (oid, obj) =>
+    st.getObjectType? oid == some obj.objectType
 
 /-- AG1-F-iv + WS-AM AM4 audit remediation: Compose the cross-subsystem
 predicate checks into a single boolean function.  Returns `true` only if

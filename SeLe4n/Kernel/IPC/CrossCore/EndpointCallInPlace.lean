@@ -99,25 +99,15 @@ theorem enqueueRunnableOnCore_agree_of_findsInPlace
       simpa only [RHTable_getElem?_eq_get?] using hObjTcb.symm
     · exact RHTable.get?_insert_ne_of_findsInPlace oid _ hF hEq
 
-/-- A write that keeps the index and the lifecycle and holds every object up to
-run links keeps every store local. -/
-theorem storeLeaves_of_agree {s s' : SystemState}
-    (hI : s'.objectIndexSet = s.objectIndexSet) (hL : s'.lifecycle = s.lifecycle)
-    (hA : s'.objectsAgreeOffRunLinks s) {id : SeLe4n.ObjId} {ty : KernelObjectType}
+/-- A write that holds every object up to run links keeps every store local:
+the check reads only the kind at each key (WS-UC UC2). -/
+theorem storeLeaves_of_agree {s s' : SystemState} (hA : s'.objectsAgreeOffRunLinks s)
+    {id : SeLe4n.ObjId} {ty : KernelObjectType}
     (h : storeLeavesIndexAndTypes s id ty = true) :
     storeLeavesIndexAndTypes s' id ty = true := by
   unfold storeLeavesIndexAndTypes at h ⊢
-  rw [hI, hL]
-  rcases hA.pointwise id with e | ⟨t, t', e, e'⟩
-  · rw [e]; exact h
-  · rw [e'] ; rw [e] at h; exact h
-
-theorem storeLeaves_of_onlyObjectsSchedulerDiffer {s s' : SystemState}
-    (hD : s'.onlyObjectsSchedulerDiffer s) (hA : s'.objectsAgreeOffRunLinks s)
-    {id : SeLe4n.ObjId} {ty : KernelObjectType}
-    (h : storeLeavesIndexAndTypes s id ty = true) :
-    storeLeavesIndexAndTypes s' id ty = true :=
-  storeLeaves_of_agree (by rw [hD]) (by rw [hD]) hA h
+  rw [SystemState.storeKeepsKind_of_getObjectType? (hA.getObjectType? id)]
+  exact h
 
 theorem runUnlinkLinks_keepsFinds (st : SystemState) (t : SeLe4n.ThreadId)
     (pv nx bpv bnx : Nat) : (st.runUnlinkLinks t pv nx bpv bnx).objectsKeepFinds st := by
@@ -452,7 +442,7 @@ theorem callRendezvous_inPlace_facts (st : SystemState) (endpointId : SeLe4n.Obj
     (enqueueRunnableOnCore_keepsFinds S2 _ r ((hK2 _).trans hFH) k).trans (hK2 k)
   have hL3 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes (enqueueRunnableOnCore S2 (determineTargetCore S2 r) r) id ty
-        = true := fun h => storeLeaves_of_onlyObjectsSchedulerDiffer hD3 hA3 (hL2 h)
+        = true := fun h => storeLeaves_of_agree hA3 (hL2 h)
   obtain ⟨ct3, hO3c, hct3⟩ := hA3.get_tcb hO2c
   obtain ⟨rt3, hO3r, hrt3⟩ := hA3.get_tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT2r)
   have hO3q := hA3.get_reply_iff.mpr hO2q
@@ -516,7 +506,8 @@ theorem callRendezvous_inPlace_facts (st : SystemState) (endpointId : SeLe4n.Obj
     rw [← hS5']; exact (RHTable.findsInPlace_insert_of_findsInPlace k _ hFR4).trans (hK4 k)
   have hL5 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes S5 id ty = true := fun h => by
-    rw [← hS5']; exact storeLeavesIndexAndTypes_insert_inPlace hFR4 (fun _ e => by cases e) (hL4 h)
+    rw [← hS5']; exact storeLeavesIndexAndTypes_insert_inPlace hFR4
+      (fun o e => by rw [hO4q] at e; cases e; rfl) (hL4 h)
   have hT5c : S5.getTcb? caller = some (callCallerTcb endpointId r ct3) :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mpr
       ((hO5 _ hNeQC).trans ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT4c))
@@ -618,7 +609,7 @@ theorem callRendezvous_inPlace_facts (st : SystemState) (endpointId : SeLe4n.Obj
       rw [SystemState.linkReplyWaiter_lifecycle, hD8]
     refine ⟨fun k => ((linkReplyWaiter_keepsFinds _ caller r k).trans
         (removeRunnableOnCore_keepsFinds S7 caller core k)).trans (hK7 k),
-      fun h => storeLeaves_of_agree hI8 hLife8 hA8 (hL7 h),
+      fun h => storeLeaves_of_agree hA8 (hL7 h),
       fun k o hnt hne hq hk => hA8.get_of_not_tcb hnt (hOk7 k o hnt hne hq hk),
       fun rp' hrp' => ?_, fun ct' hct' => ?_, ?_⟩
     · have hEq : rp' = rp := by

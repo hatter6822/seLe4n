@@ -1802,28 +1802,20 @@ private theorem blockingChain_objects_congr
           exact congrArg (server :: ·) (ih server)
       | blockedOnCall _ => simp [hLookup, h, hIpc]
 
-/-- Frame lemma for `priorityInheritance_perCore`: depends on the entire
-object store *and* `objectIndex` (the latter feeds `blockingChain`'s
-default fuel).  Proved substantively via `blockingChain_objects_congr`
-(structural induction on fuel — the chain walk only reads
-`st.objects[…]?`) plus the `objectIndex.length` equality derived from
-`hIdx`.  Both hypotheses are genuinely required: the chain walk
-recurses on `st.objects` (handled by `hObj`) AND its default fuel
-`st.objectIndex.length` comes from `st.objectIndex` (handled by
-`hIdx`).  SM5 operations that preserve both — which includes every
-scheduler operation that doesn't insert/remove objects — discharge
-both directly. -/
+/-- Frame lemma for `priorityInheritance_perCore`: depends on the object store
+alone.  Proved substantively via `blockingChain_objects_congr` (structural
+induction on fuel — the chain walk only reads `st.objects[…]?`); the walk's
+default fuel is the store's size (WS-UC UC2), so the one equality covers both
+the walk and its fuel. -/
 theorem priorityInheritance_perCore_frame {st st' : SystemState} {c : CoreId}
-    (hObj : st'.objects = st.objects)
-    (hIdx : st'.objectIndex = st.objectIndex) :
+    (hObj : st'.objects = st.objects) :
     priorityInheritance_perCore st' c ↔ priorityInheritance_perCore st c := by
   unfold priorityInheritance_perCore PriorityInheritance.blockingAcyclic
-  have h_len : st'.objectIndex.length = st.objectIndex.length := by rw [hIdx]
   have hChain : ∀ tid : SeLe4n.ThreadId,
-      PriorityInheritance.blockingChain st' tid st'.objectIndex.length =
-      PriorityInheritance.blockingChain st tid st.objectIndex.length := by
+      PriorityInheritance.blockingChain st' tid st'.objects.size =
+      PriorityInheritance.blockingChain st tid st.objects.size := by
     intro tid
-    rw [blockingChain_objects_congr hObj tid st'.objectIndex.length, h_len]
+    rw [blockingChain_objects_congr hObj tid st'.objects.size, hObj]
   constructor
   · intro hAcy tid hMem
     exact hAcy tid (hChain tid ▸ hMem)

@@ -135,8 +135,8 @@ def saveProbeState (tid : UInt64) : SeLe4n.Model.SystemState :=
         threadState := .Running })]
   { (default : SeLe4n.Model.SystemState) with
     objects := SeLe4n.Kernel.RobinHood.RHTable.ofList objs
-    objectIndex := objs.map Prod.fst
-    objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (objs.map Prod.fst)
+    objectIndexGhost := SeLe4n.Erased.mk (objs.map Prod.fst)
+    objectIndexSetGhost := SeLe4n.Erased.mk (SeLe4n.Kernel.RobinHood.RHSet.ofList (objs.map Prod.fst))
     scheduler := (default : SeLe4n.Model.SchedulerState).setCurrentOnCore
       SeLe4n.Kernel.Concurrency.bootCoreId (some t) }
 

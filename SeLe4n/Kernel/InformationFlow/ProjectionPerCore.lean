@@ -127,9 +127,11 @@ theorem projectRunnableOnCoreByLinks_eq (ctx : LabelingContext) (observer : IfOb
   rw [h.runQueueWalk_eq]
 
 /-- WS-ZA ZA4.5: `projectStateOnCore` with its runnable component read along the
-links (`projectRunnableOnCoreByLinks`); every other component is the same
-projection.  Executable, and equal to `projectStateOnCore` wherever the links
-refine core `c`'s queue (`projectStateOnCoreByLinks_eq`). -/
+links (`projectRunnableOnCoreByLinks`); WS-UC UC2: and its object index read off
+the object table (`projectObjectIndexByTable`).  Every other component is the
+same projection.  Executable, and equal to `projectStateOnCore` wherever the
+links refine core `c`'s queue and the bookkeeping agrees with the object table
+(`projectStateOnCoreByLinks_eq`). -/
 def projectStateOnCoreByLinks (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (c : CoreId) : ObservableState :=
   { objects := projectObjects ctx observer st
@@ -137,7 +139,7 @@ def projectStateOnCoreByLinks (ctx : LabelingContext) (observer : IfObserver)
     current := projectCurrentOnCore ctx observer st c
     activeDomain := projectActiveDomainOnCore ctx observer st c
     irqSignalLines := projectIrqSignalLines ctx observer st
-    objectIndex := projectObjectIndex ctx observer st
+    objectIndex := projectObjectIndexByTable ctx observer st
     domainTimeRemaining := projectDomainTimeRemainingOnCore ctx observer st c
     domainSchedule := projectDomainSchedule ctx observer st
     domainScheduleIndex := projectDomainScheduleIndexOnCore ctx observer st c
@@ -145,10 +147,13 @@ def projectStateOnCoreByLinks (ctx : LabelingContext) (observer : IfObserver)
     memory := projectMemory ctx observer st }
 
 theorem projectStateOnCoreByLinks_eq (ctx : LabelingContext) (observer : IfObserver)
-    {st : SystemState} {c : CoreId} (h : st.runQueueRefinedOnCore c) :
+    {st : SystemState} {c : CoreId} (h : st.runQueueRefinedOnCore c)
+    (hA : st.bookkeepingAgrees) (hInv : st.objects.invExt) :
     projectStateOnCoreByLinks ctx observer st c = projectStateOnCore ctx observer st c := by
   unfold projectStateOnCoreByLinks projectStateOnCore
-  rw [projectRunnableOnCoreByLinks_eq ctx observer h]; rfl
+  rw [projectRunnableOnCoreByLinks_eq ctx observer h,
+    projectObjectIndexByTable_eq ctx observer hA hInv]
+  rfl
 
 /-- WS-ZA ZA4.5: the executable form of `projectState`, read along the boot
 core's run-queue links. -/
@@ -157,9 +162,10 @@ def projectStateByLinks (ctx : LabelingContext) (observer : IfObserver)
   projectStateOnCoreByLinks ctx observer st bootCoreId
 
 theorem projectStateByLinks_eq (ctx : LabelingContext) (observer : IfObserver)
-    {st : SystemState} (h : st.runQueueRefinedOnCore bootCoreId) :
+    {st : SystemState} (h : st.runQueueRefinedOnCore bootCoreId)
+    (hA : st.bookkeepingAgrees) (hInv : st.objects.invExt) :
     projectStateByLinks ctx observer st = projectState ctx observer st :=
-  projectStateOnCoreByLinks_eq ctx observer h
+  projectStateOnCoreByLinks_eq ctx observer h hA hInv
 
 -- ============================================================================
 -- §2  Boot-core bridges (the non-orphan connection to the live surface)

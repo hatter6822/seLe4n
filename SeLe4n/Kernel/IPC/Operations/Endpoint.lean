@@ -708,27 +708,45 @@ no `Option` carries the looked-up record; otherwise the specification's body. -/
         rw [this]
 
 /-- WS-ZA ZA4.7: a store that changes only `objects` still does after an
-in-place insert of an object that is not a VSpace root: the index and type
-tables are untouched, and the slot asked about holds the new object or the old. -/
+in-place insert of an object of the kind already there.  WS-UC UC2: the check
+reads the kind stored at each slot, so the slot written must keep its kind. -/
 theorem storeLeavesIndexAndTypes_insert_inPlace {st : SystemState} {k id : SeLe4n.ObjId}
     {v : KernelObject} {ty : KernelObjectType}
-    (hF : st.objects.findsInPlace k = true) (hv : ∀ r, v ≠ .vspaceRoot r)
+    (hF : st.objects.findsInPlace k = true)
+    (hv : ∀ o, st.objects[k]? = some o → o.objectType = v.objectType)
     (h : storeLeavesIndexAndTypes st id ty = true) :
     storeLeavesIndexAndTypes { st with objects := st.objects.insert k v } id ty = true := by
-  unfold storeLeavesIndexAndTypes at h ⊢
+  unfold storeLeavesIndexAndTypes storeKeepsKind at h ⊢
   simp only [Bool.and_eq_true] at h ⊢
-  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
-  refine ⟨⟨⟨h1, h2⟩, h3⟩, ?_⟩
-  show (match (st.objects.insert k v).get? id with
-    | some (.vspaceRoot _) => false | _ => true) = true
+  refine ⟨h.1, ?_⟩
+  have h2 := h.2
   by_cases hk : k = id
   · subst hk
+    show (match (st.objects.insert k v).get? k with
+      | some o => o.objectType == ty | none => false) = true
     rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_self_of_findsInPlace v hF]
-    cases v with
-    | vspaceRoot r => exact absurd rfl (hv r)
-    | _ => rfl
-  · rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace id v hF hk]
-    exact h4
+    revert h2
+    cases ho : st.objects[k]? with
+    | none => intro h2; cases h2
+    | some o => intro h2; show (v.objectType == ty) = true; rw [← hv o ho]; exact h2
+  · show (match (st.objects.insert k v).get? id with
+      | some o => o.objectType == ty | none => false) = true
+    rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace id v hF hk]
+    exact h2
+
+/-- WS-UC UC2: the in-place insert, licensed by the slot's own store check. -/
+theorem storeLeavesIndexAndTypes_insert_inPlace_of_leaves {st : SystemState}
+    {k id : SeLe4n.ObjId} {v : KernelObject} {ty : KernelObjectType}
+    (hF : st.objects.findsInPlace k = true)
+    (hv : storeLeavesIndexAndTypes st k v.objectType = true)
+    (h : storeLeavesIndexAndTypes st id ty = true) :
+    storeLeavesIndexAndTypes { st with objects := st.objects.insert k v } id ty = true := by
+  refine storeLeavesIndexAndTypes_insert_inPlace hF (fun o ho => ?_) h
+  unfold storeLeavesIndexAndTypes storeKeepsKind at hv
+  simp only [Bool.and_eq_true] at hv
+  have := hv.2
+  rw [show st.objects[k]? = some o from ho] at this
+  exact eq_of_beq this
 
 /-- WS-ZA ZA4.7: a TCB write to a present, unreserved thread whose store
 changes only `objects` is the one insert. -/
@@ -784,7 +802,9 @@ theorem updateTcb_storeLeaves {st : SystemState} {tid : SeLe4n.ThreadId}
     {ty : KernelObjectType} (h : storeLeavesIndexAndTypes st id ty = true) :
     storeLeavesIndexAndTypes (st.updateTcb tid f) id ty = true := by
   rw [SystemState.updateTcb_eq_of_some hT]
-  exact storeLeavesIndexAndTypes_insert_inPlace hF (fun r h => by cases h) h
+  refine storeLeavesIndexAndTypes_insert_inPlace hF (fun o ho => ?_) h
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT] at ho
+  cases ho; rfl
 
 /-- An `updateTcb` whose key is found in place leaves every in-place question,
 whether or not a thread is there to update. -/
@@ -858,7 +878,8 @@ theorem recordReplyStasher_tcbSlotFrame {S : SystemState} {code : Nat}
       exact (SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hS.1 hNe).trans
         ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
     · exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k' _ hS.1
-    · exact storeLeavesIndexAndTypes_insert_inPlace hS.1 (fun _ h => by cases h) h
+    · exact storeLeavesIndexAndTypes_insert_inPlace hS.1
+        (fun o ho => by rw [hS.2.2] at ho; cases ho; rfl) h
 
 def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
   modifyTcb st tid (fun tcb => (tcb.setIpcState ipcState))
@@ -923,6 +944,16 @@ theorem recordSendCap_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.T
     (badge : Option SeLe4n.Badge) (grant : Bool) :
     SystemState.objectsAgreeOffRunLinks (recordSendCap st tid badge grant) st :=
   SystemState.mapTcbInPlace_objectsAgreeOffRunLinks st tid (fun _ => rfl)
+
+@[simp] theorem recordSendCap_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (recordSendCap st tid badge grant).lifecycle = st.lifecycle := rfl
+@[simp] theorem recordSendCap_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (recordSendCap st tid badge grant).objectIndex = st.objectIndex := rfl
+@[simp] theorem recordSendCap_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (recordSendCap st tid badge grant).objectIndexSet = st.objectIndexSet := rfl
 
 @[simp] theorem recordSendCap_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge) (grant : Bool) :
@@ -1109,7 +1140,8 @@ theorem ntfnLinksRewritten.field_fwd {α : Type} {st s : SystemState}
 what it held, or a thread with only its two notification links rewritten. -/
 theorem ntfnLinksRewritten.kindPreserving {st s : SystemState} (h : ntfnLinksRewritten st s) :
     kindPreservingWrite st s := by
-  intro k
+  refine ⟨fun k => ?_, .of_objectsOnly h.1⟩
+  unfold kindPreservingWriteAt
   rcases h.2.2 k with e | ⟨t, t', ht, ht', np, nn, rfl⟩
   · exact Or.inl e
   · exact Or.inr ⟨.tcb t, .tcb _, ht, ht', rfl, by simp [KernelObject.objectType], rfl, rfl, rfl, rfl, rfl⟩
@@ -2116,33 +2148,6 @@ theorem storeDonationFramePush_tlbShootdown_eq
   · exact e1
   · have e2 : st'.tlbShootdown = s1.tlbShootdown := by unfold storeObject at hS2; cases hS2; rfl
     rw [e2, e1]
-
-theorem storeDonationFramePush_preserves_objectIndexSet_invExt
-    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
-    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (hSetInv : st.objectIndexSet.table.invExt)
-    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
-    st'.objectIndexSet.table.invExt := by
-  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
-  have e1 := storeObject_preserves_objectIndexSet_invExt st s1 _ _ hSetInv hS1
-  rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
-  · exact e1
-  · exact storeObject_preserves_objectIndexSet_invExt s1 st' _ _ e1 hS2
-
-theorem storeDonationFramePush_preserves_objectIndexSetComplete
-    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
-    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (hObjInv : st.objects.invExt) (hSetInv : st.objectIndexSet.table.invExt)
-    (hComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
-    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
-    ∀ oid, st'.objects[oid]? ≠ none → st'.objectIndexSet.contains oid = true := by
-  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
-  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hSet1 := storeObject_preserves_objectIndexSet_invExt st s1 _ _ hSetInv hS1
-  have c1 := storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv hSetInv hComplete hS1
-  rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
-  · exact c1
-  · exact storeObject_preserves_objectIndexSetComplete s1 st' _ _ hInv1 hSet1 c1 hS2
 
 theorem storeDonationFramePush_scheduler_eq
     {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
@@ -4398,6 +4403,30 @@ theorem storeDonationHeadPop_cases
     | error e => intro h; cases h
     | ok s1 => intro h; exact Or.inr ⟨rid, r, s1, rfl, hC, h⟩
 
+/-! WS-UC UC2: the head pop moves no bookkeeping ghost — each of its stores
+writes a Reply over a Reply. -/
+
+theorem storeDonationHeadClear_ghostsKept {head? : Option SeLe4n.ReplyId}
+    {st st' : SystemState} (h : storeDonationHeadClear head? st = .ok st') :
+    SystemState.ghostsKept st' st := by
+  rcases storeDonationHeadClear_cases h with rfl | ⟨_, _, _, hR, hS⟩
+  · exact .refl _
+  · exact .storeObject_sameKind hS hR rfl
+
+theorem storeReplyReHead_ghostsKept {scId : SeLe4n.SchedContextId}
+    {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeReplyReHead scId head? st = .ok st') : SystemState.ghostsKept st' st := by
+  rcases storeReplyReHead_cases h with rfl | ⟨_, _, _, hR, hS⟩
+  · exact .refl _
+  · exact .storeObject_sameKind hS hR rfl
+
+theorem storeDonationHeadPop_ghostsKept {scId : SeLe4n.SchedContextId}
+    {head? : Option (SeLe4n.ReplyId × Reply)} {st st' : SystemState}
+    (h : storeDonationHeadPop scId head? st = .ok st') : SystemState.ghostsKept st' st := by
+  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨_, _, _, _, hClear, hReHead⟩
+  · exact .refl _
+  · exact (storeReplyReHead_ghostsKept hReHead).trans (storeDonationHeadClear_ghostsKept hClear)
+
 /-- A successful pop re-headed a frame that resolves: the frame below the head
 is a Reply object of the intermediate state (and so of the pre-state, which the
 unlink store only rewrote at the head's own key). -/
@@ -4708,7 +4737,8 @@ theorem storeDonationHeadPop_kindPreservingWrite
     (hObjInv : st.objects.invExt)
     (h : storeDonationHeadPop scId head? st = .ok st') :
     kindPreservingWrite st st' := by
-  intro k
+  refine ⟨fun k => ?_, storeDonationHeadPop_ghostsKept h⟩
+  unfold kindPreservingWriteAt
   by_cases hRep : ∃ r : Reply, st.objects[k]? = some (.reply r)
   · obtain ⟨r, hr⟩ := hRep
     obtain ⟨r', hr', _⟩ := storeDonationHeadPop_reply_rewrite hObjInv h k r hr
@@ -6669,6 +6699,25 @@ theorem cutReplyFrameOutOrSelf_eq_self_of_no_frame_above (st : SystemState)
             simp [replyFrameAbove?, hR, hN]) (by rw [hNone]; exact fun h => by cases h)
   unfold cutReplyFrameOutOrSelf; rw [hDet]
 
+/-- WS-UC UC2: the splice moves no bookkeeping ghost: each of its stores
+writes a Reply over a Reply. -/
+theorem cutReplyFrameOutOrSelf_ghostsKept (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) :
+    SystemState.ghostsKept (cutReplyFrameOutOrSelf st rid) st := by
+  obtain ⟨m1, m2, h1, h2, h3⟩ := cutReplyFrameOutOrSelf_store_cases st rid hInv
+  have g1 : SystemState.ghostsKept m1 st := by
+    rcases h1 with rfl | ⟨_, _, _, hO, hS⟩
+    · exact .refl _
+    · exact .storeObject_sameKind hS hO rfl
+  have g2 : SystemState.ghostsKept m2 m1 := by
+    rcases h2 with rfl | ⟨_, _, _, hO, hS⟩
+    · exact .refl _
+    · exact .storeObject_sameKind hS hO rfl
+  refine SystemState.ghostsKept.trans ?_ (g2.trans g1)
+  rcases h3 with h | ⟨_, _, _, hO, hS⟩
+  · rw [h]; exact .refl _
+  · exact .storeObject_sameKind hS hO rfl
+
 theorem cutReplyFrameOutOrSelf_scheduler_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
     (cutReplyFrameOutOrSelf st rid).scheduler = st.scheduler := by
   rcases cutReplyFrameOutOrSelf_cases st rid with h | h
@@ -6925,7 +6974,8 @@ so every key it writes held a Reply and still holds one. -/
 theorem cutReplyFrameOutOrSelf_kindPreservingWrite (st : SystemState)
     (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
     kindPreservingWrite st (cutReplyFrameOutOrSelf st rid) := by
-  intro k
+  refine ⟨fun k => ?_, cutReplyFrameOutOrSelf_ghostsKept st rid hObjInv⟩
+  unfold kindPreservingWriteAt
   rcases cutReplyFrameOutOrSelf_objects_rewrite st rid hObjInv k with h | ⟨r, r', hr, hr', _⟩
   · exact Or.inl h
   · exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?, KernelObject.bindingCodes,
@@ -9054,7 +9104,7 @@ theorem returnDonatedSchedContext_kindPreservingWrite
     storeObject_kindPreservingWrite hInv3 hS4 hPre4 rfl (by simp [KernelObject.objectType])
   -- The reschedule-flag write that closes the chain touches no object.
   have hLast : kindPreservingWrite s4 st' :=
-    kindPreservingWrite.of_objects_eq (by rw [hEq])
+    kindPreservingWrite.of_objects_eq (by rw [hEq]) (by rw [hEq]; exact ⟨rfl, rfl, rfl⟩)
   exact ((((hW1.trans hW2).trans hW3).trans hW4).trans hLast)
 
 /-- The pre-receive cleanup is a `kindPreservingWrite`: nothing, or the resolved
@@ -9798,6 +9848,16 @@ theorem removeRunnable_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe
     SystemState.onlyObjectsSchedulerDiffer (removeRunnable st tid) st :=
   SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
 
+@[simp] theorem removeRunnable_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).lifecycle = st.lifecycle :=
+  (congrArg SystemState.lifecycle (removeRunnable_onlyObjectsSchedulerDiffer st tid) :)
+@[simp] theorem removeRunnable_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).objectIndex = st.objectIndex :=
+  (removeRunnable_onlyObjectsSchedulerDiffer st tid).ghostsKept.index
+@[simp] theorem removeRunnable_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).objectIndexSet = st.objectIndexSet :=
+  (removeRunnable_onlyObjectsSchedulerDiffer st tid).ghostsKept.indexSet
+
 /-- WS-ZA ZA4.5: `removeRunnable` changes no object off the run-queue links
 (was `removeRunnable_preserves_objects` while the links lived in the
 scheduler). -/
@@ -9832,6 +9892,16 @@ theorem ensureRunnable_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe
       · exact .withScheduler (SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ _ _ _) _
       · exact .refl _
     · exact .refl _
+
+@[simp] theorem ensureRunnable_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).lifecycle = st.lifecycle :=
+  (congrArg SystemState.lifecycle (ensureRunnable_onlyObjectsSchedulerDiffer st tid) :)
+@[simp] theorem ensureRunnable_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).objectIndex = st.objectIndex :=
+  (ensureRunnable_onlyObjectsSchedulerDiffer st tid).ghostsKept.index
+@[simp] theorem ensureRunnable_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).objectIndexSet = st.objectIndexSet :=
+  (ensureRunnable_onlyObjectsSchedulerDiffer st tid).ghostsKept.indexSet
 
 /-- WS-ZA ZA4.5: `ensureRunnable` changes no object off the run-queue links
 (was `ensureRunnable_preserves_objects` while the links lived in the scheduler). -/

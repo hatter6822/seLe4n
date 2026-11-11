@@ -242,6 +242,25 @@ theorem congr {a a' b b' : SystemState} (ha : a'.objects = a.objects)
 variable {st st' : SystemState} (h : objectsAgreeOffRunLinks st' st)
 include h
 
+/-- WS-UC UC2: the two stores hold the same identifiers, so they count the same
+objects — what keeps the PIP-chain fuel `objects.size` fixed. -/
+theorem objects_size_eq (hInv' : st'.objects.invExt) (hInv : st.objects.invExt) :
+    st'.objects.size = st.objects.size :=
+  SeLe4n.Model.size_eq_of_present_iff _ _ hInv' hInv fun x => by
+    have hx := congrArg Option.isSome (h x)
+    simp only [Option.isSome_map] at hx
+    change st'.objects[x]? ≠ none ↔ st.objects[x]? ≠ none
+    rw [← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hx]
+
+/-- WS-UC UC2: the two stores hold objects of the same kind at every key — what
+the store's kind check (`storeKeepsKind`) reads. -/
+theorem getObjectType? (x : SeLe4n.ObjId) : st'.getObjectType? x = st.getObjectType? x := by
+  have e := congrArg (Option.map KernelObject.objectType) (h x)
+  have hk : ∀ o : KernelObject, o.withoutRunLinks.objectType = o.objectType := by
+    intro o; cases o <;> rfl
+  simp only [Option.map_map, Function.comp_def, hk] at e
+  exact e
+
 /-- A non-TCB object is the same object in both stores. -/
 theorem get_of_not_tcb {x : SeLe4n.ObjId} {o : KernelObject}
     (hNot : ∀ t, o ≠ .tcb t) (hx : st.objects[x]? = some o) : st'.objects[x]? = some o := by
@@ -482,8 +501,10 @@ theorem getCNode? (id : SeLe4n.ObjId) : st'.getCNode? id = st.getCNode? id := by
 
 /-- A step that writes only run-queue links rewrites each object to one of its
 own kind. -/
-theorem kindPreserving : SeLe4n.Model.kindPreservingWrite st st' := by
-  intro oid
+theorem kindPreserving (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
+    SeLe4n.Model.kindPreservingWrite st st' := by
+  refine ⟨fun oid => ?_, hG⟩
+  unfold SeLe4n.Model.kindPreservingWriteAt
   cases e : st.objects[oid]? with
   | none => exact Or.inl (h.get_none_iff.mpr e)
   | some o => cases o with
@@ -661,6 +682,11 @@ theorem updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB) :
   unfold SystemState.updateTcbAtCode; split
   · exact .refl _
   · exact mapTcbInPlace _ _ _
+
+/-- WS-UC UC2: the step moves none of the bookkeeping ghosts. -/
+theorem ghostsKept {a b : SystemState} (h : onlyObjectsSchedulerDiffer b a) :
+    SystemState.ghostsKept b a :=
+  ⟨by rw [h], by rw [h], by rw [h]⟩
 
 /-- Every table but the object store is `st`'s, so the kernel-level table
 invariant needs only the object store's. -/

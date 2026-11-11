@@ -732,7 +732,7 @@ def replyRecvDescheduleAndWalkWriteSet (holder recordedServer : SeLe4n.ThreadId)
   descheduleAtPlacementCores st holder
     ++ pipChainWriteSet (descheduleAtPlacement st holder)
       recordedServer serverCore
-      (descheduleAtPlacement st holder).objectIndex.length
+      (descheduleAtPlacement st holder).objects.size
 /-- **PR #895 review round 8**: the cores `replyRecvHolderDeschedule` may write.
 
 None when the holder *is* the receiver, where the step is the identity because
@@ -764,8 +764,8 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
       if rendezvousDequeuedCall st nextThread then
         match applyRendezvousCallDonation st tid nextThread with
         | .error _ => []
-        | .ok st2 => pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
-      else pipChainWriteSet st recordedServer serverCore st.objectIndex.length
+        | .ok st2 => pipChainWriteSet st2 recordedServer serverCore st2.objects.size
+      else pipChainWriteSet st recordedServer serverCore st.objects.size
   | some (_, holder) =>
       if rendezvousDequeuedCall st nextThread then
         match applyRendezvousCallDonation
@@ -777,7 +777,7 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
             -- is donated to the invoker (PR #895 review round 8).  A footprint
             -- that omitted them would be false of exactly that arm.
             replyRecvHolderDescheduleWriteSet tid holder st ++
-              pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
+              pipChainWriteSet st2 recordedServer serverCore st2.objects.size
       else replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st
 /-- SM8.B.2: **the cores the live `.replyRecv` may write** — the answered
 caller's home core, the receive leg's set at the reply's post-state, the

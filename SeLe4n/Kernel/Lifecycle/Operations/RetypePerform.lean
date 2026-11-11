@@ -95,7 +95,7 @@ def retypeFromUntypedAdmitted (st : SystemState) (authCnode : SeLe4n.ObjId)
     (authSlot : SeLe4n.Slot) (authCap : Capability)
     (untypedId childId : SeLe4n.ObjId) (ty : KernelObjectType) (size : Nat)
     (ut : UntypedObject) : Bool :=
-  !decide (st.objectIndex.length ≥ maxObjects) &&
+  !decide (st.objects.size ≥ maxObjects) &&
   !decide (childId = untypedId) &&
   !((st.getObject? childId).isSome || isIrqNodeObjId InterruptLineSet.capacity childId) &&
   childrenNameNone childId ut.children &&
@@ -487,8 +487,6 @@ theorem CarveRequest.ofWords_words (dom0 : SeLe4n.DomainId)
        | 7 => carvedObjectHeapBytes + cnodeSlotHeapBytes * 2 ^ (min n maxCSpaceDepth)
        | _ => carvedObjectHeapBytes)
       + rhInsertResizeHeapBytes st.objects
-      + rhInsertResizeHeapBytes st.objectIndexSet.table
-      + rhInsertResizeHeapBytes st.lifecycle.objectTypes
       + (match k with
          | 2 => rhInsertResizeHeapBytes st.asidTable
          | _ => 0) ≤ st.machine.kernelHeapFreeBytes)

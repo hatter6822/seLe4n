@@ -1,5 +1,5 @@
-[smp-information-flow] fixture: 4 cores, 12 objects, 3 clearances
-[smp-information-flow] visible objects at low/mid/high: 7/8/12
+[smp-information-flow] fixture: 4 cores, 14 objects, 3 clearances
+[smp-information-flow] visible objects at low/mid/high: 8/9/14
 [smp-information-flow] core 0 low view: current=(some 1010) runnable=[1012] activeDomain=0 timeRemaining=5 scheduleIndex=0 regsVisible=true
 [smp-information-flow] core 1 low view: current=none runnable=[] activeDomain=0 timeRemaining=5 scheduleIndex=0 regsVisible=false
 [smp-information-flow] core 2 low view: current=none runnable=[] activeDomain=0 timeRemaining=5 scheduleIndex=0 regsVisible=false

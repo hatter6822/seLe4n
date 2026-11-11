@@ -1527,6 +1527,15 @@ theorem linkReach.objectTypeMetadataConsistent {st₀ st : SystemState} (h : lin
   unfold lookupObjectTypeMeta
   rw [h.fields]
 
+/-- WS-UC UC2: link writes keep the ghost bookkeeping in agreement: they keep
+every ghost and every object's kind. -/
+theorem linkReach.bookkeepingAgrees {st₀ st : SystemState} (h : linkReach st₀ st)
+    (hInv : st₀.objects.invExt) (hA : st₀.bookkeepingAgrees) : st.bookkeepingAgrees :=
+  hA.of_frame (by rw [h.fields]) (by rw [h.fields]) (fun x => by
+      have e := congrArg Option.isSome ((h.agree hInv).objectType x)
+      simpa only [Option.isSome_map] using e)
+    (h.objectTypeMetadataConsistent hInv hA.types) (by rw [h.fields])
+
 theorem linkAddChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (p c : SlotRef) :
     linkReach st₀ (st.linkAddChild p c) := by
   have h3 := ((h.step c.cnode c.slot .parent (p.cnode.toNat + 1) (p.slot.toNat + 1)).step

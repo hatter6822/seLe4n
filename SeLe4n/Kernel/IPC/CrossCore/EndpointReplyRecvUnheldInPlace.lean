@@ -258,8 +258,6 @@ theorem popUnheldSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadI
   generalize hS1 : storeReplyLegReady st c rid = S1
   have hAg := fun x hx hy => hS1 ▸ storeReplyLegReady_agree st c rid ct hNo hTc hFC x hx hy
   have hNo1 : S1.objects.noResizeDue := hS1 ▸ storeReplyLegReady_noResizeDue st c rid hNo
-  obtain ⟨hI, hL⟩ := storeReplyLegReady_fields st c rid hNo
-  rw [hS1] at hI hL
   have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyLegReady_keepsFinds st c rid hNo hFC
   obtain ⟨tc1, htc1, hcv⟩ := hS1 ▸ storeReplyLegReady_callerView st c rid ct hNo hTc hFC hRc
   have hc1 : tc1.ipcStateCode = (receiverReady ct).ipcStateCode := by
@@ -279,8 +277,6 @@ theorem popUnheldSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadI
   have hTR : T.objects[rid.toObjId]? = some (.reply rp.consumed) := by rw [hHold _ hRc]; exact hR1
   have hKT : T.objectsKeepFinds st := by
     rw [← hTdef]; exact (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
-  have hIT : T.objectIndexSet = st.objectIndexSet := by rw [← hTdef]; exact hI
-  have hLT : T.lifecycle = st.lifecycle := by rw [← hTdef]; exact hL
   -- the pop's reads on `T`
   have hScT : T.getSchedContext? scId = some sc := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
     (agreeAt_of_not_tcb (hView _ hSc' hSr) (fun _ e => by cases e) hScO)
@@ -309,18 +305,16 @@ theorem popUnheldSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadI
   · have : receiveBlockAdmits rtT = receiveBlockAdmits rtT.withoutRunLinks := rfl
     rw [this, eT]; exact hA
   · unfold receiveBlocksInPlace
-    have hIP : P.objectIndexSet = st.objectIndexSet := hF.1.trans hIT
-    have hLP : P.lifecycle = st.lifecycle := hF.2.1.trans hLT
     have hKP : P.objectsKeepFinds st := hF.2.2.1.trans hKT
-    have hV : ∀ x, notVSpaceRootAt st x = true → notVSpaceRootAt P x = true := by
-      intro x hx
+    have hV : ∀ x, P.getObjectType? x = st.getObjectType? x := by
+      intro x
       by_cases hxc : x = c.toObjId
-      · subst hxc; unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, hPC]
+      · subst hxc; unfold SystemState.getObjectType?; rw [hPC, hT]; rfl
       · by_cases hxr : x = rid.toObjId
-        · subst hxr; unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, hPr']
-        · rw [notVSpaceRootAt_of_popAgree (hComb x hxc hxr)]; exact hx
+        · subst hxr; unfold SystemState.getObjectType?; rw [hPr', hRp]; rfl
+        · exact getObjectType?_of_popAgree (hComb x hxc hxr)
     rw [Bool.and_eq_true, Bool.and_eq_true]
-    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hIP hLP hKP hV ?_ hEnq, ?_⟩, ?_⟩
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hKP hV ?_ hEnq, ?_⟩, ?_⟩
     · intro p hp
       by_cases hpc : p.toObjId = c.toObjId
       · exact Option.isSome_iff_exists.mpr
@@ -366,7 +360,7 @@ theorem popUnheldSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadI
       rfl
     · show replyRecordsInPlace _ (rid.val + 1) = true
       simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec ⊢
-      exact ⟨(hKP _).trans hRec.1, storeLeavesIndexAndTypes_of_frame hIP hLP hV hRec.2⟩
+      exact ⟨(hKP _).trans hRec.1, storeLeavesIndexAndTypes_of_frame hV hRec.2⟩
 
 end UnheldReplyRecvGuard
 

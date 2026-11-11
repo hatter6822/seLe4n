@@ -131,7 +131,7 @@ theorem returnUnheldSchedContextResolved_eq_inPlace (st : SystemState)
     rw [← hS1]; exact RobinHood.RHTable.findsInPlace_insert_of_findsInPlace x _ hFsc
   have hL1 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes S1 id ty = true := fun h => by
-    rw [← hS1]; exact storeLeavesIndexAndTypes_insert_inPlace hFsc (fun _ e => by cases e) h
+    rw [← hS1]; exact storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFsc (by simpa only [KernelObject.objectType] using hLsc) h
   -- The popped head's links cleared.
   have hR1 : S1.objects[hr.toObjId]? = some (.reply r) := (hO1 _ hScR).trans hRO
   rw [storeDonationHeadPop_some, storeDonationHeadClear_some,
@@ -155,7 +155,7 @@ theorem returnUnheldSchedContextResolved_eq_inPlace (st : SystemState)
     rw [← hS2]; exact (RobinHood.RHTable.findsInPlace_insert_of_findsInPlace x _ hFr1).trans (hK1 x)
   have hL2 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes S2 id ty = true := fun h => by
-    rw [← hS2]; exact storeLeavesIndexAndTypes_insert_inPlace hFr1 (fun _ e => by cases e) (hL1 h)
+    rw [← hS2]; exact storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFr1 (by simpa only [KernelObject.objectType] using hL1 hLr) (hL1 h)
   -- The frame below re-headed.
   have hTO2 : S2.objects[owner.toObjId]? = some (.tcb ot) :=
     ((hO2 _ hROw).trans (hO1 _ hScOw)).trans hOO
@@ -190,7 +190,7 @@ theorem returnUnheldSchedContextResolved_eq_inPlace (st : SystemState)
         rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? (by exact hB2), hNext]
         rfl
       · exact (RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hFb2 hBOw).trans hTO2
-      · exact storeLeavesIndexAndTypes_insert_inPlace hFb2 (fun _ e => by cases e) (hL2 hLo)
+      · exact storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFb2 (by simpa only [KernelObject.objectType] using hL2 hLb) (hL2 hLo)
   rw [hReHead, hEq3]
   simp only []
   have hTOt : T.getTcb? owner = some ot := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTO

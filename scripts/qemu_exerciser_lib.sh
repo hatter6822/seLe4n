@@ -254,18 +254,19 @@ for driver in drivers:
         names = [m.group(1) for m in readings]
         # The cells of the object a carve makes, by kind and size bits, and
         # their bytes: the object's record and the cells it is built of, its
-        # entries in the object store (the object, index-set and type tables
-        # and the index row), and its child record in the untyped.  Nothing
+        # entry in the object table (the index, index set and type table are
+        # proof-only ghosts since WS-UC UC2, and build no cells), and its child
+        # record in the untyped.  Nothing
         # else a retype does may allocate: not its decode, not its carve
         # request, not the capability it writes.  Pinned here, cells then
         # bytes: a kind whose object changes shape changes its pins, and a
         # kind the exerciser carves that has no pin fails.  The breakdown of
         # each pin is the table in docs/planning/UNTYPED_BACKED_CELLS_PLAN.md.
         carve_cells = {
-            "endpoint/0": (11, 368), "notification/0": (11, 360), "reply/0": (15, 376),
-            "tcb/0": (24, 2160), "sched-context/7": (13, 560), "cnode/2": (28, 1248),
-            "frame/0": (11, 272), "page-table/0": (13, 352), "vspace-root/0": (106, 3688),
-            "untyped/12": (12, 304),
+            "endpoint/0": (6, 248), "notification/0": (6, 240), "reply/0": (10, 256),
+            "tcb/0": (19, 2040), "sched-context/7": (8, 440), "cnode/2": (23, 1128),
+            "frame/0": (6, 152), "page-table/0": (8, 232), "vspace-root/0": (101, 3568),
+            "untyped/12": (7, 184),
         }
         # The scenario set is pinned: a round trip renamed or dropped from
         # the exerciser (smp_exercisers.rs) must change this set too, so the

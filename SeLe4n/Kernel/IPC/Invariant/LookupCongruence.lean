@@ -230,6 +230,12 @@ theorem trans {s1 s2 s3 : SystemState}
    hSecond.declassificationAuditEpoch.trans hFirst.declassificationAuditEpoch,
    hSecond.declassificationRefusals.trans hFirst.declassificationRefusals⟩
 
+/-- The two states carry the same bookkeeping ghosts: the object index, its
+membership set and the recorded object kinds all agree. -/
+theorem ghostsKept {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
+    SystemState.ghostsKept s2 s1 :=
+  ⟨h.objectIndex, h.objectIndexSet, by rw [h.lifecycle]⟩
+
 /-- WS-SM SM9.D.5: **the declassification taint agrees** — the provenance
 analogue of the trail and ledger clauses, and load-bearing for the same reason:
 a scheduler substitution that silently re-keyed an object's taint would move a
@@ -393,9 +399,18 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
       hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance, hRel.pendingPhysicalWrites,
       hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,
       hRel.declassificationRefusals⟩
-    · simp only [hRel.objectIndexSet, hRel.objectIndex]
-    · simp only [hRel.objectIndexSet]
-    · simp only [hRel.lifecycle, KernelObject.objectType]
+    · have hS := objects_isSome_of_getObjectType? (hRel.objects.getObjectType? id)
+      simp only [SystemState.objectIndex, hS]
+      split
+      · exact hRel.objectIndex
+      · simp only [SeLe4n.Erased.out_mk]; exact congrArg (id :: ·) hRel.objectIndex
+    · have hS := objects_isSome_of_getObjectType? (hRel.objects.getObjectType? id)
+      simp only [SystemState.objectIndexSet, hS]
+      split
+      · exact hRel.objectIndexSet
+      · simp only [SeLe4n.Erased.out_mk]; exact congrArg (·.insert id) hRel.objectIndexSet
+    · rw [storeKeepsKind_of_getObjectType? (hRel.objects.getObjectType? id)]
+      simp only [hRel.lifecycle, KernelObject.objectType]
     · dsimp only
       -- the store keeps the ASID table alike on both sides: the same root at
       -- `id` and one ASID table, or a TCB, which never keeps it

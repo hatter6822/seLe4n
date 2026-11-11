@@ -262,7 +262,8 @@ def createBootObject (ist : IntermediateState) (entry : ObjectEntry) : Intermedi
       exact ⟨h.1, bootEntryAsidTable_invExtK _ _ h.2.1, h.2.2⟩
     hPerObjectSlots := fun oid cn hLookup => created.hPerObjectSlots oid cn hLookup
     hPerObjectMappings := fun oid vs hLookup => created.hPerObjectMappings oid vs hLookup
-    hLifecycleConsistent := created.hLifecycleConsistent }
+    hLifecycleConsistent := created.hLifecycleConsistent.of_frame rfl rfl (fun _ => rfl)
+      created.hLifecycleConsistent.types }
 
 /-- Q3-C: Fold initial objects into the builder state.
 
@@ -420,7 +421,8 @@ def applyMachineConfig (ist : IntermediateState) (config : MachineConfig) :
   hAllTables := ist.hAllTables
   hPerObjectSlots := ist.hPerObjectSlots
   hPerObjectMappings := ist.hPerObjectMappings
-  hLifecycleConsistent := ist.hLifecycleConsistent
+  hLifecycleConsistent := ist.hLifecycleConsistent.of_frame rfl rfl (fun _ => rfl)
+      ist.hLifecycleConsistent.types
 
 /-- AK9-F (P-M05): Gated variant of `applyMachineConfig` that validates the
     supplied `MachineConfig` BEFORE applying. Rejects configs that would
@@ -615,7 +617,8 @@ def bootEnableInterruptsOp (ist : IntermediateState) : IntermediateState where
   hAllTables := ist.hAllTables
   hPerObjectSlots := ist.hPerObjectSlots
   hPerObjectMappings := ist.hPerObjectMappings
-  hLifecycleConsistent := ist.hLifecycleConsistent
+  hLifecycleConsistent := ist.hLifecycleConsistent.of_frame rfl rfl (fun _ => rfl)
+      ist.hLifecycleConsistent.types
 
 /-- AK9-G: After `bootEnableInterruptsOp`, the machine reports IRQs enabled. -/
 theorem bootEnableInterruptsOp_interruptsEnabled (ist : IntermediateState) :
@@ -850,7 +853,7 @@ theorem bootFromPlatform_perObjectMappings (config : PlatformConfig) :
 /-- Q3-C: The booted state satisfies lifecycle metadata consistency. -/
 theorem bootFromPlatform_objectTypeMetadataConsistent (config : PlatformConfig) :
     SystemState.objectTypeMetadataConsistent (bootFromPlatform config).state :=
-  (bootFromPlatform config).hLifecycleConsistent
+  (bootFromPlatform config).hLifecycleConsistent.types
 
 /-- Q3-C: Master validity theorem — boot produces a fully valid state. -/
 theorem bootFromPlatform_valid (config : PlatformConfig) :
@@ -1286,7 +1289,7 @@ theorem embeddedIdentitiesMatchSlots_iff (config : PlatformConfig) :
     bounded that: a config with 65 533 objects and a boot root satisfies every
     other conjunct, boots, and the idle fold takes the object index to 65 537,
     past `maxObjects` — so a *successful production boot* produced a state
-    violating `objectIndexBounded`, the invariant `retypeFromUntyped` enforces
+    violating `objectCountBounded`, the invariant `retypeFromUntyped` enforces
     at every later allocation.  The headroom is `numCores`, not the binding's
     `coreCount`: the idle slots are reserved model-wide, so the budget must
     hold for any binding this config could boot on.  WS-ZA ZA6.32 adds the
@@ -3532,7 +3535,8 @@ def installIdleThread (ist : IntermediateState)
     hAllTables := withTcb.hAllTables
     hPerObjectSlots := withTcb.hPerObjectSlots
     hPerObjectMappings := withTcb.hPerObjectMappings
-    hLifecycleConsistent := withTcb.hLifecycleConsistent }
+    hLifecycleConsistent := withTcb.hLifecycleConsistent.of_frame rfl rfl (fun _ => rfl)
+      withTcb.hLifecycleConsistent.types }
 
 /-- **WS-SM SM4.G**: `installIdleThread` inserts the idle TCB into the object
     store (definitional — the scheduler-update record update leaves `objects`
@@ -3842,7 +3846,7 @@ theorem bootFromPlatformWithIdleThreads_valid (config : PlatformConfig) :
   ⟨(bootFromPlatformWithIdleThreads config).hAllTables,
    (bootFromPlatformWithIdleThreads config).hPerObjectSlots,
    (bootFromPlatformWithIdleThreads config).hPerObjectMappings,
-   (bootFromPlatformWithIdleThreads config).hLifecycleConsistent⟩
+   (bootFromPlatformWithIdleThreads config).hLifecycleConsistent.types⟩
 
 /-- **WS-SM SM4.G**: `installIdleThread` frames the machine state (it touches
     only `objects` and the scheduler's current slot — `applyMachineConfig`
@@ -3942,7 +3946,7 @@ def storeIdleThread (ist : IntermediateState)
     ist.hAllTables.objects.1 ist.hPerObjectSlots
   hPerObjectMappings := storeIdleThreadOnCore_preserves_perObjectMappingsInvariant ist.state c
     ist.hAllTables.objects.1 ist.hPerObjectMappings
-  hLifecycleConsistent := storeIdleThreadOnCore_preserves_objectTypeMetadataConsistent
+  hLifecycleConsistent := storeIdleThreadOnCore_preserves_bookkeepingAgrees
     ist.state c ist.hAllTables ist.hLifecycleConsistent
 
 /-- **v0.35.68** (the derivation, pinned): the boot's idle install *is* the
@@ -4706,7 +4710,7 @@ theorem bootFromPlatformChecked_ok_shape (config : PlatformConfig)
 
 /-! ### The object-capacity invariant of a successful boot (PR #889 review round 18)
 
-`objectIndexBounded` is the allocation-boundary invariant `retypeFromUntyped`
+`objectCountBounded` is the allocation-boundary invariant `retypeFromUntyped`
 enforces, and nothing in the boot path established it: the checked boot did not
 bound the object count, and the idle fold — live since WS-RR RR5.13 — adds one
 entry per core on top of whatever the config brought.  The chain below derives
@@ -4722,7 +4726,7 @@ theorem createObject_objectIndex_length_le (ist : IntermediateState)
     (Builder.createObject ist id obj hSlots hMappings).state.objectIndex.length ≤
       ist.state.objectIndex.length + 1 := by
   unfold Builder.createObject
-  by_cases h : ist.state.objectIndexSet.contains id
+  by_cases h : (ist.state.objects[id]?).isSome
   · simp [h]
   · simp [h]
 
@@ -4749,7 +4753,7 @@ theorem foldObjects_objectIndex_length_le (objs : List ObjectEntry)
 /-- The raw boot installs one index entry per config object at most. -/
 theorem bootFromPlatform_objectIndex_length_le (config : PlatformConfig) :
     (bootFromPlatform config).state.objectIndex.length ≤ config.initialObjects.length := by
-  have hEmpty : mkEmptyIntermediateState.state.objectIndex = [] := rfl
+  have hEmpty : mkEmptyIntermediateState.state.objectIndex = [] := default_objectIndex
   have := foldObjects_objectIndex_length_le config.initialObjects
     mkEmptyIntermediateState
   rw [hEmpty] at this
@@ -4840,17 +4844,19 @@ theorem foldl_storeIdleThread_objectIndex_length_le
       omega
 
 /-- **PR #889 review round 18**: a successful production boot satisfies
-    `objectIndexBounded`.
+    `objectCountBounded`.
 
     The budget conjunct reserves `numCores` slots, so any core list no longer
     than the model's — every binding's, by `PlatformBinding.coreCountLe` —
-    leaves the object index inside `maxObjects`. -/
-theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded
+    leaves the object count inside `maxObjects` (WS-UC UC2: the count is the
+    object table's size, which the ghost index's length equals on every booted
+    state, `bookkeepingAgrees.objectIndex_length`). -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_objectCountBounded
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
     (ist : IntermediateState)
     (hCores : cores.length ≤ SeLe4n.Kernel.Concurrency.numCores)
     (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
-    objectIndexBounded ist.state := by
+    objectCountBounded ist.state := by
   have hNd := bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup cores config ist h
   unfold bootFromPlatformCheckedWithIdleThreadsFor at h
   cases hBase : bootFromPlatformChecked config with
@@ -4871,16 +4877,18 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded
         have hIst : ist = cores.foldl storeIdleThread base := by
           simpa using h.symm
         subst hIst
-        unfold objectIndexBounded
+        unfold objectCountBounded
+        rw [← (cores.foldl storeIdleThread base).hLifecycleConsistent.objectIndex_length
+          (cores.foldl storeIdleThread base).hAllTables.objects]
         omega
       · simp [hAff] at h
 
 /-- The all-cores production boot is bounded: `allCores` has exactly `numCores`
     members, which is the headroom the budget conjunct reserves. -/
-theorem bootFromPlatformCheckedWithIdleThreads_objectIndexBounded (config : PlatformConfig)
+theorem bootFromPlatformCheckedWithIdleThreads_objectCountBounded (config : PlatformConfig)
     (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist) :
-    objectIndexBounded ist.state := by
-  refine bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded
+    objectCountBounded ist.state := by
+  refine bootFromPlatformCheckedWithIdleThreadsFor_objectCountBounded
     SeLe4n.Kernel.Concurrency.allCores config ist ?_ ?_
   · simp [SeLe4n.Kernel.Concurrency.allCores]
   · rw [bootFromPlatformCheckedWithIdleThreadsFor_allCores]; exact h
@@ -5904,7 +5912,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       exact ⟨hCN.1, hCN.2.1⟩
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle ist.state :=
-    ist.hLifecycleConsistent
+    ist.hLifecycleConsistent.types
   -- 3. ipcInvariantFull (WS-RC R4.C.7: 15 sub-components after uniqueWaiters retirement)
   have hIpcFull : ipcInvariantFull ist.state := by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -6187,16 +6195,16 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       simp [SchedContextBinding.scId?] at hBinding
     · -- AF1-B7: blockingAcyclic — all TCBs have ipcState = .ready at boot
       intro tid hMem
-      -- blockingChain uses fuel = objectIndex.length. If fuel = 0, chain = [].
+      -- blockingChain uses fuel = objects.size. If fuel = 0, chain = [].
       -- If fuel > 0, use step lemma: chain = match blockingServer tid with ...
       -- All boot TCBs have .ready ipcState → blockingServer = none → chain = []
-      cases hF : ist.state.objectIndex.length with
+      cases hF : ist.state.objects.size with
       | zero =>
         have : PriorityInheritance.blockingChain ist.state tid 0 = [] := rfl
-        rw [show ist.state.objectIndex.length = 0 from hF] at hMem
+        rw [show ist.state.objects.size = 0 from hF] at hMem
         rw [this] at hMem; simp at hMem
       | succ n =>
-        rw [show ist.state.objectIndex.length = n + 1 from hF] at hMem
+        rw [show ist.state.objects.size = n + 1 from hF] at hMem
         rw [PriorityInheritance.blockingChain_step] at hMem
         -- Show blockingServer returns none for tid at boot
         have hServer : PriorityInheritance.blockingServer ist.state tid = none := by
@@ -6217,7 +6225,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       -- `objectTypeMetadataConsistent`, which is semantically stronger
       -- than (and directly implies) the lockstep predicate.
       intro oid obj hObj
-      have hMeta := ist.hLifecycleConsistent
+      have hMeta := ist.hLifecycleConsistent.types
       -- objectTypeMetadataConsistent: ∀ oid, lookupObjectTypeMeta st oid
       --   = (st.objects[oid]?).map KernelObject.objectType
       -- With hObj : st.objects[oid]? = some obj, the RHS is
@@ -6357,11 +6365,12 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         show (0, sc.yieldFromCode) = (0, 0)
         rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2]
       | _ => rfl
-  -- Compose all 21 components
+  -- 22. bookkeepingAgrees (WS-UC UC2): every intermediate state carries it.
+  -- Compose all 22 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield⟩
+         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield, ist.hLifecycleConsistent⟩
 
 /-- WS-ZA ZA6.8: **a boot-shaped state keeps no linked thread current or
 resident** — no boot thread yields to a context, so every yield-to code is 0

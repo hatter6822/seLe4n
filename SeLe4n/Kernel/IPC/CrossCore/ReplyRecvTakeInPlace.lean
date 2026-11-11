@@ -219,21 +219,20 @@ theorem SenderWordsKept.of_withoutLinks {t t' : TCB} (h : t'.withoutLinks = t.wi
 
 /-! ### The take's guard across a frame -/
 
-/-- **The take's in-place guard carries over** to a state with the same index
-and lifecycle, every key found where it was, no new VSpace root and every
-thread still a thread, the sender's queue successor and state as they were. -/
+/-- **The take's in-place guard carries over** to a state with every key found
+where it was, every key holding an object of the same kind and every thread
+still a thread, the sender's queue successor and state as they were. -/
 theorem receiveTakesInPlace_of_frame {s s' : SystemState} (epId : SeLe4n.ObjId)
     (tid sid : SeLe4n.ThreadId) (t t' : TCB)
-    (hI : s'.objectIndexSet = s.objectIndexSet) (hL : s'.lifecycle = s.lifecycle)
     (hK : s'.objectsKeepFinds s)
-    (hV : ∀ x, notVSpaceRootAt s x = true → notVSpaceRootAt s' x = true)
+    (hV : ∀ x, s'.getObjectType? x = s.getObjectType? x)
     (hTcb : ∀ p : SeLe4n.ThreadId, (s.getTcb? p).isSome = true → (s'.getTcb? p).isSome = true)
     (hQ : t'.queueNextCode = t.queueNextCode) (hIpc : t'.ipcState = t.ipcState)
     (h : receiveTakesInPlace s epId tid sid t = true) :
     receiveTakesInPlace s' epId tid sid t' = true := by
   have hS : ∀ {id ty}, storeLeavesIndexAndTypes s id ty = true →
       storeLeavesIndexAndTypes s' id ty = true :=
-    fun h => storeLeavesIndexAndTypes_of_frame hI hL hV h
+    fun h => storeLeavesIndexAndTypes_of_frame hV h
   have hQ' : t'.queueNext = t.queueNext := by simp only [TCB.queueNext, hQ]
   unfold receiveTakesInPlace sendWakesInPlace at h ⊢
   rw [hQ', hIpc]
@@ -280,8 +279,6 @@ theorem storeReplyRendezvous_takeGuard (st : SystemState) (c tid : SeLe4n.Thread
   have hHold : ∀ x, x ≠ c.toObjId →
       (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = S1.objects[x]? := fun x hx => by
     rw [SystemState.objects_mapTcbInPlace, if_neg (fun h => hx (beq_iff_eq.mp h).symm)]
-  obtain ⟨hI, hL⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
-  rw [hS1] at hI hL
   have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
   obtain ⟨tc1, htc1, -⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
   have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
@@ -301,13 +298,13 @@ theorem storeReplyRendezvous_takeGuard (st : SystemState) (c tid : SeLe4n.Thread
     · by_cases hxr : x = rid.toObjId
       · subst hxr; right; left; rw [hHold _ hxc]; exact ⟨rfl, hR1⟩
       · right; right; rw [hHold _ hxc]; exact hAg x hxc hxr
-  have hV : ∀ x, notVSpaceRootAt st x = true →
-      notVSpaceRootAt (S1.mapTcbInPlace c (holdMessage msg)) x = true := by
-    intro x hx
-    rcases hAt x with ⟨_, t, h⟩ | ⟨_, h⟩ | h
-    · unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, h]
-    · unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, h]
-    · rw [notVSpaceRootAt_of_view h]; exact hx
+  have hV : ∀ x, (S1.mapTcbInPlace c (holdMessage msg)).getObjectType? x = st.getObjectType? x := by
+    intro x
+    rcases hAt x with ⟨e, t, h⟩ | ⟨e, h⟩ | h
+    · subst e; unfold SystemState.getObjectType?
+      rw [h, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc]; rfl
+    · subst e; unfold SystemState.getObjectType?; rw [h, hRp]; rfl
+    · exact getObjectType?_of_view h
   have hKF : (S1.mapTcbInPlace c (holdMessage msg)).objectsKeepFinds st :=
     (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
   have hTcb : ∀ p : SeLe4n.ThreadId, (st.getTcb? p).isSome = true →
@@ -328,7 +325,7 @@ theorem storeReplyRendezvous_takeGuard (st : SystemState) (c tid : SeLe4n.Thread
   have hKept := SenderWordsKept.of_withoutRunLinks e1 hw
   refine ⟨by rw [hHold _ hEc]; exact agreeAt_of_not_tcb (hAg _ hEc hEr) (fun _ e => by cases e) hE,
     sTcb1, by rw [hHold _ hSc']; exact hS1o, hKept, ?_⟩
-  exact receiveTakesInPlace_of_frame epId tid s sTcb sTcb1 hI hL hKF hV hTcb hKept.queueNext
+  exact receiveTakesInPlace_of_frame epId tid s sTcb sTcb1 hKF hV hTcb hKept.queueNext
     hKept.ipcState hG
 
 /-! ### The answered caller's held message, past the take -/
@@ -744,8 +741,8 @@ theorem takeGuard_of_transferFrame {s' s : SystemState} (h : transferFrame s' s)
   refine ⟨h.obj hE rfl (transferView_endpoint_back ep), ?_⟩
   obtain ⟨t', h1, e⟩ := h.tcb hS
   have hK := SenderWordsKept.of_withoutLinks e
-  refine ⟨t', h1, hK, receiveTakesInPlace_of_frame epId tid sid sTcb t' h.1 h.2.1 h.2.2.1
-    (fun x hx => (notVSpaceRootAt_of_transferFrame h x).trans hx) ?_ hK.queueNext hK.ipcState hG⟩
+  refine ⟨t', h1, hK, receiveTakesInPlace_of_frame epId tid sid sTcb t' h.2.2.1
+    (getObjectType?_of_transferFrame h) ?_ hK.queueNext hK.ipcState hG⟩
   intro p hp
   have e := h.getTcb? p
   revert hp e
@@ -785,8 +782,7 @@ server's register file between them. -/
 /-- **The reply-receive meeting a waiting sender, its reply leg transferring,
 is the specification's**: under the guard of `replyRecvOnCore_take_delivered`
 (its inert transfer replaced by a granting replier whose frame asks for `count`
-capabilities, `hReq`) and the transfer's stores in place
-(`replyTransferStoresInPlace`, read on the pre-state), the checked arm's result
+capabilities, `hReq`), the checked arm's result
 is `performReplyRecvTakeCapsDelivered`. -/
 theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (layout : SeLe4n.SyscallRegisterLayout)
@@ -806,9 +802,7 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
     (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
     (hF : sTcb.ipcFaultSend = false)
-    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count)
-    (hW : replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
-      count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot = true) :
+    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
     (match endpointReplyRecvOnCore epId tid rid c
         { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } true core st with
       | .ok (summary, st') =>
@@ -847,8 +841,7 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
     IpcMessage) = msg at hE1 hS1o hG1
   have hNoX := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
   have hAX := ipcBufferReadsAgree_storeReplyRendezvousReady st c tid rid hNo
-  obtain ⟨hIX, hLX⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
-  generalize hX : storeReplyRendezvousReady st c tid rid = X at hNoX hAX hIX hLX
+  generalize hX : storeReplyRendezvousReady st c tid rid = X at hNoX hAX
   have hS1 : storeReplyRendezvous st c tid rid msg = X.mapTcbInPlace c (holdMessage msg) := by
     rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, hX]
   obtain ⟨sm, Y1, hT1⟩ := receiveTransferCaps_ok (frameCapRequestOf st stcb count) none
@@ -863,7 +856,7 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
   rw [hS1] at hE1 hS1o hG1
   have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
     ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX)
-    hIX hLX ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoX) c.toObjId stcb ct count hW
+    ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoX) c.toObjId stcb ct count
     (by rw [receiveTransferCaps_mapTcbInPlace (LinkBlindWrite.withMessageSlots _ _ _) c _ _ _ X
       hNoX, hT1]; rfl)).1
   obtain ⟨hE2, sTcb2, hS2o, hK2, hG2⟩ := takeGuard_of_transferFrame hFr hE1 hS1o hG1

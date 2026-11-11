@@ -738,14 +738,14 @@ leaves through `retireCarvedObject` instead. -/
 /-- **Erase a retired kernel object** — an endpoint, a notification, a reply, a
 CNode, a thread or a scheduling context (`erasableKindAt`) — from the object
 store, with its index row, its index-set entry and its type, through the erase
-primitives `retireCarvedObject` compiles to (`withObjectErased` and its index
-and type companions, each out of line over the state it is handed, so the
-tables are erased in place); the identity at any other key.  The record it
+primitive `retireCarvedObject` compiles to (`withObjectErased`, out of line over
+the state it is handed, so the table is erased in place; the bookkeeping writes
+are ghost); the identity at any other key.  The record it
 makes is `eraseRetiredObject_eq`.  `retireFinalObject` runs it only on an
 object `finalRetireAdmitted` admits. -/
 def eraseRetiredObject (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
   if erasableKindAt st x then
-    withObjectTypeErased (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st x) x) x) x
+    withObjectErased st x
   else st
 
 /-- **`eraseRetiredObject` as a record**: the object, its index row, its
@@ -755,15 +755,10 @@ theorem eraseRetiredObject_eq (st : SystemState) (x : SeLe4n.ObjId) :
       if erasableKindAt st x then
         { st with
             objects := st.objects.erase x
-            objectIndex := st.objectIndex.filter (· != x)
-            objectIndexSet := st.objectIndexSet.erase x
-            lifecycle := { objectTypes := st.lifecycle.objectTypes.erase x } }
-      else st := by
-  unfold eraseRetiredObject withObjectTypeErased withObjectIndexSetErased
-    withObjectUnindexed withObjectErased
-  split
-  · rw [objIdListDrop_eq_filter]; simp
-  · rfl
+            objectIndexGhost := st.objectIndexGhost.map (·.filter (· != x))
+            objectIndexSetGhost := st.objectIndexSetGhost.map (·.erase x)
+            lifecycle := { objectTypesGhost := st.lifecycle.objectTypesGhost.map (·.erase x) } }
+      else st := rfl
 
 /-- **The children the untyped at `x` records**, read before it is retired;
 none when `x` holds no untyped. -/
@@ -880,7 +875,7 @@ theorem storeUntypedWith_clearRetiredChildren (st : SystemState) {x y : SeLe4n.O
       have hgy : st.objects.get? y = some (.untyped u) := hy
       have hL : storeLeavesIndexAndTypes (clearRetiredChildren st x) y .untyped =
           storeLeavesIndexAndTypes st y .untyped := by
-        unfold storeLeavesIndexAndTypes; rw [hG]; rfl
+        unfold storeLeavesIndexAndTypes storeKeepsKind; rw [hG]
       rw [hL]
       have hNo' : (st.objects.mapValueAt x
           (SystemState.mapUntypedObject fun U => { U with children := [] })).noResizeDue :=
@@ -895,22 +890,8 @@ theorem storeUntypedWith_clearRetiredChildren (st : SystemState) {x y : SeLe4n.O
           dsimp only
           rw [RHTable.modify_eq_mapValueAt _ _ hNo]
           exact (RHTable.noResizeDue_mapValueAt _ _ _).2 hNo
-      · have hgy' : (st.objects.mapValueAt x
-            (SystemState.mapUntypedObject fun U => { U with children := [] })).get? y = some (.untyped u) := by
-          have := hG; simp only [clearRetiredChildren, RHTable_getElem?_eq_get?] at this
-          rw [this]; exact hgy
-        refine ⟨?_, ?_⟩
-        · unfold storeObject clearRetiredChildren storeKeepsAsid
-          dsimp only
-          rw [RHTable.insert_eq_mapValueAt _ (RHTable.findsInPlace_of_get? hNo' hgy'),
-            RHTable.insert_eq_mapValueAt _ (RHTable.findsInPlace_of_get? hNo hgy),
-            RHTable.mapValueAt_comm _ _ _ hne]
-          have h1 := hG; simp only [clearRetiredChildren] at h1
-          simp only [h1]
-        · unfold storeObject
-          dsimp only
-          rw [RHTable.insert_eq_mapValueAt _ (RHTable.findsInPlace_of_get? hNo hgy)]
-          exact (RHTable.noResizeDue_mapValueAt _ _ _).2 hNo
+      · rename_i hNot
+        exact absurd (by unfold storeLeavesIndexAndTypes storeKeepsKind; rw [hy]; rfl) hNot
     | _ => exact ⟨rfl, hNo⟩
 
 /-- The reparent of children none of which is `x` commutes with the take-out at
@@ -1311,9 +1292,7 @@ theorem storeUntypedWith_tables (st : SystemState) (w : SeLe4n.ObjId)
       rw [← hS]
       refine ⟨rfl, ?_⟩
       dsimp only
-      split
-      · rfl
-      · rw [List.filter_cons, hw]; rfl
+      simp only [hW, Option.isSome_some, ↓reduceIte]
     | _ => all_goals (unfold SystemState.storeUntypedWith; rw [hW]; exact ⟨rfl, rfl⟩)
 
 /-- **The unrecord keeps the interrupt table, and the object index
@@ -1518,9 +1497,9 @@ theorem eraseRetiredObject_frame (st : SystemState) (x : SeLe4n.ObjId)
   · have hE : eraseRetiredObject st x =
         { st with
           objects := st.objects.erase x
-          objectIndex := st.objectIndex.filter (· != x)
-          objectIndexSet := st.objectIndexSet.erase x
-          lifecycle := { objectTypes := st.lifecycle.objectTypes.erase x } } := by
+          objectIndexGhost := st.objectIndexGhost.map (·.filter (· != x))
+          objectIndexSetGhost := st.objectIndexSetGhost.map (·.erase x)
+          lifecycle := { objectTypesGhost := st.lifecycle.objectTypesGhost.map (·.erase x) } } := by
       rw [eraseRetiredObject_eq, if_pos ((erasableKindAt_iff st x).mpr hP)]
     rw [hE]
     refine ⟨SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExt st.objects x hInv hSz,
@@ -2730,7 +2709,9 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
             st.objectIndex.filter p := by
         rw [eraseRetiredObject_eq]
         split
-        · exact ⟨rfl, filter_bne_filter (hx h0)⟩
+        · refine ⟨rfl, ?_⟩
+          simp only [SystemState.objectIndex, SeLe4n.Erased.out_map]
+          exact filter_bne_filter (hx h0)
         · exact ⟨rfl, rfl⟩
       generalize eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1)) = s0 at h1 hS0 ⊢
       unfold retireRecordedObject
@@ -2748,7 +2729,9 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
             st.objectIndex.filter p := by
         unfold retireCarvedObject
         split
-        · exact ⟨h2.1, (filter_bne_filter (hx h0)).trans h2.2⟩
+        · refine ⟨h2.1, ?_⟩
+          simp only [SystemState.objectIndex, SeLe4n.Erased.out_map]
+          exact (filter_bne_filter (hx h0)).trans h2.2
         · exact h2
       split
       · exact h3

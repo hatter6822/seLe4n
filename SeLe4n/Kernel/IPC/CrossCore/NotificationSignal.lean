@@ -205,7 +205,7 @@ theorem notificationSignalOnCore_wake_inPlace_eq (notificationId : SeLe4n.ObjId)
     exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1
   simp only [storeTcbIpcStateAndMessage, modifyTcb, hLook]
   rw [storeObject_eq_of_leaves (by
-    simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveT ⊢
+    simp only [storeLeavesIndexAndTypes, storeKeepsKind, KernelObject.objectType] at hLeaveT ⊢
     rw [hT1]; rw [hT] at hLeaveT; exact hLeaveT)]
   simp only [Option.some.injEq]
   unfold storeSignalWoken SystemState.modifyObject
@@ -527,7 +527,7 @@ theorem notificationWaitOnCore_consume_eq (notificationId : SeLe4n.ObjId)
     exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1
   simp only [storeTcbIpcState, modifyTcb, hLook]
   rw [storeObject_eq_of_leaves (by
-    simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveT ⊢
+    simp only [storeLeavesIndexAndTypes, storeKeepsKind, KernelObject.objectType] at hLeaveT ⊢
     rw [hT1]; rw [hT] at hLeaveT; exact hLeaveT)]
   simp only [Option.some.injEq]
   unfold storeWaitConsumed SystemState.modifyObject
@@ -590,7 +590,7 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
       (.blockedOnNotification notificationId) none = .ok { st with objects := O2 } := by
     unfold storeTcbIpcStateAndMessage_fromTcb
     rw [storeObject_eq_of_leaves (by
-      simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveW ⊢
+      simp only [storeLeavesIndexAndTypes, storeKeepsKind, KernelObject.objectType] at hLeaveW ⊢
       rw [hT1]; rw [hT] at hLeaveW; exact hLeaveW)]
   have hLk2 : lookupTcb { st with objects := O2 } waiter = some W := by
     simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]
@@ -601,7 +601,7 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
     rw [hLk2]
     simp only []
     rw [storeObject_eq_of_leaves (by
-      simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveW ⊢
+      simp only [storeLeavesIndexAndTypes, storeKeepsKind, KernelObject.objectType] at hLeaveW ⊢
       rw [hW2]; rw [hT] at hLeaveW; exact hLeaveW)]
   rw [hS1]; simp only []; rw [hS2]; simp only []
   unfold linkNtfnWaiter; rw [hS3]; simp only []
@@ -647,7 +647,7 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
       exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT3
     simp only [relinkNtfnNext, modifyTcbOpt, modifyTcb, hLk3]
     rw [storeObject_eq_of_leaves (by
-      simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveT ⊢
+      simp only [storeLeavesIndexAndTypes, storeKeepsKind, KernelObject.objectType] at hLeaveT ⊢
       rw [hT3]; rw [hTt'] at hLeaveT; exact hLeaveT)]
     simp only [Option.some.injEq]
     rw [SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT3)]

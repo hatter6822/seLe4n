@@ -123,8 +123,10 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
 
 /-- State-level agreement over everything both phases model.
 
-The object store is compared over the live index **and** the frozen index, so an
-object appearing on one side only is a disagreement.  The taint is compared with
+The object store is compared over the live object table's keys **and** the frozen
+index, so an object appearing on one side only is a disagreement.  (WS-UC UC2:
+the live keys are read off the table, not the ghost object index; an `all` does
+not depend on the order it visits them in.)  The taint is compared with
 the objects it lives in — a thread's and a notification's taint words are among
 the fields `frozenObjectAgrees` compares — so provenance recorded against the
 wrong carrier is an object disagreement.  The **run queue** is
@@ -132,8 +134,8 @@ compared in both directions and by priority, because whether a woken thread can
 be selected is not visible in its TCB. -/
 def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
   let objectsAgree :=
-    ls.objectIndex.all (fun oid =>
-      match fs.getObject? oid, ls.getObject? oid with
+    ls.objects.toList.all (fun kv =>
+      match fs.getObject? kv.1, ls.getObject? kv.1 with
       | some f, some l => frozenObjectAgrees f l
       | none,   none   => true
       | _, _           => false)

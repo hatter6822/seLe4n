@@ -122,6 +122,11 @@ def recordUnwrappedBadge (st : SystemState) (tcb : TCB) (i : Nat) (badge : SeLe4
     (b : SeLe4n.Badge) : (recordUnwrappedBadge st tcb i b).objects = st.objects := by
   unfold recordUnwrappedBadge; split <;> rfl
 
+/-- The badge record writes none of the bookkeeping ghosts. -/
+theorem recordUnwrappedBadge_ghostsKept (st : SystemState) (tcb : TCB) (i : Nat)
+    (b : SeLe4n.Badge) : SystemState.ghostsKept (recordUnwrappedBadge st tcb i b) st := by
+  unfold recordUnwrappedBadge; split <;> exact ⟨rfl, rfl, rfl⟩
+
 @[simp] theorem recordUnwrappedBadge_scheduler (st : SystemState) (tcb : TCB) (i : Nat)
     (b : SeLe4n.Badge) : (recordUnwrappedBadge st tcb i b).scheduler = st.scheduler := by
   unfold recordUnwrappedBadge; split <;> rfl

@@ -1363,7 +1363,7 @@ its head no longer holds — and the check refuses both. -/
 private def runRefillStrandedWitness : IO Unit := do
   IO.println "--- §3.27 a bound context's pending refill is never stranded ---"
   let strandedOk (st : SystemState) : Bool :=
-    (releaseNoRefillStrandedChecks st.objectIndex st).all (·.2)
+    (releaseNoRefillStrandedChecks st.objectIds st).all (·.2)
   assertBool "a runnable bound context holds no pending refill: nothing to check"
     (strandedOk stCbsRunnable)
   assertBool "a used-up head queued at its release time passes" (strandedOk stCbs)

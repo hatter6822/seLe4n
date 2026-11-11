@@ -220,9 +220,9 @@ theorem popHead_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (isReceiv
       (popEndpoint isReceiveQ (ThreadId.optCode ht.queueNext)) = S1 := by
     rw [hS1]; unfold SystemState.modifyObject
     rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
-  have hNotV : ∀ r, popEndpoint isReceiveQ (ThreadId.optCode ht.queueNext) (.endpoint ep) ≠
-      .vspaceRoot r := by
-    intro r h; simp only [popEndpoint] at h; split at h <;> cases h
+  have hNotV : ∀ o, st.objects[endpointId]? = some o → o.objectType =
+      (popEndpoint isReceiveQ (ThreadId.optCode ht.queueNext) (.endpoint ep)).objectType := by
+    intro o ho; rw [hE] at ho; cases ho; simp only [popEndpoint]; split <;> rfl
   have hLE' : ∀ e : Endpoint, storeLeavesIndexAndTypes st endpointId
       (KernelObject.endpoint e).objectType = true := fun _ => by
     simpa only [KernelObject.objectType] using hLE

@@ -110,7 +110,7 @@ theorem applyPriorityChangeOnCore {st st' : SystemState} {t : SeLe4n.ThreadId} {
   have F1 := updatePrioritySource st t tcb p hInv
   have F2 := F1.trans (migrateRunQueueBucketOnCore _ t p (determineTargetCore st t) F1.invExt)
   have F3 := F2.trans (markKeyChangeFor _ t (effectiveSchedParams st tcb) F2.invExt)
-  have F4 := F3.trans (repropagateFromWaiter _ t ec st.objectIndex.length F3.invExt)
+  have F4 := F3.trans (repropagateFromWaiter _ t ec st.objects.size F3.invExt)
   exact F4.trans (priorityRescheduleOnCore F4.invExt h)
 
 theorem setPriorityOnCore {st st' : SystemState} {vCaller vTarget : SeLe4n.ValidThreadId}

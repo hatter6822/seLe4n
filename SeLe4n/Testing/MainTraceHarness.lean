@@ -2963,7 +2963,7 @@ private def runParameterizedTopologyCheck
     IO Unit := do
   let stRaw := buildParameterizedTopology threadCount basePriority radix asidCount
   let st := SeLe4n.Kernel.syncThreadStates stRaw
-  let allIds := st.objectIndex
+  let allIds := st.objectIds
   let checks := stateInvariantChecksFor allIds st
   let failures := checks.filterMap fun (name, ok) => if ok then none else some name
   if failures.isEmpty then

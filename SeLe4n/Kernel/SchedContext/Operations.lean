@@ -407,17 +407,22 @@ def validateSchedContextParams (budget period priority _deadline domain : Nat)
 -- Z5-F2: Admission control
 -- ============================================================================
 
+/-- WS-UC UC2: a stored object's scheduling context, if it is one. -/
+@[inline] def schedContextOfObject : KernelObject → Option SchedContext
+  | .schedContext sc => some sc
+  | _ => none
+
 /-- Z5-F2: Collect all SchedContext objects from the object store for admission
 control, optionally excluding a specific SchedContext (used when reconfiguring
-an existing SchedContext to avoid double-counting its bandwidth). -/
+an existing SchedContext to avoid double-counting its bandwidth).
+
+WS-UC UC2: a walk of the object table (the object index it walked is a ghost).
+It lists the contexts in the table's order; admission only sums them, and the
+sum is the one the index order gives (`admissionUtilizationOf_eq_index`). -/
 def collectSchedContexts (st : SystemState) (excludeId : Option ObjId := none)
     : List SchedContext :=
-  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.  Lift
-  -- the raw `ObjId` through `SchedContextId.ofObjId` and route the
-  -- variant discrimination through `getSchedContext?`.
-  st.objectIndex.filterMap fun oid =>
-    if excludeId == some oid then none
-    else st.getSchedContext? (SchedContextId.ofObjId oid)
+  st.objects.fold [] fun acc oid o =>
+    (if excludeId == some oid then none else schedContextOfObject o).elim acc (· :: acc)
 
 /-- Z5-F2: Check admission control — total bandwidth including candidate
 must not exceed 100% (1000 per-mille). When reconfiguring an existing
@@ -427,53 +432,139 @@ def checkAdmission (st : SystemState) (candidate : SchedContext)
     (excludeId : Option ObjId := none) : Bool :=
   admissionCheck (collectSchedContexts st excludeId) candidate
 
-/-- **WS-ZA ZA5.2**: the utilization admission sums, added to `acc`, walking the
-object index itself: no list of contexts is collected and no closure is built.
-The context `ex` is left out when `hasEx` holds — a reconfiguration's own — as
-two plain arguments, so no `Option` is built to carry it. -/
-def admissionUtilizationFrom (st : SystemState) (hasEx : Bool) (ex : ObjId) :
-    List ObjId → Nat → Nat
-  | [], acc => acc
-  | oid :: rest, acc =>
-    admissionUtilizationFrom st hasEx ex rest
-      (if hasEx && ex == oid then acc
-       else match st.getSchedContext? (SchedContextId.ofObjId oid) with
-         | some sc => acc + sc.utilizationPerMille
-         | none => acc)
+/-- **WS-ZA ZA5.2**: one step of the utilization admission sum: the object
+stored at `oid` added to `acc`, unless it is the left-out context `ex` (when
+`hasEx`) or no context.  The exclusion is two plain arguments, so no `Option`
+is built to carry it. -/
+@[inline] def admissionStep (hasEx : Bool) (ex : ObjId) (acc : Nat) (oid : ObjId)
+    (o : KernelObject) : Nat :=
+  if hasEx && ex == oid then acc
+  else match o with
+    | .schedContext sc => acc + sc.utilizationPerMille
+    | _ => acc
+
+/-- **WS-ZA ZA5.2**: the utilization admission sum, walking the object table
+itself: no list of contexts is collected and no closure is built.  WS-UC UC2:
+the walk is the table's (the object index it walked is a ghost). -/
+def admissionUtilizationFrom (st : SystemState) (hasEx : Bool) (ex : ObjId) : Nat :=
+  st.objects.fold 0 (admissionStep hasEx ex)
 
 /-- `admissionUtilizationFrom`'s two plain arguments for an optional exclusion. -/
 @[inline] def admissionUtilizationOf (st : SystemState) (excludeId : Option ObjId) : Nat :=
   match excludeId with
-  | some e => admissionUtilizationFrom st true e st.objectIndex 0
-  | none => admissionUtilizationFrom st false ⟨0⟩ st.objectIndex 0
+  | some e => admissionUtilizationFrom st true e
+  | none => admissionUtilizationFrom st false ⟨0⟩
 
-theorem admissionUtilizationFrom_eq (st : SystemState) (excludeId : Option ObjId)
-    (l : List ObjId) (acc : Nat) :
-    admissionUtilizationFrom st excludeId.isSome (excludeId.getD ⟨0⟩) l acc =
-      (l.filterMap fun oid =>
-        if excludeId == some oid then none
-        else st.getSchedContext? (SchedContextId.ofObjId oid)).foldl
-        (fun acc sc => acc + sc.utilizationPerMille) acc := by
-  induction l generalizing acc with
-  | nil => rfl
-  | cons oid rest ih =>
-    have hEx : (excludeId.isSome && excludeId.getD ⟨0⟩ == oid) = (excludeId == some oid) := by
-      cases excludeId <;> simp
-    simp only [admissionUtilizationFrom, ih, List.filterMap_cons, hEx]
-    by_cases h : (excludeId == some oid) = true
-    · simp only [h, ↓reduceIte]
-    · simp only [h, Bool.false_eq_true, ↓reduceIte]
-      cases st.getSchedContext? (SchedContextId.ofObjId oid) <;> rfl
+private theorem foldl_add_shift {α : Type} (u : α → Nat) :
+    ∀ (A : List α) (n k : Nat),
+      A.foldl (fun a x => a + u x) (n + k) = A.foldl (fun a x => a + u x) n + k
+  | [], _, _ => rfl
+  | x :: A, n, k => by
+    simp only [List.foldl_cons]
+    rw [show n + k + u x = (n + u x) + k by omega]
+    exact foldl_add_shift u A _ k
+
+private theorem foldl_collect_sum {α β : Type} (g : α → Option β) (u : β → Nat) :
+    ∀ (L : List α) (A : List β) (n : Nat),
+      (L.foldl (fun acc p => (g p).elim acc (· :: acc)) A).foldl (fun a x => a + u x) n =
+        L.foldl (fun a p => match g p with | some x => a + u x | none => a)
+          (A.foldl (fun a x => a + u x) n)
+  | [], _, _ => rfl
+  | p :: L, A, n => by
+    simp only [List.foldl_cons]
+    rw [foldl_collect_sum g u L]
+    congr 1
+    cases g p with
+    | none => rfl
+    | some x =>
+      simp only [Option.elim_some, List.foldl_cons]
+      rw [foldl_add_shift]
 
 theorem admissionUtilizationOf_eq (st : SystemState) (excludeId : Option ObjId) :
     admissionUtilizationOf st excludeId =
       (collectSchedContexts st excludeId).foldl
         (fun acc sc => acc + sc.utilizationPerMille) 0 := by
-  rw [collectSchedContexts, ← admissionUtilizationFrom_eq]
-  cases excludeId <;> rfl
+  have hOf : admissionUtilizationOf st excludeId =
+      admissionUtilizationFrom st excludeId.isSome (excludeId.getD ⟨0⟩) := by
+    cases excludeId <;> rfl
+  rw [hOf, admissionUtilizationFrom, collectSchedContexts, fold_eq_toList_reverse_foldl,
+    fold_eq_toList_reverse_foldl]
+  rw [foldl_collect_sum (fun p : ObjId × KernelObject =>
+    if excludeId == some p.1 then none else schedContextOfObject p.2)]
+  simp only [List.foldl_nil]
+  congr 1
+  funext acc p
+  obtain ⟨oid, o⟩ := p
+  have hEx : (excludeId.isSome && excludeId.getD ⟨0⟩ == oid) = (excludeId == some oid) := by
+    cases excludeId <;> simp
+  simp only [admissionStep, hEx]
+  by_cases h : (excludeId == some oid) = true
+  · simp only [h, ↓reduceIte]
+  · simp only [h, Bool.false_eq_true, ↓reduceIte]
+    cases o <;> rfl
+
+/-- **WS-UC UC2: the table walk's sum is the index walk's.**  Where the
+bookkeeping agrees with the table, the admission sum taken over the table in its
+own order is the sum over the (ghost) object index in its order: what the walk
+reads does not depend on the order it visits the objects in. -/
+theorem admissionUtilizationOf_eq_index (st : SystemState) (excludeId : Option ObjId)
+    (hA : st.bookkeepingAgrees) (hInv : st.objects.invExt) :
+    admissionUtilizationOf st excludeId =
+      (st.objectIndex.filterMap fun oid =>
+        if excludeId == some oid then none
+        else st.getSchedContext? (SchedContextId.ofObjId oid)).foldl
+        (fun acc sc => acc + sc.utilizationPerMille) 0 := by
+  have hOf : admissionUtilizationOf st excludeId =
+      admissionUtilizationFrom st excludeId.isSome (excludeId.getD ⟨0⟩) := by
+    cases excludeId <;> rfl
+  let g : Nat → ObjId → Nat := fun acc oid =>
+    match (if excludeId == some oid then none
+      else st.getSchedContext? (SchedContextId.ofObjId oid)) with
+    | some sc => acc + sc.utilizationPerMille
+    | none => acc
+  have hEx : ∀ oid : ObjId,
+      (excludeId.isSome && excludeId.getD ⟨0⟩ == oid) = (excludeId == some oid) := by
+    intro oid; cases excludeId <;> simp
+  rw [hOf, admissionUtilizationFrom,
+    fold_eq_foldl_of_keys st.objects hInv st.objectIndex hA.nodup
+      (fun k => hA.index k) _ g ?hfg ?comm 0]
+  · have hL : ∀ (L : List ObjId) (n : Nat), L.foldl g n =
+        (L.filterMap fun oid => if excludeId == some oid then none
+          else st.getSchedContext? (SchedContextId.ofObjId oid)).foldl
+          (fun acc sc => acc + sc.utilizationPerMille) n := by
+      intro L
+      induction L with
+      | nil => intro n; rfl
+      | cons oid L ih =>
+        intro n
+        simp only [List.foldl_cons, List.filterMap_cons]
+        rw [ih]
+        simp only [g]
+        cases (if excludeId == some oid then none
+          else st.getSchedContext? (SchedContextId.ofObjId oid)) <;> rfl
+    exact hL _ 0
+  case hfg =>
+    intro acc k v hkv
+    simp only [admissionStep, hEx, g]
+    by_cases h : (excludeId == some k) = true
+    · simp only [h, ↓reduceIte]
+    · simp only [h, Bool.false_eq_true, ↓reduceIte]
+      have hG : st.getSchedContext? (SchedContextId.ofObjId k) = schedContextOfObject v := by
+        unfold SystemState.getSchedContext?
+        rw [SchedContextId.toObjId_ofObjId, show st.objects[k]? = some v from hkv]
+        cases v <;> rfl
+      rw [hG]; cases v <;> rfl
+  case comm =>
+    intro z x y
+    simp only [g]
+    cases (if excludeId == some x then none
+        else st.getSchedContext? (SchedContextId.ofObjId x)) <;>
+      cases (if excludeId == some y then none
+        else st.getSchedContext? (SchedContextId.ofObjId y)) <;>
+      simp only [] <;> omega
 
 /-- **WS-ZA ZA5.2**: the compiled `checkAdmission` — the sum taken over the
-object index in place (`admissionUtilizationFrom`), so admitting a
+object table in place (`admissionUtilizationFrom`), so admitting a
 reconfiguration builds nothing. -/
 @[inline] def checkAdmissionImpl (st : SystemState) (candidate : SchedContext)
     (excludeId : Option ObjId := none) : Bool :=
@@ -1026,7 +1117,7 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
                     (schedContextConfigureBoundPropagate stStored scIdTyped
                       boundTid boundTcb hBound priority domain) boundTid
                     (hasSufficientBudget st boundTcb)) boundTid preKey) boundTid
-                  (determineTargetCore st boundTid) st.objectIndex.length)
+                  (determineTargetCore st boundTid) st.objects.size)
                   boundTid updated)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
@@ -1047,7 +1138,7 @@ the object table.  When they pass the configure's state is
     match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
     | none => false
     | some _ =>
-      decide (admissionUtilizationFrom st true vScId.val st.objectIndex 0 +
+      decide (admissionUtilizationFrom st true vScId.val +
           (Bandwidth.mk budget period).utilization ≤ 1000) &&
         storeLeavesIndexAndTypes st vScId.val .schedContext
 
@@ -1077,7 +1168,7 @@ and the specification's propagation over the stored state. -/
               boundTid boundTcb hBound priority domain) boundTid
             (hasSufficientBudget st boundTcb)) boundTid
             (effectiveSchedParams st boundTcb)) boundTid
-          (determineTargetCore st boundTid) st.objectIndex.length)
+          (determineTargetCore st boundTid) st.objects.size)
           boundTid
           (configuredSchedContext budget period priority deadline domain st.machine.timer keep sc)
       | none => stStored
@@ -1115,7 +1206,7 @@ across it). -/
               boundTid boundTcb hBound priority domain) boundTid
             (hasSufficientBudget st boundTcb)) boundTid
             (effectiveSchedParams st boundTcb)) boundTid
-          (determineTargetCore st boundTid) st.objectIndex.length)
+          (determineTargetCore st boundTid) st.objects.size)
           boundTid
           (configuredSchedContext budget period priority deadline domain st.machine.timer keep sc)
       | none => stStored

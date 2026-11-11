@@ -3162,14 +3162,6 @@ it doubles as the fixture non-vacuity gate for §3.8. -/
 private theorem probeState_holds_probeCNode :
     probeState.objects[probeCNode]? = some (.cnode probeCNodeValue) := by rfl
 
-/-- The shared object index does not read the observer's core (§3.2), so this
-membership fact needs no core argument and applies at every one.  Spelled with
-`IfObserver.ofLabel lowLabel` rather than `lowObserver` so it matches the
-reduct of `(ObservableState.onCore … c lowLabel …).objectIndex` syntactically. -/
-private theorem lowEndpoint_mem_lowObjectIndex :
-    lowEndpoint ∈ projectObjectIndex probeLabeling (IfObserver.ofLabel lowLabel) probeState := by
-  decide
-
 /-- The capability the observer at `(c, L)` sees in `probeCNode`'s `slot`,
 read **through the observable state** rather than through `projectCNode`.
 `Option Capability` has `DecidableEq`, so unlike the whole projected object
@@ -3891,10 +3883,13 @@ private def runClearanceChainChecks : IO Unit := do
       (ObservableState.onCoreByLinks probeLabeling c1 highLabel probeState).runnable))
   assertBool "the derived membership corollaries apply"
     (allCores.all (fun c =>
-      have _h : lowEndpoint ∈ (ObservableState.onCore probeLabeling c highLabel probeState).objectIndex :=
+      -- The specification's object index reads the proof-only ghost index
+      -- (WS-UC UC2), so the membership is taken as a premise: the corollary
+      -- carries any low-visible object to the high view at this fixture.
+      have _h : lowEndpoint ∈ (ObservableState.onCore probeLabeling c lowLabel probeState).objectIndex →
+          lowEndpoint ∈ (ObservableState.onCore probeLabeling c highLabel probeState).objectIndex :=
         ObservableState.visibilityLe_mem_objectIndex
           (onCore_label_monotone probeLabeling c lowLabel_flowsTo_highLabel probeState)
-          lowEndpoint_mem_lowObjectIndex
       true))
 
 /-- §3.12  The finer register-aware check (SM8.A.3), and its limit. -/
@@ -6121,7 +6116,7 @@ private def runDeclassificationNonInterferenceChecks : IO Unit := do
      | .ok ((), stA), .ok ((), stB) =>
          decide (stA.objects[declassTargetA]?.isSome = true) &&
          decide (stA.scheduler.currentOnCore c1 = stB.scheduler.currentOnCore c1) &&
-         decide (stA.objectIndex = stB.objectIndex) &&
+         decide (stA.objectIds = stB.objectIds) &&
          -- the trails DIFFER (one carried a prior entry), which is what makes
          -- "modulo the trail" the honest statement rather than a weakening
          decide (stA.declassificationAuditLog ≠ stB.declassificationAuditLog)
@@ -6180,7 +6175,7 @@ private def runEndpointPolicyGateChecks : IO Unit := do
   assertBool "the live cross-core send is refused under the narrowing override"
     (match crossCoreSendUnder narrowingOverrideLabeling lowEndpoint with
      | (st', .error e) => decide (e = KernelError.flowDenied) &&
-         decide (st'.objectIndex = niState.objectIndex)
+         decide (st'.objectIds = niState.objectIds)
      | _ => false)
   assertBool "…and is NOT refused with no override configured"
     (match crossCoreSendUnder niLabeling lowEndpoint with
@@ -6255,7 +6250,7 @@ private def runLiveDeclassifyChecks : IO Unit := do
          decide (st.getObjectType? lowNotification = niState.getObjectType? lowNotification) &&
          decide (projectedBadge c0 lowLabel st lowNotification
            = projectedBadge c0 lowLabel niState lowNotification) &&
-         decide (st.objectIndex = niState.objectIndex) &&
+         decide (st.objectIds = niState.objectIds) &&
          decide (st.scheduler.currentOnCore c1 = niState.scheduler.currentOnCore c1) &&
          decide (st.machine.timer = niState.machine.timer))
   assertBool "…and is invisible on EVERY core (the trail is outside the projection)"
@@ -6518,7 +6513,7 @@ basis={e.authorizationBasis.render} kernelIssued={e.authorizationBasis.renderTag
       , s!"[smp-declassification] chain linked: {declassificationChainLinked log}, \
 cross-core {chainIsCrossCore log}"
       , s!"[smp-declassification] object store unchanged: \
-{decide (st.objectIndex = niState.objectIndex)}, scheduler unchanged \
+{decide (st.objectIds = niState.objectIds)}, scheduler unchanged \
 {decide (st.scheduler.currentOnCore c1 = niState.scheduler.currentOnCore c1)}"
       , s!"[smp-declassification] invisible on every core: \
 {allCores.all (fun c => lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c lowLabel st niState)}"
@@ -7153,12 +7148,12 @@ private def runFineLockIntegrityChecks : IO Unit := do
     (decide (rawLock lockedState lowEndpointKey ≠ rawLock niLocked lowEndpointKey))
   -- …and yet no object is touched: the lock word is not part of any object.
   assertBool "every object is unchanged by the acquire"
-    (niState.objectIndex.all (fun oid =>
+    (niState.objectIds.all (fun oid =>
       lockedState.kernel.objects[oid]? == niState.objects[oid]?))
   assertBool "…including the trusted object the untrusted core just locked"
     (lockedState.kernel.objects[lowEndpoint]? == niState.objects[lowEndpoint]?)
   assertBool "…and the whole two-lock 2PL fold is the same"
-    (niState.objectIndex.all (fun oid =>
+    (niState.objectIds.all (fun oid =>
       foldedLockState.kernel.objects[oid]? == niState.objects[oid]?))
   assertBool "bibaIntegrity_underLockSet applies at the fixture (theorem)"
     (have _h : ∀ (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
@@ -7271,10 +7266,10 @@ private def runFineLockEntryChecks : IO Unit := do
   -- The sharpened fail-closed conclusion, computed: the kernel half is
   -- untouched (WS-LS LS2.1 — the bracket wrote the ghost table alone).
   assertBool "the refused syscall left every object untouched"
-    (niState.objectIndex.all (fun oid =>
+    (niState.objectIds.all (fun oid =>
       bracketedEntryResult.1.kernel.objects[oid]? == niState.objects[oid]?))
   assertBool "…and every non-object field with it"
-    (decide (bracketedEntryResult.1.kernel.objectIndex = niState.objectIndex) &&
+    (decide (bracketedEntryResult.1.kernel.objectIds = niState.objectIds) &&
      decide (bracketedEntryResult.1.kernel.scheduler.currentOnCore c0
        = niState.scheduler.currentOnCore c0) &&
      decide (bracketedEntryResult.1.kernel.machine.timer = niState.machine.timer))
@@ -7422,7 +7417,9 @@ private def runFineLockSuccessPathChecks : IO Unit := do
       successEntryResult.1)
   assertBool "NEGATIVE: …but it genuinely refutes an index change"
     (!(lockWritesOnlyCheck ⟨successEntryState, SeLe4n.Kernel.Concurrency.LockState.unheld⟩
-      ⟨{ successEntryState with objectIndex := [] }, SeLe4n.Kernel.Concurrency.LockState.unheld⟩))
+      ⟨{ successEntryState with
+          objects := successEntryState.objects.erase (successEntryState.objectIds.headD ⟨0⟩) },
+        SeLe4n.Kernel.Concurrency.LockState.unheld⟩))
   -- The theorem, applied at this very fixture: its hypotheses are satisfiable.
   -- WS-LS LS2.1: no `invExt` premise on either side any more.
   assertBool "the success-path headline applies here (theorem)"
@@ -8211,7 +8208,7 @@ private def independenceInvisibleCores : List CoreId :=
 /-- The SM8.A half of the trace: what an observer at `(core, label)` sees. -/
 private def observerTraceLines : List String :=
   [ s!"[smp-information-flow] fixture: {Concurrency.numCores} cores, \
-{niState.objectIndex.length} objects, 3 clearances"
+{niState.objects.size} objects, 3 clearances"
   , s!"[smp-information-flow] visible objects at low/mid/high: \
 {visibleObjectCount lowLabel}/{visibleObjectCount midLabel}/{visibleObjectCount highLabel}" ] ++
   (allCores.map (fun c =>
@@ -8712,7 +8709,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
     (decide (post.objects.toList.length = niState.objects.toList.length) &&
      decide (post.scheduler.currentOnCore c1 = niState.scheduler.currentOnCore c1) &&
      decide (post.machine.timer = niState.machine.timer) &&
-     decide (post.objectIndex = niState.objectIndex))
+     decide (post.objectIds = niState.objectIds))
   -- End to end through the boundary the hardware calls.  The outcome is the
   -- error frame computed from `ke` alone — bit-identical to what this arm
   -- returned before the ledger existed — and the committed state carries the

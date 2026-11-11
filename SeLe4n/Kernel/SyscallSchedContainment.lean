@@ -412,7 +412,7 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.Obj
     applyReceiveRendezvousHandoff_ok_decompose st1 st' receiver dequeued executingCore hHand
   have hChain : endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore
       = if rendezvousDequeuedCall st1 dequeued then
-          pipChainWriteSet stDon receiver executingCore stDon.objectIndex.length
+          pipChainWriteSet stDon receiver executingCore stDon.objects.size
         else [] := by
     unfold endpointReceiveHandoffChainWriteSet
     rw [hLeg]
@@ -444,7 +444,7 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.Obj
         (observableSlotsConfinedToCores_mono (fun _ hm => hm)
           (observableSlotsConfinedToCores_trans hDonConf
             (propagatePipChainCrossCore_confinedToCores executingCore
-              stDon.objectIndex.length stDon receiver)))
+              stDon.objects.size stDon receiver)))
   · intro d hd
     subst hEq
     cases hCall : rendezvousDequeuedCall st1 dequeued

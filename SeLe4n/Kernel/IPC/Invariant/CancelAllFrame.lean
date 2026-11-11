@@ -493,24 +493,6 @@ theorem finaliseReplyCancel_eq {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
   · rw [hHd, cancelIpcBlockingReclaimed_of_no_donation c t st hD]; rfl
   · rw [hN]; rfl
 
-/-- **The priority-inheritance walk writes only the object store and the
-scheduler.** -/
-theorem propagatePipChainCrossCore_onlyObjectsSchedulerDiffer :
-    ∀ (fuel : Nat) (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.CoreId),
-      SystemState.onlyObjectsSchedulerDiffer
-        (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1 st
-  | 0, st, _, _ => by rw [PriorityInheritance.propagatePipChainCrossCore_zero]; exact .refl st
-  | n + 1, st, s, ec => by
-    rw [PriorityInheritance.propagatePipChainCrossCore_step]
-    simp only
-    have h1 : SystemState.onlyObjectsSchedulerDiffer
-        (PriorityInheritance.pipBoostWithWake st s ec).1 st := by
-      rw [PriorityInheritance.pipBoostWithWake_state]
-      exact PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer _ _ _
-    cases PriorityInheritance.blockingServer st s with
-    | none => exact h1
-    | some nx => exact (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer n _ nx ec).trans h1
-
 /-- **A reply-blocked caller's cancel**: the donation return, then the splice,
 the restore, the consume and the unlink. -/
 theorem cancelIpcBlocking_replyArm_unfold (st : SystemState) (c : SeLe4n.ThreadId)
@@ -1615,11 +1597,13 @@ structure FinaliseFrameAny (st st' : SystemState) : Prop where
   asidTable : st'.asidTable = st.asidTable
   invExt : st'.objects.invExt
   write : finaliseWriteAny st st'
+  /-- WS-UC UC2: the step moves no bookkeeping ghost. -/
+  ghosts : SystemState.ghostsKept st' st
 
 /-- A finalisation step's frame is one that lets go of no reply link. -/
 theorem FinaliseFrame.any {st st' : SystemState} (h : FinaliseFrame st st') :
     FinaliseFrameAny st st' :=
-  ⟨h.cdt, h.asidTable, h.invExt, .of_write h.write⟩
+  ⟨h.cdt, h.asidTable, h.invExt, .of_write h.write, ⟨by rw [h.rest], by rw [h.rest], by rw [h.rest]⟩⟩
 
 /-- WS-ZA ZA6.3: a write of the contexts' release-queue fields alone is a
 finalisation write — a context stays a context with its reply-stack head. -/
@@ -1653,11 +1637,12 @@ theorem FinaliseFrame.of_releaseOnlyWrite {st st' : SystemState}
 namespace FinaliseFrameAny
 
 theorem refl {st : SystemState} (hInv : st.objects.invExt) : FinaliseFrameAny st st :=
-  ⟨rfl, rfl, hInv, .refl st⟩
+  ⟨rfl, rfl, hInv, .refl st, .refl st⟩
 
 theorem trans {a b c : SystemState} (h₁ : FinaliseFrameAny a b) (h₂ : FinaliseFrameAny b c) :
     FinaliseFrameAny a c :=
-  ⟨h₂.cdt.trans h₁.cdt, h₂.asidTable.trans h₁.asidTable, h₂.invExt, h₁.write.trans h₂.write⟩
+  ⟨h₂.cdt.trans h₁.cdt, h₂.asidTable.trans h₁.asidTable, h₂.invExt, h₁.write.trans h₂.write,
+    h₂.ghosts.trans h₁.ghosts⟩
 
 theorem kind {st st' : SystemState} (h : FinaliseFrameAny st st') : kindPreservingWriteUpToBindings st st' :=
   h.write.kind
@@ -1683,6 +1668,15 @@ theorem getUntyped? {st st' : SystemState} (h : FinaliseFrameAny st st') :
   funext fun o => by
     rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]; exact h.kind.untyped o
 
+/-- WS-UC UC2: **a finalisation step keeps the bookkeeping in agreement**: it
+keeps every object's kind and moves no ghost. -/
+theorem bookkeepingAgrees {st st' : SystemState} (h : FinaliseFrameAny st st')
+    (hB : st.bookkeepingAgrees) : st'.bookkeepingAgrees :=
+  hB.of_kept ⟨h.ghosts.index, h.ghosts.indexSet, h.ghosts.types, fun x => by
+    rcases h.write x with e | ⟨pre, post, hp, hq, ht, -⟩
+    · rw [e]
+    · rw [hp, hq]; simp [ht]⟩
+
 /-- **A store of a writable object's like at its own key** (no VSpace root). -/
 theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : KernelObject}
     (hInv : st.objects.invExt) (hPre : st.objects[k]? = some o) (hW : finaliseWritableAny o)
@@ -1695,7 +1689,8 @@ theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : KernelObje
     intro r e; subst e; exact hW.not_vspaceRoot rfl
   refine ⟨storeObject_cdt_eq st st' k o' h, ?_, storeObject_preserves_objects_invExt st st' k o' hInv h,
     finaliseWriteAny.of_insert hInv hPre hW hT hS (storeObject_objects_eq st st' k o' hInv h)
-      (fun oid hne => storeObject_objects_ne st st' k oid o' hne hInv h)⟩
+      (fun oid hne => storeObject_objects_ne st st' k oid o' hne hInv h),
+    .storeObject_sameKind h hPre hT.symm⟩
   rw [storeObject_asidTable_non_vspaceRoot st st' k o' hNR h, hPre]
   cases o with
   | vspaceRoot r => exact absurd rfl (hOldNR r)
@@ -2181,7 +2176,8 @@ theorem unlinkReplyWaiterOpt (st : SystemState) (w : SeLe4n.ThreadId)
   have e := SystemState.unlinkReplyWaiterOpt_eq_objects st w s?
   exact ⟨by rw [e], by rw [e],
     SystemState.unlinkReplyWaiterOpt_objects_invExt st w s? hInv,
-    .of_write (.of_agreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st w s?))⟩
+    .of_write (.of_agreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st w s?)),
+    .of_objectsOnly e⟩
 
 /-- **The pop's two reply stores**: the head's links cleared, then the frame
 below re-headed. -/
@@ -2219,7 +2215,8 @@ theorem returnDonatedSchedContext {st st' : SystemState} {serverTid : SeLe4n.Thr
   have eC : st'.cdt = s4.cdt := by rw [hEq]
   have eA : st'.asidTable = s4.asidTable := by rw [hEq]
   exact ⟨eC.trans f4.cdt, eA.trans f4.asidTable, eO ▸ f4.invExt,
-    fun k => by rw [eO]; exact f4.write k⟩
+    fun k => by rw [eO]; exact f4.write k,
+    SystemState.ghostsKept.trans (by rw [hEq]; exact ⟨rfl, rfl, rfl⟩) f4.ghosts⟩
 
 /-- **The pop of a context no thread holds**: the context's store, the pop's
 two reply stores, then the recipient's binding rewrite. -/
@@ -2237,7 +2234,8 @@ theorem returnUnheldSchedContext {st st' : SystemState} {scId : SeLe4n.SchedCont
   have eC : st'.cdt = s3.cdt := by rw [hEq, markKeyChangeFrom_cdt]
   have eA : st'.asidTable = s3.asidTable := by rw [hEq, markKeyChangeFrom_asidTable]
   exact ⟨eC.trans f3.cdt, eA.trans f3.asidTable, eO ▸ f3.invExt,
-    fun k => by rw [eO]; exact f3.write k⟩
+    fun k => by rw [eO]; exact f3.write k,
+    SystemState.ghostsKept.trans (by rw [hEq]; exact markKeyChangeFrom_ghostsKept _ _ _) f3.ghosts⟩
 
 /-- **The sever of a context no thread holds**: the context's store, then the
 pop's two reply stores. -/
@@ -2343,7 +2341,7 @@ theorem unstack {s s1 : SystemState} {x : SeLe4n.ObjId}
         (by dsimp only; rw [RHTable_getElem?_eq_get?]
             exact RobinHood.RHTable.getElem?_insert_self s1.objects _ _ hI)
         (fun oid hne => RobinHood.RHTable.getElem?_insert_ne s1.objects _ oid _
-          (fun h => hne (eq_of_beq h).symm) hI)⟩
+          (fun h => hne (eq_of_beq h).symm) hI), ⟨rfl, rfl, rfl⟩⟩
 
 /-- **A thread's owner code cleared names no loan**: its binding is its own
 context, or none. -/
@@ -2377,7 +2375,7 @@ theorem cutUnstack {s s1 : SystemState} {scId : SeLe4n.SchedContextId}
         (by dsimp only; rw [RHTable_getElem?_eq_get?]
             exact RobinHood.RHTable.getElem?_insert_self s1.objects _ _ hI)
         (fun oid hne => RobinHood.RHTable.getElem?_insert_ne s1.objects _ oid _
-          (fun h => hne (eq_of_beq h).symm) hI)⟩
+          (fun h => hne (eq_of_beq h).symm) hI), ⟨rfl, rfl, rfl⟩⟩
 
 /-- The thread-side cut, as the closure asks it: the unstack, then a holder's
 owner code cleared (a write that lends nothing), then the key hook. -/
@@ -2698,7 +2696,7 @@ theorem revokeService_finaliseFrameAny {sid : ServiceId} {st st' : SystemState}
     FinaliseFrameAny st st' := by
   have hRw := revokeService_serviceRecordRewrite h
   obtain ⟨_, _, _, rfl⟩ := revokeService_ok h
-  refine ⟨rfl, rfl, hRw.invExt hInv, fun oid => ?_⟩
+  refine ⟨rfl, rfl, hRw.invExt hInv, fun oid => ?_, ⟨rfl, rfl, rfl⟩⟩
   rcases hRw.lookup hInv oid with e | ⟨ep, c, hE, hE'⟩
   · exact Or.inl e
   · exact Or.inr ⟨_, _, hE, hE', rfl, rfl, Or.inl (Or.inr (Or.inl rfl))⟩

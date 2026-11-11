@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.MappingRecordStage.Basic
+import SeLe4n.Kernel.Capability.Invariant.Preservation.Bookkeeping
 
 /-! # The carve keeps the mappings recorded
 
@@ -77,23 +78,28 @@ theorem untypedRetypeObject_mappingStage {src dst : CSpaceAddr} {childId : SeLe4
   have k1 : MappingStage st stUt :=
     MappingStage.storeObject hStUt hUt rfl (by simp [KernelObject.objectType])
   have k2 : MappingStage stUt stCh :=
-    MappingStage.of_preserves (fun _ => hInvCh) fun _ hL =>
+    MappingStage.of_preserves (fun _ => hInvCh) (fun _ hL =>
       hL.of_freshObject hChildNone (storeObject_objects_eq _ _ _ _ hInvUt hStCh)
         (fun j hj => storeObject_objects_ne _ _ _ _ _ hj hInvUt hStCh)
         (CarveRequest.object_noMappingEpoch _ _ _ _ req)
-        (CarveRequest.object_threadSlotsEmpty _ _ _ _ req)
+        (CarveRequest.object_threadSlotsEmpty _ _ _ _ req))
+      fun _ hB => storeObject_preserves_bookkeepingAgrees _ _ _ _ hB hInvUt hStCh
   rw [← CNode.setFreeIndex_of_lookup hLk, setCapFreeIndex_eq_storeObject hOCh] at hStIdx
   cases hStIdx
   refine (((((k1.trans k2).trans ?_).trans
-    (MappingStage.of_objects_eq (CarveRequest.scrub_objects _ _ _ _))).trans
+    (MappingStage.of_objects_eq (CarveRequest.scrub_objects _ _ _ _)
+      (CarveRequest.scrub_ghostsKept _ _ _ _))).trans
     (MappingStage.of_preserves (fun hI => cspaceInsertSlot_objects_invExt hI hIns)
-      fun hI hL => cspaceInsertSlot_preserves_liveMappingsRecorded hI hIns hL)).trans
+      (fun hI hL => cspaceInsertSlot_preserves_liveMappingsRecorded hI hIns hL)
+      fun hI hB => cspaceInsertSlot_preserves_bookkeepingAgrees hI hB hIns)).trans
     (MappingStage.of_preserves (fun hI => (SystemState.cdtAddChild_reach st2 _ _ _).invExt hI)
-      fun hI hL => cdtAddChild_preserves_liveMappingsRecorded hI hL))
+      (fun hI hL => cdtAddChild_preserves_liveMappingsRecorded hI hL)
+      fun hI hB => cdtAddChild_preserves_bookkeepingAgrees hI hB))
   exact MappingStage.of_preserves
     (fun _ => storeObject_preserves_objects_invExt _ _ _ _ hInvCh
       (setCapFreeIndex_eq_storeObject hOCh))
-    fun _ hL => setCapFreeIndex_preserves_liveMappingsRecorded hInvCh hL
+    (fun _ hL => setCapFreeIndex_preserves_liveMappingsRecorded hInvCh hL)
+    fun _ hB => setCapFreeIndex_preserves_bookkeepingAgrees hInvCh hB
 
 /-- The live `.untypedRetype` arm: the carve. -/
 theorem untypedRetypeFromCap_mappingStage {tid : SeLe4n.ThreadId}

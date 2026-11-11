@@ -995,7 +995,7 @@ constrained nothing.  It lives here, `private`, and nowhere else — the strandi
 witness below computes it beside the live predicate, so the assertion is known to
 discriminate rather than merely to pass. -/
 private def retiredPairingAcceptingAnyMissingBackPointer (st : SystemState) : Bool :=
-  st.objectIndex.foldr (fun oid acc =>
+  st.objectIds.foldr (fun oid acc =>
     match st.getTcb? ⟨oid.toNat⟩ with
     | some tcb =>
         (match tcb.queuePPrev with
@@ -1170,13 +1170,13 @@ private def runDualQueuePPrevPairingChecks : IO Unit := do
   -- conjunct (`endpointQueueHeadDisjoint`); see P2's docstring for that
   -- measurement.
   expectBool "the RUNTIME check refuses it — and P2 refuses it too since v0.35.106"
-    ((stateInvariantChecksFor stHeadNoBackPointer.objectIndex stHeadNoBackPointer).any
+    ((stateInvariantChecksFor stHeadNoBackPointer.objectIds stHeadNoBackPointer).any
       (fun c => !c.2 && c.1.startsWith "endpoint intrusive sendQ invariant")) true
   -- ...and the control: with the back-pointer intact, the runtime check passes and
   -- the sole member can be removed, so the assertions above are about the cleared
   -- field and not about a fixture the harness dislikes for other reasons.
   expectBool "control: with the back-pointer intact the runtime check passes"
-    ((stateInvariantChecksFor stSingle.objectIndex stSingle).any
+    ((stateInvariantChecksFor stSingle.objectIds stSingle).any
       (fun c => !c.2 && c.1.startsWith "endpoint intrusive sendQ invariant")) false
   let (_, _) ← expectOkSt "control: ...and the SOLE member CAN be removed"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stSingle)
@@ -1324,8 +1324,7 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
     else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
   -- `wrongTypeId` is a second, genuine `.endpoint` installed in `baseState` for an
   -- unrelated wrong-kind lookup test.  It is used here because it is already in
-  -- `objectIndex`, which a raw insert of a fresh object would not maintain — and
-  -- the check reads `st.objectIndex`, so an object outside it is invisible.
+  -- the object store, so the checks (which walk `st.objectIds`) see it.
   let otherEndpointId := wrongTypeId
   -- The shared head is installed by the LIVE operation on one endpoint, so its TCB
   -- links are exactly what the kernel writes; only the second endpoint's boundary
@@ -1339,7 +1338,7 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
   expectBool "two queues sharing one head FAIL the head-disjointness check"
     (endpointQueueHeadDisjointBool stShared) false
   expectBool "...and `stateInvariantChecksFor` reports it"
-    ((stateInvariantChecksFor stShared.objectIndex stShared).any
+    ((stateInvariantChecksFor stShared.objectIds stShared).any
       (fun c => !c.2 && c.1.startsWith "endpoint queue heads disjoint")) true
 
   -- (2) the control: the same state before the second endpoint claimed the head.
@@ -1355,7 +1354,7 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
   expectBool "the RR8.3 pairing ACCEPTS it — no TCB was written"
     (queuePPrevAgreesWithPrevBool stShared) true
   expectBool "both endpoints' queues are individually WELL FORMED"
-    ((stateInvariantChecksFor stShared.objectIndex stShared).all
+    ((stateInvariantChecksFor stShared.objectIds stShared).all
       (fun c => c.2 || !(c.1.startsWith "endpoint intrusive"
         || c.1.startsWith "endpoint dual-queue"))) true
   -- ...and the claim stated as a DIFFERENTIAL against the control, which is what
@@ -1369,7 +1368,7 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
   -- failures leaves exactly the two rows the new check reports, one per colliding
   -- queue.
   let failing (st : SystemState) : List String :=
-    ((stateInvariantChecksFor st.objectIndex st).filter (fun c => !c.2)).map (·.1)
+    ((stateInvariantChecksFor st.objectIds st).filter (fun c => !c.2)).map (·.1)
   let sharedOnly := (failing stShared).filter (fun l => !((failing stSingle).contains l))
   expectBool "the shared head adds EXACTLY the new check's rows and nothing else"
     (sharedOnly.all (fun l => l.startsWith "endpoint queue heads disjoint")) true
@@ -1386,7 +1385,7 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
   let (_, stPopped) ← expectOkVal "head disjoint: pop the shared head from ONE queue"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stShared)
   expectBool "the pop leaves the OTHER endpoint's queue malformed"
-    ((stateInvariantChecksFor stPopped.objectIndex stPopped).any
+    ((stateInvariantChecksFor stPopped.objectIds stPopped).any
       (fun c => !c.2 && c.1.startsWith "endpoint intrusive receiveQ invariant")) true
   expectBool "the shared TCB's links are cleared by that pop"
     (match stPopped.getTcb? (SeLe4n.ThreadId.ofNat 7) with
@@ -1442,13 +1441,13 @@ private def runEndpointQueueLinksOnlyBlockedChecks : IO Unit := do
      | _, _ => false) true
   expectBool "NEGATIVE: a ready thread with a queue successor fails the check"
     (endpointQueueLinksOnlyBlockedBool stCounter) false
-  let failing := ((endpointQueueLinksOnlyBlockedChecks stCounter.objectIndex stCounter).filter
+  let failing := ((endpointQueueLinksOnlyBlockedChecks stCounter.objectIds stCounter).filter
     (fun c => !c.2)).map (·.1)
   expectBool "...on the ready thread's row alone"
     (failing.length == 1 && failing.all (fun l => l.startsWith
       s!"endpoint queue links only on blocked threads: oid={ready.toObjId}")) true
   expectBool "...and the full invariant surface reports it"
-    ((stateInvariantChecksFor stCounter.objectIndex stCounter).any
+    ((stateInvariantChecksFor stCounter.objectIds stCounter).any
       (fun c => !c.2 && c.1.startsWith "endpoint queue links only on blocked threads")) true
   -- (3) the boot: a TCB carrying a queue successor is refused as a boot object.
   match stCounter.getTcb? ready with
@@ -2255,7 +2254,7 @@ def runRetypeHeapCapacityChecks : IO Unit := do
   expectCond "heap" "the refusal is answered in the state it was handed"
     (match RefusalCarrying.ofKernel carve low with
      | .error (e, s) => e == .untypedRegionExhausted &&
-         s.objectIndex == low.objectIndex &&
+         s.objectIds == low.objectIds &&
          s.machine.kernelHeapFreeBytes == low.machine.kernelHeapFreeBytes &&
          (s.objects[(⟨155⟩ : SeLe4n.ObjId)]?).isNone
      | .ok _ => false)
@@ -2272,6 +2271,52 @@ def runRetypeHeapCapacityChecks : IO Unit := do
   expectCond "heap" "a CNode's need grows with its slots"
     (SeLe4n.Kernel.CarveRequest.heapBytes roomy (.cnode 4 (by decide)) <
       SeLe4n.Kernel.CarveRequest.heapBytes roomy (.cnode 8 (by decide)))
+
+/-- WS-UC UC2: the object store's capacity (`maxObjects`) is read off the
+table itself (`objects.size`), not off a bookkeeping list.  With the store one
+short of capacity the carve succeeds and fills it; the next carve is refused
+with `objectStoreCapacityExceeded` before any write, answered in the state it
+was handed. -/
+def runObjectStoreCapacityBoundaryChecks : IO Unit := do
+  IO.println "=== object store capacity boundary checks ==="
+  let utId : SeLe4n.ObjId := ⟨153⟩
+  let cnId : SeLe4n.ObjId := ⟨154⟩
+  let slotAt (n : Nat) : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat n }
+  let base : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject utId (.untyped
+          { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x4000 })
+      |>.withObject cnId (.cnode (CNode.ofList 0 0 0 2 [
+          (SeLe4n.Slot.ofNat 0, { target := .object utId, rights := AccessRightSet.ofList [.read, .write, .retype] })
+        ]))
+      |>.withLifecycleObjectType utId .untyped
+      |>.withLifecycleObjectType cnId .cnode
+      |>.buildChecked)
+  -- Pad the store with notifications at identifiers far from the carve's, to
+  -- one short of capacity.
+  let pad := SeLe4n.Model.maxObjects - 1 - base.objects.size
+  let padded : SystemState := { base with
+    objects := (List.range pad).foldl
+      (fun t i => t.insert ⟨1000000 + i⟩ (.notification { state := .idle })) base.objects }
+  expectCond "capacity" "the padded store is one short of capacity"
+    (padded.objects.size == SeLe4n.Model.maxObjects - 1)
+  match SeLe4n.Kernel.untypedRetypeObject (slotAt 0) ⟨155⟩ (slotAt 1) .notification padded with
+  | .error e => throw <| IO.userError s!"capacity: the carve at maxObjects - 1 failed: {repr e}"
+  | .ok (_, full) =>
+    expectCond "capacity" "the carve at maxObjects - 1 fills the store"
+      (full.objects.size == SeLe4n.Model.maxObjects &&
+        (full.objects[(⟨155⟩ : SeLe4n.ObjId)]?).isSome)
+    let next := SeLe4n.Kernel.untypedRetypeObject (slotAt 0) ⟨156⟩ (slotAt 2) .notification
+    expectErr "the next carve is refused at capacity" (next full) .objectStoreCapacityExceeded
+    expectCond "capacity" "the refusal is answered in the state it was handed"
+      (match RefusalCarrying.ofKernel next full with
+       | .error (e, s) => e == .objectStoreCapacityExceeded &&
+           s.objects.size == full.objects.size &&
+           s.machine.kernelHeapFreeBytes == full.machine.kernelHeapFreeBytes &&
+           (s.objects[(⟨156⟩ : SeLe4n.ObjId)]?).isNone &&
+           (s.getCNode? cnId).map (fun cn => (cn.lookup (SeLe4n.Slot.ofNat 2)).isNone)
+             == some true
+       | .ok _ => false)
 
 /-- WS-H16/M-18: Lifecycle operations negative tests — the error branches of
 the untyped carve (`untypedRetypeObject`, `retypeFromUntyped`). -/
@@ -4133,8 +4178,8 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
   let sc0 := SeLe4n.Kernel.SchedContext.empty scIdTyped
   let stWithSc := { st0 with
     objects := st0.objects.insert scId (.schedContext sc0)
-    objectIndex := scId :: st0.objectIndex
-    objectIndexSet := st0.objectIndexSet.insert scId }
+    objectIndexGhost := st0.objectIndexGhost.map (scId :: ·)
+    objectIndexSetGhost := st0.objectIndexSetGhost.map (·.insert scId) }
   expectErr "configure zero period"
     (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 0 50 0 0 stWithSc)
     .invalidArgument
@@ -4154,8 +4199,8 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
   let scBound := { sc0 with boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩) }
   let stBound := { st0 with
     objects := st0.objects.insert scId (.schedContext scBound)
-    objectIndex := scId :: st0.objectIndex
-    objectIndexSet := st0.objectIndexSet.insert scId }
+    objectIndexGhost := st0.objectIndexGhost.map (scId :: ·)
+    objectIndexSetGhost := st0.objectIndexSetGhost.map (·.insert scId) }
   expectErr "double-bind SC"
     (SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tid, by decide⟩ stBound)
     .illegalState
@@ -4266,8 +4311,9 @@ def runAC1CdtTrackingChecks : IO Unit := do
     objects := st0.objects
       |>.insert srcCnodeId (.cnode srcCnode)
       |>.insert dstCnodeId (.cnode dstCnode)
-    objectIndex := [srcCnodeId, dstCnodeId] ++ st0.objectIndex
-    objectIndexSet := st0.objectIndexSet.insert srcCnodeId |>.insert dstCnodeId }
+    objectIndexGhost := st0.objectIndexGhost.map ([srcCnodeId, dstCnodeId] ++ ·)
+    objectIndexSetGhost := st0.objectIndexSetGhost.map
+      (fun s => (s.insert srcCnodeId).insert dstCnodeId) }
 
   let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := srcCnodeId, slot := srcSlot }
   let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := dstCnodeId, slot := dstSlot }
@@ -4758,6 +4804,7 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSH15PlatformChecks
   SeLe4n.Testing.runWSH16LifecycleChecks
   SeLe4n.Testing.runRetypeHeapCapacityChecks
+  SeLe4n.Testing.runObjectStoreCapacityBoundaryChecks
   SeLe4n.Testing.runWSJ1DecodeChecks
   SeLe4n.Testing.runWSKGChecks
   SeLe4n.Testing.runWSL4BlockedThreadChecks

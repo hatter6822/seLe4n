@@ -4804,7 +4804,7 @@ are the cleanup's own. -/
 over the object index: every `.bound scId` TCB has a SchedContext naming it back,
 and every SchedContext's `boundThread` resolves to a TCB bound to or holding it. -/
 private def schedContextBindingConsistentB (st : SystemState) : Bool :=
-  st.objectIndex.all fun oid =>
+  st.objectIds.all fun oid =>
     match st.getObject? oid with
     | some (.tcb t) =>
         match t.schedContextBinding with

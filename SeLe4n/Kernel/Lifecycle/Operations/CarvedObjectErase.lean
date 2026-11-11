@@ -57,9 +57,9 @@ def retireCarvedObject (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
       (st.getVSpaceRoot? id).isSome || (st.getPageTable? id).isSome then
     { st with
         objects := st.objects.erase id
-        objectIndex := st.objectIndex.filter (· != id)
-        objectIndexSet := st.objectIndexSet.erase id
-        lifecycle := { objectTypes := st.lifecycle.objectTypes.erase id }
+        objectIndexGhost := st.objectIndexGhost.map (·.filter (· != id))
+        objectIndexSetGhost := st.objectIndexSetGhost.map (·.erase id)
+        lifecycle := { objectTypesGhost := st.lifecycle.objectTypesGhost.map (·.erase id) }
         asidTable :=
           match st.getVSpaceRoot? id with
           | some root => st.asidTable.erase root.asid
@@ -77,41 +77,62 @@ def retireCarvedObject (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
           | none => st.physicalWritesDrained }
   else st
 
-/-- `id` dropped from an object-index list: `List.filter`, written as a
-tail-recursive walk whose kept cells are consed onto `acc` and reversed back,
-so an exclusively owned index is rewritten cell for cell in place
-(`objIdListDrop_eq_filter`). -/
-def objIdListDrop (id : SeLe4n.ObjId) : List SeLe4n.ObjId → List SeLe4n.ObjId → List SeLe4n.ObjId
-  | [], acc => acc.reverse
-  | a :: rest, acc => if a == id then objIdListDrop id rest acc else objIdListDrop id rest (a :: acc)
-
-theorem objIdListDrop_eq_filter (id : SeLe4n.ObjId) :
-    ∀ (l acc : List SeLe4n.ObjId), objIdListDrop id l acc = acc.reverse ++ l.filter (· != id)
-  | [], acc => by simp [objIdListDrop]
-  | a :: rest, acc => by
-    unfold objIdListDrop
-    by_cases h : a = id
-    · subst h; simp [objIdListDrop_eq_filter a rest acc]
-    · have hb : (a == id) = false := by simpa using h
-      rw [if_neg (by simp [hb]), objIdListDrop_eq_filter id rest (a :: acc)]
-      simp [h]
-
-/-- The object table with `id` erased, out of line, so the state is handed over
-and its table written in place. -/
+/-- The object at `id` erased, with its ghost bookkeeping — its index row, its
+index-set entry and its type — out of line, so the state is handed over and its
+table written in place.  WS-UC UC2: the bookkeeping is ghost state, so its
+writes compute nothing and the table erase is the whole of the compiled work. -/
 @[noinline] def withObjectErased (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
-  { st with objects := st.objects.erase id }
+  { st with
+      objects := st.objects.erase id
+      objectIndexGhost := st.objectIndexGhost.map (·.filter (· != id))
+      objectIndexSetGhost := st.objectIndexSetGhost.map (·.erase id)
+      lifecycle := { objectTypesGhost := st.lifecycle.objectTypesGhost.map (·.erase id) } }
 
-/-- `id` dropped from the object index, out of line. -/
-@[noinline] def withObjectUnindexed (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
-  { st with objectIndex := objIdListDrop id st.objectIndex [] }
-
-/-- `id` erased from the index set, out of line. -/
-@[noinline] def withObjectIndexSetErased (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
-  { st with objectIndexSet := st.objectIndexSet.erase id }
-
-/-- `id`'s type erased, the lifecycle record updated rather than rebuilt. -/
-@[noinline] def withObjectTypeErased (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
-  { st with lifecycle := { st.lifecycle with objectTypes := st.lifecycle.objectTypes.erase id } }
+open SeLe4n.Kernel.RobinHood in
+/-- WS-UC UC2: **the erase keeps the bookkeeping in agreement**: the key leaves
+the object table, the index, the index set and the type table together. -/
+theorem withObjectErased_preserves_bookkeepingAgrees (st : SystemState) (id : SeLe4n.ObjId)
+    (h : st.bookkeepingAgrees) (hInv : st.objects.invExt)
+    (hSz : st.objects.size < st.objects.capacity) :
+    (withObjectErased st id).bookkeepingAgrees := by
+  have hObj : ∀ k, (withObjectErased st id).objects[k]? =
+      if id = k then none else st.objects[k]? := by
+    intro k
+    show (st.objects.erase id)[k]? = _
+    simp only [RHTable_getElem?_eq_get?]
+    split
+    · next e => subst e; exact RHTable.getElem?_erase_self _ _ hInv
+    · next e => exact RHTable.getElem?_erase_ne _ _ _ (fun hb => e (eq_of_beq hb)) hInv hSz
+  have hI : (withObjectErased st id).objectIndex = st.objectIndex.filter (· != id) := by
+    simp [withObjectErased]
+  have hS : (withObjectErased st id).objectIndexSet = st.objectIndexSet.erase id := by
+    simp [withObjectErased]
+  have hT : (withObjectErased st id).lifecycle.objectTypes = st.lifecycle.objectTypes.erase id := by
+    simp [withObjectErased]
+  refine ⟨fun k => ?_, ?_, fun k => ?_, fun k => ?_, ?_, ?_⟩
+  · rw [hI, hObj k, List.mem_filter, h.index k]
+    by_cases e : id = k
+    · subst e; simp
+    · simp [e, Ne.symm e]
+  · rw [hI]; exact h.nodup.filter _
+  · rw [hS, hObj k]
+    by_cases e : id = k
+    · subst e; simp [RHSet.contains_erase_self _ _ h.indexSetInv.1]
+    · rw [RHSet.contains_erase_ne_K _ _ _ (fun hb => e (eq_of_beq hb)) h.indexSetInv, h.indexSet k,
+        if_neg e]
+  · unfold SystemState.lookupObjectTypeMeta
+    rw [hT, hObj k]
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable_getElem?_erase_K _ _ h.typesInv k]
+    by_cases e : id = k
+    · subst e; simp
+    · have hb : (id == k) = false := by simpa using e
+      rw [hb, if_neg e]
+      have := h.types k
+      unfold SystemState.lookupObjectTypeMeta at this
+      simpa only [RHTable_getElem?_eq_get?] using this
+  · rw [hS]; exact RHSet.erase_preserves_invExtK _ _ h.indexSetInv
+  · rw [hT]; exact RHTable_erase_preserves_invExtK _ _ h.typesInv
 
 /-- WS-UC UC1: `asid` erased from the ASID table, out of line, so the state is
 handed over and the table written in place. -/
@@ -127,8 +148,9 @@ carve only once its translations are invalidated. -/
     (SeLe4n.Kernel.Architecture.PhysicalWrite.invalidateAsid asid)
 
 /-- **`retireCarvedObject` as compiled**: a frame, an untyped, a page table or a
-VSpace root is erased one table at a time, each write out of line over the state
-it is handed, so every table is written in place and the state record reused; a
+VSpace root is erased from the object table out of line over the state it is
+handed (`withObjectErased`, whose bookkeeping writes are ghost), so the table is
+written in place and the state record reused; a
 VSpace root's ASID then leaves the ASID table with its invalidation recorded
 (`withAsidReleased`).  WS-UC UC1: the root took the specification's body before,
 whose every field read the one state, so each table it erased was shared and was
@@ -137,14 +159,11 @@ copied whole (1810 heap cells per root deleted, at the exerciser's object count)
 def retireCarvedObjectImpl (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
   match st.getObjectType? id with
   | some .frame | some .untyped | some .pageTable =>
-    withObjectTypeErased (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id
+    withObjectErased st id
   | some .vspaceRoot =>
     match st.getVSpaceRoot? id with
     | some root =>
-      withAsidReleased
-        (withObjectTypeErased
-          (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id)
-        root.asid
+      withAsidReleased (withObjectErased st id) root.asid
     | none => st
   | _ => st
 
@@ -152,26 +171,18 @@ private theorem retireCarvedObject_of_nonRoot {st : SystemState} {id : SeLe4n.Ob
     (hG : ((st.getFrame? id).isSome || (st.getUntyped? id).isSome ||
       (st.getVSpaceRoot? id).isSome || (st.getPageTable? id).isSome) = true)
     (hR : st.getVSpaceRoot? id = none) :
-    retireCarvedObject st id =
-      withObjectTypeErased (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id := by
-  unfold retireCarvedObject withObjectTypeErased withObjectIndexSetErased withObjectUnindexed
-    withObjectErased
-  rw [if_pos hG, hR, objIdListDrop_eq_filter]
-  simp
+    retireCarvedObject st id = withObjectErased st id := by
+  unfold retireCarvedObject withObjectErased
+  rw [if_pos hG, hR]
 
 private theorem retireCarvedObject_of_root {st : SystemState} {id : SeLe4n.ObjId}
     {r : VSpaceRoot} (hR : st.getVSpaceRoot? id = some r) :
-    retireCarvedObject st id =
-      withAsidReleased
-        (withObjectTypeErased
-          (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id)
-        r.asid := by
+    retireCarvedObject st id = withAsidReleased (withObjectErased st id) r.asid := by
   unfold retireCarvedObject
   simp only [hR, Option.isSome_some, Bool.or_true, Bool.true_or, if_true]
   cases st
   simp only [withAsidReleased, withAsidErased, SystemState.recordPhysicalWrite,
-    withObjectTypeErased, withObjectIndexSetErased, withObjectUnindexed, withObjectErased,
-    objIdListDrop_eq_filter, List.reverse_nil, List.nil_append]
+    withObjectErased]
 
 @[csimp] theorem retireCarvedObject_eq_impl : @retireCarvedObject = @retireCarvedObjectImpl := by
   funext st id

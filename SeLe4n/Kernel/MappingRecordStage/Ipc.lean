@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.MappingRecordStage.Basic
+import SeLe4n.Kernel.Capability.Invariant.Preservation.Bookkeeping
 
 /-! # The IPC arms keep the mappings recorded
 
@@ -38,7 +39,7 @@ theorem MappingStage.of_postAgrees {st r1 st' : SystemState}
     (hI : st.objects.invExt → st'.objects.invExt)
     (hK : st.objects.invExt → kindPreservingWrite st r1) (hA : OffSchedulerAgrees r1 st') :
     MappingStage st st' :=
-  MappingStage.of_kindPreservingWrite hI fun h => (hK h).trans hA.objects.kindPreserving
+  MappingStage.of_kindPreservingWrite hI fun h => (hK h).trans (hA.objects.kindPreserving hA.ghostsKept)
 
 /-! ### The capability transfer -/
 
@@ -46,13 +47,17 @@ theorem ipcTransferSingleCap_mappingStage {cap : Capability} {srcNode : SlotRef}
     {dst : CSpaceAddr} {st st' : SystemState}
     (h : ipcTransferSingleCap cap srcNode dst st = .ok ((), st')) :
     MappingStage st st' := fun hInv => by
-  refine ⟨ipcTransferSingleCap_preserves_objects_invExt _ _ _ _ _ hInv h, fun hL => ?_⟩
+  have hI' := ipcTransferSingleCap_preserves_objects_invExt _ _ _ _ _ hInv h
   obtain ⟨_, st2, -, -, -, hIns, rfl⟩ := ipcTransferSingleCap_ok_cases h
   have hI2 := cspaceInsertSlot_objects_invExt hInv hIns
-  exact untypedSourceSetFull_preserves_liveMappingsRecorded
+  exact ⟨hI', fun hL => untypedSourceSetFull_preserves_liveMappingsRecorded
     ((SystemState.cdtAddChild_reach st2 _ _ _).invExt hI2)
     (cdtAddChild_preserves_liveMappingsRecorded hI2
-      (cspaceInsertSlot_preserves_liveMappingsRecorded hInv hIns hL))
+      (cspaceInsertSlot_preserves_liveMappingsRecorded hInv hIns hL)),
+    fun hB => untypedSourceSetFull_preserves_bookkeepingAgrees
+    ((SystemState.cdtAddChild_reach st2 _ _ _).invExt hI2)
+    (cdtAddChild_preserves_bookkeepingAgrees hI2
+      (cspaceInsertSlot_preserves_bookkeepingAgrees hInv hB hIns))⟩
 
 theorem ipcUnwrapCaps_mappingStage {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
     {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState}
@@ -61,8 +66,32 @@ theorem ipcUnwrapCaps_mappingStage {caps : Array TransferCap} {endpointId : Opti
     MappingStage st st' :=
   ipcUnwrapCaps_rel (fun a b => MappingStage b a) (fun _ => MappingStage.refl _)
     (fun _ _ _ h1 h2 => h2.trans h1)
-    (fun _ _ _ => MappingStage.of_objects_eq (recordUnwrappedBadge_objects _ _ _ _))
+    (fun _ _ _ => MappingStage.of_objects_eq (recordUnwrappedBadge_objects _ _ _ _)
+      (recordUnwrappedBadge_ghostsKept _ _ _ _))
     (fun _ _ _ _ _ _ hT => ipcTransferSingleCap_mappingStage hT) h
+
+/-- The rendezvous capability transfer is the identity or one unwrap from the
+state it starts from. -/
+theorem receiveTransferCaps_cases
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st'' : SystemState}
+    {summary : CapTransferSummary}
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st'')) :
+    st'' = st ∨ ∃ (caps : Array TransferCap) (rtcb : TCB) (slot? : Option CSpaceAddr),
+      ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st'') := by
+  unfold receiveTransferCaps at h
+  cases req with
+  | none => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact .inl h.2.symm
+  | some r =>
+      obtain ⟨cr, addrs, depth⟩ := r
+      simp only at h
+      split at h
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact .inl h.2.symm
+      · cases target? with
+        | none => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact .inl h.2.symm
+        | some t =>
+          obtain ⟨rtcb, slot?⟩ := t
+          exact .inr ⟨_, rtcb, slot?, h⟩
 
 theorem receiveTransferCaps_mappingStage
     {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {endpointId : Option SeLe4n.ObjId}
@@ -70,11 +99,9 @@ theorem receiveTransferCaps_mappingStage
     {summary : CapTransferSummary}
     (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
     MappingStage st st' := by
-  obtain ⟨stR, _, hO, -, _, hOr⟩ := receiveTransferCaps_frame h
-  have h1 : MappingStage st stR := MappingStage.of_objects_eq hO
-  rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
-  · exact h1
-  · exact h1.trans (ipcUnwrapCaps_mappingStage hU)
+  rcases receiveTransferCaps_cases h with rfl | ⟨_, rtcb, slot?, hU⟩
+  · exact MappingStage.refl _
+  · exact ipcUnwrapCaps_mappingStage hU
 
 /-! ### Send -/
 
@@ -85,7 +112,7 @@ theorem endpointSendDualOnCore_mappingStage {endpointId : SeLe4n.ObjId}
   fun hInv => by
     rcases endpointSendDualOnCore_post_agrees endpointId sender payload executingCore st hInv
       with h | ⟨r1, hS, hA⟩
-    · rw [h]; exact ⟨hInv, id⟩
+    · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => endpointSendDualOnCore_preserves_objects_invExt _ _ _ _ _ h)
         (fun h => endpointSendDual_kindPreservingWrite _ _ _ _ _ h hS) hA hInv
@@ -130,7 +157,7 @@ theorem endpointReceiveDualOnCore_mappingStage {endpointId : SeLe4n.ObjId}
   fun hInv => by
     rcases endpointReceiveDualOnCore_post_agrees endpointId receiver replyId executingCore st hInv
       with h | ⟨sender, r1, hS, hA⟩
-    · rw [h]; exact ⟨hInv, id⟩
+    · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => endpointReceiveDualOnCore_preserves_objects_invExt _ _ _ _ _ h)
         (fun h => endpointReceiveDual_kindPreservingWrite _ _ _ _ _ _ h hS) hA hInv
@@ -332,7 +359,7 @@ theorem endpointReplyOnCore_mappingStage {replier target : SeLe4n.ThreadId} {msg
   fun hInv => by
     rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hInv
       with h | ⟨expected, r1, hS, hA⟩
-    · rw [h]; exact ⟨hInv, id⟩
+    · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => endpointReplyOnCore_preserves_objects_invExt _ _ _ _ _ h)
         (fun h => endpointReply_kindPreservingWrite _ _ _ _ _ h hS) hA hInv
@@ -362,15 +389,15 @@ theorem applyReplyDonationOnCore_mappingStage {st st' : SystemState} {rid : SeLe
     {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId}
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     MappingStage st st' := by
-  refine MappingStage.of_kindPreservingWrite
-    (fun hI => applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hI h) fun hI => ?_
-  rcases applyReplyDonationOnCore_objects_frame _ _ _ _ _ h with
-    ⟨-, hO⟩ | ⟨_, _, _, -, -, -, hR, hA⟩ | ⟨_, _, _, s, hR, hA⟩ | ⟨_, _, -, -, -, hS⟩
-  · exact kindPreservingWrite.of_objects_eq hO
-  rotate_left 2
-  · exact severUnheldSchedContext_kindPreservingWrite hI hS
-  · exact (returnUnheldSchedContext_kindPreservingWrite hI hR).trans hA.kindPreserving
-  · exact (returnDonatedSchedContext_kindPreservingWrite hI hR).trans hA.kindPreserving
+  rcases applyReplyDonationOnCore_ok_decompose _ _ _ _ _ h with
+    ⟨-, hP⟩ | ⟨_, holderVtid, _, _, -, -, hR, rfl⟩
+  · exact popUnheldReplyHead_mappingStage hP
+  · exact ((returnDonatedSchedContext_mappingStage hR).trans
+      (MappingStage.of_kindPreservingWrite
+        (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
+        fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+          (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)).trans
+      (descheduleAtPlacement_mappingStage _ holderVtid.val)
 
 theorem endpointReplyCrossCoreDispatch_mappingStage {replier target : SeLe4n.ThreadId}
     {msg : IpcMessage} {executingCore : CoreId} {st : SystemState} :
@@ -490,7 +517,7 @@ theorem notificationSignalOnCore_mappingStage {notificationId : SeLe4n.ObjId}
   fun hInv => by
     rcases notificationSignalOnCore_post_agrees notificationId badge executingCore st hInv
       with h | ⟨r1, hS, hA⟩
-    · rw [h]; exact ⟨hInv, id⟩
+    · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => notificationSignalOnCore_preserves_objects_invExt _ _ _ _ h)
         (fun h => notificationSignal_kindPreservingWrite _ _ _ _ h hS) hA hInv
@@ -549,7 +576,7 @@ theorem notificationWaitOnCore_mappingStage {notificationId : SeLe4n.ObjId}
   fun hInv => by
     rcases notificationWaitOnCore_post_agrees notificationId waiter executingCore st hInv
       with h | ⟨r1, _, hS, hA⟩
-    · rw [h]; exact ⟨hInv, id⟩
+    · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => notificationWaitOnCore_preserves_objects_invExt _ _ _ _ h)
         (fun h => notificationWait_kindPreservingWrite h hS) hA hInv

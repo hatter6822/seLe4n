@@ -70,7 +70,7 @@ def startInitialThread (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
     ist.hAllTables.objects.1 ist.hPerObjectSlots
   hPerObjectMappings := startInitialThreadOnCore_preserves_perObjectMappingsInvariant ist.state tid
     ist.hAllTables.objects.1 ist.hPerObjectMappings
-  hLifecycleConsistent := startInitialThreadOnCore_preserves_objectTypeMetadataConsistent
+  hLifecycleConsistent := startInitialThreadOnCore_preserves_bookkeepingAgrees
     ist.state tid ist.hAllTables.objects.1 ist.hLifecycleConsistent
 
 /-- **WS-BP BP7.11** (the derivation, pinned): the boot's start *is* the kernel
@@ -437,27 +437,6 @@ theorem startInitialThreadOnCore_cdt (st : SystemState) (tid : SeLe4n.ThreadId) 
     (startInitialThreadOnCore st tid).cdt = st.cdt := by
   unfold startInitialThreadOnCore
   rw [enqueueRunnableOnCore_cdt, SystemState.updateTcb_cdt]
-
-/-- A start removes no stored object. -/
-theorem startInitialThreadOnCore_objects_ne_none (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (h : st.objects[k]? ≠ none) :
-    (startInitialThreadOnCore st tid).objects[k]? ≠ none := by
-  obtain ⟨obj, hO⟩ := Option.ne_none_iff_exists'.mp h
-  by_cases hT : ∃ t, obj = .tcb t
-  · obtain ⟨t, rfl⟩ := hT
-    have hG : (st.getTcb? (SeLe4n.ThreadId.ofObjId k)).isSome = true := by
-      rw [Option.isSome_iff_exists]
-      exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO⟩
-    obtain ⟨t', hT'⟩ := Option.isSome_iff_exists.mp
-      (startInitialThreadOnCore_getTcb?_isSome st tid _ hInv hG)
-    have e := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT'
-    show (startInitialThreadOnCore st tid).objects[k]? ≠ none
-    rw [SeLe4n.ThreadId.toObjId_ofObjId] at e
-    rw [e]; exact Option.some_ne_none _
-  · show (startInitialThreadOnCore st tid).objects[k]? ≠ none
-    rw [startInitialThreadOnCore_objects_of_nonTcb st tid hInv k obj
-      (fun t e => hT ⟨t, e⟩) hO]
-    exact Option.some_ne_none _
 
 /-- **WS-ZA ZA5.4 part 18**: a start removes no object. -/
 theorem startInitialThreadOnCore_objectPresent (st : SystemState) (tid : SeLe4n.ThreadId)

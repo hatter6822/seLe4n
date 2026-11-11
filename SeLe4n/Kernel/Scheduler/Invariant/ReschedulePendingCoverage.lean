@@ -566,7 +566,7 @@ theorem computeCrossCoreSgis_core_flagged_of_covers {e : CoreId} {pre post : Sys
   have hSub := Concurrency.dedupCrossCoreSgis_subset _ (c, k) hMem
   have hStaled : c ≠ e ∧ ¬ coreDecisionUnstaled pre post c := by
     rcases List.mem_append.mp hSub with hObj | hSlot
-    · obtain ⟨oid, -, hBody⟩ := List.mem_filterMap.mp hObj
+    · obtain ⟨oid, hBody⟩ := PriorityInheritance.exists_of_mem_objectRuleSgis hObj
       exact crossCoreSgiBody_some_staled (hId oid) hBody
     · exact currentSlotChangeSgis_staled hSlot
   rcases hCov c hStaled.1 with hFlag | hU

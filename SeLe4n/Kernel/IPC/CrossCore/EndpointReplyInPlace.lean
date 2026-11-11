@@ -142,7 +142,7 @@ theorem replyOnCore_eq_storeLeg (st : SystemState) (replier c : SeLe4n.ThreadId)
     (enqueueRunnableOnCore_keepsFinds S1 _ c ((hK1 _).trans hFC) k).trans (hK1 k)
   have hL2 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes (enqueueRunnableOnCore S1 (determineTargetCore S1 c) c) id ty
-        = true := fun h => storeLeaves_of_onlyObjectsSchedulerDiffer hD2 hA2 (hL1 h)
+        = true := fun h => storeLeaves_of_agree hA2 (hL1 h)
   obtain ⟨ct2, hO2c, hct2⟩ := hA2.get_tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT1)
   have hO2q := hA2.get_reply_iff.mpr hO1q
   have hW : (wakeThread S1 c core).1 = enqueueRunnableOnCore S1 (determineTargetCore S1 c) c := rfl
@@ -176,7 +176,7 @@ theorem replyOnCore_eq_storeLeg (st : SystemState) (replier c : SeLe4n.ThreadId)
     rw [← hS3']; exact (RHTable.findsInPlace_insert_of_findsInPlace _ _ hFR2).trans hFC2
   have hL3 : storeLeavesIndexAndTypes S3 c.toObjId .tcb = true := by
     rw [← hS3']
-    exact storeLeavesIndexAndTypes_insert_inPlace hFR2 (fun _ e => by cases e) (hL2 hLC)
+    exact storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFR2 (by simpa only [KernelObject.objectType] using hL2 hLR) (hL2 hLC)
   have hSt4 : storeObject c.toObjId (.tcb { ct2 with replyObjectCode := 0 }) S3 =
       .ok ((), S3.updateTcb c (fun t => { t with replyObjectCode := 0 })) := by
     rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hL3),

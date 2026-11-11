@@ -685,7 +685,7 @@ private def runSeamConformanceChecks : IO Unit := do
   let st0 : SystemState := default
   let stW := icFetchOnCore st0 core0 lineExec
   assertBool "an instruction-cache write leaves the object store untouched"
-    (stW.objectIndex == st0.objectIndex)
+    (stW.objectIds == st0.objectIds)
 
 -- ----------------------------------------------------------------------------
 -- §3.10  SM7.D.1 — the emission ledger: the runtime gets the model's exact
@@ -873,7 +873,7 @@ private def runUnifyInstructionChecks : IO Unit := do
       assertBool "unify records the UNIFY operand (not a bare invalidate)"
         (stPost.pendingIcacheMaintenance == [ICacheInvalidation.unifyPage paddrPage])
       assertBool "unify modifies no page table (pure cache operation)"
-        (stPost.objectIndex == stAll.objectIndex &&
+        (stPost.objectIds == stAll.objectIds &&
          stPost.tlbShootdown == stAll.tlbShootdown)
       assertBool "the post-state satisfies the 14th conjunct"
         (icacheCoherentCheck_perCore stPost)

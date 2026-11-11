@@ -52,7 +52,7 @@ private def cdtNodeOf (st : SystemState) (ref : SeLe4n.Model.SlotRef) :
   if linkMentions st ref then some ref else none
 
 private def assertInvariants (label : String) (st : SystemState) : IO Unit :=
-  assertStateInvariantsFor label st.objectIndex st
+  assertStateInvariantsFor label st.objectIds st
 
 private def chain1CarveMintRevoke : IO Unit := do
   let utId : SeLe4n.ObjId := ⟨202⟩

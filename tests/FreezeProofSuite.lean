@@ -92,12 +92,6 @@ private def fp007_asidTable : IO Unit := do
   let fss := freeze ist
   expect "empty asid lookup" (fss.asidTable.get? ⟨0⟩ == none)
 
-/-- FP-008: Object types field — freeze preserves lookup -/
-private def fp008_objectTypes : IO Unit := do
-  let ist := mkEmptyIntermediateState
-  let fss := freeze ist
-  expect "empty objectTypes lookup" (fss.objectTypes.get? ⟨0⟩ == none)
-
 /-- FP-009: CDT — freeze copies the (empty) edge list -/
 private def fp009_cdtEmpty : IO Unit := do
   let ist := mkEmptyIntermediateState
@@ -205,7 +199,6 @@ private def fp016_deterministic : IO Unit := do
   expect "same objects size" (fss1.objects.data.size == fss2.objects.data.size)
   expect "same irq lines" (fss1.irqSignalLines == fss2.irqSignalLines)
   expect "same CDT edge bound" (fss1.cdt.edgeBound == fss2.cdt.edgeBound)
-  expect "same objectIndex" (fss1.objectIndex == fss2.objectIndex)
 
 /-- FP-017: freezeMap no duplicate keys — distinct entries have distinct keys -/
 private def fp017_noDuplicates : IO Unit := do
@@ -242,7 +235,6 @@ private def fp019_freezeEmptyInvariant : IO Unit := do
   let fss := freeze ist
   -- All frozen maps have consistent empty state
   expect "objects empty" (fss.objects.data.size == 0)
-  expect "objectTypes empty" (fss.objectTypes.data.size == 0)
 
 /-- FP-020: freeze preserves field parity — all SystemState fields represented -/
 private def fp020_fieldParity : IO Unit := do
@@ -253,7 +245,6 @@ private def fp020_fieldParity : IO Unit := do
   expect "irqSignalLines accessible" (fss.irqSignalLines.mem 0 == false)
   expect "asidTable accessible" (fss.asidTable.data.size == 0)
   expect "cdt accessible" (fss.cdt.edgeBound == 0)
-  expect "objectIndex accessible" (fss.objectIndex.length == 0)
   expect "scheduler accessible" ((fss.scheduler.current) == none)
 
 /-- FP-021: frozen lookup transfer — source and frozen agree for all keys -/
@@ -290,7 +281,6 @@ def main : IO Unit := do
   -- Q6-T2: Per-Field Lookup Equivalence
   fp006_irqSignalLines
   fp007_asidTable
-  fp008_objectTypes
   fp009_cdtEmpty
   fp009c_objectsField
 

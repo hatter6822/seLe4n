@@ -276,6 +276,10 @@ MACHINERY_PINS = {
     # WS-ZA ZA6.6: the `yield_code_kept` tactic, which discharges "this thread
     # write keeps the yield link"; a tactic macro too.
     ("SeLe4n/Model/Object/Types.lean", "macro"): 2,
+    # WS-UC UC2: the `ghosts_kept` tactic, which discharges "this step moves no
+    # bookkeeping ghost" (`SystemState.ghostsKept`); a tactic macro mints no
+    # declaration.
+    ("SeLe4n/Model/State.lean", "macro"): 1,
     # WS-ZA ZA4.5: the `run_queue_stage` tactic and its step rules -- each
     # `macro_rules` adds one tactic-category alternative (a step's stage) and
     # `macro` declares the driver tactics; none mints a declaration.

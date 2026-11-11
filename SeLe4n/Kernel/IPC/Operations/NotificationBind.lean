@@ -289,9 +289,9 @@ theorem bindNotification_of_inPlace (st : SystemState) (notificationId : SeLe4n.
       tcbId = some t := by
     rw [SystemState.getTcb?_eq_some_iff]
     exact (SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hF hNe).trans htObj
-  have hLT1 := storeLeavesIndexAndTypes_insert_inPlace
+  have hLT1 := storeLeavesIndexAndTypes_insert_inPlace_of_leaves
     (v := .notification { n with boundTCBCode := tcbId.val + 1 }) hF
-    (fun r h => by cases h) hLT
+    (by simpa only [KernelObject.objectType] using hLN) hLT
   unfold bindNotification
   simp only [hn, lookupTcb, hR, Bool.false_eq_true, ↓reduceIte, ht, Notification.boundTCB,
     TCB.boundNotification, hN, hT, SeLe4n.ThreadId.ofOptCode, SeLe4n.ObjId.ofOptCode,

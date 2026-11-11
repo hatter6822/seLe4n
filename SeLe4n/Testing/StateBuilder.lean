@@ -106,15 +106,17 @@ private def buildUnqueued (builder : BootstrapBuilder) : SystemState :=
   {
     machine := builder.machine
     objects := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.objects
-    objectIndex := builder.objects.map Prod.fst
-    objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (builder.objects.map Prod.fst)
+    objectIndexGhost := SeLe4n.Erased.mk (builder.objects.map Prod.fst)
+    objectIndexSetGhost := SeLe4n.Erased.mk
+      (SeLe4n.Kernel.RobinHood.RHSet.ofList (builder.objects.map Prod.fst))
     -- SM4.B: per-core scheduler fields; the test builder populates only the boot core.
     scheduler := (default : SchedulerState).setCurrentOnCore
           SeLe4n.Kernel.Concurrency.bootCoreId builder.current
     cdt := builder.irqSignalLines.foldl
       (fun c l => c.withIrqLineIssued l.toNat true) CapDerivationTree.empty
     lifecycle := {
-      objectTypes := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.lifecycleObjectTypes
+      objectTypesGhost :=
+        SeLe4n.Erased.mk (SeLe4n.Kernel.RobinHood.RHTable.ofList builder.lifecycleObjectTypes)
     }
     -- WS-G3/F-P06: Populate ASID table from VSpaceRoot objects
     asidTable := SeLe4n.Kernel.RobinHood.RHTable.ofList (builder.objects.filterMap fun (oid, obj) =>
@@ -274,10 +276,10 @@ def emptyFrozenSystemState : FrozenSystemState :=
         domainScheduleIndex := 0
         configDefaultTimeSlice := 5
         replenishQueue := { entries := [], size := 0 } }
-    objectTypes := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    objectTypesGhost := SeLe4n.Erased.mk (freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16))
     machine := default
-    objectIndex := []
-    objectIndexSet := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    objectIndexGhost := SeLe4n.Erased.mk []
+    objectIndexSetGhost := SeLe4n.Erased.mk (freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16))
     tlb := TlbState.empty
     perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
     declassificationAuditLog := []

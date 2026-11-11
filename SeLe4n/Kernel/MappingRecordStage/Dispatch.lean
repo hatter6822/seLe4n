@@ -55,11 +55,13 @@ theorem irqControlGet_mappingStage {control dst : CSpaceAddr} {line : Nat}
       injection h with hu h
       subst h
       refine (MappingStage.of_objects_eq (Architecture.setIrqLineSignal_objects st line true)).trans
-        (MappingStage.of_preserves (fun hI0 => ?_) fun hI0 hL => ?_)
+        (MappingStage.of_preserves (fun hI0 => ?_) (fun hI0 hL => ?_) fun hI0 hB => ?_)
       · have h1 : st1.objects.invExt := cspaceInsertSlot_objects_invExt hI0 hI
         exact (SystemState.cdtAddChild_reach st1 control dst .mint).invExt h1
       · exact cdtAddChild_preserves_liveMappingsRecorded (cspaceInsertSlot_objects_invExt hI0 hI)
           (cspaceInsertSlot_preserves_liveMappingsRecorded hI0 hI hL)
+      · exact cdtAddChild_preserves_bookkeepingAgrees (cspaceInsertSlot_objects_invExt hI0 hI)
+          (cspaceInsertSlot_preserves_bookkeepingAgrees hI0 hB hI)
 
 theorem irqControlGetFromCap_mappingStage {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
     {args? : Except KernelError IrqControlGetArgs} {st st' : SystemState}
@@ -733,7 +735,8 @@ theorem dispatchSyscallChecked_mappingStage (ctx : LabelingContext)
   cases h
   refine MappingStage.trans (st' := stPost) ?_
     (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
-      (applySyscallTaint_objectsAgreeOffTaint _ _ _))
+      (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+      (applySyscallTaint_ghostsKept _ _ _))
   obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
   exact dispatchWithCapChecked_mappingStage ctx decoded tid executingCore _ cap _ stPost P hD
 
@@ -890,7 +893,8 @@ theorem dispatchSyscall_mappingStage (decoded : SyscallDecodeResult)
   cases h
   refine MappingStage.trans (st' := stPost) ?_
     (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
-        (applySyscallTaint_objectsAgreeOffTaint _ _ _))
+        (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+      (applySyscallTaint_ghostsKept _ _ _))
   obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
   exact dispatchWithCap_mappingStage decoded tid executingCore _ cap _ stPost P hD
 

@@ -1190,9 +1190,9 @@ private def runObjectBudgetChecks : IO Unit := do
   match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads atBudget with
   | .ok ist =>
       assertBool "the boot state's object index is within maxObjects"
-        (ist.state.objectIndex.length <= cap)
+        (ist.state.objects.size <= cap)
       assertBool "...and it carries the config's objects plus one idle thread per core"
-        (ist.state.objectIndex.length == cap - 1 - SeLe4n.InterruptLineSet.capacity)
+        (ist.state.objects.size == cap - 1 - SeLe4n.InterruptLineSet.capacity)
   | .error e =>
       assertBool s!"the budget-respecting config must boot (got: {e})" false
   -- PR #889 review round 19: the budget has its own diagnostic.  Round 18 added
@@ -1253,7 +1253,7 @@ private def runInactiveFlagChecks : IO Unit := do
   assertBool "the full classification does NOT survive it (the reason for the split)"
     (match switched with
      | .ok st =>
-         !((SeLe4n.Testing.stateInvariantChecksFor st.objectIndex st).all
+         !((SeLe4n.Testing.stateInvariantChecksFor st.objectIds st).all
              (fun p => p.2))
      | .error _ => false)
   -- The dispatch premise, exhibited: a run-queue entry whose stored flag says
@@ -1268,7 +1268,7 @@ private def runInactiveFlagChecks : IO Unit := do
   -- state goes through the no-sync surface, the post-dispatch state through the
   -- live one.  Both had zero callers before this row.
   SeLe4n.Testing.assertStateInvariantsWithoutSync
-    "RR7.36 quiescent state, no sync" stUserIdle.objectIndex
+    "RR7.36 quiescent state, no sync" stUserIdle.objectIds
     (SeLe4n.Kernel.syncThreadStates stUserIdle)
   match switched with
   | .ok st => SeLe4n.Testing.assertLiveThreadStateInvariants "RR7.36 post-dispatch" st

@@ -563,7 +563,7 @@ theorem restoreToReady_blockingServer_subgraph
 
 /-- WS-RC R5.B.2 / Phase Q1: `restoreToReady` preserves `blockingAcyclic`.
 
-    Composes `restoreToReady_objectIndex_eq` with
+    Composes the object count `updateTcb` keeps (`updateTcb_objects_size`) with
     `restoreToReady_blockingServer_subgraph`, then applies Phase P1's
     `blockingAcyclic_of_subgraph`. -/
 theorem restoreToReady_preserves_blockingAcyclic
@@ -573,7 +573,8 @@ theorem restoreToReady_preserves_blockingAcyclic
     PriorityInheritance.blockingAcyclic (restoreToReady st tid) := by
   apply PriorityInheritance.blockingAcyclic_of_subgraph st (restoreToReady st tid) hAcyclic
   · exact restoreToReady_blockingServer_subgraph st tid hObjInv
-  · exact congrArg List.length (restoreToReady_objectIndex_eq st tid)
+  · unfold restoreToReady restoreToReadyStaging
+    exact SystemState.updateTcb_objects_size _ _ _ hObjInv
 
 /-- WS-RC R5.B.2 / Phase Q1: `ensureRunnable` preserves the object index. -/
 theorem ensureRunnable_objectIndex_eq
@@ -968,7 +969,7 @@ theorem schedule_preserves_computeMaxWaiterPriority
     objects table.
 
     For a successful `resumeThread st vtid = .ok st'`:
-    - `st'.objectIndex = st.objectIndex`.
+    - `st'.objects.size = st.objects.size` (the PIP-chain fuel).
     - At any thread `t ≠ vtid.val`, `st'.objects[t.toObjId]? = st.objects[t.toObjId]?`.
     - At `t = vtid.val`, `st'.objects[t.toObjId]?` is `some (.tcb tcb')`
       where `tcb'.ipcState = .ready`.
@@ -977,7 +978,7 @@ theorem schedule_preserves_computeMaxWaiterPriority
     the blocking graph. -/
 def resumeThread_postState_shape
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) : Prop :=
-  st'.objectIndex = st.objectIndex ∧
+  st'.objects.size = st.objects.size ∧
   (∀ t : SeLe4n.ThreadId, t.toObjId ≠ vtid.val.toObjId →
     st'.objects[t.toObjId]? = st.objects[t.toObjId]?) ∧
   (∃ tcb' : TCB, st'.objects[vtid.val.toObjId]? = some (.tcb tcb') ∧
@@ -993,7 +994,7 @@ theorem resumeThread_preserves_blockingAcyclic
     (hAcyclic : PriorityInheritance.blockingAcyclic st)
     (hShape : resumeThread_postState_shape st st' vtid) :
     PriorityInheritance.blockingAcyclic st' := by
-  obtain ⟨hObjIdx, hOther, hAtTid⟩ := hShape
+  obtain ⟨hSize, hOther, hAtTid⟩ := hShape
   apply PriorityInheritance.blockingAcyclic_of_subgraph st st' hAcyclic
   · -- Subgraph at every thread t.
     intro t
@@ -1009,8 +1010,8 @@ theorem resumeThread_preserves_blockingAcyclic
       right
       unfold PriorityInheritance.blockingServer
       rw [SystemState.getTcb?_congr_at (hOther t hTEq)]
-  · -- Object-index preservation.
-    exact congrArg List.length hObjIdx
+  · -- Object-count preservation.
+    exact hSize
 
 /-- WS-RC R5.B.2 (DEEP-SUSP-01): the resumed TCB's `pipBoost` is consistent
     with the post-state blocking graph.
