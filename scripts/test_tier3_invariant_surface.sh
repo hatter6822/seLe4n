@@ -4192,7 +4192,7 @@ run_check "INVARIANT" rg -n '^def liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Mod
 run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded_of_epochsVacant($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.default_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded\.of_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
-run_check "INVARIANT" rg -n -U 'def proofLayerInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*    st\.liveMappingsRecorded ∧\n    st\.releaseQueueRefined ∧\n    st\.refillsSound ∧\n    st\.yieldLinksAgree$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n -U 'def proofLayerInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*    st\.liveMappingsRecorded ∧\n    st\.releaseQueueRefined ∧\n    st\.refillsSound ∧\n    st\.yieldLinksAgree ∧\n    st\.bookkeepingAgrees$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n 'SystemState\.liveMappingsRecorded_of_epochsVacant' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
@@ -9727,8 +9727,8 @@ run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.RefusalRecord
 # the identifier outright would forbid the carriage too.  What must stay absent
 # is the field being READ as a conjunct: the `st.declassificationRefusals`
 # projection, and anything conjoined after the bundle's last conjunct — which is
-# how every conjunct from the 12th to the 20th was actually added (the 20th,
-# the refill state's soundness of WS-ZA ZA6.4, is the bundle's last).
+# how every conjunct from the 12th to the 22nd was actually added (the 22nd,
+# the bookkeeping agreement of WS-UC UC2, is the bundle's last).
 run_check "INVARIANT" rg -n '^theorem refusalLedger_bounded_structurally($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^theorem refusalCounter_bound_is_structural($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^    auditLogBounded st\.declassificationAuditLog ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
@@ -9736,8 +9736,23 @@ run_check "INVARIANT" rg -n '^    st\.runQueueRefined ∧$' SeLe4n/Kernel/Archit
 run_check "INVARIANT" rg -n '^    st\.liveMappingsRecorded ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^    st\.releaseQueueRefined ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^    st\.refillsSound ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^    st\.yieldLinksAgree$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_negative_check "INVARIANT" rg -n 'st\.yieldLinksAgree ' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.yieldLinksAgree ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.bookkeepingAgrees$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n 'st\.bookkeepingAgrees ∧' SeLe4n/Kernel/Architecture/Invariant.lean
+# The 22nd conjunct (WS-UC UC2): the bookkeeping ghosts agree with the object
+# table, established by the default state, carried by every kernel entry through
+# its mapping-record stages, and transported by the taint-word frame.
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^  · exact default_bookkeepingAgrees$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n -U '^def MappingStage \(st st. : SystemState\) : Prop :=\n[^\n]*\n    \(st\.bookkeepingAgrees → st.\.bookkeepingAgrees\)$' SeLe4n/Kernel/MappingRecordStage/Basic.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n 'bBook\.of_kept \(\.of_map KernelObject\.eraseTaint' SeLe4n/Kernel/Architecture/TaintWordFrame.lean
 # The 19th conjunct, its per-core form, and boot's and the default state's
 # establishment of it (every queue empty, no context linked).
 run_check "INVARIANT" rg -n '^def releaseQueueRefinedOnCore \(st : SystemState\) \(c : CoreId\) : Prop :=' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
@@ -23040,7 +23055,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem capabilityInvariantBundle_of_
 # named relation the instance now takes, so the claim is a property of that
 # definition and the instance merely consumes it.  Anchoring the consumer would
 # be a pin on a spelling the cut deleted; this pins the relation at its owner.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def kindPreservingWrite[^\n]*(\n([ \t][^\n]*)?)*post\.objectType . KernelObjectType\.cnode" SeLe4n/Model/State.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def kindPreservingWriteAt[^\n]*(\n([ \t][^\n]*)?)*post\.objectType . KernelObjectType\.cnode" SeLe4n/Model/State.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem capabilityInvariantBundle_of_kindPreserving[^\n]*(\n([ \t][^\n]*)?)*hAt : kindPreservingWrite st st." SeLe4n/Kernel/Capability/Invariant/Authority.lean'
 run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_objects_and_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 # The store-level instance is what every IPC step's chain is built from: it
@@ -23077,7 +23092,7 @@ run_check "INVARIANT" rg -n 'migrateSchedContextReplenishment_runQueue_current_e
 # is what both frames read, so a widening reaches the scheduler bundle and the
 # capability bundle by construction rather than at whichever consumer a review
 # names.
-run_check "INVARIANT" rg -n '^def kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^structure kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem schedulerInvariantBase_smp_of_kindPreserving($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 # The IN-PLACE primitive needs NO side condition, and that is the content: a
@@ -23744,7 +23759,8 @@ run_negative_check "INVARIANT" rg -n '\bhasEndpointRegistered\b' SeLe4n tests
 # Every kind-preserving write carries both back-links and the mapping view.  Drop
 # a conjunct and an endpoint write could silently forget the registration
 # recorded on it, or a root write a translation no capability records.
-run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\) : Prop :=(\n([ \t][^\n]*)?)*\n      post\.bindingCodes = pre\.bindingCodes ∧ post\.tableBackLinks = pre\.tableBackLinks ∧\n      post\.mappingView = pre\.mappingView$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n -U '^def kindPreservingWriteAt \(st st. : SystemState\) \(oid : SeLe4n\.ObjId\) : Prop :=(\n([ \t][^\n]*)?)*\n      post\.bindingCodes = pre\.bindingCodes ∧ post\.tableBackLinks = pre\.tableBackLinks ∧\n      post\.mappingView = pre\.mappingView$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n -U '^structure kindPreservingWrite \(st st. : SystemState\) : Prop where\n  objectsAt : ∀ oid : SeLe4n\.ObjId, kindPreservingWriteAt st st. oid\n  ghosts : SystemState\.ghostsKept st. st$' SeLe4n/Model/State.lean
 # The boot refuses an endpoint already carrying a registration.
 # The endpoint records only THAT a service is registered on it: a presence
 # flag, since the registration's id is the endpoint's own.  A number stored here
