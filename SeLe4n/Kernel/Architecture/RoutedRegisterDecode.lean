@@ -34,7 +34,7 @@ open SeLe4n.Kernel.Architecture.SyscallArgDecode (truncationMinimum)
 /-- What a routed read pins about the decode: it succeeds, as `sid`, at
     `capAddr`, with no overflow words; the decoded registers are the mapped
     layout registers. -/
-private theorem decodeSyscallArgsFromState_of_routed
+private theorem decodeSyscallArgsFromState_of_routedInline
     (st : SystemState) (tid : ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
     (capAddr : CPtr) (msgInfo : MessageInfo) (sid : SyscallId)
@@ -76,8 +76,8 @@ private theorem decodeSyscallArgsFromState_of_routedNoOverflow
             msgRegs := layout.msgRegs.map (readReg regs),
             inlineCount := layout.msgRegs.size, overflowCount := 0 } := by
   by_cases hLen : msgInfo.length ≤ layout.msgRegs.size
-  · exact decodeSyscallArgsFromState_of_routed st tid layout regs regCount capAddr msgInfo sid
-      hB hC hM hLen hS
+  · exact decodeSyscallArgsFromState_of_routedInline st tid layout regs regCount capAddr msgInfo
+      sid hB hC hM hLen hS
   rw [decodeSyscallArgsFromState_eq_impl]
   unfold decodeSyscallArgsFromStateImpl
   simp only [decodeMsgInfoWord_readReg]
@@ -88,6 +88,32 @@ private theorem decodeSyscallArgsFromState_of_routedNoOverflow
     Except.ok.inj ((decodeCapPtr_readReg regs layout.capPtrReg).symm.trans hC)
   simp only [hW, hM, hId, hLen, ↓reduceIte, mergeOverflowWords, hNo, Bool.false_eq_true,
     Array.size_map, pure, Except.pure]
+
+/-- What a routed read on the short route pins about the decode: the message
+fits the inline registers, or the syscall reads no overflow word
+(`syscallNumberReadsOverflow`); either way the decode is the inline one. -/
+private theorem decodeSyscallArgsFromState_of_routed
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (capAddr : CPtr) (msgInfo : MessageInfo) (sid : SyscallId)
+    (hB : layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
+      layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true)
+    (hC : decodeCapPtr (readReg regs layout.capPtrReg) = .ok capAddr)
+    (hM : decodeMsgInfo (readReg regs layout.msgInfoReg) = .ok msgInfo)
+    (hLen : msgInfo.length ≤ layout.msgRegs.size ∨
+      syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false)
+    (hS : (readReg regs layout.syscallNumReg).val = sid.toNat) :
+    decodeSyscallArgsFromState st tid layout regs regCount =
+      .ok { capAddr, msgInfo, syscallId := sid,
+            msgRegs := layout.msgRegs.map (readReg regs),
+            inlineCount := layout.msgRegs.size, overflowCount := 0 } := by
+  rcases hLen with hLen | hNo
+  · exact decodeSyscallArgsFromState_of_routedInline st tid layout regs regCount capAddr msgInfo
+      sid hB hC hM hLen hS
+  · rw [hS] at hNo
+    simp only [syscallNumberReadsOverflow, SyscallId.ofNat_toNat] at hNo
+    exact decodeSyscallArgsFromState_of_routedNoOverflow st tid layout regs regCount capAddr
+      msgInfo sid hB hC hM hNo hS
 
 theorem decodeSyscallArgsFromState_of_routedSignal
     (st : SystemState) (tid : ThreadId)
@@ -106,7 +132,8 @@ theorem decodeSyscallArgsFromState_of_routedSignal
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -115,19 +142,9 @@ theorem decodeSyscallArgsFromState_of_routedSignal
       cases h
       exact ⟨_, hD .notificationSignal ‹_›, rfl, rfl, rfl⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
-      -- a long signal: the syscall that reads no overflow word and is not audited
-      all_goals
-        cases h
-        rename_i sid hOf hRd hAu
-        have hSig : sid = .notificationSignal := by
-          rcases (syscallReadsOverflow_eq_false_iff sid).mp (by simpa using hRd) with h' | h'
-          · exact h'
-          · subst h'; simp [routedAudited] at hAu
-        subst hSig
-        exact ⟨_, decodeSyscallArgsFromState_of_routedNoOverflow st tid layout regs regCount _ mi
-          .notificationSignal hB hC hM rfl (SyscallId.toNat_ofNat hOf).symm, rfl, rfl, rfl⟩
   · cases h
 
 theorem decodeSyscallArgsFromState_of_routedWait
@@ -147,7 +164,8 @@ theorem decodeSyscallArgsFromState_of_routedWait
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -156,6 +174,7 @@ theorem decodeSyscallArgsFromState_of_routedWait
       cases h
       exact ⟨_, hD .notificationWait ‹_›, rfl, rfl, rfl⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -177,7 +196,8 @@ theorem decodeSyscallArgsFromState_of_routedYield
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -185,6 +205,7 @@ theorem decodeSyscallArgsFromState_of_routedYield
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       exact ⟨_, hD .yield ‹_›, rfl, rfl⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -210,7 +231,8 @@ theorem decodeSyscallArgsFromState_of_routedSend
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -220,6 +242,7 @@ theorem decodeSyscallArgsFromState_of_routedSend
       exact ⟨_, hD .send ‹_ = SyscallId.send.toNat›, rfl, rfl, rfl, rfl,
         ‹msgInfo.extraCaps = 0›, rfl⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -245,7 +268,8 @@ theorem decodeSyscallArgsFromState_of_routedCall
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -255,6 +279,7 @@ theorem decodeSyscallArgsFromState_of_routedCall
       exact ⟨_, hD .call ‹_ = SyscallId.call.toNat›, rfl, rfl, rfl, rfl,
         ‹msgInfo.extraCaps = 0›, rfl⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -280,7 +305,8 @@ theorem decodeSyscallArgsFromState_of_routedReply
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -289,6 +315,7 @@ theorem decodeSyscallArgsFromState_of_routedReply
       cases h
       exact ⟨_, hD .reply ‹_ = SyscallId.reply.toNat›, rfl, rfl, rfl, rfl, rfl⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -313,19 +340,19 @@ theorem decodeSyscallArgsFromState_of_routedReceive
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
-      all_goals
-        cases h
-        refine ⟨_, hD .receive ‹_›, rfl, rfl, rfl, rfl, fun hN => ?_⟩
-      · simp only [Array.getElem?_map, Array.getElem?_eq_getElem ‹0 < layout.msgRegs.size›,
-          Option.map_some, CPtr.ofWord_toNat, ← readReg_val_eq_word]
-      · exact absurd (Nat.lt_of_lt_of_le (Nat.pos_of_ne_zero hN) hLen) ‹¬0 < layout.msgRegs.size›
+      cases h
+      refine ⟨_, hD .receive ‹_›, rfl, rfl, rfl, rfl, fun _ => ?_⟩
+      simp only [Array.getElem?_map, Array.getElem?_eq_getElem ‹0 < layout.msgRegs.size›,
+        Option.map_some, CPtr.ofWord_toNat, ← readReg_val_eq_word]
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -351,7 +378,8 @@ theorem decodeSyscallArgsFromState_of_routedReplyRecv
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -360,6 +388,7 @@ theorem decodeSyscallArgsFromState_of_routedReplyRecv
       cases h
       exact ⟨_, hD .replyRecv ‹_ = SyscallId.replyRecv.toNat›, rfl, rfl, rfl, rfl, rfl⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -386,7 +415,8 @@ theorem decodeSyscallArgsFromState_of_routedInvoke
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -397,6 +427,7 @@ theorem decodeSyscallArgsFromState_of_routedInvoke
         obtain ⟨hR, hN⟩ := routedInvocationSid?_some hSid
         exact ⟨_, hD sid hN, rfl, hR, rfl, rfl, rfl, Nat.not_lt.mp hT⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -423,7 +454,8 @@ theorem decodeSyscallArgsFromState_of_routedAudited
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -434,15 +466,9 @@ theorem decodeSyscallArgsFromState_of_routedAudited
         obtain ⟨hR, hN⟩ := routedAuditedSid?_some hSid
         exact ⟨_, hD sid hN, rfl, hR, rfl, rfl, rfl, by first | exact hM | rfl⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
-      -- a long declassified signal: the audited call that reads no overflow word
-      all_goals
-        cases h
-        rename_i _ hOf hRd hAu
-        exact ⟨_, decodeSyscallArgsFromState_of_routedNoOverflow st tid layout regs regCount _ mi
-          _ hB hC hM (by simpa using hRd) (SyscallId.toNat_ofNat hOf).symm, rfl, hAu, rfl, rfl,
-          rfl, by first | exact hM | rfl⟩
   · cases h
 
 /-- WS-ZA ZA5.2, ZA5.5: what a routed one-overflow-word invocation pins about
@@ -471,11 +497,13 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       split at h
       · split at h <;> cases h
       split at h
@@ -485,9 +513,9 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
       split at h
       · cases h
       split at h
-      · next hLen1 =>
+      · next sid' hSid =>
         split at h
-        · next sid' hSid =>
+        · next hLen1 =>
           cases h
           obtain ⟨hR, hN⟩ := routedOverflowOneSid?_some hSid
           refine ⟨hR, mi, hLen1, ?_⟩
@@ -534,11 +562,13 @@ theorem decodeSyscallArgsFromState_of_routedSendLong
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       split at h
       · next hS =>
         split at h
@@ -592,11 +622,13 @@ theorem decodeSyscallArgsFromState_of_routedCallLong
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       split at h
       · split at h <;> cases h
       split at h
@@ -650,11 +682,13 @@ theorem decodeSyscallArgsFromState_of_routedReplyLong
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       split at h
       · split at h <;> cases h
       split at h
@@ -703,11 +737,13 @@ theorem decodeSyscallArgsFromState_of_routedReplyRecvLong
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       split at h
       · split at h <;> cases h
       split at h
@@ -749,13 +785,19 @@ theorem registerRoutedSyscall_send_length
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       cases h
-      exact hLen
+      rcases hLen with hLen | hNo
+      · exact hLen
+      · simp only [‹(readReg regs layout.syscallNumReg).val = SyscallId.send.toNat›,
+          syscallNumberReadsOverflow, SyscallId.ofNat_toNat, syscallReadsOverflow,
+          Bool.true_eq_false] at hNo
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -773,13 +815,19 @@ theorem registerRoutedSyscall_call_length
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       cases h
-      exact hLen
+      rcases hLen with hLen | hNo
+      · exact hLen
+      · simp only [‹(readReg regs layout.syscallNumReg).val = SyscallId.call.toNat›,
+          syscallNumberReadsOverflow, SyscallId.ofNat_toNat, syscallReadsOverflow,
+          Bool.true_eq_false] at hNo
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -812,11 +860,13 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       have hWf : mi.length ≤ maxMessageRegisters := by
         unfold decodeMsgInfo at hM
         split at hM
@@ -824,7 +874,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
           cases hM
           exact (MessageInfo.decode_wellFormed hD).1
         · cases hM
-      have key : ∀ sid', routedOverflowedSid? (readReg regs layout.syscallNumReg).val = some sid' →
+      have key : ∀ sid', routedOverflowOneSid? (readReg regs layout.syscallNumReg).val = some sid' →
           RegisterRoutedSyscall.overflowed sid' (CPtr.ofWord (readRegWord regs layout.capPtrReg))
               mi.length = .overflowed sid capAddr len →
           ∃ msgInfo, (Except.ok mi : Except KernelError MessageInfo) = .ok msgInfo ∧
@@ -838,8 +888,8 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
                 inlineCount := layout.msgRegs.size, overflowCount := 0 } := by
         intro sid' hSid hEq
         cases hEq
-        obtain ⟨hR, hN⟩ := routedOverflowedSid?_some hSid
-        refine ⟨mi, rfl, rfl, by omega, hWf, hR, ?_⟩
+        obtain ⟨hR, hN⟩ := routedOverflowOneSid?_some hSid
+        refine ⟨mi, rfl, rfl, by omega, hWf, routedOverflowed_of_routedOverflowOne hR, ?_⟩
         rw [decodeSyscallArgsFromState_eq_impl]
         unfold decodeSyscallArgsFromStateImpl
         simp only [decodeMsgInfoWord_readReg]
@@ -855,15 +905,12 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
       · cases h
       split at h
       · cases h
-      · split at h
-        · split at h
-          · cases h
-          · split at h
-            · next sid' hSid => exact key sid' hSid h
-            · (repeat' (first | (cases h; done) | split at h))
-        · split at h
-          · next sid' hSid => exact key sid' hSid h
-          · (repeat' (first | (cases h; done) | split at h))
+      split at h
+      · next sid' hSid =>
+        split at h
+        · cases h
+        · exact key sid' hSid h
+      · rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'
   · cases h
 
 /-- What a five-word invocation routed short of its fifth word pins about the
@@ -888,7 +935,8 @@ theorem decodeSyscallArgsFromState_of_routedShortArgs
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
     · simp only [hM] at h; cases h
     simp only [hM] at h
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       have hD := fun sid hS =>
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
@@ -900,6 +948,7 @@ theorem decodeSyscallArgsFromState_of_routedShortArgs
       · obtain ⟨hR, hN⟩ := routedOverflowOneSid?_some hSid
         exact ⟨_, hD sid hN, rfl, by simp [hR], rfl, rfl, rfl, hT⟩
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
@@ -926,7 +975,8 @@ theorem decodeSyscallArgsFromState_of_routedRefused
       rw [if_pos hB]
       simp only [hM]
     · simp only [hM] at h
-      by_cases hLen : mi.length ≤ layout.msgRegs.size <;>
+      by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+          syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false <;>
         first | rw [if_pos hLen] at h | rw [if_neg hLen] at h
       all_goals repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
@@ -1010,14 +1060,20 @@ theorem decodeSyscallArgsFromState_of_routedTransferring
         cases hM
         exact (MessageInfo.decode_wellFormed hD).1
       · cases hM
-    by_cases hLen : mi.length ≤ layout.msgRegs.size
+    by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false
     · rw [if_pos hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       all_goals (cases h; exact ⟨by decide, ‹_›, hWf,
         fun _ => decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ _ _ hB hC hM
-          hLen ‹_›, fun h' => absurd hLen (by omega)⟩)
+          hLen ‹_›, fun h' => by
+            rcases hLen with hL | hNo
+            · omega
+            · rw [‹(readReg regs layout.syscallNumReg).val = _›] at hNo
+              simp [syscallNumberReadsOverflow, SyscallId.ofNat_toNat, syscallReadsOverflow] at hNo⟩)
     · rw [if_neg hLen] at h
+      replace hLen := (not_or.mp hLen).1
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
       all_goals (cases h; exact ⟨by decide, ‹_›, hWf, fun h' => absurd h' hLen,

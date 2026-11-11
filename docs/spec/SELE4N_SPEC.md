@@ -5954,6 +5954,19 @@ Every kernel object has a decidable well-formedness predicate:
   closure) compiled into a second archive, `libsele4n_exerciser.a`, which only
   the `virt` exerciser image links; the shipped RPi5 and `virt` images define
   none of its symbols (`scripts/check_kernel_image.py --excludes`).
+- **A refused declassification records its refusal in place** (`v0.37.14`).
+  The refusal ledger holds each refusal as a fixed-size word slot
+  (`RefusalSlot`: an occupancy flag, the scalar fields, a receiver flag and
+  id) rather than an optional record, and a recorded refusal overwrites its
+  slot's own cell (`recordRefusalWords`, the seam's form by the `@[csimp]`
+  `recordSyscallRefusal_eq_impl`); the boot rebuilds the ledger out of its
+  closed term (`SystemState.withFreshRefusalLedger`), so the first record
+  owns the cells it writes.  The declassify and declassified-signal arms answer
+  a refusal without the specification's general arm (`declassifyRefusal`,
+  `declassifySignalPlanRefusal`, `declassifySignalPresentRefusal`, each proven
+  equal to `auditedArmSpec`), and the audit read splits a slot on its receiver
+  flag instead of building the optional receiver.  A refused declassification
+  read 19 to 25 heap cells before; it reads 0.
 - **The timer tick, the reschedule SGI and each core's first entry allocate
   nothing** (`v0.36.164`, WS-ZA ZA6.1).  Each entry reads its restore
   target's parts and the core's current thread off the committed state as
@@ -7814,6 +7827,17 @@ caller's `ThreadId`; no other thread's state is consulted. This guarantees
 that a 5-arg syscall cannot leak cross-domain data through the overflow
 channel.
 
+**A signal reads no overflow word.**  seL4's `seL4_Signal` reads no message
+at all: the badge is the capability's (§8.10.3b).  `syscallReadsOverflow`
+(`RegisterDecode`, no wildcard) is the one owner: it is false for
+`notificationSignal` and `declassifySignal` and true for every other syscall.
+For those two the decode keeps the inline words whatever the length
+(`decodeSyscallArgsFromState_of_no_overflow`), so a long signal reads nothing
+from the caller's IPC buffer and an unmapped buffer does not refuse it.  The
+router agrees: its long tail sends a syscall that reads no overflow word to
+its short route (`routedNoOverflowOf`: the declassified signal to the audited
+arm, the signal to the signal arm), and `routedOverflowed` excludes both.
+
 **Source**:
 - `SeLe4n/Kernel/Architecture/IpcBufferRead.lean` —
   `ipcBufferReadMr`, `IpcBufferReadError`.
@@ -7861,8 +7885,12 @@ have minimum 0, because seL4 checks no length for an IPC or a signal.
 **One owner.** `truncationMinimum` (`SyscallArgDecode`) is the table.  The
 router (`routedShortTail`), every decode's first action and the audit arms
 (`auditTruncated`) all read it.  `#assert_decoder_arities`
-(`Architecture/DecoderArity.lean`, invoked at the end of `API.lean`) reads the
-elaborated bodies and fails the build unless:
+(`Architecture/DecoderArity.lean`) reads the elaborated bodies and fails the
+build unless the conditions below hold.  It is an elaborator command, so it
+runs in `SeLe4n.Testing.DecoderArityCheck`, a Tier 1 build target, and stays
+out of the kernel's import closure, which the archive holds free of `Lean.*`;
+Tier 3 refuses an import of `DecoderArity` from the kernel's trees.  The
+conditions:
 
 - each listed decode's first action is the check at its syscall's minimum;
 - each decode reads exactly words `0 … minimum − 1`, and reads them only

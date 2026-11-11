@@ -175,23 +175,28 @@ theorem decodeMsgInfoWord_readReg (rf : RegisterFile) (r : RegName) :
 -- ============================================================================
 
 /-- **Whether a syscall reads the message words past the inline registers.**
-The signal and the declassified signal do not: seL4's `seL4_Signal` reads no
-message at all (the badge is the capability's), so a long message-info word on
-either reads no IPC-buffer word and cannot be refused by an unmapped buffer.
-Every other syscall reads the words its length names.  No wildcard: a new
-syscall states its answer. -/
+seL4 reads a word of the caller's IPC buffer only where a transfer copies it
+(`copyMRs`, for the send, the call, the reply and the reply-receive's reply)
+or a decoder reads an argument past the registers (`getSyscallArg`); the
+model's decoders read at most four words except the scheduling-context
+configure's and the service register's five (`truncationMinimum`).  Every
+other syscall reads none: the receive, the wait and the yield read no message
+(`handleRecv`, `handleYield`), the signal and the declassified signal take the
+capability's badge, and every other invocation's arguments are its registers.
+A long message-info word on one of those reads no IPC-buffer word and cannot be
+refused or clamped by the buffer.  No wildcard: a new syscall states its
+answer. -/
 def syscallReadsOverflow : SyscallId → Bool
-  | .notificationSignal | .declassifySignal => false
-  | .send | .receive | .call | .reply | .cspaceMint | .cspaceCopy | .cspaceMove
-  | .cspaceDelete | .cspaceRevoke | .untypedRetype | .untypedReset | .vspaceMap
-  | .vspaceUnmap | .vspaceUnifyInstruction | .declassify | .auditRead | .auditDrain
-  | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationWait | .replyRecv
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .tcbSuspend
-  | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
-  | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
-  | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
-  | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
-  | .tcbUnbindNotification | .mintReplyCap => true
+  | .send | .call | .reply | .replyRecv | .schedContextConfigure | .serviceRegister => true
+  | .notificationSignal | .declassifySignal | .receive | .notificationWait | .yield
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .untypedRetype
+  | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction | .declassify
+  | .auditRead | .auditDrain | .serviceRevoke | .serviceQuery | .schedContextBind
+  | .schedContextUnbind | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap
+  | .pageTableUnmap | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck
+  | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
+  | .tcbUnbindNotification | .mintReplyCap => false
 
 open SeLe4n.Kernel.Architecture.IpcBufferRead in
 /-- One overflow message word from the caller's IPC buffer, any internal
@@ -1006,15 +1011,14 @@ theorem routedAuditedSid?_some {n : Nat} {sid : SyscallId}
     · cases h
   · cases h
 
-/-- The syscalls a message past the layout's registers routes as `overflowed`:
-the wait and the receive, whose dispatch reads no word past the first message
-register; the yield, which reads none; the invocations and the audited calls, whose arguments
-are the layout's message registers; and the five-word invocations, whose fifth
-argument is overflow slot 0. -/
+/-- The syscalls a message past the layout's registers and its first overflow
+word routes as `overflowed`: the five-word invocations, whose fifth argument is
+overflow slot 0 and whose decode reads every word the message names.  Every
+other syscall past the registers either has a route of its own (the IPC calls)
+or reads no overflow word and takes its short route (`syscallReadsOverflow`). -/
 def routedOverflowed : SyscallId → Bool
-  | .notificationWait | .receive | .yield => true
-  | sid => syscallReadsOverflow sid &&
-      (routedInvocation sid || routedAudited sid || routedOverflowOne sid)
+  | .schedContextConfigure | .serviceRegister => true
+  | _ => false
 
 /-- The overflowed syscall number `n` names, if any. -/
 @[inline] def routedOverflowedSid? (n : Nat) : Option SyscallId :=
@@ -1083,21 +1087,20 @@ theorem routedShortTail_eq (capAddr : CPtr) (len n : Nat) :
   | none => rfl
   | some sid => cases sid <;> rfl
 
-/-- The long message's route of a syscall no long route names: a syscall that
-reads no word past the inline registers (`syscallReadsOverflow`) takes its short
-route, since its message's length is not read — the declassified signal the
-audited one, the signal the signal's, as seL4's `seL4_Signal` reads no
-message — and any other the decode. -/
-@[inline] def routedNoOverflowOf (sid : SyscallId) (capAddr : CPtr) : RegisterRoutedSyscall :=
-  if syscallReadsOverflow sid then .viaDecode
-  else if routedAudited sid then .audited sid capAddr
-  else .signal capAddr
+/-- Whether syscall number `n` reads a message word past the inline registers
+(`syscallReadsOverflow`); a number the decode refuses is routed as a long
+message, whose tail refuses it as the short one's does. -/
+@[inline] def syscallNumberReadsOverflow (n : Nat) : Bool :=
+  match SyscallId.ofNat? n with
+  | some sid => syscallReadsOverflow sid
+  | none => true
 
-/-- The two syscalls that read no overflow word are the signal and the
-declassified signal, so `routedNoOverflowOf`'s last branch is the signal's. -/
-theorem syscallReadsOverflow_eq_false_iff (sid : SyscallId) :
-    syscallReadsOverflow sid = false ↔
-      sid = .notificationSignal ∨ sid = .declassifySignal := by
+/-- A syscall that reads its overflow words is one the router routes past the
+inline registers: an IPC call or a five-word invocation. -/
+theorem syscallReadsOverflow_eq_true_iff (sid : SyscallId) :
+    syscallReadsOverflow sid = true ↔
+      sid = .send ∨ sid = .call ∨ sid = .reply ∨ sid = .replyRecv ∨
+        routedOverflowOne sid = true := by
   cases sid <;> decide
 
 /-- A one-overflow-word invocation reads its overflow word. -/
@@ -1108,50 +1111,35 @@ theorem syscallReadsOverflow_of_routedOverflowOne {sid : SyscallId}
 /-- A syscall the long message routes `overflowed` reads its overflow words. -/
 theorem syscallReadsOverflow_of_routedOverflowed {sid : SyscallId}
     (h : routedOverflowed sid = true) : syscallReadsOverflow sid = true := by
-  cases sid <;> first | rfl | (simp [routedOverflowed, syscallReadsOverflow] at h)
+  cases sid <;> first | rfl | (simp [routedOverflowed] at h)
 
-/-- The long message's route past the long send, read off one decode of the
-syscall number: `registerRoutedSyscallOf`'s tail (`routedLongTail_eq`). -/
+/-- The overflowed route's syscalls are the five-word invocations. -/
+theorem routedOverflowed_of_routedOverflowOne {sid : SyscallId}
+    (h : routedOverflowOne sid = true) : routedOverflowed sid = true := by
+  cases sid <;> first | rfl | (simp [routedOverflowOne] at h)
+
+/-- The long message's route past the IPC calls, read off one decode of the
+syscall number: `registerRoutedSyscallOf`'s tail (`routedLongTail_eq`).  Only a
+syscall that reads its overflow words reaches it (`syscallNumberReadsOverflow`):
+a five-word invocation, `overflowOne` at five words and `overflowed` past
+them. -/
 @[inline] def routedLongTail (capAddr : CPtr) (len size n : Nat) : RegisterRoutedSyscall :=
   match SyscallId.ofNat? n with
   | some sid =>
-    if len = size + 1 then
-      if routedOverflowOne sid then .overflowOne sid capAddr
-      else if routedOverflowed sid then .overflowed sid capAddr len
-      else routedNoOverflowOf sid capAddr
-    else if routedOverflowed sid then .overflowed sid capAddr len
-    else routedNoOverflowOf sid capAddr
+    if routedOverflowOne sid then
+      if len = size + 1 then .overflowOne sid capAddr else .overflowed sid capAddr len
+    else .viaDecode
   | none => .refused .invalidSyscallNumber
 
 theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
     routedLongTail capAddr len size n =
-      if len = size + 1 then
-        match routedOverflowOneSid? n with
-        | some sid => .overflowOne sid capAddr
-        | none =>
-          match routedOverflowedSid? n with
-          | some sid => .overflowed sid capAddr len
-          | none =>
-            match SyscallId.ofNat? n with
-            | some sid =>
-              if syscallReadsOverflow sid then .viaDecode
-              else if routedAudited sid then .audited sid capAddr
-              else .signal capAddr
-            | none => .refused .invalidSyscallNumber
-      else
-        match routedOverflowedSid? n with
-        | some sid => .overflowed sid capAddr len
-        | none =>
-          match SyscallId.ofNat? n with
-          | some sid =>
-            if syscallReadsOverflow sid then .viaDecode
-            else if routedAudited sid then .audited sid capAddr
-            else .signal capAddr
-          | none => .refused .invalidSyscallNumber := by
-  unfold routedLongTail routedNoOverflowOf routedOverflowOneSid? routedOverflowedSid?
-  by_cases hL : len = size + 1 <;> simp only [hL, ↓reduceIte] <;>
-  cases SyscallId.ofNat? n <;> try rfl
-  all_goals (rename_i sid; cases sid <;> rfl)
+      match routedOverflowOneSid? n with
+      | some sid => if len = size + 1 then .overflowOne sid capAddr else .overflowed sid capAddr len
+      | none => unroutedSyscall n := by
+  unfold routedLongTail routedOverflowOneSid? unroutedSyscall
+  cases SyscallId.ofNat? n with
+  | none => rfl
+  | some sid => cases sid <;> rfl
 
 /-- The routed syscall a register file names once its registers are in bounds
     (`registerRoutedSyscall`). -/
@@ -1161,7 +1149,8 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
   match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
   | .error e => .refused e
   | .ok msgInfo =>
-    if msgInfo.length ≤ layout.msgRegs.size then
+    if msgInfo.length ≤ layout.msgRegs.size ∨
+        syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false then
       if (readReg regs layout.syscallNumReg).val = SyscallId.notificationSignal.toNat then
         .signal capAddr
       else if (readReg regs layout.syscallNumReg).val = SyscallId.notificationWait.toNat then
@@ -1179,7 +1168,7 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
       else if (readReg regs layout.syscallNumReg).val = SyscallId.receive.toNat then
         if h0 : 0 < layout.msgRegs.size then
           .receive capAddr msgInfo.length (CPtr.ofWord (readRegWord regs layout.msgRegs[0]))
-        else .receive capAddr msgInfo.length (CPtr.ofWord 0)
+        else .viaDecode
       else if (readReg regs layout.syscallNumReg).val = SyscallId.replyRecv.toNat then
         .replyRecv capAddr msgInfo
       else

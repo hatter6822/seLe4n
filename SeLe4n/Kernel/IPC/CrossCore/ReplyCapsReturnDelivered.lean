@@ -468,7 +468,9 @@ theorem routedExtraCaps_eq_of_routedReplyLong {rf : SeLe4n.RegisterFile} {capAdd
       rw [hD] at hR
       have hm : m = mi := by
         simp only [routedShortTail_eq, routedLongTail_eq] at hR
-        by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size <;>
+        by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size ∨
+            Architecture.RegisterDecode.syscallNumberReadsOverflow
+              (SeLe4n.readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = false <;>
           first | rw [if_pos hLen] at hR | rw [if_neg hLen] at hR
         repeat' split at hR
         all_goals first
@@ -500,7 +502,9 @@ theorem routedExtraCaps_eq_of_routedReplyRecvLong {rf : SeLe4n.RegisterFile} {ca
       rw [hD] at hR
       have hm : m = mi := by
         simp only [routedShortTail_eq, routedLongTail_eq] at hR
-        by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size <;>
+        by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size ∨
+            Architecture.RegisterDecode.syscallNumberReadsOverflow
+              (SeLe4n.readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = false <;>
           first | rw [if_pos hLen] at hR | rw [if_neg hLen] at hR
         repeat' split at hR
         all_goals first
