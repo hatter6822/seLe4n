@@ -158,6 +158,11 @@ tier1_targets+=(SeLe4n.Testing.StoreReadClassificationCensus)
 # build failure rather than a reading nobody did.
 tier1_targets+=(SeLe4n.Testing.KernelTransitionReachabilityCensus)
 
+# The truncation table is the decodes' word counts: `#assert_decoder_arities`
+# reads each listed decode's body and its dispatch arm.  An elaborator command,
+# so it runs outside the kernel's import closure.
+tier1_targets+=(SeLe4n.Testing.DecoderArityCheck)
+
 # WS-ZA ZA5.12: no compiled path reads the specification's taint map.  The
 # stored table is gone; `SystemState.declassificationTaint` decodes the thread
 # and notification words at a key and is what the theorems are stated over.

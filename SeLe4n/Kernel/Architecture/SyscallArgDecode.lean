@@ -8,7 +8,6 @@
 -/
 
 import SeLe4n.Model.State
-import SeLe4n.Kernel.Architecture.DecoderArity
 
 /-! # Per-Syscall Argument Decode Layer (WS-K-B)
 
@@ -100,9 +99,10 @@ checks:
   every invocation is.
 
 Each figure is the number of words its decode reads, and the decode reads
-exactly words `0, …, n - 1` after checking `n`: `#assert_decoder_arities`, at
-the end of `SeLe4n.Kernel.API`, reads every listed decode's body and the
-dispatch arm that calls it, and fails the build otherwise.
+exactly words `0, …, n - 1` after checking `n`: `#assert_decoder_arities`, in
+`SeLe4n.Testing.DecoderArityCheck` (built by Tier 1, outside the kernel's
+import closure), reads every listed decode's body and the dispatch arm that
+calls it, and fails the build otherwise.
 
 Every other syscall reads no argument word, or is an IPC or a signal, for
 which seL4 checks no length (`notificationSignal` included). -/

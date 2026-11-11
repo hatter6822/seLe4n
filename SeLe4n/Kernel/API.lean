@@ -9289,35 +9289,4 @@ theorem dispatchCapabilityOnly_schedContextBind_idle_capability_refused
   rw [hSyscall, hTarget]
   simp only [Option.map_some, hRes]
 
-
-
-/-! **The truncation table is the decodes' word counts** (`truncationMinimum`):
-each syscall with a nonzero minimum is listed with the decode its dispatch
-reads its arguments through, and the check reads that decode's body, failing
-the build unless its first action is the truncation check at the syscall's
-minimum and the words it reads are exactly `0, …, minimum - 1`
-(`DecoderArity`).  The pairing is pinned against the checked dispatch
-(`dispatchWithCapChecked`): each listed syscall's arm calls exactly its listed
-decode, and no other syscall's arm calls one.  The signal, the receives and the declassifications have
-minimum 0, as seL4 checks no length for an IPC or a signal. -/
-#assert_decoder_arities truncationMinimum requireMessageLength requireMsgReg
-    SyscallDecodeResult.msgRegs SyscallDecodeResult.syscallId dispatchWithCapChecked [
-  (.cspaceMint, decodeCSpaceMintArgs), (.cspaceCopy, decodeCSpaceCopyArgs),
-  (.cspaceMove, decodeCSpaceMoveArgs), (.cspaceDelete, decodeCSpaceDeleteArgs),
-  (.cspaceRevoke, decodeCSpaceDeleteArgs), (.mintReplyCap, decodeCSpaceCopyArgs),
-  (.untypedRetype, decodeUntypedRetypeArgs), (.vspaceMap, decodeVSpaceMapArgs),
-  (.vspaceUnmap, decodeVSpaceUnmapArgs),
-  (.vspaceUnifyInstruction, decodeVSpaceUnifyInstructionArgs),
-  (.serviceRegister, decodeServiceRegisterArgs),
-  (.schedContextConfigure, decodeSchedContextConfigureArgs),
-  (.schedContextBind, decodeSchedContextBindArgs),
-  (.tcbBindNotification, decodeTcbBindNotificationArgs),
-  (.irqControlGet, decodeIrqControlGetArgs),
-  (.irqHandlerSetNotification, decodeIrqHandlerSetNotificationArgs),
-  (.tcbSetPriority, decodeSetPriorityArgs), (.tcbSetMCPriority, decodeSetMCPriorityArgs),
-  (.tcbSetIPCBuffer, decodeSetIPCBufferArgs), (.tcbSetAffinity, decodeSetAffinityArgs),
-  (.tcbSetFaultHandler, decodeSetFaultHandlerArgs), (.tcbSetSpace, decodeSetSpaceArgs),
-  (.pageTableMap, decodePageTableMapArgs), (.auditRead, decodeAuditReadArgs),
-  (.auditDrain, decodeAuditDrainArgs)]
-
 end SeLe4n.Kernel

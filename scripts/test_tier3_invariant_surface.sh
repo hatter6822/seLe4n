@@ -12583,7 +12583,9 @@ run_check "INVARIANT" rg -n 'fn wrappers_name_their_syscalls' rust/sele4n-abi/te
 run_check "INVARIANT" rg -n 'host_capture::last_request' rust/sele4n-abi/tests/conformance.rs
 run_negative_check "INVARIANT" rg -n 'min_inline_args' rust/sele4n-hal/src
 run_check "INVARIANT" rg -n 'TruncatedMessage = 58' rust/sele4n-types/src/error.rs
-run_check "INVARIANT" rg -n '^#assert_decoder_arities ' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^#assert_decoder_arities ' SeLe4n/Testing/DecoderArityCheck.lean
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.DecoderArityCheck\)$' scripts/test_tier1_build.sh
+run_negative_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.DecoderArity$' SeLe4n/Kernel SeLe4n/Platform SeLe4n/Model SeLe4n.lean
 run_check "INVARIANT" rg -n 'pub fn endpoint_call\(dest: CPtr, msg: &IpcMessage\) -> KernelResult<\(Badge, SyscallResponse\)>' rust/sele4n-sys/src/ipc.rs
 # PR #866 round-3: the three wrappers the ABI documented but never had —
 # implemented so the sweep covers the whole canonical syscall surface.
