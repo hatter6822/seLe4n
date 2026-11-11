@@ -2292,16 +2292,17 @@ def runObjectStoreCapacityBoundaryChecks : IO Unit := do
       |>.withLifecycleObjectType utId .untyped
       |>.withLifecycleObjectType cnId .cnode
       |>.buildChecked)
-  -- WS-UC UC3: the builder starts from the boot-sized empty state, as the boot does.
-  expectCond "capacity" "the built store is boot-sized"
-    (base.objects.capacity == SeLe4n.Model.bootTableCapacity &&
-      base.asidTable.capacity == SeLe4n.Model.bootTableCapacity)
+  -- WS-UC UC3: the store re-built in a boot-sized table, as the boot builds it
+  -- (the test builder's `RHTable.ofList` sizes its tables to their contents).
+  let presized : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject :=
+    base.objects.fold (SeLe4n.Kernel.RobinHood.RHTable.empty SeLe4n.Model.bootTableCapacity
+      SeLe4n.Model.four_le_bootTableCapacity) (fun t k v => t.insert k v)
   -- Pad the store with notifications at identifiers far from the carve's, to
   -- one short of capacity.
-  let pad := SeLe4n.Model.maxObjects - 1 - base.objects.size
+  let pad := SeLe4n.Model.maxObjects - 1 - presized.size
   let padded : SystemState := { base with
     objects := (List.range pad).foldl
-      (fun t i => t.insert ⟨1000000 + i⟩ (.notification { state := .idle })) base.objects }
+      (fun t i => t.insert ⟨1000000 + i⟩ (.notification { state := .idle })) presized }
   expectCond "capacity" "the padded store is one short of capacity"
     (padded.objects.size == SeLe4n.Model.maxObjects - 1)
   -- WS-UC UC3: filling a boot-sized table to maxObjects - 1 never resized it.

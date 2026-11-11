@@ -36,13 +36,29 @@ a slot array: the tables' slot arrays are built at boot only.
   `RHTable.empty` by `@[csimp] RHTable.empty_eq_emptyImpl`, so the boot-sized
   table no longer builds and frees a 131072-cell list (3 MiB of cons cells)
   on the way, and neither does a resize.
-- **Boundary.** `runObjectStoreCapacityBoundaryChecks` checks the built store is
-  boot-sized, that filling it to `maxObjects − 1` never resizes, that the insert
+- **Boundary.** `runObjectStoreCapacityBoundaryChecks` re-builds its store in a
+  boot-sized table, as the boot does, and checks that filling it to
+  `maxObjects − 1` never resizes, that the insert
   at size 65535 into capacity 131072 equals `insertNoResize` and keeps the
   capacity, that the carve at `maxObjects − 1` keeps it, and that the next carve
   is refused (`objectStoreCapacityExceeded`).
 - **Retired**: `FrozenState`'s private `toList_empty` and
   `fold_none_replicate`, replaced by `RHTable.toList_empty`.
+- **Gates.** The store-read census classifies `emptyImpl` as a constructor;
+  `tablesPresized`'s fields are `objectsBootSized` / `asidBootSized`, since the
+  census reads a field named `objects` as the object store; the de-threading
+  gate pins `State.lean`'s second tactic macro (`capacity_kept`).
+- **Readings** (QEMU `virt`, Lean-linked image, fresh archive, two runs,
+  identical): every reading equals `v0.37.15`'s — each kind's first-call
+  carve reading equals its steady-state one, every carve pin is unchanged
+  (endpoint 6 / 248, notification 6 / 240, reply 10 / 256, tcb 19 / 2040,
+  sched-context 8 / 440, frame 6 / 152, page-table 8 / 232, …) and every
+  other reading is 0.
+- **Boot heap.** The boot-sized slot arrays are 1 MiB each (131072 slots), and
+  every closed-term state the library builds from the default state copies
+  the shared table on its first insert, so the library initializer ends with
+  3625 of the arena's 16069 pages in use (803 at `v0.37.15`, +11.0 MiB) and
+  the install with 4206 (871, +13.0 MiB): 16.4 MiB of the 64 MiB arena.
 
 ## v0.37.15 — the bookkeeping tables become ghosts
 

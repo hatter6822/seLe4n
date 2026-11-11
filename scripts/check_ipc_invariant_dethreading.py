@@ -277,9 +277,10 @@ MACHINERY_PINS = {
     # write keeps the yield link"; a tactic macro too.
     ("SeLe4n/Model/Object/Types.lean", "macro"): 2,
     # WS-UC UC2: the `ghosts_kept` tactic, which discharges "this step moves no
-    # bookkeeping ghost" (`SystemState.ghostsKept`); a tactic macro mints no
-    # declaration.
-    ("SeLe4n/Model/State.lean", "macro"): 1,
+    # bookkeeping ghost" (`SystemState.ghostsKept`), and (WS-UC UC3) the
+    # `capacity_kept` tactic it calls, which discharges "this step shrinks no
+    # table"; a tactic macro mints no declaration.
+    ("SeLe4n/Model/State.lean", "macro"): 2,
     # WS-ZA ZA4.5: the `run_queue_stage` tactic and its step rules -- each
     # `macro_rules` adds one tactic-category alternative (a step's stage) and
     # `macro` declares the driver tactics; none mints a declaration.
