@@ -45,26 +45,6 @@ theorem objects_modifyObject_self (s : SystemState) (k : SeLe4n.ObjId) (F : Kern
   simp only [RHTable_getElem?_eq_get?]
   rw [RHTable.get?_mapValueAt, if_pos (beq_self_eq_true _)]
 
-/-- The reply's writes change only the index-free part of the state. -/
-theorem storeReplyRendezvousReady_fields (st : SystemState) (c server : SeLe4n.ThreadId)
-    (rid : SeLe4n.ReplyId) (hNo : st.objects.noResizeDue) :
-    (storeReplyRendezvousReady st c server rid).objectIndexSet = st.objectIndexSet ∧
-      (storeReplyRendezvousReady st c server rid).lifecycle = st.lifecycle := by
-  unfold storeReplyRendezvousReady storeReplyLegReady
-  dsimp only
-  have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
-  have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
-    c hNo1
-  have hNo3 := modifyObject_noResizeDue _ rid.toObjId replyConsumedObject hNo2
-  have hD := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer (st.updateTcb c receiverReady)
-    (determineTargetCore (st.updateTcb c receiverReady) c) c
-  rw [SystemState.unlinkReplyWaiter_eq_impl, SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo3,
-    SystemState.modifyObject_eq_mapValueAt _ _ _ hNo2]
-  unfold SystemState.unlinkReplyWaiterImpl SystemState.mapTcbInPlace
-  dsimp only
-  rw [hD, SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo]
-  exact ⟨rfl, rfl⟩
-
 /-- **Off the answered caller and its reply object, the reply's writes touch
 only links.** -/
 theorem storeReplyRendezvousReady_agree (st : SystemState) (c server : SeLe4n.ThreadId)

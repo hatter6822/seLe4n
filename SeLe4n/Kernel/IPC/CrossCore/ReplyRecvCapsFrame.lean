@@ -206,77 +206,34 @@ theorem transferFrame.leaves {s' s : SystemState} (h : transferFrame s' s) {id :
     storeLeavesIndexAndTypes s' id ty = true :=
   storeLeavesIndexAndTypes_of_frame (getObjectType?_of_transferFrame h) hl
 
-/-- **A CNode store where the CNode lies** keeps the frame: a CNode is written
-in place, anything else is left alone. -/
+/-- **A CNode store** keeps the frame: a CNode keeps its kind, so it is written
+in place, and anything else is left alone. -/
 theorem transferFrame_storeCNodeWith (s : SystemState) (id : SeLe4n.ObjId) (f : CNode → CNode)
-    (hNo : s.objects.noResizeDue)
-    (hL : (∃ cn, s.objects[id]? = some (.cnode cn)) → storeLeavesIndexAndTypes s id .cnode = true) :
+    (hNo : s.objects.noResizeDue) :
     transferFrame (s.storeCNodeWith id f) s ∧ (s.storeCNodeWith id f).objects.noResizeDue := by
   unfold SystemState.storeCNodeWith
   split
   · next cn hc =>
-    rw [if_pos (hL ⟨cn, hc⟩)]
+    rw [if_pos (by unfold storeLeavesIndexAndTypes storeKeepsKind; rw [hc]; rfl)]
     refine ⟨transferFrame_modifyObject s id _ hNo (transferView_mapCNodeObject f), ?_⟩
     rw [SystemState.modifyObject_eq_mapValueAt _ _ _ hNo]
     exact (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNo
   · exact ⟨transferFrame.refl s, hNo⟩
 
-/-- The leaves a transfer's CNode stores ask for, as one test: each of `dcn`
-and `scn` is no CNode or a CNode stored where it lies. -/
-@[inline] def cnodeStoreInPlace (s : SystemState) (id : SeLe4n.ObjId) : Bool :=
-  match s.getCNode? id with
-  | some _ => storeLeavesIndexAndTypes s id .cnode
-  | none => true
-
-theorem cnodeStoreInPlace_imp {s : SystemState} {id : SeLe4n.ObjId}
-    (h : cnodeStoreInPlace s id = true) :
-    (∃ cn, s.objects[id]? = some (.cnode cn)) → storeLeavesIndexAndTypes s id .cnode = true := by
-  rintro ⟨cn, hc⟩
-  unfold cnodeStoreInPlace SystemState.getCNode? at h
-  simp only [hc] at h
-  exact h
-
-/-- The CNode-store test, read through `transferView`: a CNode is the leaves
-test, anything else passes. -/
-theorem cnodeStoreInPlace_eq (s : SystemState) (id : SeLe4n.ObjId) :
-    cnodeStoreInPlace s id =
-      (((s.objects[id]?).map transferView).map Option.isSome).elim true
-        (fun b => b || storeLeavesIndexAndTypes s id .cnode) := by
-  unfold cnodeStoreInPlace SystemState.getCNode?
-  cases s.objects[id]? with
-  | none => rfl
-  | some o => cases o <;> simp [transferView]
-
-theorem transferFrame.cnodeStoreInPlace {s' s : SystemState} (h : transferFrame s' s)
-    {id : SeLe4n.ObjId} (hl : cnodeStoreInPlace s id = true) : cnodeStoreInPlace s' id = true := by
-  rw [cnodeStoreInPlace_eq] at hl ⊢
-  rw [h.2.2.2 id]
-  revert hl
-  cases ((s.objects[id]?).map transferView).map Option.isSome with
-  | none => intro _; rfl
-  | some b =>
-    simp only [Option.elim, Bool.or_eq_true]
-    rintro (hb | hb)
-    · exact .inl hb
-    · exact .inr (h.leaves hb)
-
-/-- **One install where its CNodes lie** keeps the frame. -/
+/-- **One install** keeps the frame. -/
 theorem transferFrame_transferInstallPerform (scn : SeLe4n.ObjId) (ssl : SeLe4n.Slot)
     (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot) (cap : Capability) (s : SystemState)
-    (hNo : s.objects.noResizeDue) (hD : cnodeStoreInPlace s dcn = true)
-    (hS : cnodeStoreInPlace s scn = true) :
+    (hNo : s.objects.noResizeDue) :
     transferFrame (transferInstallPerform scn ssl dcn dsl cap s) s ∧
       (transferInstallPerform scn ssl dcn dsl cap s).objects.noResizeDue := by
   unfold transferInstallPerform
   obtain ⟨f1, n1⟩ := transferFrame_storeCNodeWith s dcn
     (·.insertFields dsl cap.target cap.rights cap.badgeWord cap.badged cap.freeIndex) hNo
-    (cnodeStoreInPlace_imp hD)
   obtain ⟨f2, n2⟩ := transferFrame_cdtAddChild _ ⟨scn, ssl⟩ ⟨dcn, dsl⟩ .ipcTransfer n1
   have f12 := f2.trans f1
   refine untypedSourceSetFull_of (P := fun t => transferFrame t s ∧ t.objects.noResizeDue)
     ⟨f12, n2⟩ (fun idx => ?_)
   obtain ⟨f3, n3⟩ := transferFrame_storeCNodeWith _ scn (·.setFreeIndex ssl idx) n2
-    (cnodeStoreInPlace_imp (f12.cnodeStoreInPlace hS))
   exact ⟨f3.trans f12, n3⟩
 
 /-! ### The reply's loop: at most one install, at index 0 -/
@@ -313,22 +270,19 @@ theorem capStepsApply_noUnwrap_cases (ep : SeLe4n.ObjId) (rv : SeLe4n.ObjId) (rb
       rfl
     · exact .inl rfl
 
-/-- **The reply's loop keeps the frame** when its receive slot's CNode and its
-first source slot's CNode are stored where they lie. -/
+/-- **The reply's loop keeps the frame.** -/
 theorem transferFrame_capStepsApply_noUnwrap (ep : SeLe4n.ObjId) (rv : SeLe4n.ObjId)
     (rb : SeLe4n.VAddr) (c0 c1 c2 : Capability) (r0c : SeLe4n.ObjId) (r0s : SeLe4n.Slot)
     (r1c : SeLe4n.ObjId) (r1s : SeLe4n.Slot) (r2c : SeLe4n.ObjId) (r2s : SeLe4n.Slot)
     (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot) (fuel : Nat) (free : Bool) (st : SystemState)
-    (hNo : st.objects.noResizeDue)
-    (hG : free = true → fuel ≠ 0 → cnodeStoreInPlace st dcn = true ∧ cnodeStoreInPlace st r0c = true) :
+    (hNo : st.objects.noResizeDue) :
     transferFrame (capStepsApply ep false rv rb c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl 0 fuel free st) st ∧
       (capStepsApply ep false rv rb c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl 0 fuel free st).objects.noResizeDue := by
   rcases capStepsApply_noUnwrap_cases ep rv rb c0 c1 c2 r0c r0s r1c r1s r2c r2s dcn dsl fuel free st
-    with h | ⟨hf, hn, h⟩
+    with h | ⟨_, _, h⟩
   · rw [h]; exact ⟨transferFrame.refl st, hNo⟩
   · rw [h]
-    obtain ⟨hD, hS⟩ := hG hf hn
-    exact transferFrame_transferInstallPerform r0c r0s dcn dsl c0 st hNo hD hS
+    exact transferFrame_transferInstallPerform r0c r0s dcn dsl c0 st hNo
 
 /-! ### What the receive leg's guard reads, across the frame -/
 
@@ -442,45 +396,14 @@ theorem receiveGuard_of_transferFrame {s' s : SystemState} (h : transferFrame s'
         rintro ⟨a, b⟩
         exact ⟨(h.2.2.1 _).trans a, h.leaves b⟩
 
-/-! ### The guard, read before any write -/
-
-/-- WS-UC UC2: **the CNode-store test passes on every state**: a CNode stored
-at `id` keeps its kind, which is all the store's check reads. -/
-theorem cnodeStoreInPlace_eq_true (s : SystemState) (id : SeLe4n.ObjId) :
-    cnodeStoreInPlace s id = true := by
-  unfold cnodeStoreInPlace
-  cases h : s.getCNode? id with
-  | none => rfl
-  | some cn =>
-    have hO : s.objects[id]? = some (.cnode cn) := by
-      unfold SystemState.getCNode? at h; split at h <;> simp_all
-    unfold storeLeavesIndexAndTypes storeKeepsKind
-    rw [hO]
-    rfl
-
-/-- **The reply transfer's stores lie where their CNodes are**, read on the
-pre-state `st` over the words the transfer reads (`capTransferK`): it has no
-receive slot or nothing to move, or the receive slot's CNode and the first
-source slot's CNode are each stored in place (`cnodeStoreInPlace`).  The guard
-under which the reply-receive's receive leg may run in place after the reply
-leg's transfer (`receiveTransferCaps_reply_transferFrame`). -/
-@[inline] def replyTransferStoresInPlace (st : SystemState) (ep : SeLe4n.ObjId)
-    (sv : SeLe4n.ObjId) (sb : SeLe4n.VAddr) (sroot : SeLe4n.ObjId) (count : Nat)
-    (rv : SeLe4n.ObjId) (rb : SeLe4n.VAddr) (rroot : SeLe4n.ObjId) : Bool :=
-  capTransferK st ep sv sb sroot count rv rb rroot fun free dcn _ n _ _ _ a0 _ _ _ _ _ =>
-    !free || n == 0 || (cnodeStoreInPlace st dcn && cnodeStoreInPlace st a0)
-
 /-- **The specification's reply transfer keeps the frame**: on a state `S`
-agreeing with the pre-state `st` on buffers, CNodes, the index and the
-lifecycle, the transfer the reply leg runs (no endpoint, the request and the
-receive side read on `st`) leaves a state in `transferFrame` of `S`, when
-`replyTransferStoresInPlace` holds on `st`. -/
+agreeing with the pre-state `st` on buffers and CNodes, the transfer the reply
+leg runs (no endpoint, the request and the receive side read on `st`) leaves a
+state in `transferFrame` of `S`: every CNode it writes keeps its kind, so it is
+written in place. -/
 theorem receiveTransferCaps_reply_transferFrame {S st : SystemState}
-    (hAg : ipcBufferReadsAgree S st) (_hI : S.objectIndexSet = st.objectIndexSet)
-    (_hL : S.lifecycle = st.lifecycle) (hNo : S.objects.noResizeDue) (ep : SeLe4n.ObjId)
+    (hAg : ipcBufferReadsAgree S st) (hNo : S.objects.noResizeDue) (ep : SeLe4n.ObjId)
     (stcb rt : TCB) (count : Nat)
-    (_hG : replyTransferStoresInPlace st ep stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count
-      rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot = true)
     {s : CapTransferSummary} {S' : SystemState}
     (hT : receiveTransferCaps (frameCapRequestOf st stcb count) none (capTargetOf st rt) S =
       .ok (s, S')) :
@@ -494,6 +417,5 @@ theorem receiveTransferCaps_reply_transferFrame {S st : SystemState}
   dsimp only at hK
   rw [← hK]
   exact transferFrame_capStepsApply_noUnwrap _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ S hNo
-    (fun _ _ => ⟨cnodeStoreInPlace_eq_true _ _, cnodeStoreInPlace_eq_true _ _⟩)
 
 end SeLe4n.Kernel

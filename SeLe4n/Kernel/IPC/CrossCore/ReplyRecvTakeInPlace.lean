@@ -782,8 +782,7 @@ server's register file between them. -/
 /-- **The reply-receive meeting a waiting sender, its reply leg transferring,
 is the specification's**: under the guard of `replyRecvOnCore_take_delivered`
 (its inert transfer replaced by a granting replier whose frame asks for `count`
-capabilities, `hReq`) and the transfer's stores in place
-(`replyTransferStoresInPlace`, read on the pre-state), the checked arm's result
+capabilities, `hReq`), the checked arm's result
 is `performReplyRecvTakeCapsDelivered`. -/
 theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (layout : SeLe4n.SyscallRegisterLayout)
@@ -803,9 +802,7 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
     (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
     (hF : sTcb.ipcFaultSend = false)
-    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count)
-    (hW : replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
-      count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot = true) :
+    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
     (match endpointReplyRecvOnCore epId tid rid c
         { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } true core st with
       | .ok (summary, st') =>
@@ -844,8 +841,7 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
     IpcMessage) = msg at hE1 hS1o hG1
   have hNoX := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
   have hAX := ipcBufferReadsAgree_storeReplyRendezvousReady st c tid rid hNo
-  obtain ⟨hIX, hLX⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
-  generalize hX : storeReplyRendezvousReady st c tid rid = X at hNoX hAX hIX hLX
+  generalize hX : storeReplyRendezvousReady st c tid rid = X at hNoX hAX
   have hS1 : storeReplyRendezvous st c tid rid msg = X.mapTcbInPlace c (holdMessage msg) := by
     rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, hX]
   obtain ⟨sm, Y1, hT1⟩ := receiveTransferCaps_ok (frameCapRequestOf st stcb count) none
@@ -860,7 +856,7 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
   rw [hS1] at hE1 hS1o hG1
   have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
     ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX)
-    hIX hLX ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoX) c.toObjId stcb ct count hW
+    ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoX) c.toObjId stcb ct count
     (by rw [receiveTransferCaps_mapTcbInPlace (LinkBlindWrite.withMessageSlots _ _ _) c _ _ _ X
       hNoX, hT1]; rfl)).1
   obtain ⟨hE2, sTcb2, hS2o, hK2, hG2⟩ := takeGuard_of_transferFrame hFr hE1 hS1o hG1

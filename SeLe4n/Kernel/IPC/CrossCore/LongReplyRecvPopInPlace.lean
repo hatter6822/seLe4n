@@ -302,9 +302,7 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
     (hRec : replyRecordsInPlace st (rid.val + 1) = true)
-    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count)
-    (hW : replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
-      count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot = true) :
+    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
     (match endpointReplyRecvOnCore epId tid rid c
         { registers := longReplyRecvRegs rf st tid len, badge := badge } true core st with
       | .ok (summary, st') =>
@@ -331,7 +329,6 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
     hNe hE hR hA hEnq hStash hRec
   have hNoX := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
   have hAX := ipcBufferReadsAgree_storeReplyRendezvousReady st c tid rid hNo
-  obtain ⟨hIX, hLX⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
   have hP1 : popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid scId
       (determineTargetCore st c) =
       (popDonationSettledInPlace (storeReplyRendezvousReady st c tid rid) c tid scId
@@ -347,8 +344,6 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
   generalize hX : popDonationSettledInPlace (storeReplyRendezvousReady st c tid rid) c tid scId
     (determineTargetCore st c) = X at hP1 hNoP
   have hAX' : ipcBufferReadsAgree X st := hX ▸ hAP
-  have hIX' : X.objectIndexSet = st.objectIndexSet := hX ▸ hFrP.1.trans hIX
-  have hLX' : X.lifecycle = st.lifecycle := hX ▸ hFrP.2.1.trans hLX
   rw [hP1] at hE1 hR1 hG1
   obtain ⟨s, Y1, hT1⟩ := receiveTransferCaps_ok (frameCapRequestOf st stcb count) none
     (capTargetOf st ct) X
@@ -359,7 +354,7 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
     rfl
   have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
     ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX')
-    hIX' hLX' ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hW hHT).1
+    ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hHT).1
   obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveGuard_of_transferFrame hFr hE1 hR1 hA1 hG1
   have hXf : replyTransferCaps st tid c true
       (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
@@ -426,9 +421,7 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
     (hRec : replyRecordsInPlace st (rid.val + 1) = true)
-    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count)
-    (hW : replyTransferStoresInPlace st c.toObjId stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot
-      count ct.vspaceRoot ct.ipcBuffer ct.cspaceRoot = true) :
+    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
     (match endpointReplyRecvOnCore epId tid rid c
         { registers := longReplyRecvRegs rf st tid len, badge := badge } true core st with
       | .ok (summary, st') =>
@@ -461,7 +454,6 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
     hA hEnq hStash hRec
   have hNoX := storeReplyLegReady_noResizeDue st c rid hNo
   have hAX := ipcBufferReadsAgree_storeReplyLegReady st c rid hNo
-  obtain ⟨hIX, hLX⟩ := storeReplyLegReady_fields st c rid hNo
   have hP1 : SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
         (storeReplyLeg st c rid msg) c scId) (determineTargetCore st c) scId =
       (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
@@ -478,8 +470,6 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
   generalize hX : SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
     (storeReplyLegReady st c rid) c scId) (determineTargetCore st c) scId = X at hP1 hNoP
   have hAX' : ipcBufferReadsAgree X st := hX ▸ hAP
-  have hIX' : X.objectIndexSet = st.objectIndexSet := hX ▸ hFrP.1.trans hIX
-  have hLX' : X.lifecycle = st.lifecycle := hX ▸ hFrP.2.1.trans hLX
   rw [hP1] at hE1 hR1 hG1
   obtain ⟨s, Y1, hT1⟩ := receiveTransferCaps_ok (frameCapRequestOf st stcb count) none
     (capTargetOf st ct) X
@@ -490,7 +480,7 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
     rfl
   have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
     ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX')
-    hIX' hLX' ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hW hHT).1
+    ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hHT).1
   obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveGuard_of_transferFrame hFr hE1 hR1 hA1 hG1
   have hXf : replyTransferCaps st tid c true
       (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace

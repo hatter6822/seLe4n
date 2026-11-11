@@ -35,26 +35,6 @@ theorem storeReplyLegReady_noResizeDue (st : SystemState) (c : SeLe4n.ThreadId)
   exact updateTcb_noResizeDue _ _ _ (modifyObject_noResizeDue _ _ _
     (enqueueRunnableOnCore_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ hNo)))
 
-/-- The reply leg's writes change only the index-free part of the state. -/
-theorem storeReplyLegReady_fields (st : SystemState) (c : SeLe4n.ThreadId)
-    (rid : SeLe4n.ReplyId) (hNo : st.objects.noResizeDue) :
-    (storeReplyLegReady st c rid).objectIndexSet = st.objectIndexSet ∧
-      (storeReplyLegReady st c rid).lifecycle = st.lifecycle := by
-  unfold storeReplyLegReady
-  dsimp only
-  have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
-  have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
-    c hNo1
-  have hNo3 := modifyObject_noResizeDue _ rid.toObjId replyConsumedObject hNo2
-  have hD := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer (st.updateTcb c receiverReady)
-    (determineTargetCore (st.updateTcb c receiverReady) c) c
-  rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo3,
-    SystemState.modifyObject_eq_mapValueAt _ _ _ hNo2]
-  unfold SystemState.mapTcbInPlace
-  dsimp only
-  rw [hD, SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo]
-  exact ⟨rfl, rfl⟩
-
 /-- **Off the answered caller and its reply object, the reply leg's writes
 touch only links.** -/
 theorem storeReplyLegReady_agree (st : SystemState) (c : SeLe4n.ThreadId)

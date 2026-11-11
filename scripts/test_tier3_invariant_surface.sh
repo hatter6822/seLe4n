@@ -4592,9 +4592,10 @@ run_check "INVARIANT" rg -n '^theorem replyRecvLongCapsR_eq($|[ ({:\[\]])' SeLe4
 run_check "INVARIANT" rg -n '^theorem replyRecvLongPopR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvLongDonatedAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvDonatedDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvUnheldDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    else if replyRecvLongDonatedCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvDonatedCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvUnheldCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    if replyRecvLongCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}                \.ok \(\(\), performReplyRecvBlockCapsDeliveredLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvLongDonatedCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}              \.ok \(\(\), performReplyRecvDonatedCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}              \.ok \(\(\), performReplyRecvUnheldCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvLongCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}              \.ok \(\(\), performReplyRecvBlockCapsDeliveredLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_negative_check "INVARIANT" rg -n '\b(replyTransferStoresInPlace|cnodeStoreInPlace)\b' SeLe4n tests Main.lean
 # A fault answered by a long reply or reply-receive runs in place on every shape
 # the short answer does, its restart words past the fourth read from the
 # replier's IPC buffer in the state the answer runs on, and the take writes the
