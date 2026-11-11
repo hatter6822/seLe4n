@@ -34,15 +34,15 @@ def waitersOf (st : SystemState) (tid : ThreadId) : List ThreadId :=
 If `tid` has `ipcState = .blockedOnReply _ (some server)`, prepend `server`
 and recurse. Terminates when fuel exhausted or thread not in blockedOnReply.
 
-**Fuel semantics**: The `fuel` parameter defaults to `st.objectIndex.length`
+**Fuel semantics**: The `fuel` parameter defaults to `st.objects.size`
 (the number of objects in the store). This is sufficient because:
 - Each step of the chain visits a distinct thread (the `server` field).
 - The `blockingAcyclic` invariant guarantees no cycles in the blocking graph,
   so the chain length is bounded by the number of threads, which is bounded
-  by `objectIndex.length`. AF1-B integrates `blockingAcyclic` into
+  by `objects.size`. AF1-B integrates `blockingAcyclic` into
   `crossSubsystemInvariant` (CrossSubsystem.lean) as the 10th predicate.
   AI6-E (L-15): No separate depth constant (e.g., `maxBlockingDepth`) is
-  defined — the `objectIndex.length` fuel default is the sole bound.
+  defined — the `objects.size` fuel default is the sole bound.
 
 **Truncation behavior**: If fuel reaches 0, returns `[]` (silent truncation).
 Under the `blockingAcyclic` invariant this never happens — fuel is always
@@ -62,7 +62,7 @@ timeout. This is conservative (not unsound): stale boosts cause over-promotion,
 not under-promotion, so no priority inversion results. Formal cycle detection
 and removal is a post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`,
 row 28. -/
-def blockingChain (st : SystemState) (tid : ThreadId) (fuel : Nat := st.objectIndex.length)
+def blockingChain (st : SystemState) (tid : ThreadId) (fuel : Nat := st.objects.size)
     : List ThreadId :=
   match fuel with
   | 0 => []
@@ -82,15 +82,28 @@ def blockingChain (st : SystemState) (tid : ThreadId) (fuel : Nat := st.objectIn
 def chainContains (chain : List ThreadId) (tid : ThreadId) : Bool :=
   chain.any (· == tid)
 
-/-- D4-C5: All blocking graph edges (waiter, server) pairs. -/
-def blockingGraphEdges (st : SystemState) : List (ThreadId × ThreadId) :=
-  st.objectIndex.filterMap fun objId =>
-    match st.getObject? objId with
-    | some (KernelObject.tcb tcb) =>
-      match tcb.ipcState with
-      | .blockedOnReply _ (some server) => some (tcb.tid, server)
-      | _ => none
+/-- D4-C5: the blocking edge a stored object contributes: a thread blocked on a
+reply to `server` contributes `(thread, server)`. -/
+def blockingEdgeOf : KernelObject → Option (ThreadId × ThreadId)
+  | KernelObject.tcb tcb =>
+    match tcb.ipcState with
+    | .blockedOnReply _ (some server) => some (tcb.tid, server)
     | _ => none
+  | _ => none
+
+/-- D4-C5: All blocking graph edges (waiter, server) pairs.  WS-UC UC2: a walk
+of the object table (the object index it walked is a ghost); its order is the
+table's, and what it lists does not depend on that order
+(`mem_blockingGraphEdges`). -/
+def blockingGraphEdges (st : SystemState) : List (ThreadId × ThreadId) :=
+  st.objects.fold [] fun acc _ o => (blockingEdgeOf o).elim acc (· :: acc)
+
+/-- WS-UC UC2: an edge is listed exactly when a stored object contributes it. -/
+theorem mem_blockingGraphEdges (st : SystemState) (hInv : st.objects.invExt)
+    (e : ThreadId × ThreadId) :
+    e ∈ blockingGraphEdges st ↔
+      ∃ (oid : ObjId) (o : KernelObject), st.objects[oid]? = some o ∧ blockingEdgeOf o = some e :=
+  mem_fold_elim_cons_iff st.objects hInv (fun _ o => blockingEdgeOf o) e
 
 -- ============================================================================
 -- D4-D: Blocking graph acyclicity proofs
@@ -100,7 +113,7 @@ def blockingGraphEdges (st : SystemState) : List (ThreadId × ThreadId) :=
 well-formed system state. No thread can transitively block on itself via
 Reply chains. This predicate is part of `crossSubsystemInvariant` (10th
 conjunct, AF1-B). Fuel-bounded PIP propagation
-(`propagatePriorityInheritance` uses `objectIndex.length` as fuel)
+(`propagatePriorityInheritance` uses `objects.size` as fuel)
 prevents non-termination, and chain-walk correctness depends on this
 invariant being maintained by all ipcState-modifying operations.
 
@@ -111,7 +124,7 @@ the IPC-scope `SeLe4n.Kernel.tcbQueueChainAcyclic`
 * `blockingAcyclic` (this file) — acyclicity of the priority-inheritance
   **blocking graph** built by `blockingServer`: edge `tid → server`
   exists iff `tid` is blocked on a reply to `server`. Fuel bound:
-  `objectIndex.length`. Consumed by PIP bounded-inversion and WCRT
+  `objects.size`. Consumed by PIP bounded-inversion and WCRT
   proofs.
 
 * `tcbQueueChainAcyclic` (IPC scope) — acyclicity of the IPC **TCB
@@ -255,18 +268,17 @@ theorem blockingChain_congr (st st' : SystemState) (tid : ThreadId) (fuel : Nat)
     | none => rfl
 
 /-- AF1-B5: Frame lemma — if an operation preserves `blockingServer` for all
-    threads and preserves `objectIndex`, then `blockingAcyclic` is preserved.
+    threads and preserves the object count `objects.size`, then `blockingAcyclic` is preserved.
     This covers all 33 non-retype operations that do not modify any TCB's
     `ipcState` field. -/
 theorem blockingAcyclic_frame
     (st st' : SystemState)
     (hPre : blockingAcyclic st)
     (hServer : ∀ tid, blockingServer st' tid = blockingServer st tid)
-    (hObjIdx : st'.objectIndex = st.objectIndex) :
+    (hSize : st'.objects.size = st.objects.size) :
     blockingAcyclic st' := by
   intro tid hMem
-  rw [show st'.objectIndex.length = st.objectIndex.length from congrArg List.length hObjIdx,
-      blockingChain_congr st st' tid st.objectIndex.length hServer] at hMem
+  rw [hSize, blockingChain_congr st st' tid st.objects.size hServer] at hMem
   exact hPre tid hMem
 
 -- ============================================================================
@@ -274,7 +286,7 @@ theorem blockingAcyclic_frame
 -- ============================================================================
 
 /-- D4-E: The blocking chain length is bounded by the fuel parameter.
-Since default fuel = objectIndex.length, chain length ≤ total objects. -/
+Since default fuel = objects.size, chain length ≤ total objects. -/
 theorem blockingChain_length_le_fuel (st : SystemState) (tid : ThreadId)
     (fuel : Nat) :
     (blockingChain st tid fuel).length ≤ fuel := by
@@ -299,10 +311,10 @@ theorem blockingChain_length_le_fuel (st : SystemState) (tid : ThreadId)
       | .blockedOnNotification _ => simp_all
       | .blockedOnCall _ => simp_all
 
-/-- D4-E: blockingChain with default fuel is bounded by objectIndex length. -/
+/-- D4-E: blockingChain with default fuel is bounded by object count. -/
 theorem blockingChain_bounded (st : SystemState) (tid : ThreadId) :
-    (blockingChain st tid st.objectIndex.length).length ≤ st.objectIndex.length :=
-  blockingChain_length_le_fuel st tid st.objectIndex.length
+    (blockingChain st tid st.objects.size).length ≤ st.objects.size :=
+  blockingChain_length_le_fuel st tid st.objects.size
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase P1: Subgraph acyclicity foundational lemma
@@ -364,11 +376,11 @@ theorem blockingAcyclic_of_subgraph
     (hServer : ∀ tid,
       blockingServer st' tid = none ∨
       blockingServer st' tid = blockingServer st tid)
-    (hObjLen : st'.objectIndex.length = st.objectIndex.length) :
+    (hSize : st'.objects.size = st.objects.size) :
     blockingAcyclic st' := by
   intro tid hMem
   -- Rewrite the fuel parameter to match the pre-state chain
-  rw [show st'.objectIndex.length = st.objectIndex.length from hObjLen] at hMem
+  rw [hSize] at hMem
   exact hPre tid (blockingChain_subgraph_prefix st st' tid _ hServer tid hMem)
 
 end SeLe4n.Kernel.PriorityInheritance

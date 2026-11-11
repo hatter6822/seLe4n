@@ -2268,16 +2268,13 @@ theorem withScheduler {a b : SystemState} (h : releaseOnlyWrite b a) {sch : Sche
 theorem machine {a b : SystemState} (h : releaseOnlyWrite b a) : b.machine = a.machine := by
   rw [h.1]
 
-/-- A store's no-retype check reads the same across a release-queue edit: the
-index and lifecycle are kept, and an object's kind is kept with its fields. -/
+/-- A store's no-retype check reads the same across a release-queue edit: it
+reads only the object table, and an object's kind is kept with its fields. -/
 theorem storeLeavesIndexAndTypes_eq {st' st : SystemState} (h : releaseOnlyWrite st' st)
     (hA : objectsAgreeOffReleaseLinks st' st) (id : SeLe4n.ObjId) (ty : KernelObjectType) :
     storeLeavesIndexAndTypes st' id ty = storeLeavesIndexAndTypes st id ty := by
-  have hI : st'.objectIndexSet = st.objectIndexSet := by rw [h.1]
-  have hL : st'.lifecycle = st.lifecycle := by rw [h.1]
   have hx := hA id
-  unfold storeLeavesIndexAndTypes
-  rw [hI, hL]
+  unfold storeLeavesIndexAndTypes storeKeepsKind
   cases e : st.objects[id]? with
   | none =>
     cases e' : st'.objects[id]? with
@@ -2289,7 +2286,7 @@ theorem storeLeavesIndexAndTypes_eq {st' st : SystemState} (h : releaseOnlyWrite
     | some o' =>
       rw [e, e'] at hx
       simp only [Option.map_some, Option.some.injEq] at hx
-      cases o <;> cases o' <;> simp_all [KernelObject.withoutRelease]
+      cases o <;> cases o' <;> (first | rfl | simp_all [KernelObject.withoutRelease])
 
 
 end releaseOnlyWrite

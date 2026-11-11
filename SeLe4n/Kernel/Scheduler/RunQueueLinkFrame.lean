@@ -242,6 +242,16 @@ theorem congr {a a' b b' : SystemState} (ha : a'.objects = a.objects)
 variable {st st' : SystemState} (h : objectsAgreeOffRunLinks st' st)
 include h
 
+/-- WS-UC UC2: the two stores hold the same identifiers, so they count the same
+objects — what keeps the PIP-chain fuel `objects.size` fixed. -/
+theorem objects_size_eq (hInv' : st'.objects.invExt) (hInv : st.objects.invExt) :
+    st'.objects.size = st.objects.size :=
+  SeLe4n.Model.size_eq_of_present_iff _ _ hInv' hInv fun x => by
+    have hx := congrArg Option.isSome (h x)
+    simp only [Option.isSome_map] at hx
+    change st'.objects[x]? ≠ none ↔ st.objects[x]? ≠ none
+    rw [← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hx]
+
 /-- A non-TCB object is the same object in both stores. -/
 theorem get_of_not_tcb {x : SeLe4n.ObjId} {o : KernelObject}
     (hNot : ∀ t, o ≠ .tcb t) (hx : st.objects[x]? = some o) : st'.objects[x]? = some o := by
