@@ -741,6 +741,20 @@ for driver in drivers:
             "service-register-cap-fault", "receive-service-register-cap-fault",
             "reply-service-register-cap-fault", "long-send-cap-fault",
             "receive-long-send-cap-fault", "reply-long-send-cap-fault",
+            # The receive phase's capability faults (seL4's `handleRecv`): a
+            # capability of the wrong type, or without the right to receive,
+            # faults as a failed lookup does.
+            "overflowed-receive-cap-fault", "receive-overflowed-receive-cap-fault",
+            "reply-overflowed-receive-cap-fault",
+            "receive-wrong-type-cap-fault", "receive-receive-wrong-type-cap-fault",
+            "reply-receive-wrong-type-cap-fault",
+            "wait-wrong-type-cap-fault", "receive-wait-wrong-type-cap-fault",
+            "reply-wait-wrong-type-cap-fault",
+            "reply-recv-wrong-type-cap-fault", "receive-reply-recv-wrong-type-cap-fault",
+            "reply-reply-recv-wrong-type-cap-fault",
+            "receive-no-right-mint", "receive-no-right-cap-fault",
+            "receive-receive-no-right-cap-fault", "reply-receive-no-right-cap-fault",
+            "receive-no-right-delete",
             # The unbound line's handler issued and acknowledged, the
             # notification bound again after the revoke.
             "irq-control-get-unbound", "irq-unbound-ack", "irq-handler-set-notification-again",
@@ -753,7 +767,7 @@ for driver in drivers:
             "vacated-core-reschedule", "fp-deferred-home-back", "fp-deferred-root-receives",
             "fp-access-deferred", "fp-released-reschedule", "fp-access-released",
             # Every syscall the router takes past its inline words, refused.
-            "overflowed-receive", "overflowed-cspace-mint", "overflowed-cspace-copy",
+            "overflowed-cspace-mint", "overflowed-cspace-copy",
             "overflowed-cspace-move", "overflowed-cspace-delete", "overflowed-cspace-revoke",
             "overflowed-vspace-map", "overflowed-vspace-unmap",
             "overflowed-vspace-unify-instruction", "overflowed-service-revoke",
@@ -768,7 +782,7 @@ for driver in drivers:
             "overflowed-irq-handler-clear", "overflowed-page-table-map",
             "overflowed-page-table-unmap", "overflowed-audit-read", "overflowed-audit-drain",
             "overflowed-service-register", "overflowed-untyped-reset", "overflowed-declassify",
-            "overflowed-declassify-signal", "overflowed-untyped-retype",
+            "long-declassify-signal", "overflowed-untyped-retype",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

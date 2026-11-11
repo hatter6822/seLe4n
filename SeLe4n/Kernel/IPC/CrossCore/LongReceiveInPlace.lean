@@ -63,7 +63,7 @@ theorem decodeSyscallArgsFromState_of_routedSendLong_ok (st : SystemState)
     (fun j _ h2 => hRead j (by omega))
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
+  simp only [syscallReadsOverflow, ↓reduceIte, Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
     bind, Except.bind, pure, Except.pure, longSendDecode]
   rfl
 
@@ -82,7 +82,7 @@ theorem decodeSyscallArgsFromState_of_routedSendLong_error (st : SystemState)
   rw [hSz] at hGt
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range',
+  simp only [syscallReadsOverflow, ↓reduceIte, Array.size_map, hSz, List.range_eq_range',
     mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
     bind, Except.bind]
 
@@ -164,7 +164,7 @@ theorem decodeSyscallArgsFromState_of_routedCallLong_ok (st : SystemState)
     (fun j _ h2 => hRead j (by omega))
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
+  simp only [syscallReadsOverflow, ↓reduceIte, Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
     bind, Except.bind, pure, Except.pure, longCallDecode]
   rfl
 
@@ -183,7 +183,7 @@ theorem decodeSyscallArgsFromState_of_routedCallLong_error (st : SystemState)
   rw [hSz] at hGt
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range',
+  simp only [syscallReadsOverflow, ↓reduceIte, Array.size_map, hSz, List.range_eq_range',
     mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
     bind, Except.bind]
 

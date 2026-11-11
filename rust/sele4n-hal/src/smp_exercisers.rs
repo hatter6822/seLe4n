@@ -3637,8 +3637,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             5,
             FLOW_DENIED,
         ),
+        // A declassified signal reads no word past its inline registers
+        // (seL4's `seL4_Signal` reads no message), so a long one takes the
+        // audited route and reads no IPC-buffer word; refused on its type.
         overflowed(
-            "overflowed-declassify-signal",
+            "long-declassify-signal",
             DECLASSIFY_SIGNAL,
             ENDPOINT_CAP,
             5,

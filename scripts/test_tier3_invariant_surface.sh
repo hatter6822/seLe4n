@@ -23584,6 +23584,19 @@ run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterfac
 run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^      if routedOverflowOne sid then \.overflowOne sid capAddr$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+# A signal or a declassified signal reads no word past the inline registers
+# (seL4's `seL4_Signal` reads no message): one owner, `syscallReadsOverflow`,
+# decides it for the decode's merge, the router's long tail and the overflowed
+# route, and the merge is skipped on its answer, not on a syscall name.
+run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.notificationSignal \| \.declassifySignal => false$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_negative_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n(  \|[^\n]*\n)*  \| _ ' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    let overflowNats ← \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    let overflowNats ← \(List\.range overflowNeeded\)\.mapM readOverflow$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  if syscallReadsOverflow base\.syscallId then do\n    let inlineSize := base\.msgRegs\.size$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def routedNoOverflowOf \(sid : SyscallId\) \(capAddr : CPtr\) : RegisterRoutedSyscall :=\n  if syscallReadsOverflow sid then \.viaDecode\n  else if routedAudited sid then \.audited sid capAddr\n  else \.signal capAddr$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  \| sid => syscallReadsOverflow sid &&\n      \(routedInvocation sid \|\| routedAudited sid \|\| routedOverflowOne sid\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeSyscallArgsFromState_of_no_overflow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem syscallReadsOverflow_eq_false_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem registerService_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean

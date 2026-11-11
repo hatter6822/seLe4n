@@ -30,6 +30,7 @@ open SeLe4n
 open SeLe4n.Model
 open SeLe4n.Kernel.Architecture.SyscallArgDecode (truncationMinimum)
 
+
 /-- What a routed read pins about the decode: it succeeds, as `sid`, at
     `capAddr`, with no overflow words; the decoded registers are the mapped
     layout registers. -/
@@ -56,6 +57,37 @@ private theorem decodeSyscallArgsFromState_of_routed
   have hW : CPtr.ofWord (readRegWord regs layout.capPtrReg) = capAddr :=
     Except.ok.inj ((decodeCapPtr_readReg regs layout.capPtrReg).symm.trans hC)
   simp only [hW, hM, hId, hLen, ↓reduceIte]
+
+/-- What a routed read of a syscall that reads no overflow word pins about the
+decode, whatever the message length: as `decodeSyscallArgsFromState_of_routed`,
+no IPC-buffer word read (`syscallReadsOverflow`). -/
+private theorem decodeSyscallArgsFromState_of_routedNoOverflow
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (capAddr : CPtr) (msgInfo : MessageInfo) (sid : SyscallId)
+    (hB : layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
+      layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true)
+    (hC : decodeCapPtr (readReg regs layout.capPtrReg) = .ok capAddr)
+    (hM : decodeMsgInfo (readReg regs layout.msgInfoReg) = .ok msgInfo)
+    (hNo : syscallReadsOverflow sid = false)
+    (hS : (readReg regs layout.syscallNumReg).val = sid.toNat) :
+    decodeSyscallArgsFromState st tid layout regs regCount =
+      .ok { capAddr, msgInfo, syscallId := sid,
+            msgRegs := layout.msgRegs.map (readReg regs),
+            inlineCount := layout.msgRegs.size, overflowCount := 0 } := by
+  by_cases hLen : msgInfo.length ≤ layout.msgRegs.size
+  · exact decodeSyscallArgsFromState_of_routed st tid layout regs regCount capAddr msgInfo sid
+      hB hC hM hLen hS
+  rw [decodeSyscallArgsFromState_eq_impl]
+  unfold decodeSyscallArgsFromStateImpl
+  simp only [decodeMsgInfoWord_readReg]
+  rw [if_pos hB]
+  have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok sid := by
+    simp only [decodeSyscallId, hS, SyscallId.ofNat_toNat]
+  have hW : CPtr.ofWord (readRegWord regs layout.capPtrReg) = capAddr :=
+    Except.ok.inj ((decodeCapPtr_readReg regs layout.capPtrReg).symm.trans hC)
+  simp only [hW, hM, hId, hLen, ↓reduceIte, mergeOverflowWords, hNo, Bool.false_eq_true,
+    Array.size_map, pure, Except.pure]
 
 theorem decodeSyscallArgsFromState_of_routedSignal
     (st : SystemState) (tid : ThreadId)
@@ -85,6 +117,17 @@ theorem decodeSyscallArgsFromState_of_routedSignal
     · rw [if_neg hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
+      -- a long signal: the syscall that reads no overflow word and is not audited
+      all_goals
+        cases h
+        rename_i sid hOf hRd hAu
+        have hSig : sid = .notificationSignal := by
+          rcases (syscallReadsOverflow_eq_false_iff sid).mp (by simpa using hRd) with h' | h'
+          · exact h'
+          · subst h'; simp [routedAudited] at hAu
+        subst hSig
+        exact ⟨_, decodeSyscallArgsFromState_of_routedNoOverflow st tid layout regs regCount _ mi
+          .notificationSignal hB hC hM rfl (SyscallId.toNat_ofNat hOf).symm, rfl, rfl, rfl⟩
   · cases h
 
 theorem decodeSyscallArgsFromState_of_routedWait
@@ -393,6 +436,13 @@ theorem decodeSyscallArgsFromState_of_routedAudited
     · rw [if_neg hLen] at h
       repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
+      -- a long declassified signal: the audited call that reads no overflow word
+      all_goals
+        cases h
+        rename_i _ hOf hRd hAu
+        exact ⟨_, decodeSyscallArgsFromState_of_routedNoOverflow st tid layout regs regCount _ mi
+          _ hB hC hM (by simpa using hRd) (SyscallId.toNat_ofNat hOf).symm, rfl, hAu, rfl, rfl,
+          rfl, by first | exact hM | rfl⟩
   · cases h
 
 /-- WS-ZA ZA5.2, ZA5.5: what a routed one-overflow-word invocation pins about
@@ -448,6 +498,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
           have hId : decodeSyscallId (readReg regs layout.syscallNumReg) = .ok sid := by
             simp only [decodeSyscallId, hN, SyscallId.ofNat_toNat]
           simp only [hM, hId, hLen1, Nat.not_succ_le_self, ↓reduceIte, mergeOverflowWords,
+            syscallReadsOverflow_of_routedOverflowOne hR,
             Array.size_map, Nat.add_sub_cancel_left, List.range_one, List.mapM_cons,
             List.mapM_nil, bind, Except.bind, pure, Except.pure]
           cases readOverflowWord st tid 0 <;> rfl
@@ -809,10 +860,10 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
           · cases h
           · split at h
             · next sid' hSid => exact key sid' hSid h
-            · (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h')
+            · (repeat' (first | (cases h; done) | split at h))
         · split at h
           · next sid' hSid => exact key sid' hSid h
-          · (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h')
+          · (repeat' (first | (cases h; done) | split at h))
   · cases h
 
 /-- What a five-word invocation routed short of its fifth word pins about the
@@ -883,9 +934,11 @@ theorem decodeSyscallArgsFromState_of_routedRefused
       all_goals
         obtain ⟨hE, hN⟩ : e = .invalidSyscallNumber ∧
             SyscallId.ofNat? (readReg regs layout.syscallNumReg).val = none := by
-          rcases unroutedSyscall_eq h with h' | ⟨h', hN⟩
-          · cases h'
-          · cases h'; exact ⟨rfl, hN⟩
+          first
+          | (rcases unroutedSyscall_eq h with h' | ⟨h', hN⟩
+             · cases h'
+             · cases h'; exact ⟨rfl, hN⟩)
+          | (cases h; exact ⟨rfl, ‹SyscallId.ofNat? _ = none›⟩)
         subst hE
         rw [decodeSyscallArgsFromState_eq_impl]
         unfold decodeSyscallArgsFromStateImpl

@@ -163,14 +163,12 @@ dispatch told them apart, so the entry never resolves the operand again
     overflowedLongArmWith executingCore tid sid length (SeLe4n.CPtr.ofWord capWord) (fun w rf =>
       serviceRegisterOperandArmR ctx tid rf w) st
 
-/-- The overflowed arm of a signal, a wait, a receive or a yield. -/
+/-- The overflowed arm of a wait, a receive or a yield.  A long signal is a
+signal (`routedNoOverflowOf`): it reads no overflow word. -/
 @[noinline] def overflowedNotificationRoutedArm (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (sid : SyscallId)
     (capWord : UInt64) (length : Nat) (st : SystemState) : SystemState :=
   match sid with
-  | .notificationSignal =>
-    overflowedLongArmWith executingCore tid sid length (SeLe4n.CPtr.ofWord capWord) (fun _ _ =>
-      signalOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationSignal)) st
   | .notificationWait =>
     overflowedLongArmWith executingCore tid sid length (SeLe4n.CPtr.ofWord capWord) (fun _ _ =>
       waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait)) st
@@ -229,7 +227,7 @@ theorem overflowedRoutedArm_eq (ctx : LabelingContext) (executingCore : Concurre
   simp only [hI, hA, hO, ↓reduceIte, Bool.false_eq_true, overflowedNotificationRoutedArm,
     overflowedArmOf]
   rcases routedOverflowed_cases hOv (by simpa using hI) (by simpa using hA) with
-    rfl | rfl | rfl | rfl | rfl | rfl
+    rfl | rfl | rfl | rfl | rfl
   all_goals first
     | rfl
     | (exfalso; revert hO; decide)

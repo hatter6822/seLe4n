@@ -84,12 +84,19 @@ theorem decodeSyscallArgsFromState_of_routedReplyLong_ok (st : SystemState)
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (longMessageDecode sid st tid rf capAddr mi) := by
   obtain ⟨_, _, hDec⟩ := decodeSyscallArgsFromState_of_routedReplyLongAny st tid rf capAddr mi sid hR
+  have hRd : syscallReadsOverflow sid = true := by
+    rcases hR with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨hR, -⟩
+    · rfl
+    · rfl
+    · rcases (decodeSyscallArgsFromState_of_routedTransferring st tid _ rf 32 sid capAddr mi
+        hR).1 with rfl | rfl <;> rfl
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   have hM := mapM_readOverflowWord st tid (mi.length - 4) 0
     (fun j _ h2 => hRead j (by omega))
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
+  simp only [hRd, ↓reduceIte,
+    Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
     bind, Except.bind, pure, Except.pure, longMessageDecode]
   rfl
 
@@ -109,11 +116,18 @@ theorem decodeSyscallArgsFromState_of_routedReplyLong_error (st : SystemState)
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
       .error .invalidMessageInfo := by
   obtain ⟨hGt, _, hDec⟩ := decodeSyscallArgsFromState_of_routedReplyLongAny st tid rf capAddr mi sid hR
+  have hRd : syscallReadsOverflow sid = true := by
+    rcases hR with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨hR, -⟩
+    · rfl
+    · rfl
+    · rcases (decodeSyscallArgsFromState_of_routedTransferring st tid _ rf 32 sid capAddr mi
+        hR).1 with rfl | rfl <;> rfl
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   rw [hSz] at hGt
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range',
+  simp only [hRd, ↓reduceIte,
+    Array.size_map, hSz, List.range_eq_range',
     mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
     bind, Except.bind]
 

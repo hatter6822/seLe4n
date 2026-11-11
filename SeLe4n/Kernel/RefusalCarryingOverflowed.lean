@@ -62,7 +62,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_ok (st : SystemState)
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (overflowedDecode st tid rf sid capAddr mi) := by
-  obtain ⟨mi', hMI', -, _, _, _, hDec⟩ :=
+  obtain ⟨mi', hMI', -, _, _, hOv, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedOverflowed st tid _ rf 32 sid capAddr mi.length hR
   obtain rfl : mi = mi' := Except.ok.inj (hMI.symm.trans hMI')
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
@@ -70,7 +70,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_ok (st : SystemState)
     (fun j _ h2 => hRead j (by omega))
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
+  simp only [syscallReadsOverflow_of_routedOverflowed hOv, ↓reduceIte, Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
     bind, Except.bind, pure, Except.pure, overflowedDecode]
   rfl
 
@@ -85,14 +85,14 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_error (st : SystemState)
     (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
       .error .invalidMessageInfo := by
-  obtain ⟨mi', hMI', -, hGt, _, _, hDec⟩ :=
+  obtain ⟨mi', hMI', -, hGt, _, hOv, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedOverflowed st tid _ rf 32 sid capAddr mi.length hR
   obtain rfl : mi = mi' := Except.ok.inj (hMI.symm.trans hMI')
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   rw [hSz] at hGt
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [Array.size_map, hSz, List.range_eq_range',
+  simp only [syscallReadsOverflow_of_routedOverflowed hOv, ↓reduceIte, Array.size_map, hSz, List.range_eq_range',
     mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
     bind, Except.bind]
 
@@ -109,8 +109,6 @@ noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : Sysc
   else if routedAudited sid then dispatchAuditedCheckedR ctx sid capAddr rf tid executingCore
   else
   match sid with
-  | .notificationSignal =>
-    dispatchSignalCheckedR ctx capAddr tid executingCore
   | .notificationWait => dispatchWaitCheckedR ctx capAddr tid executingCore
   | .receive =>
     dispatchReceiveCheckedR ctx capAddr len (SeLe4n.CPtr.ofWord (readRegWord rf ⟨2⟩)) tid
@@ -127,9 +125,9 @@ noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : Sysc
 audited calls. -/
 theorem routedOverflowed_cases {sid : SyscallId} (h : routedOverflowed sid = true)
     (hI : routedInvocation sid = false) (hA : routedAudited sid = false) :
-    sid = .notificationSignal ∨ sid = .notificationWait ∨ sid = .receive ∨
+    sid = .notificationWait ∨ sid = .receive ∨
       sid = .schedContextConfigure ∨ sid = .serviceRegister ∨ sid = .yield := by
-  cases sid <;> simp_all [routedOverflowed, routedOverflowOne]
+  cases sid <;> simp_all [routedOverflowed, routedOverflowOne, syscallReadsOverflow]
 
 /-- **The overflowed route's operand arm**: the arm `dispatchOverflowedCheckedR`
 runs behind the operand check, for every kind of call the route admits but the
@@ -144,8 +142,6 @@ noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
   else if routedAudited sid then auditedOperandArmR ctx sid rf capAddr tid executingCore
   else
   match sid with
-  | .notificationSignal =>
-    signalOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationSignal)
   | .notificationWait =>
     waitOperandArmThenTaintR ctx tid executingCore (syscallRequiredRight .notificationWait)
   | .receive =>
@@ -170,7 +166,7 @@ theorem dispatchOverflowedCheckedR_eq_operand (ctx : LabelingContext) (sid : Sys
   · simp only [hI, hA, ↓reduceIte, Bool.false_eq_true]; rfl
   simp only [hI, hA, ↓reduceIte, Bool.false_eq_true]
   rcases routedOverflowed_cases h (by simpa using hI) (by simpa using hA) with
-    rfl | rfl | rfl | rfl | rfl | rfl
+    rfl | rfl | rfl | rfl | rfl
   all_goals first | rfl | exact absurd rfl hY
 
 /-- The overflowed arm refuses a missing operand as the operand check does. -/
@@ -256,12 +252,7 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     rw [Array.getElem?_append_left (by simp [SeLe4n.arm64DefaultLayout])]
     simp [SeLe4n.arm64DefaultLayout]
   rcases routedOverflowed_cases hRt (Bool.eq_false_iff.mpr hI) (Bool.eq_false_iff.mpr hAu) with
-    rfl | rfl | rfl | rfl | rfl | rfl
-  · -- the signal
-    unfold dispatchOverflowedCheckedR
-    rw [if_neg hI, if_neg hAu]
-    exact dispatchSignalCheckedR_eq ctx (overflowedDecode S tid rf .notificationSignal capAddr mi)
-      tid executingCore rfl
+    rfl | rfl | rfl | rfl | rfl
   · -- the wait
     unfold dispatchOverflowedCheckedR
     rw [if_neg hI, if_neg hAu]

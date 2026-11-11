@@ -702,6 +702,29 @@ private def ak4a04_lengthZeroIgnoresIpcBuffer : IO Unit := do
     expect "inlineCount=4" (decoded.inlineCount == 4)
   | .error _ => expect "decode failed" false
 
+/-- A signal or a declassified signal reads no word past the inline registers
+(`syscallReadsOverflow`), as seL4's `seL4_Signal` reads no message: one whose
+message-info word names ten words decodes with no IPC buffer mapped, merges no
+overflow word, and the router names a long signal a signal. -/
+private def signalLongReadsNoIpcBuffer : IO Unit := do
+  for sid in [SyscallId.notificationSignal, SyscallId.declassifySignal] do
+    let st := buildIpcDecodeState sid.toNat 10 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩] (mapIpcBuffer := false)
+    let tid : SeLe4n.ThreadId := ⟨800⟩
+    let regs : SeLe4n.RegisterFile :=
+      match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) => tcb.registerContext
+      | _ => default
+    match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout regs 32 with
+    | .ok decoded =>
+      expect s!"{sid}: a long message reads no overflow word" (decoded.overflowCount == 0)
+      expect s!"{sid}: the inline registers alone" (decoded.msgRegs.size == 4)
+    | .error _ => expect s!"{sid}: a long message decodes with no IPC buffer" false
+    match registerRoutedSyscall SeLe4n.arm64DefaultLayout regs 32, sid with
+    | .signal _, .notificationSignal => expect "a long signal routes as a signal" true
+    | .audited s' _, .declassifySignal =>
+      expect "a long declassified signal routes as audited" (s' == .declassifySignal)
+    | _, _ => expect s!"{sid}: a long message takes its short route" false
+
 /-- AK4-A-T05: `ipcBufferReadMr` bounds check — idx = maxOverflowSlots returns
     `.overflowIndexOutOfRange`. -/
 private def ak4a05_ipcBufferOutOfRange : IO Unit := do
@@ -819,6 +842,7 @@ private def runAk4aTests : IO Unit := do
   ak4a02_serviceRegisterOverflow
   ak4a03_scConfigureUnmappedFails
   ak4a04_lengthZeroIgnoresIpcBuffer
+  signalLongReadsNoIpcBuffer
   ak4a05_ipcBufferOutOfRange
   ak4a06_sizeInvariant
   ak4a07_legacyBackwardCompat

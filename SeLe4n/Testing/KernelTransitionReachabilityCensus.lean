@@ -1198,6 +1198,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchCallCheckedR
   , `SeLe4n.Kernel.dispatchReplyCheckedR
   , `SeLe4n.Kernel.dispatchReplyRecvCheckedR
+  -- The signal's route specification, which the compiled entry runs as the
+  -- routed signal arm (`syscallEntryCheckedK_eq_routed`).  The overflowed
+  -- dispatch no longer names it: a long signal reads no overflow word and
+  -- routes as a signal (`routedNoOverflowOf`).
+  , `SeLe4n.Kernel.dispatchSignalCheckedR
   -- The long call's, reply's and reply-receive's and the capability-carrying
   -- send's and call's route specifications, which the compiled entry runs as
   -- the routed arms proven equal to them (`dispatchCallLongCheckedR_eq`,

@@ -284,7 +284,9 @@ theorem decodeSyscallArgsFromState_msgInfo {st : SystemState} {tid : SeLe4n.Thre
     split at h
     · cases h; exact hb
     · split at h
-      · cases h
+      · split at h
+        · cases h
+        · cases h; exact hb
       · cases h; exact hb
 
 /-- **A saved frame names no extra capability, decided on its message-info
