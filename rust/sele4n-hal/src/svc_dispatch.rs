@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! AN9-F (DEF-R-HAL-L14 / RESOLVED): Typed SVC argument marshalling.
 //!
-//! This module owns the typed-argument extraction for SVC traps.  The
-//! `handle_svc` entry in `trap.rs` reads the raw `TrapFrame`, calls
-//! [`SyscallArgs::from_trap_frame`] to produce a structured view, and
-//! then dispatches to the Lean kernel via [`dispatch_svc`].
+//! This module owns the SVC trap's syscall-id decode.  The `handle_svc`
+//! entry in `trap.rs` reads the syscall id from the raw `TrapFrame` and
+//! dispatches to the Lean kernel via [`dispatch_svc`].
 //!
 //! ## Mirror discipline
 //!
@@ -33,17 +32,20 @@
 //! ```
 //!
 //! `MessageInfo` is packed into `x1` per AK4 ABI conventions (length,
-//! extraCaps, label fields); the dispatcher reads only its length, for the
-//! argument-count prefilter.  The Lean side reads every argument register
-//! from the in-flight frame it takes whole (`Platform.FFI.ffiTrapContext`)
-//! and decodes `MessageInfo` via `SeLe4n.Model.MessageInfo.mk`.
+//! extraCaps, label fields); the dispatcher reads none of it.  The Lean side
+//! reads every argument register from the in-flight frame it takes whole
+//! (`Platform.FFI.ffiTrapContext`), decodes `MessageInfo` via
+//! `SeLe4n.Model.MessageInfo.mk`, and refuses an invocation whose message is
+//! shorter than its arguments with `KernelError::TruncatedMessage` once its
+//! capability is found, as seL4 does (`truncationMinimum`).
 
-use crate::trap::TrapFrame;
-
-/// AN9-F + WS-RA: the dispatcher's **prefilter** rejections.
+/// AN9-F + WS-RA: the dispatcher's **prefilter** rejection.
 ///
-/// Post-WS-RA this type carries only the two rejections `dispatch_svc`
-/// itself makes before reaching the Lean kernel.  The former
+/// This type carries only the one rejection `dispatch_svc` itself makes
+/// before reaching the Lean kernel: a syscall id that names no syscall.  The
+/// argument-count prefilter is retired — the Lean kernel refuses a message
+/// shorter than its invocation's arguments with `TruncatedMessage`, after
+/// the capability lookup, in seL4's order.  The former
 /// `Kernel(u32)` wrapper — which forwarded a discriminant decoded from
 /// the retired bit-63 word — is gone: a Lean rejection now arrives as an
 /// ordinary return frame whose `x1` label carries the error (the frame
@@ -54,9 +56,9 @@ use crate::trap::TrapFrame;
 /// raw `7` / `6` written into `x0` collided with
 /// `KernelError::EndpointStateMismatch` / `SchedulerInvariantViolation`
 /// on the wire — the "post-1.0 ABI cleanup" this workstream is): the
-/// trap layer now maps these to label-encoded
-/// `KernelError::InvalidSyscallNumber` / `InvalidSyscallArgument` frames
-/// ([`error_frame_regs`]), so a prefilter rejection is indistinguishable
+/// trap layer now maps the rejection to a label-encoded
+/// `KernelError::InvalidSyscallNumber` frame ([`error_frame_regs`]), so a
+/// prefilter rejection is indistinguishable
 /// in *shape* from a kernel rejection and collides with nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchError {
@@ -65,10 +67,6 @@ pub enum DispatchError {
     /// (`SyscallId::RETIRED`).  Surfaced to userspace as `KernelError::InvalidSyscallNumber`
     /// on the `x1` label.
     InvalidSyscallId,
-    /// Caller passed an argument count below the syscall's minimum
-    /// (validated against `MessageInfo.length`).  Surfaced to userspace as
-    /// `KernelError::InvalidSyscallArgument` on the `x1` label.
-    InvalidArgument,
 }
 
 impl DispatchError {
@@ -80,7 +78,6 @@ impl DispatchError {
     pub const fn kernel_error_discriminant(self) -> u32 {
         match self {
             DispatchError::InvalidSyscallId => 31,
-            DispatchError::InvalidArgument => 41,
         }
     }
 }
@@ -262,195 +259,6 @@ impl SyscallId {
     #[inline]
     pub const fn to_u32(self) -> u32 {
         self as u32
-    }
-
-    /// AN9-F.1.c: number of inline message registers consumed by this
-    /// syscall.  Used to validate `MessageInfo.length` at the
-    /// per-syscall handler stub before forwarding to Lean.
-    ///
-    /// Values are conservative ABI minimums per AK4; some syscalls
-    /// (e.g., `ServiceRegister`) accept additional registers via the
-    /// IPC buffer overflow region (see AK4-A R-ABI-C01).
-    pub const fn min_inline_args(self) -> u32 {
-        match self {
-            Self::Send | Self::Receive | Self::Reply => 0,
-            Self::Call => 0,
-            // WS-RA RA.D.1: reconciled with the Lean decoders, which are
-            // the authority — `decodeCSpaceMintArgs` reads exactly FOUR
-            // registers (srcSlot, dstSlot, rights, badge), `decodeCSpaceCopyArgs`
-            // (shared by move) exactly TWO.  The previous minimums exceeded
-            // what the wrappers send (`cspace_mint` length 4, `cspace_copy` /
-            // `cspace_move` 2), so this gate rejected every one of those calls
-            // with `InvalidArgument` before the kernel — wrappers unreachable
-            // on hardware, the same off-by-N class the `TcbSetPriority` note
-            // below records.
-            Self::CSpaceMint => 4,
-            Self::CSpaceCopy => 2,
-            Self::CSpaceMove => 2,
-            Self::CSpaceDelete => 1,
-            // WS-RR RR8.16: the revoke takes the delete's argument layout —
-            // x2 = the slot of the invoked CNode whose derivations go.
-            Self::CspaceRevoke => 1,
-            // WS-BP BP7.1: type tag, child id, destination CNode, destination
-            // slot — all four inline message registers.
-            Self::UntypedRetype => 4,
-            // WS-BP BP7.1: the reset's only operand is the invoked capability.
-            Self::UntypedReset => 0,
-            // WS-BP BP7.1: the two root capability addresses.
-            Self::TcbSetSpace => 2,
-            // WS-BP BP7.1: the address-space capability address and the address.
-            Self::PageTableMap => 2,
-            // WS-BP BP7.1: the unmap's only operand is the invoked capability.
-            Self::PageTableUnmap => 0,
-            // WS-ZA ZA4.3: yield takes no operand at all.
-            Self::Yield => 0,
-            // WS-ZA ZA6.9: the Consumed invocation's only operand is the invoked
-            // capability.
-            Self::SchedContextConsumed => 0,
-            // WS-ZA ZA6.29: the yieldTo invocation's only operand is the invoked
-            // capability.
-            Self::SchedContextYieldTo => 0,
-            // WS-ZA ZA6.32: the acknowledge's only operand is the invoked
-            // capability.
-            Self::IrqHandlerAck => 0,
-            // WS-ZA ZA6.32: `decodeIrqControlGetArgs` reads three registers
-            // (line, destination CNode, slot), `decodeIrqHandlerSetNotificationArgs`
-            // one (the notification capability); the clear reads none.
-            Self::IrqControlGet => 3,
-            Self::IrqHandlerSetNotification => 1,
-            Self::IrqHandlerClear => 0,
-            Self::VSpaceMap => 4,
-            Self::VSpaceUnmap => 2,
-            Self::ServiceRegister => 4,
-            // The revoke removes the registration the invoked endpoint
-            // records (`revokeServiceByRecordedRegistration`) and reads no message
-            // register, like the query below.
-            Self::ServiceRevoke => 0,
-            // WS-RA RA.D.1 (found by the wrapper-length conformance pin):
-            // the `.serviceQuery` arm reads NO message registers — the
-            // endpoint comes from the capability target — and the wrapper
-            // sends length 0.  The previous minimum of 1 rejected every
-            // call, the fifth unreachable-wrapper instance of this class.
-            Self::ServiceQuery => 0,
-            // seL4's `seL4_Signal` reads no message register: the badge it
-            // ORs in is the capability's (`Capability.signalBadge`), so the
-            // kernel checks no length and neither does this prefilter.
-            Self::NotificationSignal => 0,
-            Self::NotificationWait => 0,
-            Self::ReplyRecv => 0,
-            Self::SchedContextConfigure => 5,
-            // PR #866 round-3 review (the RA.D.1 unreachable-wrapper class,
-            // four MORE instances): reconciled with the Lean decoders, the
-            // authority.  `decodeSchedContextBindArgs` reads exactly ONE
-            // register (`requireMsgReg msgRegs 0` — the TCB capability's
-            // address since `v0.35.204`, a raw thread id before);
-            // `decodeSchedContextUnbindArgs`, `decodeSuspendArgs` and
-            // `decodeResumeArgs` read NONE (`pure {}` — the target comes
-            // from the capability).  The previous minimums (2 / 1 / 1 / 1)
-            // exceeded what the wrappers send (1 / 0 / 0 / 0), so this gate
-            // rejected every one of those calls with `InvalidArgument`
-            // before the kernel.  Caught by the rebuilt
-            // `wrapper_lengths_clear_prefilter_minimums` sweep, which now
-            // drives the REAL wrappers against THIS real table.
-            Self::SchedContextBind => 1,
-            Self::SchedContextUnbind => 0,
-            Self::TcbSuspend => 0,
-            Self::TcbResume => 0,
-            // Each of these reads exactly ONE inline register (`requireMsgReg
-            // decoded.msgRegs 0` in `decodeSet{Priority,MCPriority,IPCBuffer}Args`,
-            // whose docstrings state "Requires 1 message register").  The matching
-            // `sele4n-sys` wrappers send `MessageInfo::new_const(1, 0, 0)` (length 1),
-            // so a minimum of 2 rejected every valid call at `dispatch_svc`'s
-            // `len < min_inline_args` gate (`1 < 2`), making these three TCB
-            // management syscalls unreachable on hardware before reaching the
-            // verified kernel.  The ABI contract is one inline register.
-            Self::TcbSetPriority => 1,
-            Self::TcbSetMCPriority => 1,
-            Self::TcbSetIPCBuffer => 1,
-            // WS-SM SM5.H.4: x2 = the raw affinity word (1 inline register).
-            Self::TcbSetAffinity => 1,
-            // PR #887 review: x2 = the fault-handler CPtr (1 inline register,
-            // `requireMsgReg 0` in `decodeSetFaultHandlerArgs`).
-            Self::TcbSetFaultHandler => 1,
-            // WS-SM SM6.B: bind takes 1 register (notification id); unbind none.
-            Self::TcbBindNotification => 1,
-            Self::TcbUnbindNotification => 0,
-            // PR #822 Phase H: mintReplyCap reuses the cspaceCopy decode (srcSlot in
-            // x2, dstSlot in x3) — two inline registers.
-            Self::MintReplyCap => 2,
-            // WS-SM SM7.D: unify takes the same two registers as unmap
-            // (asid in x2, vaddr in x3) — it names an address space and a page.
-            Self::VSpaceUnifyInstruction => 2,
-            // WS-SM SM8.C.9: declassify takes **no** inline argument registers.
-            // The operand is the capability itself (which names the target
-            // object), and both security domains are resolved kernel-side — the
-            // source from the subject the executing core is running, the
-            // destination from the target object.  A caller that could supply
-            // either would be writing its own audit record.
-            Self::Declassify => 0,
-            // WS-SM SM9.A.10: the reader takes THREE inline registers
-            // (`decodeAuditReadArgs`: opcode, view index, chunk index) and the
-            // drain ONE (`decodeAuditDrainArgs`: the count of entries to
-            // remove).  Reconciled against the Lean decoders, which are the
-            // authority — the RA.D.1 unreachable-wrapper class this table has
-            // now produced nine instances of.
-            Self::AuditRead => 3,
-            Self::AuditDrain => 1,
-            // WS-SM SM9.C.8: the declassifying signal reads what the ordinary
-            // signal reads — no message register, its badge being the
-            // capability's.  Neither security domain is an operand,
-            // for the reason `Declassify` takes none: the source is read off
-            // the subject the executing core is running and the two
-            // destinations off the notification and its resolved receiver.
-            Self::DeclassifySignal => 0,
-        }
-    }
-}
-
-/// AN9-F.1.a: the SVC trap frame's argument registers as the dispatcher's
-/// **prefilter** reads them — the packed `MessageInfo` in `x1`, whose length
-/// [`dispatch_svc`] checks against [`SyscallId::min_inline_args`].
-///
-/// This is the HAL's view only.  The Lean kernel reads the syscall's
-/// arguments — `x0`–`x6`, `MessageInfo`, and the fault window (`ELR_EL1`,
-/// `SPSR_EL1`, `SP_EL0`, `x30`) — once, from the whole in-flight context it
-/// takes in one call (`Platform.FFI.ffiTrapContext`), so nothing here crosses
-/// the boundary but the syscall id.
-#[derive(Debug, Clone, Copy)]
-pub struct SyscallArgs {
-    /// Packed `MessageInfo` field (length | extraCaps | label).
-    pub msg_info: u64,
-}
-
-impl SyscallArgs {
-    /// AN9-F.1.a: extract the prefilter's view from a trap frame:
-    /// `msg_info` is `x1` (`arm64DefaultLayout`).  `x7`, the `syscall_id`,
-    /// is read separately by the dispatcher; it is NOT part of
-    /// [`SyscallArgs`].
-    pub fn from_trap_frame(frame: &TrapFrame) -> Self {
-        Self {
-            msg_info: frame.x1(),
-        }
-    }
-
-    /// AN9-F.1.c (layout corrected by WS-RA RA.C.3): extract the `length`
-    /// field from `msg_info`.  The MessageInfo layout — one layout, three
-    /// mirrors (`SeLe4n.Model.MessageInfo.encode`,
-    /// `sele4n-abi/src/message_info.rs`, and this reader) — is
-    ///   bits  [ 6: 0] = length      (≤ 120)
-    ///   bits  [ 8: 7] = extraCaps   (≤ 3)
-    ///   bits  [11: 9] = capsUnwrapped
-    ///   bits  [63:12] = label       (52 bits)
-    /// The previous reader here masked `0x0FFF` under a doc comment
-    /// claiming a `length[11:0] / extraCaps[13:12] / label[63:14]` packing
-    /// that nothing else in the tree used — so any request with a nonzero
-    /// extraCaps or label over-read its length (harmless only because the
-    /// authoritative Lean decode re-validates fail-closed downstream;
-    /// load-bearing now that WS-RA makes `x1` layouts carry the return
-    /// convention in both directions).
-    #[inline]
-    pub fn message_length(&self) -> u32 {
-        (self.msg_info & 0x7F) as u32
     }
 }
 
@@ -647,9 +455,8 @@ pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
 
 /// AN9-F.2 / AN9-F.3 (restated by WS-RA): top-level SVC dispatcher.
 ///
-/// Routes the trap through [`SyscallId::from_u32`] and validates the
-/// inline-argument count against [`SyscallId::min_inline_args`] before
-/// delegating to the Lean kernel via the
+/// Routes the trap through [`SyscallId::from_u32`] before delegating to
+/// the Lean kernel via the
 /// `lean_syscall_dispatch_cross_core` extern symbol (Lean-emitted via
 /// `@[export lean_syscall_dispatch_cross_core]` in
 /// `SeLe4n/Kernel/SyscallDispatchEntry.lean`, which routes into the verified
@@ -677,10 +484,10 @@ pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
 ///                                   installed rather than resume the caller past the `SVC`
 ///                                   its handler's reply restarts it at.
 ///   `Err(error)`                  — prefilter rejection (invalid syscall
-///                                   id / argument count); the trap layer
+///                                   id); the trap layer
 ///                                   surfaces it as a label-encoded error
 ///                                   frame ([`error_frame_regs`]).
-pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, DispatchError> {
+pub fn dispatch_svc(syscall_id: u32) -> Result<SvcOutcome, DispatchError> {
     // PR #866 round-2 review: the core index is the TPIDR-derived
     // *logical* id — the same source `ffi_syscall_return_frame` (the
     // mailbox writer) and `ffi_current_core_id` (the Lean dispatch's own
@@ -704,24 +511,19 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
     // HAL from the Lean tree's `@[export]`s and fails the build unless a
     // readiness guard on the *executing* PE dominates each one.
     //
-    // PR #889 review: the gate precedes **every** prefilter, not only the Lean
+    // PR #889 review: the gate precedes the prefilter, not only the Lean
     // call.  The halt exists because a thread on a not-ready core can never be
     // preempted again (the timer seam consults the same mask), so *any* frame
-    // returned to it hands it the CPU forever — an `invalidSyscallNumber` or
-    // `invalidArgument` frame from the prefilters below exactly as much as a
-    // dispatched one.  Consulting readiness after the prefilters left both
-    // rejections as resumable frames on a not-ready core.
+    // returned to it hands it the CPU forever — an `invalidSyscallNumber`
+    // frame from the prefilter below exactly as much as a dispatched one.
+    // Consulting readiness after the prefilter left its rejection as a
+    // resumable frame on a not-ready core.
     let (tag, regs) = if crate::lean_ready::lean_ready(core) {
-        // AN9-F.1.b: reject ids outside the mirror enum's range.
-        let sid = match SyscallId::from_u32(syscall_id) {
-            Some(sid) => sid,
-            None => return Err(DispatchError::InvalidSyscallId),
-        };
-
-        // AN9-F.1.c: validate the inline-arg count from MessageInfo.length
-        let len = args.message_length();
-        if len < sid.min_inline_args() {
-            return Err(DispatchError::InvalidArgument);
+        // AN9-F.1.b: reject ids outside the mirror enum's range.  The
+        // message length is the Lean kernel's to check, after the capability
+        // lookup, as seL4's decode checks it (`truncationMinimum`).
+        if SyscallId::from_u32(syscall_id).is_none() {
+            return Err(DispatchError::InvalidSyscallId);
         }
 
         // AN9-F.2: forward to the Lean-emitted dispatcher.
@@ -915,19 +717,6 @@ mod tests {
         halt_syscall_before_lean_ready(3, u64::from(SyscallId::Send.to_u32()));
     }
 
-    fn zero_frame() -> TrapFrame {
-        TrapFrame {
-            gprs: [0; 31],
-            sp_el0: 0,
-            elr_el1: 0,
-            spsr_el1: 0,
-            esr_el1: 0,
-            far_el1: 0,
-            tpidr_el0: 0,
-            reserved: 0,
-        }
-    }
-
     #[test]
     fn syscall_id_discriminants_match_lean_abi() {
         // Round-trip every variant.  If a new syscall lands in Lean,
@@ -1001,34 +790,13 @@ mod tests {
         assert!(sele4n_types::SyscallId::from_u64(u64::from(oob)).is_none());
     }
 
-    #[test]
-    fn syscall_args_from_trap_frame_reads_msg_info_from_x1() {
-        let mut frame = zero_frame();
-        frame.gprs[1] = 0x2222;
-        let args = SyscallArgs::from_trap_frame(&frame);
-        assert_eq!(args.msg_info, 0x2222);
-    }
-
-    #[test]
-    fn syscall_args_message_length_extracts_length_field() {
-        // WS-RA RA.C.3: the real MessageInfo layout — length[6:0],
-        // extraCaps[8:7], label[28:9].  A nonzero label and extraCaps must
-        // NOT bleed into the length (the pre-fix 0x0FFF mask read label
-        // bits 9-11 as length).
-        let mut frame = zero_frame();
-        frame.gprs[1] = (0xCAFE_u64 << 12) | (0x3 << 7) | 0x04;
-        let args = SyscallArgs::from_trap_frame(&frame);
-        assert_eq!(args.message_length(), 4);
-    }
-
-    // PR #889 review: `dispatch_svc_rejects_invalid_syscall_id` and
-    // `dispatch_svc_rejects_argument_count_below_minimum` moved out of this
-    // binary.  The readiness gate now precedes the prefilters, so what an
-    // invalid id or a short message does depends on whether this core is
-    // ready — and core 0's readiness bit is set mid-run by the timer suite in
-    // this binary, so neither answer can be asserted here.  The not-ready
-    // answer (halt) is `tests/readiness_gate_before_mark.rs`; the ready answer
-    // (the prefilter refusals) is `tests/readiness_gate_after_mark.rs`.
+    // PR #889 review: `dispatch_svc_rejects_invalid_syscall_id` moved out of
+    // this binary.  The readiness gate precedes the prefilter, so what an
+    // invalid id does depends on whether this core is ready — and core 0's
+    // readiness bit is set mid-run by the timer suite in this binary, so
+    // neither answer can be asserted here.  The not-ready answer (halt) is
+    // `tests/readiness_gate_before_mark.rs`; the ready answer (the prefilter
+    // refusal) is `tests/readiness_gate_after_mark.rs`.
 
     // WS-RR RR5.6: `dispatch_svc_routes_to_inner_dispatcher` moved to
     // `tests/readiness_gate_after_mark.rs` — reaching the dispatch stand-in
@@ -1037,27 +805,19 @@ mod tests {
 
     #[test]
     fn dispatch_error_surfaces_as_kernel_error_discriminants() {
-        // WS-RA: the prefilter rejections surface as real KernelError
-        // discriminants on the x1 label — InvalidSyscallNumber = 31,
-        // InvalidSyscallArgument = 41 — retiring the legacy raw 7 / 6
+        // WS-RA: the prefilter rejection surfaces as a real KernelError
+        // discriminant on the x1 label — InvalidSyscallNumber = 31 —
+        // retiring the legacy raw 7 / 6
         // x0 writes and their documented collision with
         // EndpointStateMismatch / SchedulerInvariantViolation.
         assert_eq!(
             DispatchError::InvalidSyscallId.kernel_error_discriminant(),
             31
         );
-        assert_eq!(
-            DispatchError::InvalidArgument.kernel_error_discriminant(),
-            41
-        );
         // Pinned against the canonical enum, not just literals.
         assert_eq!(
             DispatchError::InvalidSyscallId.kernel_error_discriminant(),
             sele4n_types::KernelError::InvalidSyscallNumber as u32
-        );
-        assert_eq!(
-            DispatchError::InvalidArgument.kernel_error_discriminant(),
-            sele4n_types::KernelError::InvalidSyscallArgument as u32
         );
     }
 
@@ -1096,13 +856,13 @@ mod tests {
 
     #[test]
     fn error_frame_regs_offsets_every_discriminant() {
-        // WS-RA / ABI v3: every KernelError discriminant 0..=56 rides the
+        // WS-RA / ABI v3: every KernelError discriminant 0..=58 rides the
         // x1 label at ERROR_LABEL_BASE + disc (label 0 is success;
         // discriminant 0 is a real error — the aliasing the offset from
         // zero exists to prevent; and every label below the base is a
         // delivered message's own, so no error can be read as a delivery
         // either), and no other register carries anything.
-        for disc in 0..=57u32 {
+        for disc in 0..=58u32 {
             let regs = error_frame_regs(disc);
             assert_eq!(
                 regs[1] >> 12,
@@ -1159,20 +919,20 @@ mod tests {
         assert_eq!(mi.label(), BLOCKED_RESUME_SENTINEL_LABEL);
         // Nonzero (never success) and the last label of the status range,
         // naming discriminant 255 — beyond the kernel-emittable set
-        // 0..=57, and exactly the Rust-only `UnknownKernelError` sentinel.
+        // 0..=58, and exactly the Rust-only `UnknownKernelError` sentinel.
         // The range position is a compile-time assert at the constant's
-        // definition; these GROUND the 57 against the canonical KernelError
-        // space (WS-RR RR7.14's `IpcCancelled` is the last real discriminant,
-        // 58 the first unknown) and the 255 against the sentinel variant.
+        // definition; these GROUND the 58 against the canonical KernelError
+        // space (`TruncatedMessage` is the last real discriminant, 59 the
+        // first unknown) and the 255 against the sentinel variant.
         assert_ne!(BLOCKED_RESUME_SENTINEL_LABEL, 0);
         assert_eq!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE, 255);
-        assert!(sele4n_types::KernelError::from_u32(57).is_some());
-        assert!(sele4n_types::KernelError::from_u32(58).is_none());
+        assert!(sele4n_types::KernelError::from_u32(58).is_some());
+        assert!(sele4n_types::KernelError::from_u32(59).is_none());
         assert_eq!(
             sele4n_types::KernelError::from_u32(255),
             Some(sele4n_types::KernelError::UnknownKernelError)
         );
-        for disc in 0..=57u32 {
+        for disc in 0..=58u32 {
             assert_ne!(
                 error_frame_regs(disc)[1],
                 regs[1],
@@ -1204,94 +964,30 @@ mod tests {
     }
 
     #[test]
-    fn syscall_id_min_inline_args_match_abi_contract() {
-        // Spot-check the canonical ABI values against the Lean decoders
-        // (the authority — WS-RA RA.D.1 reconciled the drifted entries).
-        assert_eq!(SyscallId::CSpaceMint.min_inline_args(), 4);
-        assert_eq!(SyscallId::CSpaceCopy.min_inline_args(), 2);
-        assert_eq!(SyscallId::CSpaceMove.min_inline_args(), 2);
-        assert_eq!(SyscallId::ServiceRegister.min_inline_args(), 4);
-        // PR #866 round-3 review: suspend / resume / unbind read NO message
-        // registers (`decodeSuspendArgs` / `decodeResumeArgs` /
-        // `decodeSchedContextUnbindArgs` are `pure {}` — the target comes
-        // from the capability), and bind reads exactly ONE (the thread id).
-        // The previous minimums (1 / 1 / 1 / 2) rejected every real wrapper
-        // call at this gate — the RA.D.1 unreachable-wrapper class again.
-        assert_eq!(SyscallId::TcbSuspend.min_inline_args(), 0);
-        assert_eq!(SyscallId::TcbResume.min_inline_args(), 0);
-        assert_eq!(SyscallId::SchedContextUnbind.min_inline_args(), 0);
-        assert_eq!(SyscallId::SchedContextBind.min_inline_args(), 1);
-        assert_eq!(SyscallId::Send.min_inline_args(), 0);
-        // A signal's badge is its capability's: no operand register at all.
-        assert_eq!(SyscallId::NotificationSignal.min_inline_args(), 0);
-        assert_eq!(SyscallId::DeclassifySignal.min_inline_args(), 0);
-        // The four single-register TCB-management syscalls each read exactly ONE
-        // inline register (`requireMsgReg decoded.msgRegs 0` in their decoders;
-        // docstrings "Requires 1 message register") and their `sele4n-sys`
-        // wrappers all send `MessageInfo::new_const(1, 0, 0)` (length 1).  The
-        // minimum MUST be 1: a minimum of 2 rejected every valid call at
-        // `dispatch_svc`'s `len < min_inline_args` gate (`1 < 2`), making the
-        // syscall unreachable on hardware before reaching the verified kernel.
-        assert_eq!(SyscallId::TcbSetPriority.min_inline_args(), 1);
-        assert_eq!(SyscallId::TcbSetMCPriority.min_inline_args(), 1);
-        assert_eq!(SyscallId::TcbSetIPCBuffer.min_inline_args(), 1);
-        // WS-SM SM5.H.4: tcbSetAffinity follows the same one-register contract
-        // (the raw affinity word, msgReg[0]) — matching `decodeSetAffinityArgs`
-        // (requireMsgReg 0) and the `tcb_set_affinity` wrapper.
-        assert_eq!(SyscallId::TcbSetAffinity.min_inline_args(), 1);
-        // PR #887 review: the fault-handler CPtr is one inline register too.
-        assert_eq!(SyscallId::TcbSetFaultHandler.min_inline_args(), 1);
+    fn syscall_id_from_u32_names_the_late_ids() {
         assert_eq!(SyscallId::from_u32(34), Some(SyscallId::TcbSetFaultHandler));
-        // WS-RR RR8.16: the revoke takes the delete's one-register layout.
-        assert_eq!(SyscallId::CspaceRevoke.min_inline_args(), 1);
         assert_eq!(SyscallId::from_u32(35), Some(SyscallId::CspaceRevoke));
-        // WS-BP BP7.1: the carve takes all four inline registers.
-        assert_eq!(SyscallId::UntypedRetype.min_inline_args(), 4);
         assert_eq!(SyscallId::from_u32(36), Some(SyscallId::UntypedRetype));
-        // WS-BP BP7.1: the reset takes no message registers.
-        assert_eq!(SyscallId::UntypedReset.min_inline_args(), 0);
         assert_eq!(SyscallId::from_u32(37), Some(SyscallId::UntypedReset));
-        // WS-BP BP7.1: the space change takes its two root addresses.
-        assert_eq!(SyscallId::TcbSetSpace.min_inline_args(), 2);
         assert_eq!(SyscallId::from_u32(38), Some(SyscallId::TcbSetSpace));
-        // WS-BP BP7.1: the page-table install takes two, its removal none.
-        assert_eq!(SyscallId::PageTableMap.min_inline_args(), 2);
-        assert_eq!(SyscallId::PageTableUnmap.min_inline_args(), 0);
         assert_eq!(SyscallId::from_u32(39), Some(SyscallId::PageTableMap));
         assert_eq!(SyscallId::from_u32(40), Some(SyscallId::PageTableUnmap));
-        // WS-ZA ZA4.3: the yield takes no operand at all.
-        assert_eq!(SyscallId::Yield.min_inline_args(), 0);
         assert_eq!(SyscallId::from_u32(41), Some(SyscallId::Yield));
-        assert_eq!(SyscallId::SchedContextConsumed.min_inline_args(), 0);
+        assert_eq!(SyscallId::from_u32(44), Some(SyscallId::IrqHandlerAck));
+        assert_eq!(SyscallId::from_u32(45), Some(SyscallId::IrqControlGet));
+        assert_eq!(SyscallId::from_u32(47), Some(SyscallId::IrqHandlerClear));
+        assert_eq!(SyscallId::from_u32(48), None);
         assert_eq!(
             SyscallId::from_u32(42),
             Some(SyscallId::SchedContextConsumed)
         );
-        assert_eq!(SyscallId::SchedContextYieldTo.min_inline_args(), 0);
         assert_eq!(
             SyscallId::from_u32(43),
             Some(SyscallId::SchedContextYieldTo)
         );
-        assert_eq!(SyscallId::IrqHandlerAck.min_inline_args(), 0);
-        assert_eq!(SyscallId::from_u32(44), Some(SyscallId::IrqHandlerAck));
-        assert_eq!(SyscallId::IrqControlGet.min_inline_args(), 3);
-        assert_eq!(SyscallId::from_u32(45), Some(SyscallId::IrqControlGet));
-        assert_eq!(SyscallId::IrqHandlerSetNotification.min_inline_args(), 1);
         assert_eq!(
             SyscallId::from_u32(46),
             Some(SyscallId::IrqHandlerSetNotification)
         );
-        assert_eq!(SyscallId::IrqHandlerClear.min_inline_args(), 0);
-        assert_eq!(SyscallId::from_u32(47), Some(SyscallId::IrqHandlerClear));
-        assert_eq!(SyscallId::from_u32(48), None);
     }
-
-    // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid
-    // length-1 `tcbSetPriority` / `tcbSetMCPriority` / `tcbSetIPCBuffer` call
-    // must pass the `dispatch_svc` argument-count gate rather than be rejected
-    // at the trap boundary — is now
-    // `dispatch_svc_accepts_single_register_tcb_management_syscalls` in
-    // `tests/readiness_gate_after_mark.rs`: it reaches the dispatch stand-in,
-    // so it needs core 0 marked ready, and the timer suite in this binary owns
-    // that bit.
 }

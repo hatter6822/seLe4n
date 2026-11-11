@@ -1107,28 +1107,18 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
               cases rootObj with
               | cnode rootCn =>
                   simp only [hRoot] at hStep
-                  cases hInvk : syscallInvoke { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCap decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+                  cases hInvk : syscallInvokeTyped decoded.syscallId { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCap decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
                   | error e => rw [hInvk] at hStep; cases hStep
                   | ok pair =>
                       obtain ⟨u, stPost⟩ := pair; cases u
                       rw [hInvk] at hStep
                       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                      unfold syscallInvoke at hInvk
-                      cases hLk : syscallLookupCap { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } st with
-                      | error e => rw [hLk] at hInvk; cases hInvk
-                      | ok pairL =>
-                          obtain ⟨cap, stL⟩ := pairL
-                          rw [hLk] at hInvk
-                          obtain ⟨-, -, -, hStEq⟩ :=
-                            syscallResolveCap_implies_capability_at_slot _ st cap stL
-                              (syscallResolveCap_of_lookup _ st cap stL hLk)
-                          subst hStEq
-                          have hInvPost := dispatchWithCap_preserves_ipcInvariantFull
-                            decoded tid executingCore _ cap stL stPost
-                            (hPack _ cap hLk) hInvk
-                          rw [← hStep]
-                          exact ipcInvariantFull_of_objectsAgreeOffTaint
-                            (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
+                      obtain ⟨cap, hLk, -, hInvk⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hInvk
+                      have hInvPost := dispatchWithCap_preserves_ipcInvariantFull
+                        decoded tid executingCore _ cap st stPost (hPack _ cap hLk) hInvk
+                      rw [← hStep]
+                      exact ipcInvariantFull_of_objectsAgreeOffTaint
+                        (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
               | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
               | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hRoot] at hStep; cases hStep
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
@@ -1561,12 +1551,10 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
 
 
 /-- The checked top-level dispatcher preserves `ipcInvariantFull`.  Mirrors
-`dispatchSyscall_preserves_ipcInvariantFull` with two checked-tier
-differences: the audit pair routes through the resolve-only lookup
-(`syscallChecksTargetFirst` → `syscallInvokeResolved`), and the pack is
-conditioned on `syscallResolveCap` — which every successful rights-gated
-lookup implies (`syscallResolveCap_of_lookup`), so the one hypothesis
-covers both routes. -/
+`dispatchSyscall_preserves_ipcInvariantFull`: both dispatchers gate through
+`syscallInvokeTyped`, and the checked pack is conditioned on
+`syscallResolveCap`, which every successful rights-gated lookup implies
+(`syscallResolveCap_of_lookup`). -/
 theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st st' : SystemState)
@@ -1603,54 +1591,19 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
               cases rootObj with
               | cnode rootCn =>
                   simp only [hRoot] at hStep
-                  cases hTF : syscallChecksTargetFirst decoded.syscallId with
-                  | true =>
-                      simp only [hTF, if_true] at hStep
-                      cases hInvk : syscallInvokeResolved { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
-                      | error e => rw [hInvk] at hStep; cases hStep
-                      | ok pair =>
-                          obtain ⟨u, stPost⟩ := pair; cases u
-                          rw [hInvk] at hStep
-                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                          unfold syscallInvokeResolved at hInvk
-                          cases hRz : syscallResolveCap { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } st with
-                          | error e => rw [hRz] at hInvk; cases hInvk
-                          | ok pairL =>
-                              obtain ⟨cap, stL⟩ := pairL
-                              rw [hRz] at hInvk
-                              obtain ⟨-, -, -, hStEq⟩ :=
-                                syscallResolveCap_implies_capability_at_slot _ st cap stL hRz
-                              subst hStEq
-                              have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
-                                ctx decoded tid executingCore _ cap stL stPost (hPack _ cap hRz)
-                                hInvk
-                              rw [← hStep]
-                              exact ipcInvariantFull_of_objectsAgreeOffTaint
-                                (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
-                  | false =>
-                      simp only [hTF, Bool.false_eq_true, if_false] at hStep
-                      cases hInvk : syscallInvoke { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
-                      | error e => rw [hInvk] at hStep; cases hStep
-                      | ok pair =>
-                          obtain ⟨u, stPost⟩ := pair; cases u
-                          rw [hInvk] at hStep
-                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                          unfold syscallInvoke at hInvk
-                          cases hLk : syscallLookupCap { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } st with
-                          | error e => rw [hLk] at hInvk; cases hInvk
-                          | ok pairL =>
-                              obtain ⟨cap, stL⟩ := pairL
-                              rw [hLk] at hInvk
-                              have hRz := syscallResolveCap_of_lookup _ st cap stL hLk
-                              obtain ⟨-, -, -, hStEq⟩ :=
-                                syscallResolveCap_implies_capability_at_slot _ st cap stL hRz
-                              subst hStEq
-                              have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
-                                ctx decoded tid executingCore _ cap stL stPost (hPack _ cap hRz)
-                                hInvk
-                              rw [← hStep]
-                              exact ipcInvariantFull_of_objectsAgreeOffTaint
-                                (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
+                  cases hInvk : syscallInvokeTyped decoded.syscallId { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+                  | error e => rw [hInvk] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨u, stPost⟩ := pair; cases u
+                      rw [hInvk] at hStep
+                      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                      obtain ⟨cap, hLk, -, hInvk⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hInvk
+                      have hRz := syscallResolveCap_of_lookup _ st cap st hLk
+                      have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
+                        ctx decoded tid executingCore _ cap st stPost (hPack _ cap hRz) hInvk
+                      rw [← hStep]
+                      exact ipcInvariantFull_of_objectsAgreeOffTaint
+                        (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
               | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
               | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hRoot] at hStep; cases hStep
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
@@ -2357,8 +2310,12 @@ private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
     ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
   · intro _ _ _ hRes
-    simp only [resolveSchedContextBindThread, decodeSchedContextBindArgs, hRegs,
-      requireMsgReg, bind, Except.bind] at hRes
+    have hErr : ∃ e, decodeSchedContextBindArgs decoded = .error e := by
+      simp only [decodeSchedContextBindArgs, hRegs, requireMessageLength, requireMsgReg, bind,
+        Except.bind]
+      split <;> simp
+    obtain ⟨e, he⟩ := hErr
+    simp only [resolveSchedContextBindThread, he] at hRes
     cases hRes
   · intro objId _ hTgt vtid hVal
     injection hTgt with hObj
@@ -2517,7 +2474,7 @@ decoder's thread id -- the sentinel, so that field refuses at validation),
 dstSlot 999 (also the retype decoder's type tag -- invalid, so that decoder
 refuses), rights word 3, badge word 5. -/
 private def witnessDecodedMint : SyscallDecodeResult :=
-  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 4, extraCaps := 0, label := 0 },
     syscallId := .cspaceMint, msgRegs := #[⟨0⟩, ⟨999⟩, ⟨3⟩, ⟨5⟩] }
 
 private def witnessGateMint : SyscallGate :=
@@ -2545,7 +2502,8 @@ theorem syscallDispatchQuiescence_inhabited_mint :
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp only [Architecture.SyscallArgDecode.decodeCSpaceMintArgs,
-      witnessDecodedMint, requireMsgReg, bind, Except.bind, pure,
+      witnessDecodedMint, Architecture.SyscallArgDecode.requireMessageLength,
+      Architecture.SyscallArgDecode.truncationMinimum, requireMsgReg, bind, Except.bind, pure,
       Except.pure] at hDec
     split at hDec
     · cases hDec

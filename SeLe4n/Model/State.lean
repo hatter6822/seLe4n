@@ -1753,6 +1753,41 @@ def SystemState.withFreshAuditRing (st : SystemState) : SystemState :=
 theorem SystemState.withFreshAuditRing_eq (st : SystemState) : st.withFreshAuditRing = st := by
   simp only [SystemState.withFreshAuditRing, SeLe4n.Kernel.AuditRing.fresh_eq]
 
+/-- A refusal-ledger slot rebuilt into a cell of its own, through `opaqueId`, so
+a record that writes the slot over in place (`RefusalSlot.overwrite`) finds it
+exclusive.  The identity (`freshSlot_eq`). -/
+@[inline] def _root_.SeLe4n.Kernel.RefusalLedger.freshSlot (s : SeLe4n.Kernel.RefusalSlot) :
+    SeLe4n.Kernel.RefusalSlot :=
+  { s with subject := opaqueId s.subject }
+
+theorem _root_.SeLe4n.Kernel.RefusalLedger.freshSlot_eq (s : SeLe4n.Kernel.RefusalSlot) :
+    SeLe4n.Kernel.RefusalLedger.freshSlot s = s := rfl
+
+/-- The refusal ledger rebuilt with its own slot array and a cell per slot.
+The boot's ledger is the shared initial constant, whose slots are one vacant
+slot, so the first refusal recorded would copy the array and the slot; each
+slot passes through `opaqueId`, so the compiler builds a fresh array of fresh
+slots rather than handing back the constant's. -/
+@[noinline] def _root_.SeLe4n.Kernel.RefusalLedger.fresh (L : SeLe4n.Kernel.RefusalLedger) :
+    SeLe4n.Kernel.RefusalLedger :=
+  { L with slots := L.slots.map SeLe4n.Kernel.RefusalLedger.freshSlot }
+
+theorem _root_.SeLe4n.Kernel.RefusalLedger.fresh_eq (L : SeLe4n.Kernel.RefusalLedger) :
+    L.fresh = L := by
+  have h : SeLe4n.Kernel.RefusalLedger.freshSlot = id :=
+    funext SeLe4n.Kernel.RefusalLedger.freshSlot_eq
+  simp only [SeLe4n.Kernel.RefusalLedger.fresh, h, Vector.map_id]
+
+/-- **The refusal ledger prepared at boot** — the installed state's ledger gets
+its own slots (`RefusalLedger.fresh`), so the first refusal recorded after boot
+writes its slot in place.  The state itself (`withFreshRefusalLedger_eq`). -/
+def SystemState.withFreshRefusalLedger (st : SystemState) : SystemState :=
+  { st with declassificationRefusals := st.declassificationRefusals.fresh }
+
+theorem SystemState.withFreshRefusalLedger_eq (st : SystemState) :
+    st.withFreshRefusalLedger = st := by
+  simp only [SystemState.withFreshRefusalLedger, SeLe4n.Kernel.RefusalLedger.fresh_eq]
+
 /-- A register file rebuilt through `opaqueWord`: its own cell. -/
 @[inline] def RegisterFile.fresh (rf : RegisterFile) : RegisterFile :=
   { rf with x0 := opaqueWord rf.x0 }
@@ -2371,6 +2406,43 @@ theorem RefusalCarrying.ofChecked_eq (admitted : Bool) (perform : SystemState �
   | false =>
     simp only [Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel]
     cases k st <;> rfl
+  | true => simp only [↓reduceIte, RefusalCarrying.ofKernel, h rfl]
+
+/-- `ofChecked` whose refused path runs the operation `k` the kernel computation
+`K` wraps, and `next` on its result, rather than `K` itself
+(`ofCheckedThen_eq`).  `K` hands `k`'s refusal on as a refusal of another type,
+which builds a cell whenever `k`'s refusal is a shared constant; here `k`'s
+refusal meets the caller's own match and is never rebuilt. -/
+@[inline] def RefusalCarrying.ofCheckedThen (admitted : Bool)
+    (perform : SystemState → SystemState) (k : SystemState → Except KernelError β)
+    (next : β → Except KernelError (Unit × SystemState)) : RefusalCarrying Unit :=
+  fun st =>
+    if admitted then .ok ((), perform st)
+    else
+      match k st with
+      | .error e => .error (e, st)
+      | .ok b =>
+        match next b with
+        | .error e => .error (e, st)
+        | .ok r => .ok r
+
+/-- `ofCheckedThen` is `ofKernel K` when `K` is `k` then `next`, and an
+admitted `K` is `perform`. -/
+theorem RefusalCarrying.ofCheckedThen_eq (admitted : Bool)
+    (perform : SystemState → SystemState) (k : SystemState → Except KernelError β)
+    (next : β → Except KernelError (Unit × SystemState)) (K : Kernel Unit) (st : SystemState)
+    (hK : K st = match k st with
+      | .error e => .error e
+      | .ok b => next b)
+    (h : admitted = true → K st = .ok ((), perform st)) :
+    RefusalCarrying.ofCheckedThen admitted perform k next st = RefusalCarrying.ofKernel K st := by
+  unfold RefusalCarrying.ofCheckedThen
+  cases admitted with
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel, hK]
+    cases k st with
+    | error e => rfl
+    | ok b => dsimp only; cases next b <;> rfl
   | true => simp only [↓reduceIte, RefusalCarrying.ofKernel, h rfl]
 
 -- ============================================================================

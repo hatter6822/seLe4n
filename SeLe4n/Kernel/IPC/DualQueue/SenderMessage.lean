@@ -267,14 +267,16 @@ theorem decodeSyscallArgs_msgInfo {layout : SeLe4n.SyscallRegisterLayout}
     repeat (first | (split at h <;> try cases h))
     all_goals rfl
 
-/-- And so does the state-aware decode, whose overflow merge keeps the base
-decode's message info. -/
+/-- And so does the state-aware decode, up to its length: the overflow merge
+keeps the base decode's message info, and a message the buffer cannot supply is
+clamped to its inline words (`clampToInline`), its label and capability count
+kept. -/
 theorem decodeSyscallArgsFromState_msgInfo {st : SystemState} {tid : SeLe4n.ThreadId}
     {layout : SeLe4n.SyscallRegisterLayout} {regs : SeLe4n.RegisterFile}
     {n : Nat} {d : SyscallDecodeResult}
     (h : Architecture.RegisterDecode.decodeSyscallArgsFromState st tid layout regs n = .ok d) :
-    Architecture.RegisterDecode.decodeMsgInfo (SeLe4n.readReg regs layout.msgInfoReg)
-      = .ok d.msgInfo := by
+    ∃ mi, Architecture.RegisterDecode.decodeMsgInfo (SeLe4n.readReg regs layout.msgInfoReg)
+      = .ok mi ∧ d.msgInfo.extraCaps = mi.extraCaps ∧ d.msgInfo.label = mi.label := by
   unfold Architecture.RegisterDecode.decodeSyscallArgsFromState at h
   cases hB : Architecture.RegisterDecode.decodeSyscallArgs layout regs n with
   | error e => simp only [hB, bind, Except.bind] at h; cases h
@@ -282,10 +284,12 @@ theorem decodeSyscallArgsFromState_msgInfo {st : SystemState} {tid : SeLe4n.Thre
     have hb := decodeSyscallArgs_msgInfo hB
     simp only [hB, bind, Except.bind, pure, Except.pure] at h
     split at h
-    · cases h; exact hb
+    · cases h; exact ⟨_, hb, rfl, rfl⟩
     · split at h
-      · cases h
-      · cases h; exact hb
+      · split at h
+        · cases h; exact ⟨_, hb, rfl, rfl⟩
+        · cases h; exact ⟨_, hb, rfl, rfl⟩
+      · cases h; exact ⟨_, hb, rfl, rfl⟩
 
 /-- **A saved frame names no extra capability, decided on its message-info
 word** (seL4's `seL4_MessageInfo_get_extraCaps`, bits 7..8 of the word the
@@ -308,12 +312,12 @@ theorem senderFrameCapRequest_of_noExtraCaps {st : SystemState} {sender : SeLe4n
   cases hD : blockedSenderDecode st sender tcb with
   | error _ => rfl
   | ok d =>
-    have hM := decodeSyscallArgsFromState_msgInfo hD
+    obtain ⟨mi, hM, hX, -⟩ := decodeSyscallArgsFromState_msgInfo hD
     rw [← Architecture.RegisterDecode.decodeMsgInfoWord_readReg] at hM
     have hE := decodeMsgInfoWord_extraCaps hM
     unfold frameNamesNoExtraCapsW at h
     rw [beq_iff_eq.mp h] at hE
-    simp only [hE, UInt64.toNat_zero, senderExtraCapAddrs_zero, Array.isEmpty_empty, ↓reduceIte]
+    simp only [hX, hE, UInt64.toNat_zero, senderExtraCapAddrs_zero, Array.isEmpty_empty, ↓reduceIte]
 /-- WS-ZA ZA4.7: **the capabilities a blocked sender asks to transfer**, as the
 CSpace root, the addresses and the root's depth they resolve against -- or
 `none` when it transfers nothing: a fault message, a sender without the grant

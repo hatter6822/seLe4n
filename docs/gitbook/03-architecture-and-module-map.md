@@ -192,7 +192,7 @@ inventory was written:
 - `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C; extended WS-K-C/K-D/K-E v0.16.2–v0.16.4):
   - `syscallEntry` — top-level register-sourced user-space entry point,
   - `lookupThreadRegisterContext` — TCB register context extraction,
-  - `dispatchSyscall` — routes decoded arguments through `SyscallGate`/`syscallInvoke`,
+  - `dispatchSyscall` — routes decoded arguments through `SyscallGate`/`syscallInvokeTyped`,
   - `dispatchWithCap` — per-syscall routing for all 35 `SyscallId` variants
     (13 base + IPC compound + SchedContext + TCB/notification + the SM9
     declassification/audit family); accepts `SyscallDecodeResult` (WS-K-C);
@@ -206,11 +206,10 @@ inventory was written:
   - **the same guarantee on the live, flow-checked path the hardware takes**
     (WS-RR RR7.3): `dispatchSyscallChecked_requires_right` and
     `syscallEntryChecked_implies_capability_held`, parameterized over the
-    *executing* core rather than the boot core and covering both gate shapes —
-    the 31 arms that take the rights-checking `syscallInvoke` and the two
-    `syscallChecksTargetFirst` (audit) arms that take the resolve-only
-    `syscallInvokeResolved` and check the right in the arm
-    (`dispatchWithCapChecked_audit_success_requires_right`).
+    *executing* core rather than the boot core, through the one typed gate
+    `syscallInvokeTyped` every arm takes: lookup, then the capability's type,
+    then its right (`dispatchSyscallChecked_type_before_rights`,
+    `dispatchSyscallChecked_right_after_type`; spec §8.10.5b).
     `…_of_pre_state` restates it on the state the caller trapped in, and
     `Platform.FFI.syscallDispatchFromAbi_implies_capability_held` carries it to
     the exported seam,
@@ -604,7 +603,7 @@ and its non-interference status are in
 - `SeLe4n/Kernel/API.lean`
   - Unified public API with two layers: (1) raw internal kernel operations
     for trusted kernel paths, and (2) the capability-gated dispatch pipeline
-    (`SyscallGate` → `syscallLookupCap` → `syscallInvoke` → `dispatchWithCap`)
+    (`SyscallGate` → `syscallResolveCap` → `syscallInvokeTyped` → `dispatchWithCap`)
     that models the seL4 CSpace-lookup + rights-check pattern for user-space
     invocations, with 3 soundness theorems. (The WS-H15c-era `api*` wrapper
     layer was removed in S5-A; the pipeline is the single dispatch surface.)

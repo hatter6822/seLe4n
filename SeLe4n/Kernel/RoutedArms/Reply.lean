@@ -34,7 +34,7 @@ message registers, its results reported. -/
     (st : SystemState) : SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    dispatchOperandCheckedK (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    dispatchOperandCheckedK .reply (SeLe4n.CPtr.ofWord capWord) tid executingCore
       (replyOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext length
         extraCaps label tid executingCore (syscallRequiredRight .reply))
       st entryReportGeneral entryReportResolved entryReportLookup

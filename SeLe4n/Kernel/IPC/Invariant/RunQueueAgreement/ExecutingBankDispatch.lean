@@ -551,26 +551,13 @@ theorem dispatchSyscallChecked_bankAgree {ctx : LabelingContext}
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
-  cases hTF : syscallChecksTargetFirst decoded.syscallId <;>
-    simp only [hTF, Bool.false_eq_true, ↓reduceIte] at h
-  all_goals
-    split at h
-    · cases h
-    rename_i stPost hD
-    cases h
-    suffices hP : bankAgree e tid stPost from (bankFrame.of_taint _ _ _).bankAgree hP
-  · unfold syscallInvoke at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hR
-      cases syscallLookupCap_preserves_state _ _ _ _ hR
-      exact dispatchWithCapChecked_bankAgree P hRT hB hBNR hYA hYN hPlaced hD hA
-  · unfold syscallInvokeResolved at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hR
-      cases syscallResolveCap_state hR
-      exact dispatchWithCapChecked_bankAgree P hRT hB hBNR hYA hYN hPlaced hD hA
+  split at h
+  · cases h
+  rename_i stPost hD
+  cases h
+  suffices hP : bankAgree e tid stPost from (bankFrame.of_taint _ _ _).bankAgree hP
+  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  exact dispatchWithCapChecked_bankAgree P hRT hB hBNR hYA hYN hPlaced hD hA
 
 /-- WS-ZA ZA6.28: **the checked syscall entry keeps the executing core's
 agreement**: the register and decode reads write nothing, the IPC-buffer fill

@@ -271,6 +271,10 @@ theorem routedExtraCaps_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr
       have hm : m = mi := by
         simp only [Architecture.RegisterDecode.routedShortTail_eq,
           Architecture.RegisterDecode.routedLongTail_eq] at hR
+        by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size ∨
+            Architecture.RegisterDecode.syscallNumberReadsOverflow
+              (SeLe4n.readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = false <;>
+          first | rw [if_pos hLen] at hR | rw [if_neg hLen] at hR
         repeat' split at hR
         all_goals first
           | (cases hR; rfl)
@@ -284,12 +288,6 @@ theorem routedExtraCaps_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr
       · cases hD; rfl
       · cases hD
   · cases hR
-
-/-- The message length a register-routed frame names: bits 0–6 of its
-message-info word (`decodeMsgInfoWord`), read as a word so an arm that reads
-it builds no message info. -/
-@[inline] def routedLength (rf : SeLe4n.RegisterFile) : Nat :=
-  (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg &&& 0x7F).toNat
 
 theorem routedLength_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr : SeLe4n.CPtr}
     {mi : MessageInfo}
@@ -308,6 +306,10 @@ theorem routedLength_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr : 
       have hm : m = mi := by
         simp only [Architecture.RegisterDecode.routedShortTail_eq,
           Architecture.RegisterDecode.routedLongTail_eq] at hR
+        by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size ∨
+            Architecture.RegisterDecode.syscallNumberReadsOverflow
+              (SeLe4n.readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = false <;>
+          first | rw [if_pos hLen] at hR | rw [if_neg hLen] at hR
         repeat' split at hR
         all_goals first
           | (cases hR; rfl)

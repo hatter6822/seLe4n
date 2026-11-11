@@ -309,6 +309,14 @@ private def isIllegalAuthority (r : Except KernelError (Unit × SystemState)) : 
   | .error .illegalAuthority => true
   | _                        => false
 
+/-- A capability of the wrong type (an unrelated TCB capability) is refused on
+its type, `.invalidCapability`, before any right or address-space binding is
+read (spec §8.10.5b). -/
+private def isInvalidCapability (r : Except KernelError (Unit × SystemState)) : Bool :=
+  match r with
+  | .error .invalidCapability => true
+  | _                         => false
+
 -- ============================================================================
 -- §2  The predicate's truth table on a real page-table-backed state
 -- ============================================================================
@@ -346,8 +354,8 @@ private def runUnmapBindingChecks : IO Unit := do
     assertBool "the victim's page is mapped before the attempt"
       (stillMapped st victimAsid victimVaddr)
     let r := dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId st
-    assertBool "an unrelated writable cap is REFUSED (illegalAuthority)"
-      (isIllegalAuthority r)
+    assertBool "an unrelated writable cap is REFUSED on its type (invalidCapability)"
+      (isInvalidCapability r)
     assertBool "and the victim's mapping survives"
       (match r with
         | .error _ => stillMapped st victimAsid victimVaddr
@@ -376,8 +384,8 @@ private def runUnifyBindingChecks : IO Unit := do
   | none => assertBool "the exploit scenario builds" false
   | some st => do
     let r := dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId st
-    assertBool "an unrelated writable cap is REFUSED (illegalAuthority)"
-      (isIllegalAuthority r)
+    assertBool "an unrelated writable cap is REFUSED on its type (invalidCapability)"
+      (isInvalidCapability r)
     assertBool "and NO cache maintenance is emitted for the victim's page"
       (match r with
         | .error _ => st.pendingIcacheMaintenance == []
@@ -407,8 +415,8 @@ private def runMapBindingChecks : IO Unit := do
     assertBool "the target vaddr is unmapped in the victim's AS beforehand"
       (!(stillMapped st victimAsid freshVaddr))
     let r := dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId st
-    assertBool "an unrelated writable cap is REFUSED (illegalAuthority)"
-      (isIllegalAuthority r)
+    assertBool "an unrelated writable cap is REFUSED on its type (invalidCapability)"
+      (isInvalidCapability r)
     assertBool "and NO mapping is installed in the victim's address space"
       (match r with
         | .error _ => !(stillMapped st victimAsid freshVaddr)
@@ -461,14 +469,14 @@ private def runAlignmentChecks : IO Unit := do
       (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO) attacker Concurrency.bootCoreId st with
         | .ok ((), st') => stillMapped st' victimAsid freshVaddr
         | .error _ => false)
-    -- The guard is authority-independent: an unauthorized caller is still
-    -- refused for *authority*, not alignment (the binding runs first).
+    -- The guard is authority-independent: a capability of the wrong type is
+    -- refused on its type (seL4 checks the cap type before any argument).
     match scenario unrelatedCap with
     | none => assertBool "the unauthorized-alignment scenario builds" false
     | some stU =>
-      assertBool "authority is checked before alignment (illegalAuthority wins)"
+      assertBool "the capability's type is checked before alignment (invalidCapability wins)"
         (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameOdd) attacker Concurrency.bootCoreId stU with
-          | .error .illegalAuthority => true | _ => false)
+          | .error .invalidCapability => true | _ => false)
 
 -- ============================================================================
 -- §5c  WS-BP BP7.1 — authority over the address space is not authority over
@@ -561,14 +569,14 @@ private def runFrameCapabilityChecks : IO Unit := do
       (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO) attacker Concurrency.bootCoreId st with
         | .ok ((), st') => mappedPaddr st' victimAsid freshVaddr == some frameABase
         | .error _ => false)
-  -- The address-space binding still runs first: an unrelated capability is
-  -- refused for AUTHORITY even when MR2 names a frame the caller holds.
+  -- The capability's type is still checked first: an unrelated (TCB)
+  -- capability is refused on its type even when MR2 names a held frame.
   match scenario unrelatedCap with
   | none => assertBool "the unrelated-cap frame scenario builds" false
   | some stU =>
     assertBool "a held frame does not substitute for address-space authority"
       (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO) attacker Concurrency.bootCoreId stU with
-        | .error .illegalAuthority => true | _ => false)
+        | .error .invalidCapability => true | _ => false)
 
 -- ============================================================================
 -- §5d  WS-BP BP7.1 (`v0.36.5`) — memory reaches a thread only by a carve
@@ -761,8 +769,10 @@ private def runCarveChecks : IO Unit := do
     (isErr .invalidArgument
       (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 0 slotOwnCnRW slotCarved)
         carveOwner Concurrency.bootCoreId st))
-  assertBool "a `.retype` capability to a non-untyped object is refused (untypedTypeMismatch)"
-    (isErr .untypedTypeMismatch
+  -- The syscall gate checks the capability's type before its right (seL4
+  -- dispatches on the cap type first), so a VSpace-root cap is refused there.
+  assertBool "a `.retype` capability to a non-untyped object is refused on its type (invalidCapability)"
+    (isErr .invalidCapability
       (dispatchSyscallAsCurrent (decodeCarve slotVspRetype frameTag 953 slotOwnCnRW slotCarved)
         carveOwner Concurrency.bootCoreId st))
   -- An exhausted untyped: three pages, then nothing.
@@ -867,8 +877,8 @@ private def runResetChecks : IO Unit := do
       (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId st))
     assertBool "a reset without `.retype` over the untyped is refused (illegalAuthority)"
       (isErr .illegalAuthority (dispatchSyscallAsCurrent (decodeReset slotUtNoRetype) carveOwner Concurrency.bootCoreId st))
-    assertBool "a `.retype` capability to a non-untyped is refused (untypedTypeMismatch)"
-      (isErr .untypedTypeMismatch (dispatchSyscallAsCurrent (decodeReset slotVspRetype) carveOwner Concurrency.bootCoreId st))
+    assertBool "a `.retype` capability to a non-untyped is refused on its type (invalidCapability)"
+      (isErr .invalidCapability (dispatchSyscallAsCurrent (decodeReset slotVspRetype) carveOwner Concurrency.bootCoreId st))
     -- WS-ZA ZA5.4 part 13, seL4's derivation rule: slot 0 has carved, so the
     -- frames in slots 8 and 9 are its derivation children, and a copy of it is
     -- refused (`ensureNoChildren` in `deriveCap`).

@@ -66,6 +66,78 @@ theorem requireMsgReg_ok_iff (regs : Array RegValue) (idx : Nat) :
   · intro ⟨v, hv⟩; split at hv <;> simp_all
   · intro h; exact ⟨regs[idx], by simp [h]⟩
 
+/-- **The argument words an invocation's decode reads** (seL4's
+`seL4_TruncatedMessage` bound): a message whose length is below it is refused
+`.truncatedMessage` before any argument is read (`requireMessageLength`), as
+seL4's `decode*Invocation` refuses `length < n` once the capability's kind has
+chosen the decode.  The figure is the model's own word count: its ABI carries
+every argument as a word, where seL4 passes a capability argument as an extra
+capability and an index-and-depth pair.  The seL4 counterparts, and their
+checks:
+
+* `cspaceMint` 4 (`decodeCNodeInvocation`, Mint `length < 6`), `cspaceCopy`
+  `cspaceMove` 2 (`length < 4`, the source and destination slots),
+  `cspaceDelete` `cspaceRevoke` 1 (`length < 2`);
+* `untypedRetype` 4 (`decodeUntypedInvocation`, `length < 6`);
+* `vspaceMap` 4 (`decodeARMFrameInvocation`, Map `length < 3`),
+  `vspaceUnmap` `vspaceUnifyInstruction` 2 (Unify `length < 2`);
+* `pageTableMap` 2 (`decodeARMPageTableInvocation`, `length < 2`);
+* `tcbSetPriority` `tcbSetMCPriority` `tcbSetIPCBuffer` `tcbSetAffinity`
+  1 (`decodeSetPriority` / `decodeSetMCPriority` / `decodeSetIPCBuffer`,
+  `length < 1`), `tcbSetSpace` 2 (MCS `decodeSetSpace`, `length < 2`),
+  `tcbSetFaultHandler` 1 (the fault endpoint word);
+* `schedContextConfigure` 5 (`decodeSchedControl_ConfigureFlags`,
+  `length < 5`);
+* `irqControlGet` 3 (`Arch_decodeIRQControlInvocation`, IssueIRQHandler
+  `length < 3`);
+* `schedContextBind` `tcbBindNotification` `irqHandlerSetNotification`
+  1: seL4's `decodeSchedContext_Bind`, `decodeBindNotification` and
+  `IRQSetIRQHandler` check only for an extra capability, which this ABI
+  passes as a word;
+* `serviceRegister` 5, `mintReplyCap` 2, `auditRead` 3, `auditDrain` 1:
+  model calls with no seL4 counterpart, held to their decodes' word counts as
+  every invocation is.
+
+Each figure is the number of words its decode reads, and the decode reads
+exactly words `0, …, n - 1` after checking `n`: `#assert_decoder_arities`, in
+`SeLe4n.Testing.DecoderArityCheck` (built by Tier 1, outside the kernel's
+import closure), reads every listed decode's body and the dispatch arm that
+calls it, and fails the build otherwise.
+
+Every other syscall reads no argument word, or is an IPC or a signal, for
+which seL4 checks no length (`notificationSignal` included). -/
+def truncationMinimum : SyscallId → Nat
+  | .cspaceMint | .untypedRetype | .vspaceMap => 4
+  | .irqControlGet | .auditRead => 3
+  | .cspaceCopy | .cspaceMove | .mintReplyCap | .vspaceUnmap | .vspaceUnifyInstruction
+  | .tcbSetSpace | .pageTableMap => 2
+  | .cspaceDelete | .cspaceRevoke | .schedContextBind | .tcbBindNotification
+  | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
+  | .tcbSetFaultHandler | .irqHandlerSetNotification | .auditDrain => 1
+  | .schedContextConfigure | .serviceRegister => 5
+  | _ => 0
+
+/-- **The truncation check** (`truncationMinimum`): a message shorter than
+`n` words is refused `.truncatedMessage`, read off the message-info length
+before any argument word. -/
+@[inline] def requireMessageLength (decoded : SyscallDecodeResult) (n : Nat) :
+    Except KernelError Unit :=
+  if decoded.msgInfo.length < n then .error .truncatedMessage else .ok ()
+
+theorem requireMessageLength_of_le {decoded : SyscallDecodeResult} {n : Nat}
+    (h : n ≤ decoded.msgInfo.length) : requireMessageLength decoded n = .ok () := by
+  unfold requireMessageLength; simp only [Nat.not_lt.mpr h, ↓reduceIte]
+
+theorem requireMessageLength_of_lt {decoded : SyscallDecodeResult} {n : Nat}
+    (h : decoded.msgInfo.length < n) :
+    requireMessageLength decoded n = .error .truncatedMessage := by
+  unfold requireMessageLength; simp only [h, ↓reduceIte]
+
+/-- No invocation reads more than five argument words, so a message past the
+layout's four message registers is never truncated. -/
+theorem truncationMinimum_le_five (sid : SyscallId) : truncationMinimum sid ≤ 5 := by
+  cases sid <;> decide
+
 -- ============================================================================
 -- CSpace argument structures
 -- ============================================================================
@@ -176,6 +248,7 @@ abbrev VSpaceUnifyInstructionArgs := VSpaceUnmapArgs
     in-kernel users, but the ABI entry point now fails closed. -/
 def decodeCSpaceMintArgs (decoded : SyscallDecodeResult)
     : Except KernelError CSpaceMintArgs := do
+  requireMessageLength decoded (truncationMinimum .cspaceMint)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
@@ -191,6 +264,7 @@ def decodeCSpaceMintArgs (decoded : SyscallDecodeResult)
     Requires 2 message registers (srcSlot, dstSlot). -/
 def decodeCSpaceCopyArgs (decoded : SyscallDecodeResult)
     : Except KernelError CSpaceCopyArgs := do
+  requireMessageLength decoded (truncationMinimum .cspaceCopy)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   pure { srcSlot := Slot.ofNat r0.val, dstSlot := Slot.ofNat r1.val }
@@ -199,6 +273,7 @@ def decodeCSpaceCopyArgs (decoded : SyscallDecodeResult)
     Requires 2 message registers (srcSlot, dstSlot). -/
 def decodeCSpaceMoveArgs (decoded : SyscallDecodeResult)
     : Except KernelError CSpaceMoveArgs := do
+  requireMessageLength decoded (truncationMinimum .cspaceMove)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   pure { srcSlot := Slot.ofNat r0.val, dstSlot := Slot.ofNat r1.val }
@@ -207,6 +282,7 @@ def decodeCSpaceMoveArgs (decoded : SyscallDecodeResult)
     Requires 1 message register (targetSlot). -/
 def decodeCSpaceDeleteArgs (decoded : SyscallDecodeResult)
     : Except KernelError CSpaceDeleteArgs := do
+  requireMessageLength decoded (truncationMinimum .cspaceDelete)
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { targetSlot := Slot.ofNat r0.val }
 
@@ -218,6 +294,7 @@ def decodeCSpaceDeleteArgs (decoded : SyscallDecodeResult)
 Requires 4 message registers; an unrecognised type tag is `.invalidTypeTag`. -/
 def decodeUntypedRetypeArgs (decoded : SyscallDecodeResult)
     : Except KernelError UntypedRetypeArgs := do
+  requireMessageLength decoded (truncationMinimum .untypedRetype)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
@@ -241,6 +318,7 @@ def decodeUntypedRetypeArgs (decoded : SyscallDecodeResult)
     Returns `addressOutOfBounds` for VAddr ≥ 2^48. -/
 def decodeVSpaceMapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
     : Except KernelError VSpaceMapArgs := do
+  requireMessageLength decoded (truncationMinimum .vspaceMap)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
@@ -279,6 +357,7 @@ def decodeVSpaceMapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
     Requires 2 message registers (asid, vaddr). -/
 def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
     : Except KernelError VSpaceUnmapArgs := do
+  requireMessageLength decoded (truncationMinimum .vspaceUnmap)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   -- U2-G/U-H08: Validate ASID within platform-configured range
@@ -448,10 +527,11 @@ private theorem requireMsgReg_unfold_err (regs : Array RegValue) (idx : Nat) (h 
     tightened decoder additionally rejects `rights > 0x1F` — use
     `decodeCSpaceMintArgs_error_of_invalid_rights` for that mode. -/
 theorem decodeCSpaceMintArgs_error_of_insufficient_regs
-    (d : SyscallDecodeResult) (h : d.msgRegs.size < 4) :
+    (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceMint ≤ d.msgInfo.length) (h : d.msgRegs.size < 4) :
     ∃ e, decodeCSpaceMintArgs d = .error e := by
+  have hL := requireMessageLength_of_le hLen
   refine ⟨.invalidMessageInfo, ?_⟩
-  simp only [decodeCSpaceMintArgs, bind, Except.bind]
+  simp only [decodeCSpaceMintArgs, hL, bind, Except.bind]
   by_cases h0 : 0 < d.msgRegs.size
   · rw [requireMsgReg_unfold_ok _ _ h0]; simp
     by_cases h1 : 1 < d.msgRegs.size
@@ -466,10 +546,11 @@ theorem decodeCSpaceMintArgs_error_of_insufficient_regs
 /-- AK4-E: CSpace mint decode rejects `rights > 0x1F` with
     `.invalidArgument`, matching Rust-side validation. -/
 theorem decodeCSpaceMintArgs_error_of_invalid_rights
-    (d : SyscallDecodeResult) (hSize : 4 ≤ d.msgRegs.size)
+    (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceMint ≤ d.msgInfo.length) (hSize : 4 ≤ d.msgRegs.size)
     (hRights : d.msgRegs[2].val > 0x1F) :
     decodeCSpaceMintArgs d = .error .invalidArgument := by
-  simp only [decodeCSpaceMintArgs, bind, Except.bind,
+  have hL := requireMessageLength_of_le hLen
+  simp only [decodeCSpaceMintArgs, hL, bind, Except.bind,
     requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
     dif_pos (show 1 < d.msgRegs.size by omega),
     dif_pos (show 2 < d.msgRegs.size by omega),
@@ -479,10 +560,11 @@ theorem decodeCSpaceMintArgs_error_of_invalid_rights
 /-- AK4-E: CSpace mint decode fails iff fewer than 4 message registers OR
     the rights field exceeds 0x1F. The legacy-named theorem is preserved
     for invariant-surface checks, now expressing the enlarged failure set. -/
-theorem decodeCSpaceMintArgs_error_iff (d : SyscallDecodeResult) :
+theorem decodeCSpaceMintArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceMint ≤ d.msgInfo.length) :
     (∃ e, decodeCSpaceMintArgs d = .error e) ↔
     (d.msgRegs.size < 4 ∨
      (∃ (h : 3 < d.msgRegs.size), (d.msgRegs[2]'(by omega)).val > 0x1F)) := by
+  have hL := requireMessageLength_of_le hLen
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 4
@@ -491,7 +573,7 @@ theorem decodeCSpaceMintArgs_error_iff (d : SyscallDecodeResult) :
       by_cases hGt : d.msgRegs[2].val > 0x1F
       · right; exact ⟨h3, hGt⟩
       · exfalso
-        simp only [decodeCSpaceMintArgs, bind, Except.bind,
+        simp only [decodeCSpaceMintArgs, hL, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
           dif_pos (show 1 < d.msgRegs.size by omega),
           dif_pos (show 2 < d.msgRegs.size by omega),
@@ -501,76 +583,80 @@ theorem decodeCSpaceMintArgs_error_iff (d : SyscallDecodeResult) :
   · intro h
     match h with
     | .inl hLt =>
-      exact decodeCSpaceMintArgs_error_of_insufficient_regs d hLt
+      exact decodeCSpaceMintArgs_error_of_insufficient_regs d hLen hLt
     | .inr ⟨h3, hGt⟩ =>
       exact ⟨.invalidArgument,
-        decodeCSpaceMintArgs_error_of_invalid_rights d (by omega) hGt⟩
+        decodeCSpaceMintArgs_error_of_invalid_rights d hLen (by omega) hGt⟩
 
 /-- CSpace copy decode fails iff fewer than 2 message registers. -/
-theorem decodeCSpaceCopyArgs_error_iff (d : SyscallDecodeResult) :
+theorem decodeCSpaceCopyArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceCopy ≤ d.msgInfo.length) :
     (∃ e, decodeCSpaceCopyArgs d = .error e) ↔ d.msgRegs.size < 2 := by
+  have hL := requireMessageLength_of_le hLen
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 2
     · exact hlt
     · exfalso
-      simp only [decodeCSpaceCopyArgs, bind, Except.bind,
+      simp only [decodeCSpaceCopyArgs, hL, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         dif_pos (show 1 < d.msgRegs.size by omega),
         pure, Except.pure] at he
       nomatch he
   · intro h
     refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeCSpaceCopyArgs, bind, Except.bind]
+    simp only [decodeCSpaceCopyArgs, hL, bind, Except.bind]
     by_cases h0 : 0 < d.msgRegs.size
     · rw [requireMsgReg_unfold_ok _ _ h0]; simp
       rw [requireMsgReg_unfold_err _ _ (by omega)]
     · rw [requireMsgReg_unfold_err _ _ h0]
 
 /-- CSpace move decode fails iff fewer than 2 message registers. -/
-theorem decodeCSpaceMoveArgs_error_iff (d : SyscallDecodeResult) :
+theorem decodeCSpaceMoveArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceMove ≤ d.msgInfo.length) :
     (∃ e, decodeCSpaceMoveArgs d = .error e) ↔ d.msgRegs.size < 2 := by
+  have hL := requireMessageLength_of_le hLen
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 2
     · exact hlt
     · exfalso
-      simp only [decodeCSpaceMoveArgs, bind, Except.bind,
+      simp only [decodeCSpaceMoveArgs, hL, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         dif_pos (show 1 < d.msgRegs.size by omega),
         pure, Except.pure] at he
       nomatch he
   · intro h
     refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeCSpaceMoveArgs, bind, Except.bind]
+    simp only [decodeCSpaceMoveArgs, hL, bind, Except.bind]
     by_cases h0 : 0 < d.msgRegs.size
     · rw [requireMsgReg_unfold_ok _ _ h0]; simp
       rw [requireMsgReg_unfold_err _ _ (by omega)]
     · rw [requireMsgReg_unfold_err _ _ h0]
 
 /-- CSpace delete decode fails iff fewer than 1 message register. -/
-theorem decodeCSpaceDeleteArgs_error_iff (d : SyscallDecodeResult) :
+theorem decodeCSpaceDeleteArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .cspaceDelete ≤ d.msgInfo.length) :
     (∃ e, decodeCSpaceDeleteArgs d = .error e) ↔ d.msgRegs.size < 1 := by
+  have hL := requireMessageLength_of_le hLen
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 1
     · exact hlt
     · exfalso
-      simp only [decodeCSpaceDeleteArgs, bind, Except.bind,
+      simp only [decodeCSpaceDeleteArgs, hL, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         pure, Except.pure] at he
       nomatch he
   · intro h
     refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeCSpaceDeleteArgs, bind, Except.bind]
+    simp only [decodeCSpaceDeleteArgs, hL, bind, Except.bind]
     rw [requireMsgReg_unfold_err _ _ (by omega)]
 
 /-- **WS-BP BP7.1**: untyped-retype decode fails if fewer than 4 message registers. -/
-theorem decodeUntypedRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
+theorem decodeUntypedRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeResult) (hLen : truncationMinimum .untypedRetype ≤ d.msgInfo.length)
     (h : d.msgRegs.size < 4) :
     ∃ e, decodeUntypedRetypeArgs d = .error e := by
+  have hL := requireMessageLength_of_le hLen
   refine ⟨.invalidMessageInfo, ?_⟩
-  simp only [decodeUntypedRetypeArgs, bind, Except.bind]
+  simp only [decodeUntypedRetypeArgs, hL, bind, Except.bind]
   by_cases h0 : 0 < d.msgRegs.size
   · rw [requireMsgReg_unfold_ok _ _ h0]; simp
     by_cases h1 : 1 < d.msgRegs.size
@@ -583,11 +669,12 @@ theorem decodeUntypedRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeRes
   · rw [requireMsgReg_unfold_err _ _ h0]
 
 /-- T6-C/D: VSpace map decode fails if fewer than 4 message registers. -/
-theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult) (maxASID : Nat)
+theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceMap ≤ d.msgInfo.length)
     (h : d.msgRegs.size < 4) :
     ∃ e, decodeVSpaceMapArgs d maxASID = .error e := by
+  have hL := requireMessageLength_of_le hLen
   refine ⟨.invalidMessageInfo, ?_⟩
-  simp only [decodeVSpaceMapArgs, bind, Except.bind]
+  simp only [decodeVSpaceMapArgs, hL, bind, Except.bind]
   by_cases h0 : 0 < d.msgRegs.size
   · rw [requireMsgReg_unfold_ok _ _ h0]; simp
     by_cases h1 : 1 < d.msgRegs.size
@@ -600,11 +687,12 @@ theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
   · rw [requireMsgReg_unfold_err _ _ h0]
 
 /-- U2-B: VSpace map decode fails if VAddr is non-canonical (≥ 2^48). -/
-theorem decodeVSpaceMapArgs_error_of_noncanonical_vaddr (d : SyscallDecodeResult) (maxASID : Nat)
+theorem decodeVSpaceMapArgs_error_of_noncanonical_vaddr (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceMap ≤ d.msgInfo.length)
     (hSize : 4 ≤ d.msgRegs.size)
     (hVAddr : (VAddr.ofNat d.msgRegs[1].val).isCanonical = false) :
     ∃ e, decodeVSpaceMapArgs d maxASID = .error e := by
-  simp only [decodeVSpaceMapArgs, bind, Except.bind,
+  have hL := requireMessageLength_of_le hLen
+  simp only [decodeVSpaceMapArgs, hL, bind, Except.bind,
     requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
     dif_pos (show 1 < d.msgRegs.size by omega),
     dif_pos (show 2 < d.msgRegs.size by omega),
@@ -616,11 +704,12 @@ theorem decodeVSpaceMapArgs_error_of_noncanonical_vaddr (d : SyscallDecodeResult
     exact ⟨.addressOutOfBounds, by simp [hVAddr]⟩
 
 /-- T6-D/M-ARCH-1: VSpace map decode fails if the permissions word is invalid (≥ 32). -/
-theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult) (maxASID : Nat)
+theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceMap ≤ d.msgInfo.length)
     (hSize : 4 ≤ d.msgRegs.size)
     (hPerms : PagePermissions.ofNat? d.msgRegs[3].val = none) :
     ∃ e, decodeVSpaceMapArgs d maxASID = .error e := by
-  simp only [decodeVSpaceMapArgs, bind, Except.bind,
+  have hL := requireMessageLength_of_le hLen
+  simp only [decodeVSpaceMapArgs, hL, bind, Except.bind,
     requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
     dif_pos (show 1 < d.msgRegs.size by omega),
     dif_pos (show 2 < d.msgRegs.size by omega),
@@ -642,18 +731,19 @@ theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult) (ma
     2. ASID (msgRegs[0]) ≥ maxASID → asidNotBound
     3. VAddr (msgRegs[1]) ≥ 2^48 → addressOutOfBounds
     4. `msgRegs.size ≥ 4`, ASID valid, VAddr canonical, but `PagePermissions.ofNat?` returns none → invalidSyscallArgument (X5-E) -/
-theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) :
+theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceMap ≤ d.msgInfo.length) :
     (∃ e, decodeVSpaceMapArgs d maxASID = .error e) ↔
     (d.msgRegs.size < 4 ∨
      (∃ (h : 3 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig maxASID = false) ∨
      (∃ (h : 3 < d.msgRegs.size), (VAddr.ofNat (d.msgRegs[1]'(by omega)).val).isCanonical = false) ∨
      (∃ (h : 3 < d.msgRegs.size), PagePermissions.ofNat? (d.msgRegs[3]'h).val = none)) := by
+  have hL := requireMessageLength_of_le hLen
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 4
     · exact .inl hlt
     · have h3 : 3 < d.msgRegs.size := by omega
-      simp only [decodeVSpaceMapArgs, bind, Except.bind,
+      simp only [decodeVSpaceMapArgs, hL, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         dif_pos (show 1 < d.msgRegs.size by omega),
         dif_pos (show 2 < d.msgRegs.size by omega),
@@ -687,10 +777,10 @@ theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) 
               assumption⟩
   · intro h
     match h with
-    | .inl hLt => exact decodeVSpaceMapArgs_error_of_insufficient_regs d maxASID hLt
+    | .inl hLt => exact decodeVSpaceMapArgs_error_of_insufficient_regs d maxASID hLen hLt
     | .inr (.inl ⟨h3, hAsid⟩) =>
       exact ⟨.asidNotBound, by
-        simp only [decodeVSpaceMapArgs, bind, Except.bind,
+        simp only [decodeVSpaceMapArgs, hL, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
           dif_pos (show 1 < d.msgRegs.size by omega),
           dif_pos (show 2 < d.msgRegs.size by omega),
@@ -699,25 +789,26 @@ theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) 
           rw [hAsid]; rfl
         simp [this]⟩
     | .inr (.inr (.inl ⟨h3, hVAddr⟩)) =>
-      exact decodeVSpaceMapArgs_error_of_noncanonical_vaddr d maxASID (by omega) hVAddr
+      exact decodeVSpaceMapArgs_error_of_noncanonical_vaddr d maxASID hLen (by omega) hVAddr
     | .inr (.inr (.inr ⟨h3, hPerms⟩)) =>
-      exact decodeVSpaceMapArgs_error_of_invalid_perms d maxASID (by omega) hPerms
+      exact decodeVSpaceMapArgs_error_of_invalid_perms d maxASID hLen (by omega) hPerms
 
 /-- AE4-B: VSpace unmap decode fails iff fewer than 2 message registers,
     ASID invalid, or VAddr non-canonical. -/
-theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) :
+theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceUnmap ≤ d.msgInfo.length) :
     (∃ e, decodeVSpaceUnmapArgs d maxASID = .error e) ↔
     (d.msgRegs.size < 2 ∨
      (∃ (h : 1 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig maxASID = false) ∨
      (∃ (h : 1 < d.msgRegs.size),
        (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig maxASID = true ∧
        (VAddr.ofNat (d.msgRegs[1]'(by omega)).val).isCanonical = false)) := by
+  have hL := requireMessageLength_of_le hLen
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 2
     · exact .inl hlt
     · have h1 : 1 < d.msgRegs.size := by omega
-      simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
+      simp only [decodeVSpaceUnmapArgs, hL, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         dif_pos (show 1 < d.msgRegs.size by omega)] at he
       -- Branch on ASID validity
@@ -749,14 +840,14 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat
     match h with
     | .inl hLt =>
       refine ⟨.invalidMessageInfo, ?_⟩
-      simp only [decodeVSpaceUnmapArgs, bind, Except.bind]
+      simp only [decodeVSpaceUnmapArgs, hL, bind, Except.bind]
       by_cases h0 : 0 < d.msgRegs.size
       · rw [requireMsgReg_unfold_ok _ _ h0]; simp
         rw [requireMsgReg_unfold_err _ _ (by omega)]
       · rw [requireMsgReg_unfold_err _ _ h0]
     | .inr (.inl ⟨h1, hAsid⟩) =>
       exact ⟨.asidNotBound, by
-        simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
+        simp only [decodeVSpaceUnmapArgs, hL, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
           dif_pos (show 1 < d.msgRegs.size by omega)]
         have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID) = true := by
@@ -764,7 +855,7 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat
         simp [this]⟩
     | .inr (.inr ⟨h1, hAsidOk, hVAddr⟩) =>
       exact ⟨.addressOutOfBounds, by
-        simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
+        simp only [decodeVSpaceUnmapArgs, hL, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
           dif_pos (show 1 < d.msgRegs.size by omega)]
         have hAsidTrue : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID) = false := by
@@ -781,7 +872,7 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat
     Used exclusively for round-trip proof statements. -/
 private def stubDecoded (regs : Array RegValue) : SyscallDecodeResult :=
   { capAddr := CPtr.ofNat 0
-    msgInfo := { length := 0, extraCaps := 0, label := 0 }
+    msgInfo := { length := regs.size, extraCaps := 0, label := 0 }
     syscallId := .send
     msgRegs := regs }
 
@@ -839,7 +930,7 @@ theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs) :
   have hDiv : (t.toNat + b * 256) / 256 = b := by omega
   have hTag' : KernelObjectType.ofNat? (t.toNat % 256) = some t := by
     rw [Nat.mod_eq_of_lt hLt]; cases t <;> rfl
-  simp [hTag', decodeUntypedRetypeArgs, encodeUntypedRetypeArgs, stubDecoded,
+  simp [requireMessageLength, truncationMinimum, hTag', decodeUntypedRetypeArgs, encodeUntypedRetypeArgs, stubDecoded,
     requireMsgReg, hDiv, bind, Except.bind, pure, Except.pure]
   exact ⟨rfl, rfl⟩
 
@@ -883,7 +974,7 @@ theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) (maxASID : Nat)
   have hV : v.isCanonical = true := hVAddr
   -- V4-K: W^X cases (write=true, execute=true) are excluded by hWx
   cases r <;> cases w <;> cases e <;> cases u <;> cases c <;>
-    simp_all [decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded,
+    simp_all [requireMessageLength, truncationMinimum, decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded,
       bind, Except.bind, requireMsgReg, PagePermissions.wxCompliant,
       PagePermissions.toNat, PagePermissions.ofNat?, PagePermissions.ofNat,
       ASID.ofNat_toNat, VAddr.ofNat_toNat, CPtr.ofNat_toNat, pure, Except.pure]
@@ -896,7 +987,7 @@ theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs) (maxASID : Nat)
     (hVAddr : args.vaddr.isCanonical = true) :
     decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) maxASID = .ok args := by
   rcases args with ⟨a, v⟩
-  simp [decodeVSpaceUnmapArgs, encodeVSpaceUnmapArgs, stubDecoded,
+  simp [requireMessageLength, truncationMinimum, decodeVSpaceUnmapArgs, encodeVSpaceUnmapArgs, stubDecoded,
     bind, Except.bind, requireMsgReg, ASID.ofNat_toNat, VAddr.ofNat_toNat,
     pure, Except.pure, hAsid, hVAddr]
 
@@ -955,6 +1046,7 @@ def serviceMaxMessageSize : Nat := 120 * 8
     Rust-validated-but-Lean-accepted divergence. -/
 def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
     : Except KernelError ServiceRegisterArgs := do
+  requireMessageLength decoded (truncationMinimum .serviceRegister)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
@@ -990,10 +1082,11 @@ def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
     when any argument exceeds its validated bound. This supersedes the legacy
     `size < 5`-only iff. -/
 theorem decodeServiceRegisterArgs_error_of_insufficient_regs
-    (d : SyscallDecodeResult) (h : d.msgRegs.size < 5) :
+    (d : SyscallDecodeResult) (hLen : truncationMinimum .serviceRegister ≤ d.msgInfo.length) (h : d.msgRegs.size < 5) :
     ∃ e, decodeServiceRegisterArgs d = .error e := by
+  have hL := requireMessageLength_of_le hLen
   refine ⟨.invalidMessageInfo, ?_⟩
-  simp only [decodeServiceRegisterArgs, bind, Except.bind]
+  simp only [decodeServiceRegisterArgs, hL, bind, Except.bind]
   by_cases h0 : 0 < d.msgRegs.size
   · rw [requireMsgReg_unfold_ok _ _ h0]; simp
     by_cases h1 : 1 < d.msgRegs.size
@@ -1010,10 +1103,11 @@ theorem decodeServiceRegisterArgs_error_of_insufficient_regs
 
 /-- AK4-B: Out-of-range `methodCount` fails closed. -/
 theorem decodeServiceRegisterArgs_error_of_methodCount_too_large
-    (d : SyscallDecodeResult) (hSize : 5 ≤ d.msgRegs.size)
+    (d : SyscallDecodeResult) (hLen : truncationMinimum .serviceRegister ≤ d.msgInfo.length) (hSize : 5 ≤ d.msgRegs.size)
     (hMc : d.msgRegs[1].val > serviceMaxMethodCount) :
     decodeServiceRegisterArgs d = .error .invalidArgument := by
-  simp only [decodeServiceRegisterArgs, bind, Except.bind,
+  have hL := requireMessageLength_of_le hLen
+  simp only [decodeServiceRegisterArgs, hL, bind, Except.bind,
     requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
     dif_pos (show 1 < d.msgRegs.size by omega),
     dif_pos (show 2 < d.msgRegs.size by omega),
@@ -1023,13 +1117,14 @@ theorem decodeServiceRegisterArgs_error_of_methodCount_too_large
 
 /-- AK4-B: Out-of-range `requiresGrant` fails closed. -/
 theorem decodeServiceRegisterArgs_error_of_invalid_grant
-    (d : SyscallDecodeResult) (hSize : 5 ≤ d.msgRegs.size)
+    (d : SyscallDecodeResult) (hLen : truncationMinimum .serviceRegister ≤ d.msgInfo.length) (hSize : 5 ≤ d.msgRegs.size)
     (hMc : d.msgRegs[1].val ≤ serviceMaxMethodCount)
     (hMms : d.msgRegs[2].val ≤ serviceMaxMessageSize)
     (hMrs : d.msgRegs[3].val ≤ serviceMaxMessageSize)
     (hGrant : d.msgRegs[4].val ≥ 2) :
     decodeServiceRegisterArgs d = .error .invalidMessageInfo := by
-  simp only [decodeServiceRegisterArgs, bind, Except.bind,
+  have hL := requireMessageLength_of_le hLen
+  simp only [decodeServiceRegisterArgs, hL, bind, Except.bind,
     requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
     dif_pos (show 1 < d.msgRegs.size by omega),
     dif_pos (show 2 < d.msgRegs.size by omega),
@@ -1056,7 +1151,7 @@ theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
   have hMcFalse : ¬ serviceMaxMethodCount < mc := Nat.not_lt.mpr hMc
   have hMmsFalse : ¬ serviceMaxMessageSize < mms := Nat.not_lt.mpr hMms
   have hMrsFalse : ¬ serviceMaxMessageSize < mrs := Nat.not_lt.mpr hMrs
-  simp only [decodeServiceRegisterArgs, encodeServiceRegisterArgs, stubDecoded,
+  simp only [requireMessageLength, truncationMinimum, decodeServiceRegisterArgs, encodeServiceRegisterArgs, stubDecoded,
         requireMsgReg, bind, Except.bind, pure, Except.pure,
         InterfaceId.ofNat, InterfaceId.toNat]
   cases rg <;>
@@ -1203,6 +1298,7 @@ structure SchedContextUnbindArgs where
     priority-and-domain word, deadline). -/
 def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextConfigureArgs := do
+  requireMessageLength decoded (truncationMinimum .schedContextConfigure)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
@@ -1269,6 +1365,7 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
     the caller's CSpace — `v0.35.204`; a raw thread id until then). -/
 def decodeSchedContextBindArgs (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextBindArgs := do
+  requireMessageLength decoded (truncationMinimum .schedContextBind)
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { tcbCPtr := SeLe4n.CPtr.ofNat r0.val }
 
@@ -1295,6 +1392,7 @@ structure TcbUnbindNotificationArgs where
     notification capability address). -/
 def decodeTcbBindNotificationArgs (decoded : SyscallDecodeResult)
     : Except KernelError TcbBindNotificationArgs := do
+  requireMessageLength decoded (truncationMinimum .tcbBindNotification)
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { notificationCPtr := SeLe4n.CPtr.ofNat r0.val }
 
@@ -1311,6 +1409,7 @@ structure IrqControlGetArgs where
 /-- WS-ZA ZA6.32: decode `irqControlGet` arguments (3 registers). -/
 def decodeIrqControlGetArgs (decoded : SyscallDecodeResult)
     : Except KernelError IrqControlGetArgs := do
+  requireMessageLength decoded (truncationMinimum .irqControlGet)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
@@ -1326,6 +1425,7 @@ structure IrqHandlerSetNotificationArgs where
 /-- WS-ZA ZA6.32: decode `irqHandlerSetNotification` arguments (1 register). -/
 def decodeIrqHandlerSetNotificationArgs (decoded : SyscallDecodeResult)
     : Except KernelError IrqHandlerSetNotificationArgs := do
+  requireMessageLength decoded (truncationMinimum .irqHandlerSetNotification)
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { notificationCPtr := SeLe4n.CPtr.ofNat r0.val }
 
@@ -1352,13 +1452,13 @@ def decodeIrqHandlerSetNotificationArgs (decoded : SyscallDecodeResult)
 /-- Z5-A: SchedContextConfigureArgs decode round-trip. -/
 theorem decodeSchedContextConfigureArgs_roundtrip (args : SchedContextConfigureArgs) :
     decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args := by
-  simp [decodeSchedContextConfigureArgs, encodeSchedContextConfigureArgs, stubDecoded, requireMsgReg,
+  simp [requireMessageLength, truncationMinimum, decodeSchedContextConfigureArgs, encodeSchedContextConfigureArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 /-- Z5-B: SchedContextBindArgs decode round-trip. -/
 theorem decodeSchedContextBindArgs_roundtrip (args : SchedContextBindArgs) :
     decodeSchedContextBindArgs (stubDecoded (encodeSchedContextBindArgs args)) = .ok args := by
-  simp [decodeSchedContextBindArgs, encodeSchedContextBindArgs, stubDecoded, requireMsgReg,
+  simp [requireMessageLength, truncationMinimum, decodeSchedContextBindArgs, encodeSchedContextBindArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 /-- Z5-C: SchedContextUnbindArgs decode round-trip (trivial). -/
@@ -1453,14 +1553,15 @@ theorem decodeReplyRecvArgs_error_iff (d : SyscallDecodeResult) :
 -- ============================================================================
 
 /-- Z8-B: SchedContextConfigureArgs decode fails iff fewer than 5 message registers. -/
-theorem decodeSchedContextConfigureArgs_error_iff (d : SyscallDecodeResult) :
+theorem decodeSchedContextConfigureArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .schedContextConfigure ≤ d.msgInfo.length) :
     (∃ e, decodeSchedContextConfigureArgs d = .error e) ↔ d.msgRegs.size < 5 := by
+  have hL := requireMessageLength_of_le hLen
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 5
     · exact hlt
     · exfalso
-      simp only [decodeSchedContextConfigureArgs, bind, Except.bind,
+      simp only [decodeSchedContextConfigureArgs, hL, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         dif_pos (show 1 < d.msgRegs.size by omega),
         dif_pos (show 2 < d.msgRegs.size by omega),
@@ -1470,7 +1571,7 @@ theorem decodeSchedContextConfigureArgs_error_iff (d : SyscallDecodeResult) :
       nomatch he
   · intro h
     refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeSchedContextConfigureArgs, bind, Except.bind]
+    simp only [decodeSchedContextConfigureArgs, hL, bind, Except.bind]
     by_cases h0 : 0 < d.msgRegs.size
     · rw [requireMsgReg_unfold_ok _ _ h0]; simp
       by_cases h1 : 1 < d.msgRegs.size
@@ -1486,20 +1587,21 @@ theorem decodeSchedContextConfigureArgs_error_iff (d : SyscallDecodeResult) :
     · rw [requireMsgReg_unfold_err _ _ h0]
 
 /-- Z8-B: SchedContextBindArgs decode fails iff fewer than 1 message register. -/
-theorem decodeSchedContextBindArgs_error_iff (d : SyscallDecodeResult) :
+theorem decodeSchedContextBindArgs_error_iff (d : SyscallDecodeResult) (hLen : truncationMinimum .schedContextBind ≤ d.msgInfo.length) :
     (∃ e, decodeSchedContextBindArgs d = .error e) ↔ d.msgRegs.size < 1 := by
+  have hL := requireMessageLength_of_le hLen
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 1
     · exact hlt
     · exfalso
-      simp only [decodeSchedContextBindArgs, bind, Except.bind,
+      simp only [decodeSchedContextBindArgs, hL, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         pure, Except.pure] at he
       nomatch he
   · intro h
     refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeSchedContextBindArgs, bind, Except.bind]
+    simp only [decodeSchedContextBindArgs, hL, bind, Except.bind]
     rw [requireMsgReg_unfold_err _ _ (by omega)]
 
 /-- Z8-B: SchedContextUnbindArgs decode never fails (no message registers required). -/
@@ -1605,6 +1707,7 @@ structure SetMCPriorityArgs where
     value is within the valid range (≤ 0xFF). -/
 def decodeSetPriorityArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetPriorityArgs := do
+  requireMessageLength decoded (truncationMinimum .tcbSetPriority)
   let r0 ← requireMsgReg decoded.msgRegs 0
   if r0.val > 0xFF then .error .invalidArgument
   else pure { newPriority := r0.val }
@@ -1614,6 +1717,7 @@ def decodeSetPriorityArgs (decoded : SyscallDecodeResult)
     value is within the valid range (≤ 0xFF). -/
 def decodeSetMCPriorityArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetMCPriorityArgs := do
+  requireMessageLength decoded (truncationMinimum .tcbSetMCPriority)
   let r0 ← requireMsgReg decoded.msgRegs 0
   if r0.val > 0xFF then .error .invalidArgument
   else pure { newMCP := r0.val }
@@ -1637,13 +1741,13 @@ def decodeSetMCPriorityArgs (decoded : SyscallDecodeResult)
 /-- D2-C: SetPriorityArgs decode round-trip for in-range values. -/
 theorem decodeSetPriorityArgs_roundtrip (args : SetPriorityArgs) (h : args.newPriority ≤ 0xFF) :
     decodeSetPriorityArgs (stubDecoded (encodeSetPriorityArgs args)) = .ok args := by
-  simp [decodeSetPriorityArgs, encodeSetPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
+  simp [requireMessageLength, truncationMinimum, decodeSetPriorityArgs, encodeSetPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure, show ¬(args.newPriority > 0xFF) from Nat.not_lt.mpr h]
 
 /-- D2-C: SetMCPriorityArgs decode round-trip for in-range values. -/
 theorem decodeSetMCPriorityArgs_roundtrip (args : SetMCPriorityArgs) (h : args.newMCP ≤ 0xFF) :
     decodeSetMCPriorityArgs (stubDecoded (encodeSetMCPriorityArgs args)) = .ok args := by
-  simp [decodeSetMCPriorityArgs, encodeSetMCPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
+  simp [requireMessageLength, truncationMinimum, decodeSetMCPriorityArgs, encodeSetMCPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure, show ¬(args.newMCP > 0xFF) from Nat.not_lt.mpr h]
 
 -- ============================================================================
@@ -1663,6 +1767,7 @@ structure SetIPCBufferArgs where
     `bufferAddr.toNat % ipcBufferAlignment = 0`. -/
 def decodeSetIPCBufferArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetIPCBufferArgs := do
+  requireMessageLength decoded (truncationMinimum .tcbSetIPCBuffer)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let addr := SeLe4n.VAddr.ofNat r0.val
   if addr.toNat % SeLe4n.ipcBufferAlignment != 0 then .error .alignmentError
@@ -1680,7 +1785,7 @@ def decodeSetIPCBufferArgs (decoded : SyscallDecodeResult)
 theorem decodeSetIPCBufferArgs_roundtrip (args : SetIPCBufferArgs)
     (hAligned : args.bufferAddr.toNat % SeLe4n.ipcBufferAlignment = 0) :
     decodeSetIPCBufferArgs (stubDecoded (encodeSetIPCBufferArgs args)) = .ok args := by
-  simp only [decodeSetIPCBufferArgs, encodeSetIPCBufferArgs, stubDecoded, requireMsgReg,
+  simp only [requireMessageLength, truncationMinimum, decodeSetIPCBufferArgs, encodeSetIPCBufferArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure,
         SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat] at *
   simp [hAligned]
@@ -1704,6 +1809,7 @@ structure SetAffinityArgs where
     decode itself only extracts the raw word. -/
 def decodeSetAffinityArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetAffinityArgs := do
+  requireMessageLength decoded (truncationMinimum .tcbSetAffinity)
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { affinityRaw := r0.val }
 
@@ -1714,7 +1820,7 @@ def decodeSetAffinityArgs (decoded : SyscallDecodeResult)
 /-- WS-SM SM5.H.4: SetAffinityArgs decode round-trip. -/
 theorem decodeSetAffinityArgs_roundtrip (args : SetAffinityArgs) :
     decodeSetAffinityArgs (stubDecoded (encodeSetAffinityArgs args)) = .ok args := by
-  simp [decodeSetAffinityArgs, encodeSetAffinityArgs, stubDecoded, requireMsgReg, Bind.bind,
+  simp [requireMessageLength, truncationMinimum, decodeSetAffinityArgs, encodeSetAffinityArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure]
 
 -- ============================================================================
@@ -1735,6 +1841,7 @@ structure SetFaultHandlerArgs where
     message register (the CPtr word). -/
 def decodeSetFaultHandlerArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetFaultHandlerArgs := do
+  requireMessageLength decoded (truncationMinimum .tcbSetFaultHandler)
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { handlerCPtr := SeLe4n.CPtr.ofNat r0.val }
 
@@ -1745,7 +1852,7 @@ def decodeSetFaultHandlerArgs (decoded : SyscallDecodeResult)
 /-- SetFaultHandlerArgs decode round-trip. -/
 theorem decodeSetFaultHandlerArgs_roundtrip (args : SetFaultHandlerArgs) :
     decodeSetFaultHandlerArgs (stubDecoded (encodeSetFaultHandlerArgs args)) = .ok args := by
-  simp [decodeSetFaultHandlerArgs, encodeSetFaultHandlerArgs, stubDecoded, requireMsgReg,
+  simp [requireMessageLength, truncationMinimum, decodeSetFaultHandlerArgs, encodeSetFaultHandlerArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 -- ============================================================================
@@ -1771,6 +1878,7 @@ structure AuditReadArgs where
     Requires 3 message registers. -/
 def decodeAuditReadArgs (decoded : SyscallDecodeResult)
     : Except KernelError AuditReadArgs := do
+  requireMessageLength decoded (truncationMinimum .auditRead)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
@@ -1783,8 +1891,8 @@ def decodeAuditReadArgs (decoded : SyscallDecodeResult)
 /-- WS-SM SM9.A.10: AuditReadArgs decode round-trip. -/
 theorem decodeAuditReadArgs_roundtrip (args : AuditReadArgs) :
     decodeAuditReadArgs (stubDecoded (encodeAuditReadArgs args)) = .ok args := by
-  simp [decodeAuditReadArgs, encodeAuditReadArgs, stubDecoded, requireMsgReg, Bind.bind,
-        Except.bind, Pure.pure, Except.pure]
+  simp [decodeAuditReadArgs, encodeAuditReadArgs, stubDecoded, requireMsgReg, requireMessageLength,
+        truncationMinimum, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 /-- WS-SM SM9.A.10: `auditDrain` arguments.
     Register mapping: x2=count (entries to remove).
@@ -1799,6 +1907,7 @@ structure AuditDrainArgs where
     Requires 1 message register. -/
 def decodeAuditDrainArgs (decoded : SyscallDecodeResult)
     : Except KernelError AuditDrainArgs := do
+  requireMessageLength decoded (truncationMinimum .auditDrain)
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { count := r0.val }
 
@@ -1809,8 +1918,8 @@ def decodeAuditDrainArgs (decoded : SyscallDecodeResult)
 /-- WS-SM SM9.A.10: AuditDrainArgs decode round-trip. -/
 theorem decodeAuditDrainArgs_roundtrip (args : AuditDrainArgs) :
     decodeAuditDrainArgs (stubDecoded (encodeAuditDrainArgs args)) = .ok args := by
-  simp [decodeAuditDrainArgs, encodeAuditDrainArgs, stubDecoded, requireMsgReg, Bind.bind,
-        Except.bind, Pure.pure, Except.pure]
+  simp [decodeAuditDrainArgs, encodeAuditDrainArgs, stubDecoded, requireMsgReg, requireMessageLength,
+        truncationMinimum, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 
 -- ============================================================================
@@ -1830,6 +1939,7 @@ structure SetSpaceArgs where
 /-- WS-BP BP7.1: decode `tcbSetSpace` arguments.  Requires 2 message registers. -/
 def decodeSetSpaceArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetSpaceArgs := do
+  requireMessageLength decoded (truncationMinimum .tcbSetSpace)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   pure { cspaceRoot := SeLe4n.CPtr.ofNat r0.val, vspaceRoot := SeLe4n.CPtr.ofNat r1.val }
@@ -1841,7 +1951,7 @@ def decodeSetSpaceArgs (decoded : SyscallDecodeResult)
 /-- WS-BP BP7.1: SetSpaceArgs decode round-trip. -/
 theorem decodeSetSpaceArgs_roundtrip (args : SetSpaceArgs) :
     decodeSetSpaceArgs (stubDecoded (encodeSetSpaceArgs args)) = .ok args := by
-  simp [decodeSetSpaceArgs, encodeSetSpaceArgs, stubDecoded, requireMsgReg, Bind.bind,
+  simp [requireMessageLength, truncationMinimum, decodeSetSpaceArgs, encodeSetSpaceArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 -- ============================================================================
@@ -1861,6 +1971,7 @@ structure PageTableMapArgs where
 /-- WS-BP BP7.1: decode `pageTableMap` arguments.  Requires 2 message registers. -/
 def decodePageTableMapArgs (decoded : SyscallDecodeResult)
     : Except KernelError PageTableMapArgs := do
+  requireMessageLength decoded (truncationMinimum .pageTableMap)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   pure { vspaceRoot := SeLe4n.CPtr.ofNat r0.val, vaddr := SeLe4n.VAddr.ofNat r1.val }
@@ -1872,7 +1983,7 @@ def decodePageTableMapArgs (decoded : SyscallDecodeResult)
 /-- WS-BP BP7.1: PageTableMapArgs decode round-trip. -/
 theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs) :
     decodePageTableMapArgs (stubDecoded (encodePageTableMapArgs args)) = .ok args := by
-  simp [decodePageTableMapArgs, encodePageTableMapArgs, stubDecoded, requireMsgReg, Bind.bind,
+  simp [requireMessageLength, truncationMinimum, decodePageTableMapArgs, encodePageTableMapArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat,
         SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat]
 
@@ -1959,9 +2070,11 @@ word (`CPtr.ofWord`), every other field from its number, as the decode does. -/
 
 theorem decodeCSpaceMintArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .cspaceMint ≤ decoded.msgInfo.length) :
     decodeCSpaceMintArgs decoded = decodeCSpaceMintArgsBy (msgRegOfFile layout regs) := by
   unfold decodeCSpaceMintArgs decodeCSpaceMintArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -1978,9 +2091,11 @@ theorem decodeCSpaceMintArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
 
 theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .cspaceCopy ≤ decoded.msgInfo.length) :
     decodeCSpaceCopyArgs decoded = decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) := by
   unfold decodeCSpaceCopyArgs decodeCSpaceCopyArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -1997,9 +2112,11 @@ theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
 
 theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .cspaceMove ≤ decoded.msgInfo.length) :
     decodeCSpaceMoveArgs decoded = decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) := by
   unfold decodeCSpaceMoveArgs decodeCSpaceMoveArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2015,9 +2132,11 @@ theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
 
 theorem decodeCSpaceDeleteArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .cspaceDelete ≤ decoded.msgInfo.length) :
     decodeCSpaceDeleteArgs decoded = decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) := by
   unfold decodeCSpaceDeleteArgs decodeCSpaceDeleteArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2043,9 +2162,11 @@ theorem decodeCSpaceDeleteArgs_eq_by (layout : SyscallRegisterLayout) (regs : Re
 
 theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .untypedRetype ≤ decoded.msgInfo.length) :
     decodeUntypedRetypeArgs decoded = decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) := by
   unfold decodeUntypedRetypeArgs decodeUntypedRetypeArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2076,9 +2197,11 @@ theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
 
 theorem decodeVSpaceMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult) (maxASID : Nat)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .vspaceMap ≤ decoded.msgInfo.length) :
     decodeVSpaceMapArgs decoded maxASID = decodeVSpaceMapArgsBy (msgRegOfFile layout regs) maxASID := by
   unfold decodeVSpaceMapArgs decodeVSpaceMapArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2102,9 +2225,11 @@ theorem decodeVSpaceMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regis
 
 theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult) (maxASID : Nat)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .vspaceUnmap ≤ decoded.msgInfo.length) :
     decodeVSpaceUnmapArgs decoded maxASID = decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) maxASID := by
   unfold decodeVSpaceUnmapArgs decodeVSpaceUnmapArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2120,9 +2245,11 @@ theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
 
 theorem decodeSchedContextBindArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .schedContextBind ≤ decoded.msgInfo.length) :
     decodeSchedContextBindArgs decoded = decodeSchedContextBindArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSchedContextBindArgs decodeSchedContextBindArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2189,11 +2316,13 @@ read as its word (`CPtr.ofWord`), as the bind reads its thread's. -/
 theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
     (h : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5) :
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+    (hLen : truncationMinimum .schedContextConfigure ≤ decoded.msgInfo.length) :
     decodeSchedContextConfigureArgsChecked decoded =
       decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) := by
   unfold decodeSchedContextConfigureArgsChecked decodeSchedContextConfigureArgs
     decodeSchedContextConfigureArgsCheckedBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg_push]
@@ -2225,10 +2354,12 @@ decode's order. -/
 theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
     (h : MsgRegsAgreeBelow decoded.msgRegs
-      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5) :
+      (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) 5)
+    (hLen : truncationMinimum .serviceRegister ≤ decoded.msgInfo.length) :
     decodeServiceRegisterArgs decoded =
       decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) := by
   unfold decodeServiceRegisterArgs decodeServiceRegisterArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg_push]
@@ -2243,9 +2374,11 @@ theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
 
 theorem decodeTcbBindNotificationArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .tcbBindNotification ≤ decoded.msgInfo.length) :
     decodeTcbBindNotificationArgs decoded = decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) := by
   unfold decodeTcbBindNotificationArgs decodeTcbBindNotificationArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2263,9 +2396,11 @@ theorem decodeTcbBindNotificationArgs_eq_by (layout : SyscallRegisterLayout) (re
 
 theorem decodeIrqControlGetArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .irqControlGet ≤ decoded.msgInfo.length) :
     decodeIrqControlGetArgs decoded = decodeIrqControlGetArgsBy (msgRegOfFile layout regs) := by
   unfold decodeIrqControlGetArgs decodeIrqControlGetArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2281,10 +2416,12 @@ theorem decodeIrqControlGetArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
 
 theorem decodeIrqHandlerSetNotificationArgs_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .irqHandlerSetNotification ≤ decoded.msgInfo.length) :
     decodeIrqHandlerSetNotificationArgs decoded =
       decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs) := by
   unfold decodeIrqHandlerSetNotificationArgs decodeIrqHandlerSetNotificationArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2301,9 +2438,11 @@ theorem decodeIrqHandlerSetNotificationArgs_eq_by (layout : SyscallRegisterLayou
 
 theorem decodeSetPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .tcbSetPriority ≤ decoded.msgInfo.length) :
     decodeSetPriorityArgs decoded = decodeSetPriorityArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetPriorityArgs decodeSetPriorityArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2320,9 +2459,11 @@ theorem decodeSetPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
 
 theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .tcbSetMCPriority ≤ decoded.msgInfo.length) :
     decodeSetMCPriorityArgs decoded = decodeSetMCPriorityArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetMCPriorityArgs decodeSetMCPriorityArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2340,9 +2481,11 @@ theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : R
 
 theorem decodeSetIPCBufferArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .tcbSetIPCBuffer ≤ decoded.msgInfo.length) :
     decodeSetIPCBufferArgs decoded = decodeSetIPCBufferArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetIPCBufferArgs decodeSetIPCBufferArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2358,9 +2501,11 @@ theorem decodeSetIPCBufferArgs_eq_by (layout : SyscallRegisterLayout) (regs : Re
 
 theorem decodeSetAffinityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .tcbSetAffinity ≤ decoded.msgInfo.length) :
     decodeSetAffinityArgs decoded = decodeSetAffinityArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetAffinityArgs decodeSetAffinityArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2376,9 +2521,11 @@ theorem decodeSetAffinityArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
 
 theorem decodeSetFaultHandlerArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .tcbSetFaultHandler ≤ decoded.msgInfo.length) :
     decodeSetFaultHandlerArgs decoded = decodeSetFaultHandlerArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetFaultHandlerArgs decodeSetFaultHandlerArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2395,9 +2542,11 @@ theorem decodeSetFaultHandlerArgs_eq_by (layout : SyscallRegisterLayout) (regs :
 
 theorem decodeSetSpaceArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .tcbSetSpace ≤ decoded.msgInfo.length) :
     decodeSetSpaceArgs decoded = decodeSetSpaceArgsBy (msgRegOfFile layout regs) := by
   unfold decodeSetSpaceArgs decodeSetSpaceArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2414,9 +2563,11 @@ theorem decodeSetSpaceArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regist
 
 theorem decodePageTableMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
-    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4) :
+    (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
+    (hLen : truncationMinimum .pageTableMap ≤ decoded.msgInfo.length) :
     decodePageTableMapArgs decoded = decodePageTableMapArgsBy (msgRegOfFile layout regs) := by
   unfold decodePageTableMapArgs decodePageTableMapArgsBy
+  rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]
   simp only [requireMsgReg_map_readReg]
@@ -2424,6 +2575,5 @@ theorem decodePageTableMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Re
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
       SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
-
 
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

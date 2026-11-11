@@ -727,31 +727,15 @@ theorem dispatchSyscallChecked_mappingStage (ctx : LabelingContext)
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
-  cases hTF : syscallChecksTargetFirst decoded.syscallId <;>
-    simp only [hTF, Bool.false_eq_true, ↓reduceIte] at h
-  all_goals
-    split at h
-    · cases h
-    rename_i stPost hD
-    cases h
-    refine MappingStage.trans (st' := stPost) ?_
-      (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
-        (applySyscallTaint_objectsAgreeOffTaint _ _ _))
-  · unfold syscallInvoke at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hLk
-      have hRz := syscallResolveCap_of_lookup _ st cap s1 hLk
-      obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
-      subst hStEq
-      exact dispatchWithCapChecked_mappingStage ctx decoded tid executingCore _ cap _ stPost P hD
-  · unfold syscallInvokeResolved at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hRz
-      obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
-      subst hStEq
-      exact dispatchWithCapChecked_mappingStage ctx decoded tid executingCore _ cap _ stPost P hD
+  split at h
+  · cases h
+  rename_i stPost hD
+  cases h
+  refine MappingStage.trans (st' := stPost) ?_
+    (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
+      (applySyscallTaint_objectsAgreeOffTaint _ _ _))
+  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  exact dispatchWithCapChecked_mappingStage ctx decoded tid executingCore _ cap _ stPost P hD
 
 /-! ### The unchecked dispatchers
 
@@ -907,13 +891,7 @@ theorem dispatchSyscall_mappingStage (decoded : SyscallDecodeResult)
   refine MappingStage.trans (st' := stPost) ?_
     (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
         (applySyscallTaint_objectsAgreeOffTaint _ _ _))
-  unfold syscallInvoke at hD
-  split at hD
-  · cases hD
-  · rename_i cap s1 hLk
-    have hRz := syscallResolveCap_of_lookup _ st cap s1 hLk
-    obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
-    subst hStEq
-    exact dispatchWithCap_mappingStage decoded tid executingCore _ cap _ stPost P hD
+  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  exact dispatchWithCap_mappingStage decoded tid executingCore _ cap _ stPost P hD
 
 end SeLe4n.Kernel

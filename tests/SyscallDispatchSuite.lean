@@ -163,9 +163,8 @@ MessageInfo position.  Driven by numeric enumeration over the full range
 rather than a hand-maintained variant list: the retired SD-002's list had
 54 entries against the type's 55 (`.auditLogCapacityExceeded` never
 joined it), which is the silent-under-listing this shape cannot repeat —
-the boundary is pinned both ways below (WS-RR RR7.14 added
-`.ipcCancelled` at 57, so the last discriminant is 57 and 58 is the
-first rejected one). -/
+the boundary is pinned both ways below (`.truncatedMessage` is at 58,
+so the last discriminant is 58 and 59 is the first rejected one). -/
 private def sd002_errorLabelCarriage : IO Unit := do
   for disc in [0:SeLe4n.Model.KernelError.kernelErrorEncodingBound] do
     match SeLe4n.Model.KernelError.ofDiscriminant? disc with
@@ -185,13 +184,13 @@ private def sd002_errorLabelCarriage : IO Unit := do
           (frame.x0 == 0 && frame.x2 == 0 && frame.x3 == 0 &&
            frame.x4 == 0 && frame.x5 == 0)
           "errorFrame carries nothing outside x1"
-  -- The boundary, both ways: 57 is the last discriminant, 58 is rejected.
-  expect "sd002e_last_discriminant_57"
-    ((SeLe4n.Model.KernelError.ofDiscriminant? 57).isSome)
-    "discriminant 57 (ipcCancelled) must resolve"
-  expect "sd002f_boundary_58_rejected"
-    ((SeLe4n.Model.KernelError.ofDiscriminant? 58).isNone)
-    "discriminant 58 must not resolve (fail-closed)"
+  -- The boundary, both ways: 58 is the last discriminant, 59 is rejected.
+  expect "sd002e_last_discriminant_58"
+    ((SeLe4n.Model.KernelError.ofDiscriminant? 58) == some .truncatedMessage)
+    "discriminant 58 (truncatedMessage) must resolve"
+  expect "sd002f_boundary_59_rejected"
+    ((SeLe4n.Model.KernelError.ofDiscriminant? 59).isNone)
+    "discriminant 59 must not resolve (fail-closed)"
   -- ABI v3 (WS-RR RR4): the status range is the top of the label field, so
   -- a delivered message's label — the four `seL4_Fault_tag` values a fault
   -- handler receives, in particular — is never read as an error.

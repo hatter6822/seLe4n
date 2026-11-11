@@ -445,6 +445,9 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     match syscallLookupCap gate s with
     | .error _ => none
     | .ok (cap, _) =>
+      -- a receive refused at its type or its right faults on its lookup
+      -- (seL4 `handleRecv`), so it declares no operands, as a failed lookup
+      if receiveGateRefuses decoded.syscallId s cap then none else
       match decoded.syscallId, cap.target with
       | .tcbSuspend, .object objId =>
           match (SeLe4n.ThreadId.ofNat objId.toNat).toValid? with
@@ -618,7 +621,8 @@ theorem abiEntryLockOperands_tcbSuspend_target_valid (decoded : SyscallDecodeRes
     | ok capPair =>
       obtain ⟨cap, _⟩ := capPair
       rw [hLk, hSid] at h
-      simp only at h
+      simp only [receiveGateRefuses, syscallReceivesOnCap, Bool.false_and, Bool.false_eq_true,
+        ↓reduceIte] at h
       -- Only the `.object` arm survives: a suspend names a TCB object, and the
       -- guard is `ThreadId.toValid?`, whose witness carries the refusal.
       cases hTgt : cap.target with
@@ -686,7 +690,8 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
     (h : abiEntryLockOperands decoded tid s = some ops) :
     ∃ (tcb : TCB) (gate : SyscallGate) (cap : Capability),
       abiEntryGate decoded tid s = some (tcb, gate) ∧
-      syscallLookupCap gate s = .ok (cap, s) := by
+      syscallLookupCap gate s = .ok (cap, s) ∧
+      receiveGateRefuses decoded.syscallId s cap = false := by
   unfold abiEntryLockOperands at h
   rw [if_neg hNotYield] at h
   cases hGate : abiEntryGate decoded tid s with
@@ -700,7 +705,11 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
     | ok capPair =>
       obtain ⟨cap, s'⟩ := capPair
       have hS := syscallLookupCap_preserves_state gate s s' cap hLk
-      subst hS
-      exact ⟨tcb, gate, cap, rfl, hLk⟩
+      subst s'
+      rw [hLk] at h
+      simp only at h
+      cases hG : receiveGateRefuses decoded.syscallId s cap
+      · exact ⟨tcb, gate, cap, rfl, hLk, hG⟩
+      · rw [hG] at h; exact absurd h (by simp)
 
 end SeLe4n.Kernel

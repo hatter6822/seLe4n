@@ -388,7 +388,7 @@ case leaves the state unchanged
 
 -- V3-F (M-PRF-3): See `resolveCapAddress_callers_check_rights` in API.lean.
 -- All callers of `resolveCapAddress` perform post-resolution rights checks.
--- The machine-checked proof lives in API.lean where `syscallInvoke` is
+-- The machine-checked proof lives in API.lean where `syscallInvokeTyped` is
 -- defined, avoiding circular imports.
 
 

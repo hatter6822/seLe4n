@@ -1466,9 +1466,28 @@ private def runSyscallCapFaultChecks : IO Unit := do
       (.capFault 3 false .invalidCapability))
   assertBool "a TCB invocation at the same CPtr faults too — handleInvocation raises CapFault for every blocking invocation"
     (seamCapFault (seamDispatch seamCtx .tcbSuspend 3) (.capFault 3 false .invalidCapability))
+  -- A short message: the lookup comes first, as in seL4, so an unresolvable
+  -- CPtr is the lookup's fault and a resolving one is `.truncatedMessage`.
+  assertBool "a delete whose message is shorter than its argument, at the same unresolvable CPtr, faults on the lookup first"
+    (seamCapFault (seamDispatch seamCtx .cspaceDelete 3) (.capFault 3 false .invalidCapability))
+  -- A CNode capability parked at slot 3 of the caller's root: the delete's
+  -- type.  The checks run lookup, type, right, length.
+  let cnodeCapAt3 (rights : List AccessRight) : SystemState :=
+    let cap : Capability := { target := .object cnRoot, rights := AccessRightSet.ofList rights }
+    let cn : KernelObject := .cnode (rootCnode.insert (SeLe4n.Slot.ofNat 3) cap)
+    { stRunning with objects := stRunning.objects.insert cnRoot cn }
+  let deleteAt3 (st : SystemState) :=
+    SeLe4n.Testing.dispatchFromAbi seamCtx c0 SyscallId.cspaceDelete.toNat.toUInt32 3 0 0 0 0 0 0
+      svcElr svcSpsr svcSpEl0 svcX30 st
+  assertBool "a delete whose message is shorter than its argument, through a CNode capability that carries its right, is refused truncatedMessage"
+    (seamErrorFrame (deleteAt3 (cnodeCapAt3 [.read, .write])) .truncatedMessage)
+  assertBool "a delete through a CNode capability that lacks its right is refused on the right before the length"
+    (seamErrorFrame (deleteAt3 (cnodeCapAt3 [.read])) .illegalAuthority)
+  assertBool "a delete through a capability of the wrong type is refused invalidCapability before its right and its length (seL4 decodeInvocation dispatches on the type)"
+    (seamErrorFrame (seamDispatch seamCtx .cspaceDelete 1) .invalidCapability)
   -- …and what is NOT a capability fault.
-  assertBool "a Call on a capability that RESOLVES but lacks send is the invocation's error, not the lookup's fault"
-    (seamErrorFrame (seamDispatch seamCtx .call 1) .illegalAuthority)
+  assertBool "a Call on a capability that RESOLVES but lacks send is the invocation's error, not the lookup's fault (seL4 decodeInvocation: no CanSend answers InvalidCapability)"
+    (seamErrorFrame (seamDispatch seamCtx .call 1) .invalidCapability)
   assertBool "a refusal raised BEFORE the lookup (the insecure default context) is never delivered as a fault, even at an unresolvable CPtr"
     (seamErrorFrame (seamDispatch permissiveCtx .call 3) .policyDenied)
   assertBool "a declassifying syscall at the same CPtr returns the error AND records it — the refusal ledger's partition, not the handler's"

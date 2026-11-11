@@ -1623,30 +1623,17 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
-  cases hTF : syscallChecksTargetFirst decoded.syscallId <;>
-    simp only [hTF, Bool.false_eq_true, ↓reduceIte] at h
-  all_goals
-    split at h
-    · cases h
-    rename_i stPost hD
-    cases h
-    suffices hP : stepCovers e st stPost ∧ stPost.objects.invExt from
-      ⟨stepCovers_trans hP.1 (stepCovers_of_scheduler_eq
-          (keyInputsEq_of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _))
-          (applySyscallTaint_scheduler _ _ _)),
-        applySyscallTaint_invExt hP.2⟩
-  · unfold syscallInvoke at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hR
-      cases syscallLookupCap_preserves_state _ _ _ _ hR
-      exact dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD
-  · unfold syscallInvokeResolved at hD
-    split at hD
-    · cases hD
-    · rename_i cap s1 hR
-      cases syscallResolveCap_state hR
-      exact dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD
+  split at h
+  · cases h
+  rename_i stPost hD
+  cases h
+  suffices hP : stepCovers e st stPost ∧ stPost.objects.invExt from
+    ⟨stepCovers_trans hP.1 (stepCovers_of_scheduler_eq
+        (keyInputsEq_of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _))
+        (applySyscallTaint_scheduler _ _ _)),
+      applySyscallTaint_invExt hP.2⟩
+  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  exact dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD
 
 /-- **The checked syscall entry covers** on the executing core: the register
 read and the decode read, and the IPC-buffer fill writes one core's TLB. -/

@@ -286,16 +286,108 @@ pub fn release_kernel_entry() {
     release_kernel_entry_in(&KERNEL_ENTRY_LOCK);
 }
 
+/// **The kernel-entry sites each core entered**, for the allocation
+/// exerciser: a tally per core of the entries taken through each bracket site
+/// (`KERNEL_ENTRY_SITES`, every `crate::kernel_entry::with_kernel_entry(` call
+/// under `src/`, derived from the code by `build.rs`), the last slot counting
+/// an entry from a caller the table does not list.  The exerciser reads a
+/// core's tally around each measured reading and prints the sites the reading
+/// entered, so the host-side heap gate can require every production site to
+/// be entered by a measured reading.  Only the exerciser image carries it.
+#[cfg(feature = "smp_exercisers")]
+pub mod entered_sites {
+    use core::sync::atomic::{AtomicU32, Ordering};
+
+    include!(env!("SELE4N_KERNEL_ENTRY_SITES"));
+
+    /// The cores tallied: every core the heap counts.
+    pub const CORES: usize = crate::smp::MAX_SECONDARY_CORES + 1;
+
+    /// The slot counting an entry from a caller the table does not list.
+    pub const UNLISTED: usize = KERNEL_ENTRY_SITE_SLOTS - 1;
+
+    static TALLY: [[AtomicU32; KERNEL_ENTRY_SITE_SLOTS]; CORES] =
+        [const { [const { AtomicU32::new(0) }; KERNEL_ENTRY_SITE_SLOTS] }; CORES];
+
+    /// The table slot of a bracket call at `caller`, or [`UNLISTED`].  The
+    /// compiler names a workspace member's file relative to the workspace, so
+    /// the table's crate-relative path is matched as the location's suffix.
+    fn slot_of(caller: &core::panic::Location<'_>) -> usize {
+        KERNEL_ENTRY_SITES
+            .iter()
+            .position(|(path, line)| {
+                let file = caller.file();
+                *line == caller.line()
+                    && file.ends_with(path)
+                    && (file.len() == path.len()
+                        || file.as_bytes()[file.len() - path.len() - 1] == b'/')
+            })
+            .unwrap_or(UNLISTED)
+    }
+
+    /// Count one entry on `core` through the bracket called at `caller`.
+    pub(super) fn note(core: usize, caller: &core::panic::Location<'_>) {
+        if let Some(row) = TALLY.get(core) {
+            row[slot_of(caller)].fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// `core`'s tally now: zeros for a core outside the table.
+    pub fn snapshot(core: usize) -> [u32; KERNEL_ENTRY_SITE_SLOTS] {
+        let mut out = [0; KERNEL_ENTRY_SITE_SLOTS];
+        if let Some(row) = TALLY.get(core) {
+            for (o, c) in out.iter_mut().zip(row) {
+                *o = c.load(Ordering::Relaxed);
+            }
+        }
+        out
+    }
+
+    /// The sites entered between two snapshots of one core, as a reading's
+    /// line prints them: `path:line` comma-separated in table order, then
+    /// `unlisted` for an entry the table does not name, or `none`.
+    pub struct Entered(
+        pub [u32; KERNEL_ENTRY_SITE_SLOTS],
+        pub [u32; KERNEL_ENTRY_SITE_SLOTS],
+    );
+
+    impl core::fmt::Display for Entered {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            let mut any = false;
+            for slot in 0..KERNEL_ENTRY_SITE_SLOTS {
+                if self.1[slot] == self.0[slot] {
+                    continue;
+                }
+                f.write_str(if any { "," } else { "" })?;
+                any = true;
+                match KERNEL_ENTRY_SITES.get(slot) {
+                    Some((path, line)) => write!(f, "{path}:{line}")?,
+                    None => f.write_str("unlisted")?,
+                }
+            }
+            if !any {
+                f.write_str("none")?;
+            }
+            Ok(())
+        }
+    }
+}
+
 /// **WS-SM SM5.I**: run `f` with kernel entry serialised.
 ///
 /// The bracket every kernel entry point uses. `f` must not itself
 /// enter the kernel (the lock is not reentrant) and must not acquire
 /// the shootdown round lock *before* this bracket — inside is correct
-/// and is what `completeShootdownRounds` does.
+/// and is what `completeShootdownRounds` does.  The exerciser image tallies
+/// each entry by its caller's location ([`entered_sites`]).
+#[cfg_attr(feature = "smp_exercisers", track_caller)]
 pub fn with_kernel_entry<F, R>(core_id: usize, f: F) -> R
 where
     F: FnOnce() -> R,
 {
+    // The tally is this core's own relaxed counter, so it needs no lock.
+    #[cfg(feature = "smp_exercisers")]
+    entered_sites::note(core_id, core::panic::Location::caller());
     let _ticket = acquire_kernel_entry(core_id);
     // The entry decides on the committed state, so a remote commit's stall
     // request against this core is met by this decision.

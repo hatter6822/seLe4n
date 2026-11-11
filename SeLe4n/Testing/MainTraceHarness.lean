@@ -1101,10 +1101,10 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
 
 -- R1-D: These tests intentionally exercise deprecated api* wrappers to verify
 -- the new capability-target validation guards.
--- S2-J: Migrated from deprecated api* wrappers to syscallInvoke path.
+-- S2-J: Migrated from deprecated api* wrappers to the syscall gate.
 /-- WS-H15e: Exercise the capability-gated syscall path:
 1. Build a state with a CNode containing a `.write`-only capability.
-2. Invoke `syscallInvoke` + `endpointSendDual` with correct gate → expect success.
+2. Invoke `syscallInvokeTyped .send` + `endpointSendDual` with correct gate → expect success.
 3. Invoke with wrong CSpace root → expect `objectNotFound`.
 4. Invoke with insufficient rights (`.read`) → expect `illegalAuthority`. -/
 private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
@@ -1131,9 +1131,9 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
     capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 4, requiredRight := .write
   }
   let msg : IpcMessage := { registers := #[⟨42⟩], badge := none }
-  -- S2-J: Using syscallInvoke directly instead of deprecated apiEndpointSend
+  -- S2-J: the typed gate directly instead of deprecated apiEndpointSend
   let sendViaGate (gate : SeLe4n.Kernel.SyscallGate) (st : SystemState) :=
-    SeLe4n.Kernel.syscallInvoke { gate with requiredRight := .write }
+    SeLe4n.Kernel.syscallInvokeTyped .send { gate with requiredRight := .write }
       (fun cap => if cap.target ≠ .object epId then fun _ => .error .invalidCapability
         else SeLe4n.Kernel.endpointSendDual epId gate.callerId (.frame msg.badge false)) st
   match sendViaGate goodGate stLocal with
@@ -1171,7 +1171,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   }
   let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 2 }
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
-  match SeLe4n.Kernel.syscallInvoke { retypeGate with requiredRight := .retype }
+  match SeLe4n.Kernel.syscallInvokeTyped .untypedRetype { retypeGate with requiredRight := .retype }
       (fun cap => match cap.target with
         | .object _ => SeLe4n.Kernel.untypedRetypeObject authSlot ⟨60⟩ dstSlot .endpoint
         | _ => fun _ => .error .invalidCapability) stLocal with
@@ -3013,7 +3013,8 @@ private def runRustXvalVectors : IO Unit := do
     { srcSlot := SeLe4n.Slot.ofNat 10, dstSlot := SeLe4n.Slot.ofNat 20, rights := .ofNat 0x07, badge := Badge.ofNatMasked 999 }
   let mintEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs mintArgs
   let mintStub : SyscallDecodeResult :=
-    { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := mintEncoded.size, extraCaps := 0, label := 0 },
       syscallId := .send, msgRegs := mintEncoded }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs mintStub with
   | .ok decoded =>
@@ -3038,7 +3039,8 @@ private def runRustXvalVectors : IO Unit := do
     { bufferAddr := (SeLe4n.VAddr.ofNat 1024) }   -- 1024 is aligned to ipcBufferAlignment (1024)
   let ibEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs ibArgs
   let ibStub : SyscallDecodeResult :=
-    { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := ibEncoded.size, extraCaps := 0, label := 0 },
       syscallId := .tcbSetIPCBuffer, msgRegs := ibEncoded }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs ibStub with
   | .ok decoded =>

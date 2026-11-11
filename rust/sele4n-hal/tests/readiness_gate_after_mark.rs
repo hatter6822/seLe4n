@@ -18,8 +18,7 @@
 
 use sele4n_hal::lean_ready::LeanRuntimeReadyOnCore;
 use sele4n_hal::svc_dispatch::{
-    dispatch_svc, error_frame_regs, DispatchError, SvcOutcome, SyscallArgs, SyscallId,
-    ERROR_LABEL_BASE,
+    dispatch_svc, error_frame_regs, DispatchError, SvcOutcome, SyscallId, ERROR_LABEL_BASE,
 };
 use sele4n_hal::trap::{handle_synchronous_exception, TrapFrame};
 
@@ -55,41 +54,38 @@ fn zero_frame() -> TrapFrame {
 #[test]
 fn dispatch_svc_routes_to_inner_dispatcher() {
     mark_this_core_ready();
-    // Send takes 0 inline args so any frame is accepted; the inner
-    // stand-in publishes the label-encoded `NotImplemented` (discriminant
+    // The inner stand-in publishes the label-encoded `NotImplemented` (discriminant
     // 17 -> label 18) error frame into core 0's mailbox slot and
     // returns outcome tag 0.  WS-RA: a kernel rejection arrives as an
     // ordinary FRAME whose x1 label carries the error, undecoded here.
-    let frame = zero_frame();
-    let args = SyscallArgs::from_trap_frame(&frame);
-    let result = dispatch_svc(SyscallId::Send.to_u32(), &args);
+    let result = dispatch_svc(SyscallId::Send.to_u32());
     assert_eq!(result, Ok(SvcOutcome::Frame(error_frame_regs(17))));
     // The frame's x1 word is the status label in MessageInfo position
     // (the top of the 52-bit label range, base 2^52 - 256).
     assert_eq!(error_frame_regs(17)[1], (0xF_FFFF_FFFF_FF00u64 + 17) << 12);
 }
 
-/// Moved from `svc_dispatch`'s unit tests at RR5.6 (see this file's header).
+/// The argument-count prefilter is retired: a message shorter than its
+/// invocation's arguments reaches the kernel, which refuses it
+/// `TruncatedMessage` after the capability lookup, in seL4's order.  On the
+/// host lane the kernel is the stand-in, so every such call reaches it and
+/// returns its frame.
 #[test]
-fn dispatch_svc_accepts_single_register_tcb_management_syscalls() {
+fn short_messages_reach_the_kernel() {
     mark_this_core_ready();
     for sid in [
+        SyscallId::CSpaceMint,
         SyscallId::TcbSetPriority,
         SyscallId::TcbSetMCPriority,
         SyscallId::TcbSetIPCBuffer,
         SyscallId::TcbSetAffinity,
         SyscallId::TcbSetFaultHandler,
+        SyscallId::SchedContextConfigure,
     ] {
-        // A length-1 message (exactly what the `sele4n-sys` wrappers send).
-        let args = SyscallArgs { msg_info: 1 };
-        // Must clear the argument-count gate (any result other than the
-        // count-mismatch rejection is acceptable here; on the host lane the
-        // inner symbol is a stand-in).
-        let result = dispatch_svc(sid as u32, &args);
-        assert_ne!(
-            result,
-            Err(DispatchError::InvalidArgument),
-            "length-1 call to {sid:?} must not be rejected by the arg-count gate",
+        assert_eq!(
+            dispatch_svc(sid as u32),
+            Ok(SvcOutcome::Frame(error_frame_regs(17))),
+            "a call to {sid:?} must reach the kernel whatever its length",
         );
     }
 }
@@ -131,36 +127,24 @@ fn wide_syscall_number_on_ready_core_is_unknown_syscall() {
     assert_ne!(frame.x1(), (ERROR_LABEL_BASE + 17) << 12);
 }
 
-/// PR #889 review: with the core ready, the prefilters run and refuse as
-/// before — the gate moved ahead of them, it did not replace them.  (These
-/// were `svc_dispatch`'s unit tests `dispatch_svc_rejects_invalid_syscall_id`
-/// and `dispatch_svc_rejects_argument_count_below_minimum`; the gate made
-/// their answer depend on readiness, which the lib binary cannot assume.)
+/// PR #889 review: with the core ready, the prefilter runs and refuses as
+/// before — the gate moved ahead of it, it did not replace it.  (This was
+/// `svc_dispatch`'s unit test `dispatch_svc_rejects_invalid_syscall_id`; the
+/// gate made its answer depend on readiness, which the lib binary cannot
+/// assume.)
 #[test]
-fn prefilters_still_refuse_on_a_ready_core() {
+fn prefilter_still_refuses_on_a_ready_core() {
     mark_this_core_ready();
-    let args = SyscallArgs::from_trap_frame(&zero_frame());
     assert_eq!(
-        dispatch_svc(SyscallId::ENCODING_BOUND, &args),
+        dispatch_svc(SyscallId::ENCODING_BOUND),
         Err(DispatchError::InvalidSyscallId),
         "an out-of-range id is refused by the prefilter once the core is ready"
     );
     // The retired in-place retype's number names no syscall.
     assert_eq!(
-        dispatch_svc(SyscallId::RETIRED[0], &args),
+        dispatch_svc(SyscallId::RETIRED[0]),
         Err(DispatchError::InvalidSyscallId),
         "a retired id is refused by the prefilter"
-    );
-    assert_eq!(
-        dispatch_svc(SyscallId::TcbSetPriority.to_u32(), &args),
-        Err(DispatchError::InvalidArgument),
-        "a short message is refused by the argument-count prefilter once the core is ready"
-    );
-    // CSpaceMint needs four inline words; a zero-length message is short.
-    assert_eq!(
-        dispatch_svc(SyscallId::CSpaceMint.to_u32(), &args),
-        Err(DispatchError::InvalidArgument),
-        "a length-0 CSpaceMint is refused by the argument-count prefilter"
     );
 }
 

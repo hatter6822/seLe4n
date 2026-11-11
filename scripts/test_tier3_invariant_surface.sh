@@ -236,11 +236,11 @@ run_check "INVARIANT" rg -n '^theorem rpi5MachineConfig_wellFormed($|[ ({:\[\]])
 # WS-H15c: Syscall capability-checking wrappers
 run_check "INVARIANT" rg -n '^structure SyscallGate($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallLookupCap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallInvoke($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallInvokeTyped($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallLookupCap_implies_capability_held($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # W3: syscallLookupCap_state_unchanged removed as dead code (trivially follows from
 # syscallLookupCap_implies_capability_held which provides the same state-unchanged guarantee).
-run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallInvokeTyped_requires_right($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # S5-A: Deprecated api* wrappers removed in v0.19.4. Verify removal and
 # presence of production syscall dispatch path.
 run_check "INVARIANT" rg -n '^def dispatchSyscall($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -4145,7 +4145,7 @@ run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^            Self::UntypedRetype => 4,$' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '^  \| \.cspaceMint \| \.untypedRetype \| \.vspaceMap => 4$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
 run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
@@ -4905,7 +4905,7 @@ run_check "INVARIANT" rg -n '^      exact hW \(notificationSignalArm_savedRegsWr
 run_check "INVARIANT" rg -n '^      exact hW \(declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(notificationWaitArm_savedRegsWrittenFree _ P hN hWt\)\.2$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^  rw \[yieldChargeOnCore_currentOnCore hCharge, hCur\] at ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
-run_check "INVARIANT" rg -n '^        \(applySyscallTaint_objectsAgreeOffTaint _ _ _\)\) t id\)\.trans$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      \(applySyscallTaint_objectsAgreeOffTaint _ _ _\)\) t id\)\.trans$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^    \(\(E\.of_ipcFrame hF \(IpcFrame\.of_frame rfl fun _ => rfl\)\)\.arm hCur \(hNI tid hCur\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact offCoreFree_of_receiveHead E\.dequeued E\.queueHeads hRT hBNR ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n -U '^    \(h : Platform\.FFI\.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5\n      ipcBufferAddr elr spsr spEl0 x30 st = \.ok \(outcome, st.\)\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
@@ -5921,7 +5921,8 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|
 # (`syscallEntryCheckedK_outcome_eq` equates it to `syscallCapFaultOf`'s).
 run_check "INVARIANT" rg -n '^theorem dispatchOperandCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
-run_check "INVARIANT" rg -n -U '^          let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n([ \t]*(--[^\n]*)?\n)*          if slotEmpty c then onLookup \.invalidCapability st\n          else noCapRefusal \(capHeldNone c\) kArm onLookup \(arm c st\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^          let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n([ \t]*(--[^\n]*)?\n)*          if slotEmpty c then onLookup \.invalidCapability st\n          else\n([ \t]*(--[^\n]*)?\n)*            let k := fun noCap => noCapRefusal noCap kArm onLookup \(arm c st\)\n            if receiveRefusedAt sid st c then k true else k \(capHeldNone c\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def receiveSlotRefused \(sid : SyscallId\) \(st : @& SystemState\)\n    \(c : @& Option Capability\) : Bool :=\n  match c with\n  \| some cap => receiveGateRefuses sid st cap\n  \| none => false$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def slotEmpty \(c : @& Option Capability\) : Bool := c\.isNone$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_outcome_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def deliverSyscallLookupFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -5991,11 +5992,14 @@ run_check "INVARIANT" rg -n '^    scan_trap_rs_faulted_outcome_halts\(\);' rust/
 run_check "INVARIANT" rg -n '^    verify_faulted_outcome_scanner\(\);' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^theorem syscallCapFault_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
-# Relation, not presence: the producer decides on the RESOLUTION half of the
-# lookup — a resolved capability refused on rights is the invocation's error
+# Relation, not presence: the producer decides on the operand lookup — the
+# resolution, and for a receive (seL4's `handleRecv`) the capability's type
+# and right; any other resolved capability refused is the invocation's error
 # (seL4's `decodeInvocation`), never the lookup's fault — and hands the fault
 # to the flow-checked delivery, as the abort entry does.
-run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^          match syscallOperandLookup decoded\.syscallId gate st with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^  match syscallResolveCap gate st with\n  \| \.error e => \.error e\n  \| \.ok \(cap, _\) => if receiveGateRefuses sid st cap then \.error \.invalidCapability else \.ok \(\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^def receiveGateRefuses \(sid : SyscallId\) \(st : SystemState\) \(cap : Capability\) : Bool :=\n  syscallReceivesOnCap sid &&\n    \(!syscallTargetAccepted sid st cap \|\| !cap\.hasRight \(syscallRequiredRight sid\)\)$' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
@@ -8077,7 +8081,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem toList_dropFront($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem bounded \(r : AuditRing\) : auditLogBounded r\.toList' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem recordedSince_eq_ring($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshAuditRing_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n -U '^    \(\(Architecture\.withShootdownSparesSeeded\n      st\)\.withFreshAuditRing\.withFreshPerCoreSlots\.withFreshPhysicalWrites\.withFreshIrqLines\n      \)\.withFreshCoreCaches$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    \(\(Architecture\.withShootdownSparesSeeded\n      st\)\.withFreshAuditRing\.withFreshRefusalLedger\.withFreshPerCoreSlots\.withFreshPhysicalWrites\n      \|>\.withFreshIrqLines\)\.withFreshCoreCaches$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshIrqLines_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshCoreCaches_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_copy($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
@@ -8942,18 +8946,19 @@ run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_has_no_audit_reader
 # in an unconfigured deployment.
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_auditRead_default_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_audit_never_succeeds($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-# PR #870 round 5: the audit pair validates the capability's TARGET before its
-# rights — the checked dispatch routes them through the resolve-only lookup
-# (one shared resolution, so lookup and resolve cannot drift), and the arms
-# own both gates in the documented order.  The composed-path witnesses are the
-# two dispatchSyscallChecked-level theorems.
+# Every syscall's gate checks the capability's type (its target constructor and
+# the kind of the object it names) before its right, as seL4's
+# decodeInvocation does: one gate, syscallInvokeTyped, in every dispatcher.
+# The composed-path witnesses are the two dispatchSyscallChecked-level theorems.
 run_check "INVARIANT" rg -n '^def syscallResolveCap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallChecksTargetFirst($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'syscallChecksTargetFirst decoded.syscallId' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def syscallTargetAccepted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallMissingRightError($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^def syscallInvokeTyped [^\n]*\n[^\n]*\n  fun st =>\n    match syscallResolveCap gate st with\n    \| \.error e => \.error e\n    \| \.ok \(cap, st'"'"'\) =>\n      if !syscallTargetAccepted sid st'"'"' cap then \.error \.invalidCapability\n      else if cap\.hasRight gate\.requiredRight then op cap st'"'"'\n      else \.error \(syscallMissingRightError sid\)' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n '\bsyscallInvoke\b' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem syscallResolveCap_of_lookup($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_audit_insufficient_right_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_target_first($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_right_checked_second($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_type_before_rights($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_right_after_type($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # PR #870 round 4: the cross-core inventory's audit entries map to the
 # DISPATCH-level composition — transition plus WS-RA return-frame staging,
 # the state the checked dispatch actually commits.  The transition-only
@@ -9951,7 +9956,7 @@ run_check "INVARIANT" rg -n '^theorem onCore_declassificationRefusals($|[ ({:\[\
 run_check "INVARIANT" rg -n '\| declassificationRefusalLedger' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '\| .declassificationRefusalLedger =>' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^inductive RefusalReadField($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^def refusalTagsWord($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def refusalTagsWord($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalTagsWord_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalTagsWord_reason_is_abi_discriminant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalStatusWord_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
@@ -10154,7 +10159,7 @@ run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscal
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
 run_check "INVARIANT" rg -n '^pub fn declassify_signal' rust/sele4n-sys/src/declassify.rs
-run_check "INVARIANT" rg -n 'assert_clears\("declassify_signal", SyscallId::DeclassifySignal\)' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'assert_names\("declassify_signal", SyscallId::DeclassifySignal\)' rust/sele4n-abi/tests/conformance.rs
 run_check "INVARIANT" rg -n '\| \.declassify \| \.declassifySignal => \.records' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^theorem refusalSeamClass_records_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 
@@ -12568,14 +12573,19 @@ run_check "INVARIANT" rg -n '^theorem returnMessageInfo_extraCaps_le_capInfo($|[
 run_negative_check "INVARIANT" rg -n 'extraCaps := min msg.caps.size' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # PR #866 round-2: the query wrapper returns the typed ServiceId.
 run_check "INVARIANT" rg -n 'pub fn service_query\(endpoint_cap: CPtr\) -> KernelResult<ServiceId>' rust/sele4n-sys/src/service.rs
-# PR #866 round-3: the prefilter conformance sweep drives the REAL wrappers
-# (host-capture mock trap) against the REAL HAL minima (dev-dep) — the
-# hand-duplicated table that drifted twice must not come back, and the
-# `.message`-shaped call wrapper carries the badge tuple like its siblings.
+# PR #866 round-3: the conformance sweep drives the REAL wrappers
+# (host-capture mock trap), and the `.message`-shaped call wrapper carries the
+# badge tuple like its siblings.  The HAL's inline-argument prefilter is
+# retired: a short message reaches the kernel, which refuses it
+# `.truncatedMessage` after the capability lookup, as seL4 does.
 run_check "INVARIANT" rg -n 'pub mod host_capture' rust/sele4n-abi/src/trap.rs
-run_check "INVARIANT" rg -n 'fn wrapper_lengths_clear_prefilter_minimums' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'fn wrappers_name_their_syscalls' rust/sele4n-abi/tests/conformance.rs
 run_check "INVARIANT" rg -n 'host_capture::last_request' rust/sele4n-abi/tests/conformance.rs
-run_check "INVARIANT" rg -n 'min_inline_args' rust/sele4n-abi/tests/conformance.rs
+run_negative_check "INVARIANT" rg -n 'min_inline_args' rust/sele4n-hal/src
+run_check "INVARIANT" rg -n 'TruncatedMessage = 58' rust/sele4n-types/src/error.rs
+run_check "INVARIANT" rg -n '^#assert_decoder_arities ' SeLe4n/Testing/DecoderArityCheck.lean
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.DecoderArityCheck\)$' scripts/test_tier1_build.sh
+run_negative_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.DecoderArity$' SeLe4n/Kernel SeLe4n/Platform SeLe4n/Model SeLe4n.lean
 run_check "INVARIANT" rg -n 'pub fn endpoint_call\(dest: CPtr, msg: &IpcMessage\) -> KernelResult<\(Badge, SyscallResponse\)>' rust/sele4n-sys/src/ipc.rs
 # PR #866 round-3: the three wrappers the ABI documented but never had —
 # implemented so the sweep covers the whole canonical syscall surface.
@@ -23574,8 +23584,36 @@ run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterfac
 # WS-ZA ZA5.5: the service register is routed on the register file with the
 # configure, one overflow word read from the IPC buffer, and runs checks first.
 run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^      if routedOverflowOne sid then \.overflowOne sid capAddr$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -U -n '^    if routedOverflowOne sid then\n      if len = size \+ 1 then \.overflowOne sid capAddr else \.overflowed sid capAddr len$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+# A syscall reads a message word past the inline registers only when its
+# decoder or its transfer uses it, as seL4 reads only the words a syscall uses
+# (never for a receive, a wait, a yield or a signal): one owner,
+# `syscallReadsOverflow`, decides it for the decode's merge and the router,
+# naming every kind with no default arm, and the merge is skipped on its
+# answer, not on a syscall name.  A buffer the kernel cannot read clamps the
+# message to its inline words (`clampToInline`), as seL4's `handleInvocation`
+# clamps a message with no IPC buffer, in each of the three merges.
+run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_negative_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n(  \|[^\n]*\n)*  \| _ ' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\) with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM readOverflow with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  if syscallReadsOverflow base\.syscallId then\n    let inlineSize := base\.msgRegs\.size\n    let overflowNeeded := base\.msgInfo\.length - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\) with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def clampToInline \(base : SyscallDecodeResult\) : SyscallDecodeResult :=\n  \{ base with\n      msgInfo       := \{ base\.msgInfo with length := base\.msgRegs\.size \},\n      inlineCount   := base\.msgRegs\.size,\n      overflowCount := 0 \}$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^    if msgInfo\.length ≤ layout\.msgRegs\.size ∨\n        syscallNumberReadsOverflow \(readReg regs layout\.syscallNumReg\)\.val = false then$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def syscallNumberReadsOverflow \(n : Nat\) : Bool :=\n  match SyscallId\.ofNat\? n with\n  \| some sid => syscallReadsOverflow sid$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeSyscallArgsFromState_of_no_overflow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem syscallReadsOverflow_eq_true_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+# The compiled long arms, an overflow slot that does not read, run their short
+# route's arm on the four inline words (the clamp), and no routed arm answers
+# a buffer it cannot read with `InvalidMessageInfo`.
+run_check "INVARIANT" rg -n '^        \(fun _ => sendRoutedArm ctx executingCore tid capWord 4 st\)$' SeLe4n/Kernel/RoutedArms/SendLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => callRoutedArm ctx executingCore tid capWord 4 st\)$' SeLe4n/Kernel/RoutedArms/CallLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => replyRoutedArm ctx executingCore tid capWord 4 extraCaps label st\)$' SeLe4n/Kernel/RoutedArms/ReplyLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => replyRecvRoutedArm ctx executingCore tid capWord 4 extraCaps label st\)$' SeLe4n/Kernel/RoutedArms/ReplyRecvLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => shortArgsRoutedArm executingCore tid sid capWord st\)$' SeLe4n/Kernel/RoutedArms/Overflowed.lean
+run_check "INVARIANT" rg -n '^      \(fun _ => shortArgsRoutedArm executingCore tid sid capWord st\)$' SeLe4n/Kernel/RoutedArms/OverflowOne.lean
+run_negative_check "INVARIANT" rg -n 'invalidMessageInfo' SeLe4n/Kernel/RoutedArms
 run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem registerService_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean

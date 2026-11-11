@@ -433,6 +433,7 @@ refusal carrying the state it was handed (`signalOperandArmThenTaintR_eq`). -/
     (taintCode : Nat) (sink : SeLe4n.ObjId) (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
     if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+    else if !syscallTargetAccepted .notificationSignal st cap then .error (.invalidCapability, st)
     else if cap.hasRight requiredRight then
       withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
       withTaintWordsAt st sink fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
@@ -442,7 +443,7 @@ refusal carrying the state it was handed (`signalOperandArmThenTaintR_eq`). -/
           .ok ((), signalTaintStep (SignalTaintCase.ofCode taintCode) sink
             ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
             stPost)
-    else .error (.illegalAuthority, st)
+    else .error (syscallMissingRightError .notificationSignal, st)
 
 /-- The signal's slot check, then `signalResolvedArmThenTaintR` on the
 capability found.  Inlined, so the slot read builds no `some`. -/
@@ -469,8 +470,7 @@ theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
         (signalTaintPlanOf st tid decoded (SystemState.lookupSlotCap st ref))
         preEpoch preLength st.declassificationTaint) st := by
   simp only [signalOperandArmThenTaintR, dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hSig, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
-    syscallLookupCap, syscallResolveCap, hRef]
+    hSig, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
   generalize SystemState.lookupSlotCap st ref = operand
   simp only [signalTaintStep_eq st tid decoded operand hSig _ _ _ _
     (decode_taintWordsAt st tid.toObjId) (decode_taintWordsAt st (operandObjectId operand))]
@@ -480,14 +480,17 @@ theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
       SignalTaintCase.ofCode_code]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · by_cases hRight : cap.hasRight gate.requiredRight = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+    · by_cases hType : syscallTargetAccepted .notificationSignal st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted .notificationSignal st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight gate.requiredRight = true
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
           TaintWords.mk_fields]
         rw [notificationSignalCheckedArmR_eq ctx decoded tid executingCore gate cap hSig]
         simp only [RefusalCarrying.ofKernel]
         rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-- `Option.isEqSome` decides `current = some tid` without building
 `some tid`. -/
@@ -676,13 +679,14 @@ operand resolved to, every refusal carrying the state it was handed
     | none => .error (.invalidCapability, st)
     | some cap =>
         if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
+        else if !syscallTargetAccepted .notificationWait st cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           withTaintWordsAt st (capObjectId cap) fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
           match notificationWaitCheckedArmR ctx tid executingCore cap st with
           | .error refusal => .error refusal
           | .ok ((), stPost) =>
               .ok ((), waitTaintStepOfCap cap tid ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ stPost)
-        else .error (.illegalAuthority, st)
+        else .error (syscallMissingRightError .notificationWait, st)
 
 theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -697,8 +701,7 @@ theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
-    hWait, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
-    syscallLookupCap, syscallResolveCap, hRef]
+    hWait, ↓reduceIte, syscallInvokeTyped, syscallResolveCap, hRef]
   simp only [waitTaintStep_eq st tid decoded hWait _ _ (fun cap => st.taintWordsAt (capObjectId cap))
     (fun cap => decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -707,14 +710,17 @@ theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
   · simp only [waitOperandArmThenTaintR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
-    · by_cases hRight : cap.hasRight gate.requiredRight = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+    · by_cases hType : syscallTargetAccepted .notificationWait st cap = false
+      · simp only [hIdle, hType, Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+      replace hType : syscallTargetAccepted .notificationWait st cap = true := by simpa using hType
+      by_cases hRight : cap.hasRight gate.requiredRight = true
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
           TaintWords.mk_fields]
         rw [notificationWaitCheckedArmR_eq ctx decoded tid executingCore gate cap hWait]
         simp only [RefusalCarrying.ofKernel]
         rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-- `dispatchSyscallChecked` for a syscall whose arm and taint step are given as
 `arm`, refusing in the state it was handed.  It resolves the operand once, for
@@ -744,10 +750,8 @@ both straight from the register file and builds no decode record. -/
 
 /-- `dispatchOperandCheckedR` is `dispatchSyscallChecked`, at one state, given an
 `arm` that is the specification's arm and taint step at that state on every
-capability the operand resolves to (`hArm`).  Either lookup order: an address
-that does not resolve is refused alike by the classic lookup and the
-resolve-only one (`syscallInvokeResolved`), and the arm owns every check after
-the resolution. -/
+capability the operand resolves to (`hArm`).  An address that does not resolve
+is refused by the gate's resolution, and the arm owns every check after it. -/
 theorem dispatchOperandCheckedR_eq_at (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId)
@@ -783,9 +787,7 @@ theorem dispatchOperandCheckedR_eq_at (ctx : LabelingContext)
         rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
         rcases hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st with
           e | ref
-        · cases hF : syscallChecksTargetFirst decoded.syscallId <;>
-            simp only [dispatchCheckedArmThenTaint, hF, Bool.false_eq_true, ↓reduceIte,
-              syscallInvoke, syscallInvokeResolved, syscallLookupCap, syscallResolveCap, hRef]
+        · simp only [dispatchCheckedArmThenTaint, syscallInvokeTyped, syscallResolveCap, hRef]
         · have h := hArm tcb rootCn ref hTcb hRoot hRef
           simp only [RefusalCarrying.ofKernel] at h
           exact h
@@ -801,7 +803,7 @@ theorem dispatchOperandCheckedR_eq_at (ctx : LabelingContext)
 
 /-- `dispatchOperandCheckedR` is `dispatchSyscallChecked`, given an `arm` that is
 the specification's arm and taint step on every capability the operand resolves
-to (`hArm`), in either lookup order (`dispatchOperandCheckedR_eq_at`). -/
+to (`hArm`) (`dispatchOperandCheckedR_eq_at`). -/
 theorem dispatchOperandCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId)

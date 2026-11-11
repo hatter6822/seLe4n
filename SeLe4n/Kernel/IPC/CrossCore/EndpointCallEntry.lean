@@ -77,7 +77,7 @@ def endpointCallCrossCoreEntry
 -- `@[export lean_endpoint_call_cross_core]` C seam (`endpointCallCrossCoreExport`)
 -- was removed. It fed `endpointCallCrossCoreEntry` an *empty* message / cap set
 -- / root-slot 0, so wiring it would have delivered payload-less, Grant-less calls
--- with the raw endpoint/caller ids bypassing the `syscallInvoke` / checked-dispatch
+-- with the raw endpoint/caller ids bypassing the `syscallInvokeTyped` / checked-dispatch
 -- capability and flow validation. The live cross-core `.call` is the full-context
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`),
 -- which the Rust SVC handler resolves against; this module keeps only the

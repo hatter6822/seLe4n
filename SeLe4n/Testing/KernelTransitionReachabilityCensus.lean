@@ -1198,6 +1198,23 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchCallCheckedR
   , `SeLe4n.Kernel.dispatchReplyCheckedR
   , `SeLe4n.Kernel.dispatchReplyRecvCheckedR
+  -- The signal's, wait's, receive's, invocation's, audited call's and
+  -- five-word invocations' route specifications and their operand dispatch,
+  -- which the compiled entry runs as the routed arms and the operand's
+  -- continuation form (`syscallEntryCheckedK_eq_routed`,
+  -- `dispatchOperandCheckedK_spec`).  A long message on a syscall that reads
+  -- no overflow word takes its short route (`syscallReadsOverflow`), so the
+  -- overflowed dispatch holds only the five-word invocations
+  -- (`dispatchOverflowedCheckedR_eq_operand`, run as `overflowedRoutedArm`).
+  , `SeLe4n.Kernel.dispatchSignalCheckedR
+  , `SeLe4n.Kernel.dispatchWaitCheckedR
+  , `SeLe4n.Kernel.dispatchReceiveCheckedR
+  , `SeLe4n.Kernel.dispatchInvocationCheckedR
+  , `SeLe4n.Kernel.dispatchAuditedCheckedR
+  , `SeLe4n.Kernel.dispatchConfigureCheckedR
+  , `SeLe4n.Kernel.dispatchServiceRegisterCheckedR
+  , `SeLe4n.Kernel.dispatchOverflowedCheckedR
+  , `SeLe4n.Kernel.dispatchOperandCheckedR
   -- The long call's, reply's and reply-receive's and the capability-carrying
   -- send's and call's route specifications, which the compiled entry runs as
   -- the routed arms proven equal to them (`dispatchCallLongCheckedR_eq`,
@@ -1210,12 +1227,8 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchReplyRecvLongCheckedR
   , `SeLe4n.Kernel.dispatchTransferringCheckedR
   , `SeLe4n.Kernel.endpointReplyRecvLongGeneralR
-  -- The overflowed and short-argument routes' specifications, which the
-  -- compiled entry runs as the per-kind arms proven equal to them
-  -- (`overflowedRoutedArm_eq`, `overflowedArmWith_eq_spec`,
-  -- `overflowedOperandR_eq`, `shortArgsRoutedArm`).
-  , `SeLe4n.Kernel.overflowedOperandR
-  , `SeLe4n.Kernel.overflowedArmSpec
+  -- The short-argument route's specification, which the compiled entry
+  -- runs as the arm proven equal to it (`shortArgsRoutedArm`).
   , `SeLe4n.Kernel.dispatchShortArgsCheckedR
   -- The long and one-overflow-word routes' operand dispatches as the
   -- specification runs them, a refusal handing back the TLB the entry held,

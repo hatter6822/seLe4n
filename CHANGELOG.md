@@ -1,3 +1,64 @@
+## v0.37.14 — the low-risk rows measured, and a message read as seL4 reads it
+
+The last cut of the heap-allocations-per-syscall coverage audit (WS-UC).  It
+measures the rows the audit left as low risk, gates the kernel's coverage on
+evidence derived from the code, and brings the decode and the syscall gate to
+seL4's behaviour wherever the model deviated.  Every non-carve reading is 0.
+
+- **The declassification refusal ledger is written in place**
+  (`RefusalSlot`, `recordRefusalWords`, `@[csimp] recordSyscallRefusal_eq_impl`):
+  a refusal overwrites its slot's own cells, the boot rebuilds the ledger out of
+  its closed term, and the declassify and declassified-signal arms answer a
+  refusal without the general spec arm.  Both refusals, and the declassified
+  signal refused at its receiver, are measured.
+- **Coverage gates derived from code, failing closed**: the exerciser prints
+  each measured round trip's routed words and answer, and the heap gate routes
+  them with the kernel's own router (`scripts/exerciser_route_coverage.lean`);
+  `build.rs` derives the kernel-entry site table from every
+  `with_kernel_entry(` call, and the gate fails when a site has no measured
+  reading that entered it.
+- **The overflowed route hands a refusal on as the dispatch told it apart**
+  (`longOperandK` over `overflowedArmOf`), so no operand is resolved twice.
+- **`TruncatedMessage`** (seL4's `seL4_TruncatedMessage`): an invocation whose
+  message is shorter than its decoder reads is refused after its capability's
+  type and right are accepted; `truncationMinimum` is the one owner and
+  `#assert_decoder_arities` (`SeLe4n.Testing.DecoderArityCheck`) checks each
+  decoder against it.  The HAL's argument-count prefilter is deleted.
+- **A capability's type is checked before its rights**, as seL4 dispatches on
+  the type first; send, call and signal without `CanSend` answer
+  `InvalidCapability`.
+- **A receive on a capability of the wrong type or without `CanReceive`
+  faults** (seL4's `handleRecv`: a capability fault, `missing_capability`),
+  for the receive, the wait and the reply-receive's receive half.
+- **Only the words a syscall uses are read**: `syscallReadsOverflow` is true
+  for the send, call, reply, reply-receive and the two five-word invocations
+  only; a receive, a wait, a yield, a signal and every other invocation read no
+  IPC-buffer word whatever the message length and take their short route.
+- **A buffer the kernel cannot read clamps the message to its inline words**
+  (`clampToInline`, `clampedFrameDecode`), as seL4's `handleInvocation` clamps
+  `length > n_msgRegisters && !buffer` to `n_msgRegisters`, instead of
+  answering `InvalidMessageInfo`: a long send or call transfers its four inline
+  words, a long reply answers with them, and a five-word invocation is refused
+  `TruncatedMessage`.  The specification, its refusal-carrying form
+  (`syscallEntryCheckedR`, `SendFrameRouted`, `CallFrameRouted`,
+  `TransferringFrameRouted`), its continued form (`syscallEntryCheckedK`) and
+  the compiled long arms (each running its short arm at length 4) agree by
+  `syscallEntryCheckedR_eq` and `@[csimp] syscallEntryCheckedK_eq_routed`.  The
+  overflowed route now holds only the configure and the service register, and
+  its dead kinds (`overflowedArmSpec`, `overflowedArmWith` and the invocation,
+  audited and notification arms) are deleted.
+- **The router builds nothing.** A message now takes a short route in two
+  cases: it fits the registers, or its syscall reads no overflow word.  Decided
+  inline, both cases fed one join point in the compiled router, and that join
+  point took the message info as a cell, so every entry built 40 bytes.  The
+  question is now answered out of line (`routesShortDecidable`), the router
+  branches on it once, and every entry reads 0 again.
+- **Exerciser**: the one-word-short invocations, the overflowed invocations,
+  the long receive's fault, and with the IPC buffer's page unmapped the
+  clamped configure (one and two words past), the clamped long send and long
+  call and a long receive, each pinned at 0 on the first call and in the
+  steady state.
+
 ## v0.37.13 — every capability names an object of its kind
 
 A read-only audit of every transition that removes an object, or replaces it

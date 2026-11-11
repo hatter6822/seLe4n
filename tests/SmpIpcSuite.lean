@@ -1482,10 +1482,11 @@ private def runLiveApiChecks : IO Unit := do
   -- NO CAP (empty slot 0): the CSpace lookup fails closed.
   assertBool "live .call with no cap at the CPtr fails with invalidCapability"
     (match apiDispatch [] 0 with | .error .invalidCapability => true | _ => false)
-  -- READ-ONLY cap (no `.write`): the authority gate rejects (syscallRequiredRight .call = .write).
-  assertBool "live .call with a read-only endpoint cap fails with illegalAuthority"
+  -- READ-ONLY cap (no `.write`): the authority gate rejects (syscallRequiredRight .call = .write),
+  -- with seL4's answer for an endpoint cap without CanSend, InvalidCapability.
+  assertBool "live .call with a read-only endpoint cap fails with invalidCapability"
     (match apiDispatch [(SeLe4n.Slot.ofNat 0, apiEpCapRO)] 0 with
-     | .error .illegalAuthority => true | _ => false)
+     | .error .invalidCapability => true | _ => false)
   -- WRONG-KIND cap (targets a TCB): the `.call` transition rejects it.
   assertBool "live .call resolving a non-endpoint cap fails with invalidCapability"
     (match apiDispatch [(SeLe4n.Slot.ofNat 0, apiWrongKindCap)] 0 with

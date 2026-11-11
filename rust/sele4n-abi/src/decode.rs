@@ -205,16 +205,26 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_label() {
-        // WS-RR RR7.14: 57 is IpcCancelled.  The first unrecognized
-        // discriminant is 58 (label BASE + 58) → UnknownKernelError, still an
-        // Err — fail-closed.
-        let regs = [0, error_x1(58), 0, 0, 0, 0, 0];
+        // 58 is TruncatedMessage.  The first unrecognized discriminant is
+        // 59 (label BASE + 59) → UnknownKernelError, still an Err —
+        // fail-closed.
+        let regs = [0, error_x1(59), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
         // The top of the range — the blocked-resume sentinel's label,
         // discriminant 255 — is the same fail-closed answer.
         let regs = [0, error_x1(255), 0, 0, 0, 0, 0];
         assert_eq!(error_x1(255) >> 12, (1 << 52) - 1);
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+    }
+
+    #[test]
+    fn decode_truncated_message_error() {
+        // Discriminant 58 survives the label round trip: an invocation whose
+        // message is shorter than its arguments (seL4's
+        // `seL4_TruncatedMessage`) is told so, distinct from a malformed
+        // message-info word.
+        let regs = [0, error_x1(58), 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::TruncatedMessage));
     }
 
     #[test]

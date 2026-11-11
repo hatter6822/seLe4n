@@ -1002,6 +1002,8 @@ pub(crate) fn first_reschedule(core_idx: usize, halt: fn() -> !) {
             // still masked here.
             #[cfg(feature = "smp_exercisers")]
             let before = crate::lean_heap::kernel_allocations_on(core_idx).ok();
+            #[cfg(feature = "smp_exercisers")]
+            let sites_before = crate::kernel_entry::entered_sites::snapshot(core_idx);
             // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
             // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
             // The function takes one u64 argument (the PSCI context_id)
@@ -1016,11 +1018,21 @@ pub(crate) fn first_reschedule(core_idx: usize, halt: fn() -> !) {
             });
             #[cfg(feature = "smp_exercisers")]
             match (before, crate::lean_heap::kernel_allocations_on(core_idx).ok()) {
-                (Some(before), Some(after)) if after >= before => crate::kprintln!(
-                    "[smp-test] heap-allocations-per-syscall: secondary-entry: core {core_id} (first call): \
-                     before={before} after={after} delta={}",
-                    after - before
-                ),
+                (Some(before), Some(after)) if after >= before => {
+                    crate::kprintln!(
+                        "[smp-test] heap-allocations-per-syscall: secondary-entry: core {core_id} (first call): \
+                         entered {}",
+                        crate::kernel_entry::entered_sites::Entered(
+                            sites_before,
+                            crate::kernel_entry::entered_sites::snapshot(core_idx)
+                        )
+                    );
+                    crate::kprintln!(
+                        "[smp-test] heap-allocations-per-syscall: secondary-entry: core {core_id} (first call): \
+                         before={before} after={after} delta={}",
+                        after - before
+                    )
+                }
                 _ => crate::kprintln!(
                     "[smp-test] FAIL: heap-allocations-per-syscall: secondary-entry: core {core_id}: \
                      the heap counter could not be read"

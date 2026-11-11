@@ -563,13 +563,13 @@ fn live_syscall_numbers() -> impl Iterator<Item = u64> {
     (0..SyscallId::ENCODING_BOUND).filter(|n| !SyscallId::RETIRED.contains(n))
 }
 
-/// Verify KernelError roundtrip for all 57 variants.
+/// Verify KernelError roundtrip for every variant (0–58).
 /// WS-SM SM9.C.1: DeclassificationDeniedAtReceiver at 56 extends SM9.A.2's
 /// range of 0..=55 (which extended SM8.C.9's range of 0..=54).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    // WS-RR RR7.14: 58 variants (0–57), IpcCancelled at 57.
-    for i in 0..=57u32 {
+    // 59 discriminants (0–58), TruncatedMessage at 58.
+    for i in 0..=58u32 {
         if KernelError::RETIRED.contains(&i) {
             assert!(KernelError::from_u32(i).is_none(), "retired {i} decoded");
             continue;
@@ -578,7 +578,7 @@ fn kernel_error_exhaustive_roundtrip() {
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(58).is_none());
+    assert!(KernelError::from_u32(59).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 10 variants (0–9, including SchedContext,
@@ -879,9 +879,8 @@ fn access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn kernel_error_non_exhaustive() {
-    // WS-RR RR7.14: 58 variants (0–57) roundtrip
-    // (SM9.A.2 previously stood at 55 with AuditFieldTooLarge).
-    for i in 0..=56u32 {
+    // 59 discriminants (0–58) roundtrip, TruncatedMessage at 58.
+    for i in 0..=58u32 {
         if KernelError::RETIRED.contains(&i) {
             assert!(KernelError::from_u32(i).is_none());
             continue;
@@ -890,7 +889,7 @@ fn kernel_error_non_exhaustive() {
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(58).is_none());
+    assert!(KernelError::from_u32(59).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -962,9 +961,9 @@ fn unknown_kernel_error_fallback() {
 
     // WS-RA / WS-RR RR4 (ABI v3): errors ride the x1 label in the top of
     // the 20-bit range — label ERROR_LABEL_BASE + d names discriminant d.
-    // Discriminant 58 — first unrecognized after IpcCancelled (57).
+    // Discriminant 59 — first unrecognized after TruncatedMessage (58).
     let base = sele4n_types::ERROR_LABEL_BASE;
-    let regs = [0, (base + 58) << 12, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 59) << 12, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
@@ -1159,14 +1158,12 @@ fn identifier_validation() {
 // ============================================================================
 
 /// W1-H / AA1 / AG3 / AL6 / AL1b / AN7-E / R5.E / WS-SM SM5.B: KernelError
-/// variant count matches Lean (57 variants, 0-56 after SM9.C.1 added
-/// DeclassificationDeniedAtReceiver at 56; SM9.A.2 previously added
-/// AuditFieldTooLarge at 55).  Detects Lean-Rust enum divergence
-/// automatically.
+/// variant count matches Lean (discriminants 0-58, TruncatedMessage the
+/// last at 58).  Detects Lean-Rust enum divergence automatically.
 #[test]
 fn kernel_error_variant_count() {
     // One past the largest discriminant (Lean's `kernelErrorEncodingBound`).
-    const KERNEL_ERROR_COUNT: u32 = 58;
+    const KERNEL_ERROR_COUNT: u32 = 59;
     // All expected variants exist, and the retired discriminant (37) has none
     for i in 0..KERNEL_ERROR_COUNT {
         assert_eq!(
@@ -1614,7 +1611,8 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(55).is_some()); // AuditFieldTooLarge (SM9.A.2)
     assert!(KernelError::from_u32(56).is_some()); // DeclassificationDeniedAtReceiver (SM9.C.1)
     assert!(KernelError::from_u32(57).is_some()); // IpcCancelled (WS-RR RR7.14)
-    assert!(KernelError::from_u32(58).is_none());
+    assert!(KernelError::from_u32(58).is_some()); // TruncatedMessage
+    assert!(KernelError::from_u32(59).is_none());
 }
 
 // --- D6: TCB operation conformance ---
@@ -2532,43 +2530,24 @@ fn return_frame_roundtrip_per_shape() {
     assert_eq!(msg.msg_regs[..3], [100, 200, 300]);
 }
 
-/// WS-RA RA.D.1, rebuilt by the PR #866 round-3 review: every
-/// `sele4n-sys` wrapper's **real** encoded `msg_info.length` clears the
-/// **real** HAL `min_inline_args` gate.
+/// Every `sele4n-sys` wrapper names its own syscall: each REAL wrapper is
+/// driven through the host-capture mock trap and its encoded `x7` read back,
+/// and the sweep records every syscall id it drove and asserts at the end
+/// that all `SyscallId::COUNT` discriminants were hit, so the next syscall
+/// cannot skip it silently.
 ///
-/// The prior table hand-duplicated both columns and drifted twice over:
-/// it recorded length 1 for `TcbSuspend`/`TcbResume` whose wrappers send
-/// 0, and omitted `SchedContextBind`/`SchedContextUnbind` entirely — so
-/// it stayed green while four real wrappers were rejected at the
-/// prefilter before ever reaching the kernel (the exact
-/// unreachable-wrapper class RA.D.1 had already fixed five instances
-/// of).  Now neither column is a literal: each REAL wrapper is driven
-/// through the host-capture mock trap and its exact encoded registers
-/// read back, and the minimum is the REAL
-/// `sele4n_hal::svc_dispatch::SyscallId::min_inline_args()` via the
-/// test-only `sele4n-hal` dev-dependency.  A wrapper or table change
-/// that re-opens the gap fails here the day it lands.
+/// It was the prefilter conformance sweep (WS-RA RA.D.1, rebuilt by the
+/// PR #866 round-3 review), which also held each wrapper's length to the HAL's
+/// argument-count table.  That table is retired: the kernel refuses a message
+/// shorter than its invocation's arguments with `TruncatedMessage` after the
+/// capability lookup, as seL4 does, and the QEMU exerciser drives each
+/// truncated route.
 ///
 /// Dynamic-length IPC wrappers (`endpoint_send` / `endpoint_call` /
-/// `endpoint_reply` / `endpoint_reply_recv`) are driven at their
-/// MINIMUM payload (an empty message), which is the binding case for a
-/// lower-bound gate.
-///
-/// Coverage is EVERY canonical syscall with a `sele4n-sys` wrapper —
-/// which, as of the PR #866 round-3 cut, is all of them
-/// (`tcb_bind_notification` / `tcb_unbind_notification` /
-/// `mint_reply_cap` were implemented for exactly this sweep; they had
-/// been callable only via hand-encoded requests).
-///
-/// The SM9.A audit hardened the coverage claim from prose into a
-/// tripwire: the sweep records every syscall id it drove and asserts at
-/// the end that all `SyscallId::COUNT` discriminants were hit.  Without
-/// it the sweep is a hand-maintained list — the very shape whose drift
-/// this test exists to prevent — and the NEXT syscall could skip the
-/// sweep silently, exactly as `SchedContextBind`/`SchedContextUnbind`
-/// once skipped the table this test replaced.
+/// `endpoint_reply` / `endpoint_reply_recv`) are driven at their minimum
+/// payload (an empty message).
 #[test]
-fn wrapper_lengths_clear_prefilter_minimums() {
+fn wrappers_name_their_syscalls() {
     use core::cell::RefCell;
     use sele4n_abi::trap::host_capture;
 
@@ -2580,24 +2559,15 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     // Sequential call-then-read pairs on one thread; the capture slots
     // are process-global, and no other test in this binary invokes a
     // wrapper (the xval tests encode requests without invoking).
-    let assert_clears = |name: &str, sid: SyscallId| {
+    let assert_names = |name: &str, sid: SyscallId| {
         let regs = host_capture::last_request();
         assert_eq!(
             regs[6],
             sid.to_u64(),
             "{name}: captured x7 must be the wrapper's own syscall id"
         );
-        let mi = MessageInfo::decode(regs[1])
+        MessageInfo::decode(regs[1])
             .unwrap_or_else(|_| panic!("{name}: wrapper x1 must decode as MessageInfo"));
-        let hal_sid = sele4n_hal::svc_dispatch::SyscallId::from_u32(sid.to_u64() as u32)
-            .unwrap_or_else(|| panic!("{name}: HAL mirror must cover id {}", sid.to_u64()));
-        let min = hal_sid.min_inline_args() as u64;
-        assert!(
-            (mi.length() as u64) >= min,
-            "{name}: the REAL wrapper sends length {} below the REAL prefilter \
-             minimum {min} — the wrapper is unreachable on hardware",
-            mi.length()
-        );
         covered.borrow_mut()[sid.to_u64() as usize] = true;
     };
 
@@ -2620,24 +2590,24 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     let mut buf = IpcBuffer::default();
 
     let _ = sele4n_sys::ipc::endpoint_send(cap, &empty);
-    assert_clears("endpoint_send", SyscallId::Send);
+    assert_names("endpoint_send", SyscallId::Send);
     let _ = sele4n_sys::ipc::endpoint_receive(cap);
-    assert_clears("endpoint_receive", SyscallId::Receive);
+    assert_names("endpoint_receive", SyscallId::Receive);
     let _ = sele4n_sys::ipc::endpoint_receive_with_reply(cap, cap);
-    assert_clears("endpoint_receive_with_reply", SyscallId::Receive);
+    assert_names("endpoint_receive_with_reply", SyscallId::Receive);
     let _ = sele4n_sys::ipc::endpoint_call(cap, &empty);
-    assert_clears("endpoint_call", SyscallId::Call);
+    assert_names("endpoint_call", SyscallId::Call);
     let _ = sele4n_sys::ipc::endpoint_reply(cap, &empty);
-    assert_clears("endpoint_reply", SyscallId::Reply);
+    assert_names("endpoint_reply", SyscallId::Reply);
     let _ = sele4n_sys::ipc::endpoint_reply_recv(cap, cap, &empty);
-    assert_clears("endpoint_reply_recv", SyscallId::ReplyRecv);
+    assert_names("endpoint_reply_recv", SyscallId::ReplyRecv);
     let _ = sele4n_sys::ipc::notification_signal(cap);
-    assert_clears("notification_signal", SyscallId::NotificationSignal);
+    assert_names("notification_signal", SyscallId::NotificationSignal);
     // seL4's `seL4_Signal`: the real wrapper sends an empty message and no
     // badge word, since the kernel ORs in the capability's own badge.
     assert_no_badge_operand("notification_signal");
     let _ = sele4n_sys::ipc::notification_wait(cap);
-    assert_clears("notification_wait", SyscallId::NotificationWait);
+    assert_names("notification_wait", SyscallId::NotificationWait);
 
     let _ = sele4n_sys::cspace::cspace_mint(
         cap,
@@ -2646,15 +2616,15 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         AccessRights::ALL,
         Badge::from(1u64),
     );
-    assert_clears("cspace_mint", SyscallId::CSpaceMint);
+    assert_names("cspace_mint", SyscallId::CSpaceMint);
     let _ = sele4n_sys::cspace::cspace_copy(cap, Slot::from(0u64), Slot::from(1u64));
-    assert_clears("cspace_copy", SyscallId::CSpaceCopy);
+    assert_names("cspace_copy", SyscallId::CSpaceCopy);
     let _ = sele4n_sys::cspace::cspace_move(cap, Slot::from(0u64), Slot::from(1u64));
-    assert_clears("cspace_move", SyscallId::CSpaceMove);
+    assert_names("cspace_move", SyscallId::CSpaceMove);
     let _ = sele4n_sys::cspace::cspace_delete(cap, Slot::from(0u64));
-    assert_clears("cspace_delete", SyscallId::CSpaceDelete);
+    assert_names("cspace_delete", SyscallId::CSpaceDelete);
     let _ = sele4n_sys::cspace::cspace_revoke(cap, Slot::from(0u64));
-    assert_clears("cspace_revoke", SyscallId::CspaceRevoke);
+    assert_names("cspace_revoke", SyscallId::CspaceRevoke);
 
     let _ = sele4n_sys::lifecycle::untyped_retype_tcb(
         cap,
@@ -2662,7 +2632,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         CPtr::from(2u64),
         Slot::from(3u64),
     );
-    assert_clears(
+    assert_names(
         "untyped_retype (untyped_retype_tcb)",
         SyscallId::UntypedRetype,
     );
@@ -2672,7 +2642,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         CPtr::from(2u64),
         Slot::from(3u64),
     );
-    assert_clears(
+    assert_names(
         "untyped_retype (untyped_retype_endpoint)",
         SyscallId::UntypedRetype,
     );
@@ -2682,7 +2652,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         CPtr::from(2u64),
         Slot::from(3u64),
     );
-    assert_clears(
+    assert_names(
         "untyped_retype (untyped_retype_notification)",
         SyscallId::UntypedRetype,
     );
@@ -2693,7 +2663,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         CPtr::from(2u64),
         Slot::from(3u64),
     );
-    assert_clears(
+    assert_names(
         "untyped_retype (untyped_retype_cnode)",
         SyscallId::UntypedRetype,
     );
@@ -2703,7 +2673,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         CPtr::from(2u64),
         Slot::from(3u64),
     );
-    assert_clears(
+    assert_names(
         "untyped_retype (untyped_retype_reply)",
         SyscallId::UntypedRetype,
     );
@@ -2714,7 +2684,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         CPtr::from(2u64),
         Slot::from(3u64),
     );
-    assert_clears(
+    assert_names(
         "untyped_retype (untyped_retype_sched_context)",
         SyscallId::UntypedRetype,
     );
@@ -2724,7 +2694,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         CPtr::from(2u64),
         Slot::from(3u64),
     );
-    assert_clears(
+    assert_names(
         "untyped_retype (untyped_retype_frame)",
         SyscallId::UntypedRetype,
     );
@@ -2735,7 +2705,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         CPtr::from(2u64),
         Slot::from(3u64),
     );
-    assert_clears(
+    assert_names(
         "untyped_retype (untyped_retype_untyped)",
         SyscallId::UntypedRetype,
     );
@@ -2745,35 +2715,35 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         CPtr::from(2u64),
         Slot::from(3u64),
     );
-    assert_clears(
+    assert_names(
         "untyped_retype (untyped_retype_vspace_root)",
         SyscallId::UntypedRetype,
     );
     let _ = sele4n_sys::lifecycle::untyped_reset(cap);
-    assert_clears("untyped_reset", SyscallId::UntypedReset);
+    assert_names("untyped_reset", SyscallId::UntypedReset);
     let _ = sele4n_sys::tcb::tcb_set_space(cap, cap, cap);
-    assert_clears("tcb_set_space", SyscallId::TcbSetSpace);
+    assert_names("tcb_set_space", SyscallId::TcbSetSpace);
     let _ = sele4n_sys::vspace::page_table_map(cap, cap, VAddr::from(0x4000_0000u64));
-    assert_clears("page_table_map", SyscallId::PageTableMap);
+    assert_names("page_table_map", SyscallId::PageTableMap);
     let _ = sele4n_sys::vspace::page_table_unmap(cap);
-    assert_clears("page_table_unmap", SyscallId::PageTableUnmap);
+    assert_names("page_table_unmap", SyscallId::PageTableUnmap);
     let _ = sele4n_sys::sched_context::yield_now();
-    assert_clears("yield_now", SyscallId::Yield);
+    assert_names("yield_now", SyscallId::Yield);
     let _ = sele4n_sys::sched_context::sched_context_consumed(cap);
-    assert_clears("sched_context_consumed", SyscallId::SchedContextConsumed);
+    assert_names("sched_context_consumed", SyscallId::SchedContextConsumed);
     let _ = sele4n_sys::sched_context::sched_context_yield_to(cap);
-    assert_clears("sched_context_yield_to", SyscallId::SchedContextYieldTo);
+    assert_names("sched_context_yield_to", SyscallId::SchedContextYieldTo);
     let _ = sele4n_sys::irq::irq_handler_ack(cap);
-    assert_clears("irq_handler_ack", SyscallId::IrqHandlerAck);
+    assert_names("irq_handler_ack", SyscallId::IrqHandlerAck);
     let _ = sele4n_sys::irq::irq_control_get(cap, 33, cap, Slot::from(0u64));
-    assert_clears("irq_control_get", SyscallId::IrqControlGet);
+    assert_names("irq_control_get", SyscallId::IrqControlGet);
     let _ = sele4n_sys::irq::irq_handler_set_notification(cap, cap);
-    assert_clears(
+    assert_names(
         "irq_handler_set_notification",
         SyscallId::IrqHandlerSetNotification,
     );
     let _ = sele4n_sys::irq::irq_handler_clear(cap);
-    assert_clears("irq_handler_clear", SyscallId::IrqHandlerClear);
+    assert_names("irq_handler_clear", SyscallId::IrqHandlerClear);
 
     let _ = sele4n_sys::vspace::vspace_map_read_only(
         cap,
@@ -2781,12 +2751,12 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         VAddr::from(0x1000u64),
         CPtr::from(2u64),
     );
-    assert_clears("vspace_map", SyscallId::VSpaceMap);
+    assert_names("vspace_map", SyscallId::VSpaceMap);
     let _ = sele4n_sys::vspace::vspace_unmap(cap, Asid::from(1u64), VAddr::from(0x1000u64));
-    assert_clears("vspace_unmap", SyscallId::VSpaceUnmap);
+    assert_names("vspace_unmap", SyscallId::VSpaceUnmap);
     let _ =
         sele4n_sys::vspace::vspace_unify_instruction(cap, Asid::from(1u64), VAddr::from(0x1000u64));
-    assert_clears(
+    assert_names(
         "vspace_unify_instruction",
         SyscallId::VSpaceUnifyInstruction,
     );
@@ -2800,11 +2770,11 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         false,
         &mut buf,
     );
-    assert_clears("service_register", SyscallId::ServiceRegister);
+    assert_names("service_register", SyscallId::ServiceRegister);
     let _ = sele4n_sys::service::service_revoke(cap);
-    assert_clears("service_revoke", SyscallId::ServiceRevoke);
+    assert_names("service_revoke", SyscallId::ServiceRevoke);
     let _ = sele4n_sys::service::service_query(cap);
-    assert_clears("service_query", SyscallId::ServiceQuery);
+    assert_names("service_query", SyscallId::ServiceQuery);
 
     let _ = sele4n_sys::sched_context::sched_context_configure(
         cap,
@@ -2816,44 +2786,44 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         1,
         &mut buf,
     );
-    assert_clears("sched_context_configure", SyscallId::SchedContextConfigure);
+    assert_names("sched_context_configure", SyscallId::SchedContextConfigure);
     let _ = sele4n_sys::sched_context::sched_context_bind(cap, CPtr::from(1u64));
-    assert_clears("sched_context_bind", SyscallId::SchedContextBind);
+    assert_names("sched_context_bind", SyscallId::SchedContextBind);
     let _ = sele4n_sys::sched_context::sched_context_unbind(cap);
-    assert_clears("sched_context_unbind", SyscallId::SchedContextUnbind);
+    assert_names("sched_context_unbind", SyscallId::SchedContextUnbind);
 
     let _ = sele4n_sys::tcb::tcb_suspend(cap);
-    assert_clears("tcb_suspend", SyscallId::TcbSuspend);
+    assert_names("tcb_suspend", SyscallId::TcbSuspend);
     let _ = sele4n_sys::tcb::tcb_resume(cap);
-    assert_clears("tcb_resume", SyscallId::TcbResume);
+    assert_names("tcb_resume", SyscallId::TcbResume);
     let _ = sele4n_sys::tcb::tcb_set_priority(cap, 1);
-    assert_clears("tcb_set_priority", SyscallId::TcbSetPriority);
+    assert_names("tcb_set_priority", SyscallId::TcbSetPriority);
     let _ = sele4n_sys::tcb::tcb_set_mcp(cap, 1);
-    assert_clears("tcb_set_mcp", SyscallId::TcbSetMCPriority);
+    assert_names("tcb_set_mcp", SyscallId::TcbSetMCPriority);
     let _ = sele4n_sys::tcb::tcb_set_ipc_buffer(cap, 0x4000);
-    assert_clears("tcb_set_ipc_buffer", SyscallId::TcbSetIPCBuffer);
+    assert_names("tcb_set_ipc_buffer", SyscallId::TcbSetIPCBuffer);
     let _ = sele4n_sys::tcb::tcb_set_affinity(cap, 1);
-    assert_clears("tcb_set_affinity", SyscallId::TcbSetAffinity);
+    assert_names("tcb_set_affinity", SyscallId::TcbSetAffinity);
     let _ = sele4n_sys::tcb::tcb_set_fault_handler(cap, 3);
-    assert_clears("tcb_set_fault_handler", SyscallId::TcbSetFaultHandler);
+    assert_names("tcb_set_fault_handler", SyscallId::TcbSetFaultHandler);
     let _ = sele4n_sys::tcb::tcb_bind_notification(cap, cap);
-    assert_clears("tcb_bind_notification", SyscallId::TcbBindNotification);
+    assert_names("tcb_bind_notification", SyscallId::TcbBindNotification);
     let _ = sele4n_sys::tcb::tcb_unbind_notification(cap);
-    assert_clears("tcb_unbind_notification", SyscallId::TcbUnbindNotification);
+    assert_names("tcb_unbind_notification", SyscallId::TcbUnbindNotification);
 
     let _ = sele4n_sys::cspace::mint_reply_cap(cap, Slot::from(0u64), Slot::from(1u64));
-    assert_clears("mint_reply_cap", SyscallId::MintReplyCap);
+    assert_names("mint_reply_cap", SyscallId::MintReplyCap);
 
     let _ = sele4n_sys::declassify::declassify(cap);
-    assert_clears("declassify", SyscallId::Declassify);
+    assert_names("declassify", SyscallId::Declassify);
     let _ = sele4n_sys::declassify::declassify_signal(cap);
-    assert_clears("declassify_signal", SyscallId::DeclassifySignal);
+    assert_names("declassify_signal", SyscallId::DeclassifySignal);
     assert_no_badge_operand("declassify_signal");
 
     let _ = sele4n_sys::audit::audit_read(cap, sele4n_sys::audit::AuditReadOpcode::Status, 0, 0);
-    assert_clears("audit_read", SyscallId::AuditRead);
+    assert_names("audit_read", SyscallId::AuditRead);
     let _ = sele4n_sys::audit::audit_drain(cap, 1);
-    assert_clears("audit_drain", SyscallId::AuditDrain);
+    assert_names("audit_drain", SyscallId::AuditDrain);
 
     // The tripwire fires here: a syscall added without joining this sweep
     // (or without a `sele4n-sys` wrapper at all) is a missing discriminant,

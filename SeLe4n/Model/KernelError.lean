@@ -204,6 +204,13 @@ inductive KernelError where
                            -- restarts the thread instead; this kernel has no restart
                            -- state, so the boundary crossing has to end in an error
                            -- the caller can distinguish (WS-RA plan §3.5).
+  | truncatedMessage      -- seL4's `seL4_TruncatedMessage`: an invocation's
+                           -- message holds fewer argument words than its decode
+                           -- reads (`truncationMinimum`).  Answered once the
+                           -- capability is found and its kind accepted, before
+                           -- any argument is read, as seL4's `decode*Invocation`
+                           -- answers `length < n`.  The model's own discriminant
+                           -- (58), not seL4's numeric code.
   deriving Repr, DecidableEq
 
 end SeLe4n.Model

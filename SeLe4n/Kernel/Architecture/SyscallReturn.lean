@@ -105,6 +105,8 @@ def toDiscriminant : KernelError → Nat
   | .declassificationDeniedAtReceiver => 56
   -- WS-RR RR7.14: a blocking IPC forcibly cancelled.
   | .ipcCancelled                  => 57
+  -- seL4's `seL4_TruncatedMessage`: a message shorter than its decode reads.
+  | .truncatedMessage              => 58
 
 /-- The inverse the tree never had: `Platform.FFI.KernelError.toUInt32` is
 one-directional, and the Rust side decodes with its own
@@ -170,6 +172,7 @@ def ofDiscriminant? : Nat → Option KernelError
   | 55 => some .auditFieldTooLarge
   | 56 => some .declassificationDeniedAtReceiver
   | 57 => some .ipcCancelled
+  | 58 => some .truncatedMessage
   | _  => none
 
 /-- The discriminant map is a section of its inverse: every `KernelError`
@@ -192,7 +195,7 @@ the **least** strict upper bound and cannot drift up either.  Before it existed
 the number was written out at nine sites across Lean, the suites and three Rust
 crates, and WS-RR RR7.14 found one of them stated as prose in a trace line that
 kept saying `57` while the check beside it had moved to `58`. -/
-def kernelErrorEncodingBound : Nat := 58
+def kernelErrorEncodingBound : Nat := 59
 
 /-- **Retired discriminants**, reserved and never reassigned: `37`, the
 `allocationMisaligned` the carve returned before it rounded the free index up
@@ -238,8 +241,8 @@ theorem ofDiscriminant?_isSome_iff (n : Nat) :
   | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29
   | 30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39
   | 40 | 41 | 42 | 43 | 44 | 45 | 46 | 47 | 48 | 49
-  | 50 | 51 | 52 | 53 | 54 | 55 | 56 | 57 => rfl
-  | n + 58 => simp [ofDiscriminant?, kernelErrorEncodingBound, retiredDiscriminants]
+  | 50 | 51 | 52 | 53 | 54 | 55 | 56 | 57 | 58 => rfl
+  | n + 59 => simp [ofDiscriminant?, kernelErrorEncodingBound, retiredDiscriminants]
 
 /-- The retired `allocationMisaligned` discriminant names no error. -/
 theorem ofDiscriminant?_retired : ofDiscriminant? 37 = none := rfl
@@ -1467,7 +1470,7 @@ discriminant is below `KernelError.kernelErrorEncodingBound`. -/
 theorem kernelErrorFitsLabel (e : KernelError) :
     errorLabel e ≤ MessageInfo.maxLabel := by
   have h := KernelError.toDiscriminant_lt e
-  rw [show KernelError.kernelErrorEncodingBound = 58 from rfl] at h
+  rw [show KernelError.kernelErrorEncodingBound = 59 from rfl] at h
   unfold errorLabel
   rw [errorLabelBase_eq, show MessageInfo.maxLabel = 0xFFFFFFFFFFFFF by decide]
   omega

@@ -35,7 +35,7 @@ results reported. -/
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    dispatchOperandCheckedK (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    dispatchOperandCheckedK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
       (auditedOperandArmR ctx sid tcb.registerContext (SeLe4n.CPtr.ofWord capWord) tid
         executingCore)
       st entryReportGeneral entryReportResolved entryReportLookup

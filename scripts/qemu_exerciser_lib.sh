@@ -105,9 +105,10 @@ exerciser_check() {
         fi
     fi
     verdict=$(RETYPE_OBJECT_KINDS="${kinds}" RETYPE_OBJECT_KINDS_STATUS="${kinds_status}" \
-        python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
+        EXERCISER_REPO_ROOT="${REPO_ROOT}" python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
 import os
 import re
+import subprocess
 import sys
 
 log_path, lean, drivers = sys.argv[1], sys.argv[2] == "1", sys.argv[3:]
@@ -305,7 +306,8 @@ for driver in drivers:
             "declassified-signal", "declassified-signal-bound", "declassified-signal-two-hop",
             "declassified-signal-wakes", "declassified-wait-blocks",
             "declassified-wait-pending",
-            "declassify", "endpoint-delete", "exhaust-drain-tick",
+            "declassify", "declassify-refused", "declassified-signal-refused-at-receiver",
+            "endpoint-delete", "exhaust-drain-tick",
             "exhaust-tick", "fp-access", "fp-access-partner", "fp-owner-blocks",
             "fp-owner-wakes-root", "frame-copy-delete", "frame-copy-for-revoke",
             "frame-copy-mapped", "frame-delete", "frame-revoke", "head-partner-calls",
@@ -739,6 +741,33 @@ for driver in drivers:
             "service-register-cap-fault", "receive-service-register-cap-fault",
             "reply-service-register-cap-fault", "long-send-cap-fault",
             "receive-long-send-cap-fault", "reply-long-send-cap-fault",
+            # The buffer's page unmapped: the messages past the inline words
+            # clamped to them, as seL4's handleInvocation clamps a message with
+            # no IPC buffer, and a long receive reading no overflow word.
+            "configure-one-word-unmapped-buffer", "configure-long-unmapped-buffer",
+            "long-send-unmapped-buffer-cap-fault",
+            "receive-long-send-unmapped-buffer-cap-fault",
+            "reply-long-send-unmapped-buffer-cap-fault",
+            "long-call-unmapped-buffer-cap-fault",
+            "receive-long-call-unmapped-buffer-cap-fault",
+            "reply-long-call-unmapped-buffer-cap-fault",
+            "long-receive-unmapped-buffer-cap-fault",
+            "receive-long-receive-unmapped-buffer-cap-fault",
+            "reply-long-receive-unmapped-buffer-cap-fault",
+            # The receive phase's capability faults (seL4's `handleRecv`): a
+            # capability of the wrong type, or without the right to receive,
+            # faults as a failed lookup does.
+            "overflowed-receive-cap-fault", "receive-overflowed-receive-cap-fault",
+            "reply-overflowed-receive-cap-fault",
+            "receive-wrong-type-cap-fault", "receive-receive-wrong-type-cap-fault",
+            "reply-receive-wrong-type-cap-fault",
+            "wait-wrong-type-cap-fault", "receive-wait-wrong-type-cap-fault",
+            "reply-wait-wrong-type-cap-fault",
+            "reply-recv-wrong-type-cap-fault", "receive-reply-recv-wrong-type-cap-fault",
+            "reply-reply-recv-wrong-type-cap-fault",
+            "receive-no-right-mint", "receive-no-right-cap-fault",
+            "receive-receive-no-right-cap-fault", "reply-receive-no-right-cap-fault",
+            "receive-no-right-delete",
             # The unbound line's handler issued and acknowledged, the
             # notification bound again after the revoke.
             "irq-control-get-unbound", "irq-unbound-ack", "irq-handler-set-notification-again",
@@ -750,6 +779,36 @@ for driver in drivers:
             "remote-asid-map", "remote-asid-unmap", "vacated-core-syscall",
             "vacated-core-reschedule", "fp-deferred-home-back", "fp-deferred-root-receives",
             "fp-access-deferred", "fp-released-reschedule", "fp-access-released",
+            # Every syscall with a message past its inline words, refused: only
+            # an IPC transfer and a five-word invocation read the overflow words.
+            "overflowed-cspace-mint", "overflowed-cspace-copy",
+            "overflowed-cspace-move", "overflowed-cspace-delete", "overflowed-cspace-revoke",
+            "overflowed-vspace-map", "overflowed-vspace-unmap",
+            "overflowed-vspace-unify-instruction", "overflowed-service-revoke",
+            "overflowed-service-query", "overflowed-sched-context-bind",
+            "overflowed-sched-context-unbind", "overflowed-sched-context-consumed",
+            "overflowed-sched-context-yield-to", "overflowed-tcb-suspend", "overflowed-tcb-resume",
+            "overflowed-tcb-set-priority", "overflowed-tcb-set-ipc-buffer",
+            "overflowed-tcb-set-affinity", "overflowed-tcb-bind-notification",
+            "overflowed-tcb-unbind-notification", "overflowed-tcb-set-fault-handler",
+            "overflowed-tcb-set-space", "overflowed-mint-reply-cap", "overflowed-irq-handler-ack",
+            "overflowed-irq-control-get", "overflowed-irq-handler-set-notification",
+            "overflowed-irq-handler-clear", "overflowed-page-table-map",
+            "overflowed-page-table-unmap", "overflowed-audit-read", "overflowed-audit-drain",
+            "overflowed-service-register", "overflowed-untyped-reset", "overflowed-declassify",
+            "long-declassify-signal", "overflowed-untyped-retype",
+            # Every invocation with a truncation minimum, one word short of
+            # its arguments: refused TruncatedMessage before any argument read.
+            "cspace-mint-short", "cspace-copy-short", "cspace-move-short",
+            "cspace-delete-short", "cspace-revoke-short", "mint-reply-cap-short",
+            "untyped-retype-short", "vspace-map-short", "vspace-unmap-short",
+            "vspace-unify-instruction-short", "page-table-map-short",
+            "sched-context-configure-short", "sched-context-bind-short",
+            "tcb-bind-notification-short", "tcb-set-priority-short",
+            "tcb-set-mc-priority-short", "tcb-set-ipc-buffer-short",
+            "tcb-set-affinity-short", "tcb-set-fault-handler-short", "tcb-set-space-short",
+            "irq-control-get-short", "irq-handler-set-notification-short",
+            "audit-drain-short", "audit-read-short",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
@@ -770,6 +829,78 @@ for driver in drivers:
         for key in carved:
             if key not in trips:
                 failures.append(f"heap-allocations-per-syscall: {key[0]}: a carve named with no returned round trip")
+        # Every arm the kernel's router routes a syscall to has a measured
+        # round trip.  The arms are derived by the router itself
+        # (`scripts/exerciser_route_coverage.lean`, run by Lean, which routes
+        # every syscall number and message-info shape the ABI decodes); the
+        # evidence is each pinned scenario's routed words and answer, as the
+        # exerciser printed them beside its reading, routed by the same
+        # router.  A tool that cannot run, or answers nonzero, fails the gate.
+        routed_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: routed x7=(0x[0-9a-f]+) x1=(0x[0-9a-f]+) answered (0x[0-9a-f]+|blocked)")
+        # A round trip is evidence for its arm only if its reading's window
+        # entered the kernel through the syscall entry: a trip the HAL refused
+        # before the kernel ran measured no arm.
+        svc_entry_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: entered (\S+)")
+        svc_entered = set()
+        for line in lines:
+            m = svc_entry_re.fullmatch(line)
+            if m and "src/svc_dispatch.rs:" in m.group(3):
+                svc_entered.add((m.group(1), m.group(2) is not None))
+        evidence = []
+        for line in lines:
+            m = routed_re.fullmatch(line)
+            key = (m.group(1), m.group(2) is not None) if m else None
+            if m and m.group(1) in expected and key in runs and key in svc_entered:
+                evidence.append(f"{m.group(1)}{'/first' if m.group(2) else ''} {m.group(3)} {m.group(4)} {m.group(5)}")
+        try:
+            coverage = subprocess.run(
+                ["lake", "env", "lean", "--run", "scripts/exerciser_route_coverage.lean"],
+                cwd=os.environ["EXERCISER_REPO_ROOT"], input="\n".join(evidence) + "\n",
+                capture_output=True, text=True, timeout=600)
+        except (OSError, KeyError, subprocess.SubprocessError) as error:
+            failures.append(f"heap-allocations-per-syscall: the route coverage could not run: {error}")
+        else:
+            reported = [l[len("FAIL: "):] for l in coverage.stderr.split("\n") if l.startswith("FAIL: ")]
+            for finding in reported:
+                failures.append(f"heap-allocations-per-syscall: route coverage: {finding}")
+            if coverage.returncode != 0 and not reported:
+                failures.append(f"heap-allocations-per-syscall: the route coverage answered {coverage.returncode}: {coverage.stderr.strip()!r}")
+            if coverage.returncode == 0 and reported:
+                failures.append("heap-allocations-per-syscall: the route coverage reported findings and answered 0")
+        # Every kernel-entry site has a measured reading that entered it.  The
+        # sites are the HAL's own `crate::kernel_entry::with_kernel_entry(`
+        # calls, derived from the code by its `build.rs` and printed by the
+        # image; each reading names the sites its window entered, tallied by
+        # the bracket's caller.  The exerciser's own brackets (its file) are
+        # not kernel entries a thread or device takes, the one exclusion.  An
+        # entry the table does not name, or a window the image could not
+        # attribute, fails the gate.
+        site_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: kernel-entry site (src/[a-z0-9_/]+\.rs:\d+)")
+        entered_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core \d+( \(first call\))?: entered (\S+)")
+        sites = [m.group(1) for m in (site_re.fullmatch(line) for line in lines) if m]
+        if not sites:
+            failures.append("heap-allocations-per-syscall: the image printed no kernel-entry site")
+        if len(set(sites)) != len(sites):
+            failures.append(f"heap-allocations-per-syscall: the kernel-entry sites repeat: {sites}")
+        entered_sites = set()
+        windows = {"secondary-ticks", "secondary-reschedule", "secondary-entry"}
+        for line in lines:
+            m = entered_re.fullmatch(line)
+            if m is None:
+                continue
+            if m.group(1) not in expected and m.group(1) not in windows:
+                failures.append(f"heap-allocations-per-syscall: entered sites named for {m.group(1)}, not a pinned reading: {line!r}")
+                continue
+            if m.group(3) == "none":
+                continue
+            for site in m.group(3).split(","):
+                if site not in sites:
+                    failures.append(f"heap-allocations-per-syscall: {m.group(1)} entered {site}, which is not a kernel-entry site: {line!r}")
+                else:
+                    entered_sites.add(site)
+        for site in sites:
+            if not site.startswith("src/smp_exercisers.rs:") and site not in entered_sites:
+                failures.append(f"heap-allocations-per-syscall: the kernel-entry site {site} has no measured reading that entered it")
         for m in readings:
             before, after, delta = (int(g) for g in m.groups()[2:5])
             kind = carved.get((m.group(1), m.group(2) is not None))

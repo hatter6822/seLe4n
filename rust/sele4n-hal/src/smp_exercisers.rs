@@ -2367,6 +2367,38 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
     }
 }
 
+/// `KernelError.invalidTypeTag`'s discriminant (`sele4n-types`).
+#[cfg(feature = "hw_target")]
+const INVALID_TYPE_TAG: u64 = 33;
+
+/// A call past its inline words (WS-UC coverage of the long messages), five
+/// words with the root task's IPC buffer mapped: only a five-word invocation
+/// reads the overflow words (the `overflowed` route), every other syscall
+/// here its inline words alone (its short route).  Each is on a capability
+/// whose type the syscall does not take (or, for the untyped calls, with an argument
+/// the decode or the object refuses), so the gate or the arm refuses with
+/// `code` and changes nothing.
+#[cfg(feature = "hw_target")]
+const fn overflowed(
+    name: &'static str,
+    syscall: u64,
+    cptr: u64,
+    msg_len: u64,
+    code: u64,
+) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall,
+        cptr,
+        msg_len,
+        msg: [0; 4],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        returns: refused(code),
+    }
+}
+
 /// The long send's message length: four words in the sender's registers and
 /// two in its IPC buffer's overflow slots 0 and 1, which share a page.
 #[cfg(feature = "hw_target")]
@@ -2381,6 +2413,30 @@ const REFUSED_MESSAGE_INFO: Option<(u64, Option<u64>)> = Some((
     (crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_MESSAGE_INFO) << 12,
     None,
 ));
+
+/// `KernelError.truncatedMessage`'s discriminant (`sele4n-types`'
+/// `TruncatedMessage`, seL4's `seL4_TruncatedMessage`).
+#[cfg(feature = "hw_target")]
+const TRUNCATED_MESSAGE: u64 = 58;
+
+/// An invocation `msg_len` words long, shorter than its arguments
+/// (`truncationMinimum`), on a capability of the kind it reads them under: the
+/// capability is found, then the message refused `TruncatedMessage` before any
+/// argument word is read, and nothing changes.
+#[cfg(feature = "hw_target")]
+const fn truncated(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall,
+        cptr,
+        msg_len,
+        msg: [0; 4],
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        returns: refused(TRUNCATED_MESSAGE),
+    }
+}
 
 /// A message length past the most message registers a message has (120),
 /// which the message-info decode refuses.
@@ -2577,6 +2633,10 @@ const NO_GRANT_ENDPOINT_CAP: u64 = cap_address(NO_GRANT_ENDPOINT_SLOT);
 /// Read and write without grant, as a mint's rights word.
 #[cfg(feature = "hw_target")]
 const READ_WRITE_RIGHTS: u64 = 0x3;
+/// Write alone, as a mint's rights word: an endpoint capability that may send
+/// and may not receive.
+#[cfg(feature = "hw_target")]
+const WRITE_ONLY_RIGHTS: u64 = 0x2;
 /// `KernelError.alignmentError`'s discriminant (`sele4n-types`'
 /// `AlignmentError`), and the refusal frame's `x1` that carries it.
 #[cfg(feature = "hw_target")]
@@ -3190,18 +3250,86 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         // The long, short-argument and refused forms, each routed past the
         // named syscalls, the root task's IPC buffer mapped for the words
-        // past the fourth: a register one word short, refused; a configure
-        // one word long (the HAL refuses a short one before the kernel,
-        // `SyscallId::min_inline_args`); a signal and a wait one word long,
-        // the wait taking the badge the signal left; an invocation one word
-        // long; a message-info word whose length no message has, refused;
-        // one whose top bit is set, refused; and a yield one word long.
-        RoundTrip {
-            caps_or_badges: None,
-            returns: REFUSED_MESSAGE_INFO,
-            msg_len: 4,
-            ..service_register("service-register-short", ENDPOINT_CAP, SERVICE_INTERFACE)
-        },
+        // past the fourth: every invocation one word shorter than its
+        // arguments (`truncationMinimum`), refused `TruncatedMessage` once its
+        // capability is found (seL4's `seL4_TruncatedMessage`; the interrupt
+        // invocations' are measured where their capabilities exist,
+        // `interrupt_handlers_issued`); a configure one word long; a signal
+        // and a wait one word long, the wait taking the badge the signal
+        // left; an invocation one word long; a message-info word whose length
+        // no message has, refused; one whose top bit is set, refused; and a
+        // yield one word long.
+        truncated("service-register-short", SERVICE_REGISTER, ENDPOINT_CAP, 4),
+        truncated(
+            "sched-context-configure-short",
+            SCHED_CONTEXT_CONFIGURE,
+            SCHED_CONTROL_CAP,
+            4,
+        ),
+        truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 3),
+        truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
+        truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
+        truncated("cspace-delete-short", CSPACE_DELETE, CNODE_CAP, 0),
+        truncated("cspace-revoke-short", CSPACE_REVOKE, CNODE_CAP, 0),
+        truncated("mint-reply-cap-short", MINT_REPLY_CAP, CNODE_CAP, 1),
+        truncated("untyped-retype-short", UNTYPED_RETYPE, UNTYPED_CAP, 3),
+        truncated("vspace-map-short", VSPACE_MAP, VSPACE_CAP, 3),
+        truncated("vspace-unmap-short", VSPACE_UNMAP, VSPACE_CAP, 1),
+        truncated(
+            "vspace-unify-instruction-short",
+            VSPACE_UNIFY_INSTRUCTION,
+            VSPACE_CAP,
+            1,
+        ),
+        truncated(
+            "page-table-map-short",
+            PAGE_TABLE_MAP,
+            PAGE_TABLE_CAPS[0],
+            1,
+        ),
+        truncated(
+            "sched-context-bind-short",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-bind-notification-short",
+            TCB_BIND_NOTIFICATION,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-priority-short",
+            TCB_SET_PRIORITY,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-mc-priority-short",
+            TCB_SET_MC_PRIORITY,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-ipc-buffer-short",
+            TCB_SET_IPC_BUFFER,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-affinity-short",
+            TCB_SET_AFFINITY,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated(
+            "tcb-set-fault-handler-short",
+            TCB_SET_FAULT_HANDLER,
+            PARTNER_TCB_CAP,
+            0,
+        ),
+        truncated("tcb-set-space-short", TCB_SET_SPACE, PARTNER_TCB_CAP, 1),
         RoundTrip {
             msg_len: 6,
             ..configure(
@@ -3259,6 +3387,282 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             blocks: false,
             caps_or_badges: None,
             returns: None,
+        },
+        // Every other syscall with a message past its inline words, five
+        // words (six for the service register, whose fifth is its own
+        // argument, routed `overflowed`; the rest read their inline words
+        // alone), each on a capability of a type it does
+        // not take, so the gate refuses it `InvalidCapability` before any
+        // right and changes nothing (the receive's, a fault, is queued with
+        // the other capability faults, `overflow_cap_faults`): the untyped reset
+        // on the untyped while its frame child lives, the declassifications on
+        // the boot endpoint, whose flow the base lattice already permits.
+        overflowed(
+            "overflowed-cspace-mint",
+            CSPACE_MINT,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-cspace-copy",
+            CSPACE_COPY,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-cspace-move",
+            CSPACE_MOVE,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-cspace-delete",
+            CSPACE_DELETE,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-cspace-revoke",
+            CSPACE_REVOKE,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-vspace-map",
+            VSPACE_MAP,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-vspace-unmap",
+            VSPACE_UNMAP,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-vspace-unify-instruction",
+            VSPACE_UNIFY_INSTRUCTION,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-service-revoke",
+            SERVICE_REVOKE,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-service-query",
+            SERVICE_QUERY,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-sched-context-bind",
+            SCHED_CONTEXT_BIND,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-sched-context-unbind",
+            SCHED_CONTEXT_UNBIND,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-sched-context-consumed",
+            SCHED_CONTEXT_CONSUMED,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-sched-context-yield-to",
+            SCHED_CONTEXT_YIELD_TO,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-suspend",
+            TCB_SUSPEND,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-resume",
+            TCB_RESUME,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-set-priority",
+            TCB_SET_PRIORITY,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-set-ipc-buffer",
+            TCB_SET_IPC_BUFFER,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-set-affinity",
+            TCB_SET_AFFINITY,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-bind-notification",
+            TCB_BIND_NOTIFICATION,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-unbind-notification",
+            TCB_UNBIND_NOTIFICATION,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-set-fault-handler",
+            TCB_SET_FAULT_HANDLER,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-tcb-set-space",
+            TCB_SET_SPACE,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-mint-reply-cap",
+            MINT_REPLY_CAP,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-irq-handler-ack",
+            IRQ_HANDLER_ACK,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-irq-control-get",
+            IRQ_CONTROL_GET,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-irq-handler-set-notification",
+            IRQ_HANDLER_SET_NOTIFICATION,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-irq-handler-clear",
+            IRQ_HANDLER_CLEAR,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-page-table-map",
+            PAGE_TABLE_MAP,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-page-table-unmap",
+            PAGE_TABLE_UNMAP,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-audit-read",
+            AUDIT_READ,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-audit-drain",
+            AUDIT_DRAIN,
+            NOTIFICATION_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-service-register",
+            SERVICE_REGISTER,
+            NOTIFICATION_CAP,
+            6,
+            INVALID_CAPABILITY,
+        ),
+        overflowed(
+            "overflowed-untyped-reset",
+            UNTYPED_RESET,
+            UNTYPED_CAP,
+            5,
+            REVOCATION_REQUIRED,
+        ),
+        overflowed(
+            "overflowed-declassify",
+            DECLASSIFY,
+            ENDPOINT_CAP,
+            5,
+            FLOW_DENIED,
+        ),
+        // A declassified signal reads no word past its inline registers
+        // (seL4's `seL4_Signal` reads no message), so a long one takes the
+        // audited route and reads no IPC-buffer word; refused on its type.
+        overflowed(
+            "long-declassify-signal",
+            DECLASSIFY_SIGNAL,
+            ENDPOINT_CAP,
+            5,
+            INVALID_CAPABILITY,
+        ),
+        // The untyped retype past its inline words, its type tag one no
+        // object kind has, refused by the argument decode.
+        RoundTrip {
+            msg: [0xff, 0, 0, 0],
+            ..overflowed(
+                "overflowed-untyped-retype",
+                UNTYPED_RETYPE,
+                UNTYPED_CAP,
+                5,
+                INVALID_TYPE_TAG,
+            )
         },
         invocation(
             "sched-context-bind",
@@ -8679,8 +9083,8 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         false,
     ),
 ];
-/// A refused declassification (WS-ZA ZA6.35), unmeasured, so the refusal
-/// ledger has a slot for the audit reads to read: the boot domain's endpoint
+/// A refused declassification (WS-ZA ZA6.35), measured, and it gives the
+/// refusal ledger a slot for the audit reads to read: the boot domain's endpoint
 /// is in the caller's own domain, a flow the base lattice already permits,
 /// which `.declassify` refuses (`flowDenied`) and the seam records.
 #[cfg(feature = "hw_target")]
@@ -8709,7 +9113,12 @@ const FLOW_DENIED: u64 = 13;
 /// refused declassification's slot, and the causality verdicts; then the
 /// whole trail drained and the carved notification's only capability deleted.
 #[cfg(feature = "hw_target")]
-const AUDIT_SCENARIO: [RoundTrip; 20] = [
+const AUDIT_SCENARIO: [RoundTrip; 22] = [
+    // A drain and a read a word short of their arguments, through the audit
+    // capability: refused `TruncatedMessage` once the target and the right
+    // are checked, the trail untouched.
+    truncated("audit-drain-short", AUDIT_DRAIN, AUDIT_CAP, 0),
+    truncated("audit-read-short", AUDIT_READ, AUDIT_CAP, 2),
     RoundTrip {
         name: "audit-drain-first",
         syscall: AUDIT_DRAIN,
@@ -9131,7 +9540,7 @@ const BOUND_SIGNAL_SWAP: [RoundTrip; 3] = [
         [MOVE_CAP, 0, 0, 0],
     ),
 ];
-/// The root task's declassified signal refused at its second hop, unmeasured.
+/// The root task's declassified signal refused at its second hop, measured.
 #[cfg(feature = "hw_target")]
 const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     name: "declassified-signal-refused-at-receiver",
@@ -9236,8 +9645,8 @@ const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 6] = [
 ///   its slot read off the ledger's status first, its word checked to be the
 ///   low thread's id.
 ///
-/// Only the four deliveries and the read are measured; the setup, the switches,
-/// the refusal and the deletes that leave the slots empty again are not.
+/// The four deliveries, the refusal and the read are measured; the setup, the
+/// switches and the deletes that leave the slots empty again are not.
 ///
 /// One run (`which` names the first call); the caller masks the timer across
 /// it.
@@ -9281,10 +9690,8 @@ fn bound_declassified_signals(which: &str) -> bool {
             "the low thread's receive did not block",
         )
         || !unmeasured_all(&BOUND_SIGNAL_SWAP, "the notifications were not swapped")
-        || !unmeasured(
-            &DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER,
-            "the declassified signal was not refused at its receiver",
-        )
+        || heap_allocations_round_trip(&DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER, which)
+            != Some(true)
     {
         return false;
     }
@@ -9471,6 +9878,7 @@ const ROUND_TRIP_SPSR: u64 = 0;
 #[cfg(feature = "hw_target")]
 fn own_heap_allocations(core: usize) -> Option<u64> {
     let totals = crate::lean_heap::kernel_allocation_totals_on(core).ok();
+    note_entered_sites(core, totals.map_or(u64::MAX, |(count, _)| count));
     crate::barriers::isb();
     let now = crate::read_sysreg!("cntvct_el0");
     WINDOW_TICKS[0].store(WINDOW_TICKS[1].load(Ordering::Relaxed), Ordering::Relaxed);
@@ -9501,6 +9909,108 @@ static WINDOW_TOTALS: [[AtomicU64; 2]; 2] = [
 fn window_bytes(before: u64, after: u64) -> Option<u64> {
     let read = |i: usize, j: usize| WINDOW_TOTALS[i][j].load(Ordering::Relaxed);
     (read(0, 0) == before && read(1, 0) == after).then(|| read(1, 1).wrapping_sub(read(0, 1)))
+}
+
+/// The heap-counter reads [`ENTERED_SITES`] keeps per core.
+#[cfg(feature = "hw_target")]
+const ENTERED_SITES_KEPT: usize = 8;
+
+/// A core's kernel-entry tally ([`crate::kernel_entry::entered_sites`]) at
+/// each of its last [`ENTERED_SITES_KEPT`] heap-counter reads, beside the
+/// count that read gave and its sequence number (0 for a slot never written):
+/// what a reading's window entered is the difference between the read that
+/// gave its `before` and its last read ([`entered_in_window`]).  Written only
+/// by the boot core's driver, which reads every core's counter itself.
+#[cfg(feature = "hw_target")]
+static ENTERED_SITES: [[EnteredSitesRead; ENTERED_SITES_KEPT]; CORE_COUNT] =
+    [const { [const { EnteredSitesRead::new() }; ENTERED_SITES_KEPT] }; CORE_COUNT];
+
+/// The reads [`ENTERED_SITES`] has numbered, across every core.
+#[cfg(feature = "hw_target")]
+static ENTERED_SITES_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// One heap-counter read's slot of [`ENTERED_SITES`].
+#[cfg(feature = "hw_target")]
+struct EnteredSitesRead {
+    sequence: AtomicU64,
+    count: AtomicU64,
+    tally: [core::sync::atomic::AtomicU32;
+        crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITE_SLOTS],
+}
+
+#[cfg(feature = "hw_target")]
+impl EnteredSitesRead {
+    const fn new() -> Self {
+        Self {
+            sequence: AtomicU64::new(0),
+            count: AtomicU64::new(u64::MAX),
+            tally: [const { core::sync::atomic::AtomicU32::new(0) };
+                crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITE_SLOTS],
+        }
+    }
+}
+
+/// Keep `core`'s tally at a heap-counter read that gave `count`, over the
+/// oldest of its kept reads.
+#[cfg(feature = "hw_target")]
+fn note_entered_sites(core: usize, count: u64) {
+    let Some(ring) = ENTERED_SITES.get(core) else {
+        return;
+    };
+    let tally = crate::kernel_entry::entered_sites::snapshot(core);
+    let slot = ring
+        .iter()
+        .min_by_key(|r| r.sequence.load(Ordering::Relaxed))
+        .expect("the ring is not empty");
+    for (kept, now) in slot.tally.iter().zip(tally) {
+        kept.store(now, Ordering::Relaxed);
+    }
+    slot.count.store(count, Ordering::Relaxed);
+    slot.sequence.store(
+        ENTERED_SITES_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,
+        Ordering::Relaxed,
+    );
+}
+
+/// The sites a reading on `core` from `before` to `after` entered: the
+/// difference between `core`'s last kept read, which must have given
+/// `after`, and the latest earlier read that gave `before`.  For a window
+/// whose count did not move that is the read just before the last, so a
+/// reading spanning several dispatches is attributed only its last one's
+/// entries: the gate may be told less than a window entered, never more.
+/// `None` when the kept reads do not hold the window.
+#[cfg(feature = "hw_target")]
+fn entered_in_window(
+    core: usize,
+    before: u64,
+    after: u64,
+) -> Option<crate::kernel_entry::entered_sites::Entered> {
+    let ring = ENTERED_SITES.get(core)?;
+    let mut reads: [(u64, u64, usize); ENTERED_SITES_KEPT] = [(0, 0, 0); ENTERED_SITES_KEPT];
+    for (i, r) in ring.iter().enumerate() {
+        reads[i] = (
+            r.sequence.load(Ordering::Relaxed),
+            r.count.load(Ordering::Relaxed),
+            i,
+        );
+    }
+    reads.sort_unstable_by_key(|r| core::cmp::Reverse(r.0));
+    let (last_sequence, last_count, last) = reads[0];
+    if last_sequence == 0 || last_count != after {
+        return None;
+    }
+    let &(_, _, first) = reads[1..].iter().find(|r| r.0 != 0 && r.1 == before)?;
+    let load = |i: usize| {
+        let mut out = [0; crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITE_SLOTS];
+        for (o, c) in out.iter_mut().zip(&ring[i].tally) {
+            *o = c.load(Ordering::Relaxed);
+        }
+        out
+    };
+    Some(crate::kernel_entry::entered_sites::Entered(
+        load(first),
+        load(last),
+    ))
 }
 
 /// The virtual count at the last two heap-counter reads, older first.
@@ -9557,6 +10067,26 @@ impl core::fmt::Display for ReadingBytes {
     }
 }
 
+/// The words the kernel routed a measured round trip by, as its frame carried
+/// them (`x7` the syscall number, `x1` the message-info word): the host-side
+/// gate routes them with the kernel's own router to tell which syscall arm the
+/// reading measured (`scripts/exerciser_route_coverage.lean`), and the label
+/// word it was answered with (`x1`), or `blocked` for a trip that blocked.
+#[cfg(feature = "hw_target")]
+fn print_routed(trip: &RoundTrip, core: usize, which: &str, outcome: &Dispatched) {
+    let (x7, x1) = (trip.syscall, trip.msg_len);
+    let name = trip.name;
+    match outcome {
+        Dispatched::Returned(regs) => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed x7={x7:#x} x1={x1:#x} answered {:#x}",
+            regs[1]
+        ),
+        _ => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed x7={x7:#x} x1={x1:#x} answered blocked"
+        ),
+    }
+}
+
 /// The reading of one measured entry — its cells, and their bytes by size
 /// beside the count (WS-UC UC1) — and the ticks of
 /// its window (from `start`, [`window_start`]) on a line of its own
@@ -9579,6 +10109,14 @@ fn print_reading(name: &str, core: usize, which: &str, before: u64, after: u64, 
         "[smp-test] entry-ticks: {name}: core {core}{which}: ticks={ticks} frequency={}",
         crate::timer::read_frequency()
     );
+    match entered_in_window(core, before, after) {
+        Some(entered) => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: entered {entered}"
+        ),
+        None => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: entered unattributed"
+        ),
+    }
 }
 
 /// What one dispatched round trip did.
@@ -9638,6 +10176,14 @@ fn unmeasured(trip: &RoundTrip, why: &str) -> bool {
 /// reading but zero.
 #[cfg(feature = "hw_target")]
 fn heap_allocations_per_syscall() -> Option<bool> {
+    // The kernel-entry sites, as `build.rs` derived them from the code: the
+    // host-side gate requires each production site to be entered by a
+    // measured reading (the `entered` line beside each).
+    for (path, line) in crate::kernel_entry::entered_sites::KERNEL_ENTRY_SITES {
+        crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: kernel-entry site {path}:{line}"
+        );
+    }
     if !secondary_core_windows(" (first call)") {
         return Some(false);
     }
@@ -9712,10 +10258,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                 return Some(false);
             }
         }
-        if !unmeasured(
-            &DECLASSIFICATION_REFUSAL,
-            "the declassification was not refused with flowDenied",
-        ) {
+        if heap_allocations_round_trip(&DECLASSIFICATION_REFUSAL, which) != Some(true) {
             return Some(false);
         }
         for step in AUDIT_SCENARIO.iter() {
@@ -10230,8 +10773,19 @@ fn interrupt_handlers_issued(which: &str) -> bool {
         cap_address(IRQ_BOUND_HANDLER_SLOT),
         [NOTIFICATION_CAP, 0, 0, 0],
     );
-    heap_allocations_round_trip(&get_bound, which) == Some(true)
+    // Each one word shorter than its arguments, on the capability it reads
+    // them under: refused `TruncatedMessage` once the capability is found.
+    let get_short = truncated("irq-control-get-short", IRQ_CONTROL_GET, IRQ_CONTROL_CAP, 2);
+    let bind_short = truncated(
+        "irq-handler-set-notification-short",
+        IRQ_HANDLER_SET_NOTIFICATION,
+        cap_address(IRQ_BOUND_HANDLER_SLOT),
+        0,
+    );
+    heap_allocations_round_trip(&get_short, which) == Some(true)
+        && heap_allocations_round_trip(&get_bound, which) == Some(true)
         && heap_allocations_round_trip(&get_unbound, which) == Some(true)
+        && heap_allocations_round_trip(&bind_short, which) == Some(true)
         && heap_allocations_round_trip(&bind, which) == Some(true)
 }
 
@@ -10779,7 +11333,8 @@ fn queued_overflow_cap_fault(
 /// (`syscallCapFaultOf`, delivered by `deliverSyscallCapFault`); with the
 /// partner runnable and not waiting, each is queued on the handler's endpoint.
 /// The buffer's page is unmapped and mapped again first, so its translation is
-/// on no core's TLB: the first configure refused for its arguments and the
+/// on no core's TLB (between the two, the messages past the inline words are
+/// clamped to them, as seL4 clamps a message with no IPC buffer): the first configure refused for its arguments and the
 /// first fault take the arm that fills the entry and takes the fill back
 /// (`tlbFillIpcBufferOnCore`, `tlbUndoFillOnCore`); the configure that then
 /// succeeds fills it and keeps it; the second fault and refusal and the
@@ -10814,7 +11369,55 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
     };
     let fills = configure("configure-fills-ipc-buffer", admitted_args);
     let held = configure("configure-held-ipc-buffer", admitted_args);
+    // With the buffer's page unmapped, a message past the inline words is
+    // clamped to them (seL4's `handleInvocation`: `length > n_msgRegisters &&
+    // !buffer` gives `n_msgRegisters`): the configure, one word past and two
+    // words past, is then short of its fifth argument and refused
+    // `TruncatedMessage` once its capability is found; the long send and the
+    // long call on the empty slot run as the short ones and fault on the
+    // lookup; and a long receive reads no overflow word at all, so it faults
+    // on the CNode capability as the short receive does.
+    let clamped_one_word = RoundTrip {
+        returns: refused(TRUNCATED_MESSAGE),
+        ..configure("configure-one-word-unmapped-buffer", admitted_args)
+    };
+    let clamped_long = RoundTrip {
+        msg_len: 6,
+        returns: refused(TRUNCATED_MESSAGE),
+        ..configure("configure-long-unmapped-buffer", admitted_args)
+    };
     unmeasured(&unmap_buffer_page, "the buffer's page was not unmapped")
+        && heap_allocations_round_trip(&clamped_one_word, which) == Some(true)
+        && heap_allocations_round_trip(&clamped_long, which) == Some(true)
+        && queued_overflow_cap_fault(
+            &overflow_cap_fault(
+                "long-send-unmapped-buffer-cap-fault",
+                SEND,
+                LONG_SEND_LENGTH,
+            ),
+            "receive-long-send-unmapped-buffer-cap-fault",
+            "reply-long-send-unmapped-buffer-cap-fault",
+            which,
+        )
+        && queued_overflow_cap_fault(
+            &overflow_cap_fault(
+                "long-call-unmapped-buffer-cap-fault",
+                CALL,
+                LONG_SEND_LENGTH,
+            ),
+            "receive-long-call-unmapped-buffer-cap-fault",
+            "reply-long-call-unmapped-buffer-cap-fault",
+            which,
+        )
+        && queued_overflow_cap_fault(
+            &TrapTrip {
+                x0: CNODE_CAP,
+                ..overflow_cap_fault("long-receive-unmapped-buffer-cap-fault", RECEIVE, 5)
+            },
+            "receive-long-receive-unmapped-buffer-cap-fault",
+            "reply-long-receive-unmapped-buffer-cap-fault",
+            which,
+        )
         && unmeasured(map_buffer_page, "the buffer's page was not mapped again")
         && heap_allocations_round_trip(&refused_fills, which) == Some(true)
         && queued_overflow_cap_fault(
@@ -10844,6 +11447,88 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
             "reply-long-send-cap-fault",
             which,
         )
+        // A receive past its inline words on the CNode capability: seL4's
+        // `handleRecv` faults on a capability that is not an endpoint or
+        // notification, in the receive phase, as on a failed lookup.
+        && queued_overflow_cap_fault(
+            &TrapTrip {
+                x0: CNODE_CAP,
+                ..overflow_cap_fault("overflowed-receive-cap-fault", RECEIVE, 5)
+            },
+            "receive-overflowed-receive-cap-fault",
+            "reply-overflowed-receive-cap-fault",
+            which,
+        )
+        && receive_phase_cap_faults(which)
+}
+
+/// A receive-phase trap: the root task's `SVC` with `x7` the syscall, `x0`
+/// the capability it receives on and no message words.
+#[cfg(feature = "hw_target")]
+const fn receive_phase_cap_fault(name: &'static str, syscall: u64, cptr: u64) -> TrapTrip {
+    TrapTrip {
+        x0: cptr,
+        x1: 0,
+        x7: syscall,
+        ..cap_fault(name)
+    }
+}
+
+/// The slot the write-only endpoint capability takes for the receive-phase
+/// fault without the right: the empty slot, filled for that one fault and
+/// emptied after (the no-grant slot holds the fault handler's endpoint here,
+/// `FAULT_HANDLER_SLOT`).
+#[cfg(feature = "hw_target")]
+const RECEIVE_NO_RIGHT_SLOT: u64 = EMPTY_SLOT;
+
+/// **The receive phase's capability faults** (seL4's `handleRecv`): a
+/// receive, a wait and a reply-receive whose capability resolves but is not an
+/// endpoint or notification, and a receive on an endpoint capability without
+/// the right to receive, each raise a capability fault in the receive phase
+/// exactly as a failed lookup does, queued on the handler's endpoint and
+/// answered.  The capability without the right is an endpoint capability
+/// minted with the write right alone, deleted after.
+#[cfg(feature = "hw_target")]
+fn receive_phase_cap_faults(which: &str) -> bool {
+    let mint_no_receive = invocation(
+        "receive-no-right-mint",
+        CSPACE_MINT,
+        CNODE_CAP,
+        [ENDPOINT_SLOT, RECEIVE_NO_RIGHT_SLOT, WRITE_ONLY_RIGHTS, 0],
+    );
+    let delete_no_receive = invocation(
+        "receive-no-right-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [RECEIVE_NO_RIGHT_SLOT, 0, 0, 0],
+    );
+    queued_overflow_cap_fault(
+        &receive_phase_cap_fault("receive-wrong-type-cap-fault", RECEIVE, CNODE_CAP),
+        "receive-receive-wrong-type-cap-fault",
+        "reply-receive-wrong-type-cap-fault",
+        which,
+    ) && queued_overflow_cap_fault(
+        &receive_phase_cap_fault("wait-wrong-type-cap-fault", WAIT, CNODE_CAP),
+        "receive-wait-wrong-type-cap-fault",
+        "reply-wait-wrong-type-cap-fault",
+        which,
+    ) && queued_overflow_cap_fault(
+        &receive_phase_cap_fault("reply-recv-wrong-type-cap-fault", REPLY_RECV, CNODE_CAP),
+        "receive-reply-recv-wrong-type-cap-fault",
+        "reply-reply-recv-wrong-type-cap-fault",
+        which,
+    ) && heap_allocations_round_trip(&mint_no_receive, which) == Some(true)
+        && queued_overflow_cap_fault(
+            &receive_phase_cap_fault(
+                "receive-no-right-cap-fault",
+                RECEIVE,
+                cap_address(RECEIVE_NO_RIGHT_SLOT),
+            ),
+            "receive-receive-no-right-cap-fault",
+            "reply-receive-no-right-cap-fault",
+            which,
+        )
+        && heap_allocations_round_trip(&delete_no_receive, which) == Some(true)
 }
 
 /// Each kind's queued scenario: the trap raised while no handler waits, the
@@ -11023,6 +11708,16 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     crate::kprintln!(
         "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: entered, a thread restored"
     );
+    // A syscall trap is routed by the kernel's router as a round trip is:
+    // its words go to the route coverage, the trapping thread answered by
+    // no return (a capability fault blocks it on its handler).
+    if trip.esr == ROUND_TRIP_ESR {
+        crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed x7={:#x} x1={:#x} answered blocked",
+            trip.x7,
+            trip.x1
+        );
+    }
     if after < before {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the counter went back ({before} -> {after})"
@@ -11432,7 +12127,6 @@ fn dispatch_round_trip_at(
     frame.gprs[4] = trip.msg[2];
     frame.gprs[5] = trip.msg[3];
     frame.gprs[7] = trip.syscall;
-    let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(&frame);
     let saved_daif = crate::interrupts::disable_interrupts();
     let before = own_heap_allocations(core);
     let (dispatched, restored) = {
@@ -11440,7 +12134,7 @@ fn dispatch_round_trip_at(
         // The `SVC` arm's own order: the classification, then the dispatch.
         let class = crate::trap::classify_synchronous_exception(ROUND_TRIP_ESR);
         let dispatched = if class == crate::trap::sync_class::SVC {
-            crate::svc_dispatch::dispatch_svc(trip.syscall as u32, &args)
+            crate::svc_dispatch::dispatch_svc(trip.syscall as u32)
         } else {
             Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)
         };
@@ -12023,6 +12717,7 @@ fn heap_allocations_self_delete(which: &str) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = SELF_TCB_DELETE.name;
     let (outcome, before, after, resumed) = dispatch_round_trip(&SELF_TCB_DELETE);
+    print_routed(&SELF_TCB_DELETE, core, which, &outcome);
     let (Some(before), Some(after)) = (before, after) else {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"
@@ -12281,6 +12976,7 @@ fn heap_allocations_any_restore(trip: &RoundTrip, which: &str) -> Option<bool> {
     if after < before {
         return remote_failed("the counter went back");
     }
+    print_routed(trip, core, which, &outcome);
     print_reading(name, core, which, before, after, window_start());
     Some(true)
 }
@@ -12454,7 +13150,9 @@ fn heap_allocations_yield_to_linked(which: &str) -> Option<bool> {
         }
         Dispatched::Failed => return Some(false),
     }
+    print_routed(&YIELD_TO_LINK, core, which, &linked);
     let (blocked, _, after, resumed) = dispatch_round_trip(&YIELD_TO_PARTNER_BLOCKS);
+    print_routed(&YIELD_TO_PARTNER_BLOCKS, core, which, &blocked);
     if !matches!(blocked, Dispatched::Blocked) {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the partner's wait did not block"
@@ -12543,6 +13241,7 @@ fn heap_allocations_round_trip_resuming(
             return Some(false);
         }
     }
+    print_routed(trip, core, which, &outcome);
     match outcome {
         Dispatched::Returned(regs) if !trip.blocks => {
             crate::kprintln!(

@@ -832,7 +832,7 @@ private def returnAbiTraceLines : List String :=
     | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
     | e => e
   -- `KernelError.kernelErrorEncodingBound` = one past the largest `KernelError`
-  -- discriminant (the newest being WS-RR RR7.14's `.ipcCancelled` at 57); every
+  -- discriminant (the newest being `.truncatedMessage` at 58); every
   -- value below it is a variant's or a retired one (`37`, WS-ZA ZA5.4 part 14).  The boundary conjunct pins the count from above:
   -- when the next variant lands, `ofDiscriminant? count` stops being `none`, the
   -- fixture line diverges, and this range has to move with it rather than

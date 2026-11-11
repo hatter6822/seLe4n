@@ -1006,7 +1006,7 @@ advanced the PC so a fail-closed frame would be architecturally coherent, but
 the timer seam consults the same mask, so a thread on a not-ready core would
 never be preempted, charged budget or rescheduled again — returning an error
 hands it the CPU forever.  The gate precedes *every* SVC outcome, before the id
-and argument-count prefilters, and `build.rs` pins that order structurally.
+prefilter, and `build.rs` pins that order structurally.
 RR5.8/RR5.9 closed the compile-time half the finding did not reach: a Lean
 `extern` may be declared, defined or exported only under
 `feature = "hw_target"`, which the readiness gate cannot decide because it
