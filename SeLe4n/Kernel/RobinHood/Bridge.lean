@@ -1394,4 +1394,69 @@ theorem RHTable.length_le_size_of_nodup_present [BEq α] [Hashable α] [LawfulBE
   rw [← hLen]
   exact List.length_le_of_nodup_subset hL hSub
 
+-- ============================================================================
+-- WS-UC UC3: a table never shrinks, and below its load it never resizes
+-- ============================================================================
+
+/-- WS-UC UC3: **below the resize load, `insert` is `insertNoResize`.**  The
+75% check (`size * 4 ≥ capacity * 3`) is false, so no slot array is rebuilt. -/
+theorem RHTable.insert_eq_insertNoResize_of_load [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (h : t.size * 4 < t.capacity * 3) :
+    t.insert k v = t.insertNoResize k v := by
+  unfold RHTable.insert
+  rw [if_neg (by omega)]
+
+/-- WS-UC UC3: below the resize load, an insert keeps the table's capacity. -/
+theorem RHTable.insert_capacity_of_load [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (h : t.size * 4 < t.capacity * 3) :
+    (t.insert k v).capacity = t.capacity := by
+  rw [t.insert_eq_insertNoResize_of_load k v h, RHTable.insertNoResize_capacity]
+
+/-- WS-UC UC3: an insert never shrinks the table: it keeps the capacity or
+doubles it. -/
+theorem RHTable.capacity_le_insert [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) : t.capacity ≤ (t.insert k v).capacity := by
+  unfold RHTable.insert; split
+  · rw [RHTable.insertNoResize_capacity, t.resize_fold_capacity]; omega
+  · rw [RHTable.insertNoResize_capacity]; exact Nat.le_refl _
+
+/-! The floor lemmas below carry a lower bound on the capacity through each
+table write, so `simp` closes a floor goal on a chain of writes
+(`SystemState.tablesGrow`). -/
+
+@[simp] theorem RHTable.le_capacity_insert [BEq α] [Hashable α] [LawfulBEq α]
+    {n : Nat} (t : RHTable α β) (k : α) (v : β) (h : n ≤ t.capacity) :
+    n ≤ (t.insert k v).capacity :=
+  Nat.le_trans h (t.capacity_le_insert k v)
+
+@[simp] theorem RHTable.erase_capacity [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) : (t.erase k).capacity = t.capacity :=
+  t.erase_capacity_eq k
+
+@[simp] theorem RHTable.le_capacity_modify [BEq α] [Hashable α] [LawfulBEq α]
+    {n : Nat} (t : RHTable α β) (k : α) (f : β → β) (h : n ≤ t.capacity) :
+    n ≤ (t.modify k f).capacity := by
+  unfold RHTable.modify; split
+  · exact t.le_capacity_insert k _ h
+  · exact h
+
+@[simp] theorem RHTable.modifyInPlace_capacity [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (f : β → β) : (t.modifyInPlace k f).capacity = t.capacity := by
+  unfold RHTable.modifyInPlace; dsimp only; split <;> rfl
+
+/-- WS-UC UC3: an empty table lists nothing, at any capacity. -/
+theorem RHTable.toList_empty [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).toList = [] := by
+  unfold RHTable.toList RHTable.fold
+  simp only [RHTable.empty]
+  rw [← Array.foldl_toList]
+  suffices h : ∀ (n : Nat) (init : List (α × β)),
+      (List.replicate n (none : Option (RHEntry α β))).foldl
+        (fun acc slot => match slot with | none => acc | some e => (e.key, e.value) :: acc)
+        init = init from h cap []
+  intro n
+  induction n with
+  | zero => intro init; rfl
+  | succ k ih => intro init; simp [List.replicate_succ, List.foldl_cons]; exact ih init
+
 end SeLe4n.Kernel.RobinHood

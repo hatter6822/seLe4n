@@ -1197,7 +1197,7 @@ theorem default_refillsSound : (default : SystemState).refillsSound :=
       rw [(default_state_perCoreInitialized c).2.2.1]; rfl)
     (fun oid sc h => by
       have h0 : (default : SystemState).objects[oid]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
       rw [h0] at h; cases h)
 
 /-- A step that writes neither the objects nor the scheduler keeps the state

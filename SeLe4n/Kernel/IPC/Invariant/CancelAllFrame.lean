@@ -1428,15 +1428,18 @@ structure FinaliseFrame (st st' : SystemState) : Prop where
   invExt : st'.objects.invExt
   write : finaliseWrite st st'
   loan : loanWrite st st'
+  /-- WS-UC UC3: the step never shrinks the object table. -/
+  capacity : st.objects.capacity ≤ st'.objects.capacity
 
 namespace FinaliseFrame
 
 theorem refl {st : SystemState} (hInv : st.objects.invExt) : FinaliseFrame st st :=
-  ⟨.refl st, hInv, .refl st, .refl st⟩
+  ⟨.refl st, hInv, .refl st, .refl st, Nat.le_refl _⟩
 
 theorem trans {a b c : SystemState} (h₁ : FinaliseFrame a b) (h₂ : FinaliseFrame b c) :
     FinaliseFrame a c :=
-  ⟨h₂.rest.trans h₁.rest, h₂.invExt, h₁.write.trans h₂.write, h₁.loan.trans h₂.loan⟩
+  ⟨h₂.rest.trans h₁.rest, h₂.invExt, h₁.write.trans h₂.write, h₁.loan.trans h₂.loan,
+    Nat.le_trans h₁.capacity h₂.capacity⟩
 
 theorem kind {st st' : SystemState} (h : FinaliseFrame st st') :
     kindPreservingWriteUpToBindings st st' :=
@@ -1603,7 +1606,8 @@ structure FinaliseFrameAny (st st' : SystemState) : Prop where
 /-- A finalisation step's frame is one that lets go of no reply link. -/
 theorem FinaliseFrame.any {st st' : SystemState} (h : FinaliseFrame st st') :
     FinaliseFrameAny st st' :=
-  ⟨h.cdt, h.asidTable, h.invExt, .of_write h.write, ⟨by rw [h.rest], by rw [h.rest], by rw [h.rest]⟩⟩
+  ⟨h.cdt, h.asidTable, h.invExt, .of_write h.write, ⟨by rw [h.rest], by rw [h.rest], by rw [h.rest],
+    h.capacity, by rw [h.asidTable]; exact Nat.le_refl _⟩⟩
 
 /-- WS-ZA ZA6.3: a write of the contexts' release-queue fields alone is a
 finalisation write — a context stays a context with its reply-stack head. -/
@@ -1632,7 +1636,7 @@ theorem FinaliseFrame.of_releaseOnlyWrite {st st' : SystemState}
     (hW : st'.releaseOnlyWrite st) (hA : st'.objectsAgreeOffReleaseLinks st)
     (hI : st'.objects.invExt) : FinaliseFrame st st' :=
   ⟨.of_onlyObjectsSchedulerDiffer hW.1, hI, .of_agreeOffReleaseLinks hA,
-    .of_agreeOffReleaseLinks hA⟩
+    .of_agreeOffReleaseLinks hA, hW.objectsCapacity⟩
 
 namespace FinaliseFrameAny
 
@@ -1675,7 +1679,7 @@ theorem bookkeepingAgrees {st st' : SystemState} (h : FinaliseFrameAny st st')
   hB.of_kept ⟨h.ghosts.index, h.ghosts.indexSet, h.ghosts.types, fun x => by
     rcases h.write x with e | ⟨pre, post, hp, hq, ht, -⟩
     · rw [e]
-    · rw [hp, hq]; simp [ht]⟩
+    · rw [hp, hq]; simp [ht], h.ghosts.objectsCapacity, h.ghosts.asidCapacity⟩
 
 /-- **A store of a writable object's like at its own key** (no VSpace root). -/
 theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : KernelObject}
@@ -1719,7 +1723,8 @@ theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
     exact ⟨rfl, RHTable_insert_preserves_invExt _ _ _ hInv,
       finaliseWrite.of_insert hInv rfl hPre
         (finaliseWritable_tcb x) rfl (by simp only [KernelObject.tcbSlots, (hf x).1, (hf x).2]),
-      loanWrite.of_insert hInv rfl hPre (objectLoanKept_tcb (hL x))⟩
+      loanWrite.of_insert hInv rfl hPre (objectLoanKept_tcb (hL x)),
+      RobinHood.RHTable.capacity_le_insert _ _ _⟩
 
 /-- A thread rewritten in its slot in place, its capability slots, reply link and
 loan kept. -/
@@ -1729,7 +1734,8 @@ theorem mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
       intro _; exact ⟨rfl, rfl⟩)
     (hL : ∀ x, TCB.loanKept (f x) x := by intro _; exact ⟨rfl, fun _ _ h => h⟩) :
     FinaliseFrame st (st.mapTcbInPlace t f) := by
-  refine ⟨rfl, SystemState.mapTcbInPlace_objects_invExt _ _ _ hInv, fun oid => ?_, fun oid => ?_⟩
+  refine ⟨rfl, SystemState.mapTcbInPlace_objects_invExt _ _ _ hInv, fun oid => ?_, fun oid => ?_,
+    Nat.le_of_eq (SystemState.mapTcbInPlace_objects_capacity _ _ _).symm⟩
   all_goals
     rw [SystemState.objects_mapTcbInPlace]
     split
@@ -1752,7 +1758,7 @@ theorem unlinkReplyWaiter (st : SystemState) (w s : SeLe4n.ThreadId) (hInv : st.
   have hA := SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks st w s
   exact ⟨by rw [SystemState.unlinkReplyWaiter_eq_objects st w s]; rfl,
     SystemState.unlinkReplyWaiter_objects_invExt st w s hInv, .of_agreeOffRunLinks hA,
-    loanWrite.of_agreeOffRunLinks hA⟩
+    loanWrite.of_agreeOffRunLinks hA, by capacity_kept⟩
 
 /-- **The orphan step**: the caller's server forgotten in place, then its unlink. -/
 theorem orphanReplyWaiter (st : SystemState) (w x : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
@@ -1785,9 +1791,10 @@ theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) (f : KernelObject →
         · exact RobinHood.RHTable.getElem?_insert_ne st.objects k oid o
             (by intro h'; exact h (eq_of_beq h').symm) hInv
       exact ⟨rfl, RHTable_insert_preserves_invExt _ _ _ hInv, fun oid => Or.inl (hK oid),
-        fun oid => Or.inl (hK oid)⟩
+        fun oid => Or.inl (hK oid), RobinHood.RHTable.capacity_le_insert _ _ _⟩
     · refine ⟨rfl, RHTable_insert_preserves_invExt _ _ _ hInv,
-        finaliseWrite.of_insert hInv rfl hG hW hT hS hH, loanWrite.of_insert hInv rfl hG ?_⟩
+        finaliseWrite.of_insert hInv rfl hG hW hT hS hH, loanWrite.of_insert hInv rfl hG ?_,
+        RobinHood.RHTable.capacity_le_insert _ _ _⟩
       refine objectLoanKept_of_inert (fun t e => hNT ?_) (fun r e => ?_)
       · rw [← hT, e]; rfl
       · subst e; rcases hW with h | h | h | h <;> cases h
@@ -1796,7 +1803,7 @@ theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) (f : KernelObject →
 theorem enqueueRunnableOnCore (st : SystemState) (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) : FinaliseFrame st (SeLe4n.Kernel.enqueueRunnableOnCore st c t) := by
   refine ⟨.of_onlyObjectsSchedulerDiffer (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c t),
-    enqueueRunnableOnCore_preserves_objects_invExt st c t hInv, ?_, ?_⟩ <;>
+    enqueueRunnableOnCore_preserves_objects_invExt st c t hInv, ?_, ?_, by capacity_kept⟩ <;>
   cases hT : st.getTcb? t with
   | none =>
     simp only [SeLe4n.Kernel.enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hT]
@@ -1924,7 +1931,8 @@ theorem notificationCancel (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
   have hR := removeFromNotificationWaitQueue_reach st t hInv
   have h1 : FinaliseFrame st (removeFromNotificationWaitQueue st t) := by
     obtain ⟨objs, e⟩ := removeFromNotificationWaitQueue_eq_objects st t
-    exact ⟨by rw [e]; rfl, hR.1, finaliseWrite.of_ntfnUnlinkReach hR, loanWrite.of_ntfnUnlinkReach hR⟩
+    exact ⟨by rw [e]; rfl, hR.1, finaliseWrite.of_ntfnUnlinkReach hR, loanWrite.of_ntfnUnlinkReach hR,
+      by capacity_kept⟩
   exact h1.trans (updateTcb _ _ _ h1.invExt)
 
 /-- The unbind, each side in its slot. -/
@@ -1942,7 +1950,7 @@ theorem storeUnbindNotification (st : SystemState) (t : SeLe4n.ThreadId) (n : Se
 theorem of_objects_eq {st st' : SystemState} (hR : SystemState.onlyObjectsSchedulerDiffer st' st)
     (hO : st'.objects = st.objects) (hInv : st.objects.invExt) : FinaliseFrame st st' :=
   ⟨.of_onlyObjectsSchedulerDiffer hR, hO ▸ hInv, fun oid => Or.inl (by rw [hO]),
-    loanWrite.of_objects_eq hO⟩
+    loanWrite.of_objects_eq hO, by rw [hO]; exact Nat.le_refl _⟩
 
 /-- A scheduling context rewritten in its slot, its reply-stack head kept. -/
 theorem updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
@@ -1958,7 +1966,8 @@ theorem updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
       finaliseWrite.of_insert hInv rfl hPre
         (finaliseWritable_schedContext x) rfl rfl (by simp [schedContextStackHead?, hf x]),
       loanWrite.of_insert hInv rfl hPre
-        (objectLoanKept_of_inert (fun _ e => by cases e) (fun _ e => by cases e))⟩
+        (objectLoanKept_of_inert (fun _ e => by cases e) (fun _ e => by cases e)),
+      RobinHood.RHTable.capacity_le_insert _ _ _⟩
 
 /-- The key hook rewrites the scheduler alone. -/
 theorem markKeyChangeFrom (pre st : SystemState) (tid : SeLe4n.ThreadId)
@@ -2002,7 +2011,8 @@ theorem descheduleAt (st : SystemState) (t : SeLe4n.ThreadId) (p : Option Concur
     exact ⟨.of_onlyObjectsSchedulerDiffer (removeRunnableOnCore_onlyObjectsSchedulerDiffer st t c),
       removeRunnableOnCore_objects_invExt st t c hInv,
       finaliseWrite.of_agreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st t c),
-      loanWrite.of_agreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st t c)⟩
+      loanWrite.of_agreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st t c),
+      Nat.le_of_eq (removeRunnableOnCore_objects_capacity st t c).symm⟩
 
 /-- **A finalised thread's suspend**: the deschedule, then the `.Inactive` mark,
 the thread's message dropped. -/
@@ -2021,6 +2031,7 @@ theorem releaseCores (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects
   · rw [hO]; exact hInv
   · intro oid; left; rw [hO]
   · exact loanWrite.of_objects_eq hO
+  · rw [hO]; exact Nat.le_refl _
 
 /-- The release step, as the closure asks it. -/
 theorem releaseStep (st : SystemState) : FinaliseScReleaseStep (FinaliseFrame st) := by
@@ -2034,7 +2045,8 @@ theorem propagatePip (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.
     FinaliseFrame st (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1 := by
   refine ⟨.of_onlyObjectsSchedulerDiffer (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer fuel st s ec),
     PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st s ec fuel hInv,
-    fun oid => ?_, fun oid => ?_⟩
+    fun oid => ?_, fun oid => ?_,
+    le_propagatePipChainCrossCore_objects_capacity fuel st s ec (Nat.le_refl _)⟩
   · rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st s ec hInv oid with
       e | ⟨pre, post, hp, hq, hC, hL, -⟩
     · exact Or.inl e
@@ -2177,7 +2189,7 @@ theorem unlinkReplyWaiterOpt (st : SystemState) (w : SeLe4n.ThreadId)
   exact ⟨by rw [e], by rw [e],
     SystemState.unlinkReplyWaiterOpt_objects_invExt st w s? hInv,
     .of_write (.of_agreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st w s?)),
-    .of_objectsOnly e⟩
+    .of_objectsOnly e (by capacity_kept)⟩
 
 /-- **The pop's two reply stores**: the head's links cleared, then the frame
 below re-headed. -/
@@ -2216,7 +2228,7 @@ theorem returnDonatedSchedContext {st st' : SystemState} {serverTid : SeLe4n.Thr
   have eA : st'.asidTable = s4.asidTable := by rw [hEq]
   exact ⟨eC.trans f4.cdt, eA.trans f4.asidTable, eO ▸ f4.invExt,
     fun k => by rw [eO]; exact f4.write k,
-    SystemState.ghostsKept.trans (by rw [hEq]; exact ⟨rfl, rfl, rfl⟩) f4.ghosts⟩
+    SystemState.ghostsKept.trans (by rw [hEq]; exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩) f4.ghosts⟩
 
 /-- **The pop of a context no thread holds**: the context's store, the pop's
 two reply stores, then the recipient's binding rewrite. -/
@@ -2341,7 +2353,7 @@ theorem unstack {s s1 : SystemState} {x : SeLe4n.ObjId}
         (by dsimp only; rw [RHTable_getElem?_eq_get?]
             exact RobinHood.RHTable.getElem?_insert_self s1.objects _ _ hI)
         (fun oid hne => RobinHood.RHTable.getElem?_insert_ne s1.objects _ oid _
-          (fun h => hne (eq_of_beq h).symm) hI), ⟨rfl, rfl, rfl⟩⟩
+          (fun h => hne (eq_of_beq h).symm) hI), ⟨rfl, rfl, rfl, RobinHood.RHTable.capacity_le_insert _ _ _, Nat.le_refl _⟩⟩
 
 /-- **A thread's owner code cleared names no loan**: its binding is its own
 context, or none. -/
@@ -2375,7 +2387,7 @@ theorem cutUnstack {s s1 : SystemState} {scId : SeLe4n.SchedContextId}
         (by dsimp only; rw [RHTable_getElem?_eq_get?]
             exact RobinHood.RHTable.getElem?_insert_self s1.objects _ _ hI)
         (fun oid hne => RobinHood.RHTable.getElem?_insert_ne s1.objects _ oid _
-          (fun h => hne (eq_of_beq h).symm) hI), ⟨rfl, rfl, rfl⟩⟩
+          (fun h => hne (eq_of_beq h).symm) hI), ⟨rfl, rfl, rfl, RobinHood.RHTable.capacity_le_insert _ _ _, Nat.le_refl _⟩⟩
 
 /-- The thread-side cut, as the closure asks it: the unstack, then a holder's
 owner code cleared (a write that lends nothing), then the key hook. -/
@@ -2696,7 +2708,7 @@ theorem revokeService_finaliseFrameAny {sid : ServiceId} {st st' : SystemState}
     FinaliseFrameAny st st' := by
   have hRw := revokeService_serviceRecordRewrite h
   obtain ⟨_, _, _, rfl⟩ := revokeService_ok h
-  refine ⟨rfl, rfl, hRw.invExt hInv, fun oid => ?_, ⟨rfl, rfl, rfl⟩⟩
+  refine ⟨rfl, rfl, hRw.invExt hInv, fun oid => ?_, ⟨rfl, rfl, rfl, by capacity_kept, Nat.le_refl _⟩⟩
   rcases hRw.lookup hInv oid with e | ⟨ep, c, hE, hE'⟩
   · exact Or.inl e
   · exact Or.inr ⟨_, _, hE, hE', rfl, rfl, Or.inl (Or.inr (Or.inl rfl))⟩

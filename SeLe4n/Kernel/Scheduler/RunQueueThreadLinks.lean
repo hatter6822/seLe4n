@@ -306,6 +306,11 @@ theorem mapTcbInPlace_objects_invExt (st : SystemState) (t : SeLe4n.ThreadId) (g
     (hInv : st.objects.invExt) : (st.mapTcbInPlace t g).objects.invExt :=
   RHTable.mapValueAt_invExt _ _ _ hInv
 
+/-- WS-UC UC3: an in-place thread write keeps the store's capacity. -/
+@[simp] theorem mapTcbInPlace_objects_capacity (st : SystemState) (t : SeLe4n.ThreadId)
+    (g : TCB → TCB) : (st.mapTcbInPlace t g).objects.capacity = st.objects.capacity :=
+  RHTable.mapValueAt_capacity _ _ _
+
 theorem mapTcbInPlace_getTcb?_isSome (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
     (y : SeLe4n.ThreadId) :
     ((st.mapTcbInPlace t g).getTcb? y).isSome = (st.getTcb? y).isSome := by
@@ -500,6 +505,11 @@ theorem runLinkOn_mapTcbInPlace_map (st : SystemState) (y : SeLe4n.ThreadId) (g 
 code `0`, which names no thread. -/
 @[inline] def updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB) : SystemState :=
   if k = 0 then st else st.mapTcbInPlace (decode k) g
+
+/-- WS-UC UC3: a thread write by code keeps the store's capacity. -/
+@[simp] theorem updateTcbAtCode_objects_capacity (st : SystemState) (k : Nat) (g : TCB → TCB) :
+    (st.updateTcbAtCode k g).objects.capacity = st.objects.capacity := by
+  unfold updateTcbAtCode; split <;> simp
 
 theorem updateTcbAtCode_objects_invExt (st : SystemState) (k : Nat) (g : TCB → TCB)
     (hInv : st.objects.invExt) : (st.updateTcbAtCode k g).objects.invExt := by
@@ -4074,5 +4084,38 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
   · obtain ⟨x, hx, ha⟩ := d.currentActive c t hCur
     rw [hOld] at hx; cases hx
     exact ⟨new, by rw [hGet, if_pos rfl], by unfold TCB.Active; rw [hT]; exact ha⟩
+
+-- ============================================================================
+-- WS-UC UC3: the run-queue writes keep the store's capacity
+-- ============================================================================
+
+@[simp] theorem runAppendLinks_objects_capacity (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runAppendLinks c t p).objects.capacity = st.objects.capacity := by
+  simp [runAppendLinks]
+
+@[simp] theorem runAppendOnCore_objects_capacity (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runAppendOnCore c t p).objects.capacity = st.objects.capacity := by
+  simp [runAppendOnCore]
+
+@[simp] theorem runEnqueueAdmitted_objects_capacity (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runEnqueueAdmitted c t p).objects.capacity = st.objects.capacity := by
+  unfold runEnqueueAdmitted; dsimp only; split <;> simp
+
+@[simp] theorem runEnqueueOnCore_objects_capacity (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runEnqueueOnCore c t p).objects.capacity = st.objects.capacity := by
+  unfold runEnqueueOnCore; split <;> simp
+
+@[simp] theorem runUnlinkLinks_objects_capacity (st : SystemState) (t : SeLe4n.ThreadId)
+    (pv nx bpv bnx : Nat) :
+    (st.runUnlinkLinks t pv nx bpv bnx).objects.capacity = st.objects.capacity := by
+  simp [runUnlinkLinks]
+
+@[simp] theorem runRemoveOnCore_objects_capacity (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) : (st.runRemoveOnCore c t).objects.capacity = st.objects.capacity := by
+  unfold runRemoveOnCore; dsimp only; split <;> simp
 
 end SeLe4n.Model.SystemState

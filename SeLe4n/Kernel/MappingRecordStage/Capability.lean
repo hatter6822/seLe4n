@@ -170,9 +170,9 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_ghosts
       subst hStep
       unfold Architecture.tlbFillOnCore Architecture.drainInitiatorPerCoreView
       split
-      · exact ⟨rfl, rfl, rfl⟩
+      · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
       · unfold Architecture.tlbInsertOnCore
-        split <;> exact ⟨rfl, rfl, rfl⟩
+        split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
     unfold Architecture.vspaceMapPageCheckedWithShootdownFromState at hS
     dsimp only at hS
     cases hF : Architecture.vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st with
@@ -186,7 +186,7 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_ghosts
         · rw [Architecture.withShootdownRound_total] at hS
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
           subst hS
-          exact ⟨rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
         · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
           subst hS; exact .refl _
       unfold Architecture.vspaceMapPageCheckedWithFlushFromState at hF
@@ -204,7 +204,7 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_ghosts
               rw [hB] at hF
               simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
               subst hF
-              exact ⟨stB, rfl, hTail.trans (hRound.trans ⟨rfl, rfl, rfl⟩)⟩
+              exact ⟨stB, rfl, hTail.trans (hRound.trans ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)⟩
 
 /-- The page-table write the map makes is a store. -/
 theorem vspaceMapPage_preserves_bookkeepingAgrees {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
@@ -229,7 +229,7 @@ theorem vspaceMapPage_preserves_bookkeepingAgrees {asid : SeLe4n.ASID} {vaddr : 
           rw [hMp] at h
           simp only at h
           exact storeObject_preserves_bookkeepingAgrees (Architecture.recordPhysicalWrites st _) _
-            _ _ (hB.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩) hObjInv h
+            _ _ (hB.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩) hObjInv h
 
 /-- **The map keeps the agreement**: the root's store, the frame's and the
 root's epoch stores, and the record on the capability are each a store. -/

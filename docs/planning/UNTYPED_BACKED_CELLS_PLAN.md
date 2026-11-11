@@ -233,8 +233,32 @@ rewrites it there.
     (endpoint 11 → 6, 368 → 248 bytes).
   - Every other reading stays 0.
 
-### UC3 — Pre-size the object and ASID tables at boot (D4)
+### UC3 — Pre-size the object and ASID tables at boot (D4) — **LANDED `v0.37.16`**
 
+- **Done.** The boot's empty state (`SystemState.bootEmpty ()`, through
+  `mkEmptyIntermediateState ()`), which the boot's builder starts from, builds
+  `objects` and `asidTable` at `bootTableCapacity` (2^17), where the boot calls
+  it and never as a module constant (`never_extract`); the default state keeps
+  16-slot tables, so no closed state holds a boot-sized table and the boot's
+  heap cost is the installed state's two tables.  On such a table
+  holding at most `maxObjects` objects (or `maxAsidValue` ASIDs) `insert` is
+  `insertNoResize` (`SystemState.objects_insert_eq_insertNoResize`,
+  `SystemState.asidTable_insert_eq_insertNoResize`, over
+  `RHTable.insert_eq_insertNoResize_of_load`).  The capacity fact
+  (`SystemState.tablesPresized`) is `bookkeepingAgrees.presized`, so it rides in
+  the bundle's 22nd component as UC2's agreement does and every kernel entry
+  keeps it: `ghostsKept` and `BookkeepingKept` say neither table shrinks, every
+  table write carries a capacity lemma, and the cross-core legs prove it per leg
+  (`*_objects_capacity_le`).  Bundle corollaries
+  `proofLayerInvariantBundle.objects_insert_eq_insertNoResize` and
+  `.asidTable_insert_eq_insertNoResize`; the carve's
+  `retypeFromUntyped_insert_eq_insertNoResize`; the heap model's resize term
+  reads 0 there (`rhInsertResizeHeapBytes_objects_eq_zero`).  No `@[csimp]`
+  drops the insert's resize branch: the equation needs the load hypothesis,
+  which the compiled insert cannot see.  The empty table's slot array is built
+  in one allocation (`@[csimp] RHTable.empty_eq_emptyImpl`).
+  The boundary is tested (`runObjectStoreCapacityBoundaryChecks`).  Readings
+  and the boot's heap cost: CHANGELOG `v0.37.16`.
 - **Work.**
   - Boot builds `objects` and `asidTable` at capacity 2^17. That holds
     `maxObjects` objects and `maxAsidValue` ASIDs

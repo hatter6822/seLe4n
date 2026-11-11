@@ -356,6 +356,15 @@ theorem removeRunnableStepOnCore_onlyObjectsSchedulerDiffer (tid : SeLe4n.Thread
   · exact SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer _ _ _
   · exact .refl _
 
+/-- WS-UC UC3: one step of the sweep keeps the store's capacity. -/
+@[simp] theorem removeRunnableStepOnCore_objects_capacity (tid : SeLe4n.ThreadId)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableStepOnCore tid st c).objects.capacity = st.objects.capacity := by
+  unfold removeRunnableStepOnCore
+  split
+  · exact SystemState.runDescheduleOnCore_objects_capacity _ _ _
+  · rfl
+
 theorem removeRunnableStepOnCore_objectsAgreeOffRunLinks (tid : SeLe4n.ThreadId)
     (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (removeRunnableStepOnCore tid st c).objectsAgreeOffRunLinks st := by
@@ -954,6 +963,9 @@ theorem recordSendCap_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.T
 @[simp] theorem recordSendCap_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge) (grant : Bool) :
     (recordSendCap st tid badge grant).objectIndexSet = st.objectIndexSet := rfl
+@[simp] theorem recordSendCap_asidTable (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (recordSendCap st tid badge grant).asidTable = st.asidTable := rfl
 
 @[simp] theorem recordSendCap_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge) (grant : Bool) :
@@ -1042,6 +1054,23 @@ its slot (`SystemState.updateTcb`). -/
 def detachNtfnHead (st : SystemState) (head : SeLe4n.ThreadId)
     (next : Option SeLe4n.ThreadId) : SystemState :=
   unlinkNtfnNeighbours (clearNtfnLinks st head) none next
+
+/-- WS-UC UC3: the notification-link writes never shrink the object store. -/
+@[simp] theorem le_unlinkNtfnNeighbours_objects_capacity {n : Nat} (st : SystemState)
+    (prev next : Option SeLe4n.ThreadId) (h : n ≤ st.objects.capacity) :
+    n ≤ (unlinkNtfnNeighbours st prev next).objects.capacity := by
+  unfold unlinkNtfnNeighbours
+  cases prev <;> cases next <;> simp [h]
+
+@[simp] theorem le_clearNtfnLinks_objects_capacity {n : Nat} (st : SystemState)
+    (tid : SeLe4n.ThreadId) (h : n ≤ st.objects.capacity) :
+    n ≤ (clearNtfnLinks st tid).objects.capacity := by
+  unfold clearNtfnLinks; simp [h]
+
+@[simp] theorem le_detachNtfnHead_objects_capacity {n : Nat} (st : SystemState)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (h : n ≤ st.objects.capacity) :
+    n ≤ (detachNtfnHead st head next).objects.capacity := by
+  unfold detachNtfnHead; simp [h]
 
 /-- WS-ZA ZA4.4: `s` is `st` with at most notification-queue links rewritten:
 every field outside the object table is `st`'s, the table stays well formed, and
@@ -1138,9 +1167,10 @@ theorem ntfnLinksRewritten.field_fwd {α : Type} {st s : SystemState}
 
 /-- A notification-link rewrite is a `kindPreservingWrite`: each key holds
 what it held, or a thread with only its two notification links rewritten. -/
-theorem ntfnLinksRewritten.kindPreserving {st s : SystemState} (h : ntfnLinksRewritten st s) :
+theorem ntfnLinksRewritten.kindPreserving {st s : SystemState} (h : ntfnLinksRewritten st s)
+    (hC : st.objects.capacity ≤ s.objects.capacity := by capacity_kept) :
     kindPreservingWrite st s := by
-  refine ⟨fun k => ?_, .of_objectsOnly h.1⟩
+  refine ⟨fun k => ?_, .of_objectsOnly h.1 hC⟩
   unfold kindPreservingWriteAt
   rcases h.2.2 k with e | ⟨t, t', ht, ht', np, nn, rfl⟩
   · exact Or.inl e
@@ -9104,7 +9134,7 @@ theorem returnDonatedSchedContext_kindPreservingWrite
     storeObject_kindPreservingWrite hInv3 hS4 hPre4 rfl (by simp [KernelObject.objectType])
   -- The reschedule-flag write that closes the chain touches no object.
   have hLast : kindPreservingWrite s4 st' :=
-    kindPreservingWrite.of_objects_eq (by rw [hEq]) (by rw [hEq]; exact ⟨rfl, rfl, rfl⟩)
+    kindPreservingWrite.of_objects_eq (by rw [hEq]) (by rw [hEq]; exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
   exact ((((hW1.trans hW2).trans hW3).trans hW4).trans hLast)
 
 /-- The pre-receive cleanup is a `kindPreservingWrite`: nothing, or the resolved
@@ -9848,15 +9878,23 @@ theorem removeRunnable_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe
     SystemState.onlyObjectsSchedulerDiffer (removeRunnable st tid) st :=
   SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
 
+/-- WS-UC UC3: `removeRunnable` keeps the store's capacity. -/
+@[simp] theorem removeRunnable_objects_capacity (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).objects.capacity = st.objects.capacity :=
+  SystemState.runDescheduleOnCore_objects_capacity st bootCoreId tid
+
 @[simp] theorem removeRunnable_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeRunnable st tid).lifecycle = st.lifecycle :=
   (congrArg SystemState.lifecycle (removeRunnable_onlyObjectsSchedulerDiffer st tid) :)
 @[simp] theorem removeRunnable_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeRunnable st tid).objectIndex = st.objectIndex :=
-  (removeRunnable_onlyObjectsSchedulerDiffer st tid).ghostsKept.index
+  (congrArg SystemState.objectIndex (removeRunnable_onlyObjectsSchedulerDiffer st tid) :)
 @[simp] theorem removeRunnable_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeRunnable st tid).objectIndexSet = st.objectIndexSet :=
-  (removeRunnable_onlyObjectsSchedulerDiffer st tid).ghostsKept.indexSet
+  (congrArg SystemState.objectIndexSet (removeRunnable_onlyObjectsSchedulerDiffer st tid) :)
+@[simp] theorem removeRunnable_asidTable (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).asidTable = st.asidTable :=
+  (congrArg SystemState.asidTable (removeRunnable_onlyObjectsSchedulerDiffer st tid) :)
 
 /-- WS-ZA ZA4.5: `removeRunnable` changes no object off the run-queue links
 (was `removeRunnable_preserves_objects` while the links lived in the
@@ -9893,15 +9931,30 @@ theorem ensureRunnable_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe
       · exact .refl _
     · exact .refl _
 
+/-- WS-UC UC3: `ensureRunnable` keeps the store's capacity. -/
+@[simp] theorem ensureRunnable_objects_capacity (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).objects.capacity = st.objects.capacity := by
+  unfold ensureRunnable
+  split
+  · rfl
+  · split
+    · split
+      · simp
+      · rfl
+    · rfl
+
 @[simp] theorem ensureRunnable_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) :
     (ensureRunnable st tid).lifecycle = st.lifecycle :=
   (congrArg SystemState.lifecycle (ensureRunnable_onlyObjectsSchedulerDiffer st tid) :)
 @[simp] theorem ensureRunnable_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) :
     (ensureRunnable st tid).objectIndex = st.objectIndex :=
-  (ensureRunnable_onlyObjectsSchedulerDiffer st tid).ghostsKept.index
+  (congrArg SystemState.objectIndex (ensureRunnable_onlyObjectsSchedulerDiffer st tid) :)
 @[simp] theorem ensureRunnable_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) :
     (ensureRunnable st tid).objectIndexSet = st.objectIndexSet :=
-  (ensureRunnable_onlyObjectsSchedulerDiffer st tid).ghostsKept.indexSet
+  (congrArg SystemState.objectIndexSet (ensureRunnable_onlyObjectsSchedulerDiffer st tid) :)
+@[simp] theorem ensureRunnable_asidTable (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).asidTable = st.asidTable :=
+  (congrArg SystemState.asidTable (ensureRunnable_onlyObjectsSchedulerDiffer st tid) :)
 
 /-- WS-ZA ZA4.5: `ensureRunnable` changes no object off the run-queue links
 (was `ensureRunnable_preserves_objects` while the links lived in the scheduler). -/

@@ -209,7 +209,7 @@ def ak9f_03_classify_mapped : IO Unit := do
 /-- AK9-F (P-M05): `applyMachineConfigChecked` rejects malformed config
     (physicalAddressWidth = 0 fails MachineConfig.wellFormed). -/
 def ak9f_04_applyMachineConfigChecked_rejects_zero_pa : IO Unit := do
-  let ist : IntermediateState := mkEmptyIntermediateState
+  let ist : IntermediateState := (mkEmptyIntermediateState ())
   let bad : MachineConfig := { defaultMachineConfig with physicalAddressWidth := 0 }
   let result := applyMachineConfigChecked ist bad
   expect "AK9-F-04 applyChecked rejects PA width = 0"
@@ -217,7 +217,7 @@ def ak9f_04_applyMachineConfigChecked_rejects_zero_pa : IO Unit := do
 
 /-- AK9-F (P-M05): `applyMachineConfigChecked` rejects `physicalAddressWidth > 52`. -/
 def ak9f_05_applyMachineConfigChecked_rejects_pa_over_52 : IO Unit := do
-  let ist : IntermediateState := mkEmptyIntermediateState
+  let ist : IntermediateState := (mkEmptyIntermediateState ())
   let bad : MachineConfig := { defaultMachineConfig with physicalAddressWidth := 64 }
   let result := applyMachineConfigChecked ist bad
   expect "AK9-F-05 applyChecked rejects PA width > 52"
@@ -225,7 +225,7 @@ def ak9f_05_applyMachineConfigChecked_rejects_pa_over_52 : IO Unit := do
 
 /-- AK9-F (P-M05): `applyMachineConfigChecked` accepts default config. -/
 def ak9f_06_applyMachineConfigChecked_accepts_default : IO Unit := do
-  let ist : IntermediateState := mkEmptyIntermediateState
+  let ist : IntermediateState := (mkEmptyIntermediateState ())
   let result := applyMachineConfigChecked ist defaultMachineConfig
   expect "AK9-F-06 applyChecked accepts defaultMachineConfig"
     (match result with | .ok _ => true | _ => false)

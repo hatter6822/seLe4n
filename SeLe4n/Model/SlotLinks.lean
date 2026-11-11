@@ -1527,6 +1527,18 @@ theorem linkReach.objectTypeMetadataConsistent {st₀ st : SystemState} (h : lin
   unfold lookupObjectTypeMeta
   rw [h.fields]
 
+/-- WS-UC UC3: link writes never shrink the object table. -/
+theorem linkReach.capacity_le {st₀ st : SystemState} (h : linkReach st₀ st) :
+    st₀.objects.capacity ≤ st.objects.capacity := by
+  induction h with
+  | refl => exact Nat.le_refl _
+  | step _ o s f c w ih =>
+    unfold setSlotLinkWords
+    split
+    · exact SystemState.le_modifyObject_objects_capacity _ _ _ ih
+    · exact SystemState.le_modifyObject_objects_capacity _ _ _ ih
+    · exact ih
+
 /-- WS-UC UC2: link writes keep the ghost bookkeeping in agreement: they keep
 every ghost and every object's kind. -/
 theorem linkReach.bookkeepingAgrees {st₀ st : SystemState} (h : linkReach st₀ st)
@@ -1534,7 +1546,8 @@ theorem linkReach.bookkeepingAgrees {st₀ st : SystemState} (h : linkReach st�
   hA.of_frame (by rw [h.fields]) (by rw [h.fields]) (fun x => by
       have e := congrArg Option.isSome ((h.agree hInv).objectType x)
       simpa only [Option.isSome_map] using e)
-    (h.objectTypeMetadataConsistent hInv hA.types) (by rw [h.fields])
+    (h.objectTypeMetadataConsistent hInv hA.types) (by rw [h.fields]) h.capacity_le
+    (by rw [h.fields]; exact Nat.le_refl _)
 
 theorem linkAddChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (p c : SlotRef) :
     linkReach st₀ (st.linkAddChild p c) := by

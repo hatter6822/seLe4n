@@ -1999,6 +1999,18 @@ theorem enqueueRunnableOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c :
         _).trans rfl
   · exact .refl _
 
+/-- WS-UC UC3: the enqueue never shrinks the object store. -/
+@[simp] theorem le_enqueueRunnableOnCore_objects_capacity {n : Nat} (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId) (hn : n ≤ st.objects.capacity) :
+    n ≤ (enqueueRunnableOnCore st c tid).objects.capacity := by
+  unfold enqueueRunnableOnCore
+  split
+  · split
+    · exact hn
+    · simp only [SystemState.runEnqueueAdmitted_objects_capacity]
+      exact SystemState.le_rewriteObject_objects_capacity _ _ _ _ hn
+  · exact hn
+
 /-- WS-ZA ZA4.5: the enqueue keeps every core's run queue in agreement with
 the threads' links: the `.ready` mark moves no link, the append is the proven
 link append onto a thread no core holds, and the reschedule mark touches no
@@ -2527,15 +2539,23 @@ theorem removeRunnableOnCore_onlyObjectsSchedulerDiffer (st : SystemState)
     (removeRunnableOnCore st tid c).onlyObjectsSchedulerDiffer st :=
   SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st c tid
 
+/-- WS-UC UC3: the dequeue keeps the store's capacity. -/
+@[simp] theorem removeRunnableOnCore_objects_capacity (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) : (removeRunnableOnCore st tid c).objects.capacity = st.objects.capacity :=
+  SystemState.runDescheduleOnCore_objects_capacity st c tid
+
 @[simp] theorem removeRunnableOnCore_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     (removeRunnableOnCore st tid c).lifecycle = st.lifecycle :=
   (congrArg SystemState.lifecycle (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c) :)
 @[simp] theorem removeRunnableOnCore_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     (removeRunnableOnCore st tid c).objectIndex = st.objectIndex :=
-  (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c).ghostsKept.index
+  (congrArg SystemState.objectIndex (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c) :)
 @[simp] theorem removeRunnableOnCore_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     (removeRunnableOnCore st tid c).objectIndexSet = st.objectIndexSet :=
-  (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c).ghostsKept.indexSet
+  (congrArg SystemState.objectIndexSet (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c) :)
+@[simp] theorem removeRunnableOnCore_asidTable (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (removeRunnableOnCore st tid c).asidTable = st.asidTable :=
+  (congrArg SystemState.asidTable (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c) :)
 
 /-- WS-ZA ZA4.5: the dequeue changes no object off the run-queue links (was
 `removeRunnableOnCore_preserves_objects` while the links lived in the
@@ -2669,15 +2689,26 @@ theorem descheduleAtPlacement_onlyObjectsSchedulerDiffer (st : SystemState)
   · exact removeRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _
   · rfl
 
+/-- WS-UC UC3: the deschedule keeps the store's capacity. -/
+@[simp] theorem descheduleAtPlacement_objects_capacity (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (descheduleAtPlacement st tid).objects.capacity = st.objects.capacity := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact removeRunnableOnCore_objects_capacity _ _ _
+  · rfl
+
 @[simp] theorem descheduleAtPlacement_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) :
     (descheduleAtPlacement st tid).lifecycle = st.lifecycle :=
   (congrArg SystemState.lifecycle (descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid) :)
 @[simp] theorem descheduleAtPlacement_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) :
     (descheduleAtPlacement st tid).objectIndex = st.objectIndex :=
-  (descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid).ghostsKept.index
+  (congrArg SystemState.objectIndex (descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid) :)
 @[simp] theorem descheduleAtPlacement_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) :
     (descheduleAtPlacement st tid).objectIndexSet = st.objectIndexSet :=
-  (descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid).ghostsKept.indexSet
+  (congrArg SystemState.objectIndexSet (descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid) :)
+@[simp] theorem descheduleAtPlacement_asidTable (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (descheduleAtPlacement st tid).asidTable = st.asidTable :=
+  (congrArg SystemState.asidTable (descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid) :)
 
 /-- **WS-RR RR8.12 Cut C6e**: and so it keeps object-store integrity — the form
 every consumer that hands a descheduled state to a step reading `invExt` wants.

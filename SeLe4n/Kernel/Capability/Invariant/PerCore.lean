@@ -112,7 +112,7 @@ theorem default_cleanupNoStaleSchedRef_perCore (target : SeLe4n.ObjId) (c : Core
   intro tcb hObj
   have hNone : (default : SystemState).objects[target]? = none := by
     simp only [RHTable_getElem?_eq_get?]
-    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) target
+    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ target
   rw [hNone] at hObj; exact absurd hObj (by simp)
 
 -- ============================================================================

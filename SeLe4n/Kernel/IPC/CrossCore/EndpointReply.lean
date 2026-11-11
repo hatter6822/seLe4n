@@ -441,6 +441,20 @@ theorem cleanupPreReceiveDonationMigrated_preserves_objects_invExt (st st' : Sys
   rw [cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hC] at this
   exact this
 
+/-- WS-UC UC3: the migrated cleanup shrinks no object table: the donation return
+is a kind-preserving write and the migration writes release links alone. -/
+theorem cleanupPreReceiveDonationMigrated_objects_capacity_le (st st' : SystemState)
+    (receiver : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (h : cleanupPreReceiveDonationMigrated st receiver = .ok st') :
+    st.objects.capacity ≤ st'.objects.capacity := by
+  obtain ⟨stClean, hC, rfl⟩ := cleanupPreReceiveDonationMigrated_ok_decompose h
+  have hK := (cleanupPreReceiveDonation_kindPreservingWrite st receiver hObjInv).ghosts.objectsCapacity
+  rw [cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hC] at hK
+  unfold preReceiveReturnMigration
+  split
+  · exact Nat.le_trans hK (migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _).objectsCapacity
+  · exact hK
+
 /-- The migrated cleanup writes no run queue: the pop writes objects alone and the
 migration writes replenish queues alone. -/
 theorem cleanupPreReceiveDonationMigrated_runQueueOnCore (st st' : SystemState)
@@ -4002,6 +4016,118 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
                     (storeObject_preserves_objects_invExt _ stStashed receiver.toObjId _
                       (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInv2) hStash)
               · exact hObjInv
+
+/-- WS-UC UC3: the cross-core receive shrinks no object table, so a boot-sized
+store stays boot-sized across it. -/
+theorem endpointReceiveDualOnCore_objects_capacity_le
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    st.objects.capacity ≤
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.objects.capacity := by
+  unfold endpointReceiveDualOnCore
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact Nat.le_refl _
+  | some ep =>
+    simp only
+    cases hHead : ep.sendQ.head with
+    | some sender0 =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId false st with
+      | error e => simp only; exact Nat.le_refl _
+      | ok popRes =>
+        obtain ⟨sender, senderTcb, st'⟩ := popRes
+        simp only
+        have hC1 := (endpointQueuePopHead_kindPreservingWrite hObjInv hPop).ghosts.objectsCapacity
+        have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
+          st st' sender senderTcb hObjInv hPop
+        split
+        · cases hS1 : storeTcbIpcStateAndMessage st' sender
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => simp only; exact Nat.le_refl _
+          | ok st'' =>
+            simp only
+            have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hS1).ghosts.objectsCapacity
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+              sender _ _ hObjInv1 hS1
+            cases replyId with
+            | none => exact Nat.le_refl _
+            | some rid =>
+              simp only
+              cases hLink : SystemState.linkCallerReply sender rid st'' with
+              | error e => simp only; exact Nat.le_refl _
+              | ok pLink =>
+                obtain ⟨⟨⟩, stLinked⟩ := pLink
+                simp only
+                have hC3 := (SystemState.linkCallerReply_kindPreservingWrite st'' stLinked sender rid hObjInv2
+                  hLink).ghosts.objectsCapacity
+                have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
+                  sender rid hObjInv2 hLink
+                cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
+                    (some (blockedSenderMessage st' sender senderTcb)) with
+                | ok st3 =>
+                    have hC4 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv3
+                      hS2).ghosts.objectsCapacity
+                    simpa using Nat.le_trans (Nat.le_trans (Nat.le_trans hC1 hC2) hC3) hC4
+                | error e => simp only; exact Nat.le_refl _
+        · cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
+          | error e => simp only; exact Nat.le_refl _
+          | ok st'' =>
+            simp only
+            have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hS1).ghosts.objectsCapacity
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+              sender _ _ hObjInv1 hS1
+            have hC3 := (wakeThread_kindPreservingWrite st'' sender executingCore
+              hObjInv2).ghosts.objectsCapacity
+            have hObjInvW := wakeThread_preserves_objects_invExt st'' sender executingCore hObjInv2
+            cases hS2 : storeTcbIpcStateAndMessage (wakeThread st'' sender executingCore).1
+                receiver .ready (some (blockedSenderMessage st' sender senderTcb)) with
+            | ok st4 =>
+                exact Nat.le_trans (Nat.le_trans (Nat.le_trans hC1 hC2) hC3)
+                  (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvW hS2).ghosts.objectsCapacity
+            | error e => simp only; exact Nat.le_refl _
+    | none =>
+      simp only
+      cases hClean : cleanupPreReceiveDonationMigrated st receiver with
+      | error e => simp only; exact Nat.le_refl _
+      | ok stClean =>
+        simp only
+        have hC0 := cleanupPreReceiveDonationMigrated_objects_capacity_le st stClean receiver
+          hObjInv hClean
+        have hObjInvC : stClean.objects.invExt :=
+          cleanupPreReceiveDonationMigrated_preserves_objects_invExt st stClean receiver hObjInv
+            hClean
+        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean with
+        | error e => simp only; exact Nat.le_refl _
+        | ok st1 =>
+          simp only
+          have hC1 := (endpointQueueEnqueue_kindPreservingWrite hObjInvC hEnq).ghosts.objectsCapacity
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
+            stClean st1 hObjInvC hEnq
+          cases hS1 : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId)
+              none with
+          | error e => simp only; exact Nat.le_refl _
+          | ok st2 =>
+            simp only
+            have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hS1).ghosts.objectsCapacity
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
+              receiver _ _ hObjInv1 hS1
+            have hC := Nat.le_trans (Nat.le_trans hC0 hC1) hC2
+            cases hGetR : st2.getTcb? receiver with
+            | none => simpa using hC
+            | some rTcb =>
+              simp only
+              split
+              · cases hStash : storeObject receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
+                | error e => simp only; exact Nat.le_refl _
+                | ok pStash =>
+                  obtain ⟨⟨⟩, stStashed⟩ := pStash
+                  have hC3 := (SystemState.recordReplyStasher_kindPreservingWrite st2
+                    (SeLe4n.ReplyId.optCode replyId) receiver hObjInv2).ghosts.objectsCapacity
+                  simpa using Nat.le_trans (Nat.le_trans hC hC3) (storeObject_capacity_le hStash).1
+              · exact Nat.le_refl _
 
 /-- **WS-RR RR8.12 (frame)**: a cross-core receive that **rendezvouses** moves no
 thread's home core.

@@ -2073,6 +2073,19 @@ theorem default_state_perCoreInitialized (c : CoreId) :
     (default : SchedulerState).runQueueOnCore c = SeLe4n.Kernel.RunQueue.empty :=
   (default_state_perCoreInitialized c).2.1
 
+/-- WS-UC UC3: **the capacity the boot builds the object and ASID tables at**,
+`2 ^ 17` slots.  It holds `maxObjects` objects, and as many ASIDs, below the
+75% load at which `RHTable.insert` resizes (`4 · 65536 < 3 · 131072`), so on a
+state whose tables are this large (`SystemState.tablesPresized`) and whose
+object count is in bound an insert never rebuilds a slot array
+(`SystemState.objects_insert_eq_insertNoResize`). -/
+def bootTableCapacity : Nat := 131072
+
+theorem bootTableCapacity_eq_pow : bootTableCapacity = 2 ^ 17 := rfl
+
+/-- WS-UC UC3: the boot-sized capacity is at least 4, the floor every table keeps. -/
+theorem four_le_bootTableCapacity : 4 ≤ bootTableCapacity := by decide
+
 instance : Inhabited SystemState where
   default := {
     machine := default
@@ -2192,15 +2205,49 @@ theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := b
   show (SeLe4n.Erased.mk (default : RHSet SeLe4n.ObjId)).out.table.invExtK
   rw [SeLe4n.Erased.out_mk]; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
 
+/-- WS-UC UC3: **the boot's empty state**: the default state with its object and
+ASID tables built at `bootTableCapacity`, the state the boot builder starts from
+(`mkEmptyIntermediateState`).  The tables are built when it is called
+(`RHTable.emptyFresh`), and it is never a module constant (`never_extract`), so
+the boot that calls it owns both tables and fills them in place, and no module
+initializer builds a boot-sized table.  The default state keeps 16-slot tables:
+it seeds every model and test state that is not a boot, and Lean builds each
+closed state at module initialization, so boot-sized tables there would be
+built once per closed state and kept for the kernel's life. -/
+@[noinline, never_extract]
+def SystemState.bootEmpty (_ : Unit) : SystemState :=
+  { (default : SystemState) with
+    objects := RHTable.emptyFresh bootTableCapacity four_le_bootTableCapacity
+    asidTable := RHTable.emptyFresh bootTableCapacity four_le_bootTableCapacity }
+
+/-- WS-UC UC3: the boot's empty state has the default state's every field but the
+two tables. -/
+theorem SystemState.bootEmpty_eq :
+    SystemState.bootEmpty () =
+      { (default : SystemState) with
+        objects := RHTable.empty bootTableCapacity four_le_bootTableCapacity
+        asidTable := RHTable.empty bootTableCapacity four_le_bootTableCapacity } := rfl
+
+@[simp] theorem SystemState.bootEmpty_objects :
+    (SystemState.bootEmpty ()).objects = RHTable.empty bootTableCapacity four_le_bootTableCapacity :=
+  rfl
+
+@[simp] theorem SystemState.bootEmpty_asidTable :
+    (SystemState.bootEmpty ()).asidTable = RHTable.empty bootTableCapacity four_le_bootTableCapacity :=
+  rfl
+
+/-- WS-UC UC3: the boot's empty state satisfies `allTablesInvExtK`: its tables
+are empty, the two boot-sized ones as much as the default's. -/
+theorem SystemState.bootEmpty_allTablesInvExtK :
+    (SystemState.bootEmpty ()).allTablesInvExtK := by
+  have h := default_allTablesInvExtK
+  exact ⟨SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK _ four_le_bootTableCapacity,
+    SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK _ four_le_bootTableCapacity, h.2.2⟩
+
 /-- The default state's object store has an empty `toList`. -/
 theorem default_objects_toList_empty :
-    (default : SystemState).objects.toList = [] := by
-  -- `default.objects` is the canonical `RHTable.empty 16` populated with
-  -- 16 `none` slots.  `toList` folds the slots with a cons-on-some
-  -- handler; since every slot is `none`, the fold accumulator stays
-  -- `[]` throughout.  `decide` discharges the finite computation
-  -- because the capacity is the literal `16` (`minPracticalRHCapacity`).
-  decide
+    (default : SystemState).objects.toList = [] :=
+  RHTable.toList_empty _ _
 
 -- ============================================================================
 -- WS-SM SM7.A — TLB-shootdown state invariants on the default SystemState
@@ -2520,6 +2567,31 @@ def objectCountBounded (st : SystemState) : Prop :=
     boundary (`retypeFromUntyped`) rather than in `storeObject`. -/
 abbrev objectCount_le_maxObjects := objectCountBounded
 
+/-- WS-UC UC3: **the object and ASID tables are at least boot-sized.**  The boot
+builds both at `bootTableCapacity` (its empty state, `SystemState.bootEmpty_tablesPresized`), and no write
+shrinks a table, so it holds on every reachable state: `bookkeepingAgrees`
+carries it (`SystemState.bookkeepingAgrees.presized`), so the boot's
+`IntermediateState` and the 22nd conjunct of `proofLayerInvariantBundle` do, and
+every kernel entry keeps it with the agreement. -/
+structure SystemState.tablesPresized (st : SystemState) : Prop where
+  objectsBootSized : bootTableCapacity ≤ st.objects.capacity
+  asidBootSized : bootTableCapacity ≤ st.asidTable.capacity
+
+/-- WS-UC UC3: the boot's empty state is boot-sized. -/
+theorem SystemState.bootEmpty_tablesPresized : (SystemState.bootEmpty ()).tablesPresized :=
+  ⟨Nat.le_refl _, Nat.le_refl _⟩
+
+/-- WS-UC UC3: **an object-table insert on a boot-sized table holding at most
+`maxObjects` objects does not resize**: it is the in-place probe and write
+`insertNoResize`.  At the carve's boundary — 65535 objects, the most the
+capacity check (`objects.size ≥ maxObjects`) lets a carve insert into — the
+load check reads `4 · 65535 < 3 · 131072`. -/
+theorem SystemState.objects_insert_eq_insertNoResize {st : SystemState}
+    (hP : st.tablesPresized) (hS : st.objects.size ≤ maxObjects) (k : SeLe4n.ObjId)
+    (v : KernelObject) : st.objects.insert k v = st.objects.insertNoResize k v :=
+  st.objects.insert_eq_insertNoResize_of_load k v (by
+    have := hP.objectsBootSized; unfold bootTableCapacity at this; unfold maxObjects at hS; omega)
+
 /-- S4-B: The default (empty) system state satisfies the object capacity bound. -/
 theorem default_objectCount_le_maxObjects :
     objectCount_le_maxObjects (default : SystemState) := by
@@ -2625,6 +2697,18 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
           | .vspaceRoot newRoot => cleared.insert newRoot.asid id
           | _ => cleared
     })
+
+/-- WS-UC UC3: **a store shrinks neither the object table nor the ASID table**:
+each is kept, or written by an insert or an erase. -/
+theorem storeObject_capacity_le {st st' : SystemState} {id : SeLe4n.ObjId} {obj : KernelObject}
+    (h : storeObject id obj st = .ok ((), st')) :
+    st.objects.capacity ≤ st'.objects.capacity ∧ st.asidTable.capacity ≤ st'.asidTable.capacity := by
+  unfold storeObject at h; cases h
+  refine ⟨by simp, ?_⟩
+  dsimp only
+  split
+  · exact Nat.le_refl _
+  · split <;> split <;> simp
 
 /-- WS-ZA ZA1.4: **the store changes only `objects`.**  The key already holds an
 object of the new object's type, and neither the old nor the new object is a
@@ -3293,19 +3377,25 @@ theorem storeObject_cdt_eq
 -- between two object stores and mentions neither.
 
 /-- WS-UC UC2: **a step that moves none of the bookkeeping ghosts** — the
-object index, its set and the type table read as they did. -/
+object index, its set and the type table read as they did.  WS-UC UC3: and it
+shrinks neither the object table nor the ASID table, so a boot-sized table stays
+boot-sized (`SystemState.bookkeepingAgrees.of_kept`). -/
 structure SystemState.ghostsKept (st' st : SystemState) : Prop where
   index : st'.objectIndex = st.objectIndex
   indexSet : st'.objectIndexSet = st.objectIndexSet
   types : st'.lifecycle.objectTypes = st.lifecycle.objectTypes
+  objectsCapacity : st.objects.capacity ≤ st'.objects.capacity
+  asidCapacity : st.asidTable.capacity ≤ st'.asidTable.capacity
 
 theorem SystemState.ghostsKept.refl (st : SystemState) : SystemState.ghostsKept st st :=
-  ⟨rfl, rfl, rfl⟩
+  ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
 
 theorem SystemState.ghostsKept.trans {st st' st'' : SystemState}
     (h2 : SystemState.ghostsKept st'' st') (h1 : SystemState.ghostsKept st' st) :
     SystemState.ghostsKept st'' st :=
-  ⟨h2.index.trans h1.index, h2.indexSet.trans h1.indexSet, h2.types.trans h1.types⟩
+  ⟨h2.index.trans h1.index, h2.indexSet.trans h1.indexSet, h2.types.trans h1.types,
+    Nat.le_trans h1.objectsCapacity h2.objectsCapacity,
+    Nat.le_trans h1.asidCapacity h2.asidCapacity⟩
 
 /-- Two states equal off the objects and the scheduler — or off any fields but
 the three ghosts — keep them. -/
@@ -3314,19 +3404,26 @@ theorem SystemState.ghostsKept.of_eq {st st' : SystemState} (h : st' = st) :
 
 /-- A step that rewrites the objects alone keeps the ghosts. -/
 theorem SystemState.ghostsKept.of_objectsOnly {st st' : SystemState}
-    (h : st' = { st with objects := st'.objects }) : SystemState.ghostsKept st' st :=
-  ⟨by rw [h], by rw [h], by rw [h]⟩
+    (h : st' = { st with objects := st'.objects })
+    (hC : st.objects.capacity ≤ st'.objects.capacity) : SystemState.ghostsKept st' st :=
+  ⟨by rw [h], by rw [h], by rw [h], hC, by rw [h]; exact Nat.le_refl _⟩
+
+/-- WS-UC UC3: closes a goal that a step does not shrink a table: the table is
+kept, or written by the `RHTable` writes, each of which never shrinks it
+(`RHTable.le_capacity_insert` and its siblings, `simp` lemmas). -/
+macro "capacity_kept" : tactic => `(tactic| first
+  | exact Nat.le_refl _
+  | (simp <;> done))
 
 /-- Closes a `ghostsKept` goal for a step written as a record update that keeps
-the ghost fields, or from a hypothesis in context. -/
+the ghost fields and writes its tables with the `RHTable` writes
+(`capacity_kept`), or from a hypothesis in context. -/
 macro "ghosts_kept" : tactic => `(tactic| first
   | exact SeLe4n.Model.SystemState.ghostsKept.refl _
-  | exact ⟨rfl, rfl, rfl⟩
   | assumption
   | exact SeLe4n.Model.SystemState.ghostsKept.of_eq (by assumption)
-  | (refine ⟨?_, ?_, ?_⟩ <;> simp <;> done)
-  | (subst_vars; exact ⟨rfl, rfl, rfl⟩)
-  | (subst_vars; refine ⟨?_, ?_, ?_⟩ <;> simp <;> done))
+  | (refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> first | rfl | (simp <;> done) | capacity_kept)
+  | (subst_vars; refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> first | rfl | (simp <;> done) | capacity_kept))
 
 /-- **A store over an object of the same kind moves no ghost**: the key is
 already indexed, and its type does not change. -/
@@ -3341,7 +3438,8 @@ theorem SystemState.ghostsKept.storeObject_sameKind {st st' : SystemState} {id :
     unfold storeKeepsKind; rw [hOld]; simp [hK]
   rw [hOld] at hIdx hSet
   rw [hKeep] at hTy
-  exact ⟨by simpa using hIdx, by simpa using hSet, by simpa using hTy⟩
+  exact ⟨by simpa using hIdx, by simpa using hSet, by simpa using hTy,
+    (storeObject_capacity_le hStore).1, (storeObject_capacity_le hStore).2⟩
 
 /-- **`kindPreservingWrite` without its binding-code clause**: at every key the
 store is unchanged or holds an object of the same non-`cnode` kind with the same
@@ -3508,6 +3606,21 @@ def kindPreservingWriteAt (st st' : SystemState) (oid : SeLe4n.ObjId) : Prop :=
       post.bindingCodes = pre.bindingCodes ∧ post.tableBackLinks = pre.tableBackLinks ∧
       post.mappingView = pre.mappingView
 
+/-- Two key-wise kind-preserving writes in sequence are one. -/
+theorem kindPreservingWriteAt.trans {st st' st'' : SystemState} {oid : SeLe4n.ObjId}
+    (h₁ : kindPreservingWriteAt st st' oid) (h₂ : kindPreservingWriteAt st' st'' oid) :
+    kindPreservingWriteAt st st'' oid := by
+  rcases h₁ with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁, hm₁⟩
+  · rcases h₂ with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
+    · exact Or.inl (e₂.trans e₁)
+    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
+  · rcases h₂ with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
+    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁, hm₁⟩
+    · rw [hq₁] at hp₂
+      cases hp₂
+      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂, hs₂.trans hs₁, hu₂.trans hu₁,
+        hb₂.trans hb₁, hl₂.trans hl₁, hm₂.trans hm₁⟩
+
 /-- **A kind-preserving write** (see `kindPreservingWriteAt`): at every key the
 store is unchanged or holds an object of the same non-`cnode` kind with the same
 slots, untyped record, binding codes, table back-links and mapping facts, and
@@ -3526,18 +3639,8 @@ theorem refl (st : SystemState) : kindPreservingWrite st st := ⟨fun _ => Or.in
 
 theorem trans {st st' st'' : SystemState}
     (h₁ : kindPreservingWrite st st') (h₂ : kindPreservingWrite st' st'') :
-    kindPreservingWrite st st'' := by
-  refine ⟨fun oid => ?_, h₂.ghosts.trans h₁.ghosts⟩
-  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁, hm₁⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
-    · exact Or.inl (e₂.trans e₁)
-    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
-    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁, hm₁⟩
-    · rw [hq₁] at hp₂
-      cases hp₂
-      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂, hs₂.trans hs₁, hu₂.trans hu₁,
-        hb₂.trans hb₁, hl₂.trans hl₁, hm₂.trans hm₁⟩
+    kindPreservingWrite st st'' :=
+  ⟨fun oid => (h₁ oid).trans (h₂ oid), h₂.ghosts.trans h₁.ghosts⟩
 
 /-- Forgetting the binding codes. -/
 theorem upToBindings {st st' : SystemState} (h : kindPreservingWrite st st') :
@@ -6659,7 +6762,14 @@ through every store (`storeObject_preserves_bookkeepingAgrees`), rewrite and
 retire, so every kernel entry keeps it (`RunQueueLinkStage.bookkeeping`, the
 22nd conjunct of `proofLayerInvariantBundle`).  It is what
 lets the compiled kernel read the object table where the specification read a
-ghost: the object count (`objectIndex_length`), membership and type. -/
+ghost: the object count (`objectIndex_length`), membership and type.
+
+WS-UC UC3: it also carries the object store's own sizing — the object and ASID
+tables are at least boot-sized (`SystemState.tablesPresized`).  Every step that
+keeps the agreement writes those tables with inserts, erases and in-place
+updates, none of which shrinks a table, so the sizing rides on the same proofs,
+and a reachable state's inserts never resize
+(`SystemState.bookkeepingAgrees.objects_insert_eq_insertNoResize`). -/
 structure SystemState.bookkeepingAgrees (st : SystemState) : Prop where
   index : ∀ id, id ∈ st.objectIndex ↔ st.objects[id]? ≠ none
   nodup : st.objectIndex.Nodup
@@ -6667,20 +6777,37 @@ structure SystemState.bookkeepingAgrees (st : SystemState) : Prop where
   types : SystemState.objectTypeMetadataConsistent st
   indexSetInv : st.objectIndexSet.table.invExtK
   typesInv : st.lifecycle.objectTypes.invExtK
+  presized : st.tablesPresized
 
-/-- WS-UC UC2: the default state's bookkeeping agrees: every table is empty. -/
-theorem default_bookkeepingAgrees : SystemState.bookkeepingAgrees (default : SystemState) where
+/-- WS-UC UC2: the boot's empty state's bookkeeping agrees: every table is empty
+(WS-UC UC3: and the object and ASID tables are boot-sized). -/
+theorem SystemState.bootEmpty_bookkeepingAgrees :
+    SystemState.bookkeepingAgrees (SystemState.bootEmpty ()) where
   index id := by
-    have : (default : SystemState).objects[id]? = none := RHTable.getElem?_empty _ _ _
-    simp [this, default_objectIndex]
-  nodup := by rw [default_objectIndex]; exact List.nodup_nil
+    have : (SystemState.bootEmpty ()).objects[id]? = none := by
+      rw [SystemState.bootEmpty_objects]; exact RHTable.getElem?_empty _ _ _
+    have hI : (SystemState.bootEmpty ()).objectIndex = [] := default_objectIndex
+    rw [hI, this]; simp
+  nodup := by
+    have hI : (SystemState.bootEmpty ()).objectIndex = [] := default_objectIndex
+    rw [hI]; exact List.nodup_nil
   indexSet id := by
-    have : (default : SystemState).objects[id]? = none := RHTable.getElem?_empty _ _ _
-    simp only [this, ne_eq, not_true_eq_false, iff_false, default_objectIndexSet]
+    have : (SystemState.bootEmpty ()).objects[id]? = none := by
+      rw [SystemState.bootEmpty_objects]; exact RHTable.getElem?_empty _ _ _
+    have hS : (SystemState.bootEmpty ()).objectIndexSet = default := default_objectIndexSet
+    simp only [this, ne_eq, not_true_eq_false, iff_false, hS]
     exact Bool.eq_false_iff.mp (RHSet.contains_empty id)
-  types := default_systemState_objectTypeMetadataConsistent
+  types oid := by
+    simp only [SystemState.lookupObjectTypeMeta]
+    have h₁ : (SystemState.bootEmpty ()).lifecycle.objectTypes[oid]? = none := by
+      show (default : SystemState).lifecycle.objectTypes[oid]? = none
+      rw [default_objectTypes]; exact RHTable.getElem?_empty _ _ _
+    have h₂ : (SystemState.bootEmpty ()).objects[oid]? = none := by
+      rw [SystemState.bootEmpty_objects]; exact RHTable.getElem?_empty _ _ _
+    rw [h₁, h₂]; rfl
   indexSetInv := default_allTablesInvExtK.2.2.2.2
   typesInv := default_allTablesInvExtK.2.2.1
+  presized := SystemState.bootEmpty_tablesPresized
 
 /-- WS-UC UC2: **the index is as long as the object table is large** on a state
 whose bookkeeping agrees: what lets the capacity check and every fuel the
@@ -6705,7 +6832,9 @@ theorem SystemState.bookkeepingAgrees.of_frame {st st' : SystemState}
     (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
     (hP : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).isSome = (st.objects[x]?).isSome)
     (hT : SystemState.objectTypeMetadataConsistent st')
-    (hTI : st'.lifecycle.objectTypes = st.lifecycle.objectTypes := by first | rfl | assumption) :
+    (hTI : st'.lifecycle.objectTypes = st.lifecycle.objectTypes := by first | rfl | assumption)
+    (hOC : st.objects.capacity ≤ st'.objects.capacity := by capacity_kept)
+    (hAC : st.asidTable.capacity ≤ st'.asidTable.capacity := by capacity_kept) :
     SystemState.bookkeepingAgrees st' where
   index id := by
     rw [hI, h.index id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
@@ -6715,6 +6844,7 @@ theorem SystemState.bookkeepingAgrees.of_frame {st st' : SystemState}
   types := hT
   indexSetInv := hS ▸ h.indexSetInv
   typesInv := hTI ▸ h.typesInv
+  presized := ⟨Nat.le_trans h.presized.objectsBootSized hOC, Nat.le_trans h.presized.asidBootSized hAC⟩
 
 /-- WS-UC UC2: **the stored object IDs, read from the object table** — the
 executable reading of the ghost index, in the table's slot order.  On a state
@@ -6751,23 +6881,28 @@ structure SystemState.BookkeepingKept (st' st : SystemState) : Prop where
   types : st'.lifecycle.objectTypes = st.lifecycle.objectTypes
   kinds : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).map KernelObject.objectType =
     (st.objects[x]?).map KernelObject.objectType
+  /-- WS-UC UC3: neither table shrinks. -/
+  objectsCapacity : st.objects.capacity ≤ st'.objects.capacity
+  asidCapacity : st.asidTable.capacity ≤ st'.asidTable.capacity
 
 theorem SystemState.BookkeepingKept.refl (st : SystemState) : SystemState.BookkeepingKept st st :=
-  ⟨rfl, rfl, rfl, fun _ => rfl⟩
+  ⟨rfl, rfl, rfl, fun _ => rfl, Nat.le_refl _, Nat.le_refl _⟩
 
 theorem SystemState.BookkeepingKept.trans {st st' st'' : SystemState}
     (h2 : SystemState.BookkeepingKept st'' st') (h1 : SystemState.BookkeepingKept st' st) :
     SystemState.BookkeepingKept st'' st :=
   ⟨h2.index.trans h1.index, h2.indexSet.trans h1.indexSet, h2.types.trans h1.types,
-    fun x => (h2.kinds x).trans (h1.kinds x)⟩
+    fun x => (h2.kinds x).trans (h1.kinds x), Nat.le_trans h1.objectsCapacity h2.objectsCapacity,
+    Nat.le_trans h1.asidCapacity h2.asidCapacity⟩
 
 /-- A step that writes no object and none of the ghosts moves no bookkeeping. -/
 theorem SystemState.BookkeepingKept.of_objects_eq {st st' : SystemState}
     (hO : st'.objects = st.objects) (hI : st'.objectIndex = st.objectIndex)
     (hS : st'.objectIndexSet = st.objectIndexSet)
-    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
+    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes)
+    (hAC : st.asidTable.capacity ≤ st'.asidTable.capacity := by capacity_kept) :
     SystemState.BookkeepingKept st' st :=
-  ⟨hI, hS, hT, fun x => by rw [hO]⟩
+  ⟨hI, hS, hT, fun x => by rw [hO], by rw [hO]; exact Nat.le_refl _, hAC⟩
 
 /-- A step whose objects agree, through a kind-keeping reading `f`, with the old
 ones at every key — and which writes none of the ghosts — moves no bookkeeping. -/
@@ -6775,18 +6910,20 @@ theorem SystemState.BookkeepingKept.of_map {st st' : SystemState} (f : KernelObj
     (hf : ∀ o, (f o).objectType = o.objectType)
     (hA : ∀ k : SeLe4n.ObjId, (st'.objects[k]?).map f = (st.objects[k]?).map f)
     (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
-    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
+    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes)
+    (hOC : st.objects.capacity ≤ st'.objects.capacity := by capacity_kept)
+    (hAC : st.asidTable.capacity ≤ st'.asidTable.capacity := by capacity_kept) :
     SystemState.BookkeepingKept st' st :=
   ⟨hI, hS, hT, fun x => by
     have e := congrArg (Option.map KernelObject.objectType) (hA x)
-    simpa only [Option.map_map, Function.comp_def, hf] using e⟩
+    simpa only [Option.map_map, Function.comp_def, hf] using e, hOC, hAC⟩
 
 theorem SystemState.BookkeepingKept.of_kindPreserving {st st' : SystemState}
     (h : kindPreservingWrite st st') : SystemState.BookkeepingKept st' st :=
   ⟨h.ghosts.index, h.ghosts.indexSet, h.ghosts.types, fun x => by
     rcases h x with e | ⟨pre, post, hp, hq, ht, -⟩
     · rw [e]
-    · rw [hp, hq]; simp [ht]⟩
+    · rw [hp, hq]; simp [ht], h.ghosts.objectsCapacity, h.ghosts.asidCapacity⟩
 
 /-- WS-UC UC2: **the bookkeeping still agrees after a step that moves none of
 it.** -/
@@ -6804,13 +6941,15 @@ theorem SystemState.bookkeepingAgrees.of_kept {st st' : SystemState}
       simp only [SystemState.lookupObjectTypeMeta] at *
       rw [k.types, k.kinds oid]; exact h.types oid
     indexSetInv := k.indexSet ▸ h.indexSetInv
-    typesInv := k.types ▸ h.typesInv }
+    typesInv := k.types ▸ h.typesInv
+    presized := ⟨Nat.le_trans h.presized.objectsBootSized k.objectsCapacity,
+      Nat.le_trans h.presized.asidBootSized k.asidCapacity⟩ }
 
 /-- A step that writes no object and none of the ghosts keeps the agreement. -/
 theorem SystemState.bookkeepingAgrees.of_objects_ghosts {st st' : SystemState}
     (h : SystemState.bookkeepingAgrees st) (hO : st'.objects = st.objects)
     (hG : SystemState.ghostsKept st' st) : SystemState.bookkeepingAgrees st' :=
-  h.of_kept (.of_objects_eq hO hG.index hG.indexSet hG.types)
+  h.of_kept (.of_objects_eq hO hG.index hG.indexSet hG.types hG.asidCapacity)
 
 /-- WS-UC UC2: `storeObject` keeps the bookkeeping in agreement. -/
 theorem storeObject_preserves_bookkeepingAgrees
@@ -6836,7 +6975,9 @@ theorem storeObject_preserves_bookkeepingAgrees
     · rw [RHTable.getElem?_insert_ne _ _ _ _ hk hObjInv]
       have : k ≠ id := fun e => hk (by rw [e]; exact beq_self_eq_true _)
       simp [this]
-  refine ⟨fun k => ?_, ?_, fun k => ?_, hTypes, ?_, ?_⟩
+  refine ⟨fun k => ?_, ?_, fun k => ?_, hTypes, ?_, ?_,
+    ⟨Nat.le_trans h.presized.objectsBootSized (storeObject_capacity_le hStore).1,
+      Nat.le_trans h.presized.asidBootSized (storeObject_capacity_le hStore).2⟩⟩
   · rw [hIdx, hAt k]
     split
     · next hS =>
@@ -6884,7 +7025,7 @@ theorem SystemState.BookkeepingKept.storeObject_sameKind {st st' : SystemState} 
     (hOld : st.objects[id]? = some old) (hK : old.objectType = obj.objectType)
     (hObjInv : st.objects.invExt) : SystemState.BookkeepingKept st' st := by
   have hG := SystemState.ghostsKept.storeObject_sameKind hStore hOld hK
-  refine ⟨hG.index, hG.indexSet, hG.types, fun x => ?_⟩
+  refine ⟨hG.index, hG.indexSet, hG.types, fun x => ?_, hG.objectsCapacity, hG.asidCapacity⟩
   unfold storeObject at hStore; cases hStore
   simp only [RHTable_getElem?_eq_get?]
   by_cases hx : (id == x) = true
@@ -7020,6 +7161,12 @@ theorem rewriteObject_objects (st : SystemState) (id : SeLe4n.ObjId) (new : Kern
     (h : st.rewriteAdmissible id new) :
     (st.rewriteObject id new h).objects = st.objects.insert id new := rfl
 
+/-- WS-UC UC3: a rewrite never shrinks the object table (`capacity_kept`). -/
+@[simp] theorem le_rewriteObject_objects_capacity {n : Nat} (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) (hn : n ≤ st.objects.capacity) :
+    n ≤ (st.rewriteObject id new h).objects.capacity :=
+  RHTable.le_capacity_insert _ _ _ hn
+
 /-- The rewrite is the object table and nothing else — every other field of the
 state is the pre-state's, stated once for all of them.  A consumer that needs a
 field this file gives no named frame for rewrites with this and reads the field
@@ -7096,7 +7243,7 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
     (hMapping : ∀ old, st.objects[id]? = some old →
       new.mappingView = old.mappingView := by intro old _; cases old <;> rfl) :
     kindPreservingWrite st (st.rewriteObject id new h) := by
-  refine ⟨fun k => ?_, ⟨rfl, rfl, rfl⟩⟩
+  refine ⟨fun k => ?_, by ghosts_kept⟩
   unfold SeLe4n.Model.kindPreservingWriteAt
   by_cases hEq : id = k
   · subst hEq
@@ -7200,7 +7347,8 @@ theorem rewriteObject_bookkeepingKept (st : SystemState)
       obtain ⟨old, hOld, hTy, hN⟩ := h
       rw [rewriteObject_objects_self st id new ⟨old, hOld, hTy, hN⟩ hInv, hOld]
       simp [hTy]
-    · rw [rewriteObject_objects_ne st id k new h hEq hInv]⟩
+    · rw [rewriteObject_objects_ne st id k new h hEq hInv],
+    RHTable.capacity_le_insert _ _ _, Nat.le_refl _⟩
 
 /-- WS-UC UC2: a rewrite keeps the bookkeeping in agreement: it writes one stored
 key with an object of the same kind, so the stored IDs and their types are
@@ -8462,6 +8610,90 @@ theorem withObjectStored_objectIndex_length_le (st : SystemState) (id : SeLe4n.O
     (obj : KernelObject) :
     (st.withObjectStored id obj).objectIndex.length ≤ st.objectIndex.length + 1 :=
   storeObject_objectIndex_length_le st _ id obj (storeObject_eq_withObjectStored st id obj)
+
+
+/-! ### WS-UC UC3: the state-level table writes never shrink a table
+
+Each is a `simp` lemma carrying a lower bound on a table's capacity through the
+write, so `capacity_kept` closes the capacity fields of `ghostsKept` and of
+`bookkeepingAgrees.of_frame` on a step built from them. -/
+
+@[simp] theorem le_modifyObject_objects_capacity {n : Nat} (st : SystemState) (id : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) (h : n ≤ st.objects.capacity) :
+    n ≤ (st.modifyObject id f).objects.capacity :=
+  RHTable.le_capacity_modify _ _ _ h
+
+@[simp] theorem modifyObject_asidTable (st : SystemState) (id : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) : (st.modifyObject id f).asidTable = st.asidTable := rfl
+
+@[simp] theorem modifyObjectInPlace_objects_capacity (st : SystemState) (id : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) :
+    (st.modifyObjectInPlace id f).objects.capacity = st.objects.capacity :=
+  RHTable.modifyInPlace_capacity _ _ _
+
+@[simp] theorem modifyObjectInPlace_asidTable (st : SystemState) (id : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) : (st.modifyObjectInPlace id f).asidTable = st.asidTable := rfl
+
+@[simp] theorem le_updateTcb_objects_capacity {n : Nat} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (h : n ≤ st.objects.capacity) : n ≤ (st.updateTcb tid f).objects.capacity := by
+  unfold updateTcb; split
+  · exact RHTable.le_capacity_insert _ _ _ h
+  · exact h
+
+attribute [simp] updateTcb_asidTable
+
+@[simp] theorem le_updateSchedContext_objects_capacity {n : Nat} (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext)
+    (h : n ≤ st.objects.capacity) : n ≤ (st.updateSchedContext scId f).objects.capacity := by
+  unfold updateSchedContext; split
+  · exact RHTable.le_capacity_insert _ _ _ h
+  · exact h
+
+attribute [simp] updateSchedContext_asidTable
+
+@[simp] theorem le_storeCNodeWith_objects_capacity {n : Nat} (st : SystemState) (id : SeLe4n.ObjId)
+    (f : CNode → CNode) (h : n ≤ st.objects.capacity) :
+    n ≤ (st.storeCNodeWith id f).objects.capacity := by
+  unfold storeCNodeWith; split
+  · split
+    · exact RHTable.le_capacity_modify _ _ _ h
+    · split
+      · next hS => exact Nat.le_trans h (storeObject_capacity_le hS).1
+      · exact h
+  · exact h
+
+@[simp] theorem le_storeCNodeWith_asidTable_capacity {n : Nat} (st : SystemState) (id : SeLe4n.ObjId)
+    (f : CNode → CNode) (h : n ≤ st.asidTable.capacity) :
+    n ≤ (st.storeCNodeWith id f).asidTable.capacity := by
+  unfold storeCNodeWith; split
+  · split
+    · exact h
+    · split
+      · next hS => exact Nat.le_trans h (storeObject_capacity_le hS).2
+      · exact h
+  · exact h
+
+@[simp] theorem le_storeVSpaceRootWith_objects_capacity {n : Nat} (st : SystemState)
+    (id : SeLe4n.ObjId) (f : VSpaceRoot → VSpaceRoot) (h : n ≤ st.objects.capacity) :
+    n ≤ (st.storeVSpaceRootWith id f).objects.capacity := by
+  unfold storeVSpaceRootWith; split
+  · split
+    · exact RHTable.le_capacity_modify _ _ _ h
+    · split
+      · next hS => exact Nat.le_trans h (storeObject_capacity_le hS).1
+      · exact h
+  · exact h
+
+@[simp] theorem le_storeVSpaceRootWith_asidTable_capacity {n : Nat} (st : SystemState)
+    (id : SeLe4n.ObjId) (f : VSpaceRoot → VSpaceRoot) (h : n ≤ st.asidTable.capacity) :
+    n ≤ (st.storeVSpaceRootWith id f).asidTable.capacity := by
+  unfold storeVSpaceRootWith; split
+  · split
+    · exact h
+    · split
+      · next hS => exact Nat.le_trans h (storeObject_capacity_le hS).2
+      · exact h
+  · exact h
 
 end SystemState
 

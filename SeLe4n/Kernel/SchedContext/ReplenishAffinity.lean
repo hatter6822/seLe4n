@@ -526,6 +526,16 @@ theorem migrateSchedContextReplenishment_preserves_objects_invExt (st : SystemSt
     (migrateSchedContextReplenishment st scId fromCore toCore).objectIndexSet =
       st.objectIndexSet := by
   rw [(migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).1]
+/-- WS-UC UC3: the migration shrinks no object table. -/
+@[simp] theorem le_migrateSchedContextReplenishment_objects_capacity {n : Nat} (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore : CoreId) (h : n ≤ st.objects.capacity) :
+    n ≤ (migrateSchedContextReplenishment st scId fromCore toCore).objects.capacity :=
+  Nat.le_trans h (migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).objectsCapacity
+@[simp] theorem migrateSchedContextReplenishment_asidTable (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).asidTable =
+      st.asidTable := by
+  rw [(migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).1]
 
 /-- WS-SM SM5.H.4: the migration never advances the machine timer. -/
 @[simp] theorem migrateSchedContextReplenishment_machine (st : SystemState)

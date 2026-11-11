@@ -34,12 +34,149 @@ open SeLe4n.Model.SystemState (MappingStage)
 open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 
 /-- A per-core leg that agrees off the scheduler links with a kind-preserving
-single-core leg keeps the mappings recorded. -/
+single-core leg, and shrinks no object table, keeps the mappings recorded. -/
 theorem MappingStage.of_postAgrees {st r1 st' : SystemState}
     (hI : st.objects.invExt → st'.objects.invExt)
+    (hC : st.objects.invExt → st.objects.capacity ≤ st'.objects.capacity)
     (hK : st.objects.invExt → kindPreservingWrite st r1) (hA : OffSchedulerAgrees r1 st') :
     MappingStage st st' :=
-  MappingStage.of_kindPreservingWrite hI fun h => (hK h).trans (hA.objects.kindPreserving hA.ghostsKept)
+  MappingStage.of_kindPreservingWrite hI fun h =>
+    ⟨fun oid => ((hK h) oid).trans (hA.objects.kindPreservingAt oid),
+      ⟨hA.objectIndex.trans (hK h).ghosts.index, hA.objectIndexSet.trans (hK h).ghosts.indexSet,
+        by rw [hA.lifecycle]; exact (hK h).ghosts.types, hC h,
+        by rw [hA.asidTable]; exact (hK h).ghosts.asidCapacity⟩⟩
+
+/-! ### The per-core legs shrink no object table
+
+A per-core leg agrees with its single-core twin off the scheduler links, which
+says nothing of the table's capacity; each leg's writes are inserts and in-place
+rewrites, so it keeps a boot-sized store boot-sized on its own. -/
+
+/-- WS-UC UC3: the cross-core signal shrinks no object table. -/
+theorem notificationSignalOnCore_objects_capacity_le
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    st.objects.capacity ≤
+      (notificationSignalOnCore notificationId badge executingCore st).1.objects.capacity := by
+  unfold notificationSignalOnCore
+  cases hObjN : st.getNotification? notificationId with
+  | none => simp only; split <;> exact Nat.le_refl _
+  | some ntfn =>
+    simp only
+    cases hWaiters : ntfn.waitHead with
+    | none =>
+      simp only
+      cases hStore : storeObject notificationId _ st with
+      | error e => simp only; exact Nat.le_refl _
+      | ok pair => simp only; exact (storeObject_capacity_le hStore).1
+    | some waiter =>
+      simp only
+      cases hStore : storeObject notificationId _ st with
+      | error e => simp only; exact Nat.le_refl _
+      | ok pair =>
+        simp only
+        have hC1 := (storeObject_capacity_le hStore).1
+        have hObj1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
+        cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
+            (some { IpcMessage.empty with badge := some badge }) with
+        | error e => simp only; exact Nat.le_refl _
+        | ok st'' =>
+          simp only
+          have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObj1 hTcb).ghosts.objectsCapacity
+          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st'' waiter _ _ hObj1 hTcb
+          show _ ≤ (wakeThread _ waiter executingCore).1.objects.capacity
+          exact Nat.le_trans (le_detachNtfnHead_objects_capacity _ _ _ (Nat.le_trans hC1 hC2))
+            (wakeThread_kindPreservingWrite _ waiter executingCore
+              (detachNtfnHead_linksRewritten _ _ _ hObj2).2.1).ghosts.objectsCapacity
+
+/-- WS-UC UC3: the cross-core wait shrinks no object table. -/
+theorem notificationWaitOnCore_objects_capacity_le
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    st.objects.capacity ≤
+      (notificationWaitOnCore notificationId waiter executingCore st).1.objects.capacity := by
+  unfold notificationWaitOnCore
+  cases hObjN : st.getNotification? notificationId with
+  | none => simp only; split <;> exact Nat.le_refl _
+  | some ntfn =>
+    simp only
+    cases hBadge : ntfn.pendingBadge with
+    | some badge =>
+      simp only
+      cases hStore : storeObject notificationId _ st with
+      | error e => simp only; exact Nat.le_refl _
+      | ok pair =>
+        simp only
+        have hObj1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
+        cases hTcb : storeTcbIpcState pair.2 waiter .ready with
+        | error e => simp only; exact Nat.le_refl _
+        | ok st'' =>
+          simp only
+          exact Nat.le_trans (storeObject_capacity_le hStore).1
+            (storeTcbIpcState_kindPreservingWrite hObj1 hTcb).ghosts.objectsCapacity
+    | none =>
+      simp only
+      cases hLk : lookupTcb st waiter with
+      | none => simp only; exact Nat.le_refl _
+      | some tcb =>
+        simp only
+        split
+        · exact Nat.le_refl _
+        · cases hStore : storeObject notificationId _ st with
+          | error e => simp only; exact Nat.le_refl _
+          | ok pair =>
+            simp only
+            have hC1 := (storeObject_capacity_le hStore).1
+            have hObj1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
+            cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
+                (.blockedOnNotification notificationId) none with
+            | error e => simp only; exact Nat.le_refl _
+            | ok st2 =>
+              simp only
+              have hObj2 : st2.objects.invExt ∧ pair.2.objects.capacity ≤ st2.objects.capacity := by
+                unfold storeTcbIpcStateAndMessage_fromTcb at hTcb
+                cases hSO : storeObject waiter.toObjId
+                    (.tcb (TCB.setIpcState { tcb with pendingMessage := none } (.blockedOnNotification notificationId)))
+                    pair.2 with
+                | error e => simp [hSO] at hTcb
+                | ok p =>
+                  simp only [hSO] at hTcb
+                  have hE := Except.ok.inj hTcb; subst hE
+                  exact ⟨storeObject_preserves_objects_invExt' pair.2 waiter.toObjId _ p hObj1 hSO,
+                    (storeObject_capacity_le hSO).1⟩
+              cases hLink : linkNtfnWaiter st2 waiter ntfn.waitTail with
+              | error e => simp only; exact Nat.le_refl _
+              | ok st'' =>
+                simp only
+                obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases hLink
+                have hK3 := modifyTcb_kindPreservingWrite hObj2.1 h3
+                have hK4 := modifyTcbOpt_kindPreservingWrite
+                  (modifyTcb_preserves_objects_invExt hObj2.1 h3) h4
+                simpa using Nat.le_trans (Nat.le_trans (Nat.le_trans hC1 hObj2.2)
+                  hK3.ghosts.objectsCapacity) hK4.ghosts.objectsCapacity
+
+/-- WS-UC UC3: the cross-core reply shrinks no object table. -/
+theorem endpointReplyOnCore_objects_capacity_le
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    st.objects.capacity ≤
+      (endpointReplyOnCore replier target msg executingCore st).1.objects.capacity := by
+  rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
+    hEq | ⟨tcb, st', server, pre, hLk, hStore, hPost, hTail⟩
+  · rw [hEq]; exact Nat.le_refl _
+  · rw [hPost, SystemState.unlinkReplyWaiterOpt_objects_capacity]
+    have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+      rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
+    have hObj1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready
+      (some msg) hObjInv hStore'
+    have hC := Nat.le_trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv
+      hStore').ghosts.objectsCapacity
+      (wakeThread_kindPreservingWrite st' target executingCore hObj1).ghosts.objectsCapacity
+    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
+    · rw [hEq]; exact hC
+    · exact Nat.le_trans hC (removeCallerReplyFrame_kindPreservingWrite _ _ target rid
+        (wakeThread_preserves_objects_invExt st' target executingCore hObj1) hCons).ghosts.objectsCapacity
+
 
 /-! ### The capability transfer -/
 
@@ -115,6 +252,7 @@ theorem endpointSendDualOnCore_mappingStage {endpointId : SeLe4n.ObjId}
     · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => endpointSendDualOnCore_preserves_objects_invExt _ _ _ _ _ h)
+        (endpointSendDualOnCore_objects_capacity_le _ _ _ _ _)
         (fun h => endpointSendDual_kindPreservingWrite _ _ _ _ _ h hS) hA hInv
 
 /-- The send with capability transfer keeps the mappings recorded. -/
@@ -160,6 +298,7 @@ theorem endpointReceiveDualOnCore_mappingStage {endpointId : SeLe4n.ObjId}
     · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => endpointReceiveDualOnCore_preserves_objects_invExt _ _ _ _ _ h)
+        (endpointReceiveDualOnCore_objects_capacity_le _ _ _ _ _)
         (fun h => endpointReceiveDual_kindPreservingWrite _ _ _ _ _ _ h hS) hA hInv
 
 theorem endpointReceiveDualWithCapsOnCore_mappingStage {endpointId : SeLe4n.ObjId}
@@ -362,6 +501,7 @@ theorem endpointReplyOnCore_mappingStage {replier target : SeLe4n.ThreadId} {msg
     · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => endpointReplyOnCore_preserves_objects_invExt _ _ _ _ _ h)
+        (endpointReplyOnCore_objects_capacity_le _ _ _ _ _)
         (fun h => endpointReply_kindPreservingWrite _ _ _ _ _ h hS) hA hInv
 
 /-- **The pop at an unheld head is a mapping stage**: the unheld pop's three
@@ -520,6 +660,7 @@ theorem notificationSignalOnCore_mappingStage {notificationId : SeLe4n.ObjId}
     · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => notificationSignalOnCore_preserves_objects_invExt _ _ _ _ h)
+        (notificationSignalOnCore_objects_capacity_le _ _ _ _)
         (fun h => notificationSignal_kindPreservingWrite _ _ _ _ h hS) hA hInv
 
 theorem notificationSignalBoundOnCore_mappingStage {notificationId : SeLe4n.ObjId}
@@ -579,6 +720,7 @@ theorem notificationWaitOnCore_mappingStage {notificationId : SeLe4n.ObjId}
     · rw [h]; exact ⟨hInv, id, id⟩
     · exact MappingStage.of_postAgrees
         (fun h => notificationWaitOnCore_preserves_objects_invExt _ _ _ _ h)
+        (notificationWaitOnCore_objects_capacity_le _ _ _ _)
         (fun h => notificationWait_kindPreservingWrite h hS) hA hInv
 
 theorem notificationWaitCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}

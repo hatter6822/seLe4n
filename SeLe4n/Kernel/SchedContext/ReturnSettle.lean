@@ -92,6 +92,15 @@ theorem settleReturnedContext_releaseOnlyWrite (st : SystemState)
 @[simp] theorem settleReturnedContext_objectIndexSet (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
     (settleReturnedContext st c s).objectIndexSet = st.objectIndexSet :=
   (settleReturnedContext_releaseOnlyWrite st c s).ghostsKept.indexSet
+/-- WS-UC UC3: the settle shrinks no object table. -/
+@[simp] theorem le_settleReturnedContext_objects_capacity {n : Nat} (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) (h : n ≤ st.objects.capacity) :
+    n ≤ (settleReturnedContext st c s).objects.capacity :=
+  Nat.le_trans h (settleReturnedContext_releaseOnlyWrite st c s).objectsCapacity
+@[simp] theorem settleReturnedContext_asidTable (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :
+    (settleReturnedContext st c s).asidTable = st.asidTable := by
+  rw [(settleReturnedContext_releaseOnlyWrite st c s).1]
 
 @[simp] theorem settleReturnedContext_machine (st : SystemState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SchedContextId) :

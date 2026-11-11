@@ -86,7 +86,7 @@ theorem perCoreTimerTickStep_mappingStage (st : SystemState) (coreId : UInt64) :
   · rw [perCoreTimerTickStep_valid_core st coreId hc]
     have hClk : MappingStage st (tickClockedState st ⟨coreId.toNat, hc⟩) :=
       MappingStage.of_objects_eq (tickClockedState_objects _ _)
-        (by unfold tickClockedState; split <;> exact ⟨rfl, rfl, rfl⟩)
+        (by unfold tickClockedState; split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
     exact (hClk.trans (timerTickOnCore_mappingStage _ _)).trans
       (scheduleDomainOnCore_mappingStage (scheduleDomainOnCore_eq_state _ _))
   · rw [perCoreTimerTickStep_invalid_core st coreId hc]
@@ -163,7 +163,7 @@ theorem settleResidencyOnCore_mappingStage (st : SystemState) (c : CoreId) :
     ((MappingStage.of_objects_eq rfl).trans
       (MappingStage.of_objects_eq (PriorityInheritance.pokeReleasedResident_objects _ _ _ _)
         (by rcases PriorityInheritance.pokeReleasedResident_cases _ _ _ _ with h | ⟨_, -, h⟩ <;>
-              rw [h] <;> exact ⟨rfl, rfl, rfl⟩)))
+              rw [h] <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)))
 
 theorem settleResidencyAt_mappingStage (st : SystemState) (coreId : UInt64) :
     MappingStage st (PriorityInheritance.settleResidencyAt st coreId) := by
@@ -326,7 +326,7 @@ theorem syscallEntryChecked_mappingStage {ctx : LabelingContext}
     decoded.overflowCount
   rw [ht] at h
   exact (MappingStage.of_objects_eq (st := st) (st' := { st with perCoreTlb := t }) rfl
-    ⟨rfl, rfl, rfl⟩).trans
+    ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩).trans
     (dispatchSyscallChecked_mappingStage ctx decoded tid e _ st' (P.of_tables_eq rfl rfl rfl) h)
 
 /-- **The ABI dispatch keeps the mappings recorded**: the argument spill (a
@@ -363,8 +363,8 @@ theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
       exact hW.trans (MappingStage.of_objects_eq
         (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
         (by unfold Platform.FFI.recordSyscallRefusal; split
-            · exact ⟨rfl, rfl, rfl⟩
-            · split <;> exact ⟨rfl, rfl, rfl⟩))
+            · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
+            · split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩))
   · rename_i hE
     cases h
     exact hW.trans (syscallEntryChecked_mappingStage P1 hE)
@@ -418,7 +418,7 @@ theorem syscallDispatchEntryState_mappingStage (ctx : LabelingContext) (e : Core
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2) := by
   have hS := (saveCapturedSyscallFrame_mappingStage st e frame).trans
     (MappingStage.of_objects_eq (Architecture.IpcBufferRead.syncUserWords_objects _ bytes n)
-      (by unfold Architecture.IpcBufferRead.syncUserWords; split <;> exact ⟨rfl, rfl, rfl⟩))
+      (by unfold Architecture.IpcBufferRead.syncUserWords; split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩))
   have P1 : MappingArmPremises (Architecture.IpcBufferRead.syncUserWords
       (Architecture.saveCapturedSyscallFrame st e frame) bytes n) :=
     (saveCapturedSyscallFrame_mappingArmPremises e frame P).of_tables_eq
@@ -428,7 +428,7 @@ theorem syscallDispatchEntryState_mappingStage (ctx : LabelingContext) (e : Core
   exact (hS.trans (syscallDispatchCrossCoreStep_mappingStage P1)).trans
     (MappingStage.of_objects_eq (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
       (by unfold Architecture.IpcBufferRead.clearUserWords Architecture.IpcBufferRead.syncUserWords
-          exact ⟨rfl, rfl, rfl⟩))
+          exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩))
 
 /-- **The syscall entry keeps every live mapping recorded**, from the kernel's
 invariant bundle and the records every kernel entry carries on the state it

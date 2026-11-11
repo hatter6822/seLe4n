@@ -374,7 +374,7 @@ theorem resumeContext_releaseOnlyWrite (st : SystemState) (tid : SeLe4n.ThreadId
   · exact .refl st
   · refine SystemState.releaseOnlyWrite.trans
       (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ home s) ?_
-    refine ⟨?_, by rw [SystemState.updateSchedContext_scheduler]; rfl⟩
+    refine ⟨?_, by rw [SystemState.updateSchedContext_scheduler]; rfl, by capacity_kept⟩
     unfold SystemState.updateSchedContext; split <;> rfl
 
 /-- ...so it keeps every core's current thread. -/
@@ -2077,6 +2077,14 @@ theorem descheduleUnboundHolder_onlyObjectsSchedulerDiffer (stPre stPost : Syste
   · exact .refl _
   · exact descheduleAtPlacement_onlyObjectsSchedulerDiffer _ _
 
+/-- WS-UC UC3: ...and keeps the store's capacity. -/
+@[simp] theorem descheduleUnboundHolder_objects_capacity (stPre stPost : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) :
+    (descheduleUnboundHolder stPre stPost victim tcb).objects.capacity =
+      stPost.objects.capacity := by
+  unfold descheduleUnboundHolder
+  split <;> simp
+
 theorem descheduleUnboundHolder_objects_invExt (stPre stPost : SystemState)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (hInv : stPost.objects.invExt) :
     (descheduleUnboundHolder stPre stPost victim tcb).objects.invExt := by
@@ -2786,7 +2794,7 @@ theorem suspendThread_transientWindowInvariant_default
   -- so the lookup returns `none` and the match falls into the
   -- catch-all `_ => True` branch.
   have hLookup : (default : SystemState).objects[tid.toObjId]? = none :=
-    RHTable_get?_empty 16 (by omega)
+    RHTable_get?_empty _ _
   rw [hLookup]
   trivial
 
@@ -2828,7 +2836,7 @@ theorem suspendThread_atomicity_under_ffi_bracket_default
   -- The default state's objects table is empty, so the outer
   -- `match st.objects[tid.toObjId]?` falls into the `_` arm.
   have hLookup : (default : SystemState).objects[vtid.val.toObjId]? = none :=
-    RHTable_get?_empty 16 (by omega)
+    RHTable_get?_empty _ _
   simp [hLookup]
 
 /-- AN9-D: The default state satisfies the FFI atomicity precondition

@@ -253,7 +253,7 @@ theorem untypedRetypeObject {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
       refine ⟨by rw [hAUt]; exact hAdm.2, fun v => ?_, RobinHood.RHTable.empty_invExtK 16 (by omega),
         RobinHood.RHTable.empty_invExtK 16 (by omega)⟩
       simp only [RHTable_getElem?_eq_get?]
-      exact RobinHood.RHTable.getElem?_empty 16 (by omega) v) k1
+      exact RobinHood.RHTable.getElem?_empty _ _ v) k1
   have k3 := (RecordsFrame.storeObject (KernelRecords.objects_invExt k2) hStIdx (by rw [hOCh]; rfl)
     (fun _ => by simp)).preserves k2
   have k4 := (RecordsFrame.of_objects_eq (KernelRecords.objects_invExt k3)

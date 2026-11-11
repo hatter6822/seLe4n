@@ -1614,7 +1614,8 @@ theorem applySyscallTaint_preserves_proofLayerInvariantBundle (plan : TaintPlan)
       { post with objects := (applySyscallTaint plan pre post).objects } :=
     applySyscallTaint_objectsAgreeOffTaint plan pre post
   have hB := Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint hA
-    (fun hI => applySyscallTaint_invExt hI) (applySyscallTaint_size plan pre post) h
+    (fun hI => applySyscallTaint_invExt hI) (applySyscallTaint_size plan pre post)
+    (Nat.le_of_eq (applySyscallTaint_capacity plan pre post).symm) h
   rw [applySyscallTaint_frame plan pre post]
   exact hB
 

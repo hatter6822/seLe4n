@@ -589,7 +589,7 @@ theorem noPhysicalFrameCollision_empty (asid : SeLe4n.ASID) :
   intro v₁ _ _ _ _ h₁ _
   have : ({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))[v₁]?
       = none :=
-    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) v₁
+    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ v₁
   simp [VSpaceRoot.lookup, this] at h₁
 
 /-- WS-G6: Empty mappings trivially satisfy no-virtual-overlap.

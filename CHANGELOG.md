@@ -1,3 +1,97 @@
+## v0.37.16 — the object and ASID tables are built boot-sized
+
+WS-UC UC3 (decision D4).  The boot builds the object table and the ASID table
+at 2^17 slots, which holds `maxObjects` objects and `maxAsidValue` ASIDs below
+the 75% load at which `RHTable.insert` resizes, so a live insert never rebuilds
+a slot array: the tables' slot arrays are built at boot only.
+
+- **Boot-sized tables, the boot's own.** `bootTableCapacity` (131072).  The
+  boot's builder starts from `mkEmptyIntermediateState ()`, whose state
+  `SystemState.bootEmpty ()` is the default state with `objects` and
+  `asidTable` built at that capacity.  Both take `()` and are
+  `@[noinline, never_extract]`, and the tables come from `RHTable.emptyFresh`
+  (`never_extract`, proven `RHTable.empty` by `rfl`), so the compiler never
+  lifts them into a module constant: each boot builds its own two tables and
+  fills them in place.  The default state keeps its 16-slot tables, since Lean
+  builds every computable closed state when its module initializes and keeps
+  it for the kernel's life.  The QEMU deployment's idle, started and boot
+  states are `noncomputable` (the proofs name them; the kernel boots from the
+  device tree it is handed).
+- **The bundle's base case is the empty boot.** The default state is no
+  longer boot-sized, so `default_system_state_proofLayerInvariantBundle` and
+  `apiInvariantBundle_default` are retired; `emptyBoot_bootLinkedShape` shows
+  the empty boot (`bootFromPlatform_empty_state`: `SystemState.bootEmpty ()`)
+  is of linked boot shape, and `emptyBoot_proofLayerInvariantBundle` follows
+  from `proofLayerInvariantBundle_of_bootLinkedShape`; `archAssumptionConsumer`'s
+  `bootObjectTyping` arm names it.  `SystemState.bootEmpty_bookkeepingAgrees`,
+  `bootEmpty_tablesPresized` and `bootEmpty_allTablesInvExtK` replace the
+  default state's.  Retired with the old bundle proof: its private helpers in
+  `Architecture/Invariant.lean` and the scheduler's `default_*` lemmas only it
+  read (`runnableThreadsAreTCBs`, `domainScheduleEntriesPositive`,
+  `budgetPositive`, `currentBudgetPositive`, `schedContextsWellFormed`,
+  `replenishQueueValid`, `schedContextBindingConsistent`,
+  `effectiveParamsMatchRunQueue`, `boundThreadDomainConsistent`).
+- **The no-resize theorems.** `RHTable.insert_eq_insertNoResize_of_load`;
+  `SystemState.objects_insert_eq_insertNoResize` (a store of at most
+  `maxObjects` objects in a boot-sized table) and
+  `SystemState.asidTable_insert_eq_insertNoResize` (at most `maxAsidValue`
+  ASIDs); the carve's form `retypeFromUntyped_insert_eq_insertNoResize`; and
+  `rhInsertResizeHeapBytes_objects_eq_zero`, so the carve's resize term in
+  `CarveRequest.heapBytes` reads 0 on such a store.
+- **Carried by the invariant bundle.** `SystemState.tablesPresized` is
+  `bookkeepingAgrees.presized`, so it rides in the bundle's 22nd component the
+  way UC2's agreement does, held by the boot's empty state and the boot and kept by
+  every kernel entry through each step's `MappingStage`.  `ghostsKept` and
+  `BookkeepingKept` state that neither table shrinks (`objectsCapacity`,
+  `asidCapacity`); every table write carries a capacity lemma (an equality for
+  an in-place write, a `le_` form for one that may insert), and the
+  `capacity_kept` tactic closes the step goals with them.  The cross-core legs,
+  related to their single-core twins only off the scheduler links, prove it per
+  leg (`endpointSendDualOnCore_objects_capacity_le` and the receive, reply,
+  signal and wait twins).  Bundle corollaries:
+  `proofLayerInvariantBundle.tablesPresized`,
+  `.objects_insert_eq_insertNoResize`, `.asidTable_insert_eq_insertNoResize`.
+- **The insert keeps its resize branch.** The no-resize equation needs the
+  load hypothesis, which the compiled insert cannot see, so no `@[csimp]` can
+  drop the branch; the spec `insert` stays the compiled one, and on a reachable
+  state its resize branch is never taken.
+- **One allocation for an empty table.** `RHTable.emptyImpl` builds the slot
+  array with `Array.replicate` (the runtime's `lean_mk_array`), joined to
+  `RHTable.empty` by `@[csimp] RHTable.empty_eq_emptyImpl`, so the boot-sized
+  table no longer builds and frees a 131072-cell list (3 MiB of cons cells)
+  on the way, and neither does a resize.
+- **Boundary.** `runObjectStoreCapacityBoundaryChecks` re-builds its store in a
+  boot-sized table, as the boot does, and checks that filling it to
+  `maxObjects − 1` never resizes, that the insert
+  at size 65535 into capacity 131072 equals `insertNoResize` and keeps the
+  capacity, that the carve at `maxObjects − 1` keeps it, and that the next carve
+  is refused (`objectStoreCapacityExceeded`).
+- **Retired**: `FrozenState`'s private `toList_empty` and
+  `fold_none_replicate`, replaced by `RHTable.toList_empty`.
+- **Gates.** The store-read census classifies `emptyImpl` and `emptyFresh` as
+  constructors; Tier 3 pins the `never_extract` builders, the empty boot's
+  bookkeeping and `emptyBoot_bootLinkedShape`;
+  `tablesPresized`'s fields are `objectsBootSized` / `asidBootSized`, since the
+  census reads a field named `objects` as the object store; the de-threading
+  gate pins `State.lean`'s second tactic macro (`capacity_kept`).
+- **Readings** (QEMU `virt`, Lean-linked image, fresh archive, two runs,
+  identical): every reading equals `v0.37.15`'s — each kind's first-call
+  carve reading equals its steady-state one, every carve pin is unchanged
+  (endpoint 6 / 248, notification 6 / 240, reply 10 / 256, tcb 19 / 2040,
+  sched-context 8 / 440, frame 6 / 152, page-table 8 / 232, cnode 23 / 1128,
+  vspace-root 101 / 3568, untyped 7 / 184) and every
+  other reading is 0.
+- **Boot heap** (the same runs, 16069-page arena).  The boot-sized slot arrays
+  are 1 MiB each (131072 slots), and only the installed state holds them.
+  After the library initializer: 753 pages in use (803 at `v0.37.15`; the QEMU
+  deployment states, `noncomputable` now, no longer build at initialization).
+  After the install: 1337 pages (871 at `v0.37.15`), so the install adds 584
+  pages where it added 68: the two tables' 514 pages and 2 pages besides,
+  +1.8 MiB in all (5.2 MiB of the 64 MiB arena in use).  A first cut that
+  built the default state boot-sized cost 3625 / 4206 pages: every module the
+  default state is inlined into built its own table at initialization, and
+  every closed state built from it copied one.
+
 ## v0.37.15 — the bookkeeping tables become ghosts
 
 WS-UC UC2 (decision D3).  The object index, the object-index set and the

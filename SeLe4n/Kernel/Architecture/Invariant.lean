@@ -441,7 +441,7 @@ theorem contextSwitchState_preserves_currentThreadValid
 -- ============================================================================
 
 /-- W6-E (L-11): Helper — the default state's objects table has no entries.
-    Extracted to eliminate 24+ identical `RHTable_get?_empty 16 (by omega)` calls
+    Extracted to eliminate 24+ identical `RHTable_get?_empty _ _` calls
     across the default-state proof section. All default-state proofs for
     object-quantified predicates follow the same pattern: assume an object exists,
     derive a contradiction from `default_objects_none`.
@@ -451,7 +451,7 @@ theorem contextSwitchState_preserves_currentThreadValid
     and an inhabitation witness is worth nothing if only this module can use it. -/
 theorem default_objects_none (oid : SeLe4n.ObjId) :
     (default : SystemState).objects[oid]? = none :=
-  RHTable_get?_empty 16 (by omega)
+  RHTable_get?_empty _ _
 
 /-- W6-E: Helper — vacuous discharge for default-state proofs. When a hypothesis
     `hObj : (default : SystemState).objects[oid]? = some _` is present, this
@@ -467,91 +467,9 @@ private theorem default_currentOnCore_none :
     (default : SystemState).scheduler.currentOnCore bootCoreId = none :=
   (default_state_perCoreInitialized bootCoreId).1
 
-/-- L-06/WS-E3: The default (empty) `SystemState` satisfies the full composed
-`proofLayerInvariantBundle`. This provides the base case for invariant induction:
-the system starts in a valid state. All invariant components hold vacuously
-because the empty state has no objects, no threads, no registered services, and an empty
-scheduler. -/
-private theorem default_schedulerInvariantBundle :
-    schedulerInvariantBundle (default : SystemState) := by
-  -- schedulerInvariantBundle = queueCurrentConsistent ∧ runQueueUnique ∧ currentThreadValid
-  -- For default state: current = none, runnable = [], objects = none
-  refine ⟨?_, ?_, ?_⟩
-  · -- queueCurrentConsistent: current = none → True
-    simp [queueCurrentConsistent, default_currentOnCore_none]
-  · -- runQueueUnique: [].Nodup
-    show ((default : SchedulerState).runQueueOnCore bootCoreId).toList.Nodup
-    simp
-  · -- currentThreadValid: current = none → True
-    simp [currentThreadValid, default_currentOnCore_none]
-
 private theorem default_ipcInvariant :
     ipcInvariant (default : SystemState) := by
   intro oid ntfn hObj; exact default_objects_absurd hObj
-
-private theorem default_lifecycleInvariantBundle :
-    lifecycleInvariantBundle (default : SystemState) :=
-  default_systemState_objectTypeMetadataConsistent
-
-private theorem default_ipcSchedulerContractPredicates :
-    ipcSchedulerContractPredicates (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro tid tcb hObj; exact default_objects_absurd hObj
-  · intro tid tcb eid hObj; exact default_objects_absurd hObj
-  · intro tid tcb eid hObj; exact default_objects_absurd hObj
-  · intro tid tcb eid hObj; exact default_objects_absurd hObj
-  · intro tid tcb eid rt hObj; exact default_objects_absurd hObj
-  · intro tid tcb nid hObj; exact default_objects_absurd hObj
-
-/-- No slot of the default state holds a capability: it has no objects. -/
-private theorem default_slotCapAt_none (r : SlotRef) :
-    (default : SystemState).slotCapAt r = none := by
-  rw [SystemState.slotCapAt_eq_bind]
-  cases h : (default : SystemState).objects[r.cnode]? with
-  | none => rfl
-  | some o => exact default_objects_absurd h
-
-/-- The default state holds no untyped. -/
-private theorem default_getUntyped?_none (u : SeLe4n.ObjId) :
-    (default : SystemState).getUntyped? u = none := by
-  rw [SystemState.getUntyped?_eq_bind]
-  cases h : (default : SystemState).objects[u]? with
-  | none => rfl
-  | some o => exact default_objects_absurd h
-
-/-- WS-H4 refactor: Extract default-state capabilityInvariantBundle construction
-to eliminate 4x duplication in `default_system_state_proofLayerInvariantBundle`.
-All components are vacuously true (empty objects and derivation tree) or use
-`CapDerivationTree.empty_edgeWellFounded`. -/
-private theorem default_capabilityInvariantBundle :
-    capabilityInvariantBundle (default : SystemState) :=
-  -- WS-SM SM6.D / PR #822 Phase H (#1.a): the `capTargetKindBacked` conjunct is
-  -- vacuous on the empty default state (no object holds a capability).
-  ⟨SeLe4n.Kernel.cspaceLookupSound_holds _,
-   by intro ref h; exact absurd h (CapDerivationTree.empty_not_mentions ref),
-   by exact CapDerivationTree.empty_edgeWellFounded,
-   by intro cnodeId cn hObj; exact default_objects_absurd hObj,
-   by exact RHTable_empty_invExt 16 (by omega),
-   by intro oid cn slot cap hObj hLook; exact default_objects_absurd hObj,
-   LinksAgree.of_empty CapDerivationTree.empty_edges CapDerivationTree.empty_rootChains fun r f => by
-     rw [SystemState.slotLinkAt_def]
-     cases h : (default : SystemState).objects[r.cnode]? with
-     | none => rfl
-     | some o => exact default_objects_absurd h,
-   ⟨fun r hr => absurd (default_slotCapAt_none r) hr,
-    ⟨[], CapDerivationTree.TreeOrder.empty_tree CapDerivationTree.empty_edges
-      CapDerivationTree.empty_rootChains⟩,
-    fun r _ h => absurd (default_slotCapAt_none r) (SystemState.namesAt_occupied h),
-    fun _ _ _ _ _ hp => absurd (default_slotCapAt_none _) hp,
-    (by intro _ p _ ⟨_, h, _, _⟩; rw [default_slotCapAt_none] at h; cases h),
-    (by intro _ p _ ⟨_, h, _, _⟩; rw [default_slotCapAt_none] at h; cases h),
-    (by intro p _ _ _ _ h; rw [default_slotCapAt_none] at h; cases h),
-    (by intro _ _ _ p _ ⟨_, h, _, _⟩; rw [default_slotCapAt_none] at h; cases h),
-    (by intro u _ h; rw [default_getUntyped?_none] at h; cases h),
-    (by intro u _ _ _ h; rw [default_getUntyped?_none] at h; cases h),
-    (by intro r _ ⟨_, h, _⟩; rw [default_slotCapAt_none] at h; cases h),
-    fun _ _ _ => SlotList.Chunked.of_none fun x _ ⟨_, h, _⟩ => by
-      rw [default_slotCapAt_none] at h; cases h⟩⟩
 
 -- WS-H12e: Default-state proofs for new invariant components
 
@@ -669,121 +587,36 @@ theorem default_ipcInvariantFull :
    default_endpointQueueTailBlockedConsistent, default_queueNextTargetBlocked,
    .of_objects_none default_objects_none, fun _ _ hT _ => default_objects_absurd hT⟩
 
-private theorem default_contextMatchesCurrent :
-    contextMatchesCurrent (default : SystemState) := by
-  simp [contextMatchesCurrent, default_currentOnCore_none]
-
-private theorem default_currentThreadDequeueCoherent :
-    currentThreadDequeueCoherent (default : SystemState) := by
-  refine ⟨?_, ?_, ?_⟩
-  · -- currentThreadIpcReady: current = none → True
-    simp [currentThreadIpcReady, default_currentOnCore_none]
-  · -- currentNotEndpointQueueHead: current = none → True
-    unfold currentNotEndpointQueueHead; simp [default_currentOnCore_none]
-  · -- currentNotOnNotificationWaitList: current = none → True
-    unfold currentNotOnNotificationWaitList; simp [default_currentOnCore_none]
-
-private theorem default_schedulerInvariantBundleFull :
-    schedulerInvariantBundleFull (default : SystemState) :=
-  ⟨default_schedulerInvariantBundle,
-   by
-    unfold timeSlicePositive
-    intro tid hMem
-    have : (default : SystemState).scheduler.runnable = [] := by
-      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
-    rw [this] at hMem; simp at hMem,
-   by unfold currentTimeSlicePositive; simp [default_currentOnCore_none],
-   by unfold edfCurrentHasEarliestDeadline; simp [default_currentOnCore_none],
-   default_contextMatchesCurrent,
-   default_runnableThreadsAreTCBs,
-   by  -- R6-D: schedulerPriorityMatch — default runQueue empty, vacuously true
-    intro tid hMem
-    have hFlat : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).toList = [] := by
-      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
-    have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
-    simp [hFlat] at hInFlat,
-   by  -- V5-H: domainTimeRemainingPositive — default domainTimeRemaining is 5
-    unfold domainTimeRemainingPositive; decide,
-   default_domainScheduleEntriesPositive⟩
-
-theorem default_system_state_proofLayerInvariantBundle :
-    proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
-  · exact default_schedulerInvariantBundleFull
-  -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
-  · exact default_capabilityInvariantBundle
-  -- 3. coreIpcInvariantBundle (WS-H12e: now uses ipcInvariantFull)
-  · exact ⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariantFull⟩
-  -- 4. ipcSchedulerCouplingInvariantBundle (WS-H12e: now includes contextMatchesCurrent + dequeueCoherent)
-  · exact ⟨⟨default_schedulerInvariantBundle, default_capabilityInvariantBundle, default_ipcInvariantFull⟩,
-           default_ipcSchedulerContractPredicates,
-           default_contextMatchesCurrent,
-           default_currentThreadDequeueCoherent⟩
-  -- 5. lifecycleInvariantBundle
-  · exact default_lifecycleInvariantBundle
-  -- 6. registryInvariant
-  · exact default_registryInvariant
-  -- 7. vspaceInvariantBundle (8-conjunct: uniqueness ∧ nonOverlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation ∧ canonicalAddr ∧ mappingsWellFormed)
-  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · intro oid₁ oid₂ r₁ r₂ hObj₁; exact default_objects_absurd hObj₁
-    · intro oid root hObj; exact default_objects_absurd hObj
-    · constructor
-      · intro asid oid hLookup; have h : (default : SystemState).asidTable[asid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hLookup; exact absurd hLookup (by simp)
-      · intro oid root hObj; exact default_objects_absurd hObj
-    · intro oid root v p perms hObj; exact default_objects_absurd hObj
-    · intro oid root v p perms hObj; exact default_objects_absurd hObj
-    · intro oidA oidB rA rB hObjA; exact default_objects_absurd hObjA
-    · intro oid root v p perms hObj; exact default_objects_absurd hObj
-    · intro oid root hObj; exact default_objects_absurd hObj
-  -- 8. crossSubsystemInvariant (R4-E + T5-J + Z9-D + AF1-B + AM4/AL6-C + AK8-A: 10 predicates)
-  · exact default_crossSubsystemInvariant
-  -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)
-  · exact tlbConsistent_empty (default : SystemState)
-  -- 10. schedulerInvariantBundleExtended (Z9-G: SchedContext invariants)
-  · exact ⟨default_schedulerInvariantBundleFull,
-           default_budgetPositive, default_currentBudgetPositive,
-           default_schedContextsWellFormed, default_replenishQueueValid,
-           default_schedContextBindingConsistent, default_effectiveParamsMatchRunQueue,
-           default_boundThreadDomainConsistent⟩
-  -- 11. notificationWaiterConsistent (AG7-D: empty objects → vacuous)
-  · exact ⟨fun _ _ hObj => default_objects_absurd hObj,
-      fun _ _ _ hObj _ => default_objects_absurd hObj,
-      fun _ _ _ hObj _ => default_objects_absurd hObj,
-      fun _ _ _ _ hObj _ _ => default_objects_absurd hObj,
-      fun _ _ hObj _ => default_objects_absurd hObj⟩
-  -- 12. pendingBounded (WS-SM SM7.B: boot shootdown state is quiescent)
-  · exact default_tlbShootdown_pendingBounded
-  -- 13. tlbInvalidationConsistent_perCore (WS-SM SM7.C: every core's boot
-  --     TLB view is empty, hence trivially consistent)
-  · exact default_tlbInvalidationConsistent_perCore
-  -- 14. icacheCoherent_perCore (WS-SM SM7.D: every core's boot instruction
-  --     cache is cold, hence trivially coherent)
-  · exact default_icacheCoherent_perCore
-  -- 15. ackBounded (WS-SM SM7.F.3 PR #854 review: boot slots and the round
-  --     counter are all `0`)
-  · exact default_tlbShootdown_ackBounded
-  -- 16. auditLogBounded (WS-SM SM8.C.8: boot declassifies nothing, so the
-  --     audit trail is empty and trivially within capacity)
-  · exact default_auditLogBounded
-  -- 17. runQueueRefined (WS-ZA ZA4.5: no thread, every queue and its ends empty)
-  · exact SystemState.default_runQueueRefined
-  -- 18. liveMappingsRecorded (WS-ZA ZA5.4 part 37: no root, so no mapping)
-  · exact SystemState.default_liveMappingsRecorded
-  -- 19. releaseQueueRefined (WS-ZA ZA6.3: no context, every queue empty)
-  · exact SystemState.default_releaseQueueRefined
-  -- 20. refillsSound (WS-ZA ZA6.4: no context, every queue empty)
-  · exact SystemState.default_refillsSound
-  -- 21. yieldLinksAgree (WS-ZA ZA6.6: no thread, no context)
-  · exact SystemState.default_yieldLinksAgree
-  -- 22. bookkeepingAgrees (WS-UC UC2: no object, every ghost empty)
-  · exact default_bookkeepingAgrees
-
 /-- WS-UC UC2: the bundle's 22nd component — the bookkeeping agrees with the
 object store. -/
 theorem proofLayerInvariantBundle.bookkeepingAgrees {st : SystemState}
     (h : proofLayerInvariantBundle st) : st.bookkeepingAgrees :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+
+/-- WS-UC UC3: in every state the bundle holds of, the object store and the
+ASID table are at least the boot capacity (`bootTableCapacity`): the bookkeeping
+agreement carries it, and no kernel write shrinks a table. -/
+theorem proofLayerInvariantBundle.tablesPresized {st : SystemState}
+    (h : proofLayerInvariantBundle st) : st.tablesPresized :=
+  h.bookkeepingAgrees.presized
+
+/-- WS-UC UC3: **a live object insert never resizes.**  In a state the bundle
+holds of, with at most `maxObjects` objects, an insert into the object store is
+the no-resize insert. -/
+theorem proofLayerInvariantBundle.objects_insert_eq_insertNoResize {st : SystemState}
+    (h : proofLayerInvariantBundle st) (hS : st.objects.size ≤ SeLe4n.Model.maxObjects)
+    (k : SeLe4n.ObjId) (v : KernelObject) :
+    st.objects.insert k v = st.objects.insertNoResize k v :=
+  st.objects_insert_eq_insertNoResize h.tablesPresized hS k v
+
+/-- WS-UC UC3: **a live ASID insert never resizes.**  In a state the bundle
+holds of, with at most `maxAsidValue` bindings, an insert into the ASID table is
+the no-resize insert. -/
+theorem proofLayerInvariantBundle.asidTable_insert_eq_insertNoResize {st : SystemState}
+    (h : proofLayerInvariantBundle st) (hS : st.asidTable.size ≤ maxAsidValue)
+    (a : SeLe4n.ASID) (oid : SeLe4n.ObjId) :
+    st.asidTable.insert a oid = st.asidTable.insertNoResize a oid :=
+  st.asidTable_insert_eq_insertNoResize h.tablesPresized hS a oid
 
 -- ============================================================================
 -- WS-ZA ZA6.4: the refill guarantees, system-wide
@@ -829,7 +662,7 @@ that actually *consume* it, closing the gap between "we declared it" and
 | `deterministicTimerProgress` | `adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle` | `AdapterProofHooks.preserveAdvanceTimer` requires `contract.timerMonotonic` |
 | `deterministicRegisterContext` | `adapterWriteRegister_ok_preserves_proofLayerInvariantBundle` | `AdapterProofHooks.preserveWriteRegister` requires `contract.registerContextStable` |
 | `memoryAccessSafety` | `adapterReadMemory_ok_preserves_proofLayerInvariantBundle` | `AdapterProofHooks.preserveReadMemory` requires `contract.memoryAccessAllowed` |
-| `bootObjectTyping` | `default_system_state_proofLayerInvariantBundle` | Boot state satisfies lifecycle metadata consistency |
+| `bootObjectTyping` | `SeLe4n.Platform.Boot.emptyBoot_proofLayerInvariantBundle` | The boot's empty state satisfies lifecycle metadata consistency |
 | `irqRoutingTotality` | `irqBinding?_notification` | Every delivered line resolves, through its interrupt node, to a notification |
 -/
 
@@ -924,12 +757,6 @@ private example : ∀ (_contract : RuntimeBoundaryContract)
     (_hAllow : _contract.memoryAccessAllowed st addr),
     proofLayerInvariantBundle st :=
   memoryAccessSafety_consumed_by_readMemory
-
-/-- AN6-B.post-audit: `bootObjectTyping` consumer — the default boot state
-    satisfies `proofLayerInvariantBundle`. Guard elaborates iff
-    `default_system_state_proofLayerInvariantBundle` exists. -/
-private example : proofLayerInvariantBundle (default : SystemState) :=
-  default_system_state_proofLayerInvariantBundle
 
 -- ============================================================================
 -- WS-H15d/A-42: Generic adapter preservation lemmas
@@ -1163,7 +990,7 @@ theorem proofLayerInvariantBundle_setDeclassificationAuditLog (st : SystemState)
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationAuditLog bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
-         bIcache, bAck, SeLe4n.Kernel.AuditRing.bounded trail, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩⟩
+         bIcache, bAck, SeLe4n.Kernel.AuditRing.bounded trail, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
 
 /-! ### WS-SM SM9.B.3 — `proofLayerInvariantBundle` carriage across a refusal-ledger write
 
@@ -1228,7 +1055,7 @@ theorem proofLayerInvariantBundle_setDeclassificationRefusals (st : SystemState)
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationRefusals bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
-         bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩⟩
+         bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
 
 /-- **WS-SM SM7.F.5**: `proofLayerInvariantBundle` carriage across a write to
 `perCoreTlb`.
@@ -1250,7 +1077,7 @@ theorem proofLayerInvariantBundle_setPerCoreTlb (st : SystemState)
          ipcSchedulerCouplingInvariantBundle_setPerCoreTlb bCoupling,
          bLifecycle, bService, bVSpace, crossSubsystemInvariant_setPerCoreTlb bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, hPerCoreTlbConsistent,
-         bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩⟩
+         bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
 
 theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)
@@ -1262,7 +1089,7 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
          ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC,
          by exact hPB, by exact hPCT,
          by exact hIc, by exact hAck, by exact hAud, by exact hRun, by exact hMap, by exact hRel,
-         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩⟩
+         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
     exact ⟨by exact hS,
@@ -1388,7 +1215,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
          writeRegisterState_preserves_vspaceInvariantBundle reg value st hVsp,
          ?_, by exact hTlb, ?_, notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC, by exact hPB, by exact hPCT,
          by exact hIc, by exact hAck, by exact hAud, by exact hRun, by exact hMap, by exact hRel,
-         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩⟩
+         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
   -- schedulerInvariantBundleFull: swap contextMatchesCurrent
   · obtain ⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     exact ⟨hBase, hTs, hCts, hEdf, hCtx, hRunn, hPri, hDom, hDomE⟩
@@ -1596,7 +1423,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
          contextSwitchState_preserves_vspaceInvariantBundle newTid newRegs st hVsp,
          ?_, by exact hTlb, ?_, ?_, by exact hPB, by exact hPCT,
          by exact hIc, by exact hAck, by exact hAud, by exact hRun, by exact hMap, by exact hRel,
-         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩⟩
+         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
   -- 1. schedulerInvariantBundleFull
   · obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     have hQCC : queueCurrentConsistent

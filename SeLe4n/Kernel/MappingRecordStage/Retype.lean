@@ -37,7 +37,7 @@ theorem CarveRequest.object_noMappingEpoch (untypedId childId : SeLe4n.ObjId)
   intro root hR v e hE
   cases req <;> simp only [CarveRequest.object] at hR <;> try cases hR
   rw [show (untypedNextVSpaceRoot ut idx _).mappingEpochs[v]? = none from
-    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) v] at hE
+    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty _ _ v] at hE
   cases hE
 
 /-- **A carved thread's space slots are empty** (`carvedTcb`: seL4's

@@ -9740,10 +9740,17 @@ run_check "INVARIANT" rg -n '^    st\.yieldLinksAgree ∧$' SeLe4n/Kernel/Archit
 run_check "INVARIANT" rg -n '^    st\.bookkeepingAgrees$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_negative_check "INVARIANT" rg -n 'st\.bookkeepingAgrees ∧' SeLe4n/Kernel/Architecture/Invariant.lean
 # The 22nd conjunct (WS-UC UC2): the bookkeeping ghosts agree with the object
-# table, established by the default state, carried by every kernel entry through
+# table, established by the boot's empty state, carried by every kernel entry through
 # its mapping-record stages, and transported by the taint-word frame.
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^  · exact default_bookkeepingAgrees$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^  hLifecycleConsistent := SystemState\.bootEmpty_bookkeepingAgrees$' SeLe4n/Model/IntermediateState.lean
+# WS-UC UC3: the boot's object and ASID tables are boot-sized, built where the
+# boot calls for them and never as a module constant: the boot builder's empty
+# state and the tables it holds are `never_extract` calls.
+run_check "INVARIANT" rg -n -U '^@\[noinline, never_extract\]\ndef SystemState\.bootEmpty \(_ : Unit\) : SystemState :=$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline, never_extract\]\ndef mkEmptyIntermediateState \(_ : Unit\) : IntermediateState where$' SeLe4n/Model/IntermediateState.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline, never_extract\]\ndef RHTable\.emptyFresh ' SeLe4n/Kernel/RobinHood/Core.lean
+run_check "INVARIANT" rg -n '^theorem emptyBoot_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '^def MappingStage \(st st. : SystemState\) : Prop :=\n[^\n]*\n    \(st\.bookkeepingAgrees → st.\.bookkeepingAgrees\)$' SeLe4n/Kernel/MappingRecordStage/Basic.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
@@ -9753,16 +9760,14 @@ run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_bookkeepingAgree
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_bookkeepingAgrees($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n 'bBook\.of_kept \(\.of_map KernelObject\.eraseTaint' SeLe4n/Kernel/Architecture/TaintWordFrame.lean
-# The 19th conjunct, its per-core form, and boot's and the default state's
-# establishment of it (every queue empty, no context linked).
+# The 19th conjunct, its per-core form, and the default state's establishment
+# of it (every queue empty, no context linked).
 run_check "INVARIANT" rg -n '^def releaseQueueRefinedOnCore \(st : SystemState\) \(c : CoreId\) : Prop :=' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
 run_check "INVARIANT" rg -n '^def releaseQueueRefined \(st : SystemState\) : Prop := ∀ c, st\.releaseQueueRefinedOnCore c$' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
 run_check "INVARIANT" rg -n '^theorem default_releaseQueueRefined($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
-run_check "INVARIANT" rg -n '^  · exact SystemState\.default_releaseQueueRefined$' SeLe4n/Kernel/Architecture/Invariant.lean
-# The 20th conjunct (WS-ZA ZA6.4): the refill state's soundness, its default and
-# boot establishment, the system-level conservation and per-period bound read
+# The 20th conjunct (WS-ZA ZA6.4): the refill state's soundness, its boot
+# establishment, the system-level conservation and per-period bound read
 # off the bundle, and the payoffs carrying it through every kernel entry.
-run_check "INVARIANT" rg -n '^  · exact SystemState\.default_refillsSound$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_refillsConserved($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_refill_window_bound($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n 'SystemState\.refillsSound_of_empty' SeLe4n/Platform/Boot.lean
@@ -9772,10 +9777,8 @@ run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_refi
 run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
-# The 21st conjunct (WS-ZA ZA6.6): the yield link's two ends agree; the default
-# state, boot (every boot thread and context codes 0), the taint-word frame and
+# The 21st conjunct (WS-ZA ZA6.6): the yield link's two ends agree; boot (every boot thread and context codes 0), the taint-word frame and
 # the payoffs carrying it through every kernel entry.
-run_check "INVARIANT" rg -n '^  · exact SystemState\.default_yieldLinksAgree$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n 'SystemState\.yieldLinksAgree_of_clear fun k' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem yieldLinksAgree_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TaintWordFrame.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
@@ -12054,7 +12057,6 @@ run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedNotificationComponent($|[ (
 
 # WS-F6/D3: runnableThreadsAreTCBs predicate and preservation theorems.
 run_check "INVARIANT" rg -n '^def runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem default_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant.lean
 # W3: runnableThreadsAreTCBs_of_scheduler_objects_eq removed (dead frame lemma).
 run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem schedule_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean

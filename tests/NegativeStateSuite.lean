@@ -2292,20 +2292,41 @@ def runObjectStoreCapacityBoundaryChecks : IO Unit := do
       |>.withLifecycleObjectType utId .untyped
       |>.withLifecycleObjectType cnId .cnode
       |>.buildChecked)
+  -- WS-UC UC3: the store re-built in a boot-sized table, as the boot builds it
+  -- (the test builder's `RHTable.ofList` sizes its tables to their contents).
+  let presized : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject :=
+    base.objects.fold (SeLe4n.Kernel.RobinHood.RHTable.empty SeLe4n.Model.bootTableCapacity
+      SeLe4n.Model.four_le_bootTableCapacity) (fun t k v => t.insert k v)
   -- Pad the store with notifications at identifiers far from the carve's, to
   -- one short of capacity.
-  let pad := SeLe4n.Model.maxObjects - 1 - base.objects.size
+  let pad := SeLe4n.Model.maxObjects - 1 - presized.size
   let padded : SystemState := { base with
     objects := (List.range pad).foldl
-      (fun t i => t.insert ⟨1000000 + i⟩ (.notification { state := .idle })) base.objects }
+      (fun t i => t.insert ⟨1000000 + i⟩ (.notification { state := .idle })) presized }
   expectCond "capacity" "the padded store is one short of capacity"
     (padded.objects.size == SeLe4n.Model.maxObjects - 1)
+  -- WS-UC UC3: filling a boot-sized table to maxObjects - 1 never resized it.
+  expectCond "capacity" "the padded store is still boot-sized"
+    (padded.objects.capacity == SeLe4n.Model.bootTableCapacity)
+  -- WS-UC UC3: the boundary insert — at size 65535 into capacity 131072 — is
+  -- below the resize load (4 · 65535 < 3 · 131072): `insert` keeps the slot
+  -- array's size and agrees with `insertNoResize`.
+  let boundary := padded.objects.insert ⟨155⟩ (.notification { state := .idle })
+  let noResize := padded.objects.insertNoResize ⟨155⟩ (.notification { state := .idle })
+  expectCond "capacity" "the boundary insert does not resize"
+    (padded.objects.size * 4 < padded.objects.capacity * 3 &&
+      boundary.capacity == SeLe4n.Model.bootTableCapacity &&
+      boundary.capacity == noResize.capacity && boundary.size == noResize.size &&
+      boundary.slots.size == SeLe4n.Model.bootTableCapacity)
   match SeLe4n.Kernel.untypedRetypeObject (slotAt 0) ⟨155⟩ (slotAt 1) .notification padded with
   | .error e => throw <| IO.userError s!"capacity: the carve at maxObjects - 1 failed: {repr e}"
   | .ok (_, full) =>
     expectCond "capacity" "the carve at maxObjects - 1 fills the store"
       (full.objects.size == SeLe4n.Model.maxObjects &&
         (full.objects[(⟨155⟩ : SeLe4n.ObjId)]?).isSome)
+    -- WS-UC UC3: the carve's own insert, at the boundary, kept the table.
+    expectCond "capacity" "the carve at maxObjects - 1 does not resize the store"
+      (full.objects.capacity == SeLe4n.Model.bootTableCapacity)
     let next := SeLe4n.Kernel.untypedRetypeObject (slotAt 0) ⟨156⟩ (slotAt 2) .notification
     expectErr "the next carve is refused at capacity" (next full) .objectStoreCapacityExceeded
     expectCond "capacity" "the refusal is answered in the state it was handed"

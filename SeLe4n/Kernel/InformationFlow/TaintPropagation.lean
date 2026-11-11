@@ -1507,6 +1507,12 @@ theorem _root_.SeLe4n.Model.SystemState.objectsAgreeOffTaint.objectTypeMetadataC
     (s.mapObjectAt k f).objects.size = s.objects.size :=
   SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_size _ _ _
 
+/-- WS-UC UC3: a taint write keeps the object table's capacity. -/
+@[simp] theorem _root_.SeLe4n.Model.SystemState.mapObjectAt_capacity (s : SystemState)
+    (k : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    (s.mapObjectAt k f).objects.capacity = s.objects.capacity :=
+  SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_capacity _ _ _
+
 /-- WS-ZA ZA5.12: **the slot's words name no provenance**, read on scalars at
 one probe (`taintEmptyAt_eq`): the clear's elision, building no words. -/
 @[inline] def taintEmptyAt (s : SystemState) (k : SeLe4n.ObjId) : Bool :=
@@ -2014,12 +2020,12 @@ theorem applyTaintStep_ghostsKept (plan : TaintPlan) (origins : List (SeLe4n.Obj
       rw [joinTaintAt_eq]
       split
       · exact .refl s
-      · exact ⟨rfl, rfl, rfl⟩
+      · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
   have hC : ∀ (s : SystemState) k, SystemState.ghostsKept (clearTaintAt s k) s := fun s k => by
     unfold clearTaintAt
     split
     · exact .refl s
-    · exact ⟨rfl, rfl, rfl⟩
+    · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
   unfold applyTaintStep; dsimp only
   exact (R _ (fun s p => hJ s _ _) _ _).trans
     ((R _ (fun s k => hC s k) _ _).trans (R _ (fun s e => hJ s _ _) _ _))
@@ -2059,6 +2065,26 @@ theorem applyTaintStep_size (plan : TaintPlan) (origins : List (SeLe4n.ObjId × 
     split
     · rfl
     · exact SystemState.mapObjectAt_size _ _ _
+  unfold applyTaintStep; dsimp only
+  exact (R _ (fun s p => hJ s _ _) _ _).trans
+    ((R _ (fun s k => hC s k) _ _).trans (R _ (fun s e => hJ s _ _) _ _))
+
+/-- WS-UC UC3: the taint step keeps the object table's capacity. -/
+theorem applyTaintStep_capacity (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    (preTaint : TaintMap) (post : SystemState) :
+    (applyTaintStep plan origins preTaint post).objects.capacity = post.objects.capacity := by
+  have R := foldl_taintStep_rel (fun s s' => s'.objects.capacity = s.objects.capacity)
+    (fun _ => rfl) (fun _ _ _ h1 h2 => h2.trans h1)
+  have hJ : ∀ s k w, (joinTaintAt s k w).objects.capacity = s.objects.capacity := fun s k w => by
+    rw [joinTaintAt_eq]
+    split
+    · rfl
+    · exact SystemState.mapObjectAt_capacity _ _ _
+  have hC : ∀ s k, (clearTaintAt s k).objects.capacity = s.objects.capacity := fun s k => by
+    unfold clearTaintAt
+    split
+    · rfl
+    · exact SystemState.mapObjectAt_capacity _ _ _
   unfold applyTaintStep; dsimp only
   exact (R _ (fun s p => hJ s _ _) _ _).trans
     ((R _ (fun s k => hC s k) _ _).trans (R _ (fun s e => hJ s _ _) _ _))
@@ -2396,6 +2422,11 @@ theorem applySyscallTaint_invExt {plan : TaintPlan} {pre post : SystemState}
 theorem applySyscallTaint_size (plan : TaintPlan) (pre post : SystemState) :
     (applySyscallTaint plan pre post).objects.size = post.objects.size :=
   applyTaintStep_size _ _ _ _
+
+/-- WS-UC UC3: the propagation keeps the object table's capacity. -/
+theorem applySyscallTaint_capacity (plan : TaintPlan) (pre post : SystemState) :
+    (applySyscallTaint plan pre post).objects.capacity = post.objects.capacity :=
+  applyTaintStep_capacity _ _ _ _
 
 -- ============================================================================
 -- §3b  WS-SM SM9.D.8-.D.12 — what propagation establishes

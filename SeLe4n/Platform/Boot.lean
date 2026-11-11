@@ -225,6 +225,11 @@ def bootEntryAsidTable (tbl : RHTable SeLe4n.ASID SeLe4n.ObjId) (entry : ObjectE
   | .vspaceRoot vsr => tbl.insert vsr.asid entry.id
   | _ => tbl
 
+/-- WS-UC UC3: the boot's ASID registration shrinks no ASID table. -/
+@[simp] theorem le_bootEntryAsidTable_capacity {n : Nat} (tbl : RHTable SeLe4n.ASID SeLe4n.ObjId)
+    (entry : ObjectEntry) (h : n ≤ tbl.capacity) : n ≤ (bootEntryAsidTable tbl entry).capacity := by
+  unfold bootEntryAsidTable; split <;> simp [h]
+
 /-- **WS-BP BP3.5**: the ASID an entry registers — its root's, if it is a
     VSpace root.  One definition for the two places that ask: the boot's ASID
     gate (`bootVSpaceAsids`) and the proof that the table the boot builds is
@@ -799,7 +804,7 @@ is stated of its state; the boot is the started one
 (`bootFromPlatformCheckedStartedFor`), which links every configured
 capability (`linkBootCapabilities`). -/
 def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
-  let initial := mkEmptyIntermediateState
+  let initial := (mkEmptyIntermediateState ())
   let withObjects := foldObjects config.initialObjects initial
   -- WS-ZA ZA5.5: the configured service interfaces, which only the boot adds.
   let withInterfaces := foldInterfaces config.initialInterfaces withObjects
@@ -833,7 +838,7 @@ theorem bootFromPlatformWithInterrupts_objects_eq (config : PlatformConfig) :
 /-- Q3-C: Boot from empty config yields the empty IntermediateState. -/
 theorem bootFromPlatform_empty :
     bootFromPlatform { initialObjects := [] } =
-    mkEmptyIntermediateState := rfl
+    (mkEmptyIntermediateState ()) := rfl
 
 /-- Q3-C: The booted state satisfies allTablesInvExtK. -/
 theorem bootFromPlatform_allTablesInvExtK (config : PlatformConfig) :
@@ -3108,8 +3113,9 @@ to runtime invariants (`proofLayerInvariantBundle`) through the freeze
 transformation. Three intermediate composition lemmas:
 
 1. **Boot→Intermediate**: `bootFromPlatform_valid` establishes 4 structural
-   invariants. The empty-config case establishes the full runtime bundle
-   because `mkEmptyIntermediateState.state = default`.
+   invariants. The empty-config case establishes the full runtime bundle:
+   the boot's empty state is of linked boot shape
+   (`emptyBoot_bootLinkedShape`, after `proofLayerInvariantBundle_of_bootLinkedShape`).
 
 2. **Intermediate→Frozen**: `freeze_preserves_invariants` transfers the
    API invariant bundle across freeze (existential witness).
@@ -3125,44 +3131,6 @@ that each builder operation preserves all 12 components — recorded as a
 post-1.0 hardening candidate; registered in `docs/REGISTERED_DEBT.md`
 (Registered debt index, C.1).
 -/
-
-/-- U6-G Step 1: Boot from empty config produces the default state. -/
-theorem bootFromPlatform_empty_state :
-    (bootFromPlatform { initialObjects := [] }).state =
-    (default : SystemState) := rfl
-
-/-- U6-G Step 2: The default state satisfies the full runtime invariant bundle.
-    This follows from the existing `apiInvariantBundle_default`. -/
-theorem emptyBoot_proofLayerInvariantBundle :
-    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
-      (bootFromPlatform { initialObjects := [] }).state :=
-  bootFromPlatform_empty_state ▸ SeLe4n.Kernel.apiInvariantBundle_default
-
-/-- U6-G Step 3: Freeze preserves the API invariant bundle.
-    If the builder-phase state satisfies `apiInvariantBundle`, then the
-    frozen state satisfies `apiInvariantBundle_frozen`. -/
-theorem emptyBoot_freeze_preserves :
-    SeLe4n.Model.apiInvariantBundle_frozen
-      (SeLe4n.Model.freeze
-        (bootFromPlatform { initialObjects := [] })) :=
-  SeLe4n.Model.freeze_preserves_invariants _ emptyBoot_proofLayerInvariantBundle
-
-/-- U6-G End-to-end bridge (empty config): booting from empty config, then
-    freezing, produces a frozen state satisfying the API invariant bundle.
-
-    This is the base-case bridge theorem. It composes:
-    1. `bootFromPlatform_empty_state` (boot produces default state)
-    2. `apiInvariantBundle_default` (default satisfies full bundle)
-    3. `freeze_preserves_invariants` (freeze transfers the bundle)
-
-    For general configs, the bridge requires extending builder operations
-    to preserve all 12 components of `proofLayerInvariantBundle` (not just
-    the 4 structural invariants). V4-A extends this to general configs. -/
-theorem bootToRuntime_invariantBridge_empty :
-    let ist := bootFromPlatform { initialObjects := [] }
-    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle ist.state ∧
-    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze ist) :=
-  ⟨emptyBoot_proofLayerInvariantBundle, emptyBoot_freeze_preserves⟩
 
 /- Boot-to-Runtime Invariant Bridge — Known Limitation (AE5-D/U-21/PLT-01)
 
@@ -3409,9 +3377,12 @@ private theorem foldObjects_irqSignalLines (objs : List ObjectEntry) (ist : Inte
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
 
--- Bridge lemma: mkEmptyIntermediateState.state = default
-private theorem mkEmpty_state_eq_default :
-    mkEmptyIntermediateState.state = (default : SystemState) := rfl
+-- Bridge lemma: the boot builder's empty state is the boot's empty state
+private theorem mkEmpty_state_eq_bootEmpty :
+    (mkEmptyIntermediateState ()).state =
+      { (default : SystemState) with
+        objects := RHTable.empty bootTableCapacity four_le_bootTableCapacity
+        asidTable := RHTable.empty bootTableCapacity four_le_bootTableCapacity } := rfl
 
 -- Step 5: Boot-level field preservation (compose foldObjects)
 /-- V4-A2/A4/A7: The post-boot state preserves scheduler from default. -/
@@ -3419,7 +3390,7 @@ theorem bootFromPlatform_scheduler_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.scheduler =
     (default : SystemState).scheduler := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_scheduler_eq, foldInterfaces_scheduler, foldObjects_scheduler, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_scheduler_eq, foldInterfaces_scheduler, foldObjects_scheduler, mkEmpty_state_eq_bootEmpty]
 
 -- ============================================================================
 -- WS-SM SM4.G: per-core idle-thread identities (plan §3.7)
@@ -4753,9 +4724,9 @@ theorem foldObjects_objectIndex_length_le (objs : List ObjectEntry)
 /-- The raw boot installs one index entry per config object at most. -/
 theorem bootFromPlatform_objectIndex_length_le (config : PlatformConfig) :
     (bootFromPlatform config).state.objectIndex.length ≤ config.initialObjects.length := by
-  have hEmpty : mkEmptyIntermediateState.state.objectIndex = [] := default_objectIndex
+  have hEmpty : (mkEmptyIntermediateState ()).state.objectIndex = [] := default_objectIndex
   have := foldObjects_objectIndex_length_le config.initialObjects
-    mkEmptyIntermediateState
+    (mkEmptyIntermediateState ())
   rw [hEmpty] at this
   simpa [bootFromPlatform, applyMachineConfig, foldInterfaces_objectIndex] using this
 
@@ -5032,7 +5003,7 @@ theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.cdt =
     (default : SystemState).cdt := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_cdt_eq, foldInterfaces_cdt, foldObjects_cdt, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_cdt_eq, foldInterfaces_cdt, foldObjects_cdt, mkEmpty_state_eq_bootEmpty]
 
 /-- V4-A3, WS-ZA ZA5.5: the post-boot interface registry is the configured
     interfaces inserted, in order, into the default's. -/
@@ -5042,14 +5013,14 @@ theorem bootFromPlatform_interfaceRegistry_eq (config : PlatformConfig) :
       (default : SystemState).interfaceRegistry := by
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_interfaceRegistry_eq, foldInterfaces_interfaceRegistry,
-    foldObjects_interfaceRegistry, mkEmpty_state_eq_default]
+    foldObjects_interfaceRegistry, mkEmpty_state_eq_bootEmpty]
 
 /-- V4-A7: The post-boot state preserves TLB from default. -/
 theorem bootFromPlatform_tlb_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.tlb =
     (default : SystemState).tlb := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_tlb_eq, foldInterfaces_tlb, foldObjects_tlb, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_tlb_eq, foldInterfaces_tlb, foldObjects_tlb, mkEmpty_state_eq_bootEmpty]
 
 /-- WS-SM SM7.B: The post-boot state preserves TLB-shootdown state from
     default — boot never posts a shootdown descriptor, so the post-boot
@@ -5059,7 +5030,7 @@ theorem bootFromPlatform_tlbShootdown_eq (config : PlatformConfig) :
     (default : SystemState).tlbShootdown := by
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_tlbShootdown_eq, foldInterfaces_tlbShootdown, foldObjects_tlbShootdown,
-      mkEmpty_state_eq_default]
+      mkEmpty_state_eq_bootEmpty]
 
 /-- WS-SM SM7.C: after boot, every core's TLB view is the empty default —
 boot never fills a TLB (it operates on page tables directly), so the
@@ -5070,7 +5041,7 @@ theorem bootFromPlatform_perCoreTlb_eq (config : PlatformConfig) :
     (default : SystemState).perCoreTlb := by
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_perCoreTlb_eq, foldInterfaces_perCoreTlb, foldObjects_perCoreTlb,
-      mkEmpty_state_eq_default]
+      mkEmpty_state_eq_bootEmpty]
 
 /-- WS-SM SM7.D: after boot, every core's instruction cache is the cold default
 — boot loads objects and page tables but executes no user instructions through
@@ -5081,7 +5052,7 @@ theorem bootFromPlatform_perCoreICache_eq (config : PlatformConfig) :
     (default : SystemState).perCoreICache := by
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_perCoreICache_eq, foldInterfaces_perCoreICache, foldObjects_perCoreICache,
-      mkEmpty_state_eq_default]
+      mkEmpty_state_eq_bootEmpty]
 
 /-- WS-SM SM7.D.1: boot owes no instruction-cache maintenance — it fills no
 cache and destroys no mapping, so the emission ledger is the empty default.
@@ -5094,7 +5065,7 @@ theorem bootFromPlatform_pendingIcacheMaintenance_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_pendingIcacheMaintenance_eq, foldInterfaces_pendingIcacheMaintenance, 
       foldObjects_pendingIcacheMaintenance,
-      mkEmpty_state_eq_default]
+      mkEmpty_state_eq_bootEmpty]
 
 /-- WS-SM SM8.C.8: boot declassifies nothing, so the audit trail after boot is
 the empty default.  The general bridge carrying `default_auditLogBounded` (the
@@ -5106,7 +5077,7 @@ theorem bootFromPlatform_declassificationAuditLog_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_declassificationAuditLog_eq, foldInterfaces_declassificationAuditLog, 
       foldObjects_declassificationAuditLog,
-      mkEmpty_state_eq_default]
+      mkEmpty_state_eq_bootEmpty]
 
 /-- WS-SM SM9.A.1a: boot drains nothing, so the audit epoch after boot is the
 zero default.  Together with `bootFromPlatform_declassificationAuditLog_eq`
@@ -5119,7 +5090,7 @@ theorem bootFromPlatform_declassificationAuditEpoch_eq (config : PlatformConfig)
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_declassificationAuditEpoch_eq, foldInterfaces_declassificationAuditEpoch, 
       foldObjects_declassificationAuditEpoch,
-      mkEmpty_state_eq_default]
+      mkEmpty_state_eq_bootEmpty]
 
 /-- WS-SM SM9.B.7: boot refuses nothing, so the refusal ledger after boot is the
 empty default.  The general bridge that makes "a platform-booted system has
@@ -5132,7 +5103,7 @@ theorem bootFromPlatform_declassificationRefusals_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_declassificationRefusals_eq, foldInterfaces_declassificationRefusals, 
       foldObjects_declassificationRefusals,
-      mkEmpty_state_eq_default]
+      mkEmpty_state_eq_bootEmpty]
 
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.
     This replaces the pre-AH2 `bootFromPlatform_machine_eq` which stated the
@@ -5173,7 +5144,7 @@ theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
     (bootFromPlatform config).state.machine.timer = (default : SystemState).machine.timer ∧
     (bootFromPlatform config).state.machine.systemRegisters = (default : SystemState).machine.systemRegisters ∧
     (bootFromPlatform config).state.machine.interruptsEnabled = (default : SystemState).machine.interruptsEnabled := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldInterfaces_machine, foldObjects_machine, mkEmpty_state_eq_default, MachineState.regs, MachineState.regsOnCore])
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldInterfaces_machine, foldObjects_machine, mkEmpty_state_eq_bootEmpty, MachineState.regs, MachineState.regsOnCore])
 
 /-- WS-ZA ZA6.10: **the boot records no core's resident thread**: no stage
     writes a residency code, so every core's is the default `0`. -/
@@ -5182,7 +5153,7 @@ theorem bootFromPlatform_machine_residentCode (config : PlatformConfig) :
       (default : SystemState).machine.residentCode := by
   unfold bootFromPlatform
   simp [applyMachineConfig, foldInterfaces_machine, foldObjects_machine,
-    mkEmpty_state_eq_default]
+    mkEmpty_state_eq_bootEmpty]
 
 /-- ...and so does the checked boot: the boot root's install is one object
     store, the interrupt enable one machine flag. -/
@@ -5634,8 +5605,8 @@ private theorem bootFromPlatform_objects_bootSafe
   apply foldObjects_objects_bootSafe
   · -- Base: mkEmpty objects = empty → vacuous
     intro oid obj hLookup
-    have hEmpty : mkEmptyIntermediateState.state.objects[oid]? = none := by
-      rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty 16 (by omega)
+    have hEmpty : (mkEmptyIntermediateState ()).state.objects[oid]? = none := by
+      rw [mkEmpty_state_eq_bootEmpty]; exact RHTable_get?_empty _ _
     rw [hEmpty] at hLookup; exact absurd hLookup (by simp)
   · exact hSafe
 
@@ -5696,7 +5667,7 @@ theorem idleSlotsFreshAt_of_initialObjects_below_base
     exfalso
     -- `applyMachineConfig` preserves objects; trace the lookup into `foldObjects`.
     have hLook' : (foldObjects config.initialObjects
-        mkEmptyIntermediateState).state.objects[(idleThreadId c).toObjId]? =
+        (mkEmptyIntermediateState ())).state.objects[(idleThreadId c).toObjId]? =
           some o := by
       have hb := hLook
       unfold bootFromPlatform at hb
@@ -5707,9 +5678,9 @@ theorem idleSlotsFreshAt_of_initialObjects_below_base
       have hlt : (idleThreadId c).toObjId.val < idleThreadIdBase := hId ▸ hBelow e hMem
       omega
     · -- The base (the empty intermediate state) has no objects.
-      rw [mkEmpty_state_eq_default] at hBase
-      have hEmpty : (default : SystemState).objects[(idleThreadId c).toObjId]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      have hEmpty : (mkEmptyIntermediateState ()).state.objects[(idleThreadId c).toObjId]? = none := by
+        rw [mkEmpty_state_eq_bootEmpty]; simp only [RHTable_getElem?_eq_get?]
+        exact RHTable_get?_empty _ _
       rw [hEmpty] at hBase
       simp at hBase
 
@@ -5729,7 +5700,7 @@ theorem idleSlotsFreshAt_of_idleSlotsReserved
   | some o =>
     exfalso
     have hLook' : (foldObjects config.initialObjects
-        mkEmptyIntermediateState).state.objects[(idleThreadId c).toObjId]? =
+        (mkEmptyIntermediateState ())).state.objects[(idleThreadId c).toObjId]? =
           some o := by
       have hb := hLook
       unfold bootFromPlatform at hb
@@ -5737,9 +5708,9 @@ theorem idleSlotsFreshAt_of_idleSlotsReserved
     rcases foldObjects_objects_reachable config.initialObjects _ _ _ hLook' with
       ⟨e, hMem, hId, _hObj⟩ | hBase
     · exact idleThreadId_toObjId_ne_of_not_isIdleObjId e.id (hObjs e hMem) c hId.symm
-    · rw [mkEmpty_state_eq_default] at hBase
-      have hEmpty : (default : SystemState).objects[(idleThreadId c).toObjId]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+    · have hEmpty : (mkEmptyIntermediateState ()).state.objects[(idleThreadId c).toObjId]? = none := by
+        rw [mkEmpty_state_eq_bootEmpty]; simp only [RHTable_getElem?_eq_get?]
+        exact RHTable_get?_empty _ _
       rw [hEmpty] at hBase
       simp at hBase
 
@@ -5757,11 +5728,11 @@ private theorem bootFromPlatform_untypedRegionsDisjoint
   rw [applyMachineConfig_objects_eq, foldInterfaces_objects] at h₁ h₂
   -- Trace oid₁'s untyped back to initialObjects.
   rcases foldObjects_objects_reachable config.initialObjects
-    mkEmptyIntermediateState oid₁ _ h₁ with
+    (mkEmptyIntermediateState ()) oid₁ _ h₁ with
     ⟨e₁, hMem₁, hId₁, hObj₁⟩ | hBase₁
   · -- oid₁ came from entry e₁ ∈ initialObjects.
     rcases foldObjects_objects_reachable config.initialObjects
-      mkEmptyIntermediateState oid₂ _ h₂ with
+      (mkEmptyIntermediateState ()) oid₂ _ h₂ with
       ⟨e₂, hMem₂, hId₂, hObj₂⟩ | hBase₂
     · -- Both oid₁ and oid₂ from entries.
       -- e₁.id = oid₁ ≠ oid₂ = e₂.id, so e₁.id ≠ e₂.id.
@@ -5774,12 +5745,12 @@ private theorem bootFromPlatform_untypedRegionsDisjoint
         intro c hc; rw [hId₁]; exact hChildren₂ c hc
       exact hUntypedDisj e₁ e₂ ut₁ ut₂ hMem₁ hMem₂ hIdNe hObj₁ hObj₂ hChildrenE₁ hChildrenE₂
     · -- oid₂ in the empty base — impossible.
-      have hEmpty : mkEmptyIntermediateState.state.objects[oid₂]? = none := by
-        rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty 16 (by omega)
+      have hEmpty : (mkEmptyIntermediateState ()).state.objects[oid₂]? = none := by
+        rw [mkEmpty_state_eq_bootEmpty]; exact RHTable_get?_empty _ _
       rw [hEmpty] at hBase₂; exact absurd hBase₂ (by simp)
   · -- oid₁ in the empty base — impossible.
-    have hEmpty : mkEmptyIntermediateState.state.objects[oid₁]? = none := by
-      rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty 16 (by omega)
+    have hEmpty : (mkEmptyIntermediateState ()).state.objects[oid₁]? = none := by
+      rw [mkEmpty_state_eq_bootEmpty]; exact RHTable_get?_empty _ _
     rw [hEmpty] at hBase₁; exact absurd hBase₁ (by simp)
 
 -- ============================================================================
@@ -6737,7 +6708,7 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
         exact absurd hObj (by simp)
       · rwa [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj
   have hLook' : (foldObjects config.initialObjects
-      mkEmptyIntermediateState).state.objects[oid]? =
+      (mkEmptyIntermediateState ())).state.objects[oid]? =
         some (KernelObject.tcb tcb) := by
     unfold bootFromPlatform at hPlain
     rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hPlain
@@ -6746,9 +6717,9 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
   · have hCheck : bootSafeObjectCheck e.obj = true := List.all_eq_true.mp hSafe e hMem
     rw [hEObj] at hCheck
     exact (bootSafeObjectCheck_sound _ hCheck).2.2.2.1 tcb rfl
-  · rw [mkEmpty_state_eq_default] at hBase
-    have hEmpty : (default : SystemState).objects[oid]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+  · have hEmpty : (mkEmptyIntermediateState ()).state.objects[oid]? = none := by
+      rw [mkEmpty_state_eq_bootEmpty]; simp only [RHTable_getElem?_eq_get?]
+      exact RHTable_get?_empty _ _
     rw [hEmpty] at hBase
     simp at hBase
 
@@ -6831,7 +6802,7 @@ theorem bootFromPlatformChecked_ok_tcb_not_idle (config : PlatformConfig)
         exact absurd hObj (by simp)
       · rwa [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj
   have hLook' : (foldObjects config.initialObjects
-      mkEmptyIntermediateState).state.objects[oid]? =
+      (mkEmptyIntermediateState ())).state.objects[oid]? =
         some (KernelObject.tcb tcb) := by
     unfold bootFromPlatform at hPlain
     rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hPlain
@@ -6841,9 +6812,9 @@ theorem bootFromPlatformChecked_ok_tcb_not_idle (config : PlatformConfig)
       (PlatformConfig.wellFormed_idleSlotsReserved config hWf) e hMem
     rw [hId] at this
     exact this
-  · rw [mkEmpty_state_eq_default] at hBase
-    have hEmpty : (default : SystemState).objects[oid]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+  · have hEmpty : (mkEmptyIntermediateState ()).state.objects[oid]? = none := by
+      rw [mkEmpty_state_eq_bootEmpty]; simp only [RHTable_getElem?_eq_get?]
+      exact RHTable_get?_empty _ _
     rw [hEmpty] at hBase
     simp at hBase
 
@@ -7552,22 +7523,22 @@ private theorem bootFromPlatform_asidTableConsistent (config : PlatformConfig)
     (hAsids : (config.initialObjects.filterMap bootEntryAsid?).Nodup) :
     Architecture.asidTableConsistent (bootFromPlatform config).state := by
   have hEmptyObj : ∀ oid : SeLe4n.ObjId,
-      mkEmptyIntermediateState.state.objects[oid]? = none := by
+      (mkEmptyIntermediateState ()).state.objects[oid]? = none := by
     intro oid
-    rw [mkEmpty_state_eq_default]
-    exact RHTable_get?_empty 16 (by omega)
+    rw [mkEmpty_state_eq_bootEmpty]
+    exact RHTable_get?_empty _ _
   have hEmptyAsid : ∀ a : SeLe4n.ASID,
-      mkEmptyIntermediateState.state.asidTable[a]? = none := by
+      (mkEmptyIntermediateState ()).state.asidTable[a]? = none := by
     intro a
-    rw [mkEmpty_state_eq_default]
-    exact RHTable_get?_empty 16 (by omega)
+    rw [mkEmpty_state_eq_bootEmpty]
+    exact RHTable_get?_empty _ _
   have hBaseCons : Architecture.asidTableConsistent
-      mkEmptyIntermediateState.state := by
+      (mkEmptyIntermediateState ()).state := by
     constructor
     · intro a oid hL; rw [hEmptyAsid] at hL; cases hL
     · intro oid root hObj; rw [hEmptyObj] at hObj; cases hObj
   have hFold := foldObjects_preserves_asidTableConsistent config.initialObjects
-    mkEmptyIntermediateState hBaseCons
+    (mkEmptyIntermediateState ()) hBaseCons
     (fun e _ => hEmptyObj e.id) hIds hAsids (fun _ _ a _ => hEmptyAsid a)
   unfold bootFromPlatform
   unfold Architecture.asidTableConsistent at hFold ⊢
@@ -7584,7 +7555,7 @@ private theorem bootFromPlatform_asidTable_configured (config : PlatformConfig)
     a ∈ config.initialObjects.filterMap bootEntryAsid? := by
   obtain ⟨root, hR, hRA⟩ := hCons.1 a oid hL
   have hR' : (foldObjects config.initialObjects
-      mkEmptyIntermediateState).state.objects[oid]? =
+      (mkEmptyIntermediateState ())).state.objects[oid]? =
         some (.vspaceRoot root) := by
     unfold bootFromPlatform at hR
     rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hR
@@ -7594,9 +7565,9 @@ private theorem bootFromPlatform_asidTable_configured (config : PlatformConfig)
     unfold bootEntryAsid?
     rw [hEObj]
     exact congrArg some hRA
-  · rw [mkEmpty_state_eq_default] at hBase
-    have hEmpty : (default : SystemState).objects[oid]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+  · have hEmpty : (mkEmptyIntermediateState ()).state.objects[oid]? = none := by
+      rw [mkEmpty_state_eq_bootEmpty]; simp only [RHTable_getElem?_eq_get?]
+      exact RHTable_get?_empty _ _
     rw [hEmpty] at hBase
     cases hBase
 
@@ -7633,7 +7604,7 @@ theorem bootFromPlatformChecked_ok_asidTableConsistent (config : PlatformConfig)
         | some o =>
           exfalso
           have hL' : (foldObjects config.initialObjects
-              mkEmptyIntermediateState).state.objects[entry.id]? =
+              (mkEmptyIntermediateState ())).state.objects[entry.id]? =
                 some o := by
             unfold bootFromPlatform at hL
             rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hL
@@ -7643,9 +7614,9 @@ theorem bootFromPlatformChecked_ok_asidTableConsistent (config : PlatformConfig)
             rw [hSome] at hDist
             simp only [Bool.not_eq_true', List.any_eq_false, beq_iff_eq] at hDist
             exact hDist e hMem hId
-          · rw [mkEmpty_state_eq_default] at hB
-            have hEmpty : (default : SystemState).objects[entry.id]? = none := by
-              simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+          · have hEmpty : (mkEmptyIntermediateState ()).state.objects[entry.id]? = none := by
+              rw [mkEmpty_state_eq_bootEmpty]; simp only [RHTable_getElem?_eq_get?]
+              exact RHTable_get?_empty _ _
             rw [hEmpty] at hB
             cases hB
       · -- The binding's root ASID is no configured root's.
@@ -7755,13 +7726,13 @@ theorem bootFromPlatform_objects_of_config (config : PlatformConfig) (oid : SeLe
   unfold bootFromPlatform at hB
   rw [applyMachineConfig_objects_eq, foldInterfaces_objects] at hB
   have hB' : (foldObjects config.initialObjects
-      mkEmptyIntermediateState).state.objects[oid]? = some obj := by
+      (mkEmptyIntermediateState ())).state.objects[oid]? = some obj := by
     simp only [RHTable_getElem?_eq_get?]; exact hB
   rcases foldObjects_objects_reachable config.initialObjects _ oid obj hB' with hE | hE
   · exact hE
-  · rw [mkEmpty_state_eq_default] at hE
-    have hEmpty : (default : SystemState).objects[oid]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+  · have hEmpty : (mkEmptyIntermediateState ()).state.objects[oid]? = none := by
+      rw [mkEmpty_state_eq_bootEmpty]; simp only [RHTable_getElem?_eq_get?]
+      exact RHTable_get?_empty _ _
     rw [hEmpty] at hE; cases hE
 
 /-- **WS-ZA ZA5.4**: **every object the checked boot holds that holds a
@@ -7868,7 +7839,7 @@ theorem foldl_storeIdleThread_notificationBindingReciprocal
     state's inactive state (seL4's `IRQInactive` at boot). -/
 theorem bootFromPlatform_irqSignalLines (config : PlatformConfig) :
     (bootFromPlatform config).state.irqSignalLines =
-      mkEmptyIntermediateState.state.irqSignalLines := by
+      (mkEmptyIntermediateState ()).state.irqSignalLines := by
   unfold bootFromPlatform
   exact (foldInterfaces_irqSignalLines _ _).trans (foldObjects_irqSignalLines _ _)
 
@@ -7876,7 +7847,7 @@ theorem bootFromPlatform_irqSignalLines (config : PlatformConfig) :
 theorem bootFromPlatformChecked_ok_irqSignalLines (config : PlatformConfig)
     (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
     ist.state.irqSignalLines =
-      mkEmptyIntermediateState.state.irqSignalLines := by
+      (mkEmptyIntermediateState ()).state.irqSignalLines := by
   obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
   · exact bootFromPlatform_irqSignalLines config
@@ -8541,6 +8512,111 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
     obtain ⟨t, hObj, _, _, hPrio⟩ := hQueue tid hMem
     simp only [hObj]
     exact hPrio
+
+-- ============================================================================
+-- U6-G (U-M15): the empty boot satisfies the bundle
+-- ============================================================================
+
+/-- U6-G Step 1: Boot from empty config produces the boot's empty state — the
+    default state with boot-sized object and ASID tables (WS-UC UC3). -/
+theorem bootFromPlatform_empty_state :
+    (bootFromPlatform { initialObjects := [] }).state = SystemState.bootEmpty () := rfl
+
+private theorem emptyBoot_objects_none (oid : SeLe4n.ObjId) :
+    (bootFromPlatform { initialObjects := [] }).state.objects[oid]? = none := by
+  rw [bootFromPlatform_empty_state, SystemState.bootEmpty_objects]
+  exact RHTable.getElem?_empty _ _ _
+
+private theorem emptyBoot_asidTable_none (a : SeLe4n.ASID) :
+    (bootFromPlatform { initialObjects := [] }).state.asidTable[a]? = none := by
+  rw [bootFromPlatform_empty_state, SystemState.bootEmpty_asidTable]
+  exact RHTable.getElem?_empty _ _ _
+
+private theorem emptyBoot_slotCapAt_none (r : SlotRef) :
+    (bootFromPlatform { initialObjects := [] }).state.slotCapAt r = none := by
+  rw [SystemState.slotCapAt_eq_bind, emptyBoot_objects_none]; rfl
+
+private theorem emptyBoot_getUntyped?_none (u : SeLe4n.ObjId) :
+    (bootFromPlatform { initialObjects := [] }).state.getUntyped? u = none := by
+  rw [SystemState.getUntyped?_eq_bind, emptyBoot_objects_none]; rfl
+
+/-- U6-G / WS-UC UC3: **the empty boot is of linked boot shape**: it holds no
+    object, no ASID and no capability, its derivation tree is empty, and every
+    field the boot does not write is the default state's. -/
+theorem emptyBoot_bootLinkedShape :
+    bootLinkedShape (bootFromPlatform { initialObjects := [] }) := by
+  have hO := emptyBoot_objects_none
+  have hE : (bootFromPlatform { initialObjects := [] }).state.scheduler.runQueueOnCore
+      bootCoreId = SeLe4n.Kernel.RunQueue.empty :=
+    (default_state_perCoreInitialized bootCoreId).2.1
+  refine ⟨fun oid _ h => (by rw [hO] at h; cases h), ⟨rfl, rfl, rfl, rfl, rfl⟩,
+    ⟨fun a _ h => (by rw [emptyBoot_asidTable_none] at h; cases h),
+     fun oid _ h => (by rw [hO] at h; cases h)⟩,
+    fun o₁ _ _ _ h => (by rw [hO] at h; cases h),
+    ⟨_, _, _, rfl⟩, ?_, ⟨?_, fun tid hMem => ?_⟩, ?_, fun k => ?_⟩
+  · intro c
+    refine SystemState.runQueueRefinedOnCore_of_empty (default_state_perCoreInitialized c).2.1
+      (PerCoreVector.replicate_get _ _ c) (fun t => ?_)
+    have hNone : (bootFromPlatform { initialObjects := [] }).state.getTcb? t = none := by
+      unfold SystemState.getTcb?; rw [hO]
+    unfold SystemState.runLinkOn
+    rw [hNone]
+    rfl
+  · rw [hE]; simp
+  · rw [hE] at hMem; exact absurd hMem (SeLe4n.Kernel.RunQueue.not_mem_empty _)
+  · refine ⟨fun ref h => absurd h (CapDerivationTree.empty_not_mentions ref),
+      CapDerivationTree.empty_edgeWellFounded,
+      cdtLinksAgree_of_bootEmpty rfl (fun oid _ h => (by rw [hO] at h; cases h)), ?_,
+      fun oid cn slot cap hObj _ => (by rw [hO] at hObj; cases hObj)⟩
+    exact ⟨fun r hr => absurd (emptyBoot_slotCapAt_none r) hr,
+      ⟨[], CapDerivationTree.TreeOrder.empty_tree CapDerivationTree.empty_edges
+        CapDerivationTree.empty_rootChains⟩,
+      fun r _ h => absurd (emptyBoot_slotCapAt_none r) (SystemState.namesAt_occupied h),
+      fun _ _ _ _ _ hp => absurd (emptyBoot_slotCapAt_none _) hp,
+      (by intro _ p _ ⟨_, h, _, _⟩; rw [emptyBoot_slotCapAt_none] at h; cases h),
+      (by intro _ p _ ⟨_, h, _, _⟩; rw [emptyBoot_slotCapAt_none] at h; cases h),
+      (by intro p _ _ _ _ h; rw [emptyBoot_slotCapAt_none] at h; cases h),
+      (by intro _ _ _ p _ ⟨_, h, _, _⟩; rw [emptyBoot_slotCapAt_none] at h; cases h),
+      (by intro u _ h; rw [emptyBoot_getUntyped?_none] at h; cases h),
+      (by intro u _ _ _ h; rw [emptyBoot_getUntyped?_none] at h; cases h),
+      (by intro r _ ⟨_, h, _⟩; rw [emptyBoot_slotCapAt_none] at h; cases h),
+      fun _ _ _ => SlotList.Chunked.of_none fun x _ ⟨_, h, _⟩ => by
+        rw [emptyBoot_slotCapAt_none] at h; cases h⟩
+  · refine ⟨fun c h => ?_, fun c h => ?_⟩ <;> rw [hO] at h <;> simp [notificationBindingCodes] at h
+
+/-- U6-G Step 2: **the boot's empty state satisfies the full runtime invariant
+    bundle** — the base case of invariant induction, and the `bootObjectTyping`
+    consumer (`archAssumptionConsumer`). -/
+theorem emptyBoot_proofLayerInvariantBundle :
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
+      (bootFromPlatform { initialObjects := [] }).state :=
+  proofLayerInvariantBundle_of_bootLinkedShape _ emptyBoot_bootLinkedShape
+
+/-- U6-G Step 3: Freeze preserves the API invariant bundle.
+    If the builder-phase state satisfies `apiInvariantBundle`, then the
+    frozen state satisfies `apiInvariantBundle_frozen`. -/
+theorem emptyBoot_freeze_preserves :
+    SeLe4n.Model.apiInvariantBundle_frozen
+      (SeLe4n.Model.freeze
+        (bootFromPlatform { initialObjects := [] })) :=
+  SeLe4n.Model.freeze_preserves_invariants _ emptyBoot_proofLayerInvariantBundle
+
+/-- U6-G End-to-end bridge (empty config): booting from empty config, then
+    freezing, produces a frozen state satisfying the API invariant bundle.
+
+    This is the base-case bridge theorem. It composes:
+    1. `bootFromPlatform_empty_state` (boot produces the boot's empty state)
+    2. `emptyBoot_proofLayerInvariantBundle` (that state satisfies the full bundle)
+    3. `freeze_preserves_invariants` (freeze transfers the bundle)
+
+    For general configs, the bridge requires extending builder operations
+    to preserve all 12 components of `proofLayerInvariantBundle` (not just
+    the 4 structural invariants). V4-A extends this to general configs. -/
+theorem bootToRuntime_invariantBridge_empty :
+    let ist := bootFromPlatform { initialObjects := [] }
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle ist.state ∧
+    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze ist) :=
+  ⟨emptyBoot_proofLayerInvariantBundle, emptyBoot_freeze_preserves⟩
 
 /-- WS-ZA ZA6.8: a state of linked boot shape keeps no linked thread current or
 resident. -/

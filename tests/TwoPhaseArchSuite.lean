@@ -94,7 +94,7 @@ private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
 
 /-- TPH-001a: mkEmptyIntermediateState satisfies all invariants. -/
 private def tph001a_emptyBuilder : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   -- Empty state must have allTablesInvExtK (proven at compile time)
   expect "TPH-001a empty builder valid" true
   -- Empty state has no objects
@@ -103,7 +103,7 @@ private def tph001a_emptyBuilder : IO Unit := do
 
 /-- TPH-001b: Builder.createObject inserts and preserves invariants. -/
 private def tph001b_builderPipeline : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   -- Create a TCB — TCBs have no embedded hash tables, so proofs are trivial
   let tcb1 := KernelObject.tcb (mkTcb 1 10 0)
   let ist1 := Builder.createObject ist ⟨1⟩ tcb1
@@ -125,7 +125,7 @@ private def tph001b_builderPipeline : IO Unit := do
 /-- TPH-003: Build populated state, freeze, verify all lookups match. -/
 private def tph003_freezePopulated : IO Unit := do
   -- Build a state with multiple object types
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let tcb := KernelObject.tcb (mkTcb 1 10 0)
   let ist1 := Builder.createObject ist ⟨1⟩ tcb
     (fun _ h => nomatch h) (fun _ h => nomatch h)
@@ -309,7 +309,7 @@ a TCB's priority), the order of freeze vs. mutation doesn't matter for the
 affected field's lookup result. -/
 private def tph010_commutativity : IO Unit := do
   -- Path A: Build state → mutate TCB → freeze → lookup
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let tcb_v1 := KernelObject.tcb (mkTcb 1 5 0)
   let ist1 := Builder.createObject ist ⟨1⟩ tcb_v1
     (fun _ h => nomatch h) (fun _ h => nomatch h)

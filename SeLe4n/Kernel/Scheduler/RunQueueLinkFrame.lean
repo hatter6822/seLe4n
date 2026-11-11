@@ -683,10 +683,13 @@ theorem updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB) :
   · exact .refl _
   · exact mapTcbInPlace _ _ _
 
-/-- WS-UC UC2: the step moves none of the bookkeeping ghosts. -/
-theorem ghostsKept {a b : SystemState} (h : onlyObjectsSchedulerDiffer b a) :
+/-- WS-UC UC2: the step moves none of the bookkeeping ghosts.  The relation
+leaves the object store free, so its capacity is the step's own fact (WS-UC
+UC3), closed by `capacity_kept` from the writes' capacity lemmas. -/
+theorem ghostsKept {a b : SystemState} (h : onlyObjectsSchedulerDiffer b a)
+    (hC : a.objects.capacity ≤ b.objects.capacity := by capacity_kept) :
     SystemState.ghostsKept b a :=
-  ⟨by rw [h], by rw [h], by rw [h]⟩
+  ⟨by rw [h], by rw [h], by rw [h], hC, by rw [h]; exact Nat.le_refl _⟩
 
 /-- Every table but the object store is `st`'s, so the kernel-level table
 invariant needs only the object store's. -/
@@ -717,6 +720,11 @@ theorem runEnqueueOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : Core
   unfold runEnqueueOnCore; split
   · exact runEnqueueAdmitted_onlyObjectsSchedulerDiffer st c t p
   · exact .refl _
+
+/-- WS-UC UC3: the enqueue writes no ASID table. -/
+@[simp] theorem runEnqueueOnCore_asidTable (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) : (st.runEnqueueOnCore c t p).asidTable = st.asidTable := by
+  rw [runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p]
 
 theorem runUnlinkLinks_onlyObjectsSchedulerDiffer (st : SystemState) (t : SeLe4n.ThreadId)
     (pv nx bpv bnx : Nat) : onlyObjectsSchedulerDiffer (st.runUnlinkLinks t pv nx bpv bnx) st := by
@@ -848,6 +856,12 @@ def runDescheduleOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : 
             else st.scheduler.currentOnCore c))
         c (st.scheduler.currentOnCore c == some t) }
 
+/-- WS-UC UC3: the dequeue keeps the store's capacity. -/
+@[simp] theorem runDescheduleOnCore_objects_capacity (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) :
+    (st.runDescheduleOnCore c t).objects.capacity = st.objects.capacity := by
+  simp [runDescheduleOnCore]
+
 /-- The dequeue writes no release-queue slot. -/
 @[simp] theorem runDescheduleOnCore_releaseSlots (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
     (st.runDescheduleOnCore c t).scheduler.releaseSlots = st.scheduler.releaseSlots := by
@@ -958,6 +972,12 @@ theorem runRequeueOnCore_objects (st : SystemState) (c : CoreId) (t : SeLe4n.Thr
     (p : SeLe4n.Priority) :
     (st.runRequeueOnCore c t p).objects = ((st.runRemoveOnCore c t).runEnqueueAdmitted c t p).objects := by
   rfl
+
+/-- WS-UC UC3: the requeue keeps the store's capacity. -/
+@[simp] theorem runRequeueOnCore_objects_capacity (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runRequeueOnCore c t p).objects.capacity = st.objects.capacity := by
+  rw [runRequeueOnCore_objects]; simp
 
 /-- A requeue of `t` moves no other thread's core code. -/
 theorem runRequeueOnCore_runCoreCode_ne (st : SystemState) (c : CoreId) (t y : SeLe4n.ThreadId)

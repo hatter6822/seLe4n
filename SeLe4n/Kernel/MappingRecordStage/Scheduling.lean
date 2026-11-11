@@ -85,15 +85,48 @@ theorem requeueVacatedOnNewHome_onlyObjectsSchedulerDiffer (st : SystemState)
     · exact .refl _
   · exact .refl _
 
+/-! The same writes keep the object store's capacity (WS-UC UC3). -/
+
+@[simp] theorem configureResumeBound_objects_capacity (st : SystemState) (t : SeLe4n.ThreadId)
+    (sc : SchedContext) :
+    (SchedContextOps.configureResumeBound st t sc).objects.capacity = st.objects.capacity := by
+  unfold SchedContextOps.configureResumeBound
+  dsimp only
+  repeat' split
+  all_goals simp
+
+@[simp] theorem schedContextUnbindQueueStage_objects_capacity (st : SystemState) (home : CoreId)
+    (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool) :
+    (SchedContextOps.schedContextUnbindQueueStage st home tid prio wasCurrent).objects.capacity =
+      st.objects.capacity := by
+  unfold SchedContextOps.schedContextUnbindQueueStage
+  repeat' split
+  all_goals simp
+
+@[simp] theorem migrateRunQueueOnAffinityChange_objects_capacity (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).objects.capacity =
+      st.objects.capacity := by
+  unfold migrateRunQueueOnAffinityChange
+  repeat' split
+  all_goals simp
+
+@[simp] theorem requeueVacatedOnNewHome_objects_capacity (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore : CoreId) (vacated : Bool) :
+    (requeueVacatedOnNewHome st tid newCore vacated).objects.capacity = st.objects.capacity := by
+  unfold requeueVacatedOnNewHome
+  repeat' split
+  all_goals simp
+
 theorem idleFallbackOnCore_ghostsKept (st : SystemState) (c : CoreId) :
     SystemState.ghostsKept (idleFallbackOnCore st c) st := by
   unfold idleFallbackOnCore dispatchIdleOnCore
   split
   · exact SystemState.ghostsKept.trans
       (st' := restoreIncomingContextOnCore (st.runRemoveOnCore c (idleThreadId c)) c (idleThreadId c))
-      ⟨rfl, rfl, rfl⟩ ((restoreIncomingContextOnCore_ghostsKept _ _ _).trans
+      ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩ ((restoreIncomingContextOnCore_ghostsKept _ _ _).trans
         (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)
-  · exact ⟨rfl, rfl, rfl⟩
+  · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
 
 /-- **A finalisation-shaped write keeps the mappings recorded**
 (`FinaliseFrameAny.liveMappingsRecorded`): it keeps every root, every frame and
@@ -753,7 +786,7 @@ theorem setThreadCpuAffinityWithMigration_mappingStage {st st' : SystemState}
     MappingStage.of_objectsAgreeOffRunLinks
       (fun hI => by rw [vacateForAffinityChange_objects]; exact hI)
       (vacateForAffinityChange_objectsAgreeOffRunLinks _ _ _ _)
-      (by unfold vacateForAffinityChange; split <;> exact ⟨rfl, rfl, rfl⟩)
+      (by unfold vacateForAffinityChange; split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
   have hS1 : MappingStage (vacateForAffinityChange st tid
       (determineTargetCore st tid) (affinity.getD Concurrency.bootCoreId)) stSet := by
     unfold setThreadCpuAffinity at hSet
@@ -802,7 +835,7 @@ theorem pipBoostWrite_ghostsKept (st : SystemState) (tid : SeLe4n.ThreadId) :
   · dsimp only
     split
     · exact .refl _
-    · exact ⟨rfl, rfl, rfl⟩
+    · exact ⟨rfl, rfl, rfl, by capacity_kept, Nat.le_refl _⟩
   · exact .refl _
 
 /-- The boost's write: one thread rewritten in place. -/
@@ -826,7 +859,10 @@ theorem updatePipBoostOnCore_mappingStage (st : SystemState) (c : CoreId) (tid :
       (have h1 := (PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c tid).ghostsKept
        have h2 := pipBoostWrite_ghostsKept st tid
        ⟨h1.index.trans h2.index.symm, h1.indexSet.trans h2.indexSet.symm,
-         h1.types.trans h2.types.symm⟩))
+         h1.types.trans h2.types.symm,
+         PriorityInheritance.pipBoostWrite_capacity_le_updatePipBoostOnCore st c tid,
+         by rw [PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c tid,
+              PriorityInheritance.pipBoostWrite_asidTable]; exact Nat.le_refl _⟩))
 
 /-- The chain revert: one boost per link. -/
 theorem revertPriorityInheritance_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -1046,7 +1082,7 @@ theorem scheduleEffectiveOnCore_mappingStage {st st' : SystemState} {c : CoreId}
           (MappingStage.of_objects_eq (restoreIncomingContextOnCore_objects _ _ _)
             (SystemState.ghostsKept.trans
               (st' := restoreIncomingContextOnCore ((saveOutgoingContextOnCore st c).runRemoveOnCore c tid)
-                c tid) ⟨rfl, rfl, rfl⟩ (restoreIncomingContextOnCore_ghostsKept _ _ _)))
+                c tid) ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩ (restoreIncomingContextOnCore_ghostsKept _ _ _)))
       · cases h
     · cases h
 

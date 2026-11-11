@@ -490,6 +490,14 @@ theorem migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer (st : SystemState
   · exact SystemState.runRequeueOnCore_onlyObjectsSchedulerDiffer _ _ _ _
   · exact .refl _
 
+/-- WS-UC UC3: the bucket migration keeps the store's capacity. -/
+@[simp] theorem migrateRunQueueBucketOnCore_objects_capacity (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) :
+    (migrateRunQueueBucketOnCore st tid newPriority homeCore).objects.capacity =
+      st.objects.capacity := by
+  unfold migrateRunQueueBucketOnCore
+  split <;> simp
+
 theorem migrateRunQueueBucketOnCore_objects_invExt (st : SystemState)
     (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId)
     (hInv : st.objects.invExt) :

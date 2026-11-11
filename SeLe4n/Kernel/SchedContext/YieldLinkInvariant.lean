@@ -443,7 +443,7 @@ theorem _root_.SeLe4n.Model.SystemState.default_yieldLinkedNotResident :
     (default : SystemState).yieldLinkedNotResident :=
   SystemState.yieldLinkedNotResident_of_codesClear fun k => by
     have e : (default : SystemState).objects[k]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
     rw [e]; rfl
 
 end SeLe4n.Kernel
@@ -575,7 +575,7 @@ theorem yieldLinksAgree_of_clear {st : SystemState}
 theorem default_yieldLinksAgree : (default : SystemState).yieldLinksAgree :=
   yieldLinksAgree_of_clear fun k => by
     have e : (default : SystemState).objects[k]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty _ _
     rw [e]; rfl
 
 /-- **Clearing both ends of one link keeps the agreement**: when the slot `a`

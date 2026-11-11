@@ -109,7 +109,7 @@ theorem withObjectErased_preserves_bookkeepingAgrees (st : SystemState) (id : Se
     simp [withObjectErased]
   have hT : (withObjectErased st id).lifecycle.objectTypes = st.lifecycle.objectTypes.erase id := by
     simp [withObjectErased]
-  refine ⟨fun k => ?_, ?_, fun k => ?_, fun k => ?_, ?_, ?_⟩
+  refine ⟨fun k => ?_, ?_, fun k => ?_, fun k => ?_, ?_, ?_, ?_⟩
   · rw [hI, hObj k, List.mem_filter, h.index k]
     by_cases e : id = k
     · subst e; simp
@@ -133,6 +133,7 @@ theorem withObjectErased_preserves_bookkeepingAgrees (st : SystemState) (id : Se
       simpa only [RHTable_getElem?_eq_get?] using this
   · rw [hS]; exact RHSet.erase_preserves_invExtK _ _ h.indexSetInv
   · rw [hT]; exact RHTable_erase_preserves_invExtK _ _ h.typesInv
+  · exact ⟨by simpa [withObjectErased] using h.presized.objectsBootSized, h.presized.asidBootSized⟩
 
 /-- WS-UC UC1: `asid` erased from the ASID table, out of line, so the state is
 handed over and the table written in place. -/

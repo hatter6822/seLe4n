@@ -819,17 +819,6 @@ theorem freeze_preserves_configDefaultTimeSlice (ist : IntermediateState) :
     (freeze ist).scheduler.configDefaultTimeSlice =
     ist.state.scheduler.configDefaultTimeSlice := rfl
 
-/-- Q5-C helper: folding over an array of `none` values with the toList accumulator
-returns the initial accumulator unchanged. -/
-private theorem fold_none_replicate [BEq κ] [Hashable κ] [LawfulBEq κ]
-    (n : Nat) (init : List (κ × ν)) :
-    (List.replicate n (none : Option (RHEntry κ ν))).foldl
-      (fun acc slot => match slot with | none => acc | some e => (e.key, e.value) :: acc)
-      init = init := by
-  induction n generalizing init with
-  | zero => rfl
-  | succ k ih => simp [List.replicate_succ, List.foldl_cons]; exact ih init
-
 /-- Q5-C: `freezeMap` data size equals the number of entries in the source. -/
 theorem freezeMap_data_size [BEq κ] [Hashable κ] [LawfulBEq κ] (rt : RHTable κ ν) :
     (freezeMap rt).data.size = rt.toList.length := by
@@ -856,18 +845,10 @@ private theorem freezeMap_foldl_counter [BEq κ] [Hashable κ] [LawfulBEq κ]
 -- Q5-C: Additional Structural Theorems
 -- ============================================================================
 
-/-- Q5-C helper: `toList` on an empty RHTable yields `[]`. -/
-private theorem toList_empty [BEq κ] [Hashable κ] [LawfulBEq κ] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
-    (RHTable.empty cap hCapGe4 : RHTable κ ν).toList = [] := by
-  unfold RHTable.toList RHTable.fold
-  simp only [RHTable.empty]
-  rw [← Array.foldl_toList]
-  exact fold_none_replicate cap []
-
 /-- Q5-C: Freezing an empty RHTable produces a FrozenMap with empty data. -/
 theorem freezeMap_empty [BEq κ] [Hashable κ] [LawfulBEq κ] (cap : Nat) (hCapGe4 : 4 ≤ cap := by omega) :
     (freezeMap (RHTable.empty cap hCapGe4 : RHTable κ ν)).data.size = 0 := by
-  rw [freezeMap_data_size, toList_empty]; simp
+  rw [freezeMap_data_size, RHTable.toList_empty]; simp
 
 -- ============================================================================
 -- AK7-A (F-H01 / HIGH): freezeMap capacity-sufficiency witness

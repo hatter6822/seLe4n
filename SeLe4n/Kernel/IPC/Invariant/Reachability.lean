@@ -365,8 +365,7 @@ theorem ipcReachable_default : ipcReachable (default : SystemState) := by
   refine ⟨Architecture.default_ipcInvariantFull, ?_, ?_,
     default_notificationWaiterConsistent, ?_, SystemState.default_runQueueRefined,
     SystemState.replyWaitersConsistent_of_idle fun k v hv => ?_⟩
-  · exact capabilityInvariantBundle.objectsInvExt
-      (Architecture.default_system_state_proofLayerInvariantBundle).2.1
+  · exact default_allTablesInvExtK.1.1
   · intro tid tcb hTcb
     rw [Architecture.default_objects_none] at hTcb
     cases hTcb
@@ -516,8 +515,7 @@ def donationChainWitness : SystemState :=
     (.reply witnessChainInnerReply)
 
 private theorem chainWitnessObjInv0 : (default : SystemState).objects.invExt :=
-  capabilityInvariantBundle.objectsInvExt
-    (Architecture.default_system_state_proofLayerInvariantBundle).2.1
+  default_allTablesInvExtK.1.1
 
 private theorem chainWitnessObjInv1 : chainWitnessSt1.objects.invExt :=
   SystemState.withObjectStored_preserves_objects_invExt _ _ _ chainWitnessObjInv0

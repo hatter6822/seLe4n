@@ -437,15 +437,6 @@ def runnableThreadsAreTCBs (st : SystemState) : Prop :=
   ∀ tid, tid ∈ st.scheduler.runnable →
     ∃ tcb : TCB, st.objects[tid.toObjId]? = some (.tcb tcb)
 
-/-- WS-F6/D3: Default state has empty run queue, so the predicate is vacuously true. -/
-theorem default_runnableThreadsAreTCBs :
-    runnableThreadsAreTCBs (default : SystemState) := by
-  intro tid hMem
-  have : (default : SystemState).scheduler.runnable = [] := by
-      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
-  rw [this] at hMem; simp at hMem
-
-
 -- ============================================================================
 -- WS-H6: RunQueue priority-match predicate
 -- ============================================================================
@@ -497,13 +488,6 @@ at boot and is immutable at runtime, so this predicate is trivially preserved
 by all scheduler operations (frame lemma — `domainSchedule` unchanged). -/
 def domainScheduleEntriesPositive (st : SystemState) : Prop :=
   ∀ e, e ∈ st.scheduler.domainSchedule → e.length > 0
-
-/-- X2-A: Default state has empty domain schedule, so the predicate is vacuously true. -/
-theorem default_domainScheduleEntriesPositive :
-    domainScheduleEntriesPositive (default : SystemState) := by
-  intro e hMem
-  have : (default : SystemState).scheduler.domainSchedule = [] := by decide
-  rw [this] at hMem; simp at hMem
 
 /-- R6-D/L-12/V5-H/X2-A: Extended full scheduler invariant bundle.
     9-tuple: base triad + timeSlice + EDF + context + runnableAreTCBs +
@@ -610,14 +594,6 @@ def budgetPositive (st : SystemState) : Prop :=
         | none => True
     | none => True
 
-/-- Z4-K: Default state has empty run queue — vacuously true. -/
-theorem default_budgetPositive :
-    budgetPositive (default : SystemState) := by
-  intro tid hMem
-  have : (default : SystemState).scheduler.runnable = [] := by
-      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
-  rw [this] at hMem; simp at hMem
-
 -- ============================================================================
 -- Z4-L: currentBudgetPositive invariant
 -- ============================================================================
@@ -640,31 +616,12 @@ def currentBudgetPositive (st : SystemState) : Prop :=
         | none => True
     | none => True
 
-/-- Z4-L: Default state has no current thread — vacuously true. -/
-theorem default_currentBudgetPositive :
-    currentBudgetPositive (default : SystemState) := by
-  have h : (default : SystemState).scheduler.currentOnCore bootCoreId = none :=
-    (default_state_perCoreInitialized bootCoreId).1
-  simp [currentBudgetPositive, h]
-
 -- ============================================================================
 -- Z4-M: schedContextsWellFormed invariant
 -- ============================================================================
 
 -- `schedContextsWellFormed` is defined with the refill state every transition
 -- keeps (`SeLe4n.Kernel.SchedContext.RefillState`).
-
-/-- Z4-M: Default state has no SchedContext objects — vacuously true.
-The default object store is empty (`RHTable.empty 16`), so all lookups
-return `none`. -/
-theorem default_schedContextsWellFormed :
-    schedContextsWellFormed (default : SystemState) := by
-  intro oid sc hObj
-  have hNone : (default : SystemState).objects.get? oid = none :=
-    RobinHood.RHTable.getElem?_empty 16 (by omega) oid
-  simp [GetElem?.getElem?] at hObj
-  rw [hNone] at hObj
-  exact absurd hObj (by simp)
 
 -- ============================================================================
 -- Z4-N: replenishQueueValid invariant
@@ -675,13 +632,6 @@ active SchedContext. Connects Z3's queue invariants to system state. -/
 def replenishQueueValid (st : SystemState) : Prop :=
   replenishQueueSorted (st.scheduler.replenishQueueOnCore bootCoreId) ∧
   replenishQueueSizeConsistent (st.scheduler.replenishQueueOnCore bootCoreId)
-
-/-- Z4-N: Default state has empty replenish queue — trivially valid. -/
-theorem default_replenishQueueValid :
-    replenishQueueValid (default : SystemState) := by
-  rw [replenishQueueValid, show (default : SystemState).scheduler = ({} : SchedulerState) from rfl,
-    SchedulerState.default_replenishQueueOnCore]
-  exact ⟨empty_sorted, empty_sizeConsistent⟩
 
 -- ============================================================================
 -- Z4-O: schedContextBindingConsistent invariant
@@ -949,21 +899,6 @@ theorem storeObject_establishes_schedContextBindingConsistent
       obtain ⟨hTidNe, tcb, hT, hBind⟩ := hReady.2 scId sc hS hTgt tid hBT
       exact ⟨tcb, by rw [hOff _ hTidNe]; exact hT, hBind⟩
 
-/-- Z4-O: Default state has no objects — vacuously true. -/
-theorem default_schedContextBindingConsistent :
-    schedContextBindingConsistent (default : SystemState) := by
-  constructor
-  · intro tid tcb hObj
-    have hNone : (default : SystemState).objects.get? tid.toObjId = none :=
-      RobinHood.RHTable.getElem?_empty 16 (by omega) tid.toObjId
-    simp [GetElem?.getElem?] at hObj
-    rw [hNone] at hObj; exact absurd hObj (by simp)
-  · intro scId sc hObj
-    have hNone : (default : SystemState).objects.get? scId.toObjId = none :=
-      RobinHood.RHTable.getElem?_empty 16 (by omega) scId.toObjId
-    simp [GetElem?.getElem?] at hObj
-    rw [hNone] at hObj; exact absurd hObj (by simp)
-
 -- ============================================================================
 -- Z4-P: effectiveParamsMatchRunQueue invariant
 -- ============================================================================
@@ -994,15 +929,6 @@ def effectiveParamsMatchRunQueue (st : SystemState) : Prop :=
     | some (.tcb tcb) =>
       (st.scheduler.runQueueOnCore bootCoreId).priorityOf tid = some tcb.priority
     | _ => True
-
-/-- Z4-P: Default state has empty run queue — vacuously true. -/
-theorem default_effectiveParamsMatchRunQueue :
-    effectiveParamsMatchRunQueue (default : SystemState) := by
-  intro tid hMem
-  have h0 : (default : SystemState).scheduler.runQueueOnCore bootCoreId = RunQueue.empty :=
-    SchedulerState.runQueueOnCore_default bootCoreId
-  rw [h0] at hMem
-  exact absurd hMem (RunQueue.not_mem_empty tid)
 
 -- ============================================================================
 -- AE3-A/U-11: boundThreadDomainConsistent invariant
@@ -1053,16 +979,6 @@ def boundThreadDomainConsistent (st : SystemState) : Prop :=
       | some (.schedContext sc) => tcb.domain = sc.domain
       | _ => True
     | _ => True
-
-/-- AE3-A: Default state has empty object store — no bound threads to check. -/
-theorem default_boundThreadDomainConsistent :
-    boundThreadDomainConsistent (default : SystemState) := by
-  intro tid _scId
-  -- Default object store is empty — all lookups return none
-  have hNone : (default : SystemState).objects.get? tid.toObjId = none :=
-    RobinHood.RHTable.getElem?_empty 16 (by omega) tid.toObjId
-  simp only [show (default : SystemState).objects[tid.toObjId]? =
-    (default : SystemState).objects.get? tid.toObjId from rfl, hNone]
 
 -- ============================================================================
 -- Z4: Extended scheduler invariant bundle
