@@ -75,44 +75,49 @@ structure IntermediateState where
   hPerObjectMappings : perObjectMappingsInvariant state
   hLifecycleConsistent : state.bookkeepingAgrees
 
-/-- Q3-A: The empty object store satisfies the per-object CNode slots invariant
-(vacuously — no objects exist). -/
-theorem perObjectSlotsInvariant_default :
-    perObjectSlotsInvariant (default : SystemState) := by
+/-- Q3-A: The boot's empty object store satisfies the per-object CNode slots
+invariant (vacuously — no objects exist). -/
+theorem perObjectSlotsInvariant_bootEmpty :
+    perObjectSlotsInvariant (SystemState.bootEmpty ()) := by
   unfold perObjectSlotsInvariant
   intro id cn h
-  have hEmpty : (default : SystemState).objects[id]? = none :=
-    RHTable.getElem?_empty _ _ _
+  have hEmpty : (SystemState.bootEmpty ()).objects[id]? = none := by
+    rw [SystemState.bootEmpty_objects]; exact RHTable.getElem?_empty _ _ _
   rw [hEmpty] at h; cases h
 
-/-- Q3-A: The empty object store satisfies the per-object VSpaceRoot mappings
-invariant (vacuously — no objects exist). -/
-theorem perObjectMappingsInvariant_default :
-    perObjectMappingsInvariant (default : SystemState) := by
+/-- Q3-A: The boot's empty object store satisfies the per-object VSpaceRoot
+mappings invariant (vacuously — no objects exist). -/
+theorem perObjectMappingsInvariant_bootEmpty :
+    perObjectMappingsInvariant (SystemState.bootEmpty ()) := by
   unfold perObjectMappingsInvariant
   intro id vs h
-  have hEmpty : (default : SystemState).objects[id]? = none :=
-    RHTable.getElem?_empty _ _ _
+  have hEmpty : (SystemState.bootEmpty ()).objects[id]? = none := by
+    rw [SystemState.bootEmpty_objects]; exact RHTable.getElem?_empty _ _ _
   rw [hEmpty] at h; cases h
 
-/-- Q3-A: The default (empty) SystemState yields a valid IntermediateState. -/
-def mkEmptyIntermediateState : IntermediateState where
-  state := default
-  hAllTables := default_allTablesInvExtK
-  hPerObjectSlots := perObjectSlotsInvariant_default
-  hPerObjectMappings := perObjectMappingsInvariant_default
-  hLifecycleConsistent := default_bookkeepingAgrees
+/-- Q3-A: **the boot builder's empty state**: the boot's empty `SystemState`
+(`SystemState.bootEmpty`, its object and ASID tables boot-sized, WS-UC UC3) with
+the builder's invariants.  It takes `()` and is never a module constant
+(`never_extract`), so each boot that calls it builds its own tables and fills
+them in place; no module initializer builds a boot-sized table for it. -/
+@[noinline, never_extract]
+def mkEmptyIntermediateState (_ : Unit) : IntermediateState where
+  state := SystemState.bootEmpty ()
+  hAllTables := SystemState.bootEmpty_allTablesInvExtK
+  hPerObjectSlots := perObjectSlotsInvariant_bootEmpty
+  hPerObjectMappings := perObjectMappingsInvariant_bootEmpty
+  hLifecycleConsistent := SystemState.bootEmpty_bookkeepingAgrees
 
 /-- Q3-A: `mkEmptyIntermediateState` is well-formed. -/
 theorem mkEmptyIntermediateState_valid :
-    let e := mkEmptyIntermediateState
+    let e := (mkEmptyIntermediateState ())
     e.state.allTablesInvExtK ∧
     perObjectSlotsInvariant e.state ∧
     perObjectMappingsInvariant e.state ∧
     e.state.bookkeepingAgrees :=
-  ⟨mkEmptyIntermediateState.hAllTables,
-   mkEmptyIntermediateState.hPerObjectSlots,
-   mkEmptyIntermediateState.hPerObjectMappings,
-   mkEmptyIntermediateState.hLifecycleConsistent⟩
+  ⟨(mkEmptyIntermediateState ()).hAllTables,
+   (mkEmptyIntermediateState ()).hPerObjectSlots,
+   (mkEmptyIntermediateState ()).hPerObjectMappings,
+   (mkEmptyIntermediateState ()).hLifecycleConsistent⟩
 
 end SeLe4n.Model

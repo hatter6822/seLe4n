@@ -164,7 +164,8 @@ in `Invariant.lean`; the index is pointers only so this file has no
 1. `deterministicTimerProgress_consumed_by_advanceTimer`
 2. `deterministicRegisterContext_consumed_by_writeRegister`
 3. `memoryAccessSafety_consumed_by_readMemory`
-4. `default_system_state_proofLayerInvariantBundle` (boot-state typing witness)
+4. `SeLe4n.Platform.Boot.emptyBoot_proofLayerInvariantBundle` (boot-state typing
+   witness: the boot's empty state satisfies the bundle)
 5. `SeLe4n.Kernel.Architecture.irqBinding?_notification`
    (IRQ routing totality witness: every line the interrupt entry delivers on
    resolves to a notification through its interrupt node, WS-ZA ZA6.32; it
@@ -189,7 +190,7 @@ def archAssumptionConsumer : ArchAssumption → Lean.Name
   | .memoryAccessSafety =>
       `SeLe4n.Kernel.Architecture.memoryAccessSafety_consumed_by_readMemory
   | .bootObjectTyping =>
-      `SeLe4n.Kernel.Architecture.default_system_state_proofLayerInvariantBundle
+      `SeLe4n.Platform.Boot.emptyBoot_proofLayerInvariantBundle
   | .irqRoutingTotality =>
       `SeLe4n.Kernel.Architecture.irqBinding?_notification
   | .singleCoreOperation =>

@@ -90,9 +90,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 
 1. **`apiInvariantBundle`** — a top-level alias for the composed proof-layer
    invariant bundle, giving API consumers a single entry point.
-2. **`apiInvariantBundle_default`** — base-case theorem proving the bundle
-   holds for the default (empty) state.
-3. **Entry-point stability table** — documents which subsystem operations
+2. **Entry-point stability table** — documents which subsystem operations
    are considered part of the stable public API.
 
 ## Entry-point stability classification
@@ -153,13 +151,6 @@ Alias for `Architecture.proofLayerInvariantBundle` — the composed bundle of al
 active subsystem invariants. API consumers should use this name to avoid coupling
 to the internal architecture module. -/
 abbrev apiInvariantBundle := Architecture.proofLayerInvariantBundle
-
-/-- L-01/WS-E6: The default (empty) state satisfies the API invariant bundle.
-This is the base case for inductive invariant arguments: the system starts
-in a valid state. -/
-theorem apiInvariantBundle_default :
-    apiInvariantBundle (default : SystemState) :=
-  Architecture.default_system_state_proofLayerInvariantBundle
 
 -- ============================================================================
 -- X2-I: Checked scheduler API wrappers (defense-in-depth)

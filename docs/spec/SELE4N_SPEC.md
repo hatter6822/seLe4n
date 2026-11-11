@@ -4670,7 +4670,14 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   `proofLayerInvariantBundle.objects_insert_eq_insertNoResize`,
   `.asidTable_insert_eq_insertNoResize`,
   `retypeFromUntyped_insert_eq_insertNoResize`; the carve's heap model reads no
-  resize there (`rhInsertResizeHeapBytes_objects_eq_zero`).
+  resize there (`rhInsertResizeHeapBytes_objects_eq_zero`).  Only the boot's
+  own state holds boot-sized tables: the boot starts from
+  `SystemState.bootEmpty ()` (through `mkEmptyIntermediateState ()`), which
+  builds both tables where the boot calls it (`RHTable.emptyFresh`,
+  `never_extract`), so the boot owns and fills them in place; the default
+  state keeps 16-slot tables, so no closed state a module initializer builds
+  holds a boot-sized table.  The bundle's base case is the empty boot
+  (`emptyBoot_proofLayerInvariantBundle`, from `emptyBoot_bootLinkedShape`).
 - **In-place rewrite** (`v0.35.64`): a transition that rewrites an
   existing object of the same, bookkeeping-neutral kind uses
   `SystemState.rewriteObject` (and the typed `updateTcb` /
@@ -11473,7 +11480,7 @@ qualified `Lean.Name` of its consuming theorem. The mapping is:
 | `.deterministicTimerProgress`     | `deterministicTimerProgress_consumed_by_advanceTimer` |
 | `.deterministicRegisterContext`   | `deterministicRegisterContext_consumed_by_writeRegister` |
 | `.memoryAccessSafety`             | `memoryAccessSafety_consumed_by_readMemory` |
-| `.bootObjectTyping`               | `default_system_state_proofLayerInvariantBundle` |
+| `.bootObjectTyping`               | `emptyBoot_proofLayerInvariantBundle` |
 | `.irqRoutingTotality`             | `SeLe4n.Kernel.Architecture.irqBinding?_notification` |
 | `.singleCoreOperation`            | `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness` |
 

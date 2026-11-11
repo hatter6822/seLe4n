@@ -1254,7 +1254,7 @@ private def differentialNotificationSignalAgrees : IO Unit := do
       boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let boundTcb : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
   -- Control (the FO-031 discipline): both sides really deliver, so the
   -- agreement below is about a delivered signal rather than a shared refusal.
   expect "FO-026 control: the live bound-aware signal succeeds (not a shared refusal)"
@@ -1274,7 +1274,7 @@ private def differentialNotificationWaitAgrees : IO Unit := do
     { state := .active, 
       hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked 9) }
   let ist := diffAddTcb
-    (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
+    (diffAddNotification (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) (diffTcb 62)
   -- Control: the badge really is consumed on both sides.
   expect "FO-027 control: the live wait succeeds (not a shared refusal)"
@@ -1292,7 +1292,7 @@ parking branch, whose frozen mirror grew the message-presence guard. -/
 private def differentialEndpointSendAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨5⟩], badge := none }
   let ist := diffAddTcb (diffAddTcb
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
   -- Control: the send really parks on both sides.
   expect "FO-028 control: the live send succeeds (not a shared refusal)"
     (SeLe4n.Kernel.endpointSendDual diffEpId diffA (.frame msg.badge false) ist.state).toOption.isSome
@@ -1329,7 +1329,7 @@ private def differentialNotificationWaitParksAgrees : IO Unit := do
     { state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   let ist := diffAddTcb
-    (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
+    (diffAddNotification (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) { diffTcb 62 with pendingMessage := some held }
   -- Control: the wait really parks on both sides (no shared refusal).
   expect "FO-038 control: the live wait parks (not a shared refusal)"
@@ -1352,7 +1352,7 @@ private def differentialNotificationWaitParksBoundAgrees : IO Unit := do
     { state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let ist := diffAddTcb
-    (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
+    (diffAddNotification (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) (diffTcb 62)
   expect "FO-039 control: the live wait parks on the bound notification"
     (SeLe4n.Kernel.notificationWait diffNotifId diffA ist.state).toOption.isSome
@@ -1374,7 +1374,7 @@ private def differentialNotificationWaitConsumesBoundAgrees : IO Unit := do
     { state := .active, 
       hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked 9), boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let ist := diffAddTcb
-    (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
+    (diffAddNotification (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) (diffTcb 62)
   expect "FO-040 control: the live consume succeeds on the bound notification"
     (SeLe4n.Kernel.notificationWait diffNotifId diffA ist.state).toOption.isSome
@@ -1393,7 +1393,7 @@ private def differentialEndpointReceiveAgrees : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
   let parked : TCB := (TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame { diffTcb 62 with queuePPrevCode := 1 } msg) (.blockedOnSend diffEpId))
   let ist := diffAddTcb (diffAddTcb
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parked) (diffTcb 63)
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parked) (diffTcb 63)
   -- Control: the rendezvous really completes on both sides.
   expect "FO-029 control: the live receive succeeds (not a shared refusal)"
     (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none ist.state).toOption.isSome
@@ -1410,7 +1410,7 @@ branch again, on the arm that also stages a reply. -/
 private def differentialEndpointCallAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨11⟩], badge := none }
   let ist := diffAddTcb (diffAddTcb
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
   -- Control: the call really parks on both sides.
   expect "FO-030 control: the live call succeeds (not a shared refusal)"
     (SeLe4n.Kernel.endpointCall diffEpId diffA (.frame msg.badge false) ist.state).toOption.isSome
@@ -1439,7 +1439,7 @@ private def differentialEndpointReplyAgrees : IO Unit := do
   let rid : SeLe4n.ReplyId := ⟨505⟩
   let caller : TCB := (TCB.setIpcState { diffTcb 62 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply diffEpId (some diffB)))
   let ist := diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) (diffTcb 63))
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) (diffTcb 63))
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA) }
   -- Control: the reply really happens on both sides, so the agreement below is
   -- about a delivered reply rather than a shared refusal.
@@ -1457,7 +1457,7 @@ private def differentialEndpointReplyAgrees : IO Unit := do
   -- live leg the kernel dispatches; the BARE `endpointReply` refuses it, which is
   -- why naming that one as the counterpart overstated agreement here too.
   let delegatedLeg := diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) (diffTcb 63))
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) (diffTcb 63))
     (diffTcb 65)) rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA) }
   expect "FO-031 control: the live leg accepts a DELEGATED replier"
     (liveReplyLeg diffDelegate diffA msg delegatedLeg.state).toOption.isSome
@@ -1517,7 +1517,7 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
   -- what makes that boost stale.
   let server : TCB := { diffTcb 63 with pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩) }
   let ist := diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA) }
   -- Control: the operation really runs on both sides, so the agreement below is
   -- about a delivered reply rather than a shared refusal.
@@ -1545,7 +1545,7 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
   let unrecorded : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply diffEpId none))
   let ist' := diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) unrecorded) (diffTcb 63))
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) unrecorded) (diffTcb 63))
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA) }
   expect "FO-041: both answer a caller with no recorded server"
     (frozenRunAgrees unitResultAgrees
@@ -1560,7 +1560,7 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
   -- counterparts part company here.
   let boosted : TCB := { diffTcb 63 with pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩) }
   let delegated := diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) boosted)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) boosted)
     (diffTcb 65)) rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA) }
   expect "FO-041 control: the live spine accepts a DELEGATED replier"
     (liveReplySpine diffDelegate diffA msg delegated.state).toOption.isSome
@@ -1621,7 +1621,7 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
     pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩), scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated diffScId diffA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated diffScId diffA) }
   -- ### Half one: the frame HEADS the context, so both sides pop.
   let heading := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
     diffScId (diffDonatedSc (some rid))
   expect "FO-042 control: the answered frame heads the donated context"
@@ -1656,7 +1656,7 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
         (liveReplySpine diffB diffA msg) heading.state))
   -- ### Half two: the TRIGGERS DISAGREE.  Same donation, no stack frame.
   let unheaded := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA) })
     diffScId (diffDonatedSc none)
   expect "FO-042 control: the binding-driven reading FIRES here (the server is donated)"
@@ -1690,7 +1690,7 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound diffOwnScId), scBindingOwnerCode := 0 } (.blockedOnReply diffEpId (some diffB)))
   let bound := diffAddSchedContext (diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) ownCaller) server)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) ownCaller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
     diffScId (diffDonatedSc (some rid))) diffOwnScId diffCallerOwnSc
   expect "FO-042 control: the trigger still fires on this state"
@@ -1717,7 +1717,7 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
   let sentinelSc : SeLe4n.Kernel.SchedContext :=
     { diffDonatedSc (some rid) with boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨0⟩) }
   let sentinelHeld := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
     diffScId sentinelSc
   expect "FO-042 control: the trigger resolves a SENTINEL holder on both surfaces"
@@ -1787,7 +1787,7 @@ private def differentialEndpointReplyMiddleFrameSevers : IO Unit := do
   let server : TCB := { diffTcb 63 with
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated diffScId diffA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated diffScId diffA) }
   let chain := diffAddSchedContext (diffAddReply (diffAddReply (diffAddReply
-    (diffAddTcb (diffAddTcb (diffAddEndpoint mkEmptyIntermediateState diffEpId {})
+    (diffAddTcb (diffAddTcb (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {})
       caller) server)
     bottomRid { replyId := bottomRid, callerCode := SeLe4n.ThreadId.optCode (some diffDelegate),
                 next := some (.frame midRid) })
@@ -1945,7 +1945,7 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
     originScCode := diffScId.val + 1 }
   -- ### Half one: the origin DIFFERS from the answered caller.
   let redirected := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server) origin)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
     diffScId { diffDonatedSc (some rid) with donationOrigin := some diffDelegate }
   expect "FO-044 control: the answered frame heads the donated context"
@@ -2009,7 +2009,7 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
   -- identity.  A selector that fired unconditionally passes half one and breaks
   -- this, which is what makes the pair decisive rather than merely green.
   let sameOrigin := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server) origin)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
     diffScId { diffDonatedSc (some rid) with donationOrigin := some diffA }
   -- **The resolver DECLINES here, and that is the point.**  The answered caller's
@@ -2048,7 +2048,7 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
   -- (`originScCode`) refuses as well; the differential pins the two surfaces to
   -- one reading of "stale".
   let staleOrigin := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
     diffScId { diffDonatedSc (some rid) with donationOrigin := some diffStaleOrigin }
   expect "FO-044 half three control: the recorded origin resolves to no thread on either surface"
@@ -2099,7 +2099,7 @@ private def differentialReceiveFromBlockedCallerAgrees : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
   let parkedCaller : TCB := (TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame { diffTcb 62 with queuePPrevCode := 1 } msg) (.blockedOnCall diffEpId))
   let ist := diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedCaller) (diffTcb 63))
     rid { replyId := rid, callerCode := 0 }
   expect "FO-035 control: the live receive completes the call rendezvous"
@@ -2133,7 +2133,7 @@ private def differentialTaintedSignalAgrees : IO Unit := do
       boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let boundTcb : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist0 := diffAddTcb (diffAddTcb (diffAddNotification
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
         [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep)
       diffNotifId ntfn) boundTcb) (diffTcb 63)
   -- The signaller carries a tag, written into its taint words
@@ -2162,7 +2162,7 @@ message-less parked sender reached the frozen dequeue.  Both sides are handed a
 notification id that names no object. -/
 private def differentialRefusalsAgree : IO Unit := do
   let missing : SeLe4n.ObjId := ⟨999⟩
-  let ist := diffAddTcb mkEmptyIntermediateState (diffTcb 62)
+  let ist := diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 62)
   expect "FO-032: both refuse an absent notification, with the same error"
     (frozenRunAgrees (fun a b => a == b)
       (frozenNotificationWait missing diffA (freeze ist))
@@ -2233,7 +2233,7 @@ private def differentialRemovalGuardRefusalsAgree : IO Unit := do
         queueNextCode := 0 } (.blockedOnSend diffEpId))
   let ep : Endpoint :=
     (Endpoint.ofQueues { head := some diffA, tail := some diffB } {})
-  let ist := diffAddEndpoint (diffAddTcb (diffAddTcb mkEmptyIntermediateState tcbA) tcbB)
+  let ist := diffAddEndpoint (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) tcbA) tcbB)
     diffEpId ep
   let q : IntrusiveQueue := ep.sendQ
 
@@ -2292,7 +2292,7 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
         queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffB)),
         queueNextCode := SeLe4n.ThreadId.optCode (some diffB) } (.blockedOnSend diffEpId))
   let epEmpty : Endpoint := (Endpoint.ofQueues {} {})
-  let istEmpty := diffAddEndpoint (diffAddTcb mkEmptyIntermediateState tcbEmptyQ) diffEpId epEmpty
+  let istEmpty := diffAddEndpoint (diffAddTcb (mkEmptyIntermediateState ()) tcbEmptyQ) diffEpId epEmpty
   expect "FO-046 control: the guard itself ADMITS an empty queue with a .tcbNext back-pointer"
     (SeLe4n.Model.dualQueueRemovalGuard epEmpty.sendQ diffA tcbEmptyQ (.tcbNext diffB) == true)
   expect "FO-046: ...so it is the BOUNDARY half that refuses, not the guard"
@@ -2322,7 +2322,7 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
   let epOneSided : Endpoint :=
     (Endpoint.ofQueues { head := some diffA, tail := some diffB } {})
   let istOneSided :=
-    diffAddEndpoint (diffAddTcb (diffAddTcb mkEmptyIntermediateState headNotNaming) tailNamingIt)
+    diffAddEndpoint (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) headNotNaming) tailNamingIt)
       diffEpId epOneSided
   expect "FO-046 control: the enabling condition ADMITS the one-sided link"
     (SeLe4n.Model.dualQueueRemovalEnabled epOneSided.sendQ diffB tailNamingIt
@@ -2342,7 +2342,7 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
         queuePPrevCode := 0,
         queueNextCode := 0 } (.blockedOnSend diffEpId))
   let istDetached :=
-    diffAddEndpoint (diffAddTcb mkEmptyIntermediateState detached) diffEpId
+    diffAddEndpoint (diffAddTcb (mkEmptyIntermediateState ()) detached) diffEpId
       (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
   expect "FO-046: the live removal answers .endpointQueueEmpty for no back-pointer"
     (refusesQueueEmpty
@@ -2444,7 +2444,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
 
   -- ── (1) the ENQUEUE's tail neighbour ──
   let aIst := diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState epId
+    (diffAddEndpoint (mkEmptyIntermediateState ()) epId
       (Endpoint.ofQueues { head := some sentinelTid, tail := some sentinelTid } {}))
     (parked sentinelTid none (some .endpointHead) none))
     ((diffTcb mover.toNat).setIpcState .ready)
@@ -2465,7 +2465,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
     (Endpoint.ofQueues { head := some sentinelTid, tail := some mover } {})
   let bMover : TCB := parked mover (some sentinelTid) (some (.tcbNext sentinelTid)) none
   let bIst := diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState epId bEp)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) epId bEp)
     (parked sentinelTid none (some .endpointHead) (some mover))) bMover
   expect "FO-049 control: the removal's enabling condition ADMITS the predecessor shape"
     (SeLe4n.Model.dualQueueRemovalEnabled bEp.sendQ mover bMover (.tcbNext sentinelTid))
@@ -2480,7 +2480,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
     (Endpoint.ofQueues { head := some mover, tail := some sentinelTid } {})
   let cMover : TCB := parked mover none (some .endpointHead) (some sentinelTid)
   let cIst := diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState epId cEp) cMover)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) epId cEp) cMover)
     (parked sentinelTid (some mover) (some (.tcbNext mover)) none)
   expect "FO-049 control: ...and the successor shape too, so neither is a guard refusal"
     (SeLe4n.Model.dualQueueRemovalEnabled cEp.sendQ mover cMover .endpointHead)
@@ -2504,7 +2504,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
   let twoDeep : Endpoint :=
     (Endpoint.ofQueues {} { head := some diffA, tail := some diffB })
   let ist := diffAddTcb (diffAddTcb (diffAddTcb
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId twoDeep)
     recvHead) recvNext) ((diffTcb 65).setIpcState .ready)
   let behindTheHead := some (some diffA, some (QueuePPrev.tcbNext diffA), none)
@@ -2569,7 +2569,7 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
       boundThreadCode := 0, scReply := none, donationOrigin := some diffB,
       isActive := false }
   let ist := diffAddSchedContext
-    (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62))
+    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 62))
       { diffTcb 63 with originScCode := diffScId.val + 1 })
     diffScId scWithOrigin
   expect "FO-047 control: the frozen reservation starts with a recorded origin"
@@ -2653,7 +2653,7 @@ private def differentialSchedContextUnbindClearsOrigin : IO Unit := do
       boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), scReply := none, donationOrigin := some diffB,
       isActive := true }
   let ist := diffAddSchedContext
-    (diffAddTcb (diffAddTcb mkEmptyIntermediateState boundTcb) (diffTcb 63))
+    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) boundTcb) (diffTcb 63))
     diffScId scBoundWithOrigin
   expect "FO-047b control: the frozen reservation starts with a recorded origin"
     (frozenOriginOf (freeze ist) diffScId == some (some diffB))
@@ -2702,7 +2702,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
       boundThreadCode := 0, scReply := none, isActive := false }
   let istParked := diffAddSchedContext
-    (Builder.createObject (diffAddTcb mkEmptyIntermediateState (diffTcb 63))
+    (Builder.createObject (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 63))
       parkedTcb.tid.toObjId (.tcb parkedTcb) (fun _ h => nomatch h) (fun _ h => nomatch h))
     diffScId scFree
   let stParked := istParked.state
@@ -2754,7 +2754,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
     -- so the negative above is about the PARKED shape rather than about the
     -- retired writer doing nothing at all.
     let fzQueued := freeze (diffAddSchedContext
-      (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
+      (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 62)) (diffTcb 63))
       diffScId scFree)
     expect "FO-050 CONTROL: on an already-queued thread both writers keep it queued"
       (match SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed fzQueued diffA
@@ -2769,7 +2769,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
   -- clause for clause.  The RETIRED three-conjunct guard is computed beside it.
   let scSpent : SeLe4n.Kernel.SchedContext := { scFree with budgetRemaining := ⟨0⟩ }
   let istSpent := diffAddSchedContext
-    (Builder.createObject (diffAddTcb mkEmptyIntermediateState (diffTcb 63))
+    (Builder.createObject (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 63))
       parkedTcb.tid.toObjId (.tcb parkedTcb) (fun _ h => nomatch h) (fun _ h => nomatch h))
     diffScId scSpent
   let stSpent := istSpent.state
@@ -2823,7 +2823,7 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
       boundThreadCode := 0, scReply := some headRid, isActive := false }
   let istHeading := diffAddSchedContext (diffAddReply
-    (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
+    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 62)) (diffTcb 63))
     headRid headReply) diffScId scHeading
   expect "FO-047c control: the live bind refuses a reservation heading a stack"
     (liveErr istHeading.state == some KernelError.illegalState)
@@ -2837,7 +2837,7 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
       boundThreadCode := 0, scReply := none, isActive := false }
   let istDomain := diffAddSchedContext
-    (diffAddTcb (diffAddTcb mkEmptyIntermediateState otherDomainTcb) (diffTcb 63))
+    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) otherDomainTcb) (diffTcb 63))
     diffScId scDomainZero
   expect "FO-047c control: the live bind refuses a cross-domain bind"
     (liveErr istDomain.state == some KernelError.invalidArgument)
@@ -2857,7 +2857,7 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
       replyObjectCode := SeLe4n.ReplyId.optCode (some ownRid)
       } (.blockedOnReply diffEpId diffB))
   let istOwed := diffAddSchedContext (diffAddReply (diffAddReply
-    (diffAddTcb (diffAddTcb mkEmptyIntermediateState owedTcb) (diffTcb 63))
+    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) owedTcb) (diffTcb 63))
     ownRid ownReply) aboveRid aboveReply) diffScId scDomainZero
   expect "FO-047c control: the frame above really answers this one (a LIVE stack)"
     (SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istOwed) owedTcb)
@@ -2875,7 +2875,7 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
       } (.blockedOnReply diffEpId diffB))
   let staleAbove : SeLe4n.Kernel.Reply := { replyId := aboveRid, callerCode := SeLe4n.ThreadId.optCode (some diffB) }
   let istStale := diffAddSchedContext (diffAddReply (diffAddReply
-    (diffAddTcb (diffAddTcb mkEmptyIntermediateState staleTcb) (diffTcb 63))
+    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) staleTcb) (diffTcb 63))
     ownRid ownReply) aboveRid staleAbove) diffScId scDomainZero
   expect "FO-047c control: a stale upward link is NOT a live stack"
     (!(SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istStale) staleTcb))
@@ -2958,7 +2958,7 @@ private def differentialSchedContextConfigureDomainOnlyKeepsOrder : IO Unit := d
       refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 1000,
       boundThreadCode := SeLe4n.ThreadId.optCode (some diffA) }
   let ist := diffAddTcb (diffAddTcb
-    (diffAddSchedContext mkEmptyIntermediateState cfgScId cfgSc) boundTcb) peerTcb
+    (diffAddSchedContext (mkEmptyIntermediateState ()) cfgScId cfgSc) boundTcb) peerTcb
   let liveAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=
     (liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 dom).map
       (fun st => bucketOnCore st bootCoreId ⟨at_⟩)
@@ -3050,7 +3050,7 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
     | _, _ => false
   -- (1) PLACEMENT: the bound thread is `.ready`, `.Ready` and on NO run queue.
   let istParked := diffAddSchedContext
-    (Builder.createObject mkEmptyIntermediateState boundTcb.tid.toObjId (.tcb boundTcb)
+    (Builder.createObject (mkEmptyIntermediateState ()) boundTcb.tid.toObjId (.tcb boundTcb)
       (fun _ h => nomatch h) (fun _ h => nomatch h))
     cfgScId readySc
   let fzParked := freeze istParked
@@ -3080,7 +3080,7 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
   -- bound thread places nothing on either surface, and the two still agree.
   let suspendedTcb : TCB := { boundTcb with threadState := .Inactive }
   let istSuspended := diffAddSchedContext
-    (Builder.createObject mkEmptyIntermediateState suspendedTcb.tid.toObjId (.tcb suspendedTcb)
+    (Builder.createObject (mkEmptyIntermediateState ()) suspendedTcb.tid.toObjId (.tcb suspendedTcb)
       (fun _ h => nomatch h) (fun _ h => nomatch h))
     cfgScId readySc
   expect "FO-052 NEGATIVE: a suspended bound thread is not placed, on either surface"
@@ -3095,7 +3095,7 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
   -- thread, budget ≠ period), so the context has no budget now.
   let unreadySc : SeLe4n.Kernel.SchedContext :=
     { readySc with budgetRemaining := ⟨0⟩, refillHeadEligibleAt := 1000 }
-  let istQueued := diffAddSchedContext (diffAddTcb mkEmptyIntermediateState boundTcb)
+  let istQueued := diffAddSchedContext (diffAddTcb (mkEmptyIntermediateState ()) boundTcb)
     cfgScId unreadySc
   expect "FO-052 control: the bound thread starts queued on both surfaces"
     (bucketOnCore istQueued.state bootCoreId ⟨0⟩ == [diffA]
@@ -3137,7 +3137,7 @@ private def differentialSchedContextConfigureResumesBound : IO Unit := do
        | none => false
      | _, _ => false)
   -- CONTROL: on a context with budget the queued thread stays queued on both.
-  let istQueuedReady := diffAddSchedContext (diffAddTcb mkEmptyIntermediateState boundTcb)
+  let istQueuedReady := diffAddSchedContext (diffAddTcb (mkEmptyIntermediateState ()) boundTcb)
     cfgScId readySc
   expect "FO-052 CONTROL: with budget the queued thread stays queued, and the states agree"
     ((liveSchedContextConfigureState istQueuedReady.state cfgScId 100 1000 0 0 0).map
@@ -3163,7 +3163,7 @@ private def differentialSendFromAbsentSenderAgrees : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let parkedReceiver : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedReceiver) (diffTcb 63)
   expect "FO-036 control: the same rendezvous delivers from a sender that exists"
     (SeLe4n.Kernel.endpointSendDual diffEpId diffB (.frame msg.badge false) ist.state).toOption.isSome
@@ -3203,7 +3203,7 @@ private def differentialSendRendezvousDeliversAgrees : IO Unit := do
   -- the D3/F-1 clear exists for.
   let parkedReceiver : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1, pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReceive diffEpId))
   let ist := diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedReceiver) (diffTcb 63))
     rid { replyId := rid, callerCode := 0 }
   expect "FO-037 control: the receiver really parks holding a stashed reply"
@@ -3242,7 +3242,7 @@ private def differentialWakeAtUnqueuedPriorityAgrees : IO Unit := do
   -- a bucket here and the wake is the first thing that needs one.
   let parkedServer : TCB := (TCB.setIpcState { diffTcb 62 with priority := ⟨5⟩, queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
-    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep) diffNotifId ntfn)
     parkedServer) (diffTcb 63)
   expect "FO-034: control — the woken thread's priority has no bucket to start with"
@@ -3312,7 +3312,7 @@ private def differentialEndpointReplyPopsUnheldHead : IO Unit := do
         | none => 0) } (.blockedOnReply diffEpId none))
   let mkState (own? : Option SeLe4n.SchedContextId) : IntermediateState :=
     let base := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
-      (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) (mkCaller own?)) (diffTcb 65))
+      (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) (mkCaller own?)) (diffTcb 65))
       rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA),
             next := some (.head diffScId) })
       diffScId unheldSc
@@ -3446,7 +3446,7 @@ private def differentialComparisonHasBite : IO Unit := do
       boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let boundTcb : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
   expect "FO-033: NEGATIVE — the table-named counterpart does NOT agree"
     (!(frozenRunAgrees unitResultAgrees
         (frozenNotificationSignal diffNotifId diffB badge (freeze ist))
@@ -3457,7 +3457,7 @@ CNodes' slot links, and agreement compares both.  A live state that gained an
 edge (and its links) since the freeze disagrees, and so does one whose link
 words alone changed. -/
 private def frozenAgreementComparesDerivationLinks : IO Unit := do
-  let ist := diffAddCSpace mkEmptyIntermediateState
+  let ist := diffAddCSpace (mkEmptyIntermediateState ())
     [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId), (SeLe4n.Slot.ofNat 1, diffObjCap diffEpId)]
   let a : SlotRef := { cnode := diffCnId, slot := SeLe4n.Slot.ofNat 0 }
   let b : SlotRef := { cnode := diffCnId, slot := SeLe4n.Slot.ofNat 1 }

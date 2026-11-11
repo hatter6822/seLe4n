@@ -235,8 +235,12 @@ rewrites it there.
 
 ### UC3 — Pre-size the object and ASID tables at boot (D4) — **LANDED `v0.37.16`**
 
-- **Done.** The default state, which the boot's builder starts from, builds
-  `objects` and `asidTable` at `bootTableCapacity` (2^17).  On such a table
+- **Done.** The boot's empty state (`SystemState.bootEmpty ()`, through
+  `mkEmptyIntermediateState ()`), which the boot's builder starts from, builds
+  `objects` and `asidTable` at `bootTableCapacity` (2^17), where the boot calls
+  it and never as a module constant (`never_extract`); the default state keeps
+  16-slot tables, so no closed state holds a boot-sized table and the boot's
+  heap cost is the installed state's two tables.  On such a table
   holding at most `maxObjects` objects (or `maxAsidValue` ASIDs) `insert` is
   `insertNoResize` (`SystemState.objects_insert_eq_insertNoResize`,
   `SystemState.asidTable_insert_eq_insertNoResize`, over

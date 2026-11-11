@@ -81,26 +81,26 @@ private def fp005_largeLookup : IO Unit := do
 
 /-- FP-006: interrupt-line states — freeze preserves them (WS-ZA ZA6.32) -/
 private def fp006_irqSignalLines : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let fss := freeze ist
   expect "line 0 inactive" (fss.irqSignalLines.mem 0 == false)
   expect "line 5 inactive" (fss.irqSignalLines.mem 5 == false)
 
 /-- FP-007: ASID table field — freeze preserves lookup -/
 private def fp007_asidTable : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let fss := freeze ist
   expect "empty asid lookup" (fss.asidTable.get? ⟨0⟩ == none)
 
 /-- FP-009: CDT — freeze copies the (empty) edge list -/
 private def fp009_cdtEmpty : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let fss := freeze ist
   expect "cdt edge bound zero" (fss.cdt.edgeBound == 0)
 
 /-- FP-009c: Objects field — freeze preserves lookup with freezeObject transform -/
 private def fp009c_objectsField : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let fss := freeze ist
   -- Empty state: objects frozen map should have no entries
   expect "objects empty" (fss.objects.data.size == 0)
@@ -193,7 +193,7 @@ private def fp015_preservesMembership : IO Unit := do
 
 /-- FP-016: freeze determinism — same input same output -/
 private def fp016_deterministic : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let fss1 := freeze ist
   let fss2 := freeze ist
   expect "same objects size" (fss1.objects.data.size == fss2.objects.data.size)
@@ -231,14 +231,14 @@ private def fp018_totalCoverage : IO Unit := do
 
 /-- FP-019: freeze empty state preserves structural integrity -/
 private def fp019_freezeEmptyInvariant : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let fss := freeze ist
   -- All frozen maps have consistent empty state
   expect "objects empty" (fss.objects.data.size == 0)
 
 /-- FP-020: freeze preserves field parity — all SystemState fields represented -/
 private def fp020_fieldParity : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let fss := freeze ist
   -- Verify all fields exist and are accessible
   expect "objects accessible" (fss.objects.data.size == 0)

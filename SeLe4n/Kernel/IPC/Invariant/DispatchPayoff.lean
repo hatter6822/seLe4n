@@ -1657,8 +1657,7 @@ private theorem witnessKeysNe : witnessTid.toObjId ≠ witnessScId.toObjId := by
   decide
 
 private theorem witnessObjInv0 : (default : SystemState).objects.invExt :=
-  capabilityInvariantBundle.objectsInvExt
-    (Architecture.default_system_state_proofLayerInvariantBundle).2.1
+  default_allTablesInvExtK.1.1
 
 private theorem witnessObjInv1 : witnessSt1.objects.invExt :=
   SystemState.withObjectStored_preserves_objects_invExt _ _ _ witnessObjInv0

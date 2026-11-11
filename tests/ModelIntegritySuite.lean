@@ -97,12 +97,12 @@ def apiInvariantBundle_full_implies_objectsOnly : IO Unit := do
   expect "Full→ObjectsOnly implication" true
 
 /-- `freeze_preserves_direct_invariants_full` produces a
-`Full`-level witness for the default intermediate state — proving the
+`Full`-level witness for the boot's empty intermediate state — proving the
 30-conjunct predicate is realizable at freeze time. -/
 def freeze_preserves_full_invariants_default : IO Unit := do
-  let ist : Model.IntermediateState := Model.mkEmptyIntermediateState
+  let ist : Model.IntermediateState := Model.mkEmptyIntermediateState ()
   let hInv : SeLe4n.Kernel.apiInvariantBundle ist.state :=
-    SeLe4n.Kernel.apiInvariantBundle_default
+    SeLe4n.Platform.Boot.emptyBoot_proofLayerInvariantBundle
   let _ :=
     Model.freeze_preserves_direct_invariants_full ist hInv
   expect "freeze_preserves_full on default" true

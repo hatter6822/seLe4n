@@ -141,6 +141,20 @@ def RHTable.emptyImpl (cap : Nat) (hCapGe4 : 4 ≤ cap) : RHTable α β :=
   funext α β cap h
   rfl
 
+/-- WS-UC UC3: **an empty table built where it is called, never a module
+constant.**  The compiler lifts a closed `RHTable.empty cap` into a constant that
+the module's initializer builds and keeps for the program's life, and the first
+insert into a constant copies its whole slot array.  `never_extract` keeps each
+call where it is written and keeps two calls apart, so every call builds a table
+its caller owns.  The boot's empty state builds its boot-sized tables through it
+(`SystemState.bootEmpty`).  It is `RHTable.empty` (`RHTable.emptyFresh_eq`). -/
+@[noinline, never_extract]
+def RHTable.emptyFresh (cap : Nat) (hCapGe4 : 4 ≤ cap) : RHTable α β :=
+  RHTable.empty cap hCapGe4
+
+@[simp] theorem RHTable.emptyFresh_eq (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.emptyFresh cap hCapGe4 : RHTable α β) = RHTable.empty cap hCapGe4 := rfl
+
 /-- N1-B2: The empty table is well-formed (all 4 WF conjuncts). -/
 theorem RHTable.empty_wf [BEq α] [Hashable α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
     (RHTable.empty cap hCapGe4 : RHTable α β).WF where

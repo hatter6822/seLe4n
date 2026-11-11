@@ -300,7 +300,7 @@ open SeLe4n.Kernel.Concurrency
 
 -- The 14th `proofLayerInvariantBundle` conjunct is live (the bundle's
 -- boot witness elaborates only if the conjunct is present and provable).
-#check @SeLe4n.Kernel.Architecture.default_system_state_proofLayerInvariantBundle
+#check @SeLe4n.Platform.Boot.emptyBoot_proofLayerInvariantBundle
 #check @SeLe4n.Kernel.Architecture.vspaceUnmapPage_perCoreICache_eq
 
 -- ============================================================================

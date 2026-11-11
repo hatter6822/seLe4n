@@ -5,8 +5,32 @@ at 2^17 slots, which holds `maxObjects` objects and `maxAsidValue` ASIDs below
 the 75% load at which `RHTable.insert` resizes, so a live insert never rebuilds
 a slot array: the tables' slot arrays are built at boot only.
 
-- **Boot-sized tables.** `bootTableCapacity` (131072); the default state, which
-  the boot's builder starts from, builds `objects` and `asidTable` at it.
+- **Boot-sized tables, the boot's own.** `bootTableCapacity` (131072).  The
+  boot's builder starts from `mkEmptyIntermediateState ()`, whose state
+  `SystemState.bootEmpty ()` is the default state with `objects` and
+  `asidTable` built at that capacity.  Both take `()` and are
+  `@[noinline, never_extract]`, and the tables come from `RHTable.emptyFresh`
+  (`never_extract`, proven `RHTable.empty` by `rfl`), so the compiler never
+  lifts them into a module constant: each boot builds its own two tables and
+  fills them in place.  The default state keeps its 16-slot tables, since Lean
+  builds every computable closed state when its module initializes and keeps
+  it for the kernel's life.  The QEMU deployment's idle, started and boot
+  states are `noncomputable` (the proofs name them; the kernel boots from the
+  device tree it is handed).
+- **The bundle's base case is the empty boot.** The default state is no
+  longer boot-sized, so `default_system_state_proofLayerInvariantBundle` and
+  `apiInvariantBundle_default` are retired; `emptyBoot_bootLinkedShape` shows
+  the empty boot (`bootFromPlatform_empty_state`: `SystemState.bootEmpty ()`)
+  is of linked boot shape, and `emptyBoot_proofLayerInvariantBundle` follows
+  from `proofLayerInvariantBundle_of_bootLinkedShape`; `archAssumptionConsumer`'s
+  `bootObjectTyping` arm names it.  `SystemState.bootEmpty_bookkeepingAgrees`,
+  `bootEmpty_tablesPresized` and `bootEmpty_allTablesInvExtK` replace the
+  default state's.  Retired with the old bundle proof: its private helpers in
+  `Architecture/Invariant.lean` and the scheduler's `default_*` lemmas only it
+  read (`runnableThreadsAreTCBs`, `domainScheduleEntriesPositive`,
+  `budgetPositive`, `currentBudgetPositive`, `schedContextsWellFormed`,
+  `replenishQueueValid`, `schedContextBindingConsistent`,
+  `effectiveParamsMatchRunQueue`, `boundThreadDomainConsistent`).
 - **The no-resize theorems.** `RHTable.insert_eq_insertNoResize_of_load`;
   `SystemState.objects_insert_eq_insertNoResize` (a store of at most
   `maxObjects` objects in a boot-sized table) and
@@ -16,7 +40,7 @@ a slot array: the tables' slot arrays are built at boot only.
   `CarveRequest.heapBytes` reads 0 on such a store.
 - **Carried by the invariant bundle.** `SystemState.tablesPresized` is
   `bookkeepingAgrees.presized`, so it rides in the bundle's 22nd component the
-  way UC2's agreement does, held by the default state and the boot and kept by
+  way UC2's agreement does, held by the boot's empty state and the boot and kept by
   every kernel entry through each step's `MappingStage`.  `ghostsKept` and
   `BookkeepingKept` state that neither table shrinks (`objectsCapacity`,
   `asidCapacity`); every table write carries a capacity lemma (an equality for
@@ -44,7 +68,9 @@ a slot array: the tables' slot arrays are built at boot only.
   is refused (`objectStoreCapacityExceeded`).
 - **Retired**: `FrozenState`'s private `toList_empty` and
   `fold_none_replicate`, replaced by `RHTable.toList_empty`.
-- **Gates.** The store-read census classifies `emptyImpl` as a constructor;
+- **Gates.** The store-read census classifies `emptyImpl` and `emptyFresh` as
+  constructors; Tier 3 pins the `never_extract` builders, the empty boot's
+  bookkeeping and `emptyBoot_bootLinkedShape`;
   `tablesPresized`'s fields are `objectsBootSized` / `asidBootSized`, since the
   census reads a field named `objects` as the object store; the de-threading
   gate pins `State.lean`'s second tactic macro (`capacity_kept`).

@@ -2089,15 +2089,14 @@ theorem four_le_bootTableCapacity : 4 ≤ bootTableCapacity := by decide
 instance : Inhabited SystemState where
   default := {
     machine := default
-    -- WS-UC UC3: the boot's object and ASID tables are built boot-sized.
-    objects := RHTable.empty bootTableCapacity four_le_bootTableCapacity
+    objects := {}
     objectIndexGhost := SeLe4n.Erased.mk []
     objectIndexSetGhost := SeLe4n.Erased.mk default
     scheduler := default
     lifecycle := {
       objectTypesGhost := SeLe4n.Erased.mk {}
     }
-    asidTable := RHTable.empty bootTableCapacity four_le_bootTableCapacity
+    asidTable := {}
     interfaceRegistry := {}
     cdt := .empty
     tlb := TlbState.empty
@@ -2195,17 +2194,55 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.objectIndexSet.table.invExtK
 
 /-- The default SystemState satisfies `allTablesInvExtK` because all tables are
-empty, and an empty RHTable of any capacity (16, or `bootTableCapacity` for the
-object and ASID tables) trivially satisfies `invExtK`. -/
+empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
 theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK _ four_le_bootTableCapacity
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK _ four_le_bootTableCapacity
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor
   · show (SeLe4n.Erased.mk ({} : RHTable SeLe4n.ObjId KernelObjectType)).out.invExtK
     rw [SeLe4n.Erased.out_mk]; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   show (SeLe4n.Erased.mk (default : RHSet SeLe4n.ObjId)).out.table.invExtK
   rw [SeLe4n.Erased.out_mk]; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
+
+/-- WS-UC UC3: **the boot's empty state**: the default state with its object and
+ASID tables built at `bootTableCapacity`, the state the boot builder starts from
+(`mkEmptyIntermediateState`).  The tables are built when it is called
+(`RHTable.emptyFresh`), and it is never a module constant (`never_extract`), so
+the boot that calls it owns both tables and fills them in place, and no module
+initializer builds a boot-sized table.  The default state keeps 16-slot tables:
+it seeds every model and test state that is not a boot, and Lean builds each
+closed state at module initialization, so boot-sized tables there would be
+built once per closed state and kept for the kernel's life. -/
+@[noinline, never_extract]
+def SystemState.bootEmpty (_ : Unit) : SystemState :=
+  { (default : SystemState) with
+    objects := RHTable.emptyFresh bootTableCapacity four_le_bootTableCapacity
+    asidTable := RHTable.emptyFresh bootTableCapacity four_le_bootTableCapacity }
+
+/-- WS-UC UC3: the boot's empty state has the default state's every field but the
+two tables. -/
+theorem SystemState.bootEmpty_eq :
+    SystemState.bootEmpty () =
+      { (default : SystemState) with
+        objects := RHTable.empty bootTableCapacity four_le_bootTableCapacity
+        asidTable := RHTable.empty bootTableCapacity four_le_bootTableCapacity } := rfl
+
+@[simp] theorem SystemState.bootEmpty_objects :
+    (SystemState.bootEmpty ()).objects = RHTable.empty bootTableCapacity four_le_bootTableCapacity :=
+  rfl
+
+@[simp] theorem SystemState.bootEmpty_asidTable :
+    (SystemState.bootEmpty ()).asidTable = RHTable.empty bootTableCapacity four_le_bootTableCapacity :=
+  rfl
+
+/-- WS-UC UC3: the boot's empty state satisfies `allTablesInvExtK`: its tables
+are empty, the two boot-sized ones as much as the default's. -/
+theorem SystemState.bootEmpty_allTablesInvExtK :
+    (SystemState.bootEmpty ()).allTablesInvExtK := by
+  have h := default_allTablesInvExtK
+  exact ⟨SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK _ four_le_bootTableCapacity,
+    SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK _ four_le_bootTableCapacity, h.2.2⟩
 
 /-- The default state's object store has an empty `toList`. -/
 theorem default_objects_toList_empty :
@@ -2531,7 +2568,7 @@ def objectCountBounded (st : SystemState) : Prop :=
 abbrev objectCount_le_maxObjects := objectCountBounded
 
 /-- WS-UC UC3: **the object and ASID tables are at least boot-sized.**  The boot
-builds both at `bootTableCapacity` (the default state, `default_tablesPresized`), and no write
+builds both at `bootTableCapacity` (its empty state, `SystemState.bootEmpty_tablesPresized`), and no write
 shrinks a table, so it holds on every reachable state: `bookkeepingAgrees`
 carries it (`SystemState.bookkeepingAgrees.presized`), so the boot's
 `IntermediateState` and the 22nd conjunct of `proofLayerInvariantBundle` do, and
@@ -2540,8 +2577,8 @@ structure SystemState.tablesPresized (st : SystemState) : Prop where
   objectsBootSized : bootTableCapacity ≤ st.objects.capacity
   asidBootSized : bootTableCapacity ≤ st.asidTable.capacity
 
-/-- WS-UC UC3: the default state — the boot's empty state — is boot-sized. -/
-theorem default_tablesPresized : (default : SystemState).tablesPresized :=
+/-- WS-UC UC3: the boot's empty state is boot-sized. -/
+theorem SystemState.bootEmpty_tablesPresized : (SystemState.bootEmpty ()).tablesPresized :=
   ⟨Nat.le_refl _, Nat.le_refl _⟩
 
 /-- WS-UC UC3: **an object-table insert on a boot-sized table holding at most
@@ -2559,8 +2596,7 @@ theorem SystemState.objects_insert_eq_insertNoResize {st : SystemState}
 theorem default_objectCount_le_maxObjects :
     objectCount_le_maxObjects (default : SystemState) := by
   unfold objectCount_le_maxObjects objectCountBounded maxObjects
-  show (RHTable.empty bootTableCapacity four_le_bootTableCapacity :
-    RHTable SeLe4n.ObjId KernelObject).size ≤ 65536
+  show (RHTable.empty 16 (by omega) : RHTable SeLe4n.ObjId KernelObject).size ≤ 65536
   simp [RHTable.empty]
 
 /-- WS-ZA ZA5.4: **a store that leaves the ASID table as it is.**  A VSpace root
@@ -6743,20 +6779,35 @@ structure SystemState.bookkeepingAgrees (st : SystemState) : Prop where
   typesInv : st.lifecycle.objectTypes.invExtK
   presized : st.tablesPresized
 
-/-- WS-UC UC2: the default state's bookkeeping agrees: every table is empty. -/
-theorem default_bookkeepingAgrees : SystemState.bookkeepingAgrees (default : SystemState) where
+/-- WS-UC UC2: the boot's empty state's bookkeeping agrees: every table is empty
+(WS-UC UC3: and the object and ASID tables are boot-sized). -/
+theorem SystemState.bootEmpty_bookkeepingAgrees :
+    SystemState.bookkeepingAgrees (SystemState.bootEmpty ()) where
   index id := by
-    have : (default : SystemState).objects[id]? = none := RHTable.getElem?_empty _ _ _
-    simp [this, default_objectIndex]
-  nodup := by rw [default_objectIndex]; exact List.nodup_nil
+    have : (SystemState.bootEmpty ()).objects[id]? = none := by
+      rw [SystemState.bootEmpty_objects]; exact RHTable.getElem?_empty _ _ _
+    have hI : (SystemState.bootEmpty ()).objectIndex = [] := default_objectIndex
+    rw [hI, this]; simp
+  nodup := by
+    have hI : (SystemState.bootEmpty ()).objectIndex = [] := default_objectIndex
+    rw [hI]; exact List.nodup_nil
   indexSet id := by
-    have : (default : SystemState).objects[id]? = none := RHTable.getElem?_empty _ _ _
-    simp only [this, ne_eq, not_true_eq_false, iff_false, default_objectIndexSet]
+    have : (SystemState.bootEmpty ()).objects[id]? = none := by
+      rw [SystemState.bootEmpty_objects]; exact RHTable.getElem?_empty _ _ _
+    have hS : (SystemState.bootEmpty ()).objectIndexSet = default := default_objectIndexSet
+    simp only [this, ne_eq, not_true_eq_false, iff_false, hS]
     exact Bool.eq_false_iff.mp (RHSet.contains_empty id)
-  types := default_systemState_objectTypeMetadataConsistent
+  types oid := by
+    simp only [SystemState.lookupObjectTypeMeta]
+    have h₁ : (SystemState.bootEmpty ()).lifecycle.objectTypes[oid]? = none := by
+      show (default : SystemState).lifecycle.objectTypes[oid]? = none
+      rw [default_objectTypes]; exact RHTable.getElem?_empty _ _ _
+    have h₂ : (SystemState.bootEmpty ()).objects[oid]? = none := by
+      rw [SystemState.bootEmpty_objects]; exact RHTable.getElem?_empty _ _ _
+    rw [h₁, h₂]; rfl
   indexSetInv := default_allTablesInvExtK.2.2.2.2
   typesInv := default_allTablesInvExtK.2.2.1
-  presized := default_tablesPresized
+  presized := SystemState.bootEmpty_tablesPresized
 
 /-- WS-UC UC2: **the index is as long as the object table is large** on a state
 whose bookkeeping agrees: what lets the capacity check and every fuel the

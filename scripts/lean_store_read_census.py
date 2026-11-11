@@ -134,6 +134,8 @@ _TABLE_OPS = {
     "empty": "other",
     # The compiled `empty` (`@[csimp] RHTable.empty_eq_emptyImpl`): a constructor.
     "emptyImpl": "other",
+    # The empty table built where it is called (`never_extract`): a constructor.
+    "emptyFresh": "other",
     "ofList": "other",
     "resize": "other",
     "invExtK": "other",

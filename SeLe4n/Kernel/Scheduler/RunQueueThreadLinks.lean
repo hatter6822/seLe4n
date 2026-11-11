@@ -1494,9 +1494,7 @@ theorem default_runQueueRefined : (default : SystemState).runQueueRefined := by
   have hNone : (default : SystemState).getTcb? t = none := by
     unfold getTcb?
     simp only [RHTable_getElem?_eq_get?]
-    rw [show (default : SystemState).objects =
-        RHTable.empty bootTableCapacity four_le_bootTableCapacity from rfl,
-      RHTable_get?_empty _ four_le_bootTableCapacity]
+    rw [show (default : SystemState).objects = RHTable.empty 16 from rfl, RHTable_get?_empty 16 (by omega)]
   unfold runLinkOn
   rw [hNone]
   rfl

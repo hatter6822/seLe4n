@@ -368,7 +368,7 @@ open SeLe4n.Kernel.Concurrency
 -- the 12th `proofLayerInvariantBundle` conjunct) across every live
 -- shootdown-aware transition:
 #check @proofLayerInvariantBundle
-#check @default_system_state_proofLayerInvariantBundle
+#check @SeLe4n.Platform.Boot.emptyBoot_proofLayerInvariantBundle
 #check @completeShootdownOnCore_preserves_pendingBounded
 #check @tlbShootdownLocal_preserves_pendingBounded
 #check @handleTlbShootdownReqOnCore_preserves_pendingBounded
@@ -489,7 +489,7 @@ open SeLe4n.Kernel.Concurrency
 -- SM7.C.7 tlbConsistency_cross_subsystem (the memory-subsystem capstone):
 #check @tlbConsistency_cross_subsystem
 -- SM7.C: the 13th proofLayerInvariantBundle conjunct is live:
-#check @SeLe4n.Kernel.Architecture.default_system_state_proofLayerInvariantBundle
+#check @SeLe4n.Platform.Boot.emptyBoot_proofLayerInvariantBundle
 -- SM7.C completeness: insert-preservation (the walker half of the safety
 -- story), the total coalescing form, and the runtime-decidable checker:
 #check @tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore

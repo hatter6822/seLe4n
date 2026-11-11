@@ -147,7 +147,7 @@ private def fs010_freezeVSpaceRoot : IO Unit := do
 
 /-- FS-011: freeze empty IntermediateState -/
 private def fs011_freezeEmpty : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let fss := freeze ist
   expect "frozen objects data size 0" (fss.objects.data.size == 0)
   expect "frozen IRQ lines inactive" (fss.irqSignalLines.mem 0 == false)
@@ -159,7 +159,7 @@ private def fs011_freezeEmpty : IO Unit := do
 
 /-- FS-012: freeze deterministic — same input yields same output -/
 private def fs012_freezeDeterministic : IO Unit := do
-  let ist := mkEmptyIntermediateState
+  let ist := (mkEmptyIntermediateState ())
   let fss1 := freeze ist
   let fss2 := freeze ist
   expect "same objects data size" (fss1.objects.data.size == fss2.objects.data.size)

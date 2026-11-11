@@ -311,8 +311,14 @@ theorem qemuVirtBoundPlatformConfig_checked :
 -- The deployment boots, with both witnesses installed and started
 -- ============================================================================
 
-/-- The idle stage: the checked boot with each core's idle thread stored. -/
-def qemuVirtDeploymentIdleState : IntermediateState :=
+/-- The idle stage: the checked boot with each core's idle thread stored.
+
+    WS-UC UC3: this stage and the two after it are `noncomputable`: they are
+    the states the proofs name, and the kernel computes its boot state from the
+    device tree it is handed (`kernelMain`).  Lean builds a computable constant
+    when its module initializes and keeps it for the kernel's life, so each
+    would hold boot-sized object and ASID tables nothing reads. -/
+noncomputable def qemuVirtDeploymentIdleState : IntermediateState :=
   (PlatformBinding.declaredCores (platform := QemuVirtPlatform)).foldl storeIdleThread
     (bootEnableInterruptsOp
       (installBootVSpaceRoot (bootFromPlatform qemuVirtBoundPlatformConfig)
@@ -320,13 +326,13 @@ def qemuVirtDeploymentIdleState : IntermediateState :=
         qemuVirtBootVSpaceRootEntry.hMappings))
 
 /-- The started stage: the idle stage with both initial threads started. -/
-def qemuVirtDeploymentStartedState : IntermediateState :=
+noncomputable def qemuVirtDeploymentStartedState : IntermediateState :=
   (PlatformBinding.initialThreads (platform := QemuVirtPlatform)).foldl startInitialThread
     qemuVirtDeploymentIdleState
 
 /-- The state the `virt` boot installs: the started stage with its capabilities
     linked into the derivation tree. -/
-def qemuVirtDeploymentBootState : IntermediateState :=
+noncomputable def qemuVirtDeploymentBootState : IntermediateState :=
   linkBootCapabilities qemuVirtBoundPlatformConfig
     (installIrqNodes (irqNodeLineCount qemuVirtBoundPlatformConfig) qemuVirtDeploymentStartedState)
 
