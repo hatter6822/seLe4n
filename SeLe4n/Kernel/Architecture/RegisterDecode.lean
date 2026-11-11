@@ -1147,6 +1147,14 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
   | none => rfl
   | some sid => cases sid <;> rfl
 
+/-- Whether a message takes a short route: it fits the inline registers, or
+its syscall reads no word past them.  Decided out of line, so the compiled
+router branches once on the answer: decided inline, the two ways to `true`
+would meet at one join point that takes the message info as a cell, and every
+kernel entry would build it. -/
+@[reducible, noinline] def routesShortDecidable (len size n : Nat) :
+    Decidable (len ≤ size ∨ syscallNumberReadsOverflow n = false) := inferInstance
+
 /-- The routed syscall a register file names once its registers are in bounds
     (`registerRoutedSyscall`). -/
 @[inline] def registerRoutedSyscallOf (layout : SyscallRegisterLayout) (regs : RegisterFile) :
@@ -1155,6 +1163,8 @@ theorem routedLongTail_eq (capAddr : CPtr) (len size n : Nat) :
   match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
   | .error e => .refused e
   | .ok msgInfo =>
+    haveI := routesShortDecidable msgInfo.length layout.msgRegs.size
+      (readReg regs layout.syscallNumReg).val
     if msgInfo.length ≤ layout.msgRegs.size ∨
         syscallNumberReadsOverflow (readReg regs layout.syscallNumReg).val = false then
       if (readReg regs layout.syscallNumReg).val = SyscallId.notificationSignal.toNat then
