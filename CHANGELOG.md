@@ -1,3 +1,43 @@
+## v0.37.15 — the bookkeeping tables become ghosts
+
+WS-UC UC2 (decision D3).  The object index, the object-index set and the
+lifecycle type table are proof-only ghosts (`SeLe4n.Erased`), as the run
+queue's abstract queue became in WS-ZA, so a carve no longer builds their
+cells: every carve pin falls by 5 cells (120 bytes).
+
+- **Ghost fields** `objectIndexGhost`, `objectIndexSetGhost` and
+  `LifecycleMetadata.objectTypesGhost` (and their frozen counterparts); the
+  readers `objectIndex`, `objectIndexSet` and `lifecycle.objectTypes` are
+  `noncomputable` reads of the ghost, so the compiler refuses any compiled read.
+- **Agreement invariant** `SystemState.bookkeepingAgrees` (the index lists
+  exactly the stored identifiers, without duplicates; the set contains exactly
+  them; the type table is consistent), carried by the boot's
+  `IntermediateState` and preserved by every store, erase and boot step;
+  `objectIndex_length` gives `objectIndex.length = objects.size`.
+- **Re-pointed compiled reads**, each walk proven independent of the table's
+  iteration order: the capacity check is `objects.size ≥ maxObjects`
+  (`objectCountBounded` replaces `objectIndexBounded`); the PIP-chain fuel is
+  `objects.size`; the information-flow object index is sorted (`sortObjIds`)
+  and its executable form (`projectObjectIndexByTable`) walks the table,
+  proven equal to the specification; the cross-core SGI walk and the admission
+  walk fold the table (`mem_objectRuleSgis`, `admissionUtilizationOf_eq_index`);
+  `storeIsFresh` reads the table; the store-locality checks read kinds
+  (`getObjectType?`), so the in-place stores no longer fail while a
+  bookkeeping table sits at its resize load.
+- **`storeFresh`** writes the object table and the ASID table only; the
+  retire (`withObjectErased`) erases the table entry and maps the ghosts.
+  `heapBytes` drops the index-set and type-table resize terms.
+- **Retired**: `withObjectIndexed`, `withObjectIndexSet`, `withObjectType`,
+  `objIdListDrop`, `withObjectUnindexed`, `withObjectIndexSetErased`,
+  `withObjectTypeErased` and the `notVSpaceRootAt*` frame lemmas (frames now
+  take kind agreement).
+- **Boundary test** (`runObjectStoreCapacityBoundaryChecks`): with the store
+  at `maxObjects − 1` the carve succeeds; the next is refused with
+  `objectStoreCapacityExceeded` in the state it was handed.
+- **Runtime checks** walk `objectIds` (the table's keys); the
+  `crossSub:lifecycleObjectTypeLockstep` check compares the type reader with the
+  table's enumeration, and its negative test plants a misfiled entry.
+
 ## v0.37.14 — the low-risk rows measured, and a message read as seL4 reads it
 
 The last cut of the heap-allocations-per-syscall coverage audit (WS-UC).  It
