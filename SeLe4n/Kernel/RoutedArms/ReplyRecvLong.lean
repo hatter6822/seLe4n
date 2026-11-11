@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.RoutedArms.Report
+import SeLe4n.Kernel.RoutedArms.ReplyRecv
 
 /-!
 # The long reply-receive route's arm, out of line
@@ -19,6 +20,10 @@ page's first slot read, the reply-receive dispatched through its long arm
 (`replyRecvLongOperandArmThenTaintR`) on the state with this core's TLB holding
 the buffer's translations, a refusal handing back the TLB the entry held.  The
 replier's TCB is read here, off the state the arm is handed.
+
+An overflow slot that does not read clamps the message to its four inline
+words, as seL4's `handleInvocation` clamps a message with no IPC buffer, and
+the short route's arm runs on it (`replyRecvRoutedArm`).
 -/
 
 namespace SeLe4n.Kernel
@@ -36,11 +41,11 @@ apart, a result under the first. -/
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
-        (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
+        (fun _ => replyRecvRoutedArm ctx executingCore tid capWord 4 extraCaps label st)
         (fun _ =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
+            (fun _ => replyRecvRoutedArm ctx executingCore tid capWord 4 extraCaps label st)
             (fun _ => longOperandK .replyRecv (SeLe4n.CPtr.ofWord capWord) tid executingCore
                   (replyRecvLongOperandArmThenTaintR ctx tcb.registerContext length extraCaps label tid
                     executingCore (syscallRequiredRight .replyRecv))

@@ -741,6 +741,19 @@ for driver in drivers:
             "service-register-cap-fault", "receive-service-register-cap-fault",
             "reply-service-register-cap-fault", "long-send-cap-fault",
             "receive-long-send-cap-fault", "reply-long-send-cap-fault",
+            # The buffer's page unmapped: the messages past the inline words
+            # clamped to them, as seL4's handleInvocation clamps a message with
+            # no IPC buffer, and a long receive reading no overflow word.
+            "configure-one-word-unmapped-buffer", "configure-long-unmapped-buffer",
+            "long-send-unmapped-buffer-cap-fault",
+            "receive-long-send-unmapped-buffer-cap-fault",
+            "reply-long-send-unmapped-buffer-cap-fault",
+            "long-call-unmapped-buffer-cap-fault",
+            "receive-long-call-unmapped-buffer-cap-fault",
+            "reply-long-call-unmapped-buffer-cap-fault",
+            "long-receive-unmapped-buffer-cap-fault",
+            "receive-long-receive-unmapped-buffer-cap-fault",
+            "reply-long-receive-unmapped-buffer-cap-fault",
             # The receive phase's capability faults (seL4's `handleRecv`): a
             # capability of the wrong type, or without the right to receive,
             # faults as a failed lookup does.
@@ -766,7 +779,8 @@ for driver in drivers:
             "remote-asid-map", "remote-asid-unmap", "vacated-core-syscall",
             "vacated-core-reschedule", "fp-deferred-home-back", "fp-deferred-root-receives",
             "fp-access-deferred", "fp-released-reschedule", "fp-access-released",
-            # Every syscall the router takes past its inline words, refused.
+            # Every syscall with a message past its inline words, refused: only
+            # an IPC transfer and a five-word invocation read the overflow words.
             "overflowed-cspace-mint", "overflowed-cspace-copy",
             "overflowed-cspace-move", "overflowed-cspace-delete", "overflowed-cspace-revoke",
             "overflowed-vspace-map", "overflowed-vspace-unmap",

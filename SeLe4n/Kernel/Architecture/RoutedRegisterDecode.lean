@@ -474,7 +474,8 @@ theorem decodeSyscallArgsFromState_of_routedAudited
 /-- WS-ZA ZA5.2, ZA5.5: what a routed one-overflow-word invocation pins about
 the decode: as `sid`, one of `routedOverflowOne`, at `capAddr`, with one
 overflow word, its words the layout's message registers and then overflow slot
-0; it refuses exactly when that slot's read does. -/
+0; when that slot does not read, the message is clamped to the registers
+(`clampToInline`). -/
 theorem decodeSyscallArgsFromState_of_routedOverflowOne
     (st : SystemState) (tid : ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
@@ -484,7 +485,10 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
     ∃ msgInfo, msgInfo.length = layout.msgRegs.size + 1 ∧
       decodeSyscallArgsFromState st tid layout regs regCount =
       match readOverflowWord st tid 0 with
-      | .error e => .error e
+      | .error _ => .ok (clampToInline
+          { capAddr, msgInfo, syscallId := sid,
+            msgRegs := layout.msgRegs.map (readReg regs),
+            inlineCount := layout.msgRegs.size, overflowCount := 0 })
       | .ok w => .ok { capAddr, msgInfo, syscallId := sid,
                        msgRegs := layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)],
                        inlineCount := layout.msgRegs.size, overflowCount := 1 } := by
@@ -535,6 +539,33 @@ theorem decodeSyscallArgsFromState_of_routedOverflowOne
       · repeat' (first | (cases h; done) | split at h |
         (rcases unroutedSyscall_eq h with h' | ⟨h', -⟩ <;> cases h'; done))
   · cases h
+
+/-- **The decode a long frame clamps to** when an overflow slot it names does
+not read (`clampToInline`, seL4's `handleInvocation` with no IPC buffer): the
+default layout's inline words, as `sid`, at `capAddr`, its message info's
+length the four registers'. -/
+def clampedFrameDecode (sid : SyscallId) (rf : RegisterFile) (capAddr : CPtr)
+    (mi : MessageInfo) : SyscallDecodeResult :=
+  { capAddr, msgInfo := { mi with length := 4 }, syscallId := sid,
+    msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf),
+    inlineCount := 4, overflowCount := 0 }
+
+/-- A long frame's merge, an overflow slot of which does not read, is the
+clamped decode. -/
+theorem mergeOverflowWords_clamped (st : SystemState) (tid : ThreadId) (rf : RegisterFile)
+    (sid : SyscallId) (capAddr : CPtr) (mi : MessageInfo)
+    (hRd : syscallReadsOverflow sid = true)
+    (hE : ∃ e, (List.range (mi.length - 4)).mapM (readOverflowWord st tid) = .error e) :
+    mergeOverflowWords st tid
+        { capAddr, msgInfo := mi, syscallId := sid,
+          msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg rf),
+          inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 0 } =
+      .ok (clampedFrameDecode sid rf capAddr mi) := by
+  obtain ⟨e, hE⟩ := hE
+  have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+  unfold mergeOverflowWords
+  simp only [hRd, ↓reduceIte, Array.size_map, hSz, hE, pure, Except.pure, clampToInline,
+    clampedFrameDecode]
 
 /-- What a routed long send pins about the decode: as `.send`, at `capAddr`,
 with the routed message info, which carries no capabilities and runs past the

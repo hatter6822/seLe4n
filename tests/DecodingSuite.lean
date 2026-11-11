@@ -666,9 +666,11 @@ private def ak4a02_serviceRegisterOverflow : IO Unit := do
     expect "msgRegs[4].val=0" (decoded.msgRegs[4]!.val == 0)
   | .error _ => expect "decode failed" false
 
-/-- AK4-A-T03: 5-arg schedContextConfigure with unmapped VA → fails with
-    `.invalidMessageInfo`. Uses an IPC buffer address that is NOT in the
-    VSpaceRoot mapping table. -/
+/-- AK4-A-T03: 5-arg schedContextConfigure with unmapped VA → the message is
+    clamped to its four inline words (`clampToInline`), as seL4's
+    `handleInvocation` clamps a message with no IPC buffer, so the configure is
+    then short of its fifth argument.  Uses an IPC buffer address that is NOT
+    in the VSpaceRoot mapping table. -/
 private def ak4a03_scConfigureUnmappedFails : IO Unit := do
   -- Build a state where the IPC buffer VA is NOT mapped
   let st := buildIpcDecodeState 17 5 #[⟨1000⟩, ⟨5000⟩, ⟨128⟩, ⟨10000⟩]
@@ -680,9 +682,15 @@ private def ak4a03_scConfigureUnmappedFails : IO Unit := do
     | _ => default
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           regs 32 with
-  | .ok _ => expect "unexpected success" false
-  | .error e =>
-    expect "invalidMessageInfo" (e == .invalidMessageInfo)
+  | .ok decoded =>
+    expect "clamped length=4" (decoded.msgInfo.length == 4)
+    expect "clamped inlineCount=4" (decoded.inlineCount == 4)
+    expect "clamped overflowCount=0" (decoded.overflowCount == 0)
+    expect "clamped msgRegs.size=4" (decoded.msgRegs.size == 4)
+    expect "clamped short of the fifth argument"
+      (decoded.msgInfo.length < SeLe4n.Kernel.Architecture.SyscallArgDecode.truncationMinimum
+        decoded.syscallId)
+  | .error _ => expect "decode failed" false
 
 /-- AK4-A-T04: 5-arg syscall with msgLen=0 → ignores IPC buffer → succeeds
     with inlineCount = msgRegs.size = 4, overflowCount = 0. -/
@@ -724,6 +732,50 @@ private def signalLongReadsNoIpcBuffer : IO Unit := do
     | .audited s' _, .declassifySignal =>
       expect "a long declassified signal routes as audited" (s' == .declassifySignal)
     | _, _ => expect s!"{sid}: a long message takes its short route" false
+
+/-- A receive, a wait, a yield and an invocation of at most four arguments
+read no word past the inline registers (`syscallReadsOverflow`), as seL4
+reads only the words a syscall uses: one whose message-info word names ten
+words decodes with no IPC buffer mapped, merges no overflow word, and the
+router takes its short route. -/
+private def shortReadersLongReadNoIpcBuffer : IO Unit := do
+  for sid in [SyscallId.receive, SyscallId.notificationWait, SyscallId.yield,
+      SyscallId.cspaceMint] do
+    let st := buildIpcDecodeState sid.toNat 10 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩] (mapIpcBuffer := false)
+    let tid : SeLe4n.ThreadId := ⟨800⟩
+    let regs : SeLe4n.RegisterFile :=
+      match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) => tcb.registerContext
+      | _ => default
+    match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout regs 32 with
+    | .ok decoded =>
+      expect s!"{sid}: a long message reads no overflow word" (decoded.overflowCount == 0)
+      expect s!"{sid}: the inline registers alone" (decoded.msgRegs.size == 4)
+    | .error _ => expect s!"{sid}: a long message decodes with no IPC buffer" false
+    match registerRoutedSyscall SeLe4n.arm64DefaultLayout regs 32, sid with
+    | .receive .., .receive => expect "a long receive routes as a receive" true
+    | .wait _, .notificationWait => expect "a long wait routes as a wait" true
+    | .yield, .yield => expect "a long yield routes as a yield" true
+    | .invoke s' _, .cspaceMint => expect "a long mint routes as an invocation" (s' == .cspaceMint)
+    | _, _ => expect s!"{sid}: a long message takes its short route" false
+
+/-- A long send whose IPC buffer the kernel cannot read is clamped to its four
+inline words (`clampToInline`), as seL4's `handleInvocation` clamps a message
+with no IPC buffer to `n_msgRegisters`, rather than refused. -/
+private def longSendUnmappedClamps : IO Unit := do
+  let st := buildIpcDecodeState SyscallId.send.toNat 10 #[⟨1⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩]
+    (mapIpcBuffer := false)
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let regs : SeLe4n.RegisterFile :=
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => tcb.registerContext
+    | _ => default
+  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout regs 32 with
+  | .ok decoded =>
+    expect "long send clamped to length 4" (decoded.msgInfo.length == 4)
+    expect "long send clamped: no overflow word" (decoded.overflowCount == 0)
+    expect "long send clamped: the inline registers" (decoded.msgRegs.size == 4)
+  | .error _ => expect "a long send with no IPC buffer decodes clamped" false
 
 /-- AK4-A-T05: `ipcBufferReadMr` bounds check — idx = maxOverflowSlots returns
     `.overflowIndexOutOfRange`. -/
@@ -843,6 +895,8 @@ private def runAk4aTests : IO Unit := do
   ak4a03_scConfigureUnmappedFails
   ak4a04_lengthZeroIgnoresIpcBuffer
   signalLongReadsNoIpcBuffer
+  shortReadersLongReadNoIpcBuffer
+  longSendUnmappedClamps
   ak4a05_ipcBufferOutOfRange
   ak4a06_sizeInvariant
   ak4a07_legacyBackwardCompat

@@ -23586,19 +23586,34 @@ run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterfac
 run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^      if routedOverflowOne sid then \.overflowOne sid capAddr$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/Kernel/RefusalCarryingEntry.lean
-# A signal or a declassified signal reads no word past the inline registers
-# (seL4's `seL4_Signal` reads no message): one owner, `syscallReadsOverflow`,
-# decides it for the decode's merge, the router's long tail and the overflowed
-# route, and the merge is skipped on its answer, not on a syscall name.
-run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.notificationSignal \| \.declassifySignal => false$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+# A syscall reads a message word past the inline registers only when its
+# decoder or its transfer uses it, as seL4 reads only the words a syscall uses
+# (never for a receive, a wait, a yield or a signal): one owner,
+# `syscallReadsOverflow`, decides it for the decode's merge and the router,
+# naming every kind with no default arm, and the merge is skipped on its
+# answer, not on a syscall name.  A buffer the kernel cannot read clamps the
+# message to its inline words (`clampToInline`), as seL4's `handleInvocation`
+# clamps a message with no IPC buffer, in each of the three merges.
+run_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n  \| \.send \| \.call \| \.reply \| \.replyRecv \| \.schedContextConfigure \| \.serviceRegister => true\n  \| \.notificationSignal \| \.declassifySignal \| \.receive \| \.notificationWait \| \.yield$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_negative_check "INVARIANT" rg -n -U '^def syscallReadsOverflow : SyscallId → Bool\n(  \|[^\n]*\n)*  \| _ ' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    let overflowNats ← \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    let overflowNats ← \(List\.range overflowNeeded\)\.mapM readOverflow$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n -U '^  if syscallReadsOverflow base\.syscallId then do\n    let inlineSize := base\.msgRegs\.size$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n -U '^@\[inline\] def routedNoOverflowOf \(sid : SyscallId\) \(capAddr : CPtr\) : RegisterRoutedSyscall :=\n  if syscallReadsOverflow sid then \.viaDecode\n  else if routedAudited sid then \.audited sid capAddr\n  else \.signal capAddr$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n -U '^  \| sid => syscallReadsOverflow sid &&\n      \(routedInvocation sid \|\| routedAudited sid \|\| routedOverflowOne sid\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n([ \t]*(--[^\n]*)?\n)*    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\) with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  else if syscallReadsOverflow base\.syscallId then\n    let overflowNeeded := totalLen - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM readOverflow with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^  if syscallReadsOverflow base\.syscallId then\n    let inlineSize := base\.msgRegs\.size\n    let overflowNeeded := base\.msgInfo\.length - inlineSize\n    match \(List\.range overflowNeeded\)\.mapM \(readOverflowWord st tid\) with\n    \| \.ok overflowNats =>\n(      [^\n]*\n)+    \| \.error _ => pure \(clampToInline base\)$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def clampToInline \(base : SyscallDecodeResult\) : SyscallDecodeResult :=\n  \{ base with\n      msgInfo       := \{ base\.msgInfo with length := base\.msgRegs\.size \},\n      inlineCount   := base\.msgRegs\.size,\n      overflowCount := 0 \}$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^    if msgInfo\.length ≤ layout\.msgRegs\.size ∨\n        syscallNumberReadsOverflow \(readReg regs layout\.syscallNumReg\)\.val = false then$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def syscallNumberReadsOverflow \(n : Nat\) : Bool :=\n  match SyscallId\.ofNat\? n with\n  \| some sid => syscallReadsOverflow sid$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeSyscallArgsFromState_of_no_overflow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem syscallReadsOverflow_eq_false_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem syscallReadsOverflow_eq_true_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+# The compiled long arms, an overflow slot that does not read, run their short
+# route's arm on the four inline words (the clamp), and no routed arm answers
+# a buffer it cannot read with `InvalidMessageInfo`.
+run_check "INVARIANT" rg -n '^        \(fun _ => sendRoutedArm ctx executingCore tid capWord 4 st\)$' SeLe4n/Kernel/RoutedArms/SendLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => callRoutedArm ctx executingCore tid capWord 4 st\)$' SeLe4n/Kernel/RoutedArms/CallLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => replyRoutedArm ctx executingCore tid capWord 4 extraCaps label st\)$' SeLe4n/Kernel/RoutedArms/ReplyLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => replyRecvRoutedArm ctx executingCore tid capWord 4 extraCaps label st\)$' SeLe4n/Kernel/RoutedArms/ReplyRecvLong.lean
+run_check "INVARIANT" rg -n '^        \(fun _ => shortArgsRoutedArm executingCore tid sid capWord st\)$' SeLe4n/Kernel/RoutedArms/Overflowed.lean
+run_check "INVARIANT" rg -n '^      \(fun _ => shortArgsRoutedArm executingCore tid sid capWord st\)$' SeLe4n/Kernel/RoutedArms/OverflowOne.lean
+run_negative_check "INVARIANT" rg -n 'invalidMessageInfo' SeLe4n/Kernel/RoutedArms
 run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem registerService_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean

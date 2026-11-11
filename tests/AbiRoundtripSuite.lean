@@ -324,10 +324,11 @@ private def t09_service_register_grant_strict : IO Unit := do
     | .ok _ =>
       throw <| IO.userError "expected error, got ok"
 
-/-- AK4-G-T10: `ipcBufferReadMr` failure-to-decode when the thread ID lookup
-    fails. Uses a `tid` that does not exist in the object store — the helper
-    returns `.threadNotFound`, which the wrapper collapses to
-    `.invalidMessageInfo` on the 5-arg overflow path. -/
+/-- AK4-G-T10: `ipcBufferReadMr` failure when the thread ID lookup fails.
+    Uses a `tid` that does not exist in the object store — the helper returns
+    `.threadNotFound`, and the decode clamps the 5-arg message to its four
+    inline words (`clampToInline`), as seL4 clamps a message with no IPC
+    buffer. -/
 private def t10_unknown_tid_fails : IO Unit := do
   let syscallId := 11
   let msgLen := 5
@@ -338,12 +339,12 @@ private def t10_unknown_tid_fails : IO Unit := do
   let bogusTid : SeLe4n.ThreadId := ⟨9999⟩
   match decodeSyscallArgsFromState st bogusTid SeLe4n.arm64DefaultLayout
           (regsOf st ⟨900⟩) 32 with
-  | .error .invalidMessageInfo =>
-    expect "unknown tid rejected" true
+  | .ok decoded =>
+    expect "unknown tid clamped to the inline words"
+      (decoded.msgInfo.length == 4 && decoded.overflowCount == 0 &&
+        decoded.msgRegs.size == 4)
   | .error e =>
-    throw <| IO.userError s!"expected invalidMessageInfo, got {toString e}"
-  | .ok _ =>
-    throw <| IO.userError "expected error, got ok"
+    throw <| IO.userError s!"expected the clamped decode, got {toString e}"
 
 private def runAll : IO Unit := do
   IO.println "=== AbiRoundtripSuite (AK4-G) ==="

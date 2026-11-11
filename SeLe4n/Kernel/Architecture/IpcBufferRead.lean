@@ -195,8 +195,9 @@ recursion over the pairs' bytes, so no `Option`, list or closure is built. -/
     carries many message registers through the IPC buffer; the truncation was
     a model-fidelity defect, fail-closed but real.
 
-    **Failure modes (all collapse to `.invalidMessageInfo` at the decode
-    boundary):**
+    **Failure modes (each clamps the message to its inline words at the
+    decode boundary, `clampToInline`, as seL4 clamps a message with no IPC
+    buffer):**
     - Missing TCB → `threadNotFound`.
     - Missing VSpaceRoot object → `vspaceRootInvalid`.
     - Unmapped IPC-buffer VAddr → `ipcBufferVAddrUnmapped`.

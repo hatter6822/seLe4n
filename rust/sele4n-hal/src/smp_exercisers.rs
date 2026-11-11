@@ -2367,16 +2367,15 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
     }
 }
 
-/// OBSERVATION ONLY, removed before the PR: a trip whose answer is printed
-/// and accepted whatever it is, so one run reads the answers to pin.
-#[cfg(feature = "hw_target")]
 /// `KernelError.invalidTypeTag`'s discriminant (`sele4n-types`).
 #[cfg(feature = "hw_target")]
 const INVALID_TYPE_TAG: u64 = 33;
 
-/// A call past its inline words (WS-UC coverage of the `overflowed` route),
-/// five words with the root task's IPC buffer mapped, on a capability whose
-/// type the syscall does not take (or, for the untyped calls, with an argument
+/// A call past its inline words (WS-UC coverage of the long messages), five
+/// words with the root task's IPC buffer mapped: only a five-word invocation
+/// reads the overflow words (the `overflowed` route), every other syscall
+/// here its inline words alone (its short route).  Each is on a capability
+/// whose type the syscall does not take (or, for the untyped calls, with an argument
 /// the decode or the object refuses), so the gate or the arm refuses with
 /// `code` and changes nothing.
 #[cfg(feature = "hw_target")]
@@ -3389,9 +3388,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             caps_or_badges: None,
             returns: None,
         },
-        // Every other syscall the router takes past its inline words
-        // (`overflowed`), five words (six for the service register, whose
-        // fifth is its own argument), each on a capability of a type it does
+        // Every other syscall with a message past its inline words, five
+        // words (six for the service register, whose fifth is its own
+        // argument, routed `overflowed`; the rest read their inline words
+        // alone), each on a capability of a type it does
         // not take, so the gate refuses it `InvalidCapability` before any
         // right and changes nothing (the receive's, a fault, is queued with
         // the other capability faults, `overflow_cap_faults`): the untyped reset
@@ -11333,7 +11333,8 @@ fn queued_overflow_cap_fault(
 /// (`syscallCapFaultOf`, delivered by `deliverSyscallCapFault`); with the
 /// partner runnable and not waiting, each is queued on the handler's endpoint.
 /// The buffer's page is unmapped and mapped again first, so its translation is
-/// on no core's TLB: the first configure refused for its arguments and the
+/// on no core's TLB (between the two, the messages past the inline words are
+/// clamped to them, as seL4 clamps a message with no IPC buffer): the first configure refused for its arguments and the
 /// first fault take the arm that fills the entry and takes the fill back
 /// (`tlbFillIpcBufferOnCore`, `tlbUndoFillOnCore`); the configure that then
 /// succeeds fills it and keeps it; the second fault and refusal and the
@@ -11368,7 +11369,55 @@ fn overflow_cap_faults(map_buffer_page: &RoundTrip, which: &str) -> bool {
     };
     let fills = configure("configure-fills-ipc-buffer", admitted_args);
     let held = configure("configure-held-ipc-buffer", admitted_args);
+    // With the buffer's page unmapped, a message past the inline words is
+    // clamped to them (seL4's `handleInvocation`: `length > n_msgRegisters &&
+    // !buffer` gives `n_msgRegisters`): the configure, one word past and two
+    // words past, is then short of its fifth argument and refused
+    // `TruncatedMessage` once its capability is found; the long send and the
+    // long call on the empty slot run as the short ones and fault on the
+    // lookup; and a long receive reads no overflow word at all, so it faults
+    // on the CNode capability as the short receive does.
+    let clamped_one_word = RoundTrip {
+        returns: refused(TRUNCATED_MESSAGE),
+        ..configure("configure-one-word-unmapped-buffer", admitted_args)
+    };
+    let clamped_long = RoundTrip {
+        msg_len: 6,
+        returns: refused(TRUNCATED_MESSAGE),
+        ..configure("configure-long-unmapped-buffer", admitted_args)
+    };
     unmeasured(&unmap_buffer_page, "the buffer's page was not unmapped")
+        && heap_allocations_round_trip(&clamped_one_word, which) == Some(true)
+        && heap_allocations_round_trip(&clamped_long, which) == Some(true)
+        && queued_overflow_cap_fault(
+            &overflow_cap_fault(
+                "long-send-unmapped-buffer-cap-fault",
+                SEND,
+                LONG_SEND_LENGTH,
+            ),
+            "receive-long-send-unmapped-buffer-cap-fault",
+            "reply-long-send-unmapped-buffer-cap-fault",
+            which,
+        )
+        && queued_overflow_cap_fault(
+            &overflow_cap_fault(
+                "long-call-unmapped-buffer-cap-fault",
+                CALL,
+                LONG_SEND_LENGTH,
+            ),
+            "receive-long-call-unmapped-buffer-cap-fault",
+            "reply-long-call-unmapped-buffer-cap-fault",
+            which,
+        )
+        && queued_overflow_cap_fault(
+            &TrapTrip {
+                x0: CNODE_CAP,
+                ..overflow_cap_fault("long-receive-unmapped-buffer-cap-fault", RECEIVE, 5)
+            },
+            "receive-long-receive-unmapped-buffer-cap-fault",
+            "reply-long-receive-unmapped-buffer-cap-fault",
+            which,
+        )
         && unmeasured(map_buffer_page, "the buffer's page was not mapped again")
         && heap_allocations_round_trip(&refused_fills, which) == Some(true)
         && queued_overflow_cap_fault(

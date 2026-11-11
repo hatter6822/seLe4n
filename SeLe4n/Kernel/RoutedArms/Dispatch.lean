@@ -202,28 +202,29 @@ compiled form `syscallEntryCheckedK` runs as. -/
     | overflowOne sid capAddr =>
       simp only [overflowOneRoutedArm, hO]
       rw [ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _)]
-      simp only [entryReportOutcome_general, entryReportOutcome_overflowOne]; rfl
+      simp only [shortArgsRoutedArm, entryReportOutcome_operand, entryReportOutcome_overflowOne]
+      rfl
     | sendLong capAddr msgInfo =>
-      simp only [sendLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
-        entryReportOutcome_general, entryReportOutcome_long]
+      simp only [sendLongRoutedArm, sendRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_operand, entryReportOutcome_long]
       rfl
     | callLong capAddr msgInfo =>
-      simp only [callLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
-        entryReportOutcome_general, entryReportOutcome_long]
+      simp only [callLongRoutedArm, callRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_operand, entryReportOutcome_long]
       rfl
     | replyLong capAddr msgInfo =>
-      simp only [replyLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
-        entryReportOutcome_general, entryReportOutcome_long]
+      simp only [replyLongRoutedArm, replyRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_operand, entryReportOutcome_long]
       rfl
     | replyRecvLong capAddr msgInfo =>
-      simp only [replyRecvLongRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
-        entryReportOutcome_general, entryReportOutcome_long]
+      simp only [replyRecvLongRoutedArm, replyRecvRoutedArm, hO, ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _),
+        entryReportOutcome_operand, entryReportOutcome_long]
       rfl
     | transferring sid capAddr msgInfo =>
       by_cases hS : msgInfo.length ≤ 4
       · simp only [transferringRoutedArm, hO, hS, ↓reduceIte, entryReportOutcome_operand]; rfl
       · simp only [transferringRoutedArm, hO, hS, ↓reduceIte,
-          ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_general,
+          ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_operand,
           entryReportOutcome_long]
         rfl
     | audited sid capAddr =>
@@ -234,15 +235,10 @@ compiled form `syscallEntryCheckedK` runs as. -/
           sid capAddr len hRt
       dsimp only
       rw [overflowedRoutedArm_eq ctx executingCore tid sid capAddr.word len st hOv]
-      by_cases hY : sid = .yield
-      · subst hY
-        simp only [ne_eq, not_true_eq_false, ↓reduceIte, overflowedArmSpec, hO,
-          ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_general]
-        rfl
-      · simp only [hY, ne_eq, not_false_eq_true, ↓reduceIte, overflowedLongArmWith, hO,
-          ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_general,
-          entryReportOutcome_long]
-        rfl
+      simp only [overflowedLongArmWith, shortArgsRoutedArm, hO,
+        ipcBufferReadMrK_comp (entryReportOutcome kGen kRes _), entryReportOutcome_operand,
+        entryReportOutcome_long]
+      rfl
     | shortArgs sid capAddr =>
       simp only [shortArgsRoutedArm, entryReportOutcome_operand]; rfl
     | refused e => simp only [entryReportOutcome_general]

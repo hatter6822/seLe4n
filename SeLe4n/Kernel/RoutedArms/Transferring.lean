@@ -20,6 +20,10 @@ past them, slot 0 and the next page's first slot are read and the dispatch
 runs on the state with this core's TLB holding the buffer's translations, a
 refusal handing back the TLB the entry held, as the long send's.  The
 caller's TCB is read here, off the state the arm is handed.
+
+An overflow slot that does not read clamps the message to its four inline
+words, as seL4's `handleInvocation` clamps a message with no IPC buffer, and
+the short form's operand dispatch runs on it.
 -/
 
 namespace SeLe4n.Kernel
@@ -41,11 +45,17 @@ filled first as the long send's. -/
         st entryReportGeneral entryReportResolved entryReportLookup
     else
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
-        (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
+        (fun _ => dispatchOperandCheckedK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+          (transferringOperandArmThenTaintR ctx sid tcb.registerContext 4 tid executingCore
+            (syscallRequiredRight sid))
+          st entryReportGeneral entryReportResolved entryReportLookup)
         (fun _ =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
+            (fun _ => dispatchOperandCheckedK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+          (transferringOperandArmThenTaintR ctx sid tcb.registerContext 4 tid executingCore
+            (syscallRequiredRight sid))
+          st entryReportGeneral entryReportResolved entryReportLookup)
             (fun _ => longOperandK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
                   (transferringOperandArmThenTaintR ctx sid tcb.registerContext length tid
                     executingCore (syscallRequiredRight sid))

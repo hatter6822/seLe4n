@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.RoutedArms.Report
+import SeLe4n.Kernel.RoutedArms.Send
 
 /-!
 # The long-send route's arm, out of line
@@ -23,6 +24,10 @@ operand's address and the
 message length cross as words, the state owned, and the result is the state
 with its report pushed (`RoutedArms.Report`).  The caller's TCB is read here,
 off the state the arm is handed, rather than crossing the call.
+
+An overflow slot that does not read clamps the message to its four inline
+words, as seL4's `handleInvocation` clamps a message with no IPC buffer, and
+the short route's arm runs on it (`sendRoutedArm`).
 -/
 
 namespace SeLe4n.Kernel
@@ -40,11 +45,11 @@ apart, a result under the first. -/
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
-        (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
+        (fun _ => sendRoutedArm ctx executingCore tid capWord 4 st)
         (fun _ =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
-            (fun _ => entryReportGeneral (.error (.invalidMessageInfo, st)))
+            (fun _ => sendRoutedArm ctx executingCore tid capWord 4 st)
             (fun _ => longOperandK .send (SeLe4n.CPtr.ofWord capWord) tid executingCore
                   (sendOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
                     length tid executingCore (syscallRequiredRight .send))

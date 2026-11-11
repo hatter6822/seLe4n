@@ -7794,12 +7794,19 @@ into the `msgRegs` array before per-syscall argument decode runs.
 1. Register-only decode (`decodeSyscallArgs`) populates `msgRegs` from
    the inline GPR positions (`x2..x5` = 4 entries on ARM64).
 2. State-aware wrapper (`decodeSyscallArgsFromState`) inspects
-   `msgInfo.length`:
+   `msgInfo.length` and the syscall:
    - If `length ≤ 4`, no overflow is consulted. `inlineCount = 4`,
      `overflowCount = 0`.
-   - If `length > 4`, `length − 4` additional slots are read via
+   - If `length > 4` and the syscall uses the words past the inline
+     registers (`syscallReadsOverflow`: an IPC send, call, reply or
+     reply-receive, whose transfer copies them, and the two five-word
+     invocations), `length − 4` additional slots are read via
      `ipcBufferReadMr` from the caller's IPC buffer. The overflow results
      are appended to `msgRegs` and `overflowCount = length − 4`.
+   - If `length > 4` and the syscall reads no word past the inline
+     registers (a receive, a wait, a yield, a signal, every other
+     invocation), the IPC buffer is not read at all, however long the
+     message-info word says the message is.
 
 **IPC-buffer layout:** the buffer is seL4's `seL4_IPCBuffer`, 128 words
 (1024 bytes) from `tcb.ipcBuffer : VAddr`: the `tag` word (0), the 120 `msg`
@@ -7810,16 +7817,24 @@ message register `4 + i`) lives at byte offset `(5 + i) * 8`
 (`ipcBufferOverflowBaseWord`).  This mirrors
 `rust/sele4n-abi/src/ipc_buffer.rs` (`IpcBuffer`, `msg[i]` is register `i`).
 
-**Failure modes — all collapse to `KernelError.invalidMessageInfo`**
-(matches seL4 behaviour: the caller sees a single error kind regardless of
-classification):
-
-| Internal `IpcBufferReadError` | User-visible error |
-|-------------------------------|---------------------|
-| `threadNotFound` | `.invalidMessageInfo` |
-| `vspaceRootInvalid` | `.invalidMessageInfo` |
-| `ipcBufferVAddrUnmapped` | `.invalidMessageInfo` |
-| `overflowIndexOutOfRange` | `.invalidMessageInfo` |
+**A buffer the kernel cannot read clamps the message to its inline words**
+(`clampToInline`), as seL4's `handleInvocation` does (`syscall.c`: `if
+(length > n_msgRegisters && !buffer) length = n_msgRegisters`, after the
+invoked capability's lookup).  Whatever the internal `IpcBufferReadError`
+(`threadNotFound`, `vspaceRootInvalid`, `ipcBufferVAddrUnmapped`,
+`overflowIndexOutOfRange`), the decode answers the message with
+`length = 4`, `inlineCount = 4` and `overflowCount = 0`, and the call runs
+on it: a send or a call transfers its four inline words, a reply or a
+reply-receive answers with them, and a five-word invocation is then short of
+its fifth argument and refused `seL4_TruncatedMessage` once its capability
+is found and checked (§8.10.5a).  No buffer read refuses a call
+`InvalidMessageInfo`.  A clamped send or call transfers no capability whose
+address the buffer would hold (seL4's `lookupExtraCaps` with no buffer looks
+up none).  The compiled entry follows the same rule: each long route's arm,
+an overflow slot that does not read, runs its short route's arm on the four
+inline words (`RoutedArms.SendLong` and the other long arms,
+`shortArgsRoutedArm` for the five-word invocations), proven equal to the
+specification by `syscallEntryCheckedR_eq` and `syscallEntryCheckedK_eq_routed`.
 
 **Read-only / NI:** `ipcBufferReadMr` and `decodeSyscallArgsFromState`
 never modify `SystemState`. Every IPC-buffer read is parameterised by the
@@ -7827,16 +7842,21 @@ caller's `ThreadId`; no other thread's state is consulted. This guarantees
 that a 5-arg syscall cannot leak cross-domain data through the overflow
 channel.
 
-**A signal reads no overflow word.**  seL4's `seL4_Signal` reads no message
-at all: the badge is the capability's (§8.10.3b).  `syscallReadsOverflow`
-(`RegisterDecode`, no wildcard) is the one owner: it is false for
-`notificationSignal` and `declassifySignal` and true for every other syscall.
-For those two the decode keeps the inline words whatever the length
-(`decodeSyscallArgsFromState_of_no_overflow`), so a long signal reads nothing
-from the caller's IPC buffer and an unmapped buffer does not refuse it.  The
-router agrees: its long tail sends a syscall that reads no overflow word to
-its short route (`routedNoOverflowOf`: the declassified signal to the audited
-arm, the signal to the signal arm), and `routedOverflowed` excludes both.
+**Only the words a syscall uses are read.**  seL4 reads a message register
+only where a syscall's decoder or its transfer uses it: `seL4_Signal` reads no
+message at all (the badge is the capability's, §8.10.3b), a receive, a wait
+and a yield read none, and an invocation's decoder reads only its own
+arguments.  `syscallReadsOverflow` (`RegisterDecode`, every kind named, no
+wildcard) is the one owner: it is true for `send`, `call`, `reply`,
+`replyRecv`, `schedContextConfigure` and `serviceRegister` and false for every
+other syscall.  For a syscall it answers false for, the decode keeps the
+inline words whatever the length (`decodeSyscallArgsFromState_of_no_overflow`),
+so a long receive, wait, yield or signal reads nothing from the caller's IPC
+buffer and an unmapped buffer cannot change its outcome.  The router agrees:
+a message past the inline registers takes its syscall's short route unless
+the syscall number reads its overflow words (`syscallNumberReadsOverflow`),
+and only a five-word invocation reaches the `overflowOne` and `overflowed`
+routes (`routedLongTail`).
 
 **Source**:
 - `SeLe4n/Kernel/Architecture/IpcBufferRead.lean` —

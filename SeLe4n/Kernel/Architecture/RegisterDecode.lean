@@ -198,9 +198,23 @@ def syscallReadsOverflow : SyscallId → Bool
   | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap => false
 
+/-- **The message clamped to its inline words**: seL4's `handleInvocation`
+truncates a message longer than the message registers to those registers when
+the caller has no IPC buffer the kernel may read (`length = n_msgRegisters`),
+and `copyMRs` copies the registers alone, so a long message whose overflow
+words do not read is the inline message, its length the inline count.  Nothing
+is refused on that ground: a decoder that needs a word past the registers then
+answers `.truncatedMessage` (`requireMessageLength`). -/
+@[inline] def clampToInline (base : SyscallDecodeResult) : SyscallDecodeResult :=
+  { base with
+      msgInfo       := { base.msgInfo with length := base.msgRegs.size },
+      inlineCount   := base.msgRegs.size,
+      overflowCount := 0 }
+
 open SeLe4n.Kernel.Architecture.IpcBufferRead in
 /-- One overflow message word from the caller's IPC buffer, any internal
-    error collapsed to `.invalidMessageInfo` (matches seL4 convention). -/
+    error collapsed to `.invalidMessageInfo`; the decode clamps the message
+    to its inline words on it (`clampToInline`). -/
 def readOverflowWord (st : SystemState) (tid : ThreadId) (i : Nat) :
     Except KernelError UInt64 :=
   match ipcBufferReadMr st tid i with
@@ -224,9 +238,19 @@ open SeLe4n.Kernel.Architecture.IpcBufferRead in
     reject every such Rust-encoded syscall — the critical `R-ABI-C01`
     finding.
 
-    **Failure propagation:** Any `IpcBufferReadError` (missing TCB, unmapped
-    VAddr, out-of-range index) collapses to `KernelError.invalidMessageInfo`,
-    matching seL4 ABI behaviour where the caller sees a single error kind.
+    **Only the words a syscall uses are read** (`syscallReadsOverflow`): an
+    IPC send, call, reply or reply-receive, whose transfer copies them, and a
+    five-word invocation, whose decoder reads its fifth argument.  A receive,
+    a wait, a yield, a signal and every other invocation read none, however
+    long the message-info word says the message is.
+
+    **A buffer the kernel cannot read clamps the message** to its inline
+    words (`clampToInline`): any `IpcBufferReadError` (missing TCB, unmapped
+    VAddr, out-of-range index) leaves the length at the inline registers'
+    count, as seL4's `handleInvocation` clamps a message with no IPC buffer
+    to `n_msgRegisters`.  The per-syscall checks then run on the clamped
+    message, so a five-word invocation is refused short of its fifth
+    argument (`truncationMinimum`).
 
     **Purity:** This function is read-only on `SystemState` — only the base
     `decodeSyscallArgs` result and the IPC-buffer word reads are consulted. -/
@@ -248,17 +272,21 @@ def decodeSyscallArgsFromState
              inlineCount   := inlineSize,
              overflowCount := 0 }
   else if syscallReadsOverflow base.syscallId then
-    -- Merge overflow slots from the caller's IPC buffer.
+    -- Merge overflow slots from the caller's IPC buffer; a buffer the kernel
+    -- cannot read clamps the message to its inline words (`clampToInline`).
     let overflowNeeded := totalLen - inlineSize
-    let overflowNats ← (List.range overflowNeeded).mapM (readOverflowWord st tid)
-    let overflowRegs : Array RegValue :=
-      (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
-    pure { base with
-             msgRegs       := base.msgRegs ++ overflowRegs,
-             inlineCount   := inlineSize,
-             overflowCount := overflowNeeded }
+    match (List.range overflowNeeded).mapM (readOverflowWord st tid) with
+    | .ok overflowNats =>
+      let overflowRegs : Array RegValue :=
+        (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
+      pure { base with
+               msgRegs       := base.msgRegs ++ overflowRegs,
+               inlineCount   := inlineSize,
+               overflowCount := overflowNeeded }
+    | .error _ => pure (clampToInline base)
   else
-    -- A syscall that reads no word past the inline registers (the signals,
+    -- A syscall that reads no word past the inline registers (a receive, a
+    -- wait, a yield, a signal, an invocation of at most four arguments:
     -- `syscallReadsOverflow`) reads none from the IPC buffer, however long
     -- its message-info word says the message is.
     pure { base with
@@ -284,13 +312,15 @@ def decodeSyscallArgsWith (readOverflow : Nat → Except KernelError UInt64)
              overflowCount := 0 }
   else if syscallReadsOverflow base.syscallId then
     let overflowNeeded := totalLen - inlineSize
-    let overflowNats ← (List.range overflowNeeded).mapM readOverflow
-    let overflowRegs : Array RegValue :=
-      (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
-    pure { base with
-             msgRegs       := base.msgRegs ++ overflowRegs,
-             inlineCount   := inlineSize,
-             overflowCount := overflowNeeded }
+    match (List.range overflowNeeded).mapM readOverflow with
+    | .ok overflowNats =>
+      let overflowRegs : Array RegValue :=
+        (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
+      pure { base with
+               msgRegs       := base.msgRegs ++ overflowRegs,
+               inlineCount   := inlineSize,
+               overflowCount := overflowNeeded }
+    | .error _ => pure (clampToInline base)
   else
     pure { base with
              msgRegs       := base.msgRegs,
@@ -342,16 +372,18 @@ words past the inline registers, for a syscall that reads them
 (`syscallReadsOverflow`); none, for one that does not. -/
 def mergeOverflowWords (st : SystemState) (tid : ThreadId)
     (base : SyscallDecodeResult) : Except KernelError SyscallDecodeResult :=
-  if syscallReadsOverflow base.syscallId then do
+  if syscallReadsOverflow base.syscallId then
     let inlineSize := base.msgRegs.size
     let overflowNeeded := base.msgInfo.length - inlineSize
-    let overflowNats ← (List.range overflowNeeded).mapM (readOverflowWord st tid)
-    let overflowRegs : Array RegValue :=
-      (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
-    pure { base with
-             msgRegs       := base.msgRegs ++ overflowRegs,
-             inlineCount   := inlineSize,
-             overflowCount := overflowNeeded }
+    match (List.range overflowNeeded).mapM (readOverflowWord st tid) with
+    | .ok overflowNats =>
+      let overflowRegs : Array RegValue :=
+        (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
+      pure { base with
+               msgRegs       := base.msgRegs ++ overflowRegs,
+               inlineCount   := inlineSize,
+               overflowCount := overflowNeeded }
+    | .error _ => pure (clampToInline base)
   else
     pure { base with
              msgRegs       := base.msgRegs,
@@ -668,9 +700,10 @@ theorem decodeSyscallArgsFromState_ok_implies_base_ok
   | ok base => exact ⟨base, rfl⟩
 
 /-- AK4-A.4: Every successful state-aware decode preserves `capAddr`,
-    `msgInfo`, and `syscallId` from the base decode. The merge stage only
-    extends `msgRegs` and sets the count fields; the authoritative
-    register-word fields remain untouched. -/
+    `msgInfo`, and `syscallId` from the base decode, but for a message the
+    buffer cannot supply, whose length is clamped to the inline count
+    (`clampToInline`, seL4's `handleInvocation`).  The merge stage only extends
+    `msgRegs` and sets the count fields. -/
 theorem decodeSyscallArgsFromState_header_preserved
     (st : SystemState) (tid : ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
@@ -678,21 +711,23 @@ theorem decodeSyscallArgsFromState_header_preserved
     (hBase : decodeSyscallArgs layout regs regCount = .ok base)
     (hOk : decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded) :
     decoded.capAddr = base.capAddr ∧
-    decoded.msgInfo = base.msgInfo ∧
+    (decoded.msgInfo = base.msgInfo ∨
+      decoded.msgInfo = { base.msgInfo with length := base.msgRegs.size }) ∧
     decoded.syscallId = base.syscallId := by
   unfold decodeSyscallArgsFromState at hOk
   rw [hBase] at hOk
   simp only [bind, Except.bind] at hOk
   split at hOk
   · simp only [pure, Except.pure, Except.ok.injEq] at hOk
-    refine ⟨?_, ?_, ?_⟩ <;> (rw [← hOk])
+    subst hOk; exact ⟨rfl, .inl rfl, rfl⟩
   · split at hOk
     · split at hOk
-      · simp at hOk
       · simp only [pure, Except.pure, Except.ok.injEq] at hOk
-        refine ⟨?_, ?_, ?_⟩ <;> (rw [← hOk])
+        subst hOk; exact ⟨rfl, .inl rfl, rfl⟩
+      · simp only [pure, Except.pure, Except.ok.injEq, clampToInline] at hOk
+        subst hOk; exact ⟨rfl, .inr rfl, rfl⟩
     · simp only [pure, Except.pure, Except.ok.injEq] at hOk
-      refine ⟨?_, ?_, ?_⟩ <;> (rw [← hOk])
+      subst hOk; exact ⟨rfl, .inl rfl, rfl⟩
 
 /-- AK4-A.4: `capAddr` is preserved through IPC-buffer merge. -/
 theorem decodeSyscallArgsFromState_capAddr_eq
@@ -712,7 +747,8 @@ theorem decodeSyscallArgsFromState_msgInfo_eq
     (decoded base : SyscallDecodeResult)
     (hBase : decodeSyscallArgs layout regs regCount = .ok base)
     (hOk : decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded) :
-    decoded.msgInfo = base.msgInfo :=
+    decoded.msgInfo = base.msgInfo ∨
+      decoded.msgInfo = { base.msgInfo with length := base.msgRegs.size } :=
   (decodeSyscallArgsFromState_header_preserved
     st tid layout regs regCount decoded base hBase hOk).2.1
 
@@ -793,7 +829,6 @@ theorem decodeSyscallArgsFromState_size_invariant
     · split at hOk
       · -- Overflow path
         split at hOk
-        · simp at hOk
         · rename_i overflowNats hOverflowOk
           simp only [pure, Except.pure, Except.ok.injEq] at hOk
           have hMapLen : overflowNats.length
@@ -808,6 +843,9 @@ theorem decodeSyscallArgsFromState_size_invariant
           have hOver : decoded.overflowCount
               = base.msgInfo.length - base.msgRegs.size := by rw [← hOk]
           rw [hSize, hInline, hOver, hMapLen]
+        · -- the buffer does not read: the inline registers alone
+          simp only [pure, Except.pure, Except.ok.injEq, clampToInline] at hOk
+          subst hOk; simp
       · -- A syscall that reads no overflow word: the inline registers alone
         simp only [pure, Except.pure, Except.ok.injEq] at hOk
         have h1 : decoded.msgRegs.size = base.msgRegs.size := by rw [← hOk]
@@ -1117,6 +1155,16 @@ theorem syscallReadsOverflow_of_routedOverflowed {sid : SyscallId}
 theorem routedOverflowed_of_routedOverflowOne {sid : SyscallId}
     (h : routedOverflowOne sid = true) : routedOverflowed sid = true := by
   cases sid <;> first | rfl | (simp [routedOverflowOne] at h)
+
+theorem routedOverflowOne_of_routedOverflowed {sid : SyscallId}
+    (h : routedOverflowed sid = true) : routedOverflowOne sid = true := by
+  cases sid <;> first | rfl | (simp [routedOverflowed] at h)
+
+/-- A five-word invocation's truncation minimum is its five words, so a
+message clamped to the four registers is short of it. -/
+theorem truncationMinimum_of_routedOverflowed {sid : SyscallId}
+    (h : routedOverflowed sid = true) : 4 < truncationMinimum sid := by
+  cases sid <;> first | (simp [routedOverflowed] at h; done) | decide
 
 /-- The long message's route past the IPC calls, read off one decode of the
 syscall number: `registerRoutedSyscallOf`'s tail (`routedLongTail_eq`).  Only a

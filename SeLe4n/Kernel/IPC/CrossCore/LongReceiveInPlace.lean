@@ -67,24 +67,24 @@ theorem decodeSyscallArgsFromState_of_routedSendLong_ok (st : SystemState)
     bind, Except.bind, pure, Except.pure, longSendDecode]
   rfl
 
-/-- …and one with an overflow slot that does not read is refused as the decode
-refuses it. -/
-theorem decodeSyscallArgsFromState_of_routedSendLong_error (st : SystemState)
+/-- …and one with an overflow slot that does not read is clamped to its inline
+words (`clampedFrameDecode`), as seL4 clamps a message with no IPC buffer. -/
+theorem decodeSyscallArgsFromState_of_routedSendLong_clamped (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
     (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
     (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
-      .error .invalidMessageInfo := by
+      .ok (clampedFrameDecode .send rf capAddr mi) := by
   obtain ⟨hGt, _, _, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   rw [hSz] at hGt
   rw [hDec]
-  unfold mergeOverflowWords
-  simp only [syscallReadsOverflow, ↓reduceIte, Array.size_map, hSz, List.range_eq_range',
-    mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
-    bind, Except.bind]
+  rw [mergeOverflowWords_clamped st tid rf _ capAddr mi rfl
+    ⟨_, by rw [List.range_eq_range']
+           exact mapM_readOverflowWord_error st tid (mi.length - 4) 0
+             ⟨j, e, Nat.zero_le _, by omega, h0⟩⟩]
 
 /-- **A frame that routes as a long send**, read for the sender `tid` whose
 saved registers `rf` are and whose overflow slots all read: it asks to
@@ -168,24 +168,75 @@ theorem decodeSyscallArgsFromState_of_routedCallLong_ok (st : SystemState)
     bind, Except.bind, pure, Except.pure, longCallDecode]
   rfl
 
-/-- …and one with an overflow slot that does not read is refused as the decode
-refuses it. -/
-theorem decodeSyscallArgsFromState_of_routedCallLong_error (st : SystemState)
+/-- …and one with an overflow slot that does not read is clamped to its inline
+words (`clampedFrameDecode`), as seL4 clamps a message with no IPC buffer. -/
+theorem decodeSyscallArgsFromState_of_routedCallLong_clamped (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
     (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
     (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
     decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
-      .error .invalidMessageInfo := by
+      .ok (clampedFrameDecode .call rf capAddr mi) := by
   obtain ⟨hGt, _, _, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi hR
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   rw [hSz] at hGt
   rw [hDec]
-  unfold mergeOverflowWords
-  simp only [syscallReadsOverflow, ↓reduceIte, Array.size_map, hSz, List.range_eq_range',
-    mapM_readOverflowWord_error st tid (mi.length - 4) 0 ⟨j, e, Nat.zero_le _, by omega, h0⟩,
-    bind, Except.bind]
+  rw [mergeOverflowWords_clamped st tid rf _ capAddr mi rfl
+    ⟨_, by rw [List.range_eq_range']
+           exact mapM_readOverflowWord_error st tid (mi.length - 4) 0
+             ⟨j, e, Nat.zero_le _, by omega, h0⟩⟩]
+
+/-- **A long send or call whose buffer does not read is its inline words**:
+the decode clamps it to the four registers (`clampedFrameDecode`, seL4's
+`handleInvocation` and `copyMRs` with no IPC buffer), so it asks to transfer no
+capability and a present sender's message is its register words, as a short
+send's of length four. -/
+theorem routedClampedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi0 : MessageInfo)
+    (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
+    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi0 ∨
+      registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi0)
+    (hUn : ∃ j e, j < mi0.length - 4 ∧
+      Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
+    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
+      ∀ badge grant, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant) =
+          { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf 4,
+            badge := badge } := by
+  obtain ⟨j, e, hj, h0⟩ := hUn
+  obtain ⟨sid, hD, hX⟩ : ∃ sid, decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+      .ok (clampedFrameDecode sid rf capAddr mi0) ∧ mi0.extraCaps = 0 := by
+    rcases hR with hR | hR
+    · exact ⟨.send, decodeSyscallArgsFromState_of_routedSendLong_clamped st tid rf capAddr mi0 hR
+        j hj e h0, (decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi0 hR).2.2.1⟩
+    · exact ⟨.call, decodeSyscallArgsFromState_of_routedCallLong_clamped st tid rf capAddr mi0 hR
+        j hj e h0, (decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi0 hR).2.2.1⟩
+  cases hT : st.getTcb? tid with
+  | none =>
+    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
+    unfold sendCapRequest
+    split
+    · rfl
+    · rw [hT]
+  | some tcb =>
+    have hRf := hFrame tcb hT
+    subst hRf
+    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
+    · unfold sendCapRequest
+      split
+      · rfl
+      · rw [hT]
+        simp only [sendPayloadCapRequest, senderFrameCapRequest, blockedSenderDecode, hD]
+        have hE : ∀ s t, (senderExtraCapAddrs s t
+            (clampedFrameDecode sid tcb.registerContext capAddr mi0).msgInfo.extraCaps).isEmpty =
+              true := by
+          intro s t; unfold clampedFrameDecode; simp only [hX, senderExtraCapAddrs_zero]; rfl
+        simp only [hE, ↓reduceIte]
+        split <;> rfl
+    · simp only [sendPayloadMessage, senderFrameDecode, hT, blockedSenderDecode, hD,
+        senderFrameMessage, clampedFrameDecode]
+      rfl
 
 /-- **A frame that routes as a long call**, read for the caller `tid` whose
 saved registers `rf` are and whose overflow slots all read: it asks to
