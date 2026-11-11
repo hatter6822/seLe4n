@@ -78,13 +78,19 @@ a slot array: the tables' slot arrays are built at boot only.
   identical): every reading equals `v0.37.15`'s — each kind's first-call
   carve reading equals its steady-state one, every carve pin is unchanged
   (endpoint 6 / 248, notification 6 / 240, reply 10 / 256, tcb 19 / 2040,
-  sched-context 8 / 440, frame 6 / 152, page-table 8 / 232, …) and every
+  sched-context 8 / 440, frame 6 / 152, page-table 8 / 232, cnode 23 / 1128,
+  vspace-root 101 / 3568, untyped 7 / 184) and every
   other reading is 0.
-- **Boot heap.** The boot-sized slot arrays are 1 MiB each (131072 slots), and
-  every closed-term state the library builds from the default state copies
-  the shared table on its first insert, so the library initializer ends with
-  3625 of the arena's 16069 pages in use (803 at `v0.37.15`, +11.0 MiB) and
-  the install with 4206 (871, +13.0 MiB): 16.4 MiB of the 64 MiB arena.
+- **Boot heap** (the same runs, 16069-page arena).  The boot-sized slot arrays
+  are 1 MiB each (131072 slots), and only the installed state holds them.
+  After the library initializer: 753 pages in use (803 at `v0.37.15`; the QEMU
+  deployment states, `noncomputable` now, no longer build at initialization).
+  After the install: 1337 pages (871 at `v0.37.15`), so the install adds 584
+  pages where it added 68: the two tables' 514 pages and 2 pages besides,
+  +1.8 MiB in all (5.2 MiB of the 64 MiB arena in use).  A first cut that
+  built the default state boot-sized cost 3625 / 4206 pages: every module the
+  default state is inlined into built its own table at initialization, and
+  every closed state built from it copied one.
 
 ## v0.37.15 — the bookkeeping tables become ghosts
 
