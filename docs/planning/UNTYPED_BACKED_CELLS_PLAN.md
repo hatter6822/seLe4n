@@ -276,8 +276,29 @@ rewrites it there.
   - The pins are unchanged.
   - Every other reading stays 0.
 
-### UC4 — A carve owns its cells, and no pass moves them
+### UC4 — A carve owns its cells, and no pass moves them — **LANDED `v0.37.17`**
 
+- **Done.** `CapTarget.copyOver` builds a fresh cell for a `.cnodeSlot`
+  source over any destination and for any source over a destination of
+  another shape (`CapTarget.cnodeSlotOver`, `CapTarget.ofCnodeSlot` and the
+  `*Over` builders); `copyOver_eq` still holds.  `Capability.ofFields`, the
+  record the no-spare build path of `insertCellWith` stores, builds its target
+  afresh (`CapTarget.fresh`, `fresh_eq`, `Capability.ofFields_eq`), so a minted
+  reply capability no longer holds the reply object's own target cell.  In
+  `insertCellLoop` the displacement arm moves the displaced entry
+  (`RHEntry.bumpDist`) and the present-key arm writes the slot's own entry
+  (`RHEntry.withValue`); `insertCellLoop_eq` still holds.  The scanner found
+  three more reuse sites that filled one cell with another's fields, each now
+  out of line and joined by `@[csimp]`: the queue unlink's neighbour writes
+  (`queueUnlinkPredecessor_eq_impl`, `queueUnlinkSuccessor_eq_impl`) and the
+  slot lookup's result (`cspaceLookupSlot_eq_impl`).  The scanner is
+  `scripts/check_cell_reuse_ownership.py` (Tier 1, self-test first).  The
+  heap counts frees per core (`kernel_frees_on`), and the owned-CNode window
+  (carve, copy, revoke, delete) allocates and frees 23 cells, the cnode/2 pin,
+  in both runs.  Measured, no pin rises: UC1 attributed no cell to sharing,
+  and the exercised carves already built every cell they hold (the shared
+  target was reachable only on the no-spare build path and the `.cnodeSlot`
+  arm, which no pinned scenario takes).  Readings: CHANGELOG `v0.37.17`.
 - **Work.**
   - `CapTarget.copyOver` builds its own cell in its last two arms, the
     `.cnodeSlot` arm and the destination that is not one-field (F5). Proof:

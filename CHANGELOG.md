@@ -1,3 +1,71 @@
+## v0.37.17 — a carve owns its cells, and no pass moves them
+
+WS-UC UC4.  Every cell a carve builds is that carve's own, and no later
+operation moves another object into it: a capability copy builds its own
+target cell, the compiled Robin Hood insert moves a displaced entry instead of
+rebuilding it, and a Tier 1 scan of the generated C refuses any compiled
+reset/reuse that fills one object's cell with another object's fields.
+
+- **Copies build their own cells.** `CapTarget.copyOver`'s `.cnodeSlot` arm
+  and its arm for a destination of another shape returned `src` itself, so the
+  copy shared the source's target cell; both now build a fresh one
+  (`CapTarget.cnodeSlotOver`, `CapTarget.ofCnodeSlot`), and `copyOver_eq`
+  (`t.copyOver src = src`) still holds.  `Capability.ofFields`, the record
+  `insertCellWith` builds when its slot keeps no spare record, builds its
+  target afresh (`CapTarget.fresh`, `fresh_eq`, `Capability.ofFields_eq`), so a
+  minted reply capability no longer holds the boot reply object's own target
+  cell.  `CapTarget.isOneField` is retired.
+- **The Robin Hood insert moves what it displaces.** `insertCellLoop`'s
+  displacement arm passes the displaced entry, its distance bumped
+  (`RHEntry.bumpDist`), on to the next bucket instead of rebuilding it, and
+  its present-key arm writes the new value into the slot's own entry
+  (`RHEntry.withValue`) where the compiler had written the slot's key and
+  distance into the inserted cell; `insertCellLoop_eq` still holds.
+  `RHEntry.withValueOf` is retired.
+- **What the scan found besides.** The queue unlink's neighbour writes reused
+  the removed thread's cell for its neighbour's record, and the slot lookup
+  reused the address's cell for its result.  Each now runs an out-of-line fast
+  form joined to its specification by `@[csimp]`
+  (`queueUnlinkPredecessor_eq_impl`, `queueUnlinkSuccessor_eq_impl` over
+  `TCB.withQueueNextCode` / `TCB.withQueuePrevCodes`;
+  `cspaceLookupSlot_eq_impl` over `lookupSlotCapOut`).
+- **The scan** (`scripts/check_cell_reuse_ownership.py`, Tier 1 after the
+  build, self-test first).  It reads the C of `lake query SeLe4n:modules`,
+  walks the C symbol graph from every `@[export]` (derived from the code view),
+  and scans the reached functions of the store, Robin Hood, retire and
+  capability-copy modules and every Robin Hood specialisation.  Every
+  exclusivity test must be the compiler's slow reset or its in-place shape,
+  every reuse token is spent on its reuse or released, and every field write
+  lands in an allocated or reused cell; anything else is refused.  A reused
+  cell is flagged when it takes at least as many object fields, at their own
+  positions, from another cell as it keeps of its own; scalar fields are data
+  and are not counted.  A derivation that comes back empty fails.  The tree:
+  2147 reuse sites in 3313 reached functions, 0 findings (before this
+  version's fixes: the sites above).  The self-test breaks the relation on the
+  real tree, retargeting the field reads of each of 1040 slow reuse sites that
+  keep their own fields to another parameter with the reset and reuse left in
+  place (each flagged), handing 436 real reuse tokens to a call (each refused),
+  and plants ten synthetic shapes.
+- **Frees, counted.** The kernel heap counts each free to the freeing core
+  (`HeapStats::frees_by_core`, `kernel_frees_on`), tested on the host.  The
+  QEMU exerciser's owned-CNode scenario carves a CNode, copies its capability,
+  revokes the copy and deletes the carved capability (then resets the
+  untyped), and reads this core's allocations and frees across the four; the
+  heap gate holds both to the CNode's carve pin.
+- **Readings** (QEMU `virt`, Lean-linked image, fresh archive, two runs,
+  identical): the owned-CNode window allocates 23 and frees 23 in both runs,
+  the cnode/2 pin; its copy, revoke, delete and reset read 0.  No pin rises:
+  UC1 attributed no cell to sharing, and the scenarios' carves already built
+  every cell they hold (the shared target was reachable only on the no-spare
+  build path and the `.cnodeSlot` arm, which no pinned scenario takes; the
+  traced `v0.37.16` run showed each delete freeing its pin less the carve's
+  own temporaries).  Every pin is unchanged (endpoint 6 / 248, notification
+  6 / 240, reply 10 / 256, tcb 19 / 2040, sched-context 8 / 440, frame 6 / 152,
+  page-table 8 / 232, cnode 23 / 1128, vspace-root 101 / 3568, untyped 7 / 184)
+  and every other reading is 0.
+- **Boot heap** (the same runs): 753 pages after the library initializer and
+  1337 after the install, as at `v0.37.16`.
+
 ## v0.37.16 — the object and ASID tables are built boot-sized
 
 WS-UC UC3 (decision D4).  The boot builds the object table and the ASID table

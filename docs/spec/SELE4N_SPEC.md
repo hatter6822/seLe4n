@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.16` (`lakefile.toml`) |
+| **Package version** | `0.37.17` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 625,970 across 624 Lean files |
 | **Test LoC** | 89,311 across 70 Lean test suites |
@@ -4678,6 +4678,24 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   state keeps 16-slot tables, so no closed state a module initializer builds
   holds a boot-sized table.  The bundle's base case is the empty boot
   (`emptyBoot_proofLayerInvariantBundle`, from `emptyBoot_bootLinkedShape`).
+- **A carve owns its cells** (since `v0.37.17`, WS-UC UC4): no cell a carve
+  builds comes to hold another object.  A capability copy builds its target's
+  cell (`CapTarget.copyOver`, whose `.cnodeSlot` arm and arm for a destination
+  of another shape build afresh through `CapTarget.cnodeSlotOver`; `copyOver_eq`
+  keeps it equal to `src`), and so does a capability record built where no
+  spare record is kept (`Capability.ofFields` through `CapTarget.fresh`,
+  `Capability.ofFields_eq`).  The compiled Robin Hood insert moves a displaced
+  entry (`RHEntry.bumpDist`) rather than rebuilding it (`insertCellLoop_eq`).
+  The queue unlink and the slot lookup run out-of-line fast forms
+  (`queueUnlinkPredecessor_eq_impl`, `queueUnlinkSuccessor_eq_impl`,
+  `cspaceLookupSlot_eq_impl`, all `@[csimp]`), so no compiled reset/reuse
+  writes one object's fields into another's cell.  Tier 1's
+  `scripts/check_cell_reuse_ownership.py` reads the production library's
+  generated C reached from the `@[export]`s over the store, Robin Hood, retire
+  and capability-copy code, refuses any reset or reuse shape it cannot
+  classify, and flags a reused cell filled from another cell; the QEMU heap
+  gate's owned-CNode window holds the cells a CNode's carve-to-retire
+  allocates and frees each to the CNode's carve pin.
 - **In-place rewrite** (`v0.35.64`): a transition that rewrites an
   existing object of the same, bookkeeping-neutral kind uses
   `SystemState.rewriteObject` (and the typed `updateTcb` /
