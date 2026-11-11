@@ -249,8 +249,10 @@ rewrites it there.
   `proofLayerInvariantBundle.objects_insert_eq_insertNoResize` and
   `.asidTable_insert_eq_insertNoResize`; the carve's
   `retypeFromUntyped_insert_eq_insertNoResize`; the heap model's resize term
-  reads 0 there (`rhInsertResizeHeapBytes_objects_eq_zero`).  No `@[csimp]`:
-  the equation needs the load hypothesis, which the compiled insert cannot see.
+  reads 0 there (`rhInsertResizeHeapBytes_objects_eq_zero`).  No `@[csimp]`
+  drops the insert's resize branch: the equation needs the load hypothesis,
+  which the compiled insert cannot see.  The empty table's slot array is built
+  in one allocation (`@[csimp] RHTable.empty_eq_emptyImpl`).
   The boundary is tested (`runObjectStoreCapacityBoundaryChecks`).  Readings
   and the boot's heap cost: CHANGELOG `v0.37.16`.
 - **Work.**

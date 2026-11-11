@@ -125,6 +125,22 @@ def RHTable.empty (cap : Nat) (hCapGe4 : 4 ≤ cap := by omega) : RHTable α β 
     hCapGe4   := hCapGe4
     hSlotsLen := by simp [Array.size] }
 
+/-- WS-UC UC3: **the compiled empty table builds its slot array in one
+allocation** (`Array.replicate`, the runtime's `lean_mk_array`), with no list of
+`cap` cells built and taken apart on the way — at the boot's 2^17 slots that
+list is 3 MiB of cons cells.  Proven equal (`RHTable.empty_eq_emptyImpl`). -/
+def RHTable.emptyImpl (cap : Nat) (hCapGe4 : 4 ≤ cap) : RHTable α β :=
+  { slots     := Array.replicate cap none
+    size      := 0
+    capacity  := cap
+    hCapGe4   := hCapGe4
+    hSlotsLen := Array.size_replicate }
+
+@[csimp] theorem RHTable.empty_eq_emptyImpl :
+    @RHTable.empty = @RHTable.emptyImpl := by
+  funext α β cap h
+  rfl
+
 /-- N1-B2: The empty table is well-formed (all 4 WF conjuncts). -/
 theorem RHTable.empty_wf [BEq α] [Hashable α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
     (RHTable.empty cap hCapGe4 : RHTable α β).WF where

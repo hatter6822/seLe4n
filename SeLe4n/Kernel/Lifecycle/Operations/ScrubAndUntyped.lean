@@ -1314,7 +1314,7 @@ reads `4 · size < 3 · capacity`, so the resize term is 0. -/
 theorem rhInsertResizeHeapBytes_objects_eq_zero {st : SystemState} (hP : st.tablesPresized)
     (hS : st.objects.size ≤ SeLe4n.Model.maxObjects) : rhInsertResizeHeapBytes st.objects = 0 := by
   unfold rhInsertResizeHeapBytes
-  have := hP.objects
+  have := hP.objectsBootSized
   unfold SeLe4n.Model.bootTableCapacity at this; unfold SeLe4n.Model.maxObjects at hS
   rw [if_neg (by omega)]
 

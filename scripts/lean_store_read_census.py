@@ -132,6 +132,8 @@ _TABLE_OPS = {
     "findsInPlace": "other",
     "holds": "other",
     "empty": "other",
+    # The compiled `empty` (`@[csimp] RHTable.empty_eq_emptyImpl`): a constructor.
+    "emptyImpl": "other",
     "ofList": "other",
     "resize": "other",
     "invExtK": "other",

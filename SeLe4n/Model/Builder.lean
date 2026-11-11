@@ -127,7 +127,7 @@ def createObject (ist : IntermediateState)
       ist.hAllTables.objects.1 hS
     unfold storeObject at hS; cases hS
     exact ⟨h.index, h.nodup, h.indexSet, h.types, h.indexSetInv, h.typesInv,
-      ⟨h.presized.objects, ist.hLifecycleConsistent.presized.asid⟩⟩
+      ⟨h.presized.objectsBootSized, ist.hLifecycleConsistent.presized.asidBootSized⟩⟩
 
 -- ============================================================================
 -- Q3-B.6: insertCap — insert a capability into a CNode's slots

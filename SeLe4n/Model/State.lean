@@ -2537,8 +2537,8 @@ carries it (`SystemState.bookkeepingAgrees.presized`), so the boot's
 `IntermediateState` and the 22nd conjunct of `proofLayerInvariantBundle` do, and
 every kernel entry keeps it with the agreement. -/
 structure SystemState.tablesPresized (st : SystemState) : Prop where
-  objects : bootTableCapacity ≤ st.objects.capacity
-  asid : bootTableCapacity ≤ st.asidTable.capacity
+  objectsBootSized : bootTableCapacity ≤ st.objects.capacity
+  asidBootSized : bootTableCapacity ≤ st.asidTable.capacity
 
 /-- WS-UC UC3: the default state — the boot's empty state — is boot-sized. -/
 theorem default_tablesPresized : (default : SystemState).tablesPresized :=
@@ -2553,7 +2553,7 @@ theorem SystemState.objects_insert_eq_insertNoResize {st : SystemState}
     (hP : st.tablesPresized) (hS : st.objects.size ≤ maxObjects) (k : SeLe4n.ObjId)
     (v : KernelObject) : st.objects.insert k v = st.objects.insertNoResize k v :=
   st.objects.insert_eq_insertNoResize_of_load k v (by
-    have := hP.objects; unfold bootTableCapacity at this; unfold maxObjects at hS; omega)
+    have := hP.objectsBootSized; unfold bootTableCapacity at this; unfold maxObjects at hS; omega)
 
 /-- S4-B: The default (empty) system state satisfies the object capacity bound. -/
 theorem default_objectCount_le_maxObjects :
@@ -6793,7 +6793,7 @@ theorem SystemState.bookkeepingAgrees.of_frame {st st' : SystemState}
   types := hT
   indexSetInv := hS ▸ h.indexSetInv
   typesInv := hTI ▸ h.typesInv
-  presized := ⟨Nat.le_trans h.presized.objects hOC, Nat.le_trans h.presized.asid hAC⟩
+  presized := ⟨Nat.le_trans h.presized.objectsBootSized hOC, Nat.le_trans h.presized.asidBootSized hAC⟩
 
 /-- WS-UC UC2: **the stored object IDs, read from the object table** — the
 executable reading of the ghost index, in the table's slot order.  On a state
@@ -6891,8 +6891,8 @@ theorem SystemState.bookkeepingAgrees.of_kept {st st' : SystemState}
       rw [k.types, k.kinds oid]; exact h.types oid
     indexSetInv := k.indexSet ▸ h.indexSetInv
     typesInv := k.types ▸ h.typesInv
-    presized := ⟨Nat.le_trans h.presized.objects k.objectsCapacity,
-      Nat.le_trans h.presized.asid k.asidCapacity⟩ }
+    presized := ⟨Nat.le_trans h.presized.objectsBootSized k.objectsCapacity,
+      Nat.le_trans h.presized.asidBootSized k.asidCapacity⟩ }
 
 /-- A step that writes no object and none of the ghosts keeps the agreement. -/
 theorem SystemState.bookkeepingAgrees.of_objects_ghosts {st st' : SystemState}
@@ -6925,8 +6925,8 @@ theorem storeObject_preserves_bookkeepingAgrees
       have : k ≠ id := fun e => hk (by rw [e]; exact beq_self_eq_true _)
       simp [this]
   refine ⟨fun k => ?_, ?_, fun k => ?_, hTypes, ?_, ?_,
-    ⟨Nat.le_trans h.presized.objects (storeObject_capacity_le hStore).1,
-      Nat.le_trans h.presized.asid (storeObject_capacity_le hStore).2⟩⟩
+    ⟨Nat.le_trans h.presized.objectsBootSized (storeObject_capacity_le hStore).1,
+      Nat.le_trans h.presized.asidBootSized (storeObject_capacity_le hStore).2⟩⟩
   · rw [hIdx, hAt k]
     split
     · next hS =>

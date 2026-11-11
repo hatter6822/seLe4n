@@ -27,9 +27,15 @@ a slot array: the tables' slot arrays are built at boot only.
   signal and wait twins).  Bundle corollaries:
   `proofLayerInvariantBundle.tablesPresized`,
   `.objects_insert_eq_insertNoResize`, `.asidTable_insert_eq_insertNoResize`.
-- **No `@[csimp]`.** The equation needs the load hypothesis, which the compiled
-  insert cannot see, so the spec `insert` stays the compiled one; on a reachable
+- **The insert keeps its resize branch.** The no-resize equation needs the
+  load hypothesis, which the compiled insert cannot see, so no `@[csimp]` can
+  drop the branch; the spec `insert` stays the compiled one, and on a reachable
   state its resize branch is never taken.
+- **One allocation for an empty table.** `RHTable.emptyImpl` builds the slot
+  array with `Array.replicate` (the runtime's `lean_mk_array`), joined to
+  `RHTable.empty` by `@[csimp] RHTable.empty_eq_emptyImpl`, so the boot-sized
+  table no longer builds and frees a 131072-cell list (3 MiB of cons cells)
+  on the way, and neither does a resize.
 - **Boundary.** `runObjectStoreCapacityBoundaryChecks` checks the built store is
   boot-sized, that filling it to `maxObjects − 1` never resizes, that the insert
   at size 65535 into capacity 131072 equals `insertNoResize` and keeps the

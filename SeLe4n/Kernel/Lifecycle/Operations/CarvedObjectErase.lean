@@ -133,7 +133,7 @@ theorem withObjectErased_preserves_bookkeepingAgrees (st : SystemState) (id : Se
       simpa only [RHTable_getElem?_eq_get?] using this
   · rw [hS]; exact RHSet.erase_preserves_invExtK _ _ h.indexSetInv
   · rw [hT]; exact RHTable_erase_preserves_invExtK _ _ h.typesInv
-  · exact ⟨by simpa [withObjectErased] using h.presized.objects, h.presized.asid⟩
+  · exact ⟨by simpa [withObjectErased] using h.presized.objectsBootSized, h.presized.asidBootSized⟩
 
 /-- WS-UC UC1: `asid` erased from the ASID table, out of line, so the state is
 handed over and the table written in place. -/
