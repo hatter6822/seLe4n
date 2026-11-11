@@ -74,7 +74,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_ok (st : SystemState)
     (fun j _ h2 => hRead j (by omega))
   rw [hDec]
   unfold mergeOverflowWords
-  simp only [syscallReadsOverflow_of_routedOverflowed hOv, ↓reduceIte, Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
+  simp only [syscallReadsOverflow_of_routedOverflowOne hOv, ↓reduceIte, Array.size_map, hSz, List.range_eq_range', hM, overflowRegsFrom_eq_map, List.map_map,
     bind, Except.bind, pure, Except.pure, overflowedDecode]
   rfl
 
@@ -95,7 +95,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_clamped (st : SystemState
   have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
   rw [hSz] at hGt
   rw [hDec]
-  rw [mergeOverflowWords_clamped st tid rf _ capAddr mi (syscallReadsOverflow_of_routedOverflowed hOv)
+  rw [mergeOverflowWords_clamped st tid rf _ capAddr mi (syscallReadsOverflow_of_routedOverflowOne hOv)
     ⟨_, by rw [List.range_eq_range']
            exact mapM_readOverflowWord_error st tid (mi.length - 4) 0
              ⟨j, e, Nat.zero_le _, by omega, h0⟩⟩]
@@ -103,7 +103,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_clamped (st : SystemState
 /-- **The overflowed dispatch**: a five-word invocation's refusal-carrying
 dispatch, read off the inline words and the overflow word `w` in slot 0.  Only
 a syscall that reads its overflow words is routed past the inline registers
-(`syscallReadsOverflow`), so no other kind is routed here (`routedOverflowed`).
+(`syscallReadsOverflow`), so no other kind is routed here (`routedOverflowOne`).
 A specification: the compiled entry runs the routed arm
 (`RoutedArms.Overflowed`). -/
 noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : SyscallId)
@@ -114,10 +114,10 @@ noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : Sysc
   | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr rf w tid executingCore
   | _ => fun st => .error (.illegalState, st)
 
-/-- The syscalls `routedOverflowed` admits: the five-word invocations. -/
-theorem routedOverflowed_cases {sid : SyscallId} (h : routedOverflowed sid = true) :
+/-- The syscalls `routedOverflowOne` admits: the five-word invocations. -/
+theorem routedOverflowOne_cases {sid : SyscallId} (h : routedOverflowOne sid = true) :
     sid = .schedContextConfigure ∨ sid = .serviceRegister := by
-  cases sid <;> simp_all [routedOverflowed]
+  cases sid <;> simp_all [routedOverflowOne]
 
 /-- **The overflowed route's operand arm**: the arm `dispatchOverflowedCheckedR`
 runs behind the operand check (`dispatchOverflowedCheckedR_eq_operand`).  A
@@ -135,10 +135,10 @@ noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
 theorem dispatchOverflowedCheckedR_eq_operand (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (rf : SeLe4n.RegisterFile) (w : UInt64)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (h : routedOverflowed sid = true) :
+    (h : routedOverflowOne sid = true) :
     dispatchOverflowedCheckedR ctx sid capAddr rf w tid executingCore =
       dispatchOperandCheckedR capAddr tid executingCore (overflowedArmOf ctx sid rf w tid) := by
-  rcases routedOverflowed_cases h with rfl | rfl <;> rfl
+  rcases routedOverflowOne_cases h with rfl | rfl <;> rfl
 
 /-- The overflowed arm refuses a missing operand as the operand check does. -/
 theorem overflowedArmOf_none (ctx : LabelingContext) (sid : SyscallId)
@@ -171,7 +171,7 @@ invocation's fifth argument is slot 0's word. -/
 theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (mi : MessageInfo) (executingCore : Concurrency.CoreId)
-    (hRt : routedOverflowed sid = true) (hLen : 4 < mi.length) (st : SystemState) :
+    (hRt : routedOverflowOne sid = true) (hLen : 4 < mi.length) (st : SystemState) :
     dispatchOverflowedCheckedR ctx sid capAddr rf (overflowWordAt S tid 0) tid
         executingCore st =
       RefusalCarrying.ofKernel
@@ -179,7 +179,7 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
         st := by
   refine congrFun ?_ st
   have hA5 := overflowedDecode_agree S tid rf sid capAddr mi hLen
-  rcases routedOverflowed_cases hRt with rfl | rfl
+  rcases routedOverflowOne_cases hRt with rfl | rfl
   · exact dispatchConfigureCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
       executingCore rfl hA5 (show 5 ≤ mi.length by omega)
   · exact dispatchServiceRegisterCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid

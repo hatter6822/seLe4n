@@ -864,7 +864,7 @@ theorem registerRoutedSyscall_call_length
   · cases h
 
 /-- What an overflowed route pins about the decode: the syscall is one
-`routedOverflowed` admits, at `capAddr`, and the message info the register
+`routedOverflowOne` admits, at `capAddr`, and the message info the register
 decodes to runs `len` words, past the layout's message registers, to at most
 `maxMessageRegisters`; the decode merges the overflow words
 (`mergeOverflowWords`) onto the mapped layout registers. -/
@@ -876,7 +876,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
     ∃ msgInfo, decodeMsgInfo (readReg regs layout.msgInfoReg) = .ok msgInfo ∧
     msgInfo.length = len ∧
     layout.msgRegs.size < msgInfo.length ∧ msgInfo.length ≤ maxMessageRegisters ∧
-    routedOverflowed sid = true ∧
+    routedOverflowOne sid = true ∧
     decodeSyscallArgsFromState st tid layout regs regCount =
       mergeOverflowWords st tid
         { capAddr, msgInfo, syscallId := sid,
@@ -911,7 +911,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
           ∃ msgInfo, (Except.ok mi : Except KernelError MessageInfo) = .ok msgInfo ∧
           msgInfo.length = len ∧
           layout.msgRegs.size < msgInfo.length ∧ msgInfo.length ≤ maxMessageRegisters ∧
-          routedOverflowed sid = true ∧
+          routedOverflowOne sid = true ∧
           decodeSyscallArgsFromState st tid layout regs regCount =
             mergeOverflowWords st tid
               { capAddr, msgInfo, syscallId := sid,
@@ -920,7 +920,7 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed
         intro sid' hSid hEq
         cases hEq
         obtain ⟨hR, hN⟩ := routedOverflowOneSid?_some hSid
-        refine ⟨mi, rfl, rfl, by omega, hWf, routedOverflowed_of_routedOverflowOne hR, ?_⟩
+        refine ⟨mi, rfl, rfl, by omega, hWf, hR, ?_⟩
         rw [decodeSyscallArgsFromState_eq_impl]
         unfold decodeSyscallArgsFromStateImpl
         simp only [decodeMsgInfoWord_readReg]

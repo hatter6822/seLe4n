@@ -74,10 +74,10 @@ word slot 0's. -/
 (`overflowedArmOf`). -/
 theorem overflowedRoutedArm_eq (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (length : Nat)
-    (st : SystemState) (hOv : Architecture.RegisterDecode.routedOverflowed sid = true) :
+    (st : SystemState) (hOv : Architecture.RegisterDecode.routedOverflowOne sid = true) :
     overflowedRoutedArm ctx executingCore tid sid capWord length st =
       overflowedLongArmWith executingCore tid sid length capWord (fun w rf =>
         overflowedArmOf ctx sid rf w tid) st := by
-  rcases routedOverflowed_cases hOv with rfl | rfl <;> rfl
+  rcases routedOverflowOne_cases hOv with rfl | rfl <;> rfl
 
 end SeLe4n.Kernel

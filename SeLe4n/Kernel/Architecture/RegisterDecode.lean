@@ -942,11 +942,11 @@ inductive RegisterRoutedSyscall where
       no overflow words: the syscall and its operand address; its arguments
       are the layout's message registers. -/
   | audited (sid : SyscallId) (capAddr : CPtr)
-  /-- A call whose dispatch reads no word past overflow slot 0
-      (`routedOverflowed`) and whose message runs past the layout's message
-      registers: the syscall, its operand address and its message length.
-      The decode reads its overflow slots, and the dispatch reads only the
-      inline words and, for a five-word invocation, slot 0.  It carries the
+  /-- A five-word invocation (`routedOverflowOne`) whose message runs past
+      the layout's message registers and its first overflow word: the
+      syscall, its operand address and its message length.  The decode reads
+      its overflow slots, and the dispatch reads only the inline words and
+      slot 0.  It carries the
       length alone, a number, so the route builds no message info. -/
   | overflowed (sid : SyscallId) (capAddr : CPtr) (len : Nat)
   /-- A five-word invocation (`routedOverflowOne`) whose message fits the
@@ -1049,34 +1049,6 @@ theorem routedAuditedSid?_some {n : Nat} {sid : SyscallId}
     · cases h
   · cases h
 
-/-- The syscalls a message past the layout's registers and its first overflow
-word routes as `overflowed`: the five-word invocations, whose fifth argument is
-overflow slot 0 and whose decode reads every word the message names.  Every
-other syscall past the registers either has a route of its own (the IPC calls)
-or reads no overflow word and takes its short route (`syscallReadsOverflow`). -/
-def routedOverflowed : SyscallId → Bool
-  | .schedContextConfigure | .serviceRegister => true
-  | _ => false
-
-/-- The overflowed syscall number `n` names, if any. -/
-@[inline] def routedOverflowedSid? (n : Nat) : Option SyscallId :=
-  match SyscallId.ofNat? n with
-  | some sid => if routedOverflowed sid then some sid else none
-  | none => none
-
-theorem routedOverflowedSid?_some {n : Nat} {sid : SyscallId}
-    (h : routedOverflowedSid? n = some sid) :
-    routedOverflowed sid = true ∧ n = sid.toNat := by
-  unfold routedOverflowedSid? at h
-  split at h
-  · next sid' hOf =>
-    split at h
-    · next hR =>
-      cases h
-      exact ⟨hR, (SyscallId.toNat_ofNat hOf).symm⟩
-    · cases h
-  · cases h
-
 /-- The route of a call no other route names: a syscall number the decode
 refuses is refused as the decode refuses it, before anything else is read; any
 other takes the decode. -/
@@ -1146,25 +1118,11 @@ theorem syscallReadsOverflow_of_routedOverflowOne {sid : SyscallId}
     (h : routedOverflowOne sid = true) : syscallReadsOverflow sid = true := by
   cases sid <;> first | rfl | (simp [routedOverflowOne] at h)
 
-/-- A syscall the long message routes `overflowed` reads its overflow words. -/
-theorem syscallReadsOverflow_of_routedOverflowed {sid : SyscallId}
-    (h : routedOverflowed sid = true) : syscallReadsOverflow sid = true := by
-  cases sid <;> first | rfl | (simp [routedOverflowed] at h)
-
-/-- The overflowed route's syscalls are the five-word invocations. -/
-theorem routedOverflowed_of_routedOverflowOne {sid : SyscallId}
-    (h : routedOverflowOne sid = true) : routedOverflowed sid = true := by
-  cases sid <;> first | rfl | (simp [routedOverflowOne] at h)
-
-theorem routedOverflowOne_of_routedOverflowed {sid : SyscallId}
-    (h : routedOverflowed sid = true) : routedOverflowOne sid = true := by
-  cases sid <;> first | rfl | (simp [routedOverflowed] at h)
-
 /-- A five-word invocation's truncation minimum is its five words, so a
 message clamped to the four registers is short of it. -/
-theorem truncationMinimum_of_routedOverflowed {sid : SyscallId}
-    (h : routedOverflowed sid = true) : 4 < truncationMinimum sid := by
-  cases sid <;> first | (simp [routedOverflowed] at h; done) | decide
+theorem truncationMinimum_of_routedOverflowOne {sid : SyscallId}
+    (h : routedOverflowOne sid = true) : 4 < truncationMinimum sid := by
+  cases sid <;> first | (simp [routedOverflowOne] at h; done) | decide
 
 /-- The long message's route past the IPC calls, read off one decode of the
 syscall number: `registerRoutedSyscallOf`'s tail (`routedLongTail_eq`).  Only a

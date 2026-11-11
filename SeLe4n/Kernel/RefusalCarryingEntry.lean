@@ -30,7 +30,7 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Architecture.RegisterDecode (clampedFrameDecode
-  routedOverflowOne_of_routedOverflowed truncationMinimum_of_routedOverflowed)
+  truncationMinimum_of_routedOverflowOne)
 
 /-- `syscallEntryChecked`, refusing in the state it was handed
 (`syscallEntryCheckedR_eq`), on the hardware's register layout
@@ -423,9 +423,8 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
             have hE := dispatchShortArgsCheckedR_eq ctx
               (clampedFrameDecode sid tcb.registerContext capAddr msgInfo)
               tid executingCore (by simp [clampedFrameDecode, hRouted])
-              (by simp [clampedFrameDecode, truncationMinimum_of_routedOverflowed
-                (SeLe4n.Kernel.Architecture.RegisterDecode.routedOverflowed_of_routedOverflowOne
-                  hRouted)])
+              (by simp [clampedFrameDecode, truncationMinimum_of_routedOverflowOne
+                hRouted])
             simp only [clampedFrameDecode] at hE
             rw [congrFun hE st]
             simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
@@ -955,8 +954,8 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
             have hD := decodeSyscallArgsFromState_of_routedOverflowed_clamped st tid _ sid capAddr
               msgInfo hMI hOvRegs 0 hn0 e hR0
             have hE := dispatchShortArgsCheckedR_eq ctx (clampedFrameDecode sid tcb.registerContext capAddr msgInfo)
-              tid executingCore (by simp [clampedFrameDecode, routedOverflowOne_of_routedOverflowed hRt])
-              (by simp [clampedFrameDecode, truncationMinimum_of_routedOverflowed hRt])
+              tid executingCore (by simp [clampedFrameDecode, hRt])
+              (by simp [clampedFrameDecode, truncationMinimum_of_routedOverflowOne hRt])
             simp only [clampedFrameDecode] at hE
             rw [congrFun hE st]
             simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hD,
@@ -973,8 +972,8 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
                 msgInfo hMI hOvRegs _
                 (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead_lt hn0) e hR1
               have hE := dispatchShortArgsCheckedR_eq ctx (clampedFrameDecode sid tcb.registerContext capAddr msgInfo)
-                tid executingCore (by simp [clampedFrameDecode, routedOverflowOne_of_routedOverflowed hRt])
-                (by simp [clampedFrameDecode, truncationMinimum_of_routedOverflowed hRt])
+                tid executingCore (by simp [clampedFrameDecode, hRt])
+                (by simp [clampedFrameDecode, truncationMinimum_of_routedOverflowOne hRt])
               simp only [clampedFrameDecode] at hE
               rw [congrFun hE st]
               simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hD,
