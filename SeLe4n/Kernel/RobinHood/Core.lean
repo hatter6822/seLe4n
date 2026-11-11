@@ -748,26 +748,23 @@ overwrite the matching key's value, `2` displace the resident, `3` move on. -/
   | some e => if e.key == k then 1 else if e.dist < d then 2 else 3
 
 /-- WS-ZA ZA5.4: the cell `c` with its entry's distance advanced, in place when
-`c` is exclusive. -/
+`c` is exclusive.  WS-UC UC4: both the carried cell and a displaced resident's
+cell advance through this, so each keeps its own `some` and entry cell: the
+entry is moved to its next slot, never rebuilt from another cell's fields. -/
 @[inline] def RHEntry.bumpDist : Option (RHEntry α β) → Option (RHEntry α β)
   | some e => some { e with dist := e.dist + 1 }
   | none => none
 
-/-- WS-ZA ZA5.4: the value the cell `c` carries, written over a slot's entry. -/
-@[inline] def RHEntry.withValueOf (c : Option (RHEntry α β)) :
-    Option (RHEntry α β) → Option (RHEntry α β)
-  | some e => match c with
-    | some ce => some { e with value := ce.value }
-    | none => some e
-  | none => none
-
 /-- WS-ZA ZA5.4: `insertLoop`'s array, carrying the entry being placed as its
 own cell `c` (the `some` and the entry; its key `k` and distance `d` passed
-beside it): an empty slot takes `c` itself, a displaced resident's cell is
-carried on with its distance advanced, and moving on advances `c`'s distance in
-place.  A displaced resident is read before its slot is written and matched
-after, so its cell is the probe's alone by then: on an exclusively owned table
-nothing is allocated (`insertCellLoop_eq`). -/
+beside it): an empty slot takes `c` itself, a displaced resident's own cell is
+carried on with its distance advanced (`RHEntry.bumpDist`), and moving on
+advances `c`'s distance in place.  A displaced resident is read before its slot
+is written and matched only after it is advanced, so its cell is the probe's
+alone by then: on an exclusively owned table nothing is allocated
+(`insertCellLoop_eq`).  WS-UC UC4: a slot already holding `k` keeps its own
+cell and takes `c`'s value alone (`RHEntry.withValue`), so no slot's key and
+distance are written into `c`'s cell, and `c` is released. -/
 def insertCellLoop [BEq α] (fuel idx : Nat) (k : α) (d : Nat) (c : Option (RHEntry α β))
     (slots : Array (Option (RHEntry α β))) (capacity : Nat) (hLen : slots.size = capacity)
     (hCapPos : 0 < capacity) : Array (Option (RHEntry α β)) :=
@@ -778,13 +775,17 @@ def insertCellLoop [BEq α] (fuel idx : Nat) (k : α) (d : Nat) (c : Option (RHE
     have hIdx : i < slots.size := hLen ▸ Nat.mod_lt _ hCapPos
     let code := insertStepCode slots[i] k d
     if code == 0 then slots.set i c
-    else if code == 1 then modifySlotAt slots i (RHEntry.withValueOf c)
+    else if code == 1 then
+      match c with
+      | some ce => modifySlotAt slots i (RHEntry.withValue ce.value)
+      | none => slots
     else if code == 2 then
       let old := slots[i]
       let slots' := slots.set i c
-      match old with
+      let moved := RHEntry.bumpDist old
+      match moved with
       | some e =>
-        insertCellLoop fuel' (i + 1) e.key (e.dist + 1) (some { e with dist := e.dist + 1 })
+        insertCellLoop fuel' (i + 1) e.key e.dist moved
           slots' capacity (by rw [Array.size_set]; exact hLen) hCapPos
       | none => slots'
     else
@@ -817,7 +818,7 @@ theorem insertCellLoop_eq [BEq α] [Hashable α] (capacity : Nat) (hCapPos : 0 <
         · intro j h1 h2
           simp only [Array.getElem_modify, Array.getElem_set]
           split
-          · next hj => subst hj; simp [hs, RHEntry.withValueOf]
+          · next hj => subst hj; simp [hs, RHEntry.withValue]
           · rfl
       · by_cases hd : e.dist < d
         · simp only [insertStepCode, hk, hd, Bool.false_eq_true, ↓reduceIte, c20, c21,

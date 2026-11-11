@@ -1386,45 +1386,50 @@ theorem CapTarget.irqControlOver_eq (t : CapTarget) (code : Nat) :
     t.irqControlOver code = .irqControl code := by
   cases t <;> rfl
 
-/-- WS-ZA ZA6.35: whether the target is a constructor of one field (an object, a
-reply, a core's scheduling control, an interrupt line, the audit trail,
-interrupt control): a cell of one size, which a write of any of them reuses. -/
-@[inline] def CapTarget.isOneField : CapTarget → Bool
-  | .object _ => true
-  | .replyCap _ => true
-  | .schedControl _ => true
-  | .irqHandler _ => true
-  | .auditTrail _ => true
-  | .irqControl _ => true
-  | .cnodeSlot _ _ => false
+/-- WS-UC UC4: the target naming slot `slot` of CNode `cnode`, built fresh, out
+of line. -/
+@[noinline] def CapTarget.ofCnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) : CapTarget :=
+  .cnodeSlot cnode slot
 
-/-- WS-ZA ZA6.35: the target `src`, written over the record's own target `t` when
-both are constructors of one field (`objectOver`, `replyCapOver`,
-`schedControlOver`, `irqHandlerOver`, each out of line, so the compiler builds
-the new constructor in `t`'s cell instead of answering `src` itself): a copy,
-mint or move leaves its slot a target cell of its own, shared with nothing,
-which the next capability written there, a carve's among them, writes over in
-turn.  Any other target is `src` itself.  Equal to `src` (`copyOver_eq`). -/
+/-- WS-UC UC4: the target naming slot `slot` of CNode `cnode`, written over `t`
+when `t` already names a CNode slot (the one constructor of two fields, the
+same cell size, so the compiler reuses `t`'s cell), and built fresh otherwise
+(`ofCnodeSlot`), so the record it is written into owns it either way. -/
+@[noinline] def CapTarget.cnodeSlotOver (t : CapTarget) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) : CapTarget :=
+  match t with
+  | .cnodeSlot _ _ => .cnodeSlot cnode slot
+  | _ => CapTarget.ofCnodeSlot cnode slot
+
+theorem CapTarget.cnodeSlotOver_eq (t : CapTarget) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
+    t.cnodeSlotOver cnode slot = .cnodeSlot cnode slot := by
+  cases t <;> rfl
+
+/-- WS-ZA ZA6.35, WS-UC UC4: **the target `src`, written into the record's own
+target `t`**.  Each arm is out of line (`objectOver`, `replyCapOver`,
+`schedControlOver`, `irqHandlerOver`, `auditTrailOver`, `irqControlOver`,
+`cnodeSlotOver`), so the compiler builds the new constructor in `t`'s cell when
+the two are of one size and in a fresh cell otherwise, and never answers `src`
+itself: a copy, mint or move leaves its slot a target cell of its own, shared
+with nothing (not with the source slot's record, and not with the target a
+reply object holds), which the next capability written there, a carve's among
+them, writes over in turn.  Equal to `src` (`copyOver_eq`). -/
 @[noinline] def CapTarget.copyOver (t src : CapTarget) : CapTarget :=
-  if t.isOneField then
-    match src with
-    | .object id => t.objectOver id
-    | .replyCap rid => t.replyCapOver rid
-    | .schedControl core => t.schedControlOver core
-    | .irqHandler line => t.irqHandlerOver line
-    | .auditTrail code => t.auditTrailOver code
-    | .irqControl code => t.irqControlOver code
-    | .cnodeSlot _ _ => src
-  else src
+  match src with
+  | .object id => t.objectOver id
+  | .replyCap rid => t.replyCapOver rid
+  | .schedControl core => t.schedControlOver core
+  | .irqHandler line => t.irqHandlerOver line
+  | .auditTrail code => t.auditTrailOver code
+  | .irqControl code => t.irqControlOver code
+  | .cnodeSlot cnode slot => t.cnodeSlotOver cnode slot
 
 theorem CapTarget.copyOver_eq (t src : CapTarget) : t.copyOver src = src := by
   unfold CapTarget.copyOver
-  split
-  · cases src <;>
-      simp only [CapTarget.objectOver_eq, CapTarget.replyCapOver_eq,
-        CapTarget.schedControlOver_eq, CapTarget.irqHandlerOver_eq,
-        CapTarget.auditTrailOver_eq, CapTarget.irqControlOver_eq]
-  · rfl
+  cases src <;>
+    simp only [CapTarget.objectOver_eq, CapTarget.replyCapOver_eq,
+      CapTarget.schedControlOver_eq, CapTarget.irqHandlerOver_eq,
+      CapTarget.auditTrailOver_eq, CapTarget.irqControlOver_eq, CapTarget.cnodeSlotOver_eq]
 
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, written over the
 record `r` (a slot's spare): out of line, so `r` is the only record the
@@ -1499,13 +1504,40 @@ theorem Capability.overwriteIrqHandler_eq (r : Capability) (line : Nat)
   dsimp only
   rw [CapTarget.irqHandlerOver_eq, AccessRightSet.keepOr_eq]
 
+/-- WS-UC UC4: **the target `t`, in a cell of its own**: each constructor
+rebuilt out of line (`ofObject`, `ofReplyCap`, `ofSchedControl`, `ofIrqHandler`,
+`ofAuditTrail`, `ofIrqControl`, `ofCnodeSlot`), so the record that holds the
+result shares no cell with whatever holds `t` (a source slot's record, a reply
+object's own target).  Equal to `t` (`fresh_eq`). -/
+@[noinline] def CapTarget.fresh (t : CapTarget) : CapTarget :=
+  match t with
+  | .object id => CapTarget.ofObject id
+  | .replyCap rid => CapTarget.ofReplyCap rid
+  | .schedControl core => CapTarget.ofSchedControl core
+  | .irqHandler line => CapTarget.ofIrqHandler line
+  | .auditTrail code => CapTarget.ofAuditTrail code
+  | .irqControl code => CapTarget.ofIrqControl code
+  | .cnodeSlot cnode slot => CapTarget.ofCnodeSlot cnode slot
+
+theorem CapTarget.fresh_eq (t : CapTarget) : t.fresh = t := by
+  cases t <;> rfl
+
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, built fresh (a
 slot with no record of its own).  Out of line, so a caller's literal of the same
-fields is not shared with it and stays unbuilt. -/
+fields is not shared with it and stays unbuilt.  WS-UC UC4: its target is built
+fresh too (`CapTarget.fresh`), so the new record owns its target cell and holds
+none of the caller's. -/
 @[noinline] def Capability.ofFields (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
     (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) : Capability :=
-  ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩
+  ⟨target.fresh, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩
+
+theorem Capability.ofFields_eq (target : CapTarget) (rights : AccessRightSet)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
+    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) :
+    Capability.ofFields target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped freeIndex =
+      ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩ := by
+  unfold Capability.ofFields; rw [CapTarget.fresh_eq]
 
 theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
@@ -2535,6 +2567,37 @@ functions and not one") rather than as the defect it was.  One definition is wha
 makes a fourth removal impossible to get wrong. -/
 def queueUnlinkSuccessor (removed : TCB) : TCB → TCB :=
   fun n => { n with queuePrevCode := removed.queuePrevCode, queuePPrevCode := removed.queuePPrevCode }
+
+/-- WS-UC UC4: the predecessor's `queueNext` code written in its own record, out
+of line, so the record written is the predecessor's and no other thread's. -/
+@[noinline] def TCB.withQueueNextCode (p : TCB) (code : Nat) : TCB :=
+  { p with queueNextCode := code }
+
+/-- WS-UC UC4: the successor's `queuePrev` and `queuePPrev` codes written in its
+own record, out of line (as `withQueueNextCode`). -/
+@[noinline] def TCB.withQueuePrevCodes (n : TCB) (prev pprev : Nat) : TCB :=
+  { n with queuePrevCode := prev, queuePPrevCode := pprev }
+
+/-- WS-UC UC4: `queueUnlinkPredecessor` as compiled.  The specification's record
+update names two threads' records, `removed` and the predecessor, and the
+compiler reused `removed`'s cell for the predecessor's updated record, so one
+thread's fields were written into another thread's cell.  Here the removed
+thread's code is read and passed as a word, and the predecessor's own record is
+the only one written (`TCB.withQueueNextCode`). -/
+def queueUnlinkPredecessorImpl (removed : TCB) : TCB → TCB :=
+  fun p => p.withQueueNextCode removed.queueNextCode
+
+@[csimp] theorem queueUnlinkPredecessor_eq_impl :
+    @queueUnlinkPredecessor = @queueUnlinkPredecessorImpl := rfl
+
+/-- WS-UC UC4: `queueUnlinkSuccessor` as compiled, for the reason
+`queueUnlinkPredecessorImpl` gives: the successor's own record is the only one
+written (`TCB.withQueuePrevCodes`). -/
+def queueUnlinkSuccessorImpl (removed : TCB) : TCB → TCB :=
+  fun n => n.withQueuePrevCodes removed.queuePrevCode removed.queuePPrevCode
+
+@[csimp] theorem queueUnlinkSuccessor_eq_impl :
+    @queueUnlinkSuccessor = @queueUnlinkSuccessorImpl := rfl
 
 /-- **WS-RR RR8.3**: `queuePPrev` agrees with `queuePrev` — the relation the
 dual-queue removal's `pprevConsistent` guard checks, stated pointwise at the

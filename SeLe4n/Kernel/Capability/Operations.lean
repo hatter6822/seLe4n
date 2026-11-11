@@ -100,6 +100,28 @@ def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
         | some _ => .error .invalidCapability
         | none   => .error .objectNotFound
 
+/-- WS-UC UC4: the capability at slot `addr`, out of line.  The caller hands
+`addr` over and builds nothing of its cell's size here, so `addr`'s cell is
+reused for nothing; inlined, the compiler reused it for the lookup's result
+pair, taking the capability out of the CNode's slot into it, and reused the
+slot's own `some` cell as the result. -/
+@[noinline] def lookupSlotCapOut (st : SystemState) (addr : CSpaceAddr) : Option Capability :=
+  SystemState.lookupSlotCap st addr
+
+/-- WS-UC UC4: `cspaceLookupSlot` as compiled: the slot is read out of line
+(`lookupSlotCapOut`), so no cell taken from the address or the slot holds the
+result. -/
+def cspaceLookupSlotImpl (addr : CSpaceAddr) : Kernel Capability :=
+  fun st =>
+    match lookupSlotCapOut st addr with
+    | some cap => .ok (cap, st)
+    | none =>
+        match st.getCNode? addr.cnode with
+        | some _ => .error .invalidCapability
+        | none   => .error .objectNotFound
+
+@[csimp] theorem cspaceLookupSlot_eq_impl : @cspaceLookupSlot = @cspaceLookupSlotImpl := rfl
+
 /-- Resolve a CSpace path address into a concrete slot using CNode guard/radix semantics.
 
 AF5-G (AF-27): CSpace Resolution Layers
