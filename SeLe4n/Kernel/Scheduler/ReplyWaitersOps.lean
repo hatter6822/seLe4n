@@ -672,6 +672,10 @@ theorem unlinkReplyWaiterOpt_eq_objects :
   | none => rfl
   | some s => exact unlinkReplyWaiter_eq_objects st w s
 
+@[simp] theorem unlinkReplyWaiterOpt_objectIndexSet :
+    (st.unlinkReplyWaiterOpt w s?).objectIndexSet = st.objectIndexSet := by
+  rw [unlinkReplyWaiterOpt_eq_objects]
+
 theorem unlinkReplyWaiterOpt_objects_invExt (h : st.objects.invExt) :
     (st.unlinkReplyWaiterOpt w s?).objects.invExt := by
   cases s? with
@@ -681,6 +685,7 @@ theorem unlinkReplyWaiterOpt_objects_invExt (h : st.objects.invExt) :
 theorem unlinkReplyWaiterOpt_kindPreservingWrite :
     kindPreservingWrite st (st.unlinkReplyWaiterOpt w s?) :=
   (unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st w s?).kindPreserving
+    (.of_objectsOnly (unlinkReplyWaiterOpt_eq_objects st w s?))
 
 theorem unlinkReplyWaiterOpt_runQueueRefined (h : st.runQueueRefined) :
     (st.unlinkReplyWaiterOpt w s?).runQueueRefined := by

@@ -892,7 +892,9 @@ theorem propagatePipChainCrossCore_kindPreservingWrite (st : SystemState)
     (hInv : st.objects.invExt) :
     kindPreservingWrite st
       (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
-  intro oid
+  refine ⟨fun oid => ?_,
+    (SeLe4n.Kernel.propagatePipChainCrossCore_onlyObjectsSchedulerDiffer fuel st startTid ec).ghostsKept⟩
+  unfold kindPreservingWriteAt
   rcases SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st
       startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost, hC, hL, hB, hW⟩
   · exact Or.inl hEq

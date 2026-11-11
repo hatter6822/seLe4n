@@ -501,8 +501,10 @@ theorem getCNode? (id : SeLe4n.ObjId) : st'.getCNode? id = st.getCNode? id := by
 
 /-- A step that writes only run-queue links rewrites each object to one of its
 own kind. -/
-theorem kindPreserving : SeLe4n.Model.kindPreservingWrite st st' := by
-  intro oid
+theorem kindPreserving (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
+    SeLe4n.Model.kindPreservingWrite st st' := by
+  refine ⟨fun oid => ?_, hG⟩
+  unfold SeLe4n.Model.kindPreservingWriteAt
   cases e : st.objects[oid]? with
   | none => exact Or.inl (h.get_none_iff.mpr e)
   | some o => cases o with
@@ -680,6 +682,11 @@ theorem updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB) :
   unfold SystemState.updateTcbAtCode; split
   · exact .refl _
   · exact mapTcbInPlace _ _ _
+
+/-- WS-UC UC2: the step moves none of the bookkeeping ghosts. -/
+theorem ghostsKept {a b : SystemState} (h : onlyObjectsSchedulerDiffer b a) :
+    SystemState.ghostsKept b a :=
+  ⟨by rw [h], by rw [h], by rw [h]⟩
 
 /-- Every table but the object store is `st`'s, so the kernel-level table
 invariant needs only the object store's. -/

@@ -1262,7 +1262,9 @@ theorem stageDeliveredMessage_kindPreservingWrite (st : SystemState)
       · simp only [hReady, if_pos]
         cases tcb.pendingMessage with
         | none => exact SeLe4n.Model.kindPreservingWrite.refl st
-        | some msg => exact writeDeliveredFrameToTcb_kindPreservingWrite st tid _ hObjInv
+        | some msg =>
+          exact SeLe4n.Model.kindPreservingWrite.trans
+            (writeDeliveredFrameToTcb_kindPreservingWrite st tid _ hObjInv) (.of_objects_eq rfl)
       · simp only [hReady, if_false]
         exact SeLe4n.Model.kindPreservingWrite.refl st
 

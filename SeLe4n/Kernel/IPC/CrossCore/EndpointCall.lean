@@ -2034,7 +2034,8 @@ theorem endpointCallOnCore_kindPreservingWrite
           simp only
           have w2 := storeTcbIpcStateAndMessage_kindPreservingWrite h1 hMsg
           exact ((w1.trans w2).trans
-            (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving).trans
+            ((removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
+              (removeRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)).trans
             (recordSendCap_objectsAgreeOffRunLinks _ _ _ _).kindPreserving
     | some _ =>
       simp only
@@ -2072,7 +2073,8 @@ theorem endpointCallOnCore_kindPreservingWrite
               have w5 := SystemState.linkServerStashedReply_kindPreservingWrite st4 st5 caller
                 pair.1 h4 hLink
               exact (((((w1.trans w2).trans w3).trans w4).trans w5).trans
-                (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving).trans
+                ((removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
+              (removeRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)).trans
                 (SystemState.linkReplyWaiter_kindPreservingWrite _ _ _)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the Call leg writes neither CDT table

@@ -3292,6 +3292,57 @@ theorem storeObject_cdt_eq
 -- It lives in the model, upstream of both invariants, because it is a relation
 -- between two object stores and mentions neither.
 
+/-- WS-UC UC2: **a step that moves none of the bookkeeping ghosts** — the
+object index, its set and the type table read as they did. -/
+structure SystemState.ghostsKept (st' st : SystemState) : Prop where
+  index : st'.objectIndex = st.objectIndex
+  indexSet : st'.objectIndexSet = st.objectIndexSet
+  types : st'.lifecycle.objectTypes = st.lifecycle.objectTypes
+
+theorem SystemState.ghostsKept.refl (st : SystemState) : SystemState.ghostsKept st st :=
+  ⟨rfl, rfl, rfl⟩
+
+theorem SystemState.ghostsKept.trans {st st' st'' : SystemState}
+    (h2 : SystemState.ghostsKept st'' st') (h1 : SystemState.ghostsKept st' st) :
+    SystemState.ghostsKept st'' st :=
+  ⟨h2.index.trans h1.index, h2.indexSet.trans h1.indexSet, h2.types.trans h1.types⟩
+
+/-- Two states equal off the objects and the scheduler — or off any fields but
+the three ghosts — keep them. -/
+theorem SystemState.ghostsKept.of_eq {st st' : SystemState} (h : st' = st) :
+    SystemState.ghostsKept st' st := h ▸ .refl st
+
+/-- A step that rewrites the objects alone keeps the ghosts. -/
+theorem SystemState.ghostsKept.of_objectsOnly {st st' : SystemState}
+    (h : st' = { st with objects := st'.objects }) : SystemState.ghostsKept st' st :=
+  ⟨by rw [h], by rw [h], by rw [h]⟩
+
+/-- Closes a `ghostsKept` goal for a step written as a record update that keeps
+the ghost fields, or from a hypothesis in context. -/
+macro "ghosts_kept" : tactic => `(tactic| first
+  | exact SeLe4n.Model.SystemState.ghostsKept.refl _
+  | exact ⟨rfl, rfl, rfl⟩
+  | assumption
+  | exact SeLe4n.Model.SystemState.ghostsKept.of_eq (by assumption)
+  | (refine ⟨?_, ?_, ?_⟩ <;> simp <;> done)
+  | (subst_vars; exact ⟨rfl, rfl, rfl⟩)
+  | (subst_vars; refine ⟨?_, ?_, ?_⟩ <;> simp <;> done))
+
+/-- **A store over an object of the same kind moves no ghost**: the key is
+already indexed, and its type does not change. -/
+theorem SystemState.ghostsKept.storeObject_sameKind {st st' : SystemState} {id : SeLe4n.ObjId}
+    {obj old : KernelObject} (hStore : storeObject id obj st = .ok ((), st'))
+    (hOld : st.objects[id]? = some old) (hK : old.objectType = obj.objectType) :
+    SystemState.ghostsKept st' st := by
+  have hIdx := storeObject_objectIndex hStore
+  have hSet := storeObject_objectIndexSet hStore
+  have hTy := storeObject_objectTypes hStore
+  have hKeep : storeKeepsKind st id obj.objectType = true := by
+    unfold storeKeepsKind; rw [hOld]; simp [hK]
+  rw [hOld] at hIdx hSet
+  rw [hKeep] at hTy
+  exact ⟨by simpa using hIdx, by simpa using hSet, by simpa using hTy⟩
+
 /-- **`kindPreservingWrite` without its binding-code clause**: at every key the
 store is unchanged or holds an object of the same non-`cnode` kind with the same
 space slots and untyped record.  What the capability bundle reads, and what a
@@ -3440,9 +3491,16 @@ And it keeps the object's mapping facts (`KernelObject.mappingView`: a root's
 ASID, translations and mapping epochs, a frame's base), which the mapping
 records read (`SystemState.liveMappingsRecorded`): only the address-space
 operations, the carve and the final delete write them, and none of those is a
-kind-preserving chain step. -/
-def kindPreservingWrite (st st' : SystemState) : Prop :=
-  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+kind-preserving chain step.
+
+WS-UC UC2: and it moves none of the bookkeeping ghosts
+(`SystemState.ghostsKept`): the object index, its set and the type table are
+written only by a store to a fresh key or of a new kind and by an erase, and
+none of those is a kind-preserving chain step.  A kind-preserving write
+therefore keeps the bookkeeping in agreement with the objects
+(`SystemState.bookkeepingAgrees.of_kindPreservingWrite`). -/
+def kindPreservingWriteAt (st st' : SystemState) (oid : SeLe4n.ObjId) : Prop :=
+  st'.objects[oid]? = st.objects[oid]? ∨
     ∃ pre post : KernelObject,
       st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
       post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode ∧
@@ -3450,14 +3508,26 @@ def kindPreservingWrite (st st' : SystemState) : Prop :=
       post.bindingCodes = pre.bindingCodes ∧ post.tableBackLinks = pre.tableBackLinks ∧
       post.mappingView = pre.mappingView
 
+/-- **A kind-preserving write** (see `kindPreservingWriteAt`): at every key the
+store is unchanged or holds an object of the same non-`cnode` kind with the same
+slots, untyped record, binding codes, table back-links and mapping facts, and
+the bookkeeping ghosts are unchanged.  It applies as a function of the key. -/
+structure kindPreservingWrite (st st' : SystemState) : Prop where
+  objectsAt : ∀ oid : SeLe4n.ObjId, kindPreservingWriteAt st st' oid
+  ghosts : SystemState.ghostsKept st' st
+
+instance {st st' : SystemState} :
+    CoeFun (kindPreservingWrite st st') (fun _ => ∀ oid : SeLe4n.ObjId, kindPreservingWriteAt st st' oid) :=
+  ⟨kindPreservingWrite.objectsAt⟩
+
 namespace kindPreservingWrite
 
-theorem refl (st : SystemState) : kindPreservingWrite st st := fun _ => Or.inl rfl
+theorem refl (st : SystemState) : kindPreservingWrite st st := ⟨fun _ => Or.inl rfl, .refl st⟩
 
 theorem trans {st st' st'' : SystemState}
     (h₁ : kindPreservingWrite st st') (h₂ : kindPreservingWrite st' st'') :
     kindPreservingWrite st st'' := by
-  intro oid
+  refine ⟨fun oid => ?_, h₂.ghosts.trans h₁.ghosts⟩
   rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁, hm₁⟩
   · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
     · exact Or.inl (e₂.trans e₁)
@@ -3525,9 +3595,10 @@ theorem slotCap_fwd {st st' : SystemState} (h : kindPreservingWrite st st') {oid
   h.upToBindings.slotCap_fwd hO
 
 /-- WS-RR RR8.16 (`v0.35.199`): the degenerate instance — a step that writes no
-object at all. -/
-theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
-    kindPreservingWrite st st' := fun _ => Or.inl (by rw [h])
+object at all, and none of the ghosts. -/
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects)
+    (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
+    kindPreservingWrite st st' := ⟨fun _ => Or.inl (by rw [h]), hG⟩
 
 end kindPreservingWrite
 
@@ -3555,7 +3626,9 @@ theorem storeObject_kindPreservingWrite
         | rfl
         | (dsimp only; split <;> rfl)) :
     kindPreservingWrite st st' := by
-  intro k
+  refine ⟨fun k => ?_, ?_⟩
+  rotate_left
+  · exact .storeObject_sameKind hStore hPre hKind.symm
   by_cases hEq : k = oid
   · subst hEq
     exact Or.inr ⟨pre, obj, hPre,
@@ -6730,11 +6803,8 @@ theorem SystemState.BookkeepingKept.of_kindPreservingUpToBindings {st st' : Syst
     · rw [hp, hq]; simp [ht]⟩
 
 theorem SystemState.BookkeepingKept.of_kindPreserving {st st' : SystemState}
-    (h : kindPreservingWrite st st')
-    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
-    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
-    SystemState.BookkeepingKept st' st :=
-  ⟨hI, hS, hT, fun x => by
+    (h : kindPreservingWrite st st') : SystemState.BookkeepingKept st' st :=
+  ⟨h.ghosts.index, h.ghosts.indexSet, h.ghosts.types, fun x => by
     rcases h x with e | ⟨pre, post, hp, hq, ht, -⟩
     · rw [e]
     · rw [hp, hq]; simp [ht]⟩
@@ -6828,14 +6898,8 @@ theorem SystemState.BookkeepingKept.storeObject_sameKind {st st' : SystemState} 
     {obj old : KernelObject} (hStore : storeObject id obj st = .ok ((), st'))
     (hOld : st.objects[id]? = some old) (hK : old.objectType = obj.objectType)
     (hObjInv : st.objects.invExt) : SystemState.BookkeepingKept st' st := by
-  have hIdx := storeObject_objectIndex hStore
-  have hSet := storeObject_objectIndexSet hStore
-  have hTy := storeObject_objectTypes hStore
-  have hKeep : storeKeepsKind st id obj.objectType = true := by
-    unfold storeKeepsKind; rw [hOld]; simp [hK]
-  rw [hOld] at hIdx hSet
-  rw [hKeep] at hTy
-  refine ⟨by simpa using hIdx, by simpa using hSet, by simpa using hTy, fun x => ?_⟩
+  have hG := SystemState.ghostsKept.storeObject_sameKind hStore hOld hK
+  refine ⟨hG.index, hG.indexSet, hG.types, fun x => ?_⟩
   unfold storeObject at hStore; cases hStore
   simp only [RHTable_getElem?_eq_get?]
   by_cases hx : (id == x) = true
@@ -7047,7 +7111,8 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
     (hMapping : ∀ old, st.objects[id]? = some old →
       new.mappingView = old.mappingView := by intro old _; cases old <;> rfl) :
     kindPreservingWrite st (st.rewriteObject id new h) := by
-  intro k
+  refine ⟨fun k => ?_, ⟨rfl, rfl, rfl⟩⟩
+  unfold SeLe4n.Model.kindPreservingWriteAt
   by_cases hEq : id = k
   · subst hEq
     have hAdm := h

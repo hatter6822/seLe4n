@@ -480,8 +480,9 @@ theorem pageTableMap_kindPreservingWrite {tableId rootId : SeLe4n.ObjId} {vaddr 
   have hNe : rootId ≠ tableId := fun e => by subst e; rw [hTo] at hRo; cases hRo
   have hR1 : st1.objects[rootId]? = some (.vspaceRoot root) := by
     rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hS1]; exact hRo
-  exact (storeObject_kindPreservingWrite hObjInv hS1 hTo rfl
+  exact ((storeObject_kindPreservingWrite hObjInv hS1 hTo rfl
       (by simp [KernelObject.objectType])).trans
+      (kindPreservingWrite.of_objects_eq (st' := Architecture.recordPhysicalWrites st1 _) rfl)).trans
     (storeObject_kindPreservingWrite (st := Architecture.recordPhysicalWrites st1 _) hI1 hS2 hR1
       rfl (by simp [KernelObject.objectType]))
 
@@ -522,7 +523,8 @@ theorem pageTableUnmap_kindPreservingWrite {tableId : SeLe4n.ObjId} {st st' : Sy
                 rw [e, hTo] at hRo; cases hRo
               have hR1 : st1.objects[inst.root]? = some (.vspaceRoot root) := by
                 rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hS1]; exact hRo
-              exact (hTab hS1).trans
+              exact ((hTab hS1).trans (kindPreservingWrite.of_objects_eq
+                (st' := Architecture.recordPhysicalWrites st1 _) rfl)).trans
                 (storeObject_kindPreservingWrite (st := Architecture.recordPhysicalWrites st1 _)
                   hI1 h hR1 rfl (by simp [KernelObject.objectType]))
         · exact hTab h

@@ -737,6 +737,7 @@ theorem returnUnheldSchedContext_kindPreservingWrite {st st' : SystemState}
       (by simp [KernelObject.objectType])
   have hLast : kindPreservingWrite s3 st' :=
     kindPreservingWrite.of_objects_eq (by rw [hEq, markKeyChangeFrom_objects])
+      (by rw [hEq]; exact markKeyChangeFrom_ghostsKept _ _ _)
   exact ((hW1.trans hW2).trans hW3).trans hLast
 
 /-- The unheld pop writes no capability derivation edge. -/

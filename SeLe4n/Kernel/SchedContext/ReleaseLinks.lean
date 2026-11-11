@@ -2234,6 +2234,10 @@ theorem trans {a b d : SystemState} (h₂ : releaseOnlyWrite d b) (h₁ : releas
   calc d = { b with objects := d.objects, scheduler := d.scheduler } := h₂.1
     _ = _ := by rw [h₁.1]
 
+/-- WS-UC UC2: a release-only write moves no bookkeeping ghost. -/
+theorem ghostsKept {st' st : SystemState} (h : releaseOnlyWrite st' st) : ghostsKept st' st :=
+  ⟨by rw [h.1], by rw [h.1], by rw [h.1]⟩
+
 /-- WS-ZA ZA6.4: a release-only write leaves every core's run queue, current
 thread and domain state. -/
 theorem runQueueOnCore {st' st : SystemState} (h : releaseOnlyWrite st' st) (c : CoreId) :

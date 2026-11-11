@@ -493,24 +493,6 @@ theorem finaliseReplyCancel_eq {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
   · rw [hHd, cancelIpcBlockingReclaimed_of_no_donation c t st hD]; rfl
   · rw [hN]; rfl
 
-/-- **The priority-inheritance walk writes only the object store and the
-scheduler.** -/
-theorem propagatePipChainCrossCore_onlyObjectsSchedulerDiffer :
-    ∀ (fuel : Nat) (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.CoreId),
-      SystemState.onlyObjectsSchedulerDiffer
-        (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1 st
-  | 0, st, _, _ => by rw [PriorityInheritance.propagatePipChainCrossCore_zero]; exact .refl st
-  | n + 1, st, s, ec => by
-    rw [PriorityInheritance.propagatePipChainCrossCore_step]
-    simp only
-    have h1 : SystemState.onlyObjectsSchedulerDiffer
-        (PriorityInheritance.pipBoostWithWake st s ec).1 st := by
-      rw [PriorityInheritance.pipBoostWithWake_state]
-      exact PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer _ _ _
-    cases PriorityInheritance.blockingServer st s with
-    | none => exact h1
-    | some nx => exact (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer n _ nx ec).trans h1
-
 /-- **A reply-blocked caller's cancel**: the donation return, then the splice,
 the restore, the consume and the unlink. -/
 theorem cancelIpcBlocking_replyArm_unfold (st : SystemState) (c : SeLe4n.ThreadId)

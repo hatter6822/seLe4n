@@ -1704,4 +1704,22 @@ def waiterChainWriteSet (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
   | some server => pipChainWriteSet st server ec fuel
   | none => []
 
+/-- **The priority-inheritance walk writes only the object store and the
+scheduler.** -/
+theorem propagatePipChainCrossCore_onlyObjectsSchedulerDiffer :
+    ∀ (fuel : Nat) (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.CoreId),
+      SystemState.onlyObjectsSchedulerDiffer
+        (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1 st
+  | 0, st, _, _ => by rw [PriorityInheritance.propagatePipChainCrossCore_zero]; exact .refl st
+  | n + 1, st, s, ec => by
+    rw [PriorityInheritance.propagatePipChainCrossCore_step]
+    simp only
+    have h1 : SystemState.onlyObjectsSchedulerDiffer
+        (PriorityInheritance.pipBoostWithWake st s ec).1 st := by
+      rw [PriorityInheritance.pipBoostWithWake_state]
+      exact PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer _ _ _
+    cases PriorityInheritance.blockingServer st s with
+    | none => exact h1
+    | some nx => exact (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer n _ nx ec).trans h1
+
 end SeLe4n.Kernel

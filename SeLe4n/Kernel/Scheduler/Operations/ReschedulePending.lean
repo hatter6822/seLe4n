@@ -384,6 +384,14 @@ theorem markKeyChangeFrom_extract_frame {F : Type} (extract : SystemState → F)
       (markCandidacyGainFor_extract_frame extract post tid _ h)
   · exact markReschedulePendingWhere_extract_frame extract h post _ allCores
 
+/-- WS-UC UC2: the hook moves no bookkeeping ghost. -/
+theorem markKeyChangeFrom_ghostsKept (pre post : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.ghostsKept (markKeyChangeFrom pre post tid) post :=
+  have e := markKeyChangeFrom_extract_frame
+    (fun s => (s.objectIndex, s.objectIndexSet, s.lifecycle.objectTypes)) pre post tid
+    (fun _ _ => rfl)
+  ⟨congrArg (·.1) e, congrArg (·.2.1) e, congrArg (·.2.2) e⟩
+
 /-- The `.reschedule` SGIs a step owes, from the flag vector captured before
 dispatch and the committed state's: one per core whose flag went
 `false → true`.  A core already pending at the step's start is not re-poked

@@ -324,8 +324,10 @@ private theorem sc_proj {α : Sort _} (f : KernelObject → α) (hf : ∀ o, f o
 
 /-- A step that writes only scheduler links rewrites each object to one of its
 own kind. -/
-theorem kindPreserving : SeLe4n.Model.kindPreservingWrite st st' := by
-  intro oid
+theorem kindPreserving (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
+    SeLe4n.Model.kindPreservingWrite st st' := by
+  refine ⟨fun oid => ?_, hG⟩
+  unfold SeLe4n.Model.kindPreservingWriteAt
   rcases h.pointwise oid with e | ⟨t, t', ht, ht', e⟩ | ⟨sc, sc', hs, hs', e⟩
   · exact Or.inl e
   · exact Or.inr ⟨_, _, ht, ht', by simp [KernelObject.objectType], by

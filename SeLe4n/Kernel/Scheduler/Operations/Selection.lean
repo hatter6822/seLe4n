@@ -2161,9 +2161,11 @@ theorem enqueueRunnableOnCore_kindPreservingWrite (st : SystemState) (c : CoreId
     simp only
     split
     · exact kindPreservingWrite.refl _
-    · exact (SystemState.rewriteObject_tcb_kindPreservingWrite hw _ hInv
+    · exact ((SystemState.rewriteObject_tcb_kindPreservingWrite hw _ hInv
         (by exact ⟨rfl, rfl, rfl⟩)).trans
-        (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ c tid _).kindPreserving
+        ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ c tid _).kindPreserving
+          (SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ c tid _).ghostsKept)).trans
+        (.of_objects_eq rfl)
 
 /-- The enqueue keeps the lifecycle metadata's consistency with the object
 store: it writes no metadata, and every object it writes keeps its kind. -/
@@ -2525,6 +2527,16 @@ theorem removeRunnableOnCore_onlyObjectsSchedulerDiffer (st : SystemState)
     (removeRunnableOnCore st tid c).onlyObjectsSchedulerDiffer st :=
   SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st c tid
 
+@[simp] theorem removeRunnableOnCore_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (removeRunnableOnCore st tid c).lifecycle = st.lifecycle :=
+  (congrArg SystemState.lifecycle (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c) :)
+@[simp] theorem removeRunnableOnCore_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (removeRunnableOnCore st tid c).objectIndex = st.objectIndex :=
+  (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c).ghostsKept.index
+@[simp] theorem removeRunnableOnCore_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (removeRunnableOnCore st tid c).objectIndexSet = st.objectIndexSet :=
+  (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c).ghostsKept.indexSet
+
 /-- WS-ZA ZA4.5: the dequeue changes no object off the run-queue links (was
 `removeRunnableOnCore_preserves_objects` while the links lived in the
 scheduler). -/
@@ -2656,6 +2668,16 @@ theorem descheduleAtPlacement_onlyObjectsSchedulerDiffer (st : SystemState)
   split
   · exact removeRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _
   · rfl
+
+@[simp] theorem descheduleAtPlacement_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (descheduleAtPlacement st tid).lifecycle = st.lifecycle :=
+  (congrArg SystemState.lifecycle (descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid) :)
+@[simp] theorem descheduleAtPlacement_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (descheduleAtPlacement st tid).objectIndex = st.objectIndex :=
+  (descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid).ghostsKept.index
+@[simp] theorem descheduleAtPlacement_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (descheduleAtPlacement st tid).objectIndexSet = st.objectIndexSet :=
+  (descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid).ghostsKept.indexSet
 
 /-- **WS-RR RR8.12 Cut C6e**: and so it keeps object-store integrity — the form
 every consumer that hands a descheduled state to a step reading `invExt` wants.
