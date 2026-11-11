@@ -386,8 +386,9 @@ def linkBootCapabilities (config : PlatformConfig) (ist : IntermediateState) :
   hPerObjectSlots := perObjectSlotsInvariant_holds _
   hPerObjectMappings := linkReach_perObjectMappingsInvariant (linkBootSlots_reach _ _) ist.hAllTables.objects.1
     ist.hPerObjectMappings
-  hLifecycleConsistent := (linkBootSlots_reach _ _).objectTypeMetadataConsistent
-    ist.hAllTables.objects.1 ist.hLifecycleConsistent
+  hLifecycleConsistent := (linkBootSlots_reach _ _).bookkeepingAgrees
+    ist.hAllTables.objects.1
+    (ist.hLifecycleConsistent.of_frame rfl rfl (fun _ => rfl) ist.hLifecycleConsistent.types)
 
 theorem linkBootCapabilities_state (config : PlatformConfig) (ist : IntermediateState) :
     (linkBootCapabilities config ist).state =

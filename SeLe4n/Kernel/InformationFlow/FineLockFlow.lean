@@ -177,13 +177,15 @@ theorem lockWritesOnly_lowEquivalent_smp (ctx : LabelingContext) (observer : IfO
 
 Not an `iff`: kernel-state equality is not decidable (`KernelObject` has no
 `DecidableEq` — WS-G5 removed it because `RHTable`'s structural equality would
-hide hash-layout non-determinism).  What *is* decidable is the object index and
-the per-object *kind*, and a step that moved either moved the kernel state.  So
-a `false` here is a genuine refutation, which is what a test needs; a `true` is
-necessary and not sufficient (`lockWritesOnly_lockWritesOnlyCheck`). -/
+hide hash-layout non-determinism).  What *is* decidable is the store's
+identifiers (`objectIds`, the keys it enumerates — WS-UC UC2: the creation-order
+index is a proof-only ghost) and the per-object *kind*, and a step that moved
+either moved the kernel state.  So a `false` here is a genuine refutation, which
+is what a test needs; a `true` is necessary and not sufficient
+(`lockWritesOnly_lockWritesOnlyCheck`). -/
 def lockWritesOnlyCheck (s s' : LockedSystemState) : Bool :=
-  (s'.kernel.objectIndex == s.kernel.objectIndex) &&
-    s.kernel.objectIndex.all (fun oid =>
+  (s'.kernel.objectIds == s.kernel.objectIds) &&
+    s.kernel.objectIds.all (fun oid =>
       (s'.kernel.getObjectType? oid) == (s.kernel.getObjectType? oid))
 
 /-- SM8.D.1: the refuter is **sound** — a lock-only step passes it. -/

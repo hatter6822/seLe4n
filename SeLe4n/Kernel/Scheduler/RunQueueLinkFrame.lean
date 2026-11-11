@@ -252,6 +252,15 @@ theorem objects_size_eq (hInv' : st'.objects.invExt) (hInv : st.objects.invExt) 
     change st'.objects[x]? ≠ none ↔ st.objects[x]? ≠ none
     rw [← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hx]
 
+/-- WS-UC UC2: the two stores hold objects of the same kind at every key — what
+the store's kind check (`storeKeepsKind`) reads. -/
+theorem getObjectType? (x : SeLe4n.ObjId) : st'.getObjectType? x = st.getObjectType? x := by
+  have e := congrArg (Option.map KernelObject.objectType) (h x)
+  have hk : ∀ o : KernelObject, o.withoutRunLinks.objectType = o.objectType := by
+    intro o; cases o <;> rfl
+  simp only [Option.map_map, Function.comp_def, hk] at e
+  exact e
+
 /-- A non-TCB object is the same object in both stores. -/
 theorem get_of_not_tcb {x : SeLe4n.ObjId} {o : KernelObject}
     (hNot : ∀ t, o ≠ .tcb t) (hx : st.objects[x]? = some o) : st'.objects[x]? = some o := by

@@ -213,7 +213,7 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
     rw [← hS1]; exact RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFsc
   have hL1 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes S1 id ty = true := fun h => by
-    rw [← hS1]; exact storeLeavesIndexAndTypes_insert_inPlace hFsc (fun _ e => by cases e) h
+    rw [← hS1]; exact storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFsc (by simpa only [KernelObject.objectType] using hLsc) h
   -- The pushed frame's store.
   have hR1 : S1.objects[rid.toObjId]? = some (.reply pr) := (hO1 _ hScR).trans hRO'
   rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hL1 hLr)]
@@ -233,7 +233,7 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
     rw [← hS2]; exact (RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFr1).trans (hK1 k)
   have hL2 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes S2 id ty = true := fun h => by
-    rw [← hS2]; exact storeLeavesIndexAndTypes_insert_inPlace hFr1 (fun _ e => by cases e) (hL1 h)
+    rw [← hS2]; exact storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFr1 (by simpa only [KernelObject.objectType] using hL1 hLr) (hL1 h)
   have hScS : scId.toObjId ≠ server.toObjId := fun h => by rw [h, hSO] at hScO; cases hScO
   have hRS : rid.toObjId ≠ server.toObjId := fun h => by rw [h, hSO] at hRO'; cases hRO'
   cases hBelow : sc.scReply with
@@ -269,7 +269,7 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
     have hLk3 : lookupTcb T3 server = some x := by
       unfold lookupTcb; rw [hSRes]; exact hXT
     have hLT3 : storeLeavesIndexAndTypes T3 server.toObjId .tcb = true := by
-      rw [← hT3]; exact storeLeavesIndexAndTypes_insert_inPlace hFTc (fun _ e => by cases e) hLTs
+      rw [← hT3]; exact storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFTc (by simpa only [KernelObject.objectType] using hLTc) hLTs
     rw [hLk3]
     dsimp only
     rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLT3),
@@ -314,9 +314,9 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
           client.toObjId = true :=
       (RobinHood.RHTable.findsInPlace_insert_of_findsInPlace _ _ hFo2).trans ((hK2 _).trans hFc)
     have hLTc : storeLeavesIndexAndTypes ({ S2 with objects := S2.objects.insert old.toObjId (.reply { oR with next := some (.frame rid) }) } : SystemState) client.toObjId .tcb = true :=
-      storeLeavesIndexAndTypes_insert_inPlace hFo2 (fun _ e => by cases e) (hL2 hLc)
+      storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFo2 (by simpa only [KernelObject.objectType] using hL2 hLo) (hL2 hLc)
     have hLTs : storeLeavesIndexAndTypes ({ S2 with objects := S2.objects.insert old.toObjId (.reply { oR with next := some (.frame rid) }) } : SystemState) server.toObjId .tcb = true :=
-      storeLeavesIndexAndTypes_insert_inPlace hFo2 (fun _ e => by cases e) (hL2 hLs)
+      storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFo2 (by simpa only [KernelObject.objectType] using hL2 hLo) (hL2 hLs)
     generalize ({ S2 with objects := S2.objects.insert old.toObjId (.reply { oR with next := some (.frame rid) }) } : SystemState) = T
       at hTC hTS hFTc hLTc hLTs ⊢
     have hLk : lookupTcb T client = some donor := by
@@ -341,7 +341,7 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
     have hLk3 : lookupTcb T3 server = some x := by
       unfold lookupTcb; rw [hSRes]; exact hXT
     have hLT3 : storeLeavesIndexAndTypes T3 server.toObjId .tcb = true := by
-      rw [← hT3]; exact storeLeavesIndexAndTypes_insert_inPlace hFTc (fun _ e => by cases e) hLTs
+      rw [← hT3]; exact storeLeavesIndexAndTypes_insert_inPlace_of_leaves hFTc (by simpa only [KernelObject.objectType] using hLTc) hLTs
     rw [hLk3]
     dsimp only
     rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLT3),

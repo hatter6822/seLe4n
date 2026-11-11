@@ -708,27 +708,45 @@ no `Option` carries the looked-up record; otherwise the specification's body. -/
         rw [this]
 
 /-- WS-ZA ZA4.7: a store that changes only `objects` still does after an
-in-place insert of an object that is not a VSpace root: the index and type
-tables are untouched, and the slot asked about holds the new object or the old. -/
+in-place insert of an object of the kind already there.  WS-UC UC2: the check
+reads the kind stored at each slot, so the slot written must keep its kind. -/
 theorem storeLeavesIndexAndTypes_insert_inPlace {st : SystemState} {k id : SeLe4n.ObjId}
     {v : KernelObject} {ty : KernelObjectType}
-    (hF : st.objects.findsInPlace k = true) (hv : ∀ r, v ≠ .vspaceRoot r)
+    (hF : st.objects.findsInPlace k = true)
+    (hv : ∀ o, st.objects[k]? = some o → o.objectType = v.objectType)
     (h : storeLeavesIndexAndTypes st id ty = true) :
     storeLeavesIndexAndTypes { st with objects := st.objects.insert k v } id ty = true := by
-  unfold storeLeavesIndexAndTypes at h ⊢
+  unfold storeLeavesIndexAndTypes storeKeepsKind at h ⊢
   simp only [Bool.and_eq_true] at h ⊢
-  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
-  refine ⟨⟨⟨h1, h2⟩, h3⟩, ?_⟩
-  show (match (st.objects.insert k v).get? id with
-    | some (.vspaceRoot _) => false | _ => true) = true
+  refine ⟨h.1, ?_⟩
+  have h2 := h.2
   by_cases hk : k = id
   · subst hk
+    show (match (st.objects.insert k v).get? k with
+      | some o => o.objectType == ty | none => false) = true
     rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_self_of_findsInPlace v hF]
-    cases v with
-    | vspaceRoot r => exact absurd rfl (hv r)
-    | _ => rfl
-  · rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace id v hF hk]
-    exact h4
+    revert h2
+    cases ho : st.objects[k]? with
+    | none => intro h2; cases h2
+    | some o => intro h2; show (v.objectType == ty) = true; rw [← hv o ho]; exact h2
+  · show (match (st.objects.insert k v).get? id with
+      | some o => o.objectType == ty | none => false) = true
+    rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace id v hF hk]
+    exact h2
+
+/-- WS-UC UC2: the in-place insert, licensed by the slot's own store check. -/
+theorem storeLeavesIndexAndTypes_insert_inPlace_of_leaves {st : SystemState}
+    {k id : SeLe4n.ObjId} {v : KernelObject} {ty : KernelObjectType}
+    (hF : st.objects.findsInPlace k = true)
+    (hv : storeLeavesIndexAndTypes st k v.objectType = true)
+    (h : storeLeavesIndexAndTypes st id ty = true) :
+    storeLeavesIndexAndTypes { st with objects := st.objects.insert k v } id ty = true := by
+  refine storeLeavesIndexAndTypes_insert_inPlace hF (fun o ho => ?_) h
+  unfold storeLeavesIndexAndTypes storeKeepsKind at hv
+  simp only [Bool.and_eq_true] at hv
+  have := hv.2
+  rw [show st.objects[k]? = some o from ho] at this
+  exact eq_of_beq this
 
 /-- WS-ZA ZA4.7: a TCB write to a present, unreserved thread whose store
 changes only `objects` is the one insert. -/
@@ -784,7 +802,9 @@ theorem updateTcb_storeLeaves {st : SystemState} {tid : SeLe4n.ThreadId}
     {ty : KernelObjectType} (h : storeLeavesIndexAndTypes st id ty = true) :
     storeLeavesIndexAndTypes (st.updateTcb tid f) id ty = true := by
   rw [SystemState.updateTcb_eq_of_some hT]
-  exact storeLeavesIndexAndTypes_insert_inPlace hF (fun r h => by cases h) h
+  refine storeLeavesIndexAndTypes_insert_inPlace hF (fun o ho => ?_) h
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT] at ho
+  cases ho; rfl
 
 /-- An `updateTcb` whose key is found in place leaves every in-place question,
 whether or not a thread is there to update. -/
@@ -858,7 +878,8 @@ theorem recordReplyStasher_tcbSlotFrame {S : SystemState} {code : Nat}
       exact (SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hS.1 hNe).trans
         ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
     · exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k' _ hS.1
-    · exact storeLeavesIndexAndTypes_insert_inPlace hS.1 (fun _ h => by cases h) h
+    · exact storeLeavesIndexAndTypes_insert_inPlace hS.1
+        (fun o ho => by rw [hS.2.2] at ho; cases ho; rfl) h
 
 def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
   modifyTcb st tid (fun tcb => (tcb.setIpcState ipcState))

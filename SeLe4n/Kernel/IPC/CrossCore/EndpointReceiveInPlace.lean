@@ -122,7 +122,7 @@ theorem receiveTake_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (ep :
   have hD3 := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer S2 (determineTargetCore S2 s) s
   have hL3 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes (enqueueRunnableOnCore S2 (determineTargetCore S2 s) s) id ty
-        = true := fun h => storeLeaves_of_onlyObjectsSchedulerDiffer hD3 hA3 (hL2 h)
+        = true := fun h => storeLeaves_of_agree hA3 (hL2 h)
   obtain ⟨rt3, hO3r, _⟩ := hA3.get_tcb hO2r
   have hW : (wakeThread S2 s core).1 = enqueueRunnableOnCore S2 (determineTargetCore S2 s) s :=
     rfl

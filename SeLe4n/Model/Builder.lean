@@ -56,7 +56,8 @@ def registerInterface (ist : IntermediateState) (spec : InterfaceSpec) : Interme
     intro id cn hObj; exact ist.hPerObjectSlots id cn hObj
   hPerObjectMappings := by
     intro id vs hObj; exact ist.hPerObjectMappings id vs hObj
-  hLifecycleConsistent := ist.hLifecycleConsistent
+  hLifecycleConsistent := ist.hLifecycleConsistent.of_frame rfl rfl (fun _ => rfl)
+    ist.hLifecycleConsistent.types
 
 -- ============================================================================
 -- Q3-B.4: createObject — simplified boot-time object creation
@@ -81,22 +82,32 @@ def createObject (ist : IntermediateState)
   state := {
     ist.state with
       objects := ist.state.objects.insert id obj
-      -- T2-K: Maintain objectIndex/objectIndexSet alongside objects
-      objectIndex := if ist.state.objectIndexSet.contains id then ist.state.objectIndex
-                     else id :: ist.state.objectIndex
-      objectIndexSet := ist.state.objectIndexSet.insert id
-      lifecycle := {
-        ist.state.lifecycle with
-          objectTypes := ist.state.lifecycle.objectTypes.insert id obj.objectType
-      }
+      -- T2-K / WS-UC UC2: the ghost bookkeeping, written as `storeObject` writes it
+      objectIndexGhost :=
+        if (ist.state.getObject? id).isSome then ist.state.objectIndexGhost
+        else SeLe4n.Erased.mk (id :: ist.state.objectIndex)
+      objectIndexSetGhost :=
+        if (ist.state.getObject? id).isSome then ist.state.objectIndexSetGhost
+        else SeLe4n.Erased.mk (ist.state.objectIndexSet.insert id)
+      lifecycle :=
+        if storeKeepsKind ist.state id obj.objectType then ist.state.lifecycle
+        else { objectTypesGhost :=
+          SeLe4n.Erased.mk (ist.state.lifecycle.objectTypes.insert id obj.objectType) }
   }
   hAllTables := by
     have h := ist.hAllTables
-    exact ⟨RHTable.insert_preserves_invExtK _ _ _ h.objects,
-           h.asidTable,
-           RHTable.insert_preserves_invExtK _ _ _ h.objectTypes,
-           h.interfaceRegistry,
-           RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.objectIndexSet⟩
+    refine ⟨RHTable.insert_preserves_invExtK _ _ _ h.objects, h.asidTable, ?_,
+           h.interfaceRegistry, ?_⟩
+    · show (if storeKeepsKind ist.state id obj.objectType then ist.state.lifecycle
+        else _).objectTypes.invExtK
+      split
+      · exact h.objectTypes
+      · simpa using RHTable.insert_preserves_invExtK _ id obj.objectType h.objectTypes
+    · show (if (ist.state.getObject? id).isSome then ist.state.objectIndexSetGhost
+        else _).out.table.invExtK
+      split
+      · exact h.objectIndexSet
+      · simpa using RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.objectIndexSet
   hPerObjectSlots := perObjectSlotsInvariant_holds _
   hPerObjectMappings := by
     unfold perObjectMappingsInvariant
@@ -111,20 +122,11 @@ def createObject (ist : IntermediateState)
       rw [RHTable.getElem?_insert_ne ist.state.objects id oid obj hNe hObjK.1] at hObj
       exact ist.hPerObjectMappings oid vs (by simp only [RHTable_getElem?_eq_get?]; exact hObj)
   hLifecycleConsistent := by
-    intro oid
-    simp only [SystemState.lookupObjectTypeMeta]
-    have hObjK := ist.hAllTables.objects
-    have hTypesK := ist.hAllTables.objectTypes
-    by_cases hEq : id = oid
-    · subst hEq
-      simp only [RHTable_getElem?_eq_get?]
-      rw [RHTable.getElem?_insert_self _ _ _ hTypesK.1,
-          RHTable.getElem?_insert_self _ _ _ hObjK.1]; simp
-    · have hNe : ¬((id == oid) = true) := by intro heq; exact hEq (eq_of_beq heq)
-      simp only [RHTable_getElem?_eq_get?]
-      rw [RHTable.getElem?_insert_ne _ _ _ _ hNe hTypesK.1,
-          RHTable.getElem?_insert_ne _ _ _ _ hNe hObjK.1]
-      exact ist.hLifecycleConsistent oid
+    obtain ⟨st', hS⟩ := storeObject_isOk ist.state id obj
+    have h := storeObject_preserves_bookkeepingAgrees _ _ _ _ ist.hLifecycleConsistent
+      ist.hAllTables.objects.1 ist.hAllTables.objectIndexSet.1 ist.hAllTables.objectTypes.1 hS
+    unfold storeObject at hS; cases hS
+    exact ⟨h.index, h.nodup, h.indexSet, h.types⟩
 
 -- ============================================================================
 -- Q3-B.6: insertCap — insert a capability into a CNode's slots
@@ -160,8 +162,11 @@ def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
   hPerObjectMappings := fun id vs h => ist.hPerObjectMappings id vs
     ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).get_vspaceRoot_iff.mp h)
   hLifecycleConsistent :=
-    (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).objectTypeMetadataConsistent
-      (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _) ist.hLifecycleConsistent
+    have hD := SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer ist.state bootCoreId tid prio
+    have hA := SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks ist.state bootCoreId tid prio
+    ist.hLifecycleConsistent.of_frame (by rw [hD]) (by rw [hD])
+      (fun x => SystemState.objects_isSome_of_getObjectType? (hA.getObjectType? x))
+      (hD.objectTypeMetadataConsistent hA ist.hLifecycleConsistent.types)
 
 /-- **Seed an object's declassification provenance.**
 
@@ -188,9 +193,14 @@ def withTaint (ist : IntermediateState) (oid : SeLe4n.ObjId)
     (((SystemState.mapObjectAt_objectsAgreeOffTaint ist.state oid _
       (KernelObject.eraseTaint_withTaintWords · _)).inert_iff id rfl).mp h)
   hLifecycleConsistent :=
-    (SystemState.mapObjectAt_objectsAgreeOffTaint ist.state oid _
-      (KernelObject.eraseTaint_withTaintWords · _)).objectTypeMetadataConsistent rfl
-      ist.hLifecycleConsistent
+    have hA := SystemState.mapObjectAt_objectsAgreeOffTaint ist.state oid _
+      (KernelObject.eraseTaint_withTaintWords · t.toWords)
+    have hTy := hA.objectTypeMetadataConsistent rfl ist.hLifecycleConsistent.types
+    ist.hLifecycleConsistent.of_frame rfl rfl (fun x => by
+      have := congrArg Option.isSome (hTy x)
+      have h0 := congrArg Option.isSome (ist.hLifecycleConsistent.types x)
+      simp only [Option.isSome_map] at this h0
+      rw [← this, ← h0]; rfl) hTy
 
 -- ============================================================================
 -- Q3-B.7: mapPage — insert a page mapping into a VSpaceRoot

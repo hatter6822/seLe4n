@@ -343,7 +343,7 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
             simp only []
             exact observableSlotsConfinedToCores_trans hReply
               (propagatePipChainCrossCore_confinedToCores executingCore
-                st1.objectIndex.length st1 expected)
+                st1.objects.size st1 expected)
           | some rid =>
             simp only []
             cases hTV : SeLe4n.ThreadId.toValid? target with
@@ -364,7 +364,7 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
                           executingCore st hObjInv
                         rwa [hRep] at h1) hDon))
                   (propagatePipChainCrossCore_confinedToCores executingCore
-                    st2.objectIndex.length st2 expected)
+                    st2.objects.size st2 expected)
 
 -- ============================================================================
 -- §5c-bis  WS-RR RR8.12 Cut C6d — the live `.reply` ARM's confinement
@@ -567,12 +567,12 @@ theorem replyRecvDescheduleAndWalk_confinedToCores (holder recordedServer : SeLe
     observableSlotsConfinedToCores st
       (propagatePipChainCrossCore (descheduleAtPlacement st holder)
         recordedServer serverCore
-        (descheduleAtPlacement st holder).objectIndex.length).1
+        (descheduleAtPlacement st holder).objects.size).1
       (replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st) :=
   observableSlotsConfinedToCores_trans
     (descheduleAtPlacement_confinedToCores st holder)
     (propagatePipChainCrossCore_confinedToCores serverCore
-      (descheduleAtPlacement st holder).objectIndex.length
+      (descheduleAtPlacement st holder).objects.size
       (descheduleAtPlacement st holder) recordedServer)
 
 /-- **WS-RM (`v0.35.6`)**: the pop half writes **no** core.  Both its effects are
@@ -688,11 +688,11 @@ theorem replyRecvPostReceiveDonation_confinedToCores
         exact observableSlotsConfinedToCores_trans
           (applyRendezvousCallDonation_confinedToCores _ st2 _ _ hDon)
           (propagatePipChainCrossCore_confinedToCores serverCore
-            st2.objectIndex.length st2 recordedServer)
+            st2.objects.size st2 recordedServer)
     · next hCall =>
       simp only [hCall, Bool.false_eq_true, if_false] at hStep
       rw [← hOkInj hStep]
-      exact propagatePipChainCrossCore_confinedToCores serverCore st.objectIndex.length st
+      exact propagatePipChainCrossCore_confinedToCores serverCore st.objects.size st
         recordedServer
   | some pair =>
     obtain ⟨_scId, holder⟩ := pair
@@ -713,7 +713,7 @@ theorem replyRecvPostReceiveDonation_confinedToCores
           (observableSlotsConfinedToCores_trans
             (applyRendezvousCallDonation_confinedToCores _ st2 _ _ hDon)
             (propagatePipChainCrossCore_confinedToCores serverCore
-              st2.objectIndex.length st2 recordedServer))
+              st2.objects.size st2 recordedServer))
     · next hCall =>
       simp only [hCall, Bool.false_eq_true, if_false] at hStep
       rw [← hOkInj hStep]
@@ -1458,7 +1458,7 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
            | some serverId =>
              pipChainWriteSet (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId
                executingCore
-               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objectIndex.length
+               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objects.size
            | none => []) := by
         cases hSrv : PriorityInheritance.blockingServer st vtid.val with
         | none => exact hCancel

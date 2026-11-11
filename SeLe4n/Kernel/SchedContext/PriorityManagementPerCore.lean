@@ -206,7 +206,7 @@ def applyPriorityChangeOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : 
         (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
           (determineTargetCore st tid))
         tid (effectiveSchedParams st tcb))
-      tid executingCore st.objectIndex.length)
+      tid executingCore st.objects.size)
     (Lifecycle.Suspend.runningCoreOf? st tid) executingCore shouldPreempt
 
 /-- WS-SM SM8.B: a non-preempting change (a raise, or a ceiling that does not
@@ -219,7 +219,7 @@ theorem applyPriorityChangeOnCore_no_preempt (st : SystemState) (tid : SeLe4n.Th
                 (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
                   newPriority (determineTargetCore st tid))
                 tid (effectiveSchedParams st tcb))
-              tid executingCore st.objectIndex.length, none) := by
+              tid executingCore st.objects.size, none) := by
   simp [applyPriorityChangeOnCore, priorityRescheduleOnCore]
 
 /-- WS-SM SM8.B (operation): **set a thread's priority, across cores.**
@@ -331,7 +331,7 @@ and each is written in its slot (`applyPriorityChangeState_eq`). -/
   let p0 := tcb.boostedPriority
   let d0 := effectiveDeadline st tcb
   let dom0 := tcb.domain
-  let fuel := st.objectIndex.length
+  let fuel := st.objects.size
   let st1 := updatePrioritySource st tid tcb newPriority
   let st2 := migrateRunQueueBucketOnCore st1 tid newPriority home
   let st3 := markKeyChangeParts st2 tid p0 d0 dom0
@@ -345,7 +345,7 @@ theorem applyPriorityChangeState_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
           (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
             newPriority (determineTargetCore st tid))
           tid (effectiveSchedParams st tcb))
-        tid executingCore st.objectIndex.length := by
+        tid executingCore st.objects.size := by
   rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
   rfl
 

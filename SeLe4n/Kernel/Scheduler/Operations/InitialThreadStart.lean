@@ -442,6 +442,27 @@ theorem startInitialThreadOnCore_getTcb?_isSome (st : SystemState)
     obtain ⟨t', rfl, _⟩ := KernelObject.withoutRunLinks_eq_tcb ho.symm
     rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h']; rfl
 
+/-- A start removes no stored object. -/
+theorem startInitialThreadOnCore_objects_ne_none (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (h : st.objects[k]? ≠ none) :
+    (startInitialThreadOnCore st tid).objects[k]? ≠ none := by
+  obtain ⟨obj, hO⟩ := Option.ne_none_iff_exists'.mp h
+  by_cases hT : ∃ t, obj = .tcb t
+  · obtain ⟨t, rfl⟩ := hT
+    have hG : (st.getTcb? (SeLe4n.ThreadId.ofObjId k)).isSome = true := by
+      rw [Option.isSome_iff_exists]
+      exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO⟩
+    obtain ⟨t', hT'⟩ := Option.isSome_iff_exists.mp
+      (startInitialThreadOnCore_getTcb?_isSome st tid _ hInv hG)
+    have e := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT'
+    show (startInitialThreadOnCore st tid).objects[k]? ≠ none
+    rw [SeLe4n.ThreadId.toObjId_ofObjId] at e
+    rw [e]; exact Option.some_ne_none _
+  · show (startInitialThreadOnCore st tid).objects[k]? ≠ none
+    rw [startInitialThreadOnCore_objects_of_nonTcb st tid hInv k obj
+      (fun t e => hT ⟨t, e⟩) hO]
+    exact Option.some_ne_none _
+
 /-- **WS-BP BP7.11** (field frame): the start writes the object store and the
 scheduler, and no other field of the state. -/
 theorem startInitialThreadOnCore_frame (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -495,6 +516,31 @@ theorem startInitialThreadOnCore_preserves_objectTypeMetadataConsistent (st : Sy
     (SystemState.updateTcb_preserves_objects_invExt st tid _ hInv)
     (SystemState.updateTcb_preserves_objectTypeMetadataConsistent st tid
       (fun t => { t with threadState := .Ready }) hInv hC)
+
+/-- WS-UC UC2: the start keeps the bookkeeping ghosts in agreement with the
+object store — it writes no ghost, and it neither adds nor removes an object. -/
+theorem startInitialThreadOnCore_preserves_bookkeepingAgrees (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hA : SystemState.bookkeepingAgrees st) :
+    SystemState.bookkeepingAgrees (startInitialThreadOnCore st tid) :=
+  hA.of_frame
+    (by rw [startInitialThreadOnCore_frame st tid])
+    (by rw [startInitialThreadOnCore_frame st tid])
+    (fun x => by
+      cases h : st.objects[x]? with
+      | some o =>
+        cases h' : (startInitialThreadOnCore st tid).objects[x]? with
+        | some _ => rfl
+        | none =>
+          exact absurd h' (startInitialThreadOnCore_objects_ne_none st tid hInv x
+            (by rw [h]; exact Option.some_ne_none _))
+      | none =>
+        cases h' : (startInitialThreadOnCore st tid).objects[x]? with
+        | none => rfl
+        | some o' =>
+          rcases startInitialThreadOnCore_objects_cases st tid hInv x o' h' with
+            e | ⟨_, _, e, _⟩ <;> rw [h] at e <;> cases e)
+    (startInitialThreadOnCore_preserves_objectTypeMetadataConsistent st tid hInv hA.types)
 
 -- ============================================================================
 -- §4  Placement, classification, and the run-queue facts the boot reads

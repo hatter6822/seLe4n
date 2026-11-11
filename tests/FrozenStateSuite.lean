@@ -152,9 +152,7 @@ private def fs011_freezeEmpty : IO Unit := do
   expect "frozen objects data size 0" (fss.objects.data.size == 0)
   expect "frozen IRQ lines inactive" (fss.irqSignalLines.mem 0 == false)
   expect "frozen ASID table empty" (fss.asidTable.data.size == 0)
-  expect "objectIndex empty" (fss.objectIndex.length == 0)
   expect "CDT edge bound zero" (fss.cdt.edgeBound == 0)
-  expect "objectIndexSet empty" (fss.objectIndexSet.data.size == 0)
   expect "scheduler current is none" ((fss.scheduler.current) == none)
   expect "scheduler byPriority empty" (fss.scheduler.byPriority.data.size == 0)
   expect "scheduler threadPriority empty" (fss.scheduler.threadPriority.data.size == 0)
@@ -167,7 +165,6 @@ private def fs012_freezeDeterministic : IO Unit := do
   expect "same objects data size" (fss1.objects.data.size == fss2.objects.data.size)
   expect "same irq lines" (fss1.irqSignalLines == fss2.irqSignalLines)
   expect "same CDT edge bound" (fss1.cdt.edgeBound == fss2.cdt.edgeBound)
-  expect "same objectIndex" (fss1.objectIndex == fss2.objectIndex)
 
 /-- FS-014: FrozenMap.set preserves data size -/
 private def fs014_frozenMapSetSize : IO Unit := do

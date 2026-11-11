@@ -488,8 +488,6 @@ theorem replyUnheldPopsInPlace_pop (st : SystemState) (c : SeLe4n.ThreadId)
   have hHold : ∀ x, x ≠ c.toObjId →
       (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = S1.objects[x]? := fun x hx => by
     rw [SystemState.objects_mapTcbInPlace, if_neg (fun h => hx (beq_iff_eq.mp h).symm)]
-  obtain ⟨hI, hL⟩ := storeReplyLegReady_fields st c rid hNo
-  rw [hS1] at hI hL
   have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyLegReady_keepsFinds st c rid hNo hFC
   obtain ⟨tc1, htc1, hc1⟩ := hS1 ▸ storeReplyLegReady_callerView st c rid ct hNo hTc hFC hRc
   have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
@@ -503,18 +501,16 @@ theorem replyUnheldPopsInPlace_pop (st : SystemState) (c : SeLe4n.ThreadId)
     rw [← hTdef, hHold _ hx]; exact hAg x hx hy
   have hTR : T.objects[rid.toObjId]? = some (.reply rp.consumed) := by
     rw [← hTdef, hHold _ hRc]; exact hR1
-  have hV : ∀ x, notVSpaceRootAt st x = true → notVSpaceRootAt T x = true := by
-    intro x hx
+  have hV : ∀ x, T.getObjectType? x = st.getObjectType? x := by
+    intro x
     by_cases hxc : x = c.toObjId
-    · subst hxc; unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, hTC]
+    · subst hxc; unfold SystemState.getObjectType?
+      rw [hTC, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc]; rfl
     · by_cases hxr : x = rid.toObjId
-      · subst hxr; unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, hTR]
-      · rw [notVSpaceRootAt_of_view (hView x hxc hxr)]; exact hx
+      · subst hxr; unfold SystemState.getObjectType?; rw [hTR, hRp]; rfl
+      · exact getObjectType?_of_view (hView x hxc hxr)
   have hLT : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
-      storeLeavesIndexAndTypes T id ty = true := fun h => by
-    rw [← hTdef]
-    exact storeLeavesIndexAndTypes_of_frame (s' := S1.mapTcbInPlace c (holdMessage msg)) hI hL
-      (hTdef ▸ hV) h
+      storeLeavesIndexAndTypes T id ty = true := fun h => storeLeavesIndexAndTypes_of_frame hV h
   have hFT : ∀ k, T.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
     rw [← hTdef]; exact ((SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK) k
   have hRT : T.getReply? rid = some rp.consumed := (SystemState.getReply?_eq_some_iff _ _ _).mpr hTR

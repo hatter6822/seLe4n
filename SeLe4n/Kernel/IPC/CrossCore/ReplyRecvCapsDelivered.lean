@@ -328,7 +328,7 @@ theorem replyRecvOnCore_blocks_capsDelivered (st : SystemState) (epId : SeLe4n.O
     rfl
   -- the receive's guard, on the state the reply leaves, then across the transfer
   obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
-    epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+    epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   rw [hS1] at hE1 hR1 hG1 hXf
   have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
     ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX) hIX hLX
@@ -895,7 +895,7 @@ theorem replyRecvOnCore_blocks_capsDeliveredLong (st : SystemState) (epId : SeLe
       _ _ _ X hNoX, hT1]
     rfl
   obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
-    epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+    epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   rw [hS1] at hE1 hR1 hG1 hXf
   have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
     ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX)

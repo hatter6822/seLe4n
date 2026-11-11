@@ -393,9 +393,18 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
       hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance, hRel.pendingPhysicalWrites,
       hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,
       hRel.declassificationRefusals⟩
-    · simp only [hRel.objectIndexSet, hRel.objectIndex]
-    · simp only [hRel.objectIndexSet]
-    · simp only [hRel.lifecycle, KernelObject.objectType]
+    · have hS := objects_isSome_of_getObjectType? (hRel.objects.getObjectType? id)
+      simp only [SystemState.objectIndex, hS]
+      split
+      · exact hRel.objectIndex
+      · simp only [SeLe4n.Erased.out_mk]; exact congrArg (id :: ·) hRel.objectIndex
+    · have hS := objects_isSome_of_getObjectType? (hRel.objects.getObjectType? id)
+      simp only [SystemState.objectIndexSet, hS]
+      split
+      · exact hRel.objectIndexSet
+      · simp only [SeLe4n.Erased.out_mk]; exact congrArg (·.insert id) hRel.objectIndexSet
+    · rw [storeKeepsKind_of_getObjectType? (hRel.objects.getObjectType? id)]
+      simp only [hRel.lifecycle, KernelObject.objectType]
     · dsimp only
       -- the store keeps the ASID table alike on both sides: the same root at
       -- `id` and one ASID table, or a TCB, which never keeps it

@@ -188,10 +188,9 @@ theorem endpointEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId
       (enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?)) = S1 := by
     rw [hS1]; unfold SystemState.modifyObject
     rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
-  have hNotV : ∀ r,
-      enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?) (.endpoint ep) ≠
-      .vspaceRoot r := by
-    intro r h; simp only [enqueueEndpoint] at h; split at h <;> cases h
+  have hNotV : ∀ o, st.objects[endpointId]? = some o → o.objectType =
+      (enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?) (.endpoint ep)).objectType := by
+    intro o ho; rw [hE] at ho; cases ho; simp only [enqueueEndpoint]; split <;> rfl
   have hF1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
     rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
   have hG1 : ∀ k, endpointId ≠ k → S1.objects[k]? = st.objects[k]? := fun k hk => by
@@ -288,10 +287,9 @@ theorem storeEndpointEnqueue_replySlotInPlace (st : SystemState) (endpointId : S
   obtain ⟨⟨⟨⟨⟨_, _⟩, hFE⟩, _⟩, hFR⟩, hTl⟩ := hG
   obtain ⟨h1, h2, h3⟩ := h
   have hNeE : endpointId ≠ rk := by intro he; rw [he, h3] at hE; cases hE
-  have hNotV : ∀ r',
-      enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?) (.endpoint ep) ≠
-      .vspaceRoot r' := by
-    intro r' h; simp only [enqueueEndpoint] at h; split at h <;> cases h
+  have hNotV : ∀ o, st.objects[endpointId]? = some o → o.objectType =
+      (enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?) (.endpoint ep)).objectType := by
+    intro o ho; rw [hE] at ho; cases ho; simp only [enqueueEndpoint]; split <;> rfl
   have hMo : st.modifyObject endpointId
       (enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?)) = { st with objects :=
         (st.objects.insert endpointId

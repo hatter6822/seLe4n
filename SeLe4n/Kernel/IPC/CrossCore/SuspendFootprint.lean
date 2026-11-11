@@ -137,7 +137,7 @@ def suspendThreadOnCoreWriteSet (st : SystemState) (vtid : SeLe4n.ValidThreadId)
        | some serverId =>
            pipChainWriteSet (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb)
              serverId executingCore
-             (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objectIndex.length
+             (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objects.size
        | none => []) -- the chain reversion, on the post-cancel state
       ++ descheduleAtPlacementCores st vtid.val -- the placement dequeue
       ++ [executingCore] -- the G7 scheduling point
@@ -240,7 +240,7 @@ theorem schedLockSet_suspendThreadOnCore_covers_parametric_runQueue (st : System
   unfold suspendThreadOnCoreWriteSet
   rw [hTcb]
   simp only [beq_iff_eq, hActive, if_false, List.mem_append, List.mem_cons,
-    List.not_mem_nil, or_false, List.append_nil]
+    List.not_mem_nil, or_false]
   simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false,
     Option.toList_none, List.append_nil] at hp
   rcases hp with rfl | rfl

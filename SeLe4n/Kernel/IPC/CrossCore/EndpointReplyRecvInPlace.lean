@@ -214,41 +214,36 @@ open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
 
 section ReplyRecvInPlace
 
-/-- An object that is not a VSpace root, as `storeLeavesIndexAndTypes` asks. -/
-@[inline] def notVSpaceRootAt (s : SystemState) (x : SeLe4n.ObjId) : Bool :=
-  match s.getObject? x with | some (.vspaceRoot _) => false | _ => true
-
-/-- `notVSpaceRootAt` reads only the object's kind. -/
-theorem notVSpaceRootAt_eq_type (s : SystemState) (x : SeLe4n.ObjId) :
-    notVSpaceRootAt s x = (s.getObjectType? x != some .vspaceRoot) := by
-  unfold notVSpaceRootAt SystemState.getObjectType?
-  rw [SystemState.getObject?_eq_getElem]
-  cases s.objects[x]? with
-  | none => rfl
-  | some o => cases o <;> rfl
-
-/-- Objects that agree off their run-queue links agree on `notVSpaceRootAt`. -/
-theorem notVSpaceRootAt_of_view {s s' : SystemState} {x : SeLe4n.ObjId}
+/-- Objects that agree off their run-queue links are of the same kind.  WS-UC
+UC2: the kind at each key is what `storeLeavesIndexAndTypes` reads. -/
+theorem getObjectType?_of_view {s s' : SystemState} {x : SeLe4n.ObjId}
     (h : (s'.objects[x]?).map KernelObject.withoutRunLinks =
       (s.objects[x]?).map KernelObject.withoutRunLinks) :
-    notVSpaceRootAt s' x = notVSpaceRootAt s x := by
+    s'.getObjectType? x = s.getObjectType? x := by
   have e := congrArg (Option.map KernelObject.objectType) h
   simp only [Option.map_map, Function.comp_def, KernelObject.objectType_withoutRunLinks] at e
-  rw [notVSpaceRootAt_eq_type, notVSpaceRootAt_eq_type]
   unfold SystemState.getObjectType?
-  rw [e]
+  exact e
 
-/-- A store-locality answer carries over to a state with the same index and
-lifecycle and no new VSpace root. -/
+/-- A store-locality answer carries over to a state whose every key holds an
+object of the same kind (WS-UC UC2: the answer reads only the kinds). -/
 theorem storeLeavesIndexAndTypes_of_frame {s s' : SystemState}
-    (hI : s'.objectIndexSet = s.objectIndexSet) (hL : s'.lifecycle = s.lifecycle)
-    (hV : ∀ x, notVSpaceRootAt s x = true → notVSpaceRootAt s' x = true)
+    (hK : ∀ x, s'.getObjectType? x = s.getObjectType? x)
     {id : SeLe4n.ObjId} {ty : KernelObjectType} (h : storeLeavesIndexAndTypes s id ty = true) :
     storeLeavesIndexAndTypes s' id ty = true := by
-  unfold storeLeavesIndexAndTypes at h ⊢
-  rw [hI, hL]
-  simp only [Bool.and_eq_true] at h ⊢
-  exact ⟨h.1, hV id h.2⟩
+  have e := hK id
+  unfold SystemState.getObjectType? at e
+  unfold storeLeavesIndexAndTypes storeKeepsKind at h ⊢
+  cases h1 : s.objects[id]? with
+  | none => rw [h1] at h; simp at h
+  | some o =>
+    cases h2 : s'.objects[id]? with
+    | none => rw [h1, h2] at e; cases e
+    | some o' =>
+      rw [h1, h2] at e
+      simp only [Option.map_some, Option.some.injEq] at e
+      rw [h1] at h; simp only [] at h ⊢
+      rw [e]; exact h
 
 /-- **The stasher test of one key**: the thread there is blocked receiving with
 reply code `n` as its stash — what `SystemState.replyStashedAt` asks of the
@@ -290,20 +285,19 @@ theorem stasherTestAt_of_view {s s' : SystemState} {x : SeLe4n.ThreadId}
     | _ =>
       rw [agreeAt_of_not_tcb h (fun _ e => by cases e) e]
 
-/-- **An enqueue's in-place guard carries over** to a state with the same index
-and lifecycle, every key found where it was, no new VSpace root and every
-thread still a thread. -/
+/-- **An enqueue's in-place guard carries over** to a state with every key found
+where it was, every key holding an object of the same kind and every thread
+still a thread. -/
 theorem enqueuesInPlace_of_frame {s s' : SystemState} (endpointId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (tail? : Option SeLe4n.ThreadId)
-    (hI : s'.objectIndexSet = s.objectIndexSet) (hL : s'.lifecycle = s.lifecycle)
     (hK : s'.objectsKeepFinds s)
-    (hV : ∀ x, notVSpaceRootAt s x = true → notVSpaceRootAt s' x = true)
+    (hV : ∀ x, s'.getObjectType? x = s.getObjectType? x)
     (hTcb : ∀ p : SeLe4n.ThreadId, (s.getTcb? p).isSome = true → (s'.getTcb? p).isSome = true)
     (h : enqueuesInPlace s endpointId tid tail? = true) :
     enqueuesInPlace s' endpointId tid tail? = true := by
   have hS : ∀ {id ty}, storeLeavesIndexAndTypes s id ty = true →
       storeLeavesIndexAndTypes s' id ty = true :=
-    fun h => storeLeavesIndexAndTypes_of_frame hI hL hV h
+    fun h => storeLeavesIndexAndTypes_of_frame hV h
   unfold enqueuesInPlace at h ⊢
   simp only [Bool.and_eq_true] at h ⊢
   obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
@@ -323,7 +317,6 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
     (epId : SeLe4n.ObjId) (ep : Endpoint) (rt : TCB)
     (hNo : st.objects.noResizeDue)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
-    {ep0 : SeLe4n.ObjId} {s? : Option SeLe4n.ThreadId} (hIpc : ct.ipcState = .blockedOnReply ep0 s?)
     (hFC : st.objects.findsInPlace c.toObjId = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hNe : tid ≠ c)
@@ -357,8 +350,6 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
     rw [this, e1]; exact hA
   · unfold receiveBlocksInPlace
     rw [Bool.and_eq_true, Bool.and_eq_true]
-    obtain ⟨hI, hL⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
-    rw [hS1] at hI hL
     have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
     obtain ⟨tc1, htc1, hc1⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
     have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
@@ -380,16 +371,16 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
       · by_cases hxr : x = rid.toObjId
         · subst hxr; right; left; rw [hHold _ hxc]; exact ⟨rfl, hR1⟩
         · right; right; rw [hHold _ hxc]; exact hAg x hxc hxr
-    have hV : ∀ x, notVSpaceRootAt st x = true →
-        notVSpaceRootAt (S1.mapTcbInPlace c (holdMessage msg)) x = true := by
-      intro x hx
-      rcases hAt x with ⟨_, t, h, _⟩ | ⟨_, h⟩ | h
-      · unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, h]
-      · unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, h]
-      · rw [notVSpaceRootAt_of_view h]; exact hx
+    have hV : ∀ x, (S1.mapTcbInPlace c (holdMessage msg)).getObjectType? x =
+        st.getObjectType? x := by
+      intro x
+      rcases hAt x with ⟨e, t, h, _⟩ | ⟨e, h⟩ | h
+      · subst e; unfold SystemState.getObjectType?; rw [h, hT]; rfl
+      · subst e; unfold SystemState.getObjectType?; rw [h, hRp]; rfl
+      · exact getObjectType?_of_view h
     have hKF : (S1.mapTcbInPlace c (holdMessage msg)).objectsKeepFinds st :=
       (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
-    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hI hL hKF hV ?_ hEnq, ?_⟩, ?_⟩
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hKF hV ?_ hEnq, ?_⟩, ?_⟩
     · intro p hp
       obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hp
       have h1 := (SystemState.getTcb?_eq_some_iff _ _ _).mp ht
@@ -423,7 +414,7 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
     · show replyRecordsInPlace _ (rid.val + 1) = true
       simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec ⊢
       exact ⟨(hKF _).trans hRec.1, storeLeavesIndexAndTypes_of_frame
-        (s' := S1.mapTcbInPlace c (holdMessage msg)) hI hL hV hRec.2⟩
+        (s' := S1.mapTcbInPlace c (holdMessage msg)) hV hRec.2⟩
 
 /-- **The reply-receive that blocks, in place, on either answer**: under the reply's guard
 (`replyWakesInPlace`), with the receiver the server the caller recorded, no
@@ -463,7 +454,7 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
   obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz
     hT hIpc hRO hG
   obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
-    epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+    epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
   have hRec : recordedReplyServer? st c = some tid := by
@@ -669,7 +660,7 @@ theorem propagatePipChainCrossCore_ipcStateCarried (s : SystemState) (t : SeLe4n
     ipcStateCarried s (PriorityInheritance.propagatePipChainCrossCore s t ec).1 := by
   rw [PriorityInheritance.propagatePipChainCrossCore_eq_walks]
   dsimp only
-  generalize s.objectIndex.length = fuel
+  generalize s.objects.size = fuel
   induction fuel generalizing s t with
   | zero => exact fun _ x hx => ⟨x, hx, rfl⟩
   | succ n ih =>
@@ -778,7 +769,7 @@ theorem replyRecvOnCore_blocks_delivered (st : SystemState) (epId : SeLe4n.ObjId
   simp only [CapTransferSummary.capInfo_empty]
   rw [replyRecvBlock_staged _ _ _ _ _ _ _ _ hNo hNe hSz4]
   obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
-    epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+    epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   obtain ⟨t, hT1, hB⟩ := receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1
     hA1 hG1
   have h1 := storeReplyRendezvousReady_noResizeDue st c tid rid hNo

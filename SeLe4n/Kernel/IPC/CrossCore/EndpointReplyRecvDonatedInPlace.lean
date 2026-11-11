@@ -118,12 +118,10 @@ theorem popAgreeAt_type {s s' : SystemState} {x : SeLe4n.ObjId}
   have e := congrArg (Option.map KernelObject.objectType) h
   simpa only [Option.map_map, Function.comp_def, hT] using e
 
-theorem notVSpaceRootAt_of_popAgree {s s' : SystemState} {x : SeLe4n.ObjId}
+theorem getObjectType?_of_popAgree {s s' : SystemState} {x : SeLe4n.ObjId}
     (h : (s'.objects[x]?).map popFieldsView = (s.objects[x]?).map popFieldsView) :
-    notVSpaceRootAt s' x = notVSpaceRootAt s x := by
-  rw [notVSpaceRootAt_eq_type, notVSpaceRootAt_eq_type]
-  unfold SystemState.getObjectType?
-  rw [popAgreeAt_type h]
+    s'.getObjectType? x = s.getObjectType? x :=
+  popAgreeAt_type h
 
 theorem getTcb?_isSome_of_popAgree {s s' : SystemState} {p : SeLe4n.ThreadId}
     (h : (s'.objects[p.toObjId]?).map popFieldsView = (s.objects[p.toObjId]?).map popFieldsView)
@@ -602,8 +600,6 @@ theorem popDonationSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.Threa
   generalize hS1 : storeReplyRendezvousReady st c tid rid = S1
   have hAg := fun x hx hy => hS1 ▸ storeReplyRendezvousReady_agree st c tid rid ct hNo hTc hFC x hx hy
   have hNo1 : S1.objects.noResizeDue := hS1 ▸ storeReplyRendezvousReady_noResizeDue st c tid rid hNo
-  obtain ⟨hI, hL⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
-  rw [hS1] at hI hL
   have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
   obtain ⟨tc1, htc1, hc1⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
   have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
@@ -621,8 +617,6 @@ theorem popDonationSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.Threa
   have hTR : T.objects[rid.toObjId]? = some (.reply rp.consumed) := by rw [hHold _ hRc]; exact hR1
   have hKT : T.objectsKeepFinds st := by
     rw [← hTdef]; exact (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
-  have hIT : T.objectIndexSet = st.objectIndexSet := by rw [← hTdef]; exact hI
-  have hLT : T.lifecycle = st.lifecycle := by rw [← hTdef]; exact hL
   -- the pop's reads on `T`
   have hScT : T.getSchedContext? scId = some sc := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
     (agreeAt_of_not_tcb (hView _ hSc' hSr) (fun _ e => by cases e) hScO)
@@ -658,18 +652,17 @@ theorem popDonationSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.Threa
     rw [hU]
     rfl
   · unfold receiveBlocksInPlace
-    have hIP : P.objectIndexSet = st.objectIndexSet := hF.1.trans hIT
-    have hLP : P.lifecycle = st.lifecycle := hF.2.1.trans hLT
     have hKP : P.objectsKeepFinds st := hF.2.2.1.trans hKT
-    have hV : ∀ x, notVSpaceRootAt st x = true → notVSpaceRootAt P x = true := by
-      intro x hx
+    have hV : ∀ x, P.getObjectType? x = st.getObjectType? x := by
+      intro x
       by_cases hxc : x = c.toObjId
-      · subst hxc; unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, hPC]
+      · subst hxc; unfold SystemState.getObjectType?
+        rw [hPC, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc]; rfl
       · by_cases hxr : x = rid.toObjId
-        · subst hxr; unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, hPr']
-        · rw [notVSpaceRootAt_of_popAgree (hComb x hxc hxr)]; exact hx
+        · subst hxr; unfold SystemState.getObjectType?; rw [hPr', hRp]; rfl
+        · exact getObjectType?_of_popAgree (hComb x hxc hxr)
     rw [Bool.and_eq_true, Bool.and_eq_true]
-    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hIP hLP hKP hV ?_ hEnq, ?_⟩, ?_⟩
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hKP hV ?_ hEnq, ?_⟩, ?_⟩
     · intro p hp
       by_cases hpc : p.toObjId = c.toObjId
       · exact Option.isSome_iff_exists.mpr
@@ -715,7 +708,7 @@ theorem popDonationSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.Threa
       rfl
     · show replyRecordsInPlace _ (rid.val + 1) = true
       simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec ⊢
-      exact ⟨(hKP _).trans hRec.1, storeLeavesIndexAndTypes_of_frame hIP hLP hV hRec.2⟩
+      exact ⟨(hKP _).trans hRec.1, storeLeavesIndexAndTypes_of_frame hV hRec.2⟩
 
 end DonatedReplyRecvGuard
 

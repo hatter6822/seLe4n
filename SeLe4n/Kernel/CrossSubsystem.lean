@@ -206,8 +206,8 @@ theorem collectQueueMembers_congr_queueNext
 --   Given `tcbQueueChainAcyclic st` and `collectQueueMembers` with
 --   fuel = `st.objects.size`:
 --   1. Acyclicity ⟹ chain visits each thread at most once
---   2. Each visited thread ∈ `objectIndex` (by `noStaleEndpointQueueReferences`)
---   3. Therefore chain length ≤ `objectIndex.length` ≤ `objects.size` = fuel
+--   2. Each visited thread is stored in `objects` (by `noStaleEndpointQueueReferences`)
+--   3. Therefore chain length ≤ `objects.size` = fuel
 --   Formalizing requires a `QueueNextPath` inductive bridge that connects
 --   the path predicate to `queueNext` field traversal. This is the sole
 --   remaining TPI-DOC item for the IPC subsystem.
@@ -457,20 +457,34 @@ theorem storeObject_preserves_lifecycleObjectTypeLockstep
     (hStep : storeObject oid obj st = .ok ((), st')) :
     lifecycleObjectTypeLockstep st' := by
   intro oid' obj' hObj'
-  unfold storeObject at hStep; cases hStep
+  have hO : st'.objects = st.objects.insert oid obj := by
+    unfold storeObject at hStep; cases hStep; rfl
+  rw [hO] at hObj'
+  rw [storeObject_objectTypes hStep]
   simp only [RHTable_getElem?_eq_get?] at hObj' ⊢
+  have hPre := hLockstep
+  unfold lifecycleObjectTypeLockstep at hPre
+  simp only [RHTable_getElem?_eq_get?] at hPre
   by_cases hEq : oid' = oid
   · subst hEq
     rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv] at hObj'
     cases hObj'
-    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hObjTypesInv]
+    split
+    · rename_i hK
+      unfold storeKeepsKind at hK
+      cases hP : st.objects[oid']? with
+      | none => rw [hP] at hK; cases hK
+      | some o =>
+        rw [hP] at hK
+        rw [hPre oid' o hP, eq_of_beq hK]
+    · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hObjTypesInv]
   · have h1 : ¬((oid == oid') = true) := by
       intro heq; exact hEq (eq_of_beq heq).symm
     rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ h1 hObjInv] at hObj'
-    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ h1 hObjTypesInv]
-    have := hLockstep oid' obj'
-    simp only [RHTable_getElem?_eq_get?] at this
-    exact this hObj'
+    split
+    · exact hPre oid' obj' hObj'
+    · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ h1 hObjTypesInv]
+      exact hPre oid' obj' hObj'
 
 /-- WS-AM AM1-C (AL6-C hygiene): `storeObjectKindChecked` preserves
 the lockstep invariant. The wrapper's three branches reduce to:
@@ -842,11 +856,11 @@ theorem default_crossSubsystemInvariant :
     rw [this] at hMem; simp at hMem
   · -- AF1-B3: blockingAcyclic — vacuously true for empty objects (fuel = 0)
     intro tid hMem
-    -- default objectIndex = [], so objectIndex.length = 0, fuel = 0
-    -- blockingChain _ _ 0 = [] by definition, so tid ∈ [] is absurd
-    have hLen : (default : SystemState).objectIndex.length = 0 := by decide
+    -- the default object table is empty, so its size — the fuel — is 0,
+    -- and blockingChain _ _ 0 = [] by definition, so tid ∈ [] is absurd
+    have hLen : (default : SystemState).objects.size = 0 := rfl
     have hChain : PriorityInheritance.blockingChain (default : SystemState) tid
-        (default : SystemState).objectIndex.length = [] := by rw [hLen]; rfl
+        (default : SystemState).objects.size = [] := by rw [hLen]; rfl
     rw [hChain] at hMem; simp at hMem
   · -- AM4-C: lifecycleObjectTypeLockstep — empty-state witness reuses AM1-A.
     exact default_lifecycleObjectTypeLockstep
@@ -1284,7 +1298,8 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
     (h : ∀ f : StateField, SystemState.fieldEq f st st') : st' = st := by
   cases st; cases st'
   simp only [SystemState.mk.injEq]
-  exact ⟨h .machine, h .objects, h .objectIndex, h .objectIndexSet,
+  exact ⟨h .machine, h .objects, SeLe4n.Erased.ext (h .objectIndex),
+    SeLe4n.Erased.ext (h .objectIndexSet),
     h .scheduler, h .lifecycle,
     h .asidTable, h .interfaceRegistry,
     h .cdt,
@@ -2376,15 +2391,14 @@ theorem revokeService_preserves_sharingPairs_objects
 
 /-- X3-C (H-4): **Cross-subsystem invariant preservation under objects-only changes.**
     When an operation preserves `objects` and the fields the other predicates
-    read (`serviceRegistry`, `interfaceRegistry`, `objectIndex`, the object
-    types and the run queue), the full `crossSubsystemInvariant` is preserved.
+    read (`serviceRegistry`, `interfaceRegistry`, the object types and the
+    run queue), the full `crossSubsystemInvariant` is preserved.
     This covers the 3 sharing pairs via frame lemma composition. -/
 theorem crossSubsystemInvariant_objects_frame
     (st st' : SystemState)
     (hObjects : st'.objects = st.objects)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hObjIdx : st'.objectIndex = st.objectIndex)
     (hObjTypes : st'.lifecycle.objectTypes = st.lifecycle.objectTypes)
     (hRunnable : st'.scheduler.runnable = st.scheduler.runnable)
     (hInv : crossSubsystemInvariant st) :
@@ -2399,7 +2413,7 @@ theorem crossSubsystemInvariant_objects_frame
          schedContextRunQueueConsistent_frame st st' hRunnable hObjects h8,
          PriorityInheritance.blockingAcyclic_frame st st' h9
            (fun tid => by simp [PriorityInheritance.blockingServer,
-             SystemState.getTcb?_frame hObjects]) hObjIdx, ?_, ?_⟩
+             SystemState.getTcb?_frame hObjects]) (by rw [hObjects]), ?_, ?_⟩
   · -- AM4-A: lifecycleObjectTypeLockstep frame-preserved.
     intro oid obj hObj'
     rw [hObjects] at hObj'

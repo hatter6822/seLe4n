@@ -441,7 +441,7 @@ theorem schedContextConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
                 rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]; exact hI4
               exact ((k4.trans (.of_objects_eq (by rw [markKeyChangeFor_objects,
                 markCandidacyGainFor_objects]))).trans (.of_repropagateFromWaiter _ boundTid
-                (determineTargetCore st boundTid) st.objectIndex.length hI5)).trans
+                (determineTargetCore st boundTid) st.objects.size hI5)).trans
                 (.of_runLinks (SchedContextOps.configureResumeBound_objectsAgreeOffRunLinks _ _ _))
             · cases h; exact k3
       · cases h
@@ -665,13 +665,13 @@ theorem applyPriorityChangeOnCore_schedPointPrefix {e : CoreId} {base st st' : S
   have k : savedRegsKeptExcept (fun _ => False) st (PriorityInheritance.repropagateFromWaiter
       (markKeyChangeFor (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
         (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
-        (determineTargetCore st tid)) tid (effectiveSchedParams st tcb)) tid e st.objectIndex.length) :=
+        (determineTargetCore st tid)) tid (effectiveSchedParams st tcb)) tid e st.objects.size) :=
     (((updatePrioritySource_savedRegsKeptExcept st tid tcb p hInv).trans
       (.of_runLinks (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objectsAgreeOffRunLinks
         _ _ _ _))).trans (.of_objects_eq (markKeyChangeFor_objects _ _ _))).trans
       (.of_repropagateFromWaiter _ tid e _ hI3)
   have C := fun e' => (PriorityInheritance.repropagateFromWaiter_preserves
-    (fun s => stepCovers e' _ s ∧ s.objects.invExt) _ tid e st.objectIndex.length
+    (fun s => stepCovers e' _ s ∧ s.objects.invExt) _ tid e st.objects.size
     (fun server _ => propagatePipChainCrossCore_stepCovers e' e _ _ server hI3)
     ⟨stepCovers_refl e' _, hI3⟩).1
   obtain ⟨objs, hU⟩ := SchedContext.PriorityManagement.updatePrioritySource_only_modifies_objects st tid tcb p
@@ -1110,10 +1110,10 @@ theorem suspendThreadOnCore_schedPointPrefix {e : CoreId} {st st' : SystemState}
       rw [hBS] at h
       dsimp only at h
       have hc := fun e' => propagatePipChainCrossCore_stepCovers e' e
-        (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objectIndex.length _ srv h1Inv
+        (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objects.size _ srv h1Inv
       replace hW1 := fun e' => (hW1 e').trans (.of_kept (W := fun _ => False)
         (.of_propagatePipChainCrossCore _ srv e
-          (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objectIndex.length h1Inv)
+          (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objects.size h1Inv)
         (fun _ h => h.elim))
       replace hK1 := hK1.trans (.of_stepCovers fun e' => (hc e').1)
       replace hB1 := ((hc (otherCore e)).1.banksKept e (ne_otherCore e)).trans hB1

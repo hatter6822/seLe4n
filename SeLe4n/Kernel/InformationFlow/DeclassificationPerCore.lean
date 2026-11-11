@@ -1678,6 +1678,7 @@ theorem declassifyStoreOnCore_state_log_independent
         simp only [Bool.false_eq_true, if_false, if_true, storeObject, storeKeepsAsid,
           Except.ok.injEq, Prod.mk.injEq, true_and] at hGate₁ ⊢
         rw [← hGate₁]
+        rfl
   rw [hFrame] at hGate₂
   have hGateEq : stGate₂ = { stGate₁ with declassificationAudit := trail } :=
     congrArg Prod.snd (Except.ok.inj hGate₂.symm)

@@ -295,7 +295,7 @@ insert of its new value, and an insert in place keeps every key's in-place
 question, every other key's object and every local store local. -/
 theorem modifyObject_inPlace {st : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (f : KernelObject → KernelObject) (hO : st.objects[k]? = some o)
-    (hF : st.objects.findsInPlace k = true) (hNotV : ∀ r, f o ≠ .vspaceRoot r) :
+    (hF : st.objects.findsInPlace k = true) (hKind : (f o).objectType = o.objectType) :
     st.modifyObject k f = { st with objects := st.objects.insert k (f o) } ∧
     (∀ k', (st.modifyObject k f).objects.findsInPlace k' = st.objects.findsInPlace k') ∧
     (∀ k', k ≠ k' → (st.modifyObject k f).objects[k']? = st.objects[k']?) ∧
@@ -308,7 +308,9 @@ theorem modifyObject_inPlace {st : SystemState} {k : SeLe4n.ObjId} {o : KernelOb
   · rw [hEq]; exact RHTable.findsInPlace_insert_of_findsInPlace k' _ hF
   · rw [hEq]; exact RHTable.get?_insert_ne_of_findsInPlace k' _ hF hk
   · rw [hEq]; exact RHTable.get?_insert_self_of_findsInPlace _ hF
-  · rw [hEq]; exact storeLeavesIndexAndTypes_insert_inPlace hF hNotV h
+  · rw [hEq]
+    exact storeLeavesIndexAndTypes_insert_inPlace hF
+      (fun o' ho' => by rw [hO] at ho'; cases ho'; exact hKind.symm) h
 
 /-- A store of an endpoint that changes only `objects` is the modify of its slot
 by any update giving that endpoint. -/
@@ -383,7 +385,7 @@ theorem queueRemove_finish {S2 : SystemState} {endpointId : SeLe4n.ObjId} {isRec
   obtain ⟨-, hF3, hG3, -, hL3⟩ := modifyObject_inPlace (endsSetEndpoint isReceiveQ
       (removedEndCode (ep.headCodeOf isReceiveQ) (tid.val + 1) tcb.queueNextCode)
       (removedEndCode (ep.tailCodeOf isReceiveQ) (tid.val + 1) tcb.queuePrevCode))
-    hE2 hFE (by rw [hf]; intro r h; cases h)
+    hE2 hFE (by rw [hf, storeLeavesIndexAndTypes_kind hLE hE2]; rfl)
   have hT3 : S3.getTcb? tid = some tcb :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mpr ((hG3 _ hNe).trans hT2)
   have hFT3 : S3.objects.findsInPlace tid.toObjId = true := (hF3 _).trans hFT
@@ -528,7 +530,7 @@ theorem queueRemove_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (isRe
   | endpointHead =>
     obtain ⟨-, hF1, hG1, hE1, hL1⟩ := modifyObject_inPlace
       (headAdvancedEndpoint isReceiveQ tcb.queueNextCode) hE hFE
-      (by rw [headAdvancedEndpoint_eq]; intro r h; cases h)
+      (by rw [headAdvancedEndpoint_eq]; rfl)
     have hS1 := storeObject_endpoint_eq_modifyObject
       (headAdvancedEndpoint isReceiveQ tcb.queueNextCode) hE
       (headAdvancedEndpoint_eq isReceiveQ ep tcb) hLE

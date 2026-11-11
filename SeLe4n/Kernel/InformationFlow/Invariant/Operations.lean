@@ -1174,10 +1174,6 @@ theorem cspaceRevoke_preserves_projection
         intro hEq; subst hEq; simp [hAddrHigh] at hObs
       simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [Ne.symm hNe]
     · simp [projectObjects, hObs]
-  · simp only [projectObjectIndex]
-    split
-    · rfl
-    · rw [List.filter_cons]; simp [hAddrHigh]
 
 /-- WS-H9: cspaceInsertSlot at non-observable CNode preserves projection. -/
 private theorem cspaceInsertSlot_preserves_projection

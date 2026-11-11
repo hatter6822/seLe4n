@@ -1577,12 +1577,12 @@ ACCESSOR_BODIES = {
     # proven equal to the definition it replaces), and the in-place CNode,
     # TCB, VSpace-root, frame, page-table and Reply stores (each proven equal to
     # `storeObject`, e.g. `storeObject_cnode_eq_storeCNodeWith`): the in-place
-    # write reads the stored entry to decide whether the index and type rows
-    # change.  `storeKeepsAsid` is `storeObject`'s own read of the stored root,
+    # write reads the stored entry's kind (`storeKeepsKind`) to decide whether
+    # the ghost index and type rows change.  `storeKeepsAsid` is `storeObject`'s own read of the stored root,
     # deciding whether the ASID table changes, and `storeIsFresh` its read of
     # whether the key is new, deciding whether the store is `storeFresh`.
     ("SeLe4n/Model/State.lean", d): "live object-store write primitive, compiled form"
-    for d in ("storeLeavesIndexAndTypes", "storeObjectImpl", "updateTcbImpl",
+    for d in ("storeKeepsKind", "storeObjectImpl", "updateTcbImpl",
               "storeCNodeWith", "storeTcbWith", "storeVSpaceRootWith", "storeFrameWith", "storeReplyWith",
               "storePageTableWith", "storeUntypedWith", "storeIsFresh",
               "storeKeepsAsid")

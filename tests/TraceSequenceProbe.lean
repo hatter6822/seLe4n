@@ -70,8 +70,9 @@ def probeBaseState (threadCount : Nat) : SystemState :=
     (List.range threadCount).map fun n => ⟨n + 1⟩
   let base : SystemState := { (default : SystemState) with
     objects := SeLe4n.Kernel.RobinHood.RHTable.ofList allEntries
-    objectIndex := allEntries.map Prod.fst
-    objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (allEntries.map Prod.fst) }
+    objectIndexGhost := SeLe4n.Erased.mk (allEntries.map Prod.fst)
+    objectIndexSetGhost := SeLe4n.Erased.mk
+      (SeLe4n.Kernel.RobinHood.RHSet.ofList (allEntries.map Prod.fst)) }
   SeLe4n.Testing.enqueueAllOnCore base SeLe4n.Kernel.Concurrency.bootCoreId
     (runnableThreads.map (fun tid => (tid, ⟨0⟩)))
 

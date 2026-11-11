@@ -1265,18 +1265,18 @@ def storeObjectKindChecked_rejection_preserves_state : IO Unit := do
 -- ============================================================================
 
 /-- Default state satisfies the lockstep invariant — check that
-the objectTypes lookup agrees with the objects lookup on a probe id
+the type reader agrees with the objects lookup on a probe id
 (both must be `none` on the empty default state). -/
 def lifecycleObjectTypeLockstep_default : IO Unit := do
   let st : SystemState := default
   let probe : ObjId := ⟨500⟩
   let hObj := st.objects[probe]?
-  let hTy := st.lifecycle.objectTypes[probe]?
+  let hTy := st.getObjectType? probe
   expect "default objects empty" hObj.isNone
-  expect "default objectTypes empty" hTy.isNone
+  expect "default type reader empty" hTy.isNone
 
-/-- After storing a TCB via `storeObject`, both `objects` and
-`lifecycle.objectTypes` carry the new id with matching type. -/
+/-- After storing a TCB via `storeObject`, `objects` carries the new id and the
+type reader reports its kind. -/
 def storeObject_updates_objects_and_objectTypes_in_lockstep : IO Unit := do
   let id : ObjId := ⟨210⟩
   let t := minimalTcb ⟨210⟩
@@ -1289,11 +1289,11 @@ def storeObject_updates_objects_and_objectTypes_in_lockstep : IO Unit := do
         | some (.tcb _) => true
         | _ => false
       let tyOk : Bool :=
-        match st'.lifecycle.objectTypes[id]? with
+        match st'.getObjectType? id with
         | some .tcb => true
         | _ => false
       expect "objects carries tcb" objOk
-      expect "objectTypes carries .tcb" tyOk
+      expect "type reader reports .tcb" tyOk
 
 /-- The default SystemState satisfies `crossSubsystemInvariant`
 including the new 11th conjunct (`lifecycleObjectTypeLockstep`). Uses
@@ -1311,8 +1311,8 @@ def crossSubsystemInvariant_default_has_lockstep : IO Unit := do
   -- every `objects[oid]?` is `none`, so the predicate holds vacuously.
   let probe : ObjId := ⟨400⟩
   expect "lockstep projection exists" (st.objects[probe]?.isNone)
-  expect "objectTypes also absent"
-    (st.lifecycle.objectTypes[probe]?.isNone)
+  expect "type reader also absent"
+    (st.getObjectType? probe).isNone
   -- Suppress unused-variable warnings.
   let _ := hLockstep
 
@@ -1349,25 +1349,25 @@ def checkCrossSubsystemInvariant_covers_all_predicates : IO Unit := do
     expect "lockstep check passes on default state" ok
 
 /-- (audit remediation): The runtime checker actually detects
-a violation of the lockstep invariant — build a deliberately
-inconsistent state where `objects` carries a TCB but
-`lifecycle.objectTypes` records `.schedContext`, and confirm the
-runtime check returns `false` for the lockstep predicate (proving the
-checker is not vacuously passing). -/
+a violation of the lockstep check — build a deliberately corrupted store
+whose one entry carries a key it is not filed under (so the table enumerates
+an object its own lookup cannot find), and confirm the runtime check returns
+`false` (proving the checker is not vacuously passing).  Since WS-UC UC2 the
+recorded type table is a proof-only ghost, so the runtime check compares the
+store's enumeration with its type reader. -/
 def checkCrossSubsystemInvariant_detects_lockstep_violation : IO Unit := do
   let id : ObjId := ⟨410⟩
   let t := minimalTcb ⟨410⟩
   let base : SystemState := default
-  -- Build a state with a TCB in objects but SchedContext tag in objectTypes
-  -- (contradiction — this state should fail lockstep).
+  -- Store a TCB, then re-key its entry in place to an id it is not filed
+  -- under (deliberately inconsistent: the lookup of that id misses it).
+  let good := base.objects.insert id (.tcb t)
+  let misfiledId : ObjId := ⟨411⟩
   let bad : SystemState :=
     { base with
-        objects := base.objects.insert id (.tcb t)
-        objectIndex := id :: base.objectIndex
-        objectIndexSet := base.objectIndexSet.insert id
-        lifecycle := { base.lifecycle with
-          -- NOTE: .schedContext instead of .tcb — deliberately inconsistent.
-          objectTypes := base.lifecycle.objectTypes.insert id .schedContext } }
+        objects := { good with
+          slots := good.slots.map (·.map fun e => { e with key := misfiledId })
+          hSlotsLen := by simp only [Array.size_map]; exact good.hSlotsLen } }
   let checks := SeLe4n.Testing.checkCrossSubsystemInvariant bad
   let lockstepEntry := checks.find? (fun (n, _) =>
     n = "crossSub:lifecycleObjectTypeLockstep")
@@ -1393,10 +1393,10 @@ def storeObject_preserves_lockstep_under_crossSubsystemInvariant : IO Unit := do
       let objOk : Bool :=
         match st'.objects[id]? with | some (.tcb _) => true | _ => false
       let tyOk : Bool :=
-        match st'.lifecycle.objectTypes[id]? with
+        match st'.getObjectType? id with
         | some .tcb => true | _ => false
       expect "post-storeObject objects has tcb" objOk
-      expect "post-storeObject objectTypes has .tcb" tyOk
+      expect "post-storeObject type reader reports .tcb" tyOk
 
 /-- After a cross-kind rejection via `storeObjectKindChecked`,
 the pre-state object and its objectType entry remain consistent (the
@@ -1413,14 +1413,14 @@ def storeObjectKindChecked_rejection_preserves_lockstep : IO Unit := do
     { base with
         objects := base.objects.insert id (.tcb t)
         lifecycle := { base.lifecycle with
-          objectTypes := base.lifecycle.objectTypes.insert id .tcb } }
+          objectTypesGhost := base.lifecycle.objectTypesGhost.map (·.insert id .tcb) } }
   match storeObjectKindChecked id (.schedContext sc) seeded with
   | .error .invalidObjectType =>
       -- Unchanged state still carries the original tcb + .thread type.
       let stillTcb : Bool :=
         match seeded.objects[id]? with | some (.tcb _) => true | _ => false
       let stillThread : Bool :=
-        match seeded.lifecycle.objectTypes[id]? with
+        match seeded.getObjectType? id with
         | some .tcb => true | _ => false
       expect "pre-state tcb retained" stillTcb
       expect "pre-state .tcb type retained" stillThread
@@ -1523,7 +1523,7 @@ def ak8a_01_default_satisfies_untypedRegionsDisjoint : IO Unit := do
   -- Runtime check: default state's untypedRegionsDisjoint holds for every pair.
   -- We verify by enumerating all objects in the default state (which is empty).
   let st : SystemState := default
-  let objectCount := st.objectIndex.length
+  let objectCount := st.objects.size
   expect "default state has zero objects" (objectCount == 0)
 
 /-- AK8-A-02: Two disjoint top-level untypeds satisfy the predicate pairwise.

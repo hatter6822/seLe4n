@@ -167,8 +167,6 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
   have hHold : ∀ x, x ≠ c.toObjId →
       (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = S1.objects[x]? := fun x hx => by
     rw [SystemState.objects_mapTcbInPlace, if_neg (fun h => hx (beq_iff_eq.mp h).symm)]
-  obtain ⟨hI, hL⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
-  rw [hS1] at hI hL
   have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
   obtain ⟨tc1, htc1, -⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
   have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
@@ -181,18 +179,16 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
   have hTC : ∃ t, T.objects[c.toObjId]? = some (.tcb t) := ⟨holdMessage msg tc1, by
     rw [← hTdef, SystemState.objects_mapTcbInPlace, if_pos (beq_self_eq_true _), htc1]; rfl⟩
   have hTR : T.objects[rid.toObjId]? = some (.reply rp.consumed) := by rw [hHold _ hRc]; exact hR1
-  have hV : ∀ x, notVSpaceRootAt st x = true → notVSpaceRootAt T x = true := by
-    intro x hx
+  have hV : ∀ x, T.getObjectType? x = st.getObjectType? x := by
+    intro x
     by_cases hxc : x = c.toObjId
     · subst hxc; obtain ⟨t, h⟩ := hTC
-      unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, h]
+      unfold SystemState.getObjectType?; rw [h, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc]; rfl
     · by_cases hxr : x = rid.toObjId
-      · subst hxr; unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, hTR]
-      · rw [notVSpaceRootAt_of_view (hView x hxc hxr)]; exact hx
+      · subst hxr; unfold SystemState.getObjectType?; rw [hTR, hRp]; rfl
+      · exact getObjectType?_of_view (hView x hxc hxr)
   have hKF : T.objectsKeepFinds st := by
     rw [← hTdef]; exact (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
-  have hIT : T.objectIndexSet = st.objectIndexSet := by rw [← hTdef]; exact hI
-  have hLT : T.lifecycle = st.lifecycle := by rw [← hTdef]; exact hL
   have hTcb : ∀ p : SeLe4n.ThreadId, (st.getTcb? p).isSome = true → (T.getTcb? p).isSome = true := by
     intro p hp
     obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hp
@@ -206,7 +202,7 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
         exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h'⟩
   have hSL : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes T id ty = true :=
-    fun h => storeLeavesIndexAndTypes_of_frame hIT hLT hV h
+    fun h => storeLeavesIndexAndTypes_of_frame hV h
   -- the queued caller and the server, as they were
   obtain ⟨sTcb1, hS1o, e1⟩ := agreeAt_tcb (hAg _ hSc' hSr) hS
   have hsT : T.objects[s.toObjId]? = some (.tcb sTcb1) := by rw [hHold _ hSc']; exact hS1o
@@ -246,7 +242,7 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
   have hkT : T.getSchedContext? ⟨k⟩ = some scs := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
     (agreeAt_of_not_tcb (hView _ hkc hkr) (fun _ e => by cases e) hScsO)
   have hRO' : sTcb1.replyObject = sTcb.replyObject := by simp only [TCB.replyObject, hROc]
-  have hSWT := sendWakesInPlace_of_frame epId s sTcb.queueNext hIT hLT hKF hV hTcb hSW
+  have hSWT := sendWakesInPlace_of_frame epId s sTcb.queueNext hKF hV hTcb hSW
   have hLRtT := hSL hLRt
   have hFRtT := (hKF _).trans hFRt
   have hLRT := hSL hLR

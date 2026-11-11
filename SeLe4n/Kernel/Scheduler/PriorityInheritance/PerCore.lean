@@ -95,13 +95,17 @@ theorem updatePipBoostOnCore_preserves_blockingServer (st : SystemState) (c : Co
     (pipBoostWrite_preserves_blockingServer st tid hObjInv t)
 
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` preserves blocking-graph acyclicity —
-it preserves `blockingServer` (graph topology) and `objectIndex` (fuel). -/
+it preserves `blockingServer` (graph topology) and the object count `objects.size`
+(fuel). -/
 theorem updatePipBoostOnCore_preserves_blockingAcyclic (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hObjInv : st.objects.invExt) (hAcyclic : blockingAcyclic st) :
     blockingAcyclic (updatePipBoostOnCore st c tid) :=
   blockingAcyclic_frame st (updatePipBoostOnCore st c tid) hAcyclic
     (fun t => updatePipBoostOnCore_preserves_blockingServer st c tid hObjInv t)
-    (updatePipBoostOnCore_preserves_objectIndex st c tid)
+    (((updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid).objects_size_eq
+      (updatePipBoostOnCore_preserves_objects_invExt st c tid hObjInv)
+      (pipBoostWrite_objects_invExt st tid hObjInv)).trans
+      (pipBoostWrite_objects_size st tid hObjInv))
 
 /-- WS-SM SM5.F.2: the holder's post-boost `pipBoost` is the GLOBAL
 `computeMaxWaiterPriority st tid` — whether the update fired (`pipBoost := newBoost`)
@@ -298,7 +302,7 @@ out so the invariant-preservation inductions never wrestle with the SGI-list
 let-pattern.  Its one-step recursion (`_step` below) makes the chain walk's state
 effect a clean fold of per-thread `pipBoostWithWake` boosts. -/
 def propagatePipChainCrossCoreState (st : SystemState) (startTid : ThreadId)
-    (executingCore : CoreId) (fuel : Nat := st.objectIndex.length) : SystemState :=
+    (executingCore : CoreId) (fuel : Nat := st.objects.size) : SystemState :=
   (propagatePipChainCrossCore st startTid executingCore fuel).1
 
 @[simp] theorem propagatePipChainCrossCoreState_zero (st : SystemState) (tid : ThreadId)
@@ -599,7 +603,7 @@ theorem blockingGraphOnCore_consistent (st : SystemState) (tid s : ThreadId) :
 A sub-walk of the global `blockingChain` (it dead-ends as soon as a node is off
 core `c`). -/
 def blockingChainOnCore (st : SystemState) (c : CoreId) (tid : ThreadId)
-    (fuel : Nat := st.objectIndex.length) : List ThreadId :=
+    (fuel : Nat := st.objects.size) : List ThreadId :=
   match fuel with
   | 0 => []
   | fuel' + 1 =>
@@ -640,7 +644,7 @@ chain (`blockingChainOnCore_subset`), and the global chain is acyclic
 cycle can arise from the per-core decomposition. -/
 theorem blockingAcyclic_perCore (st : SystemState) (c : CoreId) (hAcyclic : blockingAcyclic st) :
     blockingAcyclicOnCore st c := fun tid hMem =>
-  hAcyclic tid (blockingChainOnCore_subset st c tid st.objectIndex.length tid hMem)
+  hAcyclic tid (blockingChainOnCore_subset st c tid st.objects.size tid hMem)
 
 -- ============================================================================
 -- §7  SM5.F.9 — priorityInheritance_perCore_witness (aggregate soundness)
@@ -1373,7 +1377,7 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
 /-- WS-SM SM8.B (PR #861 review round 16): the cross-core `.reschedule` SGIs
 warranted by a **changed `current` slot**, independent of any object.
 
-`crossCoreSgiBody` is indexed by `post.objectIndex` and opens by matching `post.objects[oid]?` against `some (.tcb tpost)`, falling through to `none`
+`crossCoreSgiBody` is indexed by the post-state's object identifiers and opens by matching `post.objects[oid]?` against `some (.tcb tpost)`, falling through to `none`
 otherwise — so a change whose subject no longer *exists* in the post-state is
 structurally invisible to it.  Destroying a TCB that is current on a remote core is exactly that case: the
 retype scrubs and repurposes the object, the sweep clears that core's `current`,
@@ -1392,6 +1396,32 @@ def currentSlotChangeSgis (pre post : SystemState) (execCore : CoreId) :
       (c != execCore) && (post.scheduler.currentOnCore c != pre.scheduler.currentOnCore c))).map
     (fun c => (c, SgiKind.reschedule))
 
+/-- WS-UC UC2: the SGIs the object rules warrant, walking the post-state's object
+table (the object index they walked is a ghost).  What they warrant does not
+depend on the table's order: `mem_objectRuleSgis` names each one by the object
+that warrants it. -/
+def objectRuleSgis (pre post : SystemState) (execCore : CoreId) : List (CoreId × SgiKind) :=
+  post.objects.fold [] fun acc oid _ =>
+    (crossCoreSgiBody pre post execCore oid).elim acc (· :: acc)
+
+/-- WS-UC UC2: an object rule's SGI is listed exactly when an object the post-state
+holds warrants it — whatever order the table visits its objects in. -/
+theorem mem_objectRuleSgis (pre post : SystemState) (execCore : CoreId)
+    (hInv : post.objects.invExt) (p : CoreId × SgiKind) :
+    p ∈ objectRuleSgis pre post execCore ↔
+      ∃ (oid : SeLe4n.ObjId) (o : KernelObject), post.objects[oid]? = some o ∧
+        crossCoreSgiBody pre post execCore oid = some p :=
+  mem_fold_elim_cons_iff post.objects hInv (fun oid _ => crossCoreSgiBody pre post execCore oid) p
+
+/-- WS-UC UC2: an object rule's SGI is warranted by some identifier — the
+forward half of `mem_objectRuleSgis`, with no table invariant. -/
+theorem exists_of_mem_objectRuleSgis {pre post : SystemState} {execCore : CoreId}
+    {p : CoreId × SgiKind} (h : p ∈ objectRuleSgis pre post execCore) :
+    ∃ oid : SeLe4n.ObjId, crossCoreSgiBody pre post execCore oid = some p := by
+  obtain ⟨oid, _, hg⟩ := exists_of_mem_fold_elim_cons post.objects
+    (fun oid (_ : KernelObject) => crossCoreSgiBody pre post execCore oid) p h
+  exact ⟨oid, hg⟩
+
 /-- WS-SM SM5.F.4 (SM6 dispatch decision): the cross-core `.reschedule` SGIs a
 transition `pre → post` warrants, derived from the state diff — one per *remote*
 (home ≠ `execCore`) thread whose *effective* run-queue bucket
@@ -1400,8 +1430,7 @@ coalesced by target core.  This is the dispatch for the generic syscall path, wh
 returns only a post-state (the per-core boost transitions return their SGIs directly). -/
 def computeCrossCoreSgis (pre post : SystemState) (execCore : CoreId) : List (CoreId × SgiKind) :=
   SeLe4n.Kernel.Concurrency.dedupCrossCoreSgis
-    (post.objectIndex.filterMap (crossCoreSgiBody pre post execCore)
-      ++ currentSlotChangeSgis pre post execCore)
+    (objectRuleSgis pre post execCore ++ currentSlotChangeSgis pre post execCore)
 
 /-- WS-SM SM8.B: the slot rule is **inert on one core** — the executing core is
 excluded by construction, and on a single-core build it is the only core. -/
@@ -2228,8 +2257,8 @@ theorem computeCrossCoreSgis_all_reschedule (pre post : SystemState) (ec : CoreI
   have hsub := SeLe4n.Kernel.Concurrency.dedupCrossCoreSgis_subset _ p hp
   -- Round 16: two sources now — the object-indexed rules and the slot rule.
   rcases List.mem_append.mp hsub with hObj | hSlot
-  · rw [List.mem_filterMap] at hObj
-    obtain ⟨oid, _, hbody⟩ := hObj
+  · obtain ⟨oid, _, hbody⟩ := exists_of_mem_fold_elim_cons post.objects
+      (fun oid _ => crossCoreSgiBody pre post ec oid) p hObj
     exact crossCoreSgiBody_reschedule pre post ec oid p hbody
   · exact currentSlotChangeSgis_reschedule pre post ec p hSlot
 
@@ -2245,8 +2274,8 @@ theorem computeCrossCoreSgis_nil_single_core (pre post : SystemState)
     (hNoRemoteCurPost : ∀ c : CoreId, c ≠ bootCoreId →
       post.scheduler.currentOnCore c = none) :
     computeCrossCoreSgis pre post bootCoreId = [] := by
-  unfold computeCrossCoreSgis currentSlotChangeSgis
-  rw [List.filterMap_eq_nil_iff.mpr (fun oid _ =>
+  unfold computeCrossCoreSgis currentSlotChangeSgis objectRuleSgis
+  rw [fold_elim_cons_eq_nil post.objects _ (fun oid _ =>
     crossCoreSgiBody_none_single_core pre post oid hAllBoot hNoRemoteCur)]
   -- Round 16: the slot rule is nil for the same reason the object rules are —
   -- on a single-core deployment no remote core is running anything in EITHER

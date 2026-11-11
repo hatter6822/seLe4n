@@ -529,9 +529,9 @@ private def sr027c_resumeThreadPreservesBlockingAcyclic : IO Unit := do
     -- For each thread in the post-state, the blocking chain from itself
     -- must not contain itself.
     let postWaiterChain := SeLe4n.Kernel.PriorityInheritance.blockingChain
-                            st' waiterTid st'.objectIndex.length
+                            st' waiterTid st'.objects.size
     let postTidChain := SeLe4n.Kernel.PriorityInheritance.blockingChain
-                          st' tid st'.objectIndex.length
+                          st' tid st'.objects.size
     expect "waiter not in its own chain"
       ¬ (SeLe4n.Kernel.PriorityInheritance.chainContains postWaiterChain waiterTid)
     expect "resumed thread not in its own chain"

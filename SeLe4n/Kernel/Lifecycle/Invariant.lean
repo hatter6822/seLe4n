@@ -188,8 +188,10 @@ theorem setCapFreeIndex_preserves_objectTypeMetadataConsistent {st : SystemState
 theorem storeObject_preserves_objectTypes_invExt {st st' : SystemState} {id : SeLe4n.ObjId}
     {obj : KernelObject} (hT : st.lifecycle.objectTypes.invExt)
     (h : storeObject id obj st = .ok ((), st')) : st'.lifecycle.objectTypes.invExt := by
-  unfold storeObject at h; cases h
-  exact RHTable_insert_preserves_invExt st.lifecycle.objectTypes _ _ hT
+  rw [storeObject_objectTypes h]
+  split
+  · exact hT
+  · exact RHTable_insert_preserves_invExt st.lifecycle.objectTypes _ _ hT
 
 /-- WS-F2: `retypeFromUntyped` preserves lifecycle metadata consistency.
 Both `storeObject` calls and the free-index write maintain metadata. -/
@@ -502,7 +504,7 @@ theorem retypeFromUntyped_ok_childId_ne
       | untyped _ =>
           simp only [hObj] at hStep
           -- S4-B: discharge capacity check
-          by_cases hCap : st.objectIndex.length ≥ maxObjects
+          by_cases hCap : st.objects.size ≥ maxObjects
           · simp [hCap] at hStep
           · simp only [hCap, ↓reduceIte] at hStep
             -- Self-overwrite guard fires: childId = untypedId → .error
@@ -528,8 +530,8 @@ theorem retypeFromUntyped_ok_childId_fresh
   unfold retypeFromUntyped SystemState.getObject? at hStep'
   simp only [hObj] at hStep'
   -- S4-B: discharge capacity check
-  have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by
-    by_cases hCap : st.objectIndex.length ≥ maxObjects
+  have hCapF : ¬(st.objects.size ≥ maxObjects) := by
+    by_cases hCap : st.objects.size ≥ maxObjects
     · simp [hCap] at hStep'
     · exact hCap
   simp only [hCapF, ↓reduceIte] at hStep'

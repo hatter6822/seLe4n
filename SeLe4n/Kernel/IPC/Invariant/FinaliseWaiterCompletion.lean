@@ -501,9 +501,9 @@ theorem finaliseReplyRevert_frame (s : SystemState) (hInv : s.objects.invExt)
   cases o with
   | none => exact ⟨.refl _ _, hInv⟩
   | some y =>
-    exact ⟨WaiterFrame.propagate s y Concurrency.bootCoreId s.objectIndex.length hInv E,
+    exact ⟨WaiterFrame.propagate s y Concurrency.bootCoreId s.objects.size hInv E,
       PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt s y
-        Concurrency.bootCoreId s.objectIndex.length hInv⟩
+        Concurrency.bootCoreId s.objects.size hInv⟩
 
 -- ============================================================================
 -- The orphan walk ends every waiter

@@ -315,7 +315,7 @@ theorem pip_enhanced_wcrt_le_base
 /-- D5-M: PIP bounded inversion integrates with WCRT. The total priority
 inversion time for a blocking chain of depth `chainDepth` is bounded by
 `chainDepth × WCRT`. With D4's `pip_bounded_inversion`, the chain depth
-is ≤ `objectIndex.length`, giving a concrete inversion bound. -/
+is ≤ `objects.size`, giving a concrete inversion bound. -/
 theorem pip_wcrt_integration
     (wcrt chainDepth : Nat) :
     PriorityInheritance.pipSingleLinkBound wcrt chainDepth = chainDepth * wcrt :=

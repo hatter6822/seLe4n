@@ -4623,15 +4623,30 @@ Every milestone-moving PR should include:
 The abstract model uses unbounded `Nat` for object indices. For the RPi5
 hardware target, the expected maximum object count is `maxObjects = 65536`.
 
-- **objectIndex growth**: The `objectIndex` list consumes at most
-  `65536 × 8 = 512 KB` at maximum capacity — well within RPi5's 8 GB RAM.
-- **Advisory predicate**: `objectIndexBounded st` asserts
-  `st.objectIndex.length ≤ maxObjects` (defined in `Model/State.lean`).
-- **Capacity enforcement**: `storeObjectChecked` (AC3-E) returns
-  `objectStoreCapacityExceeded` when inserting a new object at `maxObjects`
-  capacity. In-place updates of existing objects are always permitted.
-  `storeObject` (infallible) is used by internal operations where
-  `objectIndexBounded` is an established invariant precondition.
+- **Ghost bookkeeping** (since `v0.37.15`, WS-UC UC2): the object index,
+  the object-index set and the lifecycle type table are proof-only ghosts
+  (`SeLe4n.Erased`; fields `objectIndexGhost`, `objectIndexSetGhost`,
+  `LifecycleMetadata.objectTypesGhost`), so the compiled kernel stores none
+  of them and a carve builds none of their cells.  Their agreement with the
+  object table is `SystemState.bookkeepingAgrees` (the index lists exactly the
+  stored identifiers without duplicates, the set contains exactly them, the
+  type table is consistent); every compiled read that used to walk them reads
+  the object table instead (the capacity check, the PIP-chain fuel, the
+  information-flow index, the SGI and admission walks, `storeIsFresh`, the
+  store-locality kind checks), each proven independent of the table's
+  iteration order.
+- **Bound predicate**: `objectCountBounded st` asserts
+  `st.objects.size ≤ maxObjects` (defined in `Model/State.lean`); the ghost
+  index has the same length wherever the bookkeeping agrees
+  (`SystemState.bookkeepingAgrees.objectIndex_length`).
+- **Capacity enforcement**: the carve (`retypeFromUntyped`) and
+  `storeObjectChecked` (AC3-E) return `objectStoreCapacityExceeded` when a new
+  object would be inserted with `objects.size ≥ maxObjects`, before any write;
+  the carve with `objects.size = maxObjects − 1` succeeds
+  (`runObjectStoreCapacityBoundaryChecks`). In-place updates of existing
+  objects are always permitted. `storeObject` (infallible) is used by internal
+  operations where `objectCountBounded` is an established invariant
+  precondition.
   **Machine-checked (AF2-A)**: `storeObject_existing_preserves_objectIndex_length`
   proves in-place mutations preserve `objectIndex` length exactly;
   `retypeFromUntyped_capacity_gated` proves the allocation boundary gates
@@ -6735,10 +6750,10 @@ Every kernel object has a decidable well-formedness predicate:
   the replier's IPC buffer (`performFaultAnswerLong`, `faultReplyWordLong`;
   `faultReplyTransferChecked_inPlaceLong` and its donated and unheld forms,
   `replyRecvTransferOnCore_fault_blocks_inPlaceLong` and its donated and
-  unheld forms; `LongFaultAnswerInPlace.lean`).  Every in-place arm's
-  store guard (`storeLeavesIndexAndTypes`) also fails while the object-index
-  set or the type table sits at its resize load, once per doubling; WS-UC
-  UC2 retires both tables (the heap-capacity row of table C).  With the default layout the router hands the decoded arm
+  unheld forms; `LongFaultAnswerInPlace.lean`).  Since `v0.37.15` (WS-UC
+  UC2) every in-place arm's store guard (`storeLeavesIndexAndTypes`) asks
+  only that the key keep its kind (`storeKeepsKind`): the object-index set
+  and the type table are ghosts, so no resize load can fail it.  With the default layout the router hands the decoded arm
   nothing (`registerRoutedSyscall_viaDecode`); the arm stays for a layout
   whose registers lie out of bounds or which has no message register.
   An IPC buffer is found through its page (`validateIpcBufferAddress` looks
@@ -10791,7 +10806,7 @@ thread's effective priority is `max(SchedContext.priority, p)`.
 **Blocking graph**: `waitersOf` (all direct waiters, read from the
 reply-waiter queue), `blockingChain` (transitive upward walk).
 Acyclicity is a system-level invariant (`blockingAcyclic`); chain depth is
-bounded by `objectIndex.length`.
+bounded by `objects.size` (the object count; WS-UC UC2).
 
 **Reply-waiter queues** (since `v0.36.84`, WS-ZA ZA4.6): the threads blocked on
 a reply from a server form a queue linked through their TCBs, as seL4 links
@@ -10918,7 +10933,7 @@ parameter now classifies through `ownScId?`, and each reader is pinned to
 `SystemState.threadBasePriority` by theorem.
 
 **Bounded inversion**: Priority inversion is bounded by
-`objectIndex.length × WCRT(effectiveSchedParams)` ticks (parametric in WCRT).
+`objects.size × WCRT(effectiveSchedParams)` ticks (parametric in WCRT).
 
 ### 8.14 Bounded Latency Theorem
 The kernel's first machine-checked liveness property: a conditional worst-case

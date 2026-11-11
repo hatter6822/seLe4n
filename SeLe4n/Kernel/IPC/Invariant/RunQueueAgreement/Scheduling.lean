@@ -1071,7 +1071,7 @@ theorem applyPriorityChangeOnCore_runQueueEntryStage {st st' : SystemState}
       (determineTargetCore st tid))).trans
     ((markKeyChangeFor_runQueueStage _ tid (effectiveSchedParams st tcb)).trans
       (PriorityInheritance.repropagateFromWaiter_runQueueStage _ tid ec
-        st.objectIndex.length))).entry).trans
+        st.objects.size))).entry).trans
     (priorityRescheduleOnCore_runQueueEntryStage h)
 
 theorem setPriorityOnCore_runQueueEntryStage {st st' : SystemState}

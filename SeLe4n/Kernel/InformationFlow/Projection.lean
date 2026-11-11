@@ -714,10 +714,72 @@ def projectIrqSignalLines (ctx : LabelingContext) (observer : IfObserver) (st : 
     SeLe4n.Irq → Bool :=
   fun irq => objectObservable ctx observer (irqNodeId irq.toNat) && st.irqSignalLines.mem irq.toNat
 
-/-- WS-F3: Project object index, filtering to only observable object IDs. -/
-def projectObjectIndex (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
-    List SeLe4n.ObjId :=
-  st.objectIndex.filter (objectObservable ctx observer)
+/-- WS-UC UC2: object identifiers in ascending order — the one order a list of
+identifiers is shown in, so a view of a set of objects does not depend on the
+order something walked them in. -/
+def sortObjIds (l : List SeLe4n.ObjId) : List SeLe4n.ObjId :=
+  l.mergeSort fun a b => decide (a.toNat ≤ b.toNat)
+
+/-- WS-UC UC2: two lists of the same identifiers sort to the same list. -/
+theorem sortObjIds_eq_of_perm {l₁ l₂ : List SeLe4n.ObjId} (h : l₁.Perm l₂) :
+    sortObjIds l₁ = sortObjIds l₂ := by
+  have hTrans : ∀ a b c : SeLe4n.ObjId, decide (a.toNat ≤ b.toNat) = true →
+      decide (b.toNat ≤ c.toNat) = true → decide (a.toNat ≤ c.toNat) = true := by
+    intro a b c h₁ h₂; simp only [decide_eq_true_eq] at *; omega
+  have hTotal : ∀ a b : SeLe4n.ObjId,
+      (decide (a.toNat ≤ b.toNat) || decide (b.toNat ≤ a.toNat)) = true := by
+    intro a b; simp only [Bool.or_eq_true, decide_eq_true_eq]; omega
+  unfold sortObjIds
+  refine List.Perm.eq_of_pairwise (le := fun a b => decide (a.toNat ≤ b.toNat)) ?_
+    (List.pairwise_mergeSort hTrans hTotal _) (List.pairwise_mergeSort hTrans hTotal _)
+    ((List.mergeSort_perm _ _).trans (h.trans (List.mergeSort_perm _ _).symm))
+  intro a b _ _ h₁ h₂
+  simp only [decide_eq_true_eq] at h₁ h₂
+  exact SeLe4n.ObjId.ext (by simp only [SeLe4n.ObjId.toNat] at h₁ h₂; omega)
+
+/-- WS-UC UC2: sorting commutes with a filter — a filtered sorted list is the
+sort of the filtered list. -/
+theorem sortObjIds_filter (p : SeLe4n.ObjId → Bool) (l : List SeLe4n.ObjId) :
+    sortObjIds (l.filter p) = (sortObjIds l).filter p := by
+  have hTrans : ∀ a b c : SeLe4n.ObjId, decide (a.toNat ≤ b.toNat) = true →
+      decide (b.toNat ≤ c.toNat) = true → decide (a.toNat ≤ c.toNat) = true := by
+    intro a b c h₁ h₂; simp only [decide_eq_true_eq] at *; omega
+  have hTotal : ∀ a b : SeLe4n.ObjId,
+      (decide (a.toNat ≤ b.toNat) || decide (b.toNat ≤ a.toNat)) = true := by
+    intro a b; simp only [Bool.or_eq_true, decide_eq_true_eq]; omega
+  unfold sortObjIds
+  refine List.Perm.eq_of_pairwise (le := fun a b => decide (a.toNat ≤ b.toNat)) ?_
+    (List.pairwise_mergeSort hTrans hTotal _)
+    ((List.pairwise_mergeSort hTrans hTotal _).filter _)
+    ((List.mergeSort_perm _ _).trans ((List.mergeSort_perm _ _).filter p).symm)
+  intro a b _ _ h₁ h₂
+  simp only [decide_eq_true_eq] at h₁ h₂
+  exact SeLe4n.ObjId.ext (by simp only [SeLe4n.ObjId.toNat] at h₁ h₂; omega)
+
+/-- WS-F3: Project object index, filtering to only observable object IDs.
+WS-UC UC2: shown in ascending order (`sortObjIds`): the view is the set of
+observable objects, not the order they were created in.  It reads the ghost
+index; `projectObjectIndexByTable` is its executable form. -/
+noncomputable def projectObjectIndex (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) : List SeLe4n.ObjId :=
+  sortObjIds (st.objectIndex.filter (objectObservable ctx observer))
+
+/-- WS-UC UC2: `projectObjectIndex`, read off the object table's keys.  Equal to
+it wherever the bookkeeping agrees with the table
+(`projectObjectIndexByTable_eq`). -/
+def projectObjectIndexByTable (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) : List SeLe4n.ObjId :=
+  sortObjIds ((st.objects.toList.map Prod.fst).filter (objectObservable ctx observer))
+
+theorem projectObjectIndexByTable_eq (ctx : LabelingContext) (observer : IfObserver)
+    {st : SystemState} (hA : st.bookkeepingAgrees) (hInv : st.objects.invExt) :
+    projectObjectIndexByTable ctx observer st = projectObjectIndex ctx observer st := by
+  unfold projectObjectIndexByTable projectObjectIndex
+  apply sortObjIds_eq_of_perm
+  refine perm_of_nodup_of_mem_iff ((toList_keys_nodup _ hInv).filter _) (hA.nodup.filter _) ?_
+  intro a
+  simp only [List.mem_filter, mem_toList_keys_iff _ hInv, hA.index]
+  exact Iff.rfl
 
 /-- **A service registration carries the label of the endpoint it names.**  The
 registry is reached only through an endpoint: the register writes the

@@ -330,7 +330,7 @@ def endpointCallDispatchChainWriteSet
               (determineTargetCore st caller) (determineTargetCore st receiverTid) with
           | .error _ => []
           | .ok st'' =>
-              pipChainWriteSet st'' receiverTid executingCore st''.objectIndex.length
+              pipChainWriteSet st'' receiverTid executingCore st''.objects.size
         | _, _ => []
       | none => []
 

@@ -188,32 +188,23 @@ theorem transferFrame_cdtAddChild (s : SystemState) (p c : SlotRef) (op : Deriva
   obtain ⟨h, n⟩ := transferFrame_linkAddChild (s.modifyCdt (·.addEdge p c op)) p c hNo
   exact ⟨h.trans ⟨rfl, rfl, SystemState.objectsKeepFinds.refl s, fun _ => rfl⟩, n⟩
 
-/-- The VSpace-root test, read through `transferView`. -/
-@[inline] def notVSpaceRootView : Option KernelObject → Bool
-  | some (.vspaceRoot _) => false
-  | _ => true
-
-theorem notVSpaceRootView_map (v : Option KernelObject) :
-    (match v with | some (.vspaceRoot _) => false | _ => true) =
-      ((v.map transferView).map notVSpaceRootView).getD true := by
-  cases v with
-  | none => rfl
-  | some o => cases o <;> rfl
-
-theorem notVSpaceRootAt_of_transferFrame {s' s : SystemState} (h : transferFrame s' s)
-    (x : SeLe4n.ObjId) : notVSpaceRootAt s' x = notVSpaceRootAt s x := by
-  unfold notVSpaceRootAt
-  rw [SystemState.getObject?_eq_getElem, SystemState.getObject?_eq_getElem]
-  have a := notVSpaceRootView_map (s'.objects[x]?)
-  have b := notVSpaceRootView_map (s.objects[x]?)
-  rw [h.2.2.2 x] at a
-  exact a.trans b.symm
+/-- A transfer keeps the kind at every key: `transferView` erases a CNode and
+keeps every other object's kind (WS-UC UC2: the kind is what the store's
+check reads). -/
+theorem getObjectType?_of_transferFrame {s' s : SystemState} (h : transferFrame s' s)
+    (x : SeLe4n.ObjId) : s'.getObjectType? x = s.getObjectType? x := by
+  have hk : ∀ o : KernelObject,
+      (transferView o).elim KernelObjectType.cnode KernelObject.objectType = o.objectType := by
+    intro o; cases o <;> rfl
+  have e := congrArg (Option.map fun w => w.elim KernelObjectType.cnode KernelObject.objectType)
+    (h.2.2.2 x)
+  simp only [Option.map_map, Function.comp_def, hk] at e
+  exact e
 
 theorem transferFrame.leaves {s' s : SystemState} (h : transferFrame s' s) {id : SeLe4n.ObjId}
     {ty : KernelObjectType} (hl : storeLeavesIndexAndTypes s id ty = true) :
     storeLeavesIndexAndTypes s' id ty = true :=
-  storeLeavesIndexAndTypes_of_frame h.1 h.2.1
-    (fun x hx => (notVSpaceRootAt_of_transferFrame h x).trans hx) hl
+  storeLeavesIndexAndTypes_of_frame (getObjectType?_of_transferFrame h) hl
 
 /-- **A CNode store where the CNode lies** keeps the frame: a CNode is written
 in place, anything else is left alone. -/
@@ -419,9 +410,8 @@ theorem receiveGuard_of_transferFrame {s' s : SystemState} (h : transferFrame s'
   · unfold receiveBlocksInPlace at hG ⊢
     simp only [Bool.and_eq_true] at hG ⊢
     obtain ⟨⟨hEnq, hSt⟩, hRec⟩ := hG
-    have hV : ∀ x, notVSpaceRootAt s x = true → notVSpaceRootAt s' x = true :=
-      fun x hx => (notVSpaceRootAt_of_transferFrame h x).trans hx
-    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ h.1 h.2.1 h.2.2.1 hV ?_ hEnq, ?_⟩, ?_⟩
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ h.2.2.1 (getObjectType?_of_transferFrame h) ?_ hEnq,
+      ?_⟩, ?_⟩
     · intro p hp
       have e := h.getTcb? p
       revert hp e
@@ -454,25 +444,19 @@ theorem receiveGuard_of_transferFrame {s' s : SystemState} (h : transferFrame s'
 
 /-! ### The guard, read before any write -/
 
-/-- `cnodeStoreInPlace` read through `getCNode?`, the index and the lifecycle. -/
-theorem cnodeStoreInPlace_eq_getCNode? (s : SystemState) (id : SeLe4n.ObjId) :
-    cnodeStoreInPlace s id = (match s.getCNode? id with
-      | some _ => s.objectIndexSet.table.holds id () && s.lifecycle.objectTypes.holds id .cnode
-      | none => true) := by
-  unfold cnodeStoreInPlace storeLeavesIndexAndTypes
+/-- WS-UC UC2: **the CNode-store test passes on every state**: a CNode stored
+at `id` keeps its kind, which is all the store's check reads. -/
+theorem cnodeStoreInPlace_eq_true (s : SystemState) (id : SeLe4n.ObjId) :
+    cnodeStoreInPlace s id = true := by
+  unfold cnodeStoreInPlace
   cases h : s.getCNode? id with
   | none => rfl
   | some cn =>
     have hO : s.objects[id]? = some (.cnode cn) := by
       unfold SystemState.getCNode? at h; split at h <;> simp_all
-    simp only [hO, Bool.and_true]
+    unfold storeLeavesIndexAndTypes storeKeepsKind
+    rw [hO]
     rfl
-
-/-- The CNode-store test is the same on states agreeing on CNodes, the index and the lifecycle. -/
-theorem cnodeStoreInPlace_congr {S st : SystemState} (hC : ∀ id, S.getCNode? id = st.getCNode? id)
-    (hI : S.objectIndexSet = st.objectIndexSet) (hL : S.lifecycle = st.lifecycle)
-    (id : SeLe4n.ObjId) : cnodeStoreInPlace S id = cnodeStoreInPlace st id := by
-  rw [cnodeStoreInPlace_eq_getCNode?, cnodeStoreInPlace_eq_getCNode?, hC, hI, hL]
 
 /-- **The reply transfer's stores lie where their CNodes are**, read on the
 pre-state `st` over the words the transfer reads (`capTransferK`): it has no
@@ -492,10 +476,10 @@ lifecycle, the transfer the reply leg runs (no endpoint, the request and the
 receive side read on `st`) leaves a state in `transferFrame` of `S`, when
 `replyTransferStoresInPlace` holds on `st`. -/
 theorem receiveTransferCaps_reply_transferFrame {S st : SystemState}
-    (hAg : ipcBufferReadsAgree S st) (hI : S.objectIndexSet = st.objectIndexSet)
-    (hL : S.lifecycle = st.lifecycle) (hNo : S.objects.noResizeDue) (ep : SeLe4n.ObjId)
+    (hAg : ipcBufferReadsAgree S st) (_hI : S.objectIndexSet = st.objectIndexSet)
+    (_hL : S.lifecycle = st.lifecycle) (hNo : S.objects.noResizeDue) (ep : SeLe4n.ObjId)
     (stcb rt : TCB) (count : Nat)
-    (hG : replyTransferStoresInPlace st ep stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count
+    (_hG : replyTransferStoresInPlace st ep stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count
       rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot = true)
     {s : CapTransferSummary} {S' : SystemState}
     (hT : receiveTransferCaps (frameCapRequestOf st stcb count) none (capTargetOf st rt) S =
@@ -505,18 +489,11 @@ theorem receiveTransferCaps_reply_transferFrame {S st : SystemState}
   have hK := capTransferK_eq_at S ep false stcb count rt (fun _ Y => Y)
   simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte, hT] at hK
   rw [capTransferK_eq_words, capTransferWords_congr hAg] at hK
-  unfold replyTransferStoresInPlace at hG
-  rw [capTransferK_eq_words] at hG
   generalize capTransferWords st ep stcb.vspaceRoot stcb.ipcBuffer stcb.cspaceRoot count
-    rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot = w at hK hG
-  dsimp only at hK hG
+    rt.vspaceRoot rt.ipcBuffer rt.cspaceRoot = w at hK
+  dsimp only at hK
   rw [← hK]
-  have hC := cnodeStoreInPlace_congr (S := S) (st := st) hAg.getCNode? hI hL
-  refine transferFrame_capStepsApply_noUnwrap _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ S hNo
-    (fun hf hn => ?_)
-  rw [hf] at hG
-  have hn' : (w.n == 0) = false := by simpa using hn
-  simp only [Bool.not_true, Bool.false_or, hn', Bool.and_eq_true] at hG
-  exact ⟨(hC _).trans hG.1, (hC _).trans hG.2⟩
+  exact transferFrame_capStepsApply_noUnwrap _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ S hNo
+    (fun _ _ => ⟨cnodeStoreInPlace_eq_true _ _, cnodeStoreInPlace_eq_true _ _⟩)
 
 end SeLe4n.Kernel

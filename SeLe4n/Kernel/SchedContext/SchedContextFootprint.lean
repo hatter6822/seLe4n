@@ -108,7 +108,7 @@ def schedContextConfigureWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) :
     List CoreId :=
   schedContextWriteSet st scObjId ++
     match SchedContextOps.schedContextBoundThread? st scObjId with
-    | some tid => waiterChainWriteSet st tid (determineTargetCore st tid) st.objectIndex.length
+    | some tid => waiterChainWriteSet st tid (determineTargetCore st tid) st.objects.size
     | none => []
 
 -- ============================================================================

@@ -404,7 +404,7 @@ run_check "INVARIANT" rg -n '^@\[inline\] def Endpoint\.receiveQ \(e : Endpoint\
 # metadata is the object-type table alone and its invariant is
 # `objectTypeMetadataConsistent`; the bundle-of-two `lifecycleMetadataConsistent`
 # and the table it bundled are retired (see the v0.35.78 block below).
-run_check "INVARIANT" rg -U -n '^structure LifecycleMetadata where\n  objectTypes : RHTable SeLe4n\.ObjId KernelObjectType\n$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -U -n '^structure LifecycleMetadata where\n( *\n)*  objectTypesGhost : SeLe4n\.Erased \(RHTable SeLe4n\.ObjId KernelObjectType\)\n$' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^def objectTypeMetadataConsistent($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^def cspaceRevoke($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevoke_local_target_reduction($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
@@ -610,7 +610,9 @@ run_check "INVARIANT" rg -n '^def projectKernelObject($|[ ({:\[\]])' SeLe4n/Kern
 run_check "INVARIANT" rg -n '^def capTargetObservable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def projectActiveDomain($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def projectIrqSignalLines($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^def projectObjectIndex($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^noncomputable def projectObjectIndex($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def projectObjectIndexByTable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectObjectIndexByTable_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^\s*activeDomain' SeLe4n/Kernel/InformationFlow/Projection.lean
 # CNode slot filtering safety theorems (F-22):
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_idempotent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
@@ -3341,7 +3343,7 @@ run_negative_check "INVARIANT" rg -n 'objects\.insert' SeLe4n/Kernel/SchedContex
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate \(stStored : SystemState\)\n    \(scId : SeLe4n\.SchedContextId\)\n    \(boundTid : SeLe4n\.ThreadId\) \(boundTcb : TCB\)\n    \(hBound : stStored\.getTcb\? boundTid = some boundTcb\)\n    \(priority domain : Nat\) : SystemState :=" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*        stStored\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb boundTcb2\)\n          \(SystemState\.rewriteAdmissible_tcb hBound boundTcb2\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*  match stProp\.getTcbWitnessed\? boundTid with\n  \| some ⟨currentTcb, hCurrent⟩ =>\n    if currentTcb\.domain\.val = domain ∨\n       ¬ schedContextConfigurePropagates boundTcb scId then stProp\n    else(\n([ \t][^\n]*)?)*      stProp\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb currentTcb2\)\n        \(SystemState\.rewriteAdmissible_tcb hCurrent currentTcb2\)\n  \| none => stProp$" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*              match stStored\.getTcbWitnessed\? boundTid with\n              \| some ⟨boundTcb, hBound⟩ =>\n( *\n)*                let preKey := effectiveSchedParams st boundTcb\n                \.ok \(\(\), configureResumeBound \(PriorityInheritance\.repropagateFromWaiter\n                  \(markKeyChangeFor \(markCandidacyGainFor\n                    \(schedContextConfigureBoundPropagate stStored scIdTyped\n                      boundTid boundTcb hBound priority domain\) boundTid\n                    \(hasSufficientBudget st boundTcb\)\) boundTid preKey\) boundTid\n                  \(determineTargetCore st boundTid\) st\.objectIndex\.length\)\n                  boundTid updated\)" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*              match stStored\.getTcbWitnessed\? boundTid with\n              \| some ⟨boundTcb, hBound⟩ =>\n( *\n)*                let preKey := effectiveSchedParams st boundTcb\n                \.ok \(\(\), configureResumeBound \(PriorityInheritance\.repropagateFromWaiter\n                  \(markKeyChangeFor \(markCandidacyGainFor\n                    \(schedContextConfigureBoundPropagate stStored scIdTyped\n                      boundTid boundTcb hBound priority domain\) boundTid\n                    \(hasSufficientBudget st boundTcb\)\) boundTid preKey\) boundTid\n                  \(determineTargetCore st boundTid\) st\.objects\.size\)\n                  boundTid updated\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 # NEGATIVE: the propagation must not resolve the bound thread bare again, and
 # the domain write must not swallow its condition (a rewrite that runs on
 # every configure re-inserts an unchanged record).
@@ -3617,7 +3619,7 @@ run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Concurrency\.Locks\.Dynam
 # kept beside their replacements -- and must not come back.  The store's
 # lifecycle write is the object-type insert alone, and the metadata is the
 # object-type table alone.
-run_check "INVARIANT" rg -U -n '^        lifecycle := \{\n          objectTypes := st\.lifecycle\.objectTypes\.insert id obj\.objectType\n        \}$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -U -n '^        lifecycle :=\n          if storeKeepsKind st id obj\.objectType then st\.lifecycle\n          else \{ objectTypesGhost :=\n            SeLe4n\.Erased\.mk \(st\.lifecycle\.objectTypes\.insert id obj\.objectType\) \}$' SeLe4n/Model/State.lean
 run_negative_check "INVARIANT" rg -n 'capabilityRefs' SeLe4n/Model/State.lean SeLe4n/Model/FrozenState.lean SeLe4n/Model/FreezeProofs.lean SeLe4n/Testing/StateBuilder.lean SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n 'lookupCapabilityRefMeta|capabilityRefMetadataConsistent|lifecycleMetadataConsistent' SeLe4n tests
 run_negative_check "INVARIANT" rg -n '\bstoreCapabilityRef\b|revokeAndClearRefsState' SeLe4n tests
@@ -5187,7 +5189,7 @@ run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_ipcReacha
 run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  \(!passiveKindAt st x \|\| passiveObjectRetirable st x\) &&\n    \(!schedulingKindAt st x \|\| schedulingObjectRetirable st x\)' SeLe4n/Kernel/Capability/FinalRetire.lean
 # The passive erase runs through the registered erase primitives (no raw
 # object-table write of its own), and its record form is a theorem.
-run_check "INVARIANT" rg -n -U 'def eraseRetiredObject \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  if erasableKindAt st x then\n    withObjectTypeErased \(withObjectIndexSetErased \(withObjectUnindexed \(withObjectErased st x\) x\) x\) x\n  else st' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def eraseRetiredObject \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  if erasableKindAt st x then\n    withObjectErased st x\n  else st' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_eq ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_negative_check "INVARIANT" rg -n 'eraseRetiredObjectImpl|eraseRetiredObject_eq_impl' SeLe4n
 # The final-delete retire keeps what other objects name, and the reachable state.
@@ -12409,8 +12411,8 @@ run_check "INVARIANT" rg -n '^def objectBudgetRespected($|[ ({:\[\]])' SeLe4n/Pl
 # the moment a sixth conjunct followed it in `wellFormed`.  The conjunct-list
 # pairing is the stable form and is what round 19 made canonical.
 run_check "INVARIANT" rg -nF '(objectBudgetRespected config, objectBudgetBootError)' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_objectIndexBounded($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_objectCountBounded($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_objectCountBounded($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem foldl_storeIdleThread_objectIndex_length_le($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # PR #889 review round 17: the boot entry's contract moved off Lean source
 # text and onto the elaborated environment.  The fail-closed wrapper makes the

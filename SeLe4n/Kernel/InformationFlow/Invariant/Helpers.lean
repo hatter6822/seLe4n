@@ -45,8 +45,8 @@ private theorem storeObject_preserves_projectObjectIndex
     (hOidHigh : objectObservable ctx observer oid = false)
     (hStore : storeObject oid obj st = .ok ((), st')) :
     projectObjectIndex ctx observer st' = projectObjectIndex ctx observer st := by
-  unfold storeObject at hStore; cases hStore
   simp only [projectObjectIndex]
+  rw [storeObject_objectIndex hStore]
   split
   · rfl
   · rw [List.filter_cons]; simp [hOidHigh]
@@ -757,7 +757,7 @@ theorem storeObject_projectionStable_preserves_projection
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj old : KernelObject)
     (hPrev : st.objects[oid]? = some old)
     (hProj : projectKernelObject ctx observer obj = projectKernelObject ctx observer old)
-    (hIdxContains : st.objectIndexSet.contains oid = true)
+    (_hIdxContains : st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject oid obj st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -777,8 +777,9 @@ theorem storeObject_projectionStable_preserves_projection
   · simp [projectCurrent, storeObject_scheduler_eq st st' oid _ hStore]
   · simp [projectActiveDomain, storeObject_scheduler_eq st st' oid _ hStore]
   · funext irq; simp only [projectIrqSignalLines, storeObject_irqSignalLines_eq st st' oid _ hStore]
-  · unfold storeObject at hStore; cases hStore
-    simp only [projectObjectIndex, hIdxContains, if_true]
+  · simp only [projectObjectIndex]
+    rw [storeObject_objectIndex hStore, hPrev]
+    rfl
   · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st st' oid _ hStore]
   · simp [projectDomainSchedule, storeObject_scheduler_eq st st' oid _ hStore]
   · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st st' oid _ hStore]
@@ -1503,13 +1504,8 @@ theorem cspaceRevoke_preserves_lowEquivalent
   · -- objectIndex
     simp only [projectObjectIndex]
     have hIdx := congrArg ObservableState.objectIndex hLow
-    -- Both sides: if objectIndexSet.contains addr.cnode then idx else addr.cnode :: idx
-    -- Since hCNodeHigh filters addr.cnode out, prepending it is invisible
-    split <;> split
-    · exact hIdx
-    · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
-    · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
-    · rw [List.filter_cons, List.filter_cons]; simp [hCNodeHigh]; exact hIdx
+    -- The CNode is stored on both sides, so the store leaves each index as it is
+    exact hIdx
   · -- domainTimeRemaining
     simp only [projectDomainTimeRemaining]
     exact congrArg ObservableState.domainTimeRemaining hLow

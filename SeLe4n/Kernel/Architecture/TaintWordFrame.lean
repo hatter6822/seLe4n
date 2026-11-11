@@ -739,7 +739,7 @@ theorem crossSubsystemInvariant_of_objectsAgreeOffTaint
     fun tid t hT scId hb => ?_, fun t1 t2 a b scId h1 h2 hb1 hb2 => ?_,
     fun tid hr t hT scId hb => ?_,
     PriorityInheritance.blockingAcyclic_frame st _ d8
-      (blockingServer_of_objectsAgreeOffTaint hA) rfl,
+      (blockingServer_of_objectsAgreeOffTaint hA) hS,
     fun oid o hO => ?_, fun o1 o2 u1 u2 a b => d10 o1 o2 u1 u2
       ((objectsAgreeOffTaint.inert_iff hA _ rfl).mp a)
       ((objectsAgreeOffTaint.inert_iff hA _ rfl).mp b)⟩

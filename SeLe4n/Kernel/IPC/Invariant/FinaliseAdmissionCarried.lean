@@ -148,12 +148,11 @@ theorem CancelReadsKept.of_pointwise {s s' : SystemState}
     · rw [h]
     · rw [h1, h2]; rfl
     · rw [h1, h2]
-  · unfold storeLeavesIndexAndTypes
-    rw [hI, hL]
+  · unfold storeLeavesIndexAndTypes storeKeepsKind
     rcases hP id with h | ⟨t, b, h1, h2⟩ | ⟨m, m', h1, h2⟩
     · rw [h]
-    · rw [h1, h2]
-    · rw [h1, h2]
+    · rw [h1, h2]; rfl
+    · rw [h1, h2]; rfl
 
 /-- **The notification unbind keeps the cancel's reads** (`CancelReadsKept`): it
 writes the thread's bound-notification code in place (its admission finds the

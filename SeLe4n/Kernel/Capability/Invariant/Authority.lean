@@ -73,17 +73,7 @@ theorem cspaceRevoke_local_target_reduction
       | cnode cn =>
           let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
           let storedState : SystemState :=
-            { st with
-              objects := st.objects.insert addr.cnode revokedObj,
-              objectIndex :=
-                if st.objectIndexSet.contains addr.cnode then st.objectIndex else addr.cnode :: st.objectIndex,
-              objectIndexSet := st.objectIndexSet.insert addr.cnode,
-              lifecycle :=
-                {
-                  st.lifecycle with
-                    objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
-                }
-            }
+            { st with objects := st.objects.insert addr.cnode revokedObj }
           -- The revoke IS the store of the filtered CNode; `storedState` spells its
           -- post-state with the displaced-CNode lookup (`hObj`) already resolved.
           cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
@@ -230,17 +220,7 @@ theorem cspaceRevoke_preserves_source
               have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
               let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
               let storedState : SystemState :=
-                { st with
-                  objects := st.objects.insert addr.cnode revokedObj,
-                  objectIndex :=
-                    if st.objectIndexSet.contains addr.cnode then st.objectIndex else addr.cnode :: st.objectIndex,
-                  objectIndexSet := st.objectIndexSet.insert addr.cnode,
-                  lifecycle :=
-                    {
-                      st.lifecycle with
-                        objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
-                    }
-                }
+                { st with objects := st.objects.insert addr.cnode revokedObj }
               -- The revoke IS the store of the filtered CNode; see the first site.
               cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
               | error e => simp [hLookup, hObj, hStore] at hStep

@@ -5713,7 +5713,7 @@ def endpointReceiveHandoffChainWriteSet (st : SystemState) (endpointId : SeLe4n.
     | .ok stDon =>
       if rendezvousDequeuedCall st1 dequeued then
         pipChainWriteSet stDon receiver executingCore
-          stDon.objectIndex.length
+          stDon.objects.size
       else []
 
 def schedLockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)

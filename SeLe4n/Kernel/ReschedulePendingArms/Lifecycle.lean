@@ -325,7 +325,7 @@ theorem suspendThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Val
       rw [hB] at hStep
       dsimp only at hStep
       have hc := propagatePipChainCrossCore_stepCovers e e
-        (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objectIndex.length _ srv h1Inv
+        (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb).objects.size _ srv h1Inv
       replace h1 := stepCovers_trans h1 hc.1
       replace h1Inv := hc.2
       clear hc

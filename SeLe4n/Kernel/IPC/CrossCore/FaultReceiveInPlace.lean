@@ -331,7 +331,8 @@ theorem receiveCallTake_inPlace_facts (st : SystemState) (endpointId : SeLe4n.Ob
   have hL3 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes S3 id ty = true := fun h => by
     rw [← hS3']
-    exact storeLeavesIndexAndTypes_insert_inPlace hFQ2 (fun _ e => by cases e) (hL2 h)
+    exact storeLeavesIndexAndTypes_insert_inPlace hFQ2
+      (fun o e => by rw [hO2q] at e; cases e; rfl) (hL2 h)
   have hOk3 : ∀ k o, (∀ t, o ≠ .tcb t) → (∀ e, o ≠ .endpoint e) → k ≠ rid.toObjId →
       st.objects[k]? = some o → S3.objects[k]? = some o :=
     fun k o hnt hne hq hk => (hO3 k (Ne.symm hq)).trans (hOk2 k o hnt hne hq hk)
@@ -417,8 +418,7 @@ theorem receiveCallTake_inPlace_facts (st : SystemState) (endpointId : SeLe4n.Ob
     (updateTcb_get?_ne_of_findsInPlace _ hT4r hFR4 hNeRQ).trans
       ((updateTcb_get?_ne_of_findsInPlace _ hT3s hFS3 hNeSQ).trans hS3q)
   refine ⟨?_, ?_, ?_, ?_, fun k => (linkReplyWaiter_keepsFinds _ s receiver k).trans (hK5 k),
-    fun h => storeLeaves_of_agree (by simp only [SystemState.linkReplyWaiter_objectIndexSet])
-      (by simp only [SystemState.linkReplyWaiter_lifecycle]) hA (hL5 h),
+    fun h => storeLeaves_of_agree hA (hL5 h),
     fun k o hnt hne hq hk => hA.get_of_not_tcb hnt (hOk5 k o hnt hne hq hk),
     fun rp' hrp' => ?_, ?_, ?_, ?_⟩
   · unfold SystemState.linkCallerReply SystemState.linkReply

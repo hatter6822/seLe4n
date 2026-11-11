@@ -204,20 +204,19 @@ of its link code. -/
   rw [sendWakesInPlaceCode_eq, queueSuccessorDiffers_eq, TCB.ofOptCode_queueNextCode]
   rfl
 
-/-- The send rendezvous's in-place guard carries over to a state with the same
-index and lifecycle, every key found where it was, no new VSpace root and every
+/-- The send rendezvous's in-place guard carries over to a state with every key
+found where it was, every key holding an object of the same kind and every
 thread still a thread. -/
 theorem sendWakesInPlace_of_frame {s s' : SystemState} (epId : SeLe4n.ObjId)
     (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
-    (hI : s'.objectIndexSet = s.objectIndexSet) (hL : s'.lifecycle = s.lifecycle)
     (hK : s'.objectsKeepFinds s)
-    (hV : ∀ x, notVSpaceRootAt s x = true → notVSpaceRootAt s' x = true)
+    (hV : ∀ x, s'.getObjectType? x = s.getObjectType? x)
     (hTcb : ∀ p : SeLe4n.ThreadId, (s.getTcb? p).isSome = true → (s'.getTcb? p).isSome = true)
     (h : sendWakesInPlace s epId head next = true) :
     sendWakesInPlace s' epId head next = true := by
   have hS : ∀ {id ty}, storeLeavesIndexAndTypes s id ty = true →
       storeLeavesIndexAndTypes s' id ty = true :=
-    fun h => storeLeavesIndexAndTypes_of_frame hI hL hV h
+    fun h => storeLeavesIndexAndTypes_of_frame hV h
   unfold sendWakesInPlace at h ⊢
   simp only [Bool.and_eq_true] at h ⊢
   obtain ⟨⟨⟨⟨⟨a1, a2⟩, a3⟩, a4⟩, a5⟩, a6⟩ := h
@@ -317,8 +316,6 @@ theorem popDonationSettled_callDonationGuard (st : SystemState) (c tid : SeLe4n.
   generalize hS1 : storeReplyRendezvousReady st c tid rid = S1 at hKS hP
   have hAg := fun x hx hy => hS1 ▸ storeReplyRendezvousReady_agree st c tid rid ct hNo hTc hFC x hx hy
   have hNo1 : S1.objects.noResizeDue := hS1 ▸ storeReplyRendezvousReady_noResizeDue st c tid rid hNo
-  obtain ⟨hI, hL⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
-  rw [hS1] at hI hL
   have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
   obtain ⟨tc1, htc1, hc1⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
   have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
@@ -336,8 +333,6 @@ theorem popDonationSettled_callDonationGuard (st : SystemState) (c tid : SeLe4n.
   have hTR : T.objects[rid.toObjId]? = some (.reply rp.consumed) := by rw [hHold _ hRc]; exact hR1
   have hKT : T.objectsKeepFinds st := by
     rw [← hTdef]; exact (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
-  have hIT : T.objectIndexSet = st.objectIndexSet := by rw [← hTdef]; exact hI
-  have hLT : T.lifecycle = st.lifecycle := by rw [← hTdef]; exact hL
   -- the pop
   have hScT : T.getSchedContext? scId = some sc := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
     (agreeAt_of_not_tcb (hView _ hSc' hSr) (fun _ e => by cases e) hScO)
@@ -384,16 +379,15 @@ theorem popDonationSettled_callDonationGuard (st : SystemState) (c tid : SeLe4n.
         reduceCtorEq, KernelObject.schedContext.injEq] at e
       exact ⟨_, rfl, e⟩
   -- the frame of the whole reply leg
-  have hIP : P.objectIndexSet = st.objectIndexSet := hF.1.trans hIT
-  have hLP : P.lifecycle = st.lifecycle := hF.2.1.trans hLT
   have hKP : P.objectsKeepFinds st := hF.2.2.1.trans hKT
-  have hV : ∀ x, notVSpaceRootAt st x = true → notVSpaceRootAt P x = true := by
-    intro x hx
+  have hV : ∀ x, P.getObjectType? x = st.getObjectType? x := by
+    intro x
     by_cases hxc : x = c.toObjId
-    · subst hxc; unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, hPC]
+    · subst hxc; unfold SystemState.getObjectType?
+      rw [hPC, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc]; rfl
     · by_cases hxr : x = rid.toObjId
-      · subst hxr; unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, hPr']
-      · rw [notVSpaceRootAt_of_popAgree (hComb x hxc hxr)]; exact hx
+      · subst hxr; unfold SystemState.getObjectType?; rw [hPr', hRp]; rfl
+      · exact getObjectType?_of_popAgree (hComb x hxc hxr)
   have hTcbP : ∀ p : SeLe4n.ThreadId, (st.getTcb? p).isSome = true →
       (P.getTcb? p).isSome = true := by
     intro p hp
@@ -407,7 +401,7 @@ theorem popDonationSettled_callDonationGuard (st : SystemState) (c tid : SeLe4n.
       · exact getTcb?_isSome_of_popAgree (hComb _ hpc hpr) hp
   have hSL : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes P id ty = true :=
-    fun h => storeLeavesIndexAndTypes_of_frame hIP hLP hV h
+    fun h => storeLeavesIndexAndTypes_of_frame hV h
   -- the queued caller, as it was
   have hw : sTcb1.sendCapWords = sTcb.sendCapWords := by
     have k := hKS s.toObjId
@@ -451,7 +445,7 @@ theorem popDonationSettled_callDonationGuard (st : SystemState) (c tid : SeLe4n.
     have := congrArg SchedContext.scReply ekP
     exact this
   have hRO' : sTcb1.replyObject = sTcb.replyObject := by simp only [TCB.replyObject, hROc]
-  have hSWP := sendWakesInPlace_of_frame epId s sTcb.queueNext hIP hLP hKP hV hTcbP hSW
+  have hSWP := sendWakesInPlace_of_frame epId s sTcb.queueNext hKP hV hTcbP hSW
   have hLRtP := hSL hLRt
   have hFRtP := (hKP _).trans hFRt
   have hLRP := hSL hLR

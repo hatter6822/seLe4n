@@ -1319,7 +1319,7 @@ def receiveLegPipHandoffWriteSet (st : SystemState)
     List CoreId :=
   if alreadyWalked == receiver then []
   else if rendezvousDequeuedCall st dequeued then
-    pipChainWriteSet st receiver executingCore st.objectIndex.length
+    pipChainWriteSet st receiver executingCore st.objects.size
   else []
 
 /-- WS-OD OD3.14: a **non-delegated** reply changes nothing — the arm's earlier
