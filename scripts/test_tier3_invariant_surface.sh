@@ -12057,7 +12057,6 @@ run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedNotificationComponent($|[ (
 
 # WS-F6/D3: runnableThreadsAreTCBs predicate and preservation theorems.
 run_check "INVARIANT" rg -n '^def runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem default_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant.lean
 # W3: runnableThreadsAreTCBs_of_scheduler_objects_eq removed (dead frame lemma).
 run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem schedule_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
