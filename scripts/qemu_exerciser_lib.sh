@@ -783,6 +783,18 @@ for driver in drivers:
             "overflowed-page-table-unmap", "overflowed-audit-read", "overflowed-audit-drain",
             "overflowed-service-register", "overflowed-untyped-reset", "overflowed-declassify",
             "long-declassify-signal", "overflowed-untyped-retype",
+            # Every invocation with a truncation minimum, one word short of
+            # its arguments: refused TruncatedMessage before any argument read.
+            "cspace-mint-short", "cspace-copy-short", "cspace-move-short",
+            "cspace-delete-short", "cspace-revoke-short", "mint-reply-cap-short",
+            "untyped-retype-short", "vspace-map-short", "vspace-unmap-short",
+            "vspace-unify-instruction-short", "page-table-map-short",
+            "sched-context-configure-short", "sched-context-bind-short",
+            "tcb-bind-notification-short", "tcb-set-priority-short",
+            "tcb-set-mc-priority-short", "tcb-set-ipc-buffer-short",
+            "tcb-set-affinity-short", "tcb-set-fault-handler-short", "tcb-set-space-short",
+            "irq-control-get-short", "irq-handler-set-notification-short",
+            "audit-drain-short", "audit-read-short",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

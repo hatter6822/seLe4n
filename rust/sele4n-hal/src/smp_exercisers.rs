@@ -3282,7 +3282,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             VSPACE_CAP,
             1,
         ),
-        truncated("page-table-map-short", PAGE_TABLE_MAP, VSPACE_CAP, 1),
+        truncated(
+            "page-table-map-short",
+            PAGE_TABLE_MAP,
+            PAGE_TABLE_CAPS[0],
+            1,
+        ),
         truncated(
             "sched-context-bind-short",
             SCHED_CONTEXT_BIND,
@@ -11420,6 +11425,13 @@ const fn receive_phase_cap_fault(name: &'static str, syscall: u64, cptr: u64) ->
     }
 }
 
+/// The slot the write-only endpoint capability takes for the receive-phase
+/// fault without the right: the empty slot, filled for that one fault and
+/// emptied after (the no-grant slot holds the fault handler's endpoint here,
+/// `FAULT_HANDLER_SLOT`).
+#[cfg(feature = "hw_target")]
+const RECEIVE_NO_RIGHT_SLOT: u64 = EMPTY_SLOT;
+
 /// **The receive phase's capability faults** (seL4's `handleRecv`): a
 /// receive, a wait and a reply-receive whose capability resolves but is not an
 /// endpoint or notification, and a receive on an endpoint capability without
@@ -11433,13 +11445,13 @@ fn receive_phase_cap_faults(which: &str) -> bool {
         "receive-no-right-mint",
         CSPACE_MINT,
         CNODE_CAP,
-        [ENDPOINT_SLOT, NO_GRANT_ENDPOINT_SLOT, WRITE_ONLY_RIGHTS, 0],
+        [ENDPOINT_SLOT, RECEIVE_NO_RIGHT_SLOT, WRITE_ONLY_RIGHTS, 0],
     );
     let delete_no_receive = invocation(
         "receive-no-right-delete",
         CSPACE_DELETE,
         CNODE_CAP,
-        [NO_GRANT_ENDPOINT_SLOT, 0, 0, 0],
+        [RECEIVE_NO_RIGHT_SLOT, 0, 0, 0],
     );
     queued_overflow_cap_fault(
         &receive_phase_cap_fault("receive-wrong-type-cap-fault", RECEIVE, CNODE_CAP),
@@ -11458,7 +11470,11 @@ fn receive_phase_cap_faults(which: &str) -> bool {
         which,
     ) && heap_allocations_round_trip(&mint_no_receive, which) == Some(true)
         && queued_overflow_cap_fault(
-            &receive_phase_cap_fault("receive-no-right-cap-fault", RECEIVE, NO_GRANT_ENDPOINT_CAP),
+            &receive_phase_cap_fault(
+                "receive-no-right-cap-fault",
+                RECEIVE,
+                cap_address(RECEIVE_NO_RIGHT_SLOT),
+            ),
             "receive-receive-no-right-cap-fault",
             "reply-receive-no-right-cap-fault",
             which,
@@ -11643,6 +11659,16 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     crate::kprintln!(
         "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: entered, a thread restored"
     );
+    // A syscall trap is routed by the kernel's router as a round trip is:
+    // its words go to the route coverage, the trapping thread answered by
+    // no return (a capability fault blocks it on its handler).
+    if trip.esr == ROUND_TRIP_ESR {
+        crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed x7={:#x} x1={:#x} answered blocked",
+            trip.x7,
+            trip.x1
+        );
+    }
     if after < before {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the counter went back ({before} -> {after})"
