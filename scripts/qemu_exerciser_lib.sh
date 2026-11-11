@@ -810,6 +810,9 @@ for driver in drivers:
             "tcb-set-affinity-short", "tcb-set-fault-handler-short", "tcb-set-space-short",
             "irq-control-get-short", "irq-handler-set-notification-short",
             "audit-drain-short", "audit-read-short",
+            # WS-UC UC4: a carved CNode copied out of, revoked and retired.
+            "untyped-retype-owned-cnode", "owned-cnode-copy", "owned-cnode-revoke",
+            "owned-cnode-delete", "owned-cnode-untyped-reset",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
@@ -988,6 +991,32 @@ for driver in drivers:
                 failures.append(f"heap-allocations-per-syscall: the retype can carve {kind}, and no pinned scenario carves it in both runs")
             elif not deleted_by:
                 failures.append(f"heap-allocations-per-syscall: no pinned scenario deletes a carved {kind}'s capability before its carve runs again")
+
+        # WS-UC UC4: a carve owns its cells, and its retire returns them.  The
+        # owned-CNode window runs a CNode's carve, a copy of its capability,
+        # the copy's revoke and the carved capability's delete, and reads this
+        # core's allocations and frees across all four: once in each run, the
+        # cells allocated and the cells freed are each the CNode's carve pin.
+        # A cell the carve shares with another object, or one the retire
+        # leaves behind or takes from another object, moves the frees off it.
+        owned_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: owned-cnode-retire: core 0( \(first call\))?: allocated (\d+) freed (\d+)$")
+        owned = [m for m in (owned_re.fullmatch(line) for line in lines) if m]
+        owned_cnode = [carved.get(("untyped-retype-owned-cnode", first)) for first in (True, False)]
+        if owned_cnode[0] is None or owned_cnode[0] != owned_cnode[1] or owned_cnode[0] not in carve_cells:
+            failures.append(f"heap-allocations-per-syscall: owned-cnode-retire: the carve named {owned_cnode}, not one pinned CNode kind in both runs")
+        elif not owned_cnode[0].startswith("cnode/"):
+            failures.append(f"heap-allocations-per-syscall: owned-cnode-retire: the carve made {owned_cnode[0]}, not a CNode")
+        else:
+            owned_pin = carve_cells[owned_cnode[0]][0]
+            for first in (True, False):
+                window = [m for m in owned if (m.group(1) is not None) == first]
+                which = "first call" if first else "steady state"
+                if len(window) != 1:
+                    failures.append(f"heap-allocations-per-syscall: owned-cnode-retire ({which}): expected one window, found {len(window)}")
+                    continue
+                allocated, freed = int(window[0].group(2)), int(window[0].group(3))
+                if allocated != owned_pin or freed != owned_pin:
+                    failures.append(f"heap-allocations-per-syscall: owned-cnode-retire ({which}): allocated {allocated} and freed {freed}, the CNode's carve pin is {owned_pin}: {window[0].group(0)!r}")
 
         # WS-ZA ZA6.1: each core's first entry, its bring-up reschedule, read
         # once per core (the boot core's after boot, each secondary's as it

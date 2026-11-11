@@ -296,6 +296,11 @@ pub struct HeapStats {
     /// were, where the size record holds only the latest
     /// [`RECORDED_ALLOCATIONS`].
     pub allocated_bytes_by_core: [u64; HEAP_COUNTED_CORES],
+    /// Frees since the heap was taken into service, per freeing core: a small
+    /// object or a whole run each — monotone, so a reading taken before and
+    /// after some code counts the cells it returned, the measure of a retire
+    /// against the cells its carve made.
+    pub frees_by_core: [u64; HEAP_COUNTED_CORES],
 }
 
 /// The bytes of a window of one core's allocations, in allocation order
@@ -365,6 +370,8 @@ pub struct Heap<'a> {
     allocations_by_core: [u64; HEAP_COUNTED_CORES],
     /// `HeapStats::allocated_bytes_by_core`.
     allocated_bytes_by_core: [u64; HEAP_COUNTED_CORES],
+    /// `HeapStats::frees_by_core`.
+    frees_by_core: [u64; HEAP_COUNTED_CORES],
     /// Per core, the bytes of its latest [`RECORDED_ALLOCATIONS`]
     /// allocations: allocation `n` (counted from 0) at index
     /// `n % RECORDED_ALLOCATIONS`.
@@ -437,6 +444,7 @@ impl<'a> Heap<'a> {
             partial: [NO_PAGE; SLOT_COUNT],
             allocations_by_core: [0; HEAP_COUNTED_CORES],
             allocated_bytes_by_core: [0; HEAP_COUNTED_CORES],
+            frees_by_core: [0; HEAP_COUNTED_CORES],
             recent_sizes_by_core: [[0; RECORDED_ALLOCATIONS]; HEAP_COUNTED_CORES],
             allocating_core: 0,
         })
@@ -487,6 +495,7 @@ impl<'a> Heap<'a> {
             free_pages: self.free_pages,
             allocations_by_core: self.allocations_by_core,
             allocated_bytes_by_core: self.allocated_bytes_by_core,
+            frees_by_core: self.frees_by_core,
         }
     }
 
@@ -519,6 +528,16 @@ impl<'a> Heap<'a> {
         }
         if let Some(total) = self.allocated_bytes_by_core.get_mut(core) {
             *total = total.wrapping_add(bytes as u64);
+        }
+    }
+
+    /// One free, counted to the core the heap was last set to — the executing
+    /// core, as for an allocation.  Called at exactly one point per free:
+    /// `free_small`, and `free` only on the arm it serves itself (it forwards
+    /// every small object to `free_small`, which counts it).
+    fn count_free(&mut self) {
+        if let Some(n) = self.frees_by_core.get_mut(self.allocating_core) {
+            *n = n.wrapping_add(1);
         }
     }
 
@@ -795,6 +814,7 @@ impl<'a> Heap<'a> {
         } else if was_full {
             self.list_push(slot, page);
         }
+        self.count_free();
         Ok(())
     }
 
@@ -837,6 +857,7 @@ impl<'a> Heap<'a> {
             PageState::Small(_) => self.free_small(addr),
             PageState::RunHead(n) if offset == 0 => {
                 self.release_pages(page, n);
+                self.count_free();
                 Ok(())
             }
             PageState::RunHead(_) | PageState::RunTail => Err(HeapFault::NotAtStart),
@@ -1266,6 +1287,18 @@ pub fn kernel_allocation_totals_on(core: usize) -> Result<(u64, u64), KernelHeap
                 .unwrap_or(0),
         )
     })
+}
+
+/// The kernel heap's frees on `core` since it was taken into service
+/// ([`HeapStats::frees_by_core`]): read before and after a retire, the cells
+/// it returned, which the `heap_allocations_per_syscall` exerciser holds to
+/// the cells the carve made.  `0` for a core outside [`HEAP_COUNTED_CORES`].
+///
+/// # Errors
+///
+/// `Init` if the arena cannot be taken into service.
+pub fn kernel_frees_on(core: usize) -> Result<u64, KernelHeapError> {
+    with_kernel_heap(|heap| heap.stats().frees_by_core.get(core).copied().unwrap_or(0))
 }
 
 /// The bytes of the kernel heap's allocations on `core` numbered `from` to
@@ -1924,6 +1957,48 @@ mod tests {
             Some(0)
         );
         assert_eq!(heap.allocation_sizes(HEAP_COUNTED_CORES, 0, 1), None);
+    }
+
+    #[test]
+    fn every_successful_free_is_counted_once_to_its_core() {
+        let (mut meta, mut bits) = metadata(16);
+        let mut heap = heap(&mut meta, &mut bits);
+        let frees = |h: &Heap<'_>| h.stats().frees_by_core;
+        let a = heap.alloc_small(40, 4).unwrap().unwrap();
+        let b = heap.alloc(40, 8).unwrap();
+        let run = heap.alloc(3 * PAGE_SIZE, PAGE_SIZE).unwrap();
+        assert_eq!(
+            frees(&heap),
+            [0; HEAP_COUNTED_CORES],
+            "an allocation frees nothing"
+        );
+        // The freeing core is counted, not the allocating one; `free`
+        // forwards a small object to `free_small`: counted once, not twice.
+        heap.set_allocating_core(1);
+        heap.free_small(a).unwrap();
+        heap.free(b).unwrap();
+        assert_eq!(
+            frees(&heap),
+            [0, 2, 0, 0],
+            "a small object, directly and forwarded"
+        );
+        heap.set_allocating_core(3);
+        heap.free(run).unwrap();
+        assert_eq!(frees(&heap), [0, 2, 0, 1], "a whole run, once");
+        // A refused free counts nothing: the second free, or one inside a run.
+        assert!(heap.free(b).is_err());
+        assert!(heap.free_small(a).is_err());
+        let run = heap.alloc(2 * PAGE_SIZE, PAGE_SIZE).unwrap();
+        assert_eq!(heap.free(run + PAGE_SIZE), Err(HeapFault::NotAtStart));
+        assert_eq!(frees(&heap), [0, 2, 0, 1]);
+        heap.free(run).unwrap();
+        assert_eq!(frees(&heap), [0, 2, 0, 2]);
+        // A core outside the counted range is counted nowhere.
+        heap.set_allocating_core(HEAP_COUNTED_CORES);
+        let c = heap.alloc_small(8, 0).unwrap().unwrap();
+        heap.free_small(c).unwrap();
+        assert_eq!(frees(&heap), [0, 2, 0, 2]);
+        ok(&heap);
     }
 
     #[test]

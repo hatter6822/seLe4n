@@ -8256,6 +8256,97 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
     &LIFECYCLE_SCENARIO,
 ];
 
+/// **WS-UC UC4: a carve owns its cells, and the retire returns them.**  A
+/// CNode carved, its capability copied out of it, the copy revoked (it is the
+/// carved capability's derivation child) and the carved capability deleted,
+/// which retires the CNode; then the boot untyped reset, so the next run
+/// carves where this one did.  Each step is a measured reading; across the
+/// first four, [`carved_cnode_retire`] also reads this core's frees, and the
+/// host-side gate holds both the cells allocated and the cells freed to the
+/// CNode's carve pin: every cell the carve made, and no other, comes back.
+#[cfg(feature = "hw_target")]
+const CARVED_CNODE_RETIRE: [RoundTrip; 5] = [
+    invocation(
+        "untyped-retype-owned-cnode",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+    ),
+    invocation(
+        "owned-cnode-copy",
+        CSPACE_COPY,
+        CNODE_CAP,
+        [FRAME_SLOT, MOVE_SLOT, 0, 0],
+    ),
+    invocation(
+        "owned-cnode-revoke",
+        CSPACE_REVOKE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "owned-cnode-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "owned-cnode-untyped-reset",
+        UNTYPED_RESET,
+        UNTYPED_CAP,
+        [0; 4],
+    ),
+];
+
+/// The carve-to-retire window of [`CARVED_CNODE_RETIRE`]: its steps measured
+/// one by one, and across the carve, the copy, the revoke and the delete this
+/// core's allocations and frees, read under one mask so no tick's cells are
+/// charged to it.  Printed as `owned-cnode-retire: … allocated A freed F`;
+/// the host-side gate holds `A` and `F` each to the CNode's carve pin.
+#[cfg(feature = "hw_target")]
+fn carved_cnode_retire(which: &str) -> Option<bool> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    let read = || {
+        let allocated = crate::lean_heap::kernel_allocation_totals_on(core).ok()?.0;
+        let freed = crate::lean_heap::kernel_frees_on(core).ok()?;
+        Some((allocated, freed))
+    };
+    let saved = crate::interrupts::disable_interrupts();
+    let before = read();
+    let (window, rest) = CARVED_CNODE_RETIRE.split_at(4);
+    let mut ok = window
+        .iter()
+        .all(|step| heap_allocations_round_trip(step, which) == Some(true));
+    let after = read();
+    if ok {
+        ok = rest
+            .iter()
+            .all(|step| heap_allocations_round_trip(step, which) == Some(true));
+    }
+    crate::interrupts::restore_interrupts(saved);
+    if !ok {
+        return Some(false);
+    }
+    let (Some((a0, f0)), Some((a1, f1))) = (before, after) else {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: owned-cnode-retire: the heap counters could not be read"
+        );
+        return Some(false);
+    };
+    if a1 < a0 || f1 < f0 {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: owned-cnode-retire: a counter went back"
+        );
+        return Some(false);
+    }
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: owned-cnode-retire: core {core}{which}: allocated {} freed {}",
+        a1 - a0,
+        f1 - f0
+    );
+    Some(true)
+}
+
 /// **The lifecycle branches no other scenario reaches**: the final deletes,
 /// retires and refusals of untypeds, moved parents, bound threads, threads'
 /// space slots, page tables, mapped frames and used VSpace roots, run as the
@@ -10418,6 +10509,13 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                     return Some(false);
                 }
             }
+        }
+    }
+    // WS-UC UC4: a carved CNode's cells, every one returned by its retire.
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if carved_cnode_retire(which) != Some(true) {
+            return Some(false);
         }
     }
     // WS-ZA ZA6.33: the affinity change of a thread running on core 1, the
