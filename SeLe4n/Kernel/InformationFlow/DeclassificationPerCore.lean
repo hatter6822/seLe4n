@@ -1344,6 +1344,11 @@ private def causalWitnessTcb (w : TaintWords) : TCB :=
     { tid := causalWitnessSubject, priority := ⟨0⟩, domain := ⟨1⟩,
       spaceCells := TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096 } w
 
+/-- The witness states' object table: a small empty one, so `decide` walks a
+few slots rather than the boot-sized table of the default state (WS-UC UC3). -/
+private def causalWitnessObjects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject :=
+  SeLe4n.Kernel.RobinHood.RHTable.empty 16 (by decide)
+
 /-- WS-SM SM9.D.14 (**`chainCausal_not_table_derived`**, invention half): a tag
 the subject acquires **after** the event invents a causal link that never
 existed.
@@ -1363,10 +1368,10 @@ theorem chainCausal_not_table_derived :
       chainCausalVerdict true st₁ chain ≠ chainCausalVerdict true st₂ chain := by
   refine ⟨[causalWitnessFirst, causalWitnessSecond DeclassificationTaint.empty],
           { (default : SystemState) with objects :=
-            ((default : SystemState).objects.insert causalWitnessSubject.toObjId
+            (causalWitnessObjects.insert causalWitnessSubject.toObjId
               (.tcb (causalWitnessTcb {}))) },
           ({ (default : SystemState) with objects :=
-            ((default : SystemState).objects.insert causalWitnessSubject.toObjId
+            (causalWitnessObjects.insert causalWitnessSubject.toObjId
               (.tcb (causalWitnessTcb {}))) }).mapObjectAt
             causalWitnessSubject.toObjId
             (·.withTaintWords (DeclassificationTaint.singleton 0).toWords),
@@ -1390,7 +1395,7 @@ theorem chainCausal_survives_subject_retype :
       chainCausalVerdict true st₂ chain = false := by
   refine ⟨[causalWitnessFirst, causalWitnessSecond (DeclassificationTaint.singleton 0)],
           { (default : SystemState) with
-            objects := ((default : SystemState).objects.insert causalWitnessSubject.toObjId
+            objects := (causalWitnessObjects.insert causalWitnessSubject.toObjId
               (.tcb (causalWitnessTcb (DeclassificationTaint.singleton 0).toWords))) },
           _, rfl, by decide, by decide, by decide, by decide⟩
 

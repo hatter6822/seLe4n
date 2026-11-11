@@ -233,8 +233,26 @@ rewrites it there.
     (endpoint 11 → 6, 368 → 248 bytes).
   - Every other reading stays 0.
 
-### UC3 — Pre-size the object and ASID tables at boot (D4)
+### UC3 — Pre-size the object and ASID tables at boot (D4) — **LANDED `v0.37.16`**
 
+- **Done.** The default state, which the boot's builder starts from, builds
+  `objects` and `asidTable` at `bootTableCapacity` (2^17).  On such a table
+  holding at most `maxObjects` objects (or `maxAsidValue` ASIDs) `insert` is
+  `insertNoResize` (`SystemState.objects_insert_eq_insertNoResize`,
+  `SystemState.asidTable_insert_eq_insertNoResize`, over
+  `RHTable.insert_eq_insertNoResize_of_load`).  The capacity fact
+  (`SystemState.tablesPresized`) is `bookkeepingAgrees.presized`, so it rides in
+  the bundle's 22nd component as UC2's agreement does and every kernel entry
+  keeps it: `ghostsKept` and `BookkeepingKept` say neither table shrinks, every
+  table write carries a capacity lemma, and the cross-core legs prove it per leg
+  (`*_objects_capacity_le`).  Bundle corollaries
+  `proofLayerInvariantBundle.objects_insert_eq_insertNoResize` and
+  `.asidTable_insert_eq_insertNoResize`; the carve's
+  `retypeFromUntyped_insert_eq_insertNoResize`; the heap model's resize term
+  reads 0 there (`rhInsertResizeHeapBytes_objects_eq_zero`).  No `@[csimp]`:
+  the equation needs the load hypothesis, which the compiled insert cannot see.
+  The boundary is tested (`runObjectStoreCapacityBoundaryChecks`).  Readings
+  and the boot's heap cost: CHANGELOG `v0.37.16`.
 - **Work.**
   - Boot builds `objects` and `asidTable` at capacity 2^17. That holds
     `maxObjects` objects and `maxAsidValue` ASIDs

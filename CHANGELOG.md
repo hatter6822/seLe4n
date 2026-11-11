@@ -1,3 +1,43 @@
+## v0.37.16 — the object and ASID tables are built boot-sized
+
+WS-UC UC3 (decision D4).  The boot builds the object table and the ASID table
+at 2^17 slots, which holds `maxObjects` objects and `maxAsidValue` ASIDs below
+the 75% load at which `RHTable.insert` resizes, so a live insert never rebuilds
+a slot array: the tables' slot arrays are built at boot only.
+
+- **Boot-sized tables.** `bootTableCapacity` (131072); the default state, which
+  the boot's builder starts from, builds `objects` and `asidTable` at it.
+- **The no-resize theorems.** `RHTable.insert_eq_insertNoResize_of_load`;
+  `SystemState.objects_insert_eq_insertNoResize` (a store of at most
+  `maxObjects` objects in a boot-sized table) and
+  `SystemState.asidTable_insert_eq_insertNoResize` (at most `maxAsidValue`
+  ASIDs); the carve's form `retypeFromUntyped_insert_eq_insertNoResize`; and
+  `rhInsertResizeHeapBytes_objects_eq_zero`, so the carve's resize term in
+  `CarveRequest.heapBytes` reads 0 on such a store.
+- **Carried by the invariant bundle.** `SystemState.tablesPresized` is
+  `bookkeepingAgrees.presized`, so it rides in the bundle's 22nd component the
+  way UC2's agreement does, held by the default state and the boot and kept by
+  every kernel entry through each step's `MappingStage`.  `ghostsKept` and
+  `BookkeepingKept` state that neither table shrinks (`objectsCapacity`,
+  `asidCapacity`); every table write carries a capacity lemma (an equality for
+  an in-place write, a `le_` form for one that may insert), and the
+  `capacity_kept` tactic closes the step goals with them.  The cross-core legs,
+  related to their single-core twins only off the scheduler links, prove it per
+  leg (`endpointSendDualOnCore_objects_capacity_le` and the receive, reply,
+  signal and wait twins).  Bundle corollaries:
+  `proofLayerInvariantBundle.tablesPresized`,
+  `.objects_insert_eq_insertNoResize`, `.asidTable_insert_eq_insertNoResize`.
+- **No `@[csimp]`.** The equation needs the load hypothesis, which the compiled
+  insert cannot see, so the spec `insert` stays the compiled one; on a reachable
+  state its resize branch is never taken.
+- **Boundary.** `runObjectStoreCapacityBoundaryChecks` checks the built store is
+  boot-sized, that filling it to `maxObjects − 1` never resizes, that the insert
+  at size 65535 into capacity 131072 equals `insertNoResize` and keeps the
+  capacity, that the carve at `maxObjects − 1` keeps it, and that the next carve
+  is refused (`objectStoreCapacityExceeded`).
+- **Retired**: `FrozenState`'s private `toList_empty` and
+  `fold_none_replicate`, replaced by `RHTable.toList_empty`.
+
 ## v0.37.15 — the bookkeeping tables become ghosts
 
 WS-UC UC2 (decision D3).  The object index, the object-index set and the

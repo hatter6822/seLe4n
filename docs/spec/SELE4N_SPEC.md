@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.15` (`lakefile.toml`) |
+| **Package version** | `0.37.16` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 625,089 across 624 Lean files |
 | **Test LoC** | 89,290 across 70 Lean test suites |
@@ -4656,6 +4656,21 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   proves in-place mutations preserve `objectIndex` length exactly;
   `retypeFromUntyped_capacity_gated` proves the allocation boundary gates
   on `maxObjects`.
+- **Boot-sized tables** (since `v0.37.16`, WS-UC UC3): the boot builds the
+  object table and the ASID table at `bootTableCapacity` = 2^17 slots, which
+  holds `maxObjects` objects and `maxAsidValue` (65536) ASIDs below the 75% load
+  at which `RHTable.insert` resizes (`4 · 65535 < 3 · 131072`).  On such a
+  table in bound `insert` equals `insertNoResize`
+  (`SystemState.objects_insert_eq_insertNoResize`,
+  `SystemState.asidTable_insert_eq_insertNoResize`), so a live insert never
+  rebuilds a slot array.  The capacity fact (`SystemState.tablesPresized`) is
+  `bookkeepingAgrees.presized`, part of the bundle's 22nd conjunct, and every
+  kernel entry keeps it: no step shrinks either table (`ghostsKept`'s
+  `objectsCapacity` / `asidCapacity`).  Corollaries
+  `proofLayerInvariantBundle.objects_insert_eq_insertNoResize`,
+  `.asidTable_insert_eq_insertNoResize`,
+  `retypeFromUntyped_insert_eq_insertNoResize`; the carve's heap model reads no
+  resize there (`rhInsertResizeHeapBytes_objects_eq_zero`).
 - **In-place rewrite** (`v0.35.64`): a transition that rewrites an
   existing object of the same, bookkeeping-neutral kind uses
   `SystemState.rewriteObject` (and the typed `updateTcb` /
