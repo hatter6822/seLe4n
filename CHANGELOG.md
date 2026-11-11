@@ -47,6 +47,12 @@ seL4's behaviour wherever the model deviated.  Every non-carve reading is 0.
   overflowed route now holds only the configure and the service register, and
   its dead kinds (`overflowedArmSpec`, `overflowedArmWith` and the invocation,
   audited and notification arms) are deleted.
+- **The router builds nothing.** A message now takes a short route in two
+  cases: it fits the registers, or its syscall reads no overflow word.  Decided
+  inline, both cases fed one join point in the compiled router, and that join
+  point took the message info as a cell, so every entry built 40 bytes.  The
+  question is now answered out of line (`routesShortDecidable`), the router
+  branches on it once, and every entry reads 0 again.
 - **Exerciser**: the one-word-short invocations, the overflowed invocations,
   the long receive's fault, and with the IPC buffer's page unmapped the
   clamped configure (one and two words past), the clamped long send and long
