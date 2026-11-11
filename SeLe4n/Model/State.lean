@@ -6580,8 +6580,11 @@ theorem storeObject_preserves_objectIndexLive
 /-- WS-UC UC2: **the ghost bookkeeping agrees with the object table** — the
 index lists exactly the stored IDs, each once; the index set holds exactly the
 stored IDs; and the type table records each stored object's type and nothing
-else.  It holds on every reachable state: at boot, and through every store
-(`storeObject_preserves_bookkeepingAgrees`), rewrite and retire.  It is what
+else; and the index set's and the type table's own table invariants hold, so a
+store or a retire keeps them.  It holds on every reachable state: at boot, and
+through every store (`storeObject_preserves_bookkeepingAgrees`), rewrite and
+retire, so every kernel entry keeps it (`RunQueueLinkStage.bookkeeping`, the
+22nd conjunct of `proofLayerInvariantBundle`).  It is what
 lets the compiled kernel read the object table where the specification read a
 ghost: the object count (`objectIndex_length`), membership and type. -/
 structure SystemState.bookkeepingAgrees (st : SystemState) : Prop where
@@ -6589,6 +6592,8 @@ structure SystemState.bookkeepingAgrees (st : SystemState) : Prop where
   nodup : st.objectIndex.Nodup
   indexSet : ∀ id, st.objectIndexSet.contains id = true ↔ st.objects[id]? ≠ none
   types : SystemState.objectTypeMetadataConsistent st
+  indexSetInv : st.objectIndexSet.table.invExtK
+  typesInv : st.lifecycle.objectTypes.invExtK
 
 /-- WS-UC UC2: the default state's bookkeeping agrees: every table is empty. -/
 theorem default_bookkeepingAgrees : SystemState.bookkeepingAgrees (default : SystemState) where
@@ -6601,6 +6606,8 @@ theorem default_bookkeepingAgrees : SystemState.bookkeepingAgrees (default : Sys
     simp only [this, ne_eq, not_true_eq_false, iff_false, default_objectIndexSet]
     exact Bool.eq_false_iff.mp (RHSet.contains_empty id)
   types := default_systemState_objectTypeMetadataConsistent
+  indexSetInv := default_allTablesInvExtK.2.2.2.2
+  typesInv := default_allTablesInvExtK.2.2.1
 
 /-- WS-UC UC2: **the index is as long as the object table is large** on a state
 whose bookkeeping agrees: what lets the capacity check and every fuel the
@@ -6624,13 +6631,17 @@ theorem SystemState.bookkeepingAgrees.of_frame {st st' : SystemState}
     (h : SystemState.bookkeepingAgrees st)
     (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
     (hP : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).isSome = (st.objects[x]?).isSome)
-    (hT : SystemState.objectTypeMetadataConsistent st') : SystemState.bookkeepingAgrees st' where
+    (hT : SystemState.objectTypeMetadataConsistent st')
+    (hTI : st'.lifecycle.objectTypes = st.lifecycle.objectTypes := by first | rfl | assumption) :
+    SystemState.bookkeepingAgrees st' where
   index id := by
     rw [hI, h.index id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
   nodup := hI ▸ h.nodup
   indexSet id := by
     rw [hS, h.indexSet id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
   types := hT
+  indexSetInv := hS ▸ h.indexSetInv
+  typesInv := hTI ▸ h.typesInv
 
 /-- WS-UC UC2: **the stored object IDs, read from the object table** — the
 executable reading of the ghost index, in the table's slot order.  On a state
@@ -6656,19 +6667,108 @@ theorem SystemState.bookkeepingAgrees.contains_iff {st : SystemState} (h : Syste
   have := h.indexSet id
   cases hc : st.objectIndexSet.contains id <;> cases ho : st.objects[id]? <;> simp_all
 
+/-- WS-UC UC2: **a step that moves no bookkeeping** — it writes none of the
+three ghosts and keeps every slot's kind: an empty slot stays empty and a stored
+object keeps its type.  Every step that writes objects in place (a thread or
+context field, a run-queue link, a taint word) is one, and it keeps the
+agreement (`SystemState.bookkeepingAgrees.of_kept`). -/
+structure SystemState.BookkeepingKept (st' st : SystemState) : Prop where
+  index : st'.objectIndex = st.objectIndex
+  indexSet : st'.objectIndexSet = st.objectIndexSet
+  types : st'.lifecycle.objectTypes = st.lifecycle.objectTypes
+  kinds : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).map KernelObject.objectType =
+    (st.objects[x]?).map KernelObject.objectType
+
+theorem SystemState.BookkeepingKept.refl (st : SystemState) : SystemState.BookkeepingKept st st :=
+  ⟨rfl, rfl, rfl, fun _ => rfl⟩
+
+theorem SystemState.BookkeepingKept.trans {st st' st'' : SystemState}
+    (h2 : SystemState.BookkeepingKept st'' st') (h1 : SystemState.BookkeepingKept st' st) :
+    SystemState.BookkeepingKept st'' st :=
+  ⟨h2.index.trans h1.index, h2.indexSet.trans h1.indexSet, h2.types.trans h1.types,
+    fun x => (h2.kinds x).trans (h1.kinds x)⟩
+
+/-- A step that writes no object and none of the ghosts moves no bookkeeping. -/
+theorem SystemState.BookkeepingKept.of_objects_eq {st st' : SystemState}
+    (hO : st'.objects = st.objects) (hI : st'.objectIndex = st.objectIndex)
+    (hS : st'.objectIndexSet = st.objectIndexSet)
+    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
+    SystemState.BookkeepingKept st' st :=
+  ⟨hI, hS, hT, fun x => by rw [hO]⟩
+
+/-- A step whose objects agree, through a kind-keeping reading `f`, with the old
+ones at every key — and which writes none of the ghosts — moves no bookkeeping. -/
+theorem SystemState.BookkeepingKept.of_map {st st' : SystemState} (f : KernelObject → KernelObject)
+    (hf : ∀ o, (f o).objectType = o.objectType)
+    (hA : ∀ k : SeLe4n.ObjId, (st'.objects[k]?).map f = (st.objects[k]?).map f)
+    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
+    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
+    SystemState.BookkeepingKept st' st :=
+  ⟨hI, hS, hT, fun x => by
+    have e := congrArg (Option.map KernelObject.objectType) (hA x)
+    simpa only [Option.map_map, Function.comp_def, hf] using e⟩
+
+/-- A step that keeps every slot's kind (`getObjectType?`) and writes none of the
+ghosts moves no bookkeeping. -/
+theorem SystemState.BookkeepingKept.of_getObjectType? {st st' : SystemState}
+    (hK : ∀ x, st'.getObjectType? x = st.getObjectType? x)
+    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
+    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
+    SystemState.BookkeepingKept st' st :=
+  ⟨hI, hS, hT, hK⟩
+
+/-- A kind-preserving write (up to the bindings) that writes none of the ghosts
+moves no bookkeeping. -/
+theorem SystemState.BookkeepingKept.of_kindPreservingUpToBindings {st st' : SystemState}
+    (h : kindPreservingWriteUpToBindings st st')
+    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
+    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
+    SystemState.BookkeepingKept st' st :=
+  ⟨hI, hS, hT, fun x => by
+    rcases h x with e | ⟨pre, post, hp, hq, ht, -⟩
+    · rw [e]
+    · rw [hp, hq]; simp [ht]⟩
+
+theorem SystemState.BookkeepingKept.of_kindPreserving {st st' : SystemState}
+    (h : kindPreservingWrite st st')
+    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
+    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
+    SystemState.BookkeepingKept st' st :=
+  ⟨hI, hS, hT, fun x => by
+    rcases h x with e | ⟨pre, post, hp, hq, ht, -⟩
+    · rw [e]
+    · rw [hp, hq]; simp [ht]⟩
+
+/-- WS-UC UC2: **the bookkeeping still agrees after a step that moves none of
+it.** -/
+theorem SystemState.bookkeepingAgrees.of_kept {st st' : SystemState}
+    (h : SystemState.bookkeepingAgrees st) (k : SystemState.BookkeepingKept st' st) :
+    SystemState.bookkeepingAgrees st' :=
+  have hP : ∀ x : SeLe4n.ObjId, (st'.objects[x]?).isSome = (st.objects[x]?).isSome := fun x => by
+    rw [← Option.isSome_map (f := KernelObject.objectType), k.kinds x, Option.isSome_map]
+  { index := fun id => by
+      rw [k.index, h.index id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
+    nodup := k.index ▸ h.nodup
+    indexSet := fun id => by
+      rw [k.indexSet, h.indexSet id, ← Option.isSome_iff_ne_none, ← Option.isSome_iff_ne_none, hP]
+    types := fun oid => by
+      simp only [SystemState.lookupObjectTypeMeta] at *
+      rw [k.types, k.kinds oid]; exact h.types oid
+    indexSetInv := k.indexSet ▸ h.indexSetInv
+    typesInv := k.types ▸ h.typesInv }
+
 /-- WS-UC UC2: `storeObject` keeps the bookkeeping in agreement. -/
 theorem storeObject_preserves_bookkeepingAgrees
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
     (h : SystemState.bookkeepingAgrees st)
     (hObjInv : st.objects.invExt)
-    (hSetInv : st.objectIndexSet.table.invExt)
-    (hTypesInv : st.lifecycle.objectTypes.invExt)
     (hStore : storeObject id obj st = .ok ((), st')) :
     SystemState.bookkeepingAgrees st' := by
+  have hSetInv := h.indexSetInv.1
   have hIdx := storeObject_objectIndex hStore
   have hSet := storeObject_objectIndexSet hStore
   have hTypes := storeObject_preserves_objectTypeMetadataConsistent st st' id obj h.types
-    hObjInv hTypesInv hStore
+    hObjInv h.typesInv.1 hStore
   have hObjs : ∀ k : SeLe4n.ObjId, st'.objects[k]? = (st.objects.insert id obj)[k]? := by
     unfold storeObject at hStore; cases hStore; intro k; rfl
   have hAt : ∀ k, st'.objects[k]? ≠ none ↔ (k = id ∨ st.objects[k]? ≠ none) := by
@@ -6681,7 +6781,7 @@ theorem storeObject_preserves_bookkeepingAgrees
     · rw [RHTable.getElem?_insert_ne _ _ _ _ hk hObjInv]
       have : k ≠ id := fun e => hk (by rw [e]; exact beq_self_eq_true _)
       simp [this]
-  refine ⟨fun k => ?_, ?_, fun k => ?_, hTypes⟩
+  refine ⟨fun k => ?_, ?_, fun k => ?_, hTypes, ?_, ?_⟩
   · rw [hIdx, hAt k]
     split
     · next hS =>
@@ -6715,6 +6815,35 @@ theorem storeObject_preserves_bookkeepingAgrees
       · rw [RHSet.contains_insert_ne _ _ _ hk hSetInv, h.indexSet k]
         have : k ≠ id := fun e => hk (by rw [e]; exact beq_self_eq_true _)
         simp [this]
+  · rw [hSet]; split
+    · exact h.indexSetInv
+    · exact RHSet.insert_preserves_invExtK _ _ h.indexSetInv
+  · rw [storeObject_objectTypes hStore]; split
+    · exact h.typesInv
+    · exact RHTable_insert_preserves_invExtK _ _ _ h.typesInv
+
+/-- WS-UC UC2: **a store over an object of the same kind moves no
+bookkeeping**: the key is already indexed, and its type does not change. -/
+theorem SystemState.BookkeepingKept.storeObject_sameKind {st st' : SystemState} {id : SeLe4n.ObjId}
+    {obj old : KernelObject} (hStore : storeObject id obj st = .ok ((), st'))
+    (hOld : st.objects[id]? = some old) (hK : old.objectType = obj.objectType)
+    (hObjInv : st.objects.invExt) : SystemState.BookkeepingKept st' st := by
+  have hIdx := storeObject_objectIndex hStore
+  have hSet := storeObject_objectIndexSet hStore
+  have hTy := storeObject_objectTypes hStore
+  have hKeep : storeKeepsKind st id obj.objectType = true := by
+    unfold storeKeepsKind; rw [hOld]; simp [hK]
+  rw [hOld] at hIdx hSet
+  rw [hKeep] at hTy
+  refine ⟨by simpa using hIdx, by simpa using hSet, by simpa using hTy, fun x => ?_⟩
+  unfold storeObject at hStore; cases hStore
+  simp only [RHTable_getElem?_eq_get?]
+  by_cases hx : (id == x) = true
+  · have := eq_of_beq hx; subst this
+    rw [RHTable.getElem?_insert_self _ _ _ hObjInv]
+    simp only [RHTable_getElem?_eq_get?] at hOld
+    rw [hOld]; simp [hK]
+  · rw [RHTable.getElem?_insert_ne _ _ _ _ hx hObjInv]
 
 -- ============================================================================
 -- The in-place rewrite — a store write that carries no bookkeeping, by proof
@@ -7009,25 +7138,28 @@ theorem rewriteObject_preserves_objectTypeMetadataConsistent (st : SystemState)
   · rw [rewriteObject_objects_ne st id oid new h hEq hInv]
     exact hC'
 
+/-- WS-UC UC2: **an in-place rewrite moves no bookkeeping**: it writes none of
+the ghosts, and the object it rewrites keeps its kind. -/
+theorem rewriteObject_bookkeepingKept (st : SystemState)
+    (id : SeLe4n.ObjId) (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (hInv : st.objects.invExt) :
+    SystemState.BookkeepingKept (st.rewriteObject id new h) st :=
+  ⟨rfl, rfl, rfl, fun k => by
+    by_cases hEq : id = k
+    · subst hEq
+      obtain ⟨old, hOld, hTy, hN⟩ := h
+      rw [rewriteObject_objects_self st id new ⟨old, hOld, hTy, hN⟩ hInv, hOld]
+      simp [hTy]
+    · rw [rewriteObject_objects_ne st id k new h hEq hInv]⟩
+
 /-- WS-UC UC2: a rewrite keeps the bookkeeping in agreement: it writes one stored
 key with an object of the same kind, so the stored IDs and their types are
 unchanged. -/
 theorem rewriteObject_preserves_bookkeepingAgrees (st : SystemState)
     (id : SeLe4n.ObjId) (new : KernelObject) (h : st.rewriteAdmissible id new)
     (hInv : st.objects.invExt) (hA : bookkeepingAgrees st) :
-    bookkeepingAgrees (st.rewriteObject id new h) := by
-  have hDom : ∀ k : SeLe4n.ObjId,
-      (st.rewriteObject id new h).objects[k]? ≠ none ↔ st.objects[k]? ≠ none := by
-    intro k
-    by_cases hEq : id = k
-    · subst hEq
-      obtain ⟨old, hOld, -, -⟩ := h
-      rw [rewriteObject_objects_self st id new ⟨old, hOld, by assumption, by assumption⟩ hInv, hOld]
-      simp
-    · rw [rewriteObject_objects_ne st id k new h hEq hInv]
-  exact ⟨fun k => (hA.index k).trans (hDom k).symm, hA.nodup,
-    fun k => (hA.indexSet k).trans (hDom k).symm,
-    rewriteObject_preserves_objectTypeMetadataConsistent st id new h hInv hA.types⟩
+    bookkeepingAgrees (st.rewriteObject id new h) :=
+  hA.of_kept (rewriteObject_bookkeepingKept st id new h hInv)
 
 
 -- ----------------------------------------------------------------------------
@@ -7757,6 +7889,13 @@ theorem updateTcb_preserves_objectTypeMetadataConsistent (st : SystemState)
   · exact rewriteObject_preserves_objectTypeMetadataConsistent _ _ _ _ hInv hC
   · exact hC
 
+/-- WS-UC UC2: a TCB rewrite moves no bookkeeping. -/
+theorem BookkeepingKept.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) : BookkeepingKept (st.updateTcb tid f) st := by
+  unfold SystemState.updateTcb; split
+  · exact rewriteObject_bookkeepingKept _ _ _ _ hInv
+  · exact .refl st
+
 /-- Rewrite the SchedContext at `scId` in place through `f`; the identity when
 `scId` resolves to no SchedContext.  `updateTcb`'s twin, for the same reason. -/
 @[inline] def updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
@@ -7879,6 +8018,14 @@ theorem updateSchedContext_preserves_objectTypeMetadataConsistent (st : SystemSt
   unfold updateSchedContext; split
   · exact rewriteObject_preserves_objectTypeMetadataConsistent _ _ _ _ hInv hC
   · exact hC
+
+/-- WS-UC UC2: a SchedContext rewrite moves no bookkeeping. -/
+theorem BookkeepingKept.updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt) :
+    BookkeepingKept (st.updateSchedContext scId f) st := by
+  unfold SystemState.updateSchedContext; split
+  · exact rewriteObject_bookkeepingKept _ _ _ _ hInv
+  · exact .refl st
 
 
 -- ============================================================================
@@ -8253,8 +8400,8 @@ theorem withObjectStored_preserves_objectTypeMetadataConsistent (st : SystemStat
 theorem withObjectStored_preserves_bookkeepingAgrees (st : SystemState)
     (id : SeLe4n.ObjId) (obj : KernelObject) (hAll : st.allTablesInvExtK)
     (h : bookkeepingAgrees st) : bookkeepingAgrees (st.withObjectStored id obj) :=
-  storeObject_preserves_bookkeepingAgrees st _ id obj h hAll.objects.1 hAll.objectIndexSet.1
-    hAll.objectTypes.1 (storeObject_eq_withObjectStored st id obj)
+  storeObject_preserves_bookkeepingAgrees st _ id obj h hAll.objects.1
+    (storeObject_eq_withObjectStored st id obj)
 
 theorem withObjectStored_preserves_allTablesInvExtK (st : SystemState) (id : SeLe4n.ObjId)
     (obj : KernelObject) (hAll : st.allTablesInvExtK) :

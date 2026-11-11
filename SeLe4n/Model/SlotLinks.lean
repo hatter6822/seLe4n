@@ -1534,7 +1534,7 @@ theorem linkReach.bookkeepingAgrees {st₀ st : SystemState} (h : linkReach st�
   hA.of_frame (by rw [h.fields]) (by rw [h.fields]) (fun x => by
       have e := congrArg Option.isSome ((h.agree hInv).objectType x)
       simpa only [Option.isSome_map] using e)
-    (h.objectTypeMetadataConsistent hInv hA.types)
+    (h.objectTypeMetadataConsistent hInv hA.types) (by rw [h.fields])
 
 theorem linkAddChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (p c : SlotRef) :
     linkReach st₀ (st.linkAddChild p c) := by

@@ -808,8 +808,7 @@ theorem cutCancelledCallerHead_hidden (ctx : LabelingContext) (observer : IfObse
       have hRo := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
       have hI1 := SeLe4n.Model.storeObject_preserves_objects_invExt s0 s1 _ _ hI hSt
       have hP1 := storeObject_projectionStable_preserves_projection ctx observer s0 s1
-        rid.toObjId _ (.reply r) hRo (projectKernelObject_reply_next_invariant ctx observer r _)
-        (hC rid.toObjId (by rw [hRo]; intro hx; cases hx)) hI hSt
+        rid.toObjId _ (.reply r) hRo (projectKernelObject_reply_next_invariant ctx observer r _) hI hSt
       have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s0 s1 _ _ hI hS hC hSt
       have hS1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s0 s1 _ _ hS hSt
       have hW := projectedObjectsWrite.updateSchedContext (ctx := ctx) (observer := observer) s1
@@ -1662,9 +1661,7 @@ strips (`projectKernelObject_reply_next_invariant`), and the context's head is
 written in its hidden slot. -/
 theorem finaliseSchedContextUnstack_hidden (ctx : LabelingContext) (observer : IfObserver)
     {s : SystemState} {x : SeLe4n.ObjId} (hInv : s.objects.invExt)
-    (hX : objectObservable ctx observer x = false)
-    (hIdx : ∀ (rid : SeLe4n.ReplyId) (r : Reply), s.getReply? rid = some r →
-      s.objectIndexSet.contains rid.toObjId = true) :
+    (hX : objectObservable ctx observer x = false) :
     projectState ctx observer (finaliseSchedContextUnstack s x) = projectState ctx observer s := by
   unfold finaliseSchedContextUnstack
   split
@@ -1679,7 +1676,7 @@ theorem finaliseSchedContextUnstack_hidden (ctx : LabelingContext) (observer : I
             rw [(hiddenObjectsWrite.updateSchedContext s1 ⟨x.val⟩ _ hI1 hX).projection]
             exact storeObject_projectionStable_preserves_projection ctx observer s s1 _ _ (.reply r)
               ((SystemState.getReply?_eq_some_iff _ _ _).mp hR)
-              (projectKernelObject_reply_next_invariant ctx observer r none) (hIdx rid r hR) hInv hS
+              (projectKernelObject_reply_next_invariant ctx observer r none) hInv hS
           · rfl
         · rfl
       · rfl
@@ -1704,13 +1701,10 @@ theorem finaliseSchedContextCleanupImpl_hidden (ctx : LabelingContext) (observer
 /-- **A scheduling context's finalisation is invisible** when the context and
 the thread bound to it are hidden: the holder's deschedule
 (`finaliseSchedContextDeschedule_hidden`), the release (`finaliseSchedContextUnbind_hidden`),
-the reply-stack unlink (`finaliseSchedContextUnstack_hidden`, at the replies the
-pre-state indexes — the release writes a thread and a context only, and no
-index), and the destroy cleanup, which completes the yield the context records
+the reply-stack unlink (`finaliseSchedContextUnstack_hidden`), and the destroy cleanup, which completes the yield the context records
 (`finaliseSchedContextCleanupImpl_hidden`). -/
 theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
-    (hIdx : SeLe4n.Model.objectIndexSetComplete st)
     (hX : objectObservable ctx observer x = false)
     (hH : schedContextFinaliseHidden ctx observer st x) :
     projectState ctx observer (finaliseSchedContext x st) = projectState ctx observer st := by
@@ -1723,22 +1717,13 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
     have hF : FinaliseFrame st (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) := by
       refine finaliseSchedContextUnbind_closed (FinaliseFrame st) ?_ _ x hD
       exact FinaliseFrame.releaseStep st
-    have hSet : (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x).objectIndexSet =
-        st.objectIndexSet := by
-      rw [hF.rest]
     rename_i hA
     have hU := (finaliseSchedContextUnstack_closed (FinaliseFrameAny st)
       (FinaliseFrameAny.unstackStep st) x st (.refl hInv) hA _ rfl hF.any).invExt
     refine (finaliseSchedContextCleanupImpl_hidden ctx observer hU hX).trans
-      ((finaliseSchedContextUnstack_hidden ctx observer hF.invExt hX
-      (fun rid r hR => ?_)).trans ((finaliseSchedContextUnbind_hidden ctx observer hD.invExt hX
-        hH.deschedule).trans (finaliseSchedContextDeschedule_hidden ctx observer hH)))
-    rw [hSet]
-    refine hIdx _ (fun e => ?_)
-    have hR' := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
-    rcases hF.write rid.toObjId with h | ⟨pre, _, hp, _⟩
-    · rw [h, e] at hR'; cases hR'
-    · rw [hp] at e; cases e
+      ((finaliseSchedContextUnstack_hidden ctx observer hF.invExt hX).trans
+        ((finaliseSchedContextUnbind_hidden ctx observer hD.invExt hX hH.deschedule).trans
+          (finaliseSchedContextDeschedule_hidden ctx observer hH)))
   · rfl
 
 /-- **What a reply's finalisation writes, besides the reply**: the caller waiting
@@ -1802,16 +1787,11 @@ theorem returnUnheldSchedContext_preserves_projection (ctx : LabelingContext)
     hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
     s.toObjId _ (.schedContext sc) hSc
-    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
-    (hIdx s.toObjId (by rw [hSc]; intro hx; cases hx)) hObjInv hS1
+    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _) hObjInv hS1
   have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
   have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
     c.toObjId _ (.tcb ot) (lookupTcb_some_objects s2 c ot hL1)
     (projectKernelObject_tcb_schedContextBinding_invariant ctx observer ot _ _)
-    (hC2 c.toObjId (by
-      rw [lookupTcb_some_objects s2 c ot hL1]
-      intro hx
-      cases hx))
     hInv2 hS3
   subst hEq
   refine ⟨?_, fun k hk => ?_, by rw [markKeyChangeFrom_objectIndexSet]; exact hSet3⟩
@@ -1840,8 +1820,7 @@ theorem severUnheldSchedContext_preserves_projection (ctx : LabelingContext)
     hSet hIdx hS1
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
     s.toObjId _ (.schedContext sc) hSc
-    (by simp [projectKernelObject, donationSeverSchedContext])
-    (hIdx s.toObjId (by rw [hSc]; intro hx; cases hx)) hObjInv hS1
+    (by simp [projectKernelObject, donationSeverSchedContext]) hObjInv hS1
   exact ⟨(storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear).trans hP1,
     storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear,
     storeDonationHeadPop_preserves_objectIndexSet_invExt hSet1 hClear⟩
@@ -2122,7 +2101,7 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
       · exact hP0
     · exact finaliseThread_hidden ctx observer h.2.1 hValid hIdx hSet hBlockingChainHigh hX
         (hTF h0)
-    · exact finaliseSchedContext_hidden ctx observer h.2.1 hIdx hX (hSF h0)
+    · exact finaliseSchedContext_hidden ctx observer h.2.1 hX (hSF h0)
     · exact finaliseReply_hidden ctx observer h.2.1 h.1 hLc hFlow hValid hIdx hSet hBlockingChainHigh
         (hRF h0)
     · rfl

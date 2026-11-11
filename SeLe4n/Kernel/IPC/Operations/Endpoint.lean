@@ -2138,33 +2138,6 @@ theorem storeDonationFramePush_tlbShootdown_eq
   · have e2 : st'.tlbShootdown = s1.tlbShootdown := by unfold storeObject at hS2; cases hS2; rfl
     rw [e2, e1]
 
-theorem storeDonationFramePush_preserves_objectIndexSet_invExt
-    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
-    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (hSetInv : st.objectIndexSet.table.invExt)
-    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
-    st'.objectIndexSet.table.invExt := by
-  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
-  have e1 := storeObject_preserves_objectIndexSet_invExt st s1 _ _ hSetInv hS1
-  rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
-  · exact e1
-  · exact storeObject_preserves_objectIndexSet_invExt s1 st' _ _ e1 hS2
-
-theorem storeDonationFramePush_preserves_objectIndexSetComplete
-    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
-    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (hObjInv : st.objects.invExt) (hSetInv : st.objectIndexSet.table.invExt)
-    (hComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
-    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
-    ∀ oid, st'.objects[oid]? ≠ none → st'.objectIndexSet.contains oid = true := by
-  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
-  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hSet1 := storeObject_preserves_objectIndexSet_invExt st s1 _ _ hSetInv hS1
-  have c1 := storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv hSetInv hComplete hS1
-  rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
-  · exact c1
-  · exact storeObject_preserves_objectIndexSetComplete s1 st' _ _ hInv1 hSet1 c1 hS2
-
 theorem storeDonationFramePush_scheduler_eq
     {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
     {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
@@ -9077,6 +9050,54 @@ theorem returnDonatedSchedContext_kindPreservingWrite
   have hLast : kindPreservingWrite s4 st' :=
     kindPreservingWrite.of_objects_eq (by rw [hEq])
   exact ((((hW1.trans hW2).trans hW3).trans hW4).trans hLast)
+
+/-! WS-UC UC2: the donation return moves no bookkeeping — each of its stores
+writes an object over one of the same kind. -/
+
+theorem storeDonationHeadClear_bookkeepingKept {head? : Option SeLe4n.ReplyId}
+    {st st' : SystemState} (hObjInv : st.objects.invExt)
+    (h : storeDonationHeadClear head? st = .ok st') : SystemState.BookkeepingKept st' st := by
+  rcases storeDonationHeadClear_cases h with rfl | ⟨_, _, _, hR, hS⟩
+  · exact .refl _
+  · exact .storeObject_sameKind hS hR rfl hObjInv
+
+theorem storeReplyReHead_bookkeepingKept {scId : SeLe4n.SchedContextId}
+    {head? : Option SeLe4n.ReplyId} {st st' : SystemState} (hObjInv : st.objects.invExt)
+    (h : storeReplyReHead scId head? st = .ok st') : SystemState.BookkeepingKept st' st := by
+  rcases storeReplyReHead_cases h with rfl | ⟨_, _, _, hR, hS⟩
+  · exact .refl _
+  · exact .storeObject_sameKind hS hR rfl hObjInv
+
+theorem storeDonationHeadPop_bookkeepingKept {scId : SeLe4n.SchedContextId}
+    {head? : Option (SeLe4n.ReplyId × Reply)} {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (h : storeDonationHeadPop scId head? st = .ok st') : SystemState.BookkeepingKept st' st := by
+  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨_, _, _, _, hClear, hReHead⟩
+  · exact .refl _
+  · exact (storeReplyReHead_bookkeepingKept
+      (storeDonationHeadClear_preserves_objects_invExt hObjInv hClear) hReHead).trans
+      (storeDonationHeadClear_bookkeepingKept hObjInv hClear)
+
+theorem returnDonatedSchedContext_bookkeepingKept
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    SystemState.BookkeepingKept st' st := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
+  have hInv3 := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have k4 : SystemState.BookkeepingKept s4 s3 :=
+    .storeObject_sameKind hS4 (lookupTcb_some_objects s3 serverTid serverTcb hL2) rfl hInv3
+  have k3 : SystemState.BookkeepingKept s3 s2 :=
+    .storeObject_sameKind hS3 (lookupTcb_some_objects s2 originalOwner clientTcb hL1) rfl hInv2
+  have k5 : SystemState.BookkeepingKept st' s4 := by rw [hEq]; exact ⟨rfl, rfl, rfl, fun _ => rfl⟩
+  exact k5.trans (k4.trans (k3.trans ((storeDonationHeadPop_bookkeepingKept hInv1 hClear).trans
+    (.storeObject_sameKind hS1 hSc rfl hObjInv))))
 
 /-- The pre-receive cleanup is a `kindPreservingWrite`: nothing, or the resolved
 donation return. -/

@@ -231,12 +231,6 @@ theorem endpointCallOnCore_call_path_NI
     .ready (some (sendPayloadMessage st caller payload)) hObjSetPop hStore
   obtain ⟨recvTcb'', hRecvGet, hRecvReady⟩ :=
     storeTcbIpcStateAndMessage_getTcb?_ipcState st' st'' receiver .ready (some (sendPayloadMessage st caller payload)) hInv' hStore
-  have hIdxW := wakeThread_preserves_objectIndexSetComplete_of_ready st'' receiver executingCore
-    recvTcb'' hRecvGet hRecvReady hInv'' hIdxSt''
-  have hObjSetW := wakeThread_preserves_objectIndexSet_invExt st'' receiver executingCore hObjSetSt''
-  have hIdxSt4 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
-    (wakeThread st'' receiver executingCore).1 st4 caller (.blockedOnReply endpointId (some receiver))
-    none hInvW hObjSetW hIdxW hCallerStore
   have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
     (wakeThread st'' receiver executingCore).1 st4 caller (.blockedOnReply endpointId (some receiver))
     none hInvW hCallerStore
@@ -248,7 +242,7 @@ theorem endpointCallOnCore_call_path_NI
   rw [linkReplyWaiter_preserves_projection,
       removeRunnableOnCore_preserves_projection ctx observer st5 caller executingCore hCallerHigh,
       linkServerStashedReply_preserves_projection ctx observer st4 st5 caller receiver
-        hCallerObjHigh hReceiverObjHigh hIdxSt4 hObjInv4 hLink,
+        hCallerObjHigh hReceiverObjHigh hObjInv4 hLink,
       storeTcbIpcStateAndMessage_preserves_projection ctx observer
         (wakeThread st'' receiver executingCore).1 st4 caller
         (.blockedOnReply endpointId (some receiver)) none hCallerObjHigh hInvW hCallerStore,

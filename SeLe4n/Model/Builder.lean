@@ -124,9 +124,9 @@ def createObject (ist : IntermediateState)
   hLifecycleConsistent := by
     obtain ⟨st', hS⟩ := storeObject_isOk ist.state id obj
     have h := storeObject_preserves_bookkeepingAgrees _ _ _ _ ist.hLifecycleConsistent
-      ist.hAllTables.objects.1 ist.hAllTables.objectIndexSet.1 ist.hAllTables.objectTypes.1 hS
+      ist.hAllTables.objects.1 hS
     unfold storeObject at hS; cases hS
-    exact ⟨h.index, h.nodup, h.indexSet, h.types⟩
+    exact ⟨h.index, h.nodup, h.indexSet, h.types, h.indexSetInv, h.typesInv⟩
 
 -- ============================================================================
 -- Q3-B.6: insertCap — insert a capability into a CNode's slots
@@ -166,7 +166,7 @@ def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
     have hA := SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks ist.state bootCoreId tid prio
     ist.hLifecycleConsistent.of_frame (by rw [hD]) (by rw [hD])
       (fun x => SystemState.objects_isSome_of_getObjectType? (hA.getObjectType? x))
-      (hD.objectTypeMetadataConsistent hA ist.hLifecycleConsistent.types)
+      (hD.objectTypeMetadataConsistent hA ist.hLifecycleConsistent.types) (by rw [hD])
 
 /-- **Seed an object's declassification provenance.**
 

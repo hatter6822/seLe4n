@@ -271,7 +271,6 @@ theorem linkServerStashedReply_preserves_projectionOnCore (ctx : LabelingContext
     (caller server : SeLe4n.ThreadId) (c : CoreId)
     (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
     (hServerObjHigh : objectObservable ctx observer server.toObjId = false)
-    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
@@ -279,7 +278,7 @@ theorem linkServerStashedReply_preserves_projectionOnCore (ctx : LabelingContext
   have hMach := linkServerStashedReply_machine_eq st st' caller server hStep
   exact projectStateOnCore_congr ctx observer
     (linkServerStashedReply_preserves_projection ctx observer st st' caller server
-      hCallerObjHigh hServerObjHigh hIdxComplete hObjInv hStep)
+      hCallerObjHigh hServerObjHigh hObjInv hStep)
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
 
 /-- WS-ZA ZA4.6: the per-core form of `linkReplyWaiter_preserves_projection`.
@@ -317,7 +316,6 @@ theorem consumeCallerReply_preserves_projectionOnCore (ctx : LabelingContext)
     (observer : IfObserver) (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (c : CoreId)
     (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
-    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
@@ -325,7 +323,7 @@ theorem consumeCallerReply_preserves_projectionOnCore (ctx : LabelingContext)
   have hMach := SystemState.consumeCallerReply_machine_eq st st' caller rid hStep
   exact projectStateOnCore_congr ctx observer
     (consumeCallerReply_preserves_projection ctx observer st st' caller rid
-      hCallerObjHigh hIdxComplete hObjInv hStep)
+      hCallerObjHigh hObjInv hStep)
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
 
 /-- WS-RM (`v0.35.6`): the per-core form of
@@ -407,12 +405,6 @@ theorem endpointCallOnCore_call_path_NI_smp
     .ready (some (sendPayloadMessage st caller payload)) hObjSetPop hStore
   obtain ⟨recvTcb'', hRecvGet, hRecvReady⟩ :=
     storeTcbIpcStateAndMessage_getTcb?_ipcState st' st'' receiver .ready (some (sendPayloadMessage st caller payload)) hInv' hStore
-  have hIdxW := wakeThread_preserves_objectIndexSetComplete_of_ready st'' receiver executingCore
-    recvTcb'' hRecvGet hRecvReady hInv'' hIdxSt''
-  have hObjSetW := wakeThread_preserves_objectIndexSet_invExt st'' receiver executingCore hObjSetSt''
-  have hIdxSt4 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
-    (wakeThread st'' receiver executingCore).1 st4 caller (.blockedOnReply endpointId (some receiver))
-    none hInvW hObjSetW hIdxW hCallerStore
   have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
     (wakeThread st'' receiver executingCore).1 st4 caller (.blockedOnReply endpointId (some receiver))
     none hInvW hCallerStore
@@ -428,7 +420,7 @@ theorem endpointCallOnCore_call_path_NI_smp
       removeRunnableOnCore_preserves_projectionOnCore ctx observer st5 caller executingCore c
         hCallerHigh,
       linkServerStashedReply_preserves_projectionOnCore ctx observer st4 st5 caller receiver c
-        hCallerObjHigh hReceiverObjHigh hIdxSt4 hObjInv4 hLink,
+        hCallerObjHigh hReceiverObjHigh hObjInv4 hLink,
       storeTcbIpcStateAndMessage_preserves_projectionOnCore ctx observer
         (wakeThread st'' receiver executingCore).1 st4 caller
         (.blockedOnReply endpointId (some receiver)) none c hCallerObjHigh hInvW hCallerStore,

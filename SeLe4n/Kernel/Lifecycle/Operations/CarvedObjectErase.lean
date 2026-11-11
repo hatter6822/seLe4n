@@ -88,6 +88,52 @@ writes compute nothing and the table erase is the whole of the compiled work. -/
       objectIndexSetGhost := st.objectIndexSetGhost.map (·.erase id)
       lifecycle := { objectTypesGhost := st.lifecycle.objectTypesGhost.map (·.erase id) } }
 
+open SeLe4n.Kernel.RobinHood in
+/-- WS-UC UC2: **the erase keeps the bookkeeping in agreement**: the key leaves
+the object table, the index, the index set and the type table together. -/
+theorem withObjectErased_preserves_bookkeepingAgrees (st : SystemState) (id : SeLe4n.ObjId)
+    (h : st.bookkeepingAgrees) (hInv : st.objects.invExt)
+    (hSz : st.objects.size < st.objects.capacity) :
+    (withObjectErased st id).bookkeepingAgrees := by
+  have hObj : ∀ k, (withObjectErased st id).objects[k]? =
+      if id = k then none else st.objects[k]? := by
+    intro k
+    show (st.objects.erase id)[k]? = _
+    simp only [RHTable_getElem?_eq_get?]
+    split
+    · next e => subst e; exact RHTable.getElem?_erase_self _ _ hInv
+    · next e => exact RHTable.getElem?_erase_ne _ _ _ (fun hb => e (eq_of_beq hb)) hInv hSz
+  have hI : (withObjectErased st id).objectIndex = st.objectIndex.filter (· != id) := by
+    simp [withObjectErased]
+  have hS : (withObjectErased st id).objectIndexSet = st.objectIndexSet.erase id := by
+    simp [withObjectErased]
+  have hT : (withObjectErased st id).lifecycle.objectTypes = st.lifecycle.objectTypes.erase id := by
+    simp [withObjectErased]
+  refine ⟨fun k => ?_, ?_, fun k => ?_, fun k => ?_, ?_, ?_⟩
+  · rw [hI, hObj k, List.mem_filter, h.index k]
+    by_cases e : id = k
+    · subst e; simp
+    · simp [e, Ne.symm e]
+  · rw [hI]; exact h.nodup.filter _
+  · rw [hS, hObj k]
+    by_cases e : id = k
+    · subst e; simp [RHSet.contains_erase_self _ _ h.indexSetInv.1]
+    · rw [RHSet.contains_erase_ne_K _ _ _ (fun hb => e (eq_of_beq hb)) h.indexSetInv, h.indexSet k,
+        if_neg e]
+  · unfold SystemState.lookupObjectTypeMeta
+    rw [hT, hObj k]
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable_getElem?_erase_K _ _ h.typesInv k]
+    by_cases e : id = k
+    · subst e; simp
+    · have hb : (id == k) = false := by simpa using e
+      rw [hb, if_neg e]
+      have := h.types k
+      unfold SystemState.lookupObjectTypeMeta at this
+      simpa only [RHTable_getElem?_eq_get?] using this
+  · rw [hS]; exact RHSet.erase_preserves_invExtK _ _ h.indexSetInv
+  · rw [hT]; exact RHTable_erase_preserves_invExtK _ _ h.typesInv
+
 /-- WS-UC UC1: `asid` erased from the ASID table, out of line, so the state is
 handed over and the table written in place. -/
 @[noinline] def withAsidErased (st : SystemState) (asid : SeLe4n.ASID) : SystemState :=

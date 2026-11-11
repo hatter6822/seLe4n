@@ -541,6 +541,7 @@ theorem startInitialThreadOnCore_preserves_bookkeepingAgrees (st : SystemState)
           rcases startInitialThreadOnCore_objects_cases st tid hInv x o' h' with
             e | ⟨_, _, e, _⟩ <;> rw [h] at e <;> cases e)
     (startInitialThreadOnCore_preserves_objectTypeMetadataConsistent st tid hInv hA.types)
+    (by rw [startInitialThreadOnCore_frame st tid])
 
 -- ============================================================================
 -- §4  Placement, classification, and the run-queue facts the boot reads

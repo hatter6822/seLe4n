@@ -1626,30 +1626,20 @@ private theorem returnDonatedSchedContext_preserves_projection
   have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
-  have hSet2 := storeDonationHeadPop_preserves_objectIndexSet_invExt hSet1 hClear
-  have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
   have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
     hObjSetInv hIdxComplete hS1
-  have hC2 := storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
-  have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
-    hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
     scId.toObjId _ (.schedContext sc) hSc
     (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
-    (hIdxComplete scId.toObjId (by rw [hSc]; intro hx; cases hx))
     hObjInv hS1
   have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
   have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
     originalOwner.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 originalOwner clientTcb hL1)
     (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
-    (hC2 originalOwner.toObjId (by
-      rw [lookupTcb_some_objects s2 originalOwner clientTcb hL1]; intro hx; cases hx))
     hInv2 hS3
   have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
     serverTid.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 serverTid serverTcb hL2)
     (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
-    (hC3 serverTid.toObjId (by
-      rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; intro hx; cases hx))
     hInv3 hS4
   have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
     rw [hEq]; rfl
@@ -1780,108 +1770,6 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
                         hInv2 hS2 hC2 hFinal,
                       storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ headTid _ _ _ hS2 hFinal⟩
 
-/-- The enqueue is one endpoint store and at most two link stores, each of which
-keeps the object index complete and well-formed. -/
-theorem endpointQueueEnqueue_preserves_objectIndexSetComplete_and_invExt
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (st st' : SystemState)
-    (hObjInv : st.objects.invExt)
-    (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hComplete : objectIndexSetComplete st)
-    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
-    objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
-  unfold endpointQueueEnqueue SystemState.getObject? at hStep
-  cases hObj : st.objects[endpointId]? with
-  | none => simp [hObj] at hStep
-  | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-        simp [hObj] at hStep
-    | endpoint ep =>
-      simp only [hObj] at hStep
-      cases hLookup : lookupTcb st tid with
-      | none => simp [hLookup] at hStep
-      | some tcb =>
-        simp only [hLookup] at hStep
-        by_cases hReady : tcb.ipcState ≠ .ready
-        · simp [hReady] at hStep
-        · by_cases hLinks : (tcb.queuePPrev.isSome || tcb.queuePrev.isSome || tcb.queueNext.isSome) = true
-          · simp [hReady, hLinks] at hStep
-          · rw [if_neg hReady, if_neg hLinks] at hStep
-            revert hStep
-            cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
-            | none =>
-              simp only []
-              cases hStore : storeObject endpointId _ st with
-              | error e => simp
-              | ok pair =>
-                obtain ⟨punit, stp⟩ := pair
-                cases punit
-                simp only []
-                intro hFinal
-                have hC1 := storeObject_preserves_objectIndexSetComplete st stp endpointId _
-                  hObjInv hObjSetInv hComplete hStore
-                have hS1 := storeObject_preserves_objectIndexSet_invExt st stp endpointId _
-                  hObjSetInv hStore
-                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ ((), stp)
-                  hObjInv hStore
-                exact ⟨storeTcbQueueLinks_preserves_objectIndexSetComplete _ _ tid _ _ _
-                    hInv1 hS1 hC1 hFinal,
-                  storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ tid _ _ _ hS1 hFinal⟩
-            | some tailTid =>
-              simp only []
-              cases hLookupTail : lookupTcb st tailTid with
-              | none => simp
-              | some tailTcb =>
-                simp only []
-                cases hStore : storeObject endpointId _ st with
-                | error e => simp
-                | ok pair =>
-                  obtain ⟨punit, stp⟩ := pair
-                  cases punit
-                  simp only []
-                  have hC1 := storeObject_preserves_objectIndexSetComplete st stp endpointId _
-                    hObjInv hObjSetInv hComplete hStore
-                  have hS1 := storeObject_preserves_objectIndexSet_invExt st stp endpointId _
-                    hObjSetInv hStore
-                  have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ ((), stp)
-                    hObjInv hStore
-                  cases hLink : storeTcbQueueLinks stp tailTid tailTcb.queuePrev tailTcb.queuePPrev
-                      (some tid) with
-                  | error e => simp
-                  | ok st2 =>
-                    simp only []
-                    intro hFinal
-                    have hC2 := storeTcbQueueLinks_preserves_objectIndexSetComplete _ _ _ _ _ _
-                      hInv1 hS1 hC1 hLink
-                    have hS2 := storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ _ _ _ _
-                      hS1 hLink
-                    have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ _ _ _ _ hInv1 hLink
-                    exact ⟨storeTcbQueueLinks_preserves_objectIndexSetComplete _ _ tid _ _ _
-                        hInv2 hS2 hC2 hFinal,
-                      storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ tid _ _ _ hS2 hFinal⟩
-
-/-- The pre-receive donation cleanup is nothing or one resolved donation return,
-which keeps the object index complete and well-formed. -/
-theorem cleanupPreReceiveDonation_preserves_objectIndexSetComplete_and_invExt
-    (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hComplete : objectIndexSetComplete st) :
-    objectIndexSetComplete (cleanupPreReceiveDonation st receiver) ∧
-      (cleanupPreReceiveDonation st receiver).objectIndexSet.table.invExt := by
-  unfold cleanupPreReceiveDonation
-  split
-  · exact ⟨hComplete, hObjSetInv⟩
-  · split
-    · split
-      · exact ⟨hComplete, hObjSetInv⟩
-      · rename_i st' hRet
-        obtain ⟨_, _, hR⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact ⟨returnDonatedSchedContext_preserves_objectIndexSetComplete _ _ _ _ _ _
-            hObjInv hObjSetInv hComplete hR,
-          returnDonatedSchedContext_preserves_objectIndexSet_invExt _ _ _ _ _ _ hObjSetInv hR⟩
-    · exact ⟨hComplete, hObjSetInv⟩
-
 /-- U4-B: endpointReceiveDual at a non-observable endpoint preserves projection.
 
     Two paths:
@@ -1966,8 +1854,6 @@ theorem endpointReceiveDual_preserves_projection
               obtain ⟨hIdxPop, hObjSetPop⟩ :=
                 endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
                   endpointId false st st1 sender senderTcb hObjInv hObjSetInv hIdxComplete hPop
-              have hIdxSt2 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
-                  st1 st2 sender _ _ hObjInv1 hObjSetPop hIdxPop hIpc
               -- #7.1 fold: replyId match (none fails closed) + linkCallerReply.
               cases hReplyId : replyId with
               | none => simp [hReplyId] at hStep
@@ -1983,7 +1869,7 @@ theorem endpointReceiveDual_preserves_projection
                   -- sender is high (hSenderObjHigh), so linkCallerReply preserves
                   -- projection unconditionally.
                   have hProjLink := linkCallerReply_preserves_projection ctx observer
-                      st2 stLinked sender rid hSenderObjHigh hIdxSt2 hObjInv2 hLink
+                      st2 stLinked sender rid hSenderObjHigh hObjInv2 hLink
                   have hObjInvLink := linkCallerReply_preserves_objects_invExt
                       st2 stLinked sender rid hObjInv2 hLink
                   -- AK1-D: atomic (.ready, senderMsg) receiver update
@@ -2126,17 +2012,11 @@ theorem endpointReceiveDual_preserves_projection
                   obtain ⟨_, hStEq⟩ := hStep; subst hStEq
                   -- The record is projection-stable; it reads the index completeness
                   -- the cleanup, the enqueue and the block carry forward.
-                  have hCS0 := cleanupPreReceiveDonation_preserves_objectIndexSetComplete_and_invExt
-                    st receiver hObjInv hObjSetInv hIdxComplete
-                  have hCS1 := endpointQueueEnqueue_preserves_objectIndexSetComplete_and_invExt
-                    endpointId true receiver _ st1 hObjInvClean hCS0.2 hCS0.1 hEnq
-                  have hC2 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete st1 st2
-                    receiver _ _ hObjInv1 hCS1.2 hCS1.1 hIpc
                   rw [removeRunnable_preserves_projection ctx observer stStashed receiver hReceiverHigh,
                       storeObject_preserves_projection ctx observer _ stStashed receiver.toObjId _
                         hReceiverObjHigh
                         (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInv2) hStash,
-                      recordReplyStasher_preserves_projection ctx observer st2 _ receiver hC2 hObjInv2,
+                      recordReplyStasher_preserves_projection ctx observer st2 _ receiver hObjInv2,
                       hProjTail]
 
 /-- The receive leg of `endpointReplyRecv` runs from the state after the answered
@@ -2372,12 +2252,6 @@ theorem endpointCall_preserves_projection
             obtain ⟨hIdxPop, hObjSetPop⟩ :=
               endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
                 endpointId true st st1 receiver _recvTcb hObjInv hObjSetInv hIdxComplete hPop
-            have hIdxSt2 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
-                st1 st2 receiver _ _ hObjInv1 hObjSetPop hIdxPop hTcbStore
-            have hObjSetSt2 := storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt
-                st1 st2 receiver _ _ hObjSetPop hTcbStore
-            have hIdxEns := ensureRunnable_preserves_objectIndexSetComplete st2 receiver hIdxSt2
-            have hObjSetEns := ensureRunnable_preserves_objectIndexSet_invExt st2 receiver hObjSetSt2
             -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller
                 (.blockedOnReply endpointId (some receiver)) none with
@@ -2388,8 +2262,6 @@ theorem endpointCall_preserves_projection
                   (ensureRunnable st2 receiver) st3 caller _ _ hObjInvEns hIpc
               have hProjIpc := storeTcbIpcStateAndMessage_preserves_projection ctx observer
                   (ensureRunnable st2 receiver) st3 caller _ _ hCallerObjHigh hObjInvEns hIpc
-              have hIdxSt3 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
-                  (ensureRunnable st2 receiver) st3 caller _ _ hObjInvEns hObjSetEns hIdxEns hIpc
               -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link. Both writes are
               -- projection-invisible: the caller is high (`hCallerObjHigh`) and the server is
               -- the dequeued receiver, also high (`hRecvObjHigh`).
@@ -2400,7 +2272,7 @@ theorem endpointCall_preserves_projection
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hStEq⟩ := hStep; subst hStEq
                 have hProjLink := linkServerStashedReply_preserves_projection ctx observer
-                    st3 st5 caller receiver hCallerObjHigh hRecvObjHigh hIdxSt3 hObjInvSt3 hLink
+                    st3 st5 caller receiver hCallerObjHigh hRecvObjHigh hObjInvSt3 hLink
                 rw [linkReplyWaiter_preserves_projection,
                     removeRunnable_preserves_projection ctx observer st5 caller hCallerHigh,
                     hProjLink, hProjIpc, hProjEns, hProjTcb, hProjPop]
@@ -3096,10 +2968,7 @@ private theorem donateSchedContext_preserves_projection
     (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
     (clientScId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
-    (hDonate : donateSchedContext st clientTid serverTid clientScId = .ok st')
-    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
-        st.objectIndexSet.contains oid = true)
-    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    (hDonate : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
       hObj, _, _, hFrame, hS1, hS2, hL1, hS3, hL2, hS4, hEq⟩ :=
@@ -3119,35 +2988,22 @@ private theorem donateSchedContext_preserves_projection
   have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
-  have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
-  have hSet2 := storeDonationFramePush_preserves_objectIndexSet_invExt hSet1 hS2
-  have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
-  have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
-    hObjSetInv hIdxComplete hS1
-  have hC2 := storeDonationFramePush_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hS2
-  have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
-    hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
     clientScId.toObjId _ (.schedContext sc) hScRaw
     -- **WS-HP HP10.4**: a donation step writes three SchedContext fields now.
     (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
-    (hIdxComplete clientScId.toObjId (by rw [hScRaw]; intro hx; cases hx))
     hObjInv hS1
   -- `v0.35.4`: the push is two Reply writes now (the pushed frame and the old
   -- head's upward link); both are projection-stable for the same reason.
-  have hP2 := storeDonationFramePush_preserves_projection ctx observer hC1 hSet1 hInv1
+  have hP2 := storeDonationFramePush_preserves_projection ctx observer hInv1
     ((SystemState.getReply?_eq_some_iff _ _ _).mpr hRep1) hS2
   have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
     clientTid.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 clientTid clientTcb hL1)
     (projectKernelObject_tcb_donorStore_invariant ctx observer clientTcb _ _ _)
-    (hC2 clientTid.toObjId (by
-      rw [lookupTcb_some_objects s2 clientTid clientTcb hL1]; intro hx; cases hx))
     hInv2 hS3
   have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
     serverTid.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 serverTid serverTcb hL2)
     (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
-    (hC3 serverTid.toObjId (by
-      rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; intro hx; cases hx))
     hInv3 hS4
   have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
     rw [hEq]; rfl
@@ -3167,10 +3023,7 @@ theorem applyCallDonation_preserves_projection
     (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
     (hOk : applyCallDonation st callerVtid receiverVtid = .ok st')
-    (hObjInv : st.objects.invExt)
-    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
-        st.objectIndexSet.contains oid = true)
-    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    (hObjInv : st.objects.invExt) :
     projectState ctx observer st' =
     projectState ctx observer st := by
   cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
@@ -3179,7 +3032,7 @@ theorem applyCallDonation_preserves_projection
   | some scId =>
       rw [applyCallDonation_characterisation, hSc] at hOk
       exact donateSchedContext_preserves_projection ctx observer st st'
-        callerVtid.val receiverVtid.val scId hObjInv hOk hIdxComplete hObjSetInv
+        callerVtid.val receiverVtid.val scId hObjInv hOk
 
 /-- AE1-F3: `propagatePriorityInheritance` preserves NI projection when
 the starting thread and its entire blocking chain are non-observable.
