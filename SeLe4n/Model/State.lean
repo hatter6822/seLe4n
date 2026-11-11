@@ -6781,27 +6781,6 @@ theorem SystemState.BookkeepingKept.of_map {st st' : SystemState} (f : KernelObj
     have e := congrArg (Option.map KernelObject.objectType) (hA x)
     simpa only [Option.map_map, Function.comp_def, hf] using e⟩
 
-/-- A step that keeps every slot's kind (`getObjectType?`) and writes none of the
-ghosts moves no bookkeeping. -/
-theorem SystemState.BookkeepingKept.of_getObjectType? {st st' : SystemState}
-    (hK : ∀ x, st'.getObjectType? x = st.getObjectType? x)
-    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
-    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
-    SystemState.BookkeepingKept st' st :=
-  ⟨hI, hS, hT, hK⟩
-
-/-- A kind-preserving write (up to the bindings) that writes none of the ghosts
-moves no bookkeeping. -/
-theorem SystemState.BookkeepingKept.of_kindPreservingUpToBindings {st st' : SystemState}
-    (h : kindPreservingWriteUpToBindings st st')
-    (hI : st'.objectIndex = st.objectIndex) (hS : st'.objectIndexSet = st.objectIndexSet)
-    (hT : st'.lifecycle.objectTypes = st.lifecycle.objectTypes) :
-    SystemState.BookkeepingKept st' st :=
-  ⟨hI, hS, hT, fun x => by
-    rcases h x with e | ⟨pre, post, hp, hq, ht, -⟩
-    · rw [e]
-    · rw [hp, hq]; simp [ht]⟩
-
 theorem SystemState.BookkeepingKept.of_kindPreserving {st st' : SystemState}
     (h : kindPreservingWrite st st') : SystemState.BookkeepingKept st' st :=
   ⟨h.ghosts.index, h.ghosts.indexSet, h.ghosts.types, fun x => by
@@ -6826,6 +6805,12 @@ theorem SystemState.bookkeepingAgrees.of_kept {st st' : SystemState}
       rw [k.types, k.kinds oid]; exact h.types oid
     indexSetInv := k.indexSet ▸ h.indexSetInv
     typesInv := k.types ▸ h.typesInv }
+
+/-- A step that writes no object and none of the ghosts keeps the agreement. -/
+theorem SystemState.bookkeepingAgrees.of_objects_ghosts {st st' : SystemState}
+    (h : SystemState.bookkeepingAgrees st) (hO : st'.objects = st.objects)
+    (hG : SystemState.ghostsKept st' st) : SystemState.bookkeepingAgrees st' :=
+  h.of_kept (.of_objects_eq hO hG.index hG.indexSet hG.types)
 
 /-- WS-UC UC2: `storeObject` keeps the bookkeeping in agreement. -/
 theorem storeObject_preserves_bookkeepingAgrees

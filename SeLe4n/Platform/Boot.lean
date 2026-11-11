@@ -6365,11 +6365,12 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         show (0, sc.yieldFromCode) = (0, 0)
         rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2]
       | _ => rfl
-  -- Compose all 21 components
+  -- 22. bookkeepingAgrees (WS-UC UC2): every intermediate state carries it.
+  -- Compose all 22 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield⟩
+         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield, ist.hLifecycleConsistent⟩
 
 /-- WS-ZA ZA6.8: **a boot-shaped state keeps no linked thread current or
 resident** — no boot thread yields to a context, so every yield-to code is 0

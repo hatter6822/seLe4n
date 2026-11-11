@@ -230,6 +230,12 @@ theorem trans {s1 s2 s3 : SystemState}
    hSecond.declassificationAuditEpoch.trans hFirst.declassificationAuditEpoch,
    hSecond.declassificationRefusals.trans hFirst.declassificationRefusals⟩
 
+/-- The two states carry the same bookkeeping ghosts: the object index, its
+membership set and the recorded object kinds all agree. -/
+theorem ghostsKept {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
+    SystemState.ghostsKept s2 s1 :=
+  ⟨h.objectIndex, h.objectIndexSet, by rw [h.lifecycle]⟩
+
 /-- WS-SM SM9.D.5: **the declassification taint agrees** — the provenance
 analogue of the trail and ledger clauses, and load-bearing for the same reason:
 a scheduler substitution that silently re-keyed an object's taint would move a

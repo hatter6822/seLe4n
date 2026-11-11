@@ -2002,6 +2002,28 @@ theorem applyTaintStep_objectsAgreeOffTaint (plan : TaintPlan)
   exact ((R _ (fun s e => hJ s _ _) _ _).trans (R _ (fun s k => hC s k) _ _)).trans
     (R _ (fun s p => hJ s _ _) _ _)
 
+/-- The taint step writes the store's slots alone, so it moves no bookkeeping
+ghost. -/
+theorem applyTaintStep_ghostsKept (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    (preTaint : TaintMap) (post : SystemState) :
+    SystemState.ghostsKept (applyTaintStep plan origins preTaint post) post := by
+  have R := foldl_taintStep_rel (fun (s s' : SystemState) => SystemState.ghostsKept s' s)
+    SystemState.ghostsKept.refl (fun _ _ _ h1 h2 => h2.trans h1)
+  have hJ : ∀ (s : SystemState) k w, SystemState.ghostsKept (joinTaintAt s k w) s :=
+    fun s k w => by
+      rw [joinTaintAt_eq]
+      split
+      · exact .refl s
+      · exact ⟨rfl, rfl, rfl⟩
+  have hC : ∀ (s : SystemState) k, SystemState.ghostsKept (clearTaintAt s k) s := fun s k => by
+    unfold clearTaintAt
+    split
+    · exact .refl s
+    · exact ⟨rfl, rfl, rfl⟩
+  unfold applyTaintStep; dsimp only
+  exact (R _ (fun s p => hJ s _ _) _ _).trans
+    ((R _ (fun s k => hC s k) _ _).trans (R _ (fun s e => hJ s _ _) _ _))
+
 /-- The taint step keeps the store's table invariant. -/
 theorem applyTaintStep_invExt (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
     (preTaint : TaintMap) {post : SystemState} (h : post.objects.invExt) :
@@ -2359,6 +2381,11 @@ only in its taint words. -/
 theorem applySyscallTaint_objectsAgreeOffTaint (plan : TaintPlan) (pre post : SystemState) :
     post.objectsAgreeOffTaint (applySyscallTaint plan pre post) :=
   applyTaintStep_objectsAgreeOffTaint _ _ _ _
+
+/-- The syscall's taint step moves no bookkeeping ghost. -/
+theorem applySyscallTaint_ghostsKept (plan : TaintPlan) (pre post : SystemState) :
+    SystemState.ghostsKept (applySyscallTaint plan pre post) post :=
+  applyTaintStep_ghostsKept _ _ _ _
 
 /-- The syscall's taint step keeps the store's table invariant. -/
 theorem applySyscallTaint_invExt {plan : TaintPlan} {pre post : SystemState}

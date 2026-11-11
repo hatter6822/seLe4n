@@ -2121,6 +2121,24 @@ theorem vspaceUnifyInstructionPage_declassificationTaint {st st' : SystemState}
           subst h
           rfl
 
+/-- The unify writes none of the bookkeeping ghosts. -/
+theorem vspaceUnifyInstructionPage_ghostsKept {st st' : SystemState}
+    {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    (h : vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
+    SystemState.ghostsKept st' st := by
+  cases hres : resolveAsidRoot st asid with
+  | none => rw [vspaceUnifyInstructionPage_asid_unbound st vaddr hres] at h; cases h
+  | some rr =>
+      obtain ⟨rid, root⟩ := rr
+      cases hlk : VSpaceRoot.lookup root vaddr with
+      | none => rw [vspaceUnifyInstructionPage_unmapped hres hlk] at h; cases h
+      | some lk =>
+          obtain ⟨p, pm⟩ := lk
+          rw [vspaceUnifyInstructionPage_ok hres hlk] at h
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+          subst h
+          exact ⟨rfl, rfl, rfl⟩
+
 /-- **WS-SM SM7.D**: the unify records the *unify* operand — the runtime emits
 the full data-to-instruction sequence, not a bare invalidate, so the caller's
 stores are pushed to the Point of Unification before the instruction lines are

@@ -3652,7 +3652,7 @@ object-store size.
 
 Production `AdapterProofHooks` (`rpi5ProductionAdapterProofHooks` in
 `Platform/RPi5/ProofHooks.lean`) provides substantive preservation proofs
-for all 4 adapter paths. The `proofLayerInvariantBundle` (18 conjuncts; the 18th, `liveMappingsRecorded`, says every live mapping is recorded on a capability to its frame and no thread's space slot holds a record)
+for all 4 adapter paths. The `proofLayerInvariantBundle` (22 conjuncts; the 18th, `liveMappingsRecorded`, says every live mapping is recorded on a capability to its frame and no thread's space slot holds a record, and the 22nd, `bookkeepingAgrees`, that the ghost index, index set and type table agree with the object table)
 and `ipcInvariantFull` (20 conjuncts; the first 15 form `ipcInvariantCore`
 after the WS-RC R4.C.7 close-out) are preserved through the FFI boundary.
 
@@ -4630,7 +4630,12 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   of them and a carve builds none of their cells.  Their agreement with the
   object table is `SystemState.bookkeepingAgrees` (the index lists exactly the
   stored identifiers without duplicates, the set contains exactly them, the
-  type table is consistent); every compiled read that used to walk them reads
+  type table is consistent), the proof-layer bundle's 22nd conjunct, carried
+  by the default state and boot and kept by every kernel entry
+  (`syscallDispatchEntryState_preserves_bookkeepingAgrees` and its timer,
+  reschedule, interrupt, fault, unknown-syscall and FP/SIMD siblings, through
+  each step's `MappingStage`) and by the taint-word frame; every compiled read
+  that used to walk them reads
   the object table instead (the capacity check, the PIP-chain fuel, the
   information-flow index, the SGI and admission walks, `storeIsFresh`, the
   store-locality kind checks), each proven independent of the table's

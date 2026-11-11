@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.MappingRecordStage.Basic
 import SeLe4n.Kernel.Capability.Invariant.Preservation.SetSpaceMappingRecords
+import SeLe4n.Kernel.Capability.Invariant.Preservation.Bookkeeping
 import SeLe4n.Kernel.KernelRecords.Frame
 
 /-! # The capability and VSpace arms keep the mappings recorded
@@ -92,28 +93,32 @@ theorem cspaceCopy_mappingStage {src dst : CSpaceAddr} {st st' : SystemState}
     MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
       (cspaceCopy_preserves_capabilityInvariantBundle st st' src dst hC h))
-    fun hI hL => cspaceCopy_preserves_liveMappingsRecorded hI hL h
+    (fun hI hL => cspaceCopy_preserves_liveMappingsRecorded hI hL h)
+    fun hI hB => cspaceCopy_preserves_bookkeepingAgrees hI hB h
 
 theorem cspaceMintWithCdt_mappingStage {src dst : CSpaceAddr} {rights : AccessRightSet}
     {badge : Option SeLe4n.Badge} {st st' : SystemState} (hC : capabilityInvariantBundle st)
     (h : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) : MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
       (cspaceMintWithCdt_preserves_capabilityInvariantBundle st st' src dst rights badge hC h))
-    fun hI hL => cspaceMintWithCdt_preserves_liveMappingsRecorded hI hL h
+    (fun hI hL => cspaceMintWithCdt_preserves_liveMappingsRecorded hI hL h)
+    fun hI hB => cspaceMintWithCdt_preserves_bookkeepingAgrees hI hB h
 
 theorem cspaceMove_mappingStage {src dst : CSpaceAddr} {st st' : SystemState}
     (hC : capabilityInvariantBundle st) (h : cspaceMove src dst st = .ok ((), st')) :
     MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
       (cspaceMove_preserves_capabilityInvariantBundle st st' src dst hC h))
-    fun hI hL => cspaceMove_preserves_liveMappingsRecorded hI hL h
+    (fun hI hL => cspaceMove_preserves_liveMappingsRecorded hI hL h)
+    fun hI hB => cspaceMove_preserves_bookkeepingAgrees hI hB h
 
 theorem mintReplyCapWithCdt_mappingStage {src dst : CSpaceAddr} {st st' : SystemState}
     (hC : capabilityInvariantBundle st) (h : mintReplyCapWithCdt src dst st = .ok ((), st')) :
     MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
       (mintReplyCapWithCdt_preserves_capabilityInvariantBundle st st' src dst hC h))
-    fun hI hL => mintReplyCapWithCdt_preserves_liveMappingsRecorded hI hL h
+    (fun hI hL => mintReplyCapWithCdt_preserves_liveMappingsRecorded hI hL h)
+    fun hI hB => mintReplyCapWithCdt_preserves_bookkeepingAgrees hI hB h
 
 /-- The reset writes the invoked capability's free index alone. -/
 theorem untypedResetFromCap_mappingStage {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
@@ -121,8 +126,10 @@ theorem untypedResetFromCap_mappingStage {tid : SeLe4n.ThreadId} {srcAddr : SeLe
     MappingStage st st' := by
   obtain ⟨_, _, _, _, _, hR⟩ := untypedResetFromCap_ok tid srcAddr st st' h
   refine MappingStage.of_preserves (fun hI => ?_)
-    fun hI hL => untypedResetFromCap_preserves_liveMappingsRecorded tid srcAddr hI hL h
-  rw [untypedResetSlot_ok_frame hR]; exact setCapFreeIndex_preserves_objects_invExt hI
+    (fun hI hL => untypedResetFromCap_preserves_liveMappingsRecorded tid srcAddr hI hL h)
+    fun hI hB => ?_
+  · rw [untypedResetSlot_ok_frame hR]; exact setCapFreeIndex_preserves_objects_invExt hI
+  · rw [untypedResetSlot_ok_frame hR]; exact setCapFreeIndex_preserves_bookkeepingAgrees hI hB
 
 /-! ### The VSpace and page-table arms -/
 
@@ -142,12 +149,133 @@ theorem vspaceMapFromFrameCap_objects_invExt {tid : SeLe4n.ThreadId} {ec : Concu
   obtain ⟨_, _, -, -, hS⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
   exact storeObject_preserves_objects_invExt _ _ _ _ hI2 hS
 
+/-- The map writes the root through a store, then TLB, shootdown and fill state
+alone: no ghost moves after the store. -/
+theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_ghosts
+    (ec : Concurrency.CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st st' : SystemState)
+    (hStep : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore ec asid vaddr
+      paddr perms st = .ok ((), st')) :
+    ∃ stB, Architecture.vspaceMapPage asid vaddr paddr perms st = .ok ((), stB) ∧
+      SystemState.ghostsKept st' stB := by
+  unfold Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore at hStep
+  cases hS : Architecture.vspaceMapPageCheckedWithShootdownFromState ec asid vaddr paddr
+      perms st with
+  | error e => rw [hS] at hStep; cases hStep
+  | ok pr =>
+    obtain ⟨u, stM⟩ := pr; cases u
+    rw [hS] at hStep
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+    have hTail : SystemState.ghostsKept st' stM := by
+      subst hStep
+      unfold Architecture.tlbFillOnCore Architecture.drainInitiatorPerCoreView
+      split
+      · exact ⟨rfl, rfl, rfl⟩
+      · unfold Architecture.tlbInsertOnCore
+        split <;> exact ⟨rfl, rfl, rfl⟩
+    unfold Architecture.vspaceMapPageCheckedWithShootdownFromState at hS
+    dsimp only at hS
+    cases hF : Architecture.vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st with
+    | error e => rw [hF] at hS; cases hS
+    | ok pr2 =>
+      obtain ⟨u2, stF⟩ := pr2; cases u2
+      rw [hF] at hS
+      simp only at hS
+      have hRound : SystemState.ghostsKept stM stF := by
+        split at hS
+        · rw [Architecture.withShootdownRound_total] at hS
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+          subst hS
+          exact ⟨rfl, rfl, rfl⟩
+        · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+          subst hS; exact .refl _
+      unfold Architecture.vspaceMapPageCheckedWithFlushFromState at hF
+      split at hF
+      · cases hF
+      · split at hF
+        · cases hF
+        · split at hF
+          · cases hF
+          · unfold Architecture.vspaceMapPageWithFlush at hF
+            cases hB : Architecture.vspaceMapPage asid vaddr paddr perms st with
+            | error e => rw [hB] at hF; cases hF
+            | ok pr3 =>
+              obtain ⟨u3, stB⟩ := pr3; cases u3
+              rw [hB] at hF
+              simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
+              subst hF
+              exact ⟨stB, rfl, hTail.trans (hRound.trans ⟨rfl, rfl, rfl⟩)⟩
+
+/-- The page-table write the map makes is a store. -/
+theorem vspaceMapPage_preserves_bookkeepingAgrees {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions} {st st' : SystemState}
+    (hObjInv : st.objects.invExt) (hB : st.bookkeepingAgrees)
+    (h : Architecture.vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    st'.bookkeepingAgrees := by
+  unfold Architecture.vspaceMapPage at h
+  cases hRes : Architecture.resolveAsidRoot st asid with
+  | none => rw [hRes] at h; cases h
+  | some pr =>
+    obtain ⟨rootId, root⟩ := pr
+    rw [hRes] at h
+    simp only at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · cases hMp : root.mapPage vaddr paddr perms with
+        | none => rw [hMp] at h; cases h
+        | some root' =>
+          rw [hMp] at h
+          simp only at h
+          exact storeObject_preserves_bookkeepingAgrees (Architecture.recordPhysicalWrites st _) _
+            _ _ (hB.of_objects_ghosts rfl ⟨rfl, rfl, rfl⟩) hObjInv h
+
+/-- **The map keeps the agreement**: the root's store, the frame's and the
+root's epoch stores, and the record on the capability are each a store. -/
+theorem vspaceMapFromFrameCap_preserves_bookkeepingAgrees {tid : SeLe4n.ThreadId}
+    {ec : Concurrency.CoreId} {args : Architecture.SyscallArgDecode.VSpaceMapArgs}
+    {st st' : SystemState} (hI : st.objects.invExt) (hB : st.bookkeepingAgrees)
+    (h : vspaceMapFromFrameCap tid ec args st = .ok ((), st')) : st'.bookkeepingAgrees := by
+  obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, epoch, st2, hT, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid ec args st st' h
+  have hI1 := (vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1 hI
+    hMap).1
+  obtain ⟨stB, hMB, hG⟩ := vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_ghosts _ _ _ _ _
+    st st1 hMap
+  obtain ⟨stB', hMB', hO⟩ := vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_objects _ _ _ _ _
+    st st1 hMap
+  rw [hMB] at hMB'
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hMB'
+  subst hMB'
+  have hB1 := (vspaceMapPage_preserves_bookkeepingAgrees hI hB hMB).of_objects_ghosts hO hG
+  obtain ⟨_, _, _, st3, -, -, -, h1, h2⟩ := tagFrameMapping_ok _ _ _ st1 st2 epoch hT
+  have hI3 := storeObject_preserves_objects_invExt _ _ _ _ hI1 h1
+  have hB2 := storeObject_preserves_bookkeepingAgrees _ _ _ _
+    (storeObject_preserves_bookkeepingAgrees _ _ _ _ hB1 hI1 h1) hI3 h2
+  obtain ⟨_, _, -, -, hS⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
+  exact storeObject_preserves_bookkeepingAgrees _ _ _ _ hB2
+    (storeObject_preserves_objects_invExt _ _ _ _ hI3 h2) hS
+
+/-- **The unmap keeps the agreement**: it writes the root as a root
+(`unmapPageState`), and no ghost. -/
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_bookkeepingAgrees
+    {ec : Concurrency.CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {st st' : SystemState}
+    (hI : st.objects.invExt) (hB : st.bookkeepingAgrees)
+    (h : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
+      = .ok ((), st')) : st'.bookkeepingAgrees := by
+  obtain ⟨-, hW, -⟩ := vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame ec asid vaddr st st'
+    hI h
+  obtain ⟨-, -, -, -, -, e⟩ := vspaceUnmap_ok_unmapPageState h
+  exact hB.of_vspaceRootOnlyWrite hW (e ▸ unmapPageState_ghostsKept ec asid vaddr st)
+
 theorem vspaceMapFromFrameCap_mappingStage {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId}
     {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}
     (hW : teardownWellFormed st) (h : vspaceMapFromFrameCap tid ec args st = .ok ((), st')) :
     MappingStage st st' :=
   MappingStage.of_preserves (fun hI => vspaceMapFromFrameCap_objects_invExt hI h)
-    fun _ hL => vspaceMapFromFrameCap_preserves_liveMappingsRecorded tid ec args st st' hW hL h
+    (fun _ hL => vspaceMapFromFrameCap_preserves_liveMappingsRecorded tid ec args st st' hW hL h)
+    fun hI hB => vspaceMapFromFrameCap_preserves_bookkeepingAgrees hI hB h
 
 theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage {ec : Concurrency.CoreId}
     {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {st st' : SystemState}
@@ -156,8 +284,9 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage {ec : Concur
       = .ok ((), st')) : MappingStage st st' :=
   MappingStage.of_preserves
     (fun hI => (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame ec asid vaddr st st' hI h).1)
-    fun _ hL => vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded
-      ec asid vaddr st st' hW hL h
+    (fun _ hL => vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded
+      ec asid vaddr st st' hW hL h)
+    fun hI hB => vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_bookkeepingAgrees hI hB h
 
 /-- **The live `.vspaceMap` arm, map or remap, keeps the mappings recorded**: a
 remap is the unmap of the address the frame capability records, which keeps the
@@ -176,6 +305,7 @@ theorem vspaceUnifyInstructionPage_mappingStage {asid : SeLe4n.ASID} {vaddr : Se
     {st st' : SystemState} (h : Architecture.vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
     MappingStage st st' :=
   MappingStage.of_objects_eq (Architecture.vspaceUnifyInstructionPage_frame h).1
+    (Architecture.vspaceUnifyInstructionPage_ghostsKept h)
 
 /-- The page-table install stores the table, then the root. -/
 theorem pageTableMap_objects_invExt {tableId rootId : SeLe4n.ObjId} {vaddr : SeLe4n.VAddr}
@@ -234,22 +364,25 @@ theorem cspaceRevokeCdtFinalising_mappingStage {ec : Concurrency.CoreId} {addr :
     (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) : MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
       (cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle ec addr st st' P.caps h))
-    fun _ hL => cspaceRevokeCdtFinalising_preserves_liveMappingsRecorded ec addr st st' P.caps
-      P.teardown hL h
+    (fun _ hL => cspaceRevokeCdtFinalising_preserves_liveMappingsRecorded ec addr st st' P.caps
+      P.teardown hL h)
+    fun hI hB => cspaceRevokeCdtFinalising_preserves_bookkeepingAgrees ec hI hB h
 
 theorem cspaceDeleteSlotZombie_mappingStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
     {st st' : SystemState} (P : MappingArmPremises st)
     (h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) : MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
       (cspaceDeleteSlotZombie_preserves_capabilityInvariantBundle ec addr st st' P.caps h))
-    fun _ hL => cspaceDeleteSlotZombie_preserves_liveMappingsRecorded ec addr st st' P.caps
-      P.teardown hL h
+    (fun _ hL => cspaceDeleteSlotZombie_preserves_liveMappingsRecorded ec addr st st' P.caps
+      P.teardown hL h)
+    fun hI hB => cspaceDeleteSlotZombie_preserves_bookkeepingAgrees ec hI hB h
 
 theorem copyThreadSpacesZombie_mappingStage {ec : Concurrency.CoreId} {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr} (P : MappingArmPremises st)
     (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') : MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
       (copyThreadSpacesZombie_preserves_capabilityInvariantBundle ec P.caps h))
-    fun _ hL => copyThreadSpacesZombie_preserves_liveMappingsRecorded ec P.caps P.teardown hL h
+    (fun _ hL => copyThreadSpacesZombie_preserves_liveMappingsRecorded ec P.caps P.teardown hL h)
+    fun hI hB => copyThreadSpacesZombie_preserves_bookkeepingAgrees ec hI hB h
 
 end SeLe4n.Kernel

@@ -14,13 +14,17 @@ import SeLe4n.Kernel.MappingRecordPreservation
 `SystemState.liveMappingsRecorded` (`Model/MappingRecords.lean`) reads the
 objects alone: every root's ASID, translations and epochs, every frame's base and
 every slot's capability.  A `MappingStage` is a step that, from a state whose
-object store keeps its table invariant, reaches one that keeps it too and keeps
-the mappings recorded.  Stages compose (`MappingStage.trans`), so a kernel
-entry's proof is the composition of its steps' stages.
+object store keeps its table invariant, reaches one that keeps it too, keeps
+the mappings recorded and keeps the bookkeeping ghosts in agreement with the
+objects (`SystemState.bookkeepingAgrees`, WS-UC UC2).  Stages compose
+(`MappingStage.trans`), so a kernel entry's proof is the composition of its
+steps' stages.
 
 Most steps keep every object's kind and mapping facts and every thread's slots,
-and write no CNode (`kindPreservingWrite`); their stage is
-`MappingStage.of_kindPreservingWrite`.  The steps that write a slot or a mapping
+write no CNode and move no ghost (`kindPreservingWrite`); their stage is
+`MappingStage.of_kindPreservingWrite`.  A step that writes no object states
+that it moves no ghost (`ghostsKept`, closed by `ghosts_kept` for a record
+update that leaves the three fields alone).  The steps that write a slot or a mapping
 are proven in `Kernel/MappingRecordPreservation.lean` and
 `Capability/Invariant/Preservation/MappingRecords.lean`.
 -/
@@ -28,8 +32,8 @@ are proven in `Kernel/MappingRecordPreservation.lean` and
 namespace SeLe4n.Model.SystemState
 
 /-- **A step that keeps the live mappings recorded**: from a state whose object
-store keeps its table invariant, it reaches one that keeps it too, and the
-mappings stay recorded. -/
+store keeps its table invariant, it reaches one that keeps it too, the mappings
+stay recorded, and the bookkeeping stays in agreement with the objects. -/
 def MappingStage (st st' : SystemState) : Prop :=
   st.objects.invExt → st'.objects.invExt ∧ (st.liveMappingsRecorded → st'.liveMappingsRecorded) ∧
     (st.bookkeepingAgrees → st'.bookkeepingAgrees)

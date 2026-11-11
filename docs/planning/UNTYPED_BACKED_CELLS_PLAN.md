@@ -187,9 +187,12 @@ rewrites it there.
   `objectIndexSetGhost`, `LifecycleMetadata.objectTypesGhost`, and their frozen
   forms), read only through `noncomputable` readers.  Their agreement with the
   object table is `SystemState.bookkeepingAgrees`, carried by the boot's
-  `IntermediateState`; wiring it into the kernel-entry bundle is a registered
-  follow-up (table C, closure before UC9), as is the reply-receive's
-  now-always-true capability-transfer store guard (closure UC3).  The capacity
+  `IntermediateState` and the kernel invariant bundle's 22nd component, which
+  every kernel entry keeps (`MappingStage.bookkeeping`;
+  `syscallDispatchEntryState_preserves_bookkeepingAgrees` and its twins for the
+  other entries).  The reply-receive's capability-transfer store guard, true on
+  every state once an in-place store asks only for the key's kind, is deleted
+  and the dispatch equivalences re-proven without it.  The capacity
   check reads `objects.size`; the PIP fuel, the information-flow index
   (sorted, `sortObjIds`; executable form `projectObjectIndexByTable`, proven
   equal), the SGI and admission walks, `storeIsFresh` and the store-locality

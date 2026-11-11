@@ -13,7 +13,16 @@ cells: every carve pin falls by 5 cells (120 bytes).
   exactly the stored identifiers, without duplicates; the set contains exactly
   them; the type table is consistent), carried by the boot's
   `IntermediateState` and preserved by every store, erase and boot step;
-  `objectIndex_length` gives `objectIndex.length = objects.size`.
+  `objectIndex_length` gives `objectIndex.length = objects.size`.  It is the
+  kernel invariant bundle's 22nd component
+  (`proofLayerInvariantBundle.bookkeepingAgrees`), kept by every kernel entry:
+  the mapping-record stage (`MappingStage`) carries it as its third part, so
+  each step's stage proves it — a write that keeps every object's kind moves no
+  ghost (`kindPreservingWrite.ghosts`, `ghostsKept`), and a store, a carve, a
+  CDT link or a retire moves the ghosts with the table — and
+  `syscallDispatchEntryState_preserves_bookkeepingAgrees` and its timer,
+  reschedule, interrupt, fault, unknown-syscall and FP/SIMD twins state it per
+  entry.
 - **Re-pointed compiled reads**, each walk proven independent of the table's
   iteration order: the capacity check is `objects.size ≥ maxObjects`
   (`objectCountBounded` replaces `objectIndexBounded`); the PIP-chain fuel is
@@ -30,7 +39,12 @@ cells: every carve pin falls by 5 cells (120 bytes).
 - **Retired**: `withObjectIndexed`, `withObjectIndexSet`, `withObjectType`,
   `objIdListDrop`, `withObjectUnindexed`, `withObjectIndexSetErased`,
   `withObjectTypeErased` and the `notVSpaceRootAt*` frame lemmas (frames now
-  take kind agreement).
+  take kind agreement); the reply-receive's capability-transfer store guard
+  (`replyTransferStoresInPlace`, `cnodeStoreInPlace`), true on every state once
+  an in-place store asks only for the key's kind, with the reply legs'
+  `_fields` lemmas that fed it (the dispatch equivalences are re-proven without
+  it); and the unused index-set hypothesis of
+  `storeObject_projectionStable_preserves_projection`.
 - **Boundary test** (`runObjectStoreCapacityBoundaryChecks`): with the store
   at `maxObjects − 1` the carve succeeds; the next is refused with
   `objectStoreCapacityExceeded` in the state it was handed.

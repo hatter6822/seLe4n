@@ -86,6 +86,7 @@ theorem perCoreTimerTickStep_mappingStage (st : SystemState) (coreId : UInt64) :
   · rw [perCoreTimerTickStep_valid_core st coreId hc]
     have hClk : MappingStage st (tickClockedState st ⟨coreId.toNat, hc⟩) :=
       MappingStage.of_objects_eq (tickClockedState_objects _ _)
+        (by unfold tickClockedState; split <;> exact ⟨rfl, rfl, rfl⟩)
     exact (hClk.trans (timerTickOnCore_mappingStage _ _)).trans
       (scheduleDomainOnCore_mappingStage (scheduleDomainOnCore_eq_state _ _))
   · rw [perCoreTimerTickStep_invalid_core st coreId hc]
@@ -160,7 +161,9 @@ theorem settleResidencyOnCore_mappingStage (st : SystemState) (c : CoreId) :
   exact ((dispatchVacatedCore_mappingStage st c).trans
     (deferResidentElsewhere_mappingStage _ c)).trans
     ((MappingStage.of_objects_eq rfl).trans
-      (MappingStage.of_objects_eq (PriorityInheritance.pokeReleasedResident_objects _ _ _ _)))
+      (MappingStage.of_objects_eq (PriorityInheritance.pokeReleasedResident_objects _ _ _ _)
+        (by rcases PriorityInheritance.pokeReleasedResident_cases _ _ _ _ with h | ⟨_, -, h⟩ <;>
+              rw [h] <;> exact ⟨rfl, rfl, rfl⟩)))
 
 theorem settleResidencyAt_mappingStage (st : SystemState) (coreId : UInt64) :
     MappingStage st (PriorityInheritance.settleResidencyAt st coreId) := by
@@ -183,9 +186,12 @@ theorem completeYieldTo_mappingStage (st : SystemState) (y : SeLe4n.ThreadId) :
 completion, and the core's bank, which holds no mapping. -/
 theorem activateThreadOnCore_mappingStage (st : SystemState) (c : CoreId) :
     MappingStage st (activateThreadOnCore st c) := by
-  rcases activateThreadOnCore_objects st c with h | ⟨tid, _, h⟩
-  · exact MappingStage.of_objects_eq h
-  · exact (completeYieldTo_mappingStage st tid).trans (MappingStage.of_objects_eq h)
+  rcases activateThreadOnCore_cases st c with h | ⟨tid, _, _, -, -, -, h⟩ <;> rw [h]
+  · exact MappingStage.refl _
+  · unfold completeCurrentYield
+    split
+    · exact (completeYieldTo_mappingStage st tid).trans (MappingStage.of_objects_eq rfl)
+    · exact completeYieldTo_mappingStage st tid
 
 theorem activateThreadAt_mappingStage (st : SystemState) (coreId : UInt64) :
     MappingStage st (activateThreadAt st coreId) := by
@@ -319,7 +325,8 @@ theorem syscallEntryChecked_mappingStage {ctx : LabelingContext}
   obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
     decoded.overflowCount
   rw [ht] at h
-  exact (MappingStage.of_objects_eq (st' := { st with perCoreTlb := t }) rfl).trans
+  exact (MappingStage.of_objects_eq (st := st) (st' := { st with perCoreTlb := t }) rfl
+    ⟨rfl, rfl, rfl⟩).trans
     (dispatchSyscallChecked_mappingStage ctx decoded tid e _ st' (P.of_tables_eq rfl rfl rfl) h)
 
 /-- **The ABI dispatch keeps the mappings recorded**: the argument spill (a
@@ -354,7 +361,10 @@ theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
         (faultDeliverOnCoreChecked_mappingStage _ _ tid _ _ e)
     · cases h
       exact hW.trans (MappingStage.of_objects_eq
-        (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _))
+        (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+        (by unfold Platform.FFI.recordSyscallRefusal; split
+            · exact ⟨rfl, rfl, rfl⟩
+            · split <;> exact ⟨rfl, rfl, rfl⟩))
   · rename_i hE
     cases h
     exact hW.trans (syscallEntryChecked_mappingStage P1 hE)
@@ -407,7 +417,8 @@ theorem syscallDispatchEntryState_mappingStage (ctx : LabelingContext) (e : Core
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2) := by
   have hS := (saveCapturedSyscallFrame_mappingStage st e frame).trans
-    (MappingStage.of_objects_eq (Architecture.IpcBufferRead.syncUserWords_objects _ bytes n))
+    (MappingStage.of_objects_eq (Architecture.IpcBufferRead.syncUserWords_objects _ bytes n)
+      (by unfold Architecture.IpcBufferRead.syncUserWords; split <;> exact ⟨rfl, rfl, rfl⟩))
   have P1 : MappingArmPremises (Architecture.IpcBufferRead.syncUserWords
       (Architecture.saveCapturedSyscallFrame st e frame) bytes n) :=
     (saveCapturedSyscallFrame_mappingArmPremises e frame P).of_tables_eq
@@ -415,7 +426,9 @@ theorem syscallDispatchEntryState_mappingStage (ctx : LabelingContext) (e : Core
       (by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
   exact (hS.trans (syscallDispatchCrossCoreStep_mappingStage P1)).trans
-    (MappingStage.of_objects_eq (Architecture.IpcBufferRead.syncUserWords_objects _ _ _))
+    (MappingStage.of_objects_eq (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
+      (by unfold Architecture.IpcBufferRead.clearUserWords Architecture.IpcBufferRead.syncUserWords
+          exact ⟨rfl, rfl, rfl⟩))
 
 /-- **The syscall entry keeps every live mapping recorded**, from the kernel's
 invariant bundle and the records every kernel entry carries on the state it
@@ -588,5 +601,97 @@ theorem fpAccessEntryState_mappingStage (coreId : UInt64)
   split
   · exact MappingStage.refl _
   · exact (fpAccessOnCore_mappingStage _ _ live).trans (dispatchVacatedCore_mappingStage _ _)
+
+/-! ### The bookkeeping, through every kernel entry
+
+WS-UC UC2: each entry's stage keeps the bookkeeping in agreement with the
+objects (`MappingStage.bookkeeping`), so the bundle's 22nd component
+(`Architecture.proofLayerInvariantBundle.bookkeepingAgrees`) holds on the
+committed state of every syscall, timer, reschedule, interrupt, fault,
+unknown-syscall and FP/SIMD entry, from the bundle on the state it starts
+from. -/
+
+/-- **The syscall entry keeps the bookkeeping in agreement with the objects.** -/
+theorem syscallDispatchEntryState_preserves_bookkeepingAgrees (ctx : LabelingContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
+    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
+    (st : SystemState) (hB : Architecture.proofLayerInvariantBundle st)
+    (hR : st.kernelRecordsSound) :
+    (Architecture.IpcBufferRead.clearUserWords
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).bookkeepingAgrees :=
+  (syscallDispatchEntryState_mappingStage ctx e trapped frame bytes n st
+    (MappingArmPremises.of_kernelRecordsSound hB hR)).bookkeeping
+    (objects_invExt_of_capabilityInvariantBundle _ hB.2.1) hB.bookkeepingAgrees
+
+/-- **The timer entry keeps the bookkeeping in agreement with the objects.** -/
+theorem perCoreTimerTickEntryState_preserves_bookkeepingAgrees (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hB : Architecture.proofLayerInvariantBundle st) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        ((timerTickBracket coreId).run
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))).bookkeepingAgrees :=
+  (perCoreTimerTickEntryState_mappingStage coreId frame st).bookkeeping
+    (objects_invExt_of_capabilityInvariantBundle _ hB.2.1) hB.bookkeepingAgrees
+
+/-- **The reschedule entry keeps the bookkeeping in agreement with the objects.** -/
+theorem perCoreRescheduleEntryState_preserves_bookkeepingAgrees (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hB : Architecture.proofLayerInvariantBundle st) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        ((rescheduleBracket coreId).run
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))).bookkeepingAgrees :=
+  (perCoreRescheduleEntryState_mappingStage coreId frame st).bookkeeping
+    (objects_invExt_of_capabilityInvariantBundle _ hB.2.1) hB.bookkeepingAgrees
+
+/-- **The interrupt entry keeps the bookkeeping in agreement with the objects.** -/
+theorem interruptEntryState_preserves_bookkeepingAgrees (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hB : Architecture.proofLayerInvariantBundle st) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))).bookkeepingAgrees :=
+  (interruptEntryState_mappingStage coreId intId frame st).bookkeeping
+    (objects_invExt_of_capabilityInvariantBundle _ hB.2.1) hB.bookkeepingAgrees
+
+/-- **The fault entry keeps the bookkeeping in agreement with the objects.** -/
+theorem faultEntryState_preserves_bookkeepingAgrees (lctx : LabelingContext) (coreId : UInt64)
+    (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
+    (w : FaultRegisterWindow) (st : SystemState)
+    (hB : Architecture.proofLayerInvariantBundle st) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (faultEntryStep lctx (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w
+          coreId).2 coreId) coreId))).bookkeepingAgrees :=
+  (faultEntryState_mappingStage lctx coreId frame ectx w st).bookkeeping
+    (objects_invExt_of_capabilityInvariantBundle _ hB.2.1) hB.bookkeepingAgrees
+
+/-- **The unknown-syscall entry keeps the bookkeeping in agreement with the
+objects.** -/
+theorem unknownSyscallEntryState_preserves_bookkeepingAgrees (lctx : LabelingContext)
+    (coreId : UInt64) (frame : Architecture.InFlightContext)
+    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (st : SystemState)
+    (hB : Architecture.proofLayerInvariantBundle st) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (unknownSyscallEntryStep lctx
+        (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame)) ectx w coreId).2
+        coreId) coreId))).bookkeepingAgrees :=
+  (unknownSyscallEntryState_mappingStage lctx coreId frame ectx w st).bookkeeping
+    (objects_invExt_of_capabilityInvariantBundle _ hB.2.1) hB.bookkeepingAgrees
+
+/-- **The FP/SIMD entry keeps the bookkeeping in agreement with the objects.** -/
+theorem fpAccessEntryState_preserves_bookkeepingAgrees (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (live : Option FpContext)
+    (st : SystemState) (hB : Architecture.proofLayerInvariantBundle st) :
+    (activateThreadAt (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId)
+      coreId).bookkeepingAgrees :=
+  (fpAccessEntryState_mappingStage coreId frame live st).bookkeeping
+    (objects_invExt_of_capabilityInvariantBundle _ hB.2.1) hB.bookkeepingAgrees
 
 end SeLe4n.Kernel

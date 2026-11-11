@@ -1456,6 +1456,12 @@ theorem retypeFromUntyped_ok_sizeAligned
     (req : CarveRequest) : (req.scrub st ut idx).objects = st.objects := by
   cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
 
+/-- ...and none of the bookkeeping ghosts. -/
+theorem CarveRequest.scrub_ghostsKept (st : SystemState) (ut : UntypedObject) (idx : Nat)
+    (req : CarveRequest) : SystemState.ghostsKept (req.scrub st ut idx) st := by
+  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;>
+    exact ⟨rfl, rfl, rfl⟩
+
 /-- ...and no scheduler state. -/
 @[simp] theorem CarveRequest.scrub_scheduler (st : SystemState) (ut : UntypedObject) (idx : Nat)
     (req : CarveRequest) : (req.scrub st ut idx).scheduler = st.scheduler := by

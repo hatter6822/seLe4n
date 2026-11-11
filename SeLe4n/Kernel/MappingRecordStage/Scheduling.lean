@@ -27,12 +27,80 @@ open SeLe4n.Model
 open SeLe4n.Model.SystemState (MappingStage)
 open SeLe4n.Kernel.Concurrency (CoreId)
 
+/-! ### Run-queue writes move no ghost
+
+Each of these writes the objects and the scheduler alone
+(`SystemState.onlyObjectsSchedulerDiffer`), so it moves none of the bookkeeping
+ghosts. -/
+
+theorem configureResumeBound_onlyObjectsSchedulerDiffer (st : SystemState) (t : SeLe4n.ThreadId)
+    (sc : SchedContext) :
+    (SchedContextOps.configureResumeBound st t sc).onlyObjectsSchedulerDiffer st := by
+  unfold SchedContextOps.configureResumeBound
+  dsimp only
+  split
+  · split
+    · exact .refl _
+    · exact SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer _ _ _
+  · split
+    · split
+      · exact (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).withScheduler _
+      · split
+        · exact (SystemState.onlyObjectsSchedulerDiffer.refl _).withScheduler _
+        · exact .refl _
+    · exact .refl _
+
+theorem schedContextUnbindQueueStage_onlyObjectsSchedulerDiffer (st : SystemState) (home : CoreId)
+    (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool) :
+    (SchedContextOps.schedContextUnbindQueueStage st home tid prio wasCurrent).onlyObjectsSchedulerDiffer
+      st := by
+  unfold SchedContextOps.schedContextUnbindQueueStage
+  split
+  · exact SystemState.runRequeueOnCore_onlyObjectsSchedulerDiffer _ _ _ _
+  · split
+    · exact (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).withScheduler _
+    · exact .refl _
+
+theorem migrateRunQueueOnAffinityChange_onlyObjectsSchedulerDiffer (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).onlyObjectsSchedulerDiffer st := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · exact .refl _
+  · split
+    · exact .refl _
+    · dsimp only
+      split
+      · exact ((SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ _ _ _).trans
+          (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer _ _ _)).withScheduler _
+      · exact .refl _
+
+theorem requeueVacatedOnNewHome_onlyObjectsSchedulerDiffer (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore : CoreId) (vacated : Bool) :
+    (requeueVacatedOnNewHome st tid newCore vacated).onlyObjectsSchedulerDiffer st := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · exact (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).withScheduler _
+    · exact .refl _
+  · exact .refl _
+
+theorem idleFallbackOnCore_ghostsKept (st : SystemState) (c : CoreId) :
+    SystemState.ghostsKept (idleFallbackOnCore st c) st := by
+  unfold idleFallbackOnCore dispatchIdleOnCore
+  split
+  · exact SystemState.ghostsKept.trans
+      (st' := restoreIncomingContextOnCore (st.runRemoveOnCore c (idleThreadId c)) c (idleThreadId c))
+      ⟨rfl, rfl, rfl⟩ ((restoreIncomingContextOnCore_ghostsKept _ _ _).trans
+        (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)
+  · exact ⟨rfl, rfl, rfl⟩
+
 /-- **A finalisation-shaped write keeps the mappings recorded**
 (`FinaliseFrameAny.liveMappingsRecorded`): it keeps every root, every frame and
 every slot's capability. -/
 theorem MappingStage.of_finaliseFrameAny {st st' : SystemState}
     (h : st.objects.invExt → FinaliseFrameAny st st') : MappingStage st st' :=
-  fun hI => ⟨(h hI).invExt, (h hI).liveMappingsRecorded⟩
+  fun hI => ⟨(h hI).invExt, (h hI).liveMappingsRecorded, (h hI).bookkeepingAgrees⟩
 
 theorem MappingStage.of_finaliseFrame {st st' : SystemState}
     (h : st.objects.invExt → FinaliseFrame st st') : MappingStage st st' :=
@@ -55,6 +123,7 @@ theorem releasePlace_mappingStage (st : SystemState) (c : CoreId) (scId : SeLe4n
   MappingStage.of_objectsAgreeOffSchedulerLinks
     (fun h => SystemState.releasePlace_objects_invExt st c scId h)
     (.of_releaseLinks (SystemState.releasePlace_agree st c scId))
+    (SystemState.releasePlace_releaseOnlyWrite st c scId).ghostsKept
 
 /-- The replenishment purge writes the release-queue links alone. -/
 theorem purgeReplenishment_mappingStage (st : SystemState) (scId : SeLe4n.SchedContextId) :
@@ -62,6 +131,7 @@ theorem purgeReplenishment_mappingStage (st : SystemState) (scId : SeLe4n.SchedC
   MappingStage.of_kindPreservingWrite (SchedContextOps.purgeReplenishment_objects_invExt st scId)
     fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
       (SchedContextOps.purgeReplenishment_agree st scId)).kindPreserving
+      (SchedContextOps.purgeReplenishment_releaseOnlyWrite st scId).ghostsKept
 
 /-- WS-ZA ZA6.33: the settle of a returned context: the purge, then perhaps the
 placement. -/
@@ -131,6 +201,7 @@ theorem runEnqueueHeadOnCore_mappingStage (st : SystemState) (c : CoreId) (t : S
     (p : SeLe4n.Priority) : MappingStage st (st.runEnqueueHeadOnCore c t p) :=
   MappingStage.of_objectsAgreeOffRunLinks (SystemState.runEnqueueHeadOnCore_objects_invExt st c t p)
     (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p)
+    (SystemState.runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer st c t p).ghostsKept
 
 /-- WS-ZA ZA6.29: the yield link rewrites a context and a thread in place. -/
 theorem setYieldLink_mappingStage (st : SystemState) (s : SeLe4n.SchedContextId)
@@ -263,11 +334,17 @@ theorem cancelIpcBlockingReclaimed_mappingStage (st : SystemState) (tid : SeLe4n
   have h1 := cancelIpcBlocking_mappingStage st tid tcb hI
   have h2 := MappingStage.of_objectsAgreeOffSchedulerLinks
     (cancelIpcBlockingMigrated_objects_invExt tid tcb st)
-    (.of_releaseLinks (cancelIpcBlockingMigrated_agree tid tcb st)) h1.1
+    (.of_releaseLinks (cancelIpcBlockingMigrated_agree tid tcb st))
+    (by
+      unfold cancelIpcBlockingMigrated
+      split
+      · exact (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _).ghostsKept
+      · exact .refl _) h1.1
   have h3 := MappingStage.of_objectsAgreeOffRunLinks
     (fun _ => cancelIpcBlockingReclaimed_objects_invExt tid tcb st h1.1)
-    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks tid tcb st) h2.1
-  ⟨h3.1, h3.2 ∘ h2.2 ∘ h1.2⟩
+    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks tid tcb st)
+    (descheduleUnboundHolder_onlyObjectsSchedulerDiffer _ _ tid tcb).ghostsKept h2.1
+  ⟨h3.1, h3.2.1 ∘ h2.2.1 ∘ h1.2.1, h3.2.2 ∘ h2.2.2 ∘ h1.2.2⟩
 
 /-- The suspend's scheduling point: a reschedule on the executing core or nothing. -/
 theorem suspendRescheduleOnCore_mappingStage {st st' : SystemState}
@@ -478,6 +555,18 @@ theorem MappingStage.rewriteObject_schedContext {st : SystemState} {scId : SeLe4
   exact MappingStage.rewriteObject _ _ _ (fun old hOld => by rw [hRaw] at hOld; cases hOld; rfl)
     (fun old hOld => by rw [hRaw] at hOld; cases hOld; rfl)
 
+/-- A scheduling context rewritten through its witnessed lookup, after a write
+of the scheduler alone. -/
+theorem MappingStage.rewriteObject_schedContext_schedulerOnly {st : SystemState}
+    {s : SchedulerState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
+    (h : st.getSchedContext? scId = some sc) (sc' : SchedContext)
+    (hA : ({ st with scheduler := s } : SystemState).rewriteAdmissible scId.toObjId
+      (.schedContext sc')) :
+    MappingStage st (({ st with scheduler := s } : SystemState).rewriteObject scId.toObjId
+      (.schedContext sc') hA) :=
+  MappingStage.of_objects_eq_left (st0 := { st with scheduler := s }) rfl
+    (MappingStage.rewriteObject_schedContext (st := { st with scheduler := s }) h _ _)
+
 /-- The bind writes the context's bound thread and the thread's binding and
 priority in place, re-buckets or places the thread, then the key hook. -/
 theorem schedContextBind_mappingStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n.ValidThreadId}
@@ -558,6 +647,7 @@ theorem configureResumeBound_mappingStage (st : SystemState) (t : SeLe4n.ThreadI
     (sc : SchedContext) : MappingStage st (SchedContextOps.configureResumeBound st t sc) :=
   MappingStage.of_objectsAgreeOffRunLinks (SchedContextOps.configureResumeBound_objects_invExt st t sc)
     (SchedContextOps.configureResumeBound_objectsAgreeOffRunLinks st t sc)
+    (configureResumeBound_onlyObjectsSchedulerDiffer st t sc).ghostsKept
 
 /-- The configure purges the context's replenishment, stores the reconfigured
 context over the old one, and runs the bound-thread propagation, the key hook
@@ -628,10 +718,10 @@ theorem schedContextUnbind_mappingStage {vScId : SeLe4n.ValidObjId} {st st' : Sy
             (purgeReplenishment_mappingStage _ _)
           refine MappingStage.trans ?_ (MappingStage.of_objectsAgreeOffRunLinks
             (SchedContextOps.schedContextUnbindQueueStage_objects_invExt _ _ _ _ _)
-            (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _))
+            (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _)
+            (schedContextUnbindQueueStage_onlyObjectsSchedulerDiffer _ _ _ _ _).ghostsKept)
           refine MappingStage.trans ?_ (updateTcb_mappingStage _ _ _)
-          exact MappingStage.of_objects_eq_left rfl (MappingStage.rewriteObject_schedContext hSc _
-            (SystemState.rewriteAdmissible_schedContext hSc _))
+          exact MappingStage.rewriteObject_schedContext_schedulerOnly hSc _ _
       · cases hStep
         refine MappingStage.trans ?_
           (purgeReplenishment_mappingStage _ _)
@@ -663,6 +753,7 @@ theorem setThreadCpuAffinityWithMigration_mappingStage {st st' : SystemState}
     MappingStage.of_objectsAgreeOffRunLinks
       (fun hI => by rw [vacateForAffinityChange_objects]; exact hI)
       (vacateForAffinityChange_objectsAgreeOffRunLinks _ _ _ _)
+      (by unfold vacateForAffinityChange; split <;> exact ⟨rfl, rfl, rfl⟩)
   have hS1 : MappingStage (vacateForAffinityChange st tid
       (determineTargetCore st tid) (affinity.getD Concurrency.bootCoreId)) stSet := by
     unfold setThreadCpuAffinity at hSet
@@ -673,10 +764,12 @@ theorem setThreadCpuAffinityWithMigration_mappingStage {st st' : SystemState}
     · cases hSet
   refine hS0.trans (hS1.trans (MappingStage.trans ?_ ((MappingStage.of_objectsAgreeOffRunLinks
     (migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _)
-    (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks _ _ _ _)).trans
+    (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks _ _ _ _)
+    (migrateRunQueueOnAffinityChange_onlyObjectsSchedulerDiffer _ _ _ _).ghostsKept).trans
     (MappingStage.of_objectsAgreeOffRunLinks
       (requeueVacatedOnNewHome_preserves_objects_invExt _ _ _ _)
-      (requeueVacatedOnNewHome_objectsAgreeOffRunLinks _ _ _ _)))))
+      (requeueVacatedOnNewHome_objectsAgreeOffRunLinks _ _ _ _)
+      (requeueVacatedOnNewHome_onlyObjectsSchedulerDiffer _ _ _ _).ghostsKept))))
   split
   · exact migrateSchedContextReplenishment_mappingStage _ _ _ _
   · exact MappingStage.refl _
@@ -701,6 +794,17 @@ theorem setThreadCpuAffinityOnCore_mappingStage {st st' : SystemState}
     MappingStage st st' :=
   setThreadCpuAffinityWithMigration_mappingStage h
 
+/-- The boost's write rewrites one thread in place, moving no ghost. -/
+theorem pipBoostWrite_ghostsKept (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.ghostsKept (PriorityInheritance.pipBoostWrite st tid) st := by
+  unfold PriorityInheritance.pipBoostWrite
+  split
+  · dsimp only
+    split
+    · exact .refl _
+    · exact ⟨rfl, rfl, rfl⟩
+  · exact .refl _
+
 /-- The boost's write: one thread rewritten in place. -/
 theorem pipBoostWrite_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) :
     MappingStage st (PriorityInheritance.pipBoostWrite st tid) := by
@@ -718,7 +822,11 @@ theorem updatePipBoostOnCore_mappingStage (st : SystemState) (c : CoreId) (tid :
   MappingStage.of_invExt fun hI => (pipBoostWrite_mappingStage st tid).trans
     (MappingStage.of_objectsAgreeOffRunLinks
       (fun _ => PriorityInheritance.updatePipBoostOnCore_preserves_objects_invExt st c tid hI)
-      (PriorityInheritance.updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid))
+      (PriorityInheritance.updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid)
+      (have h1 := (PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c tid).ghostsKept
+       have h2 := pipBoostWrite_ghostsKept st tid
+       ⟨h1.index.trans h2.index.symm, h1.indexSet.trans h2.indexSet.symm,
+         h1.types.trans h2.types.symm⟩))
 
 /-- The chain revert: one boost per link. -/
 theorem revertPriorityInheritance_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -917,6 +1025,7 @@ theorem idleFallbackOnCore_mappingStage (st : SystemState) (c : CoreId) :
     MappingStage st (idleFallbackOnCore st c) :=
   MappingStage.of_objectsAgreeOffRunLinks (idleFallbackOnCore_objects_invExt st c)
     (idleFallbackOnCore_objectsAgreeOffRunLinks st c)
+    (idleFallbackOnCore_ghostsKept st c)
 
 /-- The reschedule: the register save, then the idle fallback or the dequeue,
 restore and current-slot write of the chosen thread, then the flag clear. -/
@@ -934,7 +1043,10 @@ theorem scheduleEffectiveOnCore_mappingStage {st st' : SystemState} {c : CoreId}
         rename_i tid _ _ _ _ _
         exact ((saveOutgoingContextOnCore_mappingStage st c).trans
           (runRemoveOnCore_mappingStage _ c tid)).trans
-          (MappingStage.of_objects_eq (restoreIncomingContextOnCore_objects _ _ _))
+          (MappingStage.of_objects_eq (restoreIncomingContextOnCore_objects _ _ _)
+            (SystemState.ghostsKept.trans
+              (st' := restoreIncomingContextOnCore ((saveOutgoingContextOnCore st c).runRemoveOnCore c tid)
+                c tid) ⟨rfl, rfl, rfl⟩ (restoreIncomingContextOnCore_ghostsKept _ _ _)))
       · cases h
     · cases h
 
