@@ -3632,7 +3632,7 @@ run_check "INVARIANT" rg -n '^theorem storeObject_preserves_objectTypeMetadataCo
 run_check "INVARIANT" rg -n '^theorem withObjectStored_preserves_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem default_systemState_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatform_objectTypeMetadataConsistent\b' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^  hLifecycleConsistent : SystemState\.objectTypeMetadataConsistent state$' SeLe4n/Model/IntermediateState.lean
+run_check "INVARIANT" rg -n '^  hLifecycleConsistent : state\.bookkeepingAgrees$' SeLe4n/Model/IntermediateState.lean
 run_negative_check "INVARIANT" rg -n 'lifecycleInvariantBundle_of_metadata_consistent|lifecycleMetadataConsistent_of_lifecycleInvariantBundle|default_systemState_lifecycleConsistent' SeLe4n tests
 
 # ============================================================================

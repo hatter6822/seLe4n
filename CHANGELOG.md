@@ -37,6 +37,10 @@ cells: every carve pin falls by 5 cells (120 bytes).
 - **Runtime checks** walk `objectIds` (the table's keys); the
   `crossSub:lifecycleObjectTypeLockstep` check compares the type reader with the
   table's enumeration, and its negative test plants a misfiled entry.
+- **Fixture `smp_information_flow.expected`**: the suite's `niState` inserts
+  its two notifications straight into the object table, outside the index, so
+  the index-based count read 12 objects (7/8/12 visible); the projection now
+  reads the table and counts all 14 (8/9/14).  The fixture records the table.
 
 ## v0.37.14 — the low-risk rows measured, and a message read as seL4 reads it
 
