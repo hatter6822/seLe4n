@@ -55,6 +55,33 @@ reset/reuse that fills one object's cell with another object's fields.
   layout by decoding every bit alone, against `abi_layout.expected`.
   `mintReplyCap` keeps two slot numbers of the invoked CNode and now has its
   own decoder (`decodeMintReplyCapArgs`).
+- **Mint is seL4's CNode_Mint, and Copy and Mint mask rights.**  A mint
+  names its slots as a copy does and adds the badge, its fifth word, read from
+  overflow slot 0 of the caller's IPC buffer (`CSpaceMintArgs`, five words,
+  truncation minimum 5, a routed one-overflow syscall).  A copy's and a mint's
+  rights are the operation word's bits `[16, 21)`; the new capability's rights
+  are their intersection with the source's, never refused (seL4's
+  `maskCapRights`; `Capability.maskRights`, `AccessRightSet.maskBy`).  A move
+  carries no rights and refuses any bit from 16 up.
+- **The QEMU root task has an IPC buffer from boot.**  As seL4's boot gives its
+  initial thread one, the exerciser image's boot ends by mapping the root task
+  a buffer page and setting it as its buffer
+  (`qemuVirtExerciserGiveRootIpcBufferOrHalt`).  The page and the three tables
+  on its walk are carved from a four-page untyped at the top of RAM, which the
+  root task's untyped gives up (`qemuVirtExerciserRootUntypeds_tile`), so the
+  root untyped keeps no boot-made child.  They are mapped at `2^40`, level-0
+  index 2 (`qemuVirtExerciserRootIpcBufferVAddr`), through the kernel's own
+  capability path: retype, page-table map, map and set-IPC-buffer, run as the
+  compiled checked dispatcher runs them after its caller-current test
+  (`qemuVirtExerciserRootInvoke`).  The physical writes they owe (four page
+  scrubs, three table descriptors, one page descriptor) are performed before
+  the first syscall.  The root CNode grows to 64 slots with a 58-bit guard,
+  so every capability address is unchanged; slots 32 to 36 hold the
+  untyped, the tables and the frame (seL4's `seL4_CapInitThreadIPCBuffer`).
+  The shipped `virt` and Raspberry Pi 5 boots are untouched.  Every exerciser
+  mint is now the five-word mint, its badge written to the root task's
+  current buffer and cleared after; the short mint stays an explicit
+  four-word message, refused `TruncatedMessage`.
 - **What the scan found besides.** The queue unlink's neighbour writes reused
   the removed thread's cell for its neighbour's record, and the slot lookup
   reused the address's cell for its result.  Each now runs an out-of-line fast
