@@ -50,6 +50,14 @@ now returns seL4's error payload in the message registers, in
   `dispatchOperandCheckedKW_eq`). The CNode Copy, Move and Mint arms ask that
   the invoked object is a CNode before the walk, so their refusal goes straight
   to that join point. The generated `RoutedArms` C allocates no error.
+- **Comparing errors builds nothing.** With payload constructors, the derived
+  `DecidableEq KernelError` compares two errors of one constructor through a
+  closure it builds on every comparison, so the ledger's test for a
+  receiver-side declassification refusal built a cell. `decEqWords` decides
+  equality on the discriminant and the payload words (`matchesWords_iff`), and
+  `@[csimp]` makes it the compiled instance. `validateSchedContextParams` is
+  inlined, so a configure's refusal returns its closed constant rather than a
+  copy of it.
 - **seL4's IllegalOperation.** A `TCB_SetSpace` whose CSpace or VSpace root
   capability names an object of the wrong kind, and a `TCB_BindNotification`
   whose capability is not a notification, are refused `.illegalState`, the
@@ -73,8 +81,9 @@ now returns seL4's error payload in the message registers, in
     `failed-lookup-depth-mismatch`, `failed-lookup-missing-source` and
     `failed-lookup-guard-mismatch`. The guard mismatch's fifth word lands in
     the root task's buffer `msg[4]`, which a later five-word call reads as an
-    argument (a configure's deadline), so the scenario names the buffer and
-    the word goes back to zero after it.
+    argument (a configure's deadline), so the scenario names the buffer (the
+    window's frame, where the root task's buffer points at that step) and the
+    word goes back to zero after it.
 
 ## v0.37.19 — WS-SX registered: the seL4 ABI fidelity plan
 

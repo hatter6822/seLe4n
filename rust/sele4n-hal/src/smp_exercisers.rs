@@ -3439,9 +3439,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         // a later five-word call (a configure's deadline, a service
         // register's grant flag) reads as its argument, so the round trip
         // names the buffer ([`RoundTrip::overflow`]) and the word goes back
-        // to the boot's zero after the measured window.
+        // to the boot's zero after the measured window.  The root task's
+        // buffer here is the window's frame ([`FRAME_VADDR`]), where
+        // `root-set-ipc-buffer` pointed it; the tail's configures read the
+        // same page once `tail-root-ipc-buffer-back` points it there again.
         RoundTrip {
-            overflow: Some((ROOT_IPC_BUFFER, 0)),
+            overflow: Some((FRAME_VADDR, 0)),
             ..cnode_refusal(
                 "failed-lookup-guard-mismatch",
                 [

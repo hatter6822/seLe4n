@@ -394,7 +394,7 @@ Returns error if any parameter violates well-formedness constraints:
 - `budget ≤ period` (cannot use more than 100% of a period)
 - `priority ≤ maxPriority` (within valid priority range)
 - `domain < numDomains` (within valid domain range) -/
-def validateSchedContextParams (budget period priority _deadline domain : Nat)
+@[inline] def validateSchedContextParams (budget period priority _deadline domain : Nat)
     : Except KernelError Unit :=
   if period == 0 then .error (.invalidArgument 0)
   else if budget == 0 then .error (.invalidArgument 0)
