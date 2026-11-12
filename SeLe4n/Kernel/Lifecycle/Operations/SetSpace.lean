@@ -332,8 +332,8 @@ def copyThreadSpaces (executingCore : Concurrency.CoreId) (st : SystemState)
   | some tcb =>
     if tcb.threadState != .Inactive || inferThreadState st vtid.val tcb != .Inactive then
       .error .illegalState
-    else if !cspaceRootSourceAdmitted st cnSrc then .error .invalidCapability
-    else if !vspaceRootSourceAdmitted st vrSrc then .error .invalidCapability
+    else if !cspaceRootSourceAdmitted st cnSrc then .error (.invalidCapability 0)
+    else if !vspaceRootSourceAdmitted st vrSrc then .error (.invalidCapability 0)
     else .ok (copyThreadSpacesPerform executingCore st vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode
       vrSrc.slot)
 

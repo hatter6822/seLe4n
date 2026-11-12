@@ -4232,7 +4232,7 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- reaches the executing core, so G7 must run the local preemption gate.
       suspendRescheduleOnCore st (runningCore?.getD executingCore) executingCore
         runningCore?.isSome (currentDeboostedFrom st executingCore execCurPre)
-  | none => .error .invalidArgument
+  | none => .error (.invalidArgument 0)
 
 /-- WS-ZA ZA5.2: `suspendRescheduleOnCore`'s state, which it always reaches
 (`suspendRescheduleOnCore_eq_state`): the local scheduling point never refuses. -/
@@ -4412,7 +4412,7 @@ theorem suspendRescheduleOnCore_preserves_objects_invExt (st st' : SystemState)
 theorem suspendThreadOnCore_rejects_absent (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
     (hGet : st.getTcb? vtid.val = none) :
-    suspendThreadOnCore st vtid ec = .error .invalidArgument := by
+    suspendThreadOnCore st vtid ec = .error (.invalidArgument 0) := by
   simp only [suspendThreadOnCore, hGet]
 
 /-- WS-SM SM6.E: an already-`.Inactive` victim is rejected with

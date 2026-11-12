@@ -259,11 +259,11 @@ space `rootId` at the shallowest level the walk to `vaddr` is missing. -/
 def pageTableMap (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
   fun st =>
     match st.getPageTable? tableId, st.getVSpaceRoot? rootId with
-    | none, _ => .error .invalidCapability
-    | _, none => .error .invalidCapability
+    | none, _ => .error (.invalidCapability 0)
+    | _, none => .error (.invalidCapability 1)
     | some table, some root =>
-      if pageTableInstallLive st tableId then .error .invalidCapability
-      else if root.tableBase.isNone then .error .invalidArgument
+      if pageTableInstallLive st tableId then .error (.invalidCapability 0)
+      else if root.tableBase.isNone then .error (.invalidArgument 0)
       else if !pageTableAddressable vaddr then .error .addressOutOfBounds
       else
         match root.missingLevel? vaddr with
@@ -284,7 +284,7 @@ answers that call with success too. -/
 def pageTableUnmap (tableId : SeLe4n.ObjId) : Kernel Unit :=
   fun st =>
     match st.getPageTable? tableId with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability 0)
     | some table =>
       match table.installedIn with
       | none => .ok ((), st)

@@ -396,11 +396,11 @@ Returns error if any parameter violates well-formedness constraints:
 - `domain < numDomains` (within valid domain range) -/
 def validateSchedContextParams (budget period priority _deadline domain : Nat)
     : Except KernelError Unit :=
-  if period == 0 then .error .invalidArgument
-  else if budget == 0 then .error .invalidArgument
-  else if budget > period then .error .invalidArgument
-  else if priority > maxPriorityVal then .error .invalidArgument
-  else if domain ≥ numDomainsVal then .error .invalidArgument
+  if period == 0 then .error (.invalidArgument 0)
+  else if budget == 0 then .error (.invalidArgument 0)
+  else if budget > period then .error (.invalidArgument 0)
+  else if priority > maxPriorityVal then .error (.invalidArgument 0)
+  else if domain ≥ numDomainsVal then .error (.invalidArgument 0)
   else .ok ()
 
 -- ============================================================================
@@ -1411,7 +1411,7 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
           -- but effective priority resolves from sc.domain. Mismatched domains would
           -- cause a thread to pass the domain filter by TCB domain but be prioritized
           -- by SchedContext domain.
-          if tcb.domain != sc.domain then .error .invalidArgument
+          if tcb.domain != sc.domain then .error (.invalidArgument 0)
           -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
           -- live stack (`next.isSome`) is owed a context by the pop that reaches
           -- that frame, and the pop writes its binding; giving it a second
@@ -2766,7 +2766,7 @@ def schedContextYieldToOnCore (s : SeLe4n.SchedContextId) (c : Concurrency.CoreI
   | none => .error .illegalState
   | some caller =>
     match st.getSchedContext? s with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability 0)
     | some sc =>
       match sc.boundThreadCode with
       | 0 => .error .illegalState

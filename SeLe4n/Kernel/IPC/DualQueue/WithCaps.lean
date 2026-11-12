@@ -205,7 +205,7 @@ def endpointSendDualWithCaps
         | some _ =>
             match recv? with
             | some _ => receiveTransferCaps req endpointId target? st'
-            | none => .error .invalidCapability
+            | none => .error (.invalidCapability 0)
 
 /-- M-D01: Extended receive with capability transfer. When a sender is
 dequeued (immediate rendezvous on the receive side), the capabilities it asked
@@ -270,7 +270,7 @@ def endpointCallWithCaps
         | some _ =>
             match recv? with
             | some _ => receiveTransferCaps req endpointId target? st'
-            | none => .error .invalidCapability
+            | none => .error (.invalidCapability 0)
 
 /-- **A transfer writes the CNode its receive slot names, and only that**: the
 transfer's object frame is `ipcUnwrapCaps_object_cases` at the slot of its

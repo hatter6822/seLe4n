@@ -78,7 +78,7 @@ private def sr003_suspendMissing : IO Unit := do
   match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for missing thread"
   | .error e =>
-    expect "error is invalidArgument" (e == .invalidArgument)
+    expect "error is invalidArgument" (e == (.invalidArgument 0))
 
 /-- SR-004: Suspend clears pending state (pendingMessage, timeoutBudget, queue links). -/
 private def sr004_suspendClearsPending : IO Unit := do
@@ -131,7 +131,7 @@ private def sr007_resumeMissing : IO Unit := do
   match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for missing thread"
   | .error e =>
-    expect "error is invalidArgument" (e == .invalidArgument)
+    expect "error is invalidArgument" (e == (.invalidArgument 0))
 
 /-- SR-008: Suspend then resume roundtrip — thread returns to Ready. -/
 private def sr008_suspendResumeRoundtrip : IO Unit := do
@@ -317,7 +317,7 @@ private def sr018_suspendEndpoint : IO Unit := do
   match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for non-TCB"
   | .error e =>
-    expect "error is invalidArgument" (e == .invalidArgument)
+    expect "error is invalidArgument" (e == (.invalidArgument 0))
 
 /-- SR-019: Resume targeting an Endpoint — should fail with invalidArgument. -/
 private def sr019_resumeEndpoint : IO Unit := do
@@ -327,7 +327,7 @@ private def sr019_resumeEndpoint : IO Unit := do
   match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for non-TCB"
   | .error e =>
-    expect "error is invalidArgument" (e == .invalidArgument)
+    expect "error is invalidArgument" (e == (.invalidArgument 0))
 
 -- ============================================================================
 -- D1-Q7: Additional frozen operation tests
@@ -1114,7 +1114,7 @@ private def sr045_consumedInvocationReadsAndResets : IO Unit := do
   | .error e => throw <| IO.userError s!"SR-045 Consumed should succeed, got {repr e}"
   expect "SR-045 an object that is no context is refused"
     (match SeLe4n.Kernel.schedContextConsumedOnCore (SeLe4n.SchedContextId.ofNat 2) core st with
-     | .error .invalidCapability => true | _ => false)
+     | .error (.invalidCapability _) => true | _ => false)
   expect "SR-045 a core with no current thread is refused"
     (match SeLe4n.Kernel.schedContextConsumedOnCore (SeLe4n.SchedContextId.ofNat 50) core
         yieldLinkedState with

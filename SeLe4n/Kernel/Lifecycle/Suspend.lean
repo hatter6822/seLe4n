@@ -155,7 +155,13 @@ theorem restoreToReadyCancelled_readReturnFrame (st : SystemState)
   rw [SystemState.updateTcb_eq_of_some hTcb]
   simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
   rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
-  rfl
+  simp only
+  generalize Architecture.cancelledIpcFrame = frame
+  obtain ⟨h0, h1, h2, h3, h4, h5⟩ :=
+    (tcb.restoredToReady.registerContext).stageReturnFrame_reads_back frame
+  simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
+  cases frame
+  simp [UInt64.ofNat_toNat]
 
 /-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
 on `restoreToReadyStaging` so the plain and cancellation spellings cannot
@@ -621,7 +627,7 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
           -- REMOTE: hand the home core a `.reschedule` SGI so it runs the same handler.
           .ok (st3, some (target, SgiKind.reschedule))
       else .ok (st2, none)
-  | none => .error .invalidArgument
+  | none => .error (.invalidArgument 0)
 
 /-- WS-ZA ZA5.2: the checks `.tcbResume` makes, asked before any write: the
 target is a TCB in `.Inactive`.  A thread carrying a pending fault has it
@@ -2589,7 +2595,7 @@ noncomputable def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
           | .error e => .error e
         else
           .ok st
-  | none => .error .invalidArgument
+  | none => .error (.invalidArgument 0)
 
 -- ============================================================================
 -- D1-H: resumeThread
@@ -2719,7 +2725,7 @@ noncomputable def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
           | .error e => .error e
         else
           .ok st
-  | none => .error .invalidArgument
+  | none => .error (.invalidArgument 0)
 
 /-- WS-ZA ZA6.33: **the single-core resume resumes the context**: an `.Inactive`
 thread whose context is not schedulable once resumed ends in the state
@@ -2830,7 +2836,7 @@ def suspendThread_atomicity_precondition (st : SystemState) : Prop :=
 theorem suspendThread_atomicity_under_ffi_bracket_default
     (vtid : SeLe4n.ValidThreadId)
     (_hPre : suspendThread_atomicity_precondition (default : SystemState)) :
-    suspendThread (default : SystemState) vtid = .error .invalidArgument := by
+    suspendThread (default : SystemState) vtid = .error (.invalidArgument 0) := by
   -- Unfold suspendThread on the default state.
   unfold suspendThread SystemState.getTcb?
   -- The default state's objects table is empty, so the outer
@@ -2853,7 +2859,7 @@ theorem suspendThread_atomicity_precondition_default :
     post-state shape unconditionally. -/
 theorem suspendThread_default_rejects_with_invalidArgument
     (vtid : SeLe4n.ValidThreadId) :
-    suspendThread (default : SystemState) vtid = .error .invalidArgument :=
+    suspendThread (default : SystemState) vtid = .error (.invalidArgument 0) :=
   suspendThread_atomicity_under_ffi_bracket_default vtid
     suspendThread_atomicity_precondition_default
 

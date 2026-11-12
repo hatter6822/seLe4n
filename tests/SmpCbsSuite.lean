@@ -453,7 +453,7 @@ private def runCompositeScenarios : IO Unit := do
   -- The composite is fail-closed on a non-TCB target.
   assertBool "composite on a non-TCB target is .error .invalidArgument"
     (match setThreadCpuAffinityWithMigration stCbs (ThreadId.ofNat 999) (some bootCoreId) core1 with
-     | .error .invalidArgument => true
+     | .error (.invalidArgument _) => true
      | _ => false)
   -- An unbound thread (no SchedContext) has no replenishments to migrate; the
   -- composite is just the affinity write + run-queue migration.
@@ -483,7 +483,7 @@ private def runCompositeScenarios : IO Unit := do
   assertBool "decodeAffinity (unbind marker = numCores) = .ok none"
     (match decodeAffinity affinityUnbindMarker with | .ok none => true | _ => false)
   assertBool "decodeAffinity (out of range) = .error .invalidArgument"
-    (match decodeAffinity (numCores + 5) with | .error .invalidArgument => true | _ => false)
+    (match decodeAffinity (numCores + 5) with | .error (.invalidArgument 0) => true | _ => false)
 
 /-- §3.4 SM5.H.7, WS-ZA ZA6.4: the refill accounting — a charge keeps the
 refill total (the budget is conserved), takes what ran off the head, and keeps
@@ -579,7 +579,7 @@ private def runDeclaredCoreScenarios : IO Unit := do
   -- The refusal, on a one-PE machine.
   assertBool "one-PE machine: .tcbSetAffinity to core 1 is refused (.invalidArgument)"
     (match setThreadCpuAffinityWithMigration stSingleCore tid0 (some core1) bootCoreId with
-     | .error .invalidArgument => true
+     | .error (.invalidArgument _) => true
      | _ => false)
   -- ...and it commits nothing: the pinned affinity is unchanged.
   assertBool "one-PE machine: a refused affinity write leaves the TCB pinned as it was"

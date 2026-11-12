@@ -908,7 +908,7 @@ private def runUnifyInstructionChecks : IO Unit := do
     | .ok ((), stNoCap) =>
       assertBool "no capability at the slot is refused (invalidCapability)"
         (match dispatchSyscallAsCurrent unifyDecoded udCaller bootCoreId stNoCap with
-          | .error .invalidCapability => true | _ => false)
+          | .error (.invalidCapability _) => true | _ => false)
 
 -- ----------------------------------------------------------------------------
 -- §3.13  SM7.D — the re-type's clean to the Point of Unification.

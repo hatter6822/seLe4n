@@ -259,7 +259,7 @@ def applyReplyDonation (st : SystemState) (rid : SeLe4n.ReplyId)
               -- and placed again for the recipient (`settleReturnedContext`).
               .ok (removeRunnable (SchedContextOps.settleReturnedContext st' Concurrency.bootCoreId scId)
                 holder)
-      | none => .error .invalidArgument
+      | none => .error (.invalidArgument 0)
 
 -- ============================================================================
 -- Z7-J/K: Donation operation structural theorems

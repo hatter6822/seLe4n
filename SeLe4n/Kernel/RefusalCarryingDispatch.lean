@@ -196,7 +196,7 @@ message array. -/
                         (clearWokenReceiverStashPure woken? st') woken? 0)
                       (SeLe4n.ThreadId.ofOptCode plainWaiterCode) 0)
         | (st', .error e) => .error (e, st')
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 /-- WS-ZA ZA4.7: the checked signal arm.  A signal that wakes its
 notification's head waiter, with the flow gate passed, no bound receiver and
@@ -432,8 +432,8 @@ refusal carrying the state it was handed (`signalOperandArmThenTaintR_eq`). -/
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (taintCode : Nat) (sink : SeLe4n.ObjId) (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
-    if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-    else if !syscallTargetAccepted .notificationSignal st cap then .error (.invalidCapability, st)
+    if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+    else if !syscallTargetAccepted .notificationSignal st cap then .error (.invalidCapability 0, st)
     else if cap.hasRight requiredRight then
       withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
       withTaintWordsAt st sink fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
@@ -452,7 +452,7 @@ capability found.  Inlined, so the slot read builds no `some`. -/
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
         signalResolvedArmThenTaintR ctx tid executingCore requiredRight
           (signalTaintCaseOfCap st cap).code (capObjectId cap) cap st
@@ -569,7 +569,7 @@ writes the same way; every other wait takes the specification's form. -/
                   | none => notificationWaitArmGeneralR notifId tid executingCore st
           | none => notificationWaitArmGeneralR notifId tid executingCore st
         else .error (.flowDenied, st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
@@ -676,10 +676,10 @@ operand resolved to, every refusal carrying the state it was handed
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .notificationWait st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .notificationWait st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           withTaintWordsAt st (capObjectId cap) fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
           match notificationWaitCheckedArmR ctx tid executingCore cap st with
@@ -743,7 +743,7 @@ both straight from the register file and builds no decode record. -/
           (fun e => .error (e, st))
           (fun cnode slot =>
             arm (SystemState.lookupSlotCap st { cnode := cnode, slot := slot }) st)
-      | some _ => .error (.invalidCapability, st)
+      | some _ => .error (.invalidCapability 0, st)
       | none   => .error (.objectNotFound, st)
     | some _ => .error (.illegalState, st)
     | none   => .error (.objectNotFound, st)

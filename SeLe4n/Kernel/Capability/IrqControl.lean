@@ -224,9 +224,9 @@ def irqHandlerSetNotification (executingCore : Concurrency.CoreId) (line : Nat)
     (src : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match st.lookupSlotCap src with
-    | none => .error .invalidCapability
+    | none => .error (.invalidCapability 0)
     | some cap =>
-      if !irqNotificationCapAdmitted st cap then .error .invalidCapability
+      if !irqNotificationCapAdmitted st cap then .error (.invalidCapability 0)
       else if !cnodeInvoked (irqNodeId line) st then .error .objectNotFound
       else if irqHandlerSetNotificationInPlace st line src.cnode cap then
         .ok ((), irqHandlerSetNotificationPerform line src st)

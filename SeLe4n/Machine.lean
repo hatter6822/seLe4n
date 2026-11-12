@@ -1070,6 +1070,22 @@ structure MachineState where
       arm's own and no specification reads the word.  Every committed state
       holds what the entry was handed: `0` from boot. -/
   entryReport : Nat := 0
+  /-- **The report's payload words**, beside the report word: a refusal's
+      five payload words (`KernelError.payloadWord`, seL4's message-register
+      order), one stack per word, so that a refusal carrying data hands it on
+      as scalars rather than as a built error (D2b).  Each is pushed and
+      popped with the report word (`SystemState.pushEntryReport`, radix
+      `2^64`), so a push followed by its pop is the identity on these too;
+      a committed result pushes `0`s.  `0` from boot. -/
+  entryReportWord0 : Nat := 0
+  /-- The report's payload word 1's stack (see `entryReportWord0`). -/
+  entryReportWord1 : Nat := 0
+  /-- The report's payload word 2's stack (see `entryReportWord0`). -/
+  entryReportWord2 : Nat := 0
+  /-- The report's payload word 3's stack (see `entryReportWord0`). -/
+  entryReportWord3 : Nat := 0
+  /-- The report's payload word 4's stack (see `entryReportWord0`). -/
+  entryReportWord4 : Nat := 0
   /-- **The kernel heap's free bytes**, as the HAL last reported them: its free
       pages times the page size (`lean_heap::kernel_heap_free_bytes`, read
       through `Platform.FFI.ffiKernelHeapFreeBytes`).  The syscall entry

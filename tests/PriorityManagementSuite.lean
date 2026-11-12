@@ -108,7 +108,7 @@ private def pm004_setPriorityMissingCaller : IO Unit := do
   match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok _ => throw <| IO.userError "missing caller should fail"
   | .error e =>
-    expect "error is invalidArgument" (e == .invalidArgument)
+    expect "error is invalidArgument" (e == (.invalidArgument 0))
 
 /-- PM-005: setPriority with missing target returns invalidArgument. -/
 private def pm005_setPriorityMissingTarget : IO Unit := do
@@ -118,7 +118,7 @@ private def pm005_setPriorityMissingTarget : IO Unit := do
   match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok _ => throw <| IO.userError "missing target should fail"
   | .error e =>
-    expect "error is invalidArgument" (e == .invalidArgument)
+    expect "error is invalidArgument" (e == (.invalidArgument 0))
 
 -- ============================================================================
 -- D2-M3: setMCPriorityOp tests

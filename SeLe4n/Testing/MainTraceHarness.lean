@@ -1134,7 +1134,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   -- S2-J: the typed gate directly instead of deprecated apiEndpointSend
   let sendViaGate (gate : SeLe4n.Kernel.SyscallGate) (st : SystemState) :=
     SeLe4n.Kernel.syscallInvokeTyped .send { gate with requiredRight := .write }
-      (fun cap => if cap.target ≠ .object epId then fun _ => .error .invalidCapability
+      (fun cap => if cap.target ≠ .object epId then fun _ => .error (.invalidCapability 0)
         else SeLe4n.Kernel.endpointSendDual epId gate.callerId (.frame msg.badge false)) st
   match sendViaGate goodGate stLocal with
   | .ok _ => IO.println "[SGT-001] H15e syscall gate send (correct): ok"
@@ -1174,7 +1174,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   match SeLe4n.Kernel.syscallInvokeTyped .untypedRetype { retypeGate with requiredRight := .retype }
       (fun cap => match cap.target with
         | .object _ => SeLe4n.Kernel.untypedRetypeObject authSlot ⟨60⟩ dstSlot .endpoint
-        | _ => fun _ => .error .invalidCapability) stLocal with
+        | _ => fun _ => .error (.invalidCapability 0)) stLocal with
   | .ok _ => IO.println "[SGT-009] H15e syscall gate retype: ok"
   | .error e => IO.println s!"[SGT-010] H15e syscall gate retype: {reprStr e}"
   checkInvariants counter "post-syscall-gate-cap-checks" st1
@@ -1385,8 +1385,8 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs mintDecoded with
   | .error e => IO.println s!"[KSD-001] cspaceMint decode error: {reprStr e}"
   | .ok args =>
-    match SeLe4n.Kernel.resolveCNodeOpSlot ksdCnodeId args.srcIndex args.srcDepth stKsd,
-      SeLe4n.Kernel.resolveCNodeOpSlot ksdCnodeId args.destIndex args.destDepth stKsd with
+    match SeLe4n.Kernel.resolveCNodeOpSlot true ksdCnodeId args.srcIndex args.srcDepth stKsd,
+      SeLe4n.Kernel.resolveCNodeOpSlot false ksdCnodeId args.destIndex args.destDepth stKsd with
     | .error e, _ | _, .error e =>
       IO.println s!"[KSD-001] cspaceMint slot resolution error: {reprStr e}"
     | .ok mintSrc, .ok mintDst =>
@@ -1411,8 +1411,8 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs copyDecoded with
   | .error e => IO.println s!"[KSD-002] cspaceCopy decode error: {reprStr e}"
   | .ok copyArgs =>
-    match SeLe4n.Kernel.resolveCNodeOpSlot ksdCnodeId copyArgs.srcIndex copyArgs.srcDepth stKsd,
-      SeLe4n.Kernel.resolveCNodeOpSlot ksdCnodeId copyArgs.destIndex copyArgs.destDepth stKsd with
+    match SeLe4n.Kernel.resolveCNodeOpSlot true ksdCnodeId copyArgs.srcIndex copyArgs.srcDepth stKsd,
+      SeLe4n.Kernel.resolveCNodeOpSlot false ksdCnodeId copyArgs.destIndex copyArgs.destDepth stKsd with
     | .error e, _ | _, .error e =>
       IO.println s!"[KSD-002] cspaceCopy slot resolution error: {reprStr e}"
     | .ok copySrc, .ok copyDst =>
@@ -1683,8 +1683,8 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs moveDecoded with
   | .error e => IO.println s!"[MOV-001] cspaceMove decode error: {reprStr e}"
   | .ok moveArgs =>
-    match SeLe4n.Kernel.resolveCNodeOpSlot moveCnId moveArgs.srcIndex moveArgs.srcDepth stMove,
-      SeLe4n.Kernel.resolveCNodeOpSlot moveCnId moveArgs.destIndex moveArgs.destDepth stMove with
+    match SeLe4n.Kernel.resolveCNodeOpSlot true moveCnId moveArgs.srcIndex moveArgs.srcDepth stMove,
+      SeLe4n.Kernel.resolveCNodeOpSlot false moveCnId moveArgs.destIndex moveArgs.destDepth stMove with
     | .error e, _ | _, .error e =>
       IO.println s!"[MOV-001] cspaceMove slot resolution error: {reprStr e}"
     | .ok decodedSrc, .ok decodedDst =>

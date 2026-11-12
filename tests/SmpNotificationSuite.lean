@@ -488,14 +488,14 @@ private def runErrorPathChecks : IO Unit := do
      | .error .objectNotFound => true | _ => false)
   assertBool "wait on a wrong-kind object (an endpoint) fails with invalidCapability"
     (match (notificationWaitOnCore epId waiter2 c2 stFourCore).2 with
-     | .error .invalidCapability => true | _ => false)
+     | .error (.invalidCapability _) => true | _ => false)
   -- Absent / wrong-kind objects, signal side.
   assertBool "signal on an absent object fails with objectNotFound"
     (match (notificationSignalOnCore ⟨999⟩ badge1 c0 stFourCore).2 with
      | .error .objectNotFound => true | _ => false)
   assertBool "signal on a wrong-kind object (a TCB) fails with invalidCapability"
     (match (notificationSignalOnCore waiter2.toObjId badge1 c0 stFourCore).2 with
-     | .error .invalidCapability => true | _ => false)
+     | .error (.invalidCapability _) => true | _ => false)
   -- Pre-state on a failed signal: the fixture notification is untouched.
   let (stErr, _) := notificationSignalOnCore ⟨999⟩ badge1 c0 stFourCore
   assertBool "the failed signal returns the pre-state (notification untouched)"

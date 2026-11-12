@@ -130,7 +130,7 @@ def main : IO Unit := do
   let suspendResult := SeLe4n.Testing.bootSuspendThread (default : SystemState)
                          (⟨SeLe4n.ThreadId.ofNat 1, by decide⟩)
   let isInvalidArg : Bool := match suspendResult with
-    | .error .invalidArgument => true
+    | .error (.invalidArgument _) => true
     | _ => false
   expect "an9d_audit_fix_default_rejects_invalidArgument"
     isInvalidArg

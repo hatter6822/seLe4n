@@ -3,9 +3,9 @@
 //!
 //! Lean source: `SeLe4n/Model/KernelError.lean`.
 //! Discriminants 0–60 other than the retired 37 are a 1:1 mapping from the
-//! Lean inductive (60 variants after `RangeError` at 59 and `DepthMismatch` at
-//! 60 — seL4's `seL4_RangeError` and its depth-mismatch `seL4_FailedLookup`
-//! for a CNode operation's address — and `TruncatedMessage` at 58 — seL4's
+//! Lean inductive (60 variants after `RangeError` at 59 and `FailedLookup` at
+//! 60 — seL4's `seL4_RangeError` and `seL4_FailedLookup` for a CNode
+//! operation's address — and `TruncatedMessage` at 58 — seL4's
 //! `seL4_TruncatedMessage`, an invocation's message shorter than its decode
 //! reads — and WS-RR RR7.14's `IpcCancelled` at 57, the error a forcibly-cancelled
 //! blocking IPC returns, distinct from `IpcTimeout`'s budget expiry —
@@ -18,6 +18,10 @@
 //! `AllocationMisaligned`): no variant carries it and it is never reassigned
 //! (see [`KernelError::RETIRED`]).
 //! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
+//!
+//! A discriminant names an error's **code**.  Five codes carry seL4's error
+//! payload in the message registers (`setMRs_syscall_error`): see
+//! [`SyscallError`], which decodes a code and its payload words.
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
 ///
@@ -165,13 +169,12 @@ pub enum KernelError {
     TruncatedMessage = 58,
     /// seL4's `seL4_RangeError`: an invocation argument outside the range its
     /// operation admits — a CNode operation's depth outside `1..=64` — refused
-    /// before the lookup it would bound.
+    /// before the lookup it would bound.  Payload: the range's min and max.
     RangeError = 59,
-    /// seL4's `seL4_FailedLookup` with a depth-mismatch lookup fault: a CNode
-    /// operation's address that, resolved to its stated depth, stops at a slot
-    /// holding no CNode with bits still to resolve, or reaches a CNode level
-    /// needing more bits than remain.
-    DepthMismatch = 60,
+    /// seL4's `seL4_FailedLookup`: a CNode operation's address that does not
+    /// resolve, or names an empty source slot.  Payload: whether it was the
+    /// source's, then seL4's lookup fault ([`LookupFault`]).
+    FailedLookup = 60,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
     /// Discriminant 255 is a reserved sentinel outside the kernel range 0–60.
     UnknownKernelError = 255,
@@ -247,7 +250,7 @@ impl KernelError {
             57 => Some(Self::IpcCancelled),
             58 => Some(Self::TruncatedMessage),
             59 => Some(Self::RangeError),
-            60 => Some(Self::DepthMismatch),
+            60 => Some(Self::FailedLookup),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -320,7 +323,7 @@ impl std::fmt::Display for KernelError {
             Self::DeclassificationDeniedAtReceiver => write!(f, "declassification denied at the resolved receiver (the second hop, not the caller's)"),
             Self::TruncatedMessage => write!(f, "message shorter than the invocation's arguments"),
             Self::RangeError => write!(f, "argument outside its operation's range"),
-            Self::DepthMismatch => write!(f, "CNode address does not resolve to exactly its depth"),
+            Self::FailedLookup => write!(f, "capability address lookup failed"),
             Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
@@ -328,6 +331,173 @@ impl std::fmt::Display for KernelError {
 
 /// Standard kernel result type.
 pub type KernelResult<T> = Result<T, KernelError>;
+
+/// seL4's `lookup_fault` (`include/object/structures_64.bf`), as
+/// `setMRs_lookup_failure` writes it: the type word (`lufType + 1`), then its
+/// fields.  Mirrors Lean's `SeLe4n.Model.LookupFault`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LookupFault {
+    /// `seL4_InvalidRoot` (1): the root capability is not a CNode capability.
+    InvalidRoot,
+    /// `seL4_MissingCapability` (2).
+    MissingCapability { bits_left: u64 },
+    /// `seL4_DepthMismatch` (3).
+    DepthMismatch { bits_left: u64, bits_found: u64 },
+    /// `seL4_GuardMismatch` (4): `guard_found` is the CNode capability's guard.
+    GuardMismatch {
+        bits_left: u64,
+        guard_found: u64,
+        bits_found: u64,
+    },
+}
+
+impl LookupFault {
+    /// The words the fault occupies: the type word and its fields.
+    pub const fn word_count(&self) -> usize {
+        match self {
+            Self::InvalidRoot => 1,
+            Self::MissingCapability { .. } => 2,
+            Self::DepthMismatch { .. } => 3,
+            Self::GuardMismatch { .. } => 4,
+        }
+    }
+
+    /// Decode a fault from its words (type word first).  `None` when the
+    /// type word names no fault or the words are too few for it.
+    pub fn decode(words: &[u64]) -> Option<Self> {
+        let w = |i: usize| words.get(i).copied();
+        match w(0)? {
+            1 => Some(Self::InvalidRoot),
+            2 => Some(Self::MissingCapability { bits_left: w(1)? }),
+            3 => Some(Self::DepthMismatch {
+                bits_left: w(1)?,
+                bits_found: w(2)?,
+            }),
+            4 => Some(Self::GuardMismatch {
+                bits_left: w(1)?,
+                guard_found: w(2)?,
+                bits_found: w(3)?,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// A kernel error with its payload, as `setMRs_syscall_error`
+/// (`src/object/tcb.c`) writes it into the message registers.  Mirrors the
+/// Lean `KernelError`'s payload fields (`KernelError.payloadWord`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SyscallError {
+    /// MR0: the capability's number (`0` the invoked one, `i + 1` extra
+    /// capability `i`).
+    InvalidCapability { cap_number: u64 },
+    /// MR0: the argument's number.
+    InvalidArgument { arg_number: u64 },
+    /// MR0, MR1: the range's min and max.
+    RangeError { min: u64, max: u64 },
+    /// MR0: whether the source's lookup failed; MR1..: the lookup fault.
+    FailedLookup {
+        was_source: bool,
+        fault: LookupFault,
+    },
+    /// MR0: the memory the untyped has left.
+    UntypedRegionExhausted { memory_left: u64 },
+    /// A code that carries no payload.
+    Code(KernelError),
+}
+
+impl SyscallError {
+    /// The error's code.
+    pub const fn code(&self) -> KernelError {
+        match self {
+            Self::InvalidCapability { .. } => KernelError::InvalidCapability,
+            Self::InvalidArgument { .. } => KernelError::InvalidArgument,
+            Self::RangeError { .. } => KernelError::RangeError,
+            Self::FailedLookup { .. } => KernelError::FailedLookup,
+            Self::UntypedRegionExhausted { .. } => KernelError::UntypedRegionExhausted,
+            Self::Code(e) => *e,
+        }
+    }
+
+    /// The payload's words in seL4's order (at most five).
+    pub fn payload(&self) -> ([u64; 5], usize) {
+        let mut w = [0u64; 5];
+        let n = match *self {
+            Self::InvalidCapability { cap_number } => {
+                w[0] = cap_number;
+                1
+            }
+            Self::InvalidArgument { arg_number } => {
+                w[0] = arg_number;
+                1
+            }
+            Self::RangeError { min, max } => {
+                w[0] = min;
+                w[1] = max;
+                2
+            }
+            Self::FailedLookup { was_source, fault } => {
+                w[0] = u64::from(was_source);
+                match fault {
+                    LookupFault::InvalidRoot => w[1] = 1,
+                    LookupFault::MissingCapability { bits_left } => {
+                        w[1] = 2;
+                        w[2] = bits_left;
+                    }
+                    LookupFault::DepthMismatch {
+                        bits_left,
+                        bits_found,
+                    } => {
+                        w[1] = 3;
+                        w[2] = bits_left;
+                        w[3] = bits_found;
+                    }
+                    LookupFault::GuardMismatch {
+                        bits_left,
+                        guard_found,
+                        bits_found,
+                    } => {
+                        w[1] = 4;
+                        w[2] = bits_left;
+                        w[3] = guard_found;
+                        w[4] = bits_found;
+                    }
+                }
+                1 + fault.word_count()
+            }
+            Self::UntypedRegionExhausted { memory_left } => {
+                w[0] = memory_left;
+                1
+            }
+            Self::Code(_) => 0,
+        };
+        (w, n)
+    }
+
+    /// Decode a code and the message's words (`mrs`, the message's length of
+    /// them, the fifth read from the caller's IPC buffer).  `None` when the
+    /// words are too few for the code — a guard mismatch whose fifth word the
+    /// kernel could not write (no IPC buffer, length 4) is one.
+    pub fn decode(code: KernelError, mrs: &[u64]) -> Option<Self> {
+        let w = |i: usize| mrs.get(i).copied();
+        Some(match code {
+            KernelError::InvalidCapability => Self::InvalidCapability { cap_number: w(0)? },
+            KernelError::InvalidArgument => Self::InvalidArgument { arg_number: w(0)? },
+            KernelError::RangeError => Self::RangeError {
+                min: w(0)?,
+                max: w(1)?,
+            },
+            KernelError::FailedLookup => Self::FailedLookup {
+                was_source: w(0)? != 0,
+                fault: LookupFault::decode(mrs.get(1..)?)?,
+            },
+            KernelError::UntypedRegionExhausted => {
+                Self::UntypedRegionExhausted { memory_left: w(0)? }
+            }
+            other => Self::Code(other),
+        })
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -343,7 +513,7 @@ mod tests {
         // WS-SM SM9.C.1: DeclassificationDeniedAtReceiver added at discriminant 56.
         // WS-RR RR7.14: IpcCancelled added at discriminant 57.
         // TruncatedMessage added at discriminant 58.
-        // RangeError and DepthMismatch added at discriminants 59 and 60.
+        // RangeError and FailedLookup added at discriminants 59 and 60.
         for i in 0..=60u32 {
             if KernelError::RETIRED.contains(&i) {
                 assert!(KernelError::from_u32(i).is_none(), "retired {i} decoded");
@@ -410,7 +580,7 @@ mod tests {
     #[test]
     fn lean_rust_correspondence() {
         // 61 discriminants (0-60, 37 retired) — verify the range matches
-        // Lean's `kernelErrorEncodingBound` (DepthMismatch at 60).
+        // Lean's `kernelErrorEncodingBound` (FailedLookup at 60).
         let max_valid = 60u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
@@ -420,7 +590,7 @@ mod tests {
     }
 
     /// T1-H: Discriminant ordering — kernel variants 0–60 are sequential.
-    /// RangeError (59) and DepthMismatch (60) extended the range after
+    /// RangeError (59) and FailedLookup (60) extended the range after
     /// TruncatedMessage at 58.
     #[test]
     fn discriminant_ordering() {
@@ -437,6 +607,61 @@ mod tests {
             }
             prev = Some(i);
         }
+    }
+
+    /// The payload decodes back to the error it was written from, for each
+    /// payload code and each lookup fault.
+    #[test]
+    fn syscall_error_payload_roundtrip() {
+        let cases = [
+            SyscallError::InvalidCapability { cap_number: 1 },
+            SyscallError::InvalidArgument { arg_number: 3 },
+            SyscallError::RangeError { min: 1, max: 64 },
+            SyscallError::UntypedRegionExhausted { memory_left: 4096 },
+            SyscallError::FailedLookup {
+                was_source: false,
+                fault: LookupFault::InvalidRoot,
+            },
+            SyscallError::FailedLookup {
+                was_source: true,
+                fault: LookupFault::MissingCapability { bits_left: 64 },
+            },
+            SyscallError::FailedLookup {
+                was_source: false,
+                fault: LookupFault::DepthMismatch {
+                    bits_left: 4,
+                    bits_found: 7,
+                },
+            },
+            SyscallError::FailedLookup {
+                was_source: true,
+                fault: LookupFault::GuardMismatch {
+                    bits_left: 64,
+                    guard_found: 2,
+                    bits_found: 58,
+                },
+            },
+            SyscallError::Code(KernelError::IllegalState),
+        ];
+        for e in cases {
+            let (w, n) = e.payload();
+            assert!(n <= 5);
+            assert_eq!(SyscallError::decode(e.code(), &w[..n]), Some(e));
+        }
+        // A guard mismatch cut to four words (no buffer) does not decode.
+        let gm = SyscallError::FailedLookup {
+            was_source: false,
+            fault: LookupFault::GuardMismatch {
+                bits_left: 64,
+                guard_found: 2,
+                bits_found: 58,
+            },
+        };
+        let (w, _) = gm.payload();
+        assert_eq!(
+            SyscallError::decode(KernelError::FailedLookup, &w[..4]),
+            None
+        );
     }
 
     /// AF6-A: UnknownKernelError sentinel at discriminant 255.

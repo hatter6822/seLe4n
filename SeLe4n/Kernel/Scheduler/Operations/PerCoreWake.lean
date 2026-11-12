@@ -1480,7 +1480,7 @@ with `.invalidArgument` (mirroring `setPriorityOp`). -/
 theorem setThreadCpuAffinity_error_of_no_tcb (st : SystemState)
     (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
     (hTcb : st.getTcb? targetTid = none) :
-    setThreadCpuAffinity st targetTid affinity = .error .invalidArgument := by
+    setThreadCpuAffinity st targetTid affinity = .error (.invalidArgument 0) := by
   simp only [setThreadCpuAffinity, SystemState.getTcbWitnessed?_eq_none hTcb]
 
 /-- WS-SM SM5.C.8: after a successful `setThreadCpuAffinity`, the target's

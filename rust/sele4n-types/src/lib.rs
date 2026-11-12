@@ -46,7 +46,7 @@ pub mod identifiers;
 pub mod rights;
 pub mod syscall;
 
-pub use error::{KernelError, KernelResult};
+pub use error::{KernelError, KernelResult, LookupFault, SyscallError};
 pub use identifiers::*;
 pub use rights::{AccessRight, AccessRights, AccessRightsError};
 
@@ -70,12 +70,17 @@ pub use rights::{AccessRight, AccessRights, AccessRightsError};
 ///   in bits 9-11 and the label from bit 12, and the IPC buffer's receive
 ///   path (`receive_cnode`, `receive_index`, `receive_depth`) after its
 ///   `caps_or_badges` words.
+/// * Version **5** — an error frame carries seL4's error payload
+///   (`setMRs_syscall_error`): `x1`'s length is the payload's word count,
+///   `x2`-`x5` its first four words (MR0-MR3), and a guard mismatch's fifth
+///   word is written to the caller's IPC buffer `msg[4]`, counted only when
+///   written ([`SyscallError`]).
 ///
 /// Mirrored by Lean's `Architecture.syscallAbiVersion` and the HAL's
 /// `svc_dispatch::SYSCALL_ABI_VERSION`; each side's conformance suite
 /// pins its own constant to the same literal, so a half-bumped tree
 /// fails its own suite rather than mis-decoding at runtime.
-pub const SYSCALL_ABI_VERSION: u64 = 4;
+pub const SYSCALL_ABI_VERSION: u64 = 5;
 
 /// WS-RR RR4 (ABI v3): the first kernel-status label.  A `MessageInfo`
 /// label at or above this value in `x1` is a kernel error (discriminant

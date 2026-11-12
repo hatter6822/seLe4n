@@ -116,7 +116,7 @@ def notificationSignalOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
       -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
       -- genuinely absent one with `.objectNotFound`.  Reading the store raw
       -- here would have been the very pattern the comment claimed to avoid.
-      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 /-- WS-ZA ZA1.6: a signal with no waiter, as an update of the notification's
@@ -257,7 +257,7 @@ the waiter path is the specification's. -/
               hasPendingBadge := true, pendingWord := mergedBadge
               boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }), .ok none)
   | none =>
-      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 @[csimp] theorem notificationSignalOnCore_eq_impl :
@@ -355,7 +355,7 @@ def notificationWaitOnCore (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.Thre
       -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
       -- genuinely absent one with `.objectNotFound`.  Reading the store raw
       -- here would have been the very pattern the comment claimed to avoid.
-      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 /-- WS-ZA ZA4: a wait consuming its notification's pending badge, as an update
@@ -488,7 +488,7 @@ def notificationWaitOnCoreImpl (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.
                         | .error e => (st, .error e)
                         | .ok st'' => (removeRunnableOnCore st'' waiter executingCore, .ok none)
   | none =>
-      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
       else (st, .error .objectNotFound)
 
 /-- WS-ZA ZA4: the guarded badge-consume path is the specification's. -/

@@ -37,7 +37,69 @@ is what makes it placeable below every consumer.
 
 namespace SeLe4n.Model
 
+/-- **seL4's `lookup_fault`** (`include/object/structures_64.bf`): why a
+capability-address resolution stopped.  A `seL4_FailedLookup` error and (from
+WS-SX SX2) a capability fault carry one, and `setMRs_lookup_failure`
+(`src/api/faults.c`) writes it as its type plus one, then its fields in this
+order.
+
+- `invalidRoot`: the root capability is not a CNode capability.
+- `missingCapability bitsLeft`: the slot the address names holds no capability
+  of the kind the operation needs, with `bitsLeft` bits of the address
+  unresolved.
+- `depthMismatch bitsLeft bitsFound`: the walk stopped with `bitsLeft` bits
+  left, at a level that resolves `bitsFound` (`0` where it stopped at a slot
+  that names no CNode).
+- `guardMismatch bitsLeft guardFound bitsFound`: the address's guard bits do
+  not match the CNode capability's guard `guardFound`, `bitsFound` bits wide,
+  with `bitsLeft` bits left. -/
+inductive LookupFault where
+  | invalidRoot
+  | missingCapability (bitsLeft : UInt64)
+  | depthMismatch (bitsLeft bitsFound : UInt64)
+  | guardMismatch (bitsLeft guardFound bitsFound : UInt64)
+  deriving Repr, DecidableEq
+
+namespace LookupFault
+
+/-- seL4's lookup-failure type word, `lufType + 1`: `seL4_InvalidRoot` (1),
+`seL4_MissingCapability` (2), `seL4_DepthMismatch` (3), `seL4_GuardMismatch` (4). -/
+def typeWord : LookupFault → UInt64
+  | .invalidRoot => 1
+  | .missingCapability _ => 2
+  | .depthMismatch _ _ => 3
+  | .guardMismatch _ _ _ => 4
+
+/-- The words `setMRs_lookup_failure` writes: the type word and the fields. -/
+def wordCount : LookupFault → Nat
+  | .invalidRoot => 1
+  | .missingCapability _ => 2
+  | .depthMismatch _ _ => 3
+  | .guardMismatch _ _ _ => 4
+
+/-- Word `i` of the fault, in `setMRs_lookup_failure`'s order: the type word,
+then `bitsLeft`, then `bitsFound` (a depth mismatch) or `guardFound` and
+`bitsFound` (a guard mismatch); `0` past the last. -/
+def word (f : LookupFault) (i : Nat) : UInt64 :=
+  match f, i with
+  | f, 0 => f.typeWord
+  | .missingCapability l, 1 => l
+  | .depthMismatch l _, 1 => l
+  | .depthMismatch _ b, 2 => b
+  | .guardMismatch l _ _, 1 => l
+  | .guardMismatch _ g _, 2 => g
+  | .guardMismatch _ _ b, 3 => b
+  | _, _ => 0
+
+end LookupFault
+
 /-- F-04: Kernel error codes. This inductive has 60 variants.
+Five carry seL4's error payload (`setMRs_syscall_error`, `src/object/tcb.c`):
+`invalidCapability`, `invalidArgument`, `rangeError`, `failedLookup` and
+`untypedRegionExhausted`.  The payload rides in the message registers of the
+error frame, never in its label (`Architecture.errorFrame`).  Each payload
+field is a machine word (`UInt64`), as seL4's `current_syscall_error` fields
+are `word_t`: a payload is exactly the words the caller reads back.
 **Coding convention**: Prefer explicit match arms over `| _ =>` catch-all
 patterns when matching on `KernelError`. Lean's exhaustiveness checker will
 flag missing arms at compile time, but catch-all patterns silently swallow
@@ -52,7 +114,9 @@ error handling in donation/lifecycle wrappers (documented by AC3-A/I-02 atomicit
 contract), or (c) seL4-compatible `resolveExtraCaps` silent-drop (documented by
 AC3-D/API-01). -/
 inductive KernelError where
-  | invalidCapability
+  /-- seL4's `seL4_InvalidCapability`: `capNumber` names the capability, `0` for
+  the invoked one and `i + 1` for argument capability `i`. -/
+  | invalidCapability (capNumber : UInt64)
   | objectNotFound
   | illegalState
   | illegalAuthority
@@ -72,7 +136,9 @@ inductive KernelError where
   | notImplemented
   | targetSlotOccupied   -- WS-E4/H-02: insert into occupied slot
   | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state, or replier not authorized (WS-H1/M-02)
-  | untypedRegionExhausted   -- WS-F2: not enough space in untyped region
+  /-- WS-F2: not enough space in the untyped region — seL4's
+  `seL4_NotEnoughMemory`, carrying the bytes the untyped has left. -/
+  | untypedRegionExhausted (memoryLeft : UInt64)
   | untypedTypeMismatch      -- WS-F2: source object is not an UntypedObject
   | untypedDeviceRestriction -- WS-F2: device untyped cannot back kernel objects
   | untypedAllocSizeTooSmall -- WS-F2: allocSize smaller than minimum for object type
@@ -97,7 +163,9 @@ inductive KernelError where
   -- up to the object's boundary.  It is reserved and never reassigned
   -- (`KernelError.retiredDiscriminants`).
   | revocationRequired    -- U-H03: destroying an object or mapping still in use (unmap, cancel or revoke first)
-  | invalidArgument      -- U5-E/U-M07: syscall argument decode failed (e.g., invalid permission bits)
+  /-- U5-E/U-M07: a syscall argument the operation refuses — seL4's
+  `seL4_InvalidArgument`, carrying the argument's number (its message word). -/
+  | invalidArgument (argNumber : UInt64)
   | mmioUnaligned        -- V4-B/M-HW-1: MMIO access at unaligned address (4-byte for 32-bit, 8-byte for 64-bit)
   | invalidSyscallArgument  -- X5-E/M-11: syscall-specific argument decode failure (distinct from generic invalidArgument)
   | ipcTimeout             -- WS-Z Z6: IPC blocked thread timed out due to SchedContext budget expiry
@@ -211,21 +279,32 @@ inductive KernelError where
                            -- any argument is read, as seL4's `decode*Invocation`
                            -- answers `length < n`.  The model's own discriminant
                            -- (58), not seL4's numeric code.
-  | rangeError            -- seL4's `seL4_RangeError`: an invocation argument
-                           -- outside the range its operation admits — a CNode
-                           -- operation's depth outside `1 .. 64` (seL4's
-                           -- `rangeCheck` in `lookupSlotForCNodeOp`), refused
-                           -- before the lookup it would bound.  The model's own
-                           -- discriminant (59); seL4 also returns the range's
-                           -- bounds, which this kernel's error return does not
-                           -- carry.
-  | depthMismatch         -- seL4's `seL4_FailedLookup` with a depth-mismatch
-                           -- lookup fault: a CNode operation's address that,
-                           -- resolved to its stated depth, stops at a slot whose
-                           -- capability is no CNode with bits still to resolve, or
-                           -- reaches a CNode whose level needs more bits than
-                           -- remain (`resolveCNodeOpSlot`).  The model's own
-                           -- discriminant (60).
+  | rangeError (rangeMin rangeMax : UInt64)
+                           -- seL4's `seL4_RangeError`: an invocation argument
+                           -- outside the range `rangeMin .. rangeMax` its
+                           -- operation admits — a CNode operation's depth
+                           -- outside `1 .. 64` (seL4's `rangeCheck` in
+                           -- `lookupSlotForCNodeOp`), refused before the lookup
+                           -- it would bound.  The model's own discriminant (59);
+                           -- the bounds are the error's payload.
+  | failedLookup (wasSource : Bool) (lookupFault : LookupFault)
+                           -- seL4's `seL4_FailedLookup`: a CNode operation's
+                           -- address that does not resolve (`lookupSlotForCNodeOp`)
+                           -- or names an empty source slot, with whether it was
+                           -- the source's and seL4's lookup fault.  The model's
+                           -- own discriminant (60).
   deriving Repr, DecidableEq
+
+/-- The error's code with its payload cleared: every field `0`, `false` or
+`invalidRoot`.  Two errors share a code exactly when their payload-cleared
+forms are equal; the error label carries the code alone
+(`KernelError.ofDiscriminant?_toDiscriminant`). -/
+def KernelError.erasePayload : KernelError → KernelError
+  | .invalidCapability _ => .invalidCapability 0
+  | .invalidArgument _ => .invalidArgument 0
+  | .rangeError _ _ => .rangeError 0 0
+  | .failedLookup _ _ => .failedLookup false .invalidRoot
+  | .untypedRegionExhausted _ => .untypedRegionExhausted 0
+  | e => e
 
 end SeLe4n.Model

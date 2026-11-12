@@ -553,7 +553,7 @@ private def runCompletionNonVacuityChecks : IO Unit := do
   -- F13: resume of a non-existent (non-TCB) target → invalidArgument (rejection path).
   assertBool "F13 resumeThreadOnCore: a non-TCB target → invalidArgument"
     (match resumeThreadOnCore stNoRq ((ThreadId.ofNat 999).toValid (by decide)) core0 with
-     | .error .invalidArgument => true
+     | .error (.invalidArgument _) => true
      | _ => false)
   -- Single-core bridge: on the all-unbound state the chain walk fires NO cross-core SGI.
   assertBool "single-core (all-unbound) chain walk fires no cross-core SGI"

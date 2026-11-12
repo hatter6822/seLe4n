@@ -141,7 +141,7 @@ def endpointCallCrossCoreDispatch
               -- (`pipBoostWithWake … bootCoreId` of an unbound thread = `updatePipBoost`).
               ((PriorityInheritance.propagatePipChainCrossCore st'' receiverTid executingCore).1,
                .ok (summary, sgi))
-        | _, _ => (st', .error .invalidArgument)
+        | _, _ => (st', .error (.invalidArgument 0))
       | none => (st', .ok (summary, sgi))
 
 /-- WS-SM SM6.A (live `.call` enforcement): the **information-flow-checked**

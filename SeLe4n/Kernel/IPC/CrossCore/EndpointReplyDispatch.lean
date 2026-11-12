@@ -157,7 +157,7 @@ def applyReplyDonationOnCore (st : SystemState) (rid : SeLe4n.ReplyId)
               .ok (descheduleAtPlacement
                     (SchedContextOps.settleReturnedContext st' ownerHome scId)
                     holder)
-      | none => .error .invalidArgument
+      | none => .error (.invalidArgument 0)
 
 /-- **WS-HP HP10.7: the DESTINATION core of the reply path's returned context**
 — the home of the thread the pop actually hands the reservation to, where the
@@ -320,7 +320,7 @@ theorem applyReplyDonationOnCore_characterisation
                       .ok (descheduleAtPlacement
                             (SchedContextOps.settleReturnedContext st' ownerHome scId)
                             holder))
-             | none => .error .invalidArgument
+             | none => .error (.invalidArgument 0)
          | none => popUnheldReplyHead st rid targetVtid.val ownerHome) := by
   simp only [applyReplyDonationOnCore]
   cases replyFrameHeadHolder? st rid with
@@ -970,7 +970,7 @@ def endpointReplyCrossCoreDispatch
                     .ok replySgi?)
               | some rid =>
                 match SeLe4n.ThreadId.toValid? target with
-                | none => (st, .error .invalidArgument)
+                | none => (st, .error (.invalidArgument 0))
                 | some targetV =>
                   -- **WS-HP HP10.7**: the migration's DESTINATION is the
                   -- redirected recipient's home, not the answered caller's --
@@ -982,7 +982,7 @@ def endpointReplyCrossCoreDispatch
                   | .error e => (st, .error e)
                   | .ok st2 =>
                       ((PriorityInheritance.propagatePipChainCrossCore st2 expected executingCore).1, .ok replySgi?)
-          | none => (st, .error .invalidArgument)
+          | none => (st, .error (.invalidArgument 0))
       | none =>
           -- **WS-ZA ZA6.34**: a caller recording no server -- its server was
           -- finalised, which forgot it and returned the context it held to no
@@ -995,7 +995,7 @@ def endpointReplyCrossCoreDispatch
           | none => (st1, .ok replySgi?)
           | some rid =>
             match SeLe4n.ThreadId.toValid? target with
-            | none => (st, .error .invalidArgument)
+            | none => (st, .error (.invalidArgument 0))
             | some targetV =>
               match applyReplyDonationOnCore st1 rid targetV
                   (replyDonationRecipientHome st1 rid target) with

@@ -159,7 +159,7 @@ private def t02_service_register_bounds_rejected : IO Unit := do
     throw <| IO.userError "base decode unexpectedly failed"
   | .ok decoded =>
     match decodeServiceRegisterArgs decoded with
-    | .error .invalidArgument =>
+    | .error (.invalidArgument _) =>
       expect "methodCount>MAX rejected" true
     | .error e =>
       throw <| IO.userError s!"expected invalidArgument, got {toString e}"
@@ -255,7 +255,7 @@ private def t06_cspace_mint_rights_rejected : IO Unit := do
     throw <| IO.userError "base decode unexpectedly failed"
   | .ok decoded =>
     match decodeCSpaceMintArgs decoded with
-    | .error .invalidArgument =>
+    | .error (.invalidArgument _) =>
       expect "stray bit past the mask rejected" true
     | .error e =>
       throw <| IO.userError s!"expected invalidArgument, got {toString e}"

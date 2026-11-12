@@ -343,7 +343,8 @@ def retypeFromUntyped
                 -- WS-H2/A-28: Both objects are computed before any state mutation.
                 -- `ut'` and `newObj` are fully determined at this point.
                 match ut.allocate idx childId allocSize with
-                | none => .error .untypedRegionExhausted
+                | none => .error (.untypedRegionExhausted
+                    (ut.regionSize - retypeFreeIndex st authority authCap).toUInt64)
                 | some (ut', _offset) =>
                     -- Atomic store: the child recorded in the untyped, the child
                     -- created, and the invoked capability's free index advanced.
@@ -704,7 +705,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (hNoFit : ut.allocate (alignedCarveIndex newObj.objectType allocSize ut
       (retypeFreeIndex st authority cap)) childId allocSize = none) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
-      .error .untypedRegionExhausted := by
+      .error (.untypedRegionExhausted (ut.regionSize - retypeFreeIndex st authority cap).toUInt64) := by
   unfold retypeFromUntyped SystemState.getObject?
   have hCapF : ¬(st.objects.size ≥ maxObjects) := by omega
   simp only [hObj, hCapF, ↓reduceIte, hNeSelf, hNoCollision, hNotNode, Bool.or_false,
@@ -1393,7 +1394,7 @@ holder of a capability to it.
 def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
     (dst : CSpaceAddr) (req : CarveRequest) : Kernel Unit :=
   fun st =>
-    if !req.heapAdmitted st then .error .untypedRegionExhausted else
+    if !req.heapAdmitted st then .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64) else
     if !req.admissible st then .error .illegalState else
     match cspaceLookupSlot src st with
     | .error e => .error e
@@ -1415,7 +1416,7 @@ def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
             | .ok ((), st1) =>
               .ok ((), ((req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))).storeCNodeWith dst.cnode
                 (·.insert dst.slot (req.capability childId))).cdtAddChild src dst .retype)
-      | _ => .error .invalidCapability
+      | _ => .error (.invalidCapability 0)
 
 
 theorem objectTypeAllocSize_pos (ty : KernelObjectType) : 0 < objectTypeAllocSize ty := by
@@ -1652,7 +1653,8 @@ caller named, and precedes every other check and every write. -/
 theorem untypedRetypeObject_heapRefused
     (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
     (st : SystemState) (hHeap : req.heapAdmitted st = false) :
-    untypedRetypeObject src childId dst req st = .error .untypedRegionExhausted := by
+    untypedRetypeObject src childId dst req st =
+      .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64) := by
   unfold untypedRetypeObject
   simp only [hHeap, Bool.not_false, ↓reduceIte]
 
@@ -1663,7 +1665,7 @@ theorem untypedRetypeObject_heapRefused_stateUnchanged
     (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
     (st : SystemState) (hHeap : req.heapAdmitted st = false) :
     RefusalCarrying.ofKernel (untypedRetypeObject src childId dst req) st =
-      .error (.untypedRegionExhausted, st) := by
+      .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64, st) := by
   unfold RefusalCarrying.ofKernel
   rw [untypedRetypeObject_heapRefused src dst childId req st hHeap]
 

@@ -95,7 +95,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
     expect name
       (KernelError.toUInt32 e == expected)
       s!"{name}: expected {expected}, got {KernelError.toUInt32 e}"
-  pin "sd001_00_invalidCapability"            .invalidCapability             0
+  pin "sd001_00_invalidCapability"            (.invalidCapability 0)             0
   pin "sd001_01_objectNotFound"               .objectNotFound                1
   pin "sd001_02_illegalState"                 .illegalState                  2
   pin "sd001_03_illegalAuthority"             .illegalAuthority              3
@@ -115,7 +115,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_17_notImplemented"               .notImplemented               17
   pin "sd001_18_targetSlotOccupied"           .targetSlotOccupied           18
   pin "sd001_19_replyCapInvalid"              .replyCapInvalid              19
-  pin "sd001_20_untypedRegionExhausted"       .untypedRegionExhausted       20
+  pin "sd001_20_untypedRegionExhausted"       (.untypedRegionExhausted 0)       20
   pin "sd001_21_untypedTypeMismatch"          .untypedTypeMismatch          21
   pin "sd001_22_untypedDeviceRestriction"     .untypedDeviceRestriction     22
   pin "sd001_23_untypedAllocSizeTooSmall"     .untypedAllocSizeTooSmall     23
@@ -140,7 +140,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
       (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
     "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38
-  pin "sd001_39_invalidArgument"              .invalidArgument              39
+  pin "sd001_39_invalidArgument"              (.invalidArgument 0)              39
   pin "sd001_40_mmioUnaligned"                .mmioUnaligned                40
   pin "sd001_41_invalidSyscallArgument"       .invalidSyscallArgument       41
   pin "sd001_42_ipcTimeout"                   .ipcTimeout                   42
@@ -158,12 +158,12 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
 
 /-- SD-002 (WS-RA shape): every `KernelError` discriminant 0..54 resolves
 through `ofDiscriminant?`, carries the **offset** label `disc + 1`, and its
-`errorFrame` puts exactly that label — and nothing else — in the `x1`
-MessageInfo position.  Driven by numeric enumeration over the full range
+`errorFrame` puts exactly that label and the payload's length in the `x1`
+MessageInfo position and the payload words, in seL4's order, in `x2`–`x5`.  Driven by numeric enumeration over the full range
 rather than a hand-maintained variant list: the retired SD-002's list had
 54 entries against the type's 55 (`.auditLogCapacityExceeded` never
 joined it), which is the silent-under-listing this shape cannot repeat —
-the boundary is pinned both ways below (`.depthMismatch` is at 60,
+the boundary is pinned both ways below (`.failedLookup` is at 60,
 so the last discriminant is 60 and 61 is the first rejected one). -/
 private def sd002_errorLabelCarriage : IO Unit := do
   for disc in [0:SeLe4n.Model.KernelError.kernelErrorEncodingBound] do
@@ -176,18 +176,19 @@ private def sd002_errorLabelCarriage : IO Unit := do
         expect s!"sd002b_label_offset_{disc}"
           (Kernel.Architecture.errorLabel e == Kernel.Architecture.errorLabelBase + disc)
           s!"errorLabel must be errorLabelBase + discriminant for {disc}"
-        let frame := Kernel.Architecture.errorFrame e
+        let frame := Kernel.Architecture.errorFrame e false
         expect s!"sd002c_frame_x1_{disc}"
-          (frame.x1 == ((Kernel.Architecture.errorLabelBase + disc) <<< 12).toUInt64)
-          s!"errorFrame x1 must carry label errorLabelBase + {disc} at bit 9"
-        expect s!"sd002d_frame_rest_zero_{disc}"
-          (frame.x0 == 0 && frame.x2 == 0 && frame.x3 == 0 &&
-           frame.x4 == 0 && frame.x5 == 0)
-          "errorFrame carries nothing outside x1"
+          (frame.x1 == ((Kernel.Architecture.errorLabelBase + disc) <<< 12
+              ||| e.payloadLength).toUInt64)
+          s!"errorFrame x1 must carry label errorLabelBase + {disc} at bit 12 and the payload length"
+        expect s!"sd002d_frame_rest_payload_{disc}"
+          (frame.x0 == 0 && frame.x2 == e.payloadWord 0 && frame.x3 == e.payloadWord 1 &&
+           frame.x4 == e.payloadWord 2 && frame.x5 == e.payloadWord 3)
+          "errorFrame carries the payload in x2..x5 and nothing in x0"
   -- The boundary, both ways: 60 is the last discriminant, 61 is rejected.
   expect "sd002e_last_discriminant_58"
-    ((SeLe4n.Model.KernelError.ofDiscriminant? 60) == some .depthMismatch)
-    "discriminant 60 (depthMismatch) must resolve"
+    ((SeLe4n.Model.KernelError.ofDiscriminant? 60) == some (.failedLookup false .invalidRoot))
+    "discriminant 60 (failedLookup) must resolve"
   expect "sd002f_boundary_59_rejected"
     ((SeLe4n.Model.KernelError.ofDiscriminant? 61).isNone)
     "discriminant 61 must not resolve (fail-closed)"
@@ -352,7 +353,7 @@ private def sd022_suspendThreadInner_missing : IO Unit := do
   initialiseKernelState st
   let result ← suspendThreadInner 99
   expect "sd022_returns_invalidArgument"
-    (result == KernelError.toUInt32 .invalidArgument)
+    (result == KernelError.toUInt32 (.invalidArgument 0))
     s!"suspendThreadInner of a missing thread must return InvalidArgument (39), got {result}"
 
 /-- SD-023: `suspendThreadInner` on the reserved sentinel `tid = 0`
@@ -373,7 +374,7 @@ private def sd023_suspendThreadInner_sentinel : IO Unit := do
   let sentinel : UInt64 := SeLe4n.ThreadId.sentinel.toNat.toUInt64
   let result ← suspendThreadInner sentinel
   expect "sd023_returns_invalidArgument"
-    (result == KernelError.toUInt32 .invalidArgument)
+    (result == KernelError.toUInt32 (.invalidArgument 0))
     "suspendThreadInner of the sentinel must return InvalidArgument"
   -- The state must be unchanged because the sentinel branch never
   -- invokes `suspendThread`.
@@ -415,7 +416,7 @@ private def dispatchViaRef (syscallId : UInt32)
 /-- Is this outcome the error frame for `e`? -/
 private def isErrorFrameFor (outcome : Kernel.Architecture.SyscallOutcome)
     (e : KernelError) : Bool :=
-  outcome == .returns (Kernel.Architecture.errorFrame e)
+  outcome == .returns (Kernel.Architecture.errorFrame e false)
 
 /-- Does this outcome carry *some* error on its x1 label? -/
 private def isSomeErrorFrame (outcome : Kernel.Architecture.SyscallOutcome) : Bool :=
@@ -922,7 +923,7 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
   -- Negative 1: notification cap ABSENT (slot 1 empty) → fail-closed (invalidCapability).
   let rNoCap := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap)])
   expect "sd050_bindNtfn_no_cap_rejected"
-    (match rNoCap with | .error .invalidCapability => true | _ => false)
+    (match rNoCap with | .error (.invalidCapability 0) => true | _ => false)
     "bind without a held notification cap should fail with invalidCapability"
   -- Negative 2: notification cap present but READ-only (no `.write`) → illegalAuthority.
   let rRO := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapRO)])
@@ -1014,7 +1015,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
       capDepth := 4, requiredRight := .write }
   expect "sd054_idle_target_cap_resolves_invalidCapability"
     (match syscallResolveCap (gate 0) st with
-     | .error .invalidCapability => true
+     | .error (.invalidCapability _) => true
      | _ => false)
     "a capability to an idle TCB must resolve like an empty slot"
   expect "sd054_ordinary_target_cap_resolves"
@@ -1033,7 +1034,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
       msgRegs := #[], inlineCount := 0, overflowCount := 0 }
   expect "sd054_tcbSuspend_on_idle_target_refused"
     (match dispatchSyscallAsCurrent decoded caller bootCoreId st with
-     | .error .invalidCapability => true
+     | .error (.invalidCapability _) => true
      | _ => false)
     "a suspend aimed at an idle TCB must be refused at resolution"
   -- PR #889 review round 11 (P1), re-based at `v0.35.204`: the chokepoint
@@ -1058,7 +1059,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
     (match dispatchCapabilityOnly (bindDecoded 0) scCap caller bootCoreId with
      | some f =>
        match f st with
-       | .error .invalidCapability => true
+       | .error (.invalidCapability _) => true
        | _ => false
      | none => false)
     "a schedContextBind whose TCB capability names an idle thread must be refused like an empty slot"
@@ -1074,7 +1075,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
   expect "sd054_raw_thread_operand_validator_refuses_every_core"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
       match validateThreadIdArg (SeLe4n.Kernel.idleThreadId c) with
-      | .error .invalidArgument => true
+      | .error (.invalidArgument _) => true
       | _ => false))
     "the raw-operand validator refuses every core's idle thread id"
   expect "sd054_raw_operand_validators_admit_ordinary_ids"
@@ -1085,7 +1086,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
       | .ok v => decide (v.val = (⟨7⟩ : SeLe4n.ObjId))
       | _ => false) &&
      (match validateObjIdArg (SeLe4n.Kernel.idleThreadId ⟨1, by decide⟩).toObjId with
-      | .error .invalidArgument => true
+      | .error (.invalidArgument _) => true
       | _ => false))
     "an ordinary raw id still lifts, and a reserved idle object id does not"
 
@@ -1456,7 +1457,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
   match dispatchSyscallAsCurrent (decoded 3 2) caller bootCoreId (mkSt cnodeCapGrant) with
   | .error e =>
       expect "sd058_non_reply_source_refused"
-        (decide (e = KernelError.invalidCapability))
+        (decide (e = (KernelError.invalidCapability 0)))
         "a source naming a non-Reply object must be refused with invalidCapability"
   | .ok ((), stBad) =>
       expect "sd058_non_reply_source_wrote_nothing"
@@ -1466,7 +1467,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
   -- 5. A primary capability of the wrong target kind: the arm's fail-closed arm.
   expect "sd058_wrong_primary_kind_refused"
     (match dispatchSyscallAsCurrent (decoded 1 2) caller bootCoreId (mkSt wrongKindCap) with
-     | .error .invalidCapability => true
+     | .error (.invalidCapability _) => true
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
 
@@ -1626,7 +1627,7 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
   -- 4. A primary capability of the wrong target kind: the arm's fail-closed arm.
   expect "sd059_wrong_primary_kind_refused"
     (match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId (mkSt wrongKindCap) with
-     | .error .invalidCapability => true
+     | .error (.invalidCapability _) => true
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
 
@@ -1700,20 +1701,20 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
   -- Negative 2: a writable capability to a non-TCB object -> invalidCapability.
   expect "sd060_non_tcb_capability_rejected"
     (match dispatchSyscallAsCurrent (decoded 3) caller bootCoreId st with
-     | .error .invalidCapability => true
+     | .error (.invalidCapability _) => true
      | _ => false)
     "a capability to a CNode is not a TCB capability and must fail with invalidCapability"
   -- Negative 3 — the retired reading: the target's raw thread id in MR0.  `70`
   -- is an address, it masks to an empty slot, and the chokepoint refuses it.
   expect "sd060_raw_thread_id_in_mr0_is_not_a_capability"
     (match dispatchSyscallAsCurrent (decoded tgtTid.toNat) caller bootCoreId st with
-     | .error .invalidCapability => true
+     | .error (.invalidCapability _) => true
      | _ => false)
     "naming the thread's id is not holding a capability to it"
   -- Negative 4: an empty slot beside the held ones.
   expect "sd060_empty_slot_rejected"
     (match dispatchSyscallAsCurrent (decoded 9) caller bootCoreId st with
-     | .error .invalidCapability => true
+     | .error (.invalidCapability _) => true
      | _ => false)
     "an empty CSpace slot must fail with invalidCapability"
 
@@ -1778,7 +1779,7 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
   -- The regression: the context's own capability configures nothing.
   expect "sd063_configure_through_sched_context_cap_refused"
     (match dispatchSyscallAsCurrent (decoded 0 0) caller bootCoreId st with
-     | .error .invalidCapability => true
+     | .error (.invalidCapability _) => true
      | _ => false)
     "a configure invoked on a scheduling-context capability must be refused"
   expect "sd063_refused_configure_leaves_the_context"
@@ -1809,7 +1810,7 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
     "core 0's control must configure the context bound to a thread homed on core 0 and queue it"
   expect "sd063_mr0_naming_no_sched_context_refused"
     (match dispatchSyscallAsCurrent (decoded 1 3) caller bootCoreId st with
-     | .error .invalidCapability => true
+     | .error (.invalidCapability _) => true
      | _ => false)
     "MR0 naming a CNode capability is not a scheduling context"
   expect "sd063_resolver_answers_the_held_context"

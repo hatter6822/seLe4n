@@ -1813,7 +1813,7 @@ def donationPushFrame? (st : SystemState) (clientTcb : TCB) :
         -- pop's outer-caller resolver refuses, so pushing it would build a stack
         -- that cannot unwind.  A Reply on a stack has a caller
         -- (`Reply.wellFormed`), and this is where that is enforced at the push.
-        if r.prev.isSome || r.next.isSome then .error .invalidArgument
+        if r.prev.isSome || r.next.isSome then .error (.invalidArgument 0)
         else if r.caller.isNone then .error .illegalState
         else .ok (rid, r)
 
@@ -1875,7 +1875,7 @@ def storeDonationFramePush (scId : SeLe4n.SchedContextId) (pushRid : SeLe4n.Repl
   -- A frame cannot be pushed onto itself: the old head is a *different* Reply or
   -- there is none.  Refused rather than assumed, so the lemmas below need no
   -- distinctness hypothesis and a malformed store cannot close a one-frame cycle.
-  if oldHead? == some pushRid then .error .invalidArgument else
+  if oldHead? == some pushRid then .error (.invalidArgument 0) else
   match storeObject pushRid.toObjId
       (.reply { pushReply with prev := oldHead?, next := some (.head scId) }) st with
   | .error e => .error e
@@ -2524,7 +2524,7 @@ def donateSchedContext
   match st.getSchedContext? clientScId with
   | some sc =>
     -- AUD-3b: Defense-in-depth — verify SchedContext is bound to the caller
-    if sc.boundThread != some clientTid then .error .invalidArgument
+    if sc.boundThread != some clientTid then .error (.invalidArgument 0)
     else
     -- WS-OD OD4.1: resolve the frame this donation pushes **before any store**,
     -- from the donor's own TCB, so a donation that cannot record its frame
@@ -3318,7 +3318,7 @@ def donationHeadOf? (st : SystemState) (scId : SeLe4n.SchedContextId)
     -- metric — the project's own "gates read code, prose reads prose" rule.
     match st.getReply? rid with
     | some r =>
-      if r.next != some (.head scId) then .error .invalidArgument
+      if r.next != some (.head scId) then .error (.invalidArgument 0)
       else .ok (some (rid, r))
     | none => .error .objectNotFound
 
@@ -3447,7 +3447,7 @@ def replyStackOuterCaller? (st : SystemState) (scId : SeLe4n.SchedContextId) :
         match st.getReply? below with
         | none => .error .objectNotFound
         | some b =>
-          if b.next != some (.frame headRid) then .error .invalidArgument
+          if b.next != some (.frame headRid) then .error (.invalidArgument 0)
           else
             match b.caller with
             | none => .error .illegalState
@@ -5617,7 +5617,7 @@ def cutReplyFrameOut (st : SystemState) (rid : SeLe4n.ReplyId) :
       match st.getReply? above with
       | none => .error .objectNotFound
       | some a =>
-        if a.prev != some rid then .error .invalidArgument
+        if a.prev != some rid then .error (.invalidArgument 0)
         else cutReplyFrameStores st rid above r a
     | some (.head _) => .ok st
     | none =>
@@ -7246,7 +7246,7 @@ def returnDonatedSchedContext
     -- well-formed state; it also makes the SM5.H replenishment migration's source
     -- core derivable from success rather than assumed
     -- (`returnDonatedSchedContext_ok_implies_sc_bound`).
-    if sc.boundThread != some serverTid then .error .invalidArgument
+    if sc.boundThread != some serverTid then .error (.invalidArgument 0)
     else
     -- WS-OD OD4.4: **validate the outer caller before handing it a donation.**
     -- `donateSchedContext` checks its donor side (the AUD-3b guard) before
@@ -7260,14 +7260,14 @@ def returnDonatedSchedContext
     -- consequences of this operation succeeding rather than obligations of
     -- everyone who calls it.
     if !outerCallerAcceptable st serverTid originalOwner newOwner? then
-      .error .invalidArgument
+      .error (.invalidArgument 0)
     else
     -- **WS-HP HP4.6**: and validate the *recipient* the same way, for the reason
     -- `donationRecipientAcceptable` records -- the head-driven trigger takes it
     -- from the answered caller rather than from a binding `donationOwnerValid`
     -- constrains, so the operation checks what it is about to overwrite.
     if !donationRecipientAcceptable st originalOwner then
-      .error .invalidArgument
+      .error (.invalidArgument 0)
     else
     -- WS-OD OD3.1: resolve and validate the reply-stack head **before** any
     -- store, so a head this context does not own commits nothing.
@@ -8623,7 +8623,7 @@ theorem returnDonatedSchedContext_rejects_bound_recipient
     (hLk : lookupTcb st originalOwner = some tcb)
     (hBound : tcb.schedContextBinding ≠ .unbound) :
     returnDonatedSchedContext st serverTid scId originalOwner newOwner?
-      = .error .invalidArgument := by
+      = .error (.invalidArgument 0) := by
   have hRecip : donationRecipientAcceptable st originalOwner = false := by
     rw [donationRecipientAcceptable_eq_of_some st originalOwner tcb hLk]
     -- Same hand-written `BEq`: evaluate on the constructor the hypothesis rules in.
@@ -8672,7 +8672,7 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
     (hNoOrigin : sc.donationOrigin = none)
     (hRecip : donationRecipientAcceptable st originalOwner = true) :
     returnDonatedSchedContext st serverTid scId originalOwner none =
-      (if sc.boundThread != some serverTid then .error .invalidArgument
+      (if sc.boundThread != some serverTid then .error (.invalidArgument 0)
        else
          match storeObject scId.toObjId
              (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some originalOwner) }) st with
@@ -9613,7 +9613,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
               boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated
             }
             storeObject notificationId (.notification ntfn') st
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 -- AK1-E (I-M03): `notificationSignal_respects_pipBoost` correctness lemma
@@ -9686,7 +9686,7 @@ def notificationWaitPark
                           (.blockedOnNotification notificationId) none with
                       | .error e => .error e
                       | .ok st2 => .ok (none, removeRunnable st2 waiter)
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 /-- WS-ZA ZA4.4: link a parked waiter into its notification's queue behind the

@@ -426,7 +426,7 @@ noncomputable def handleYield : Kernel Unit :=
         -- error — callers should check `current` before invoking yield.
         -- `.invalidArgument` (rather than `.schedulerInvariantViolation`)
         -- gives userspace a stable "bad syscall" signal.
-        .error .invalidArgument
+        .error (.invalidArgument 0)
     | some tid =>
         match st.getTcb? tid with
         | some tcb =>
@@ -793,7 +793,7 @@ Unbound threads use the existing yield path (insert + rotateToBack). -/
 noncomputable def handleYieldWithBudget : Kernel Unit :=
   fun st =>
     match (st.scheduler.currentOnCore bootCoreId) with
-    | none => .error .invalidArgument
+    | none => .error (.invalidArgument 0)
     | some tid =>
       match st.getTcb? tid with
       | some tcb =>
@@ -4019,8 +4019,8 @@ def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.Thr
       -- PR #889 review round 20: a core the platform does not have is not a
       -- home (RR5's `bootAffinitiesDeclared` relation on the live path).
       if affinity.any (fun c => c.val ≥ st.machine.declaredCoreCount) then
-        .error .invalidArgument
-      else if isIdleThreadId targetTid then .error .invalidArgument
+        .error (.invalidArgument 0)
+      else if isIdleThreadId targetTid then .error (.invalidArgument 0)
       else
       let oldCore := determineTargetCore st targetTid
       if affinityRunningElsewhere st targetTid oldCore SeLe4n.Kernel.Concurrency.allCores then
@@ -4043,7 +4043,7 @@ def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.Thr
             else none
           .ok (st3, sgi)
       | .error e => .error e
-  | none => .error .invalidArgument
+  | none => .error (.invalidArgument 0)
 
 /-- WS-SM SM5.H.4: decode a `tcbSetAffinity` argument register into a target
 affinity.  Values `0 .. numCores-1` bind the thread to that core; the dedicated
@@ -4056,7 +4056,7 @@ def affinityUnbindMarker : Nat := SeLe4n.Kernel.Concurrency.numCores
 def decodeAffinity (v : Nat) : Except KernelError (Option CoreId) :=
   if h : v < SeLe4n.Kernel.Concurrency.numCores then .ok (some ⟨v, h⟩)
   else if v = affinityUnbindMarker then .ok none
-  else .error .invalidArgument
+  else .error (.invalidArgument 0)
 
 /-- **WS-SM SM8.B (PR #861 review round 37): the per-core affinity op.**
 
@@ -4149,7 +4149,7 @@ neither an `Except` nor a `some` is built (`decodeAffinityK_eq`). -/
     (err : KernelError → α) : α :=
   if v < SeLe4n.Kernel.Concurrency.numCores then k (nthCoreSome v allCoresSome)
   else if v = affinityUnbindMarker then k none
-  else err .invalidArgument
+  else err (.invalidArgument 0)
 
 theorem decodeAffinityK_eq {α : Type} (v : Nat) (k : Option CoreId → α)
     (err : KernelError → α) :

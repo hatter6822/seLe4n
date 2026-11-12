@@ -60,9 +60,11 @@ thread's saved register file and are spliced in by
   four-word tail; this model already has a total, typed vocabulary for
   exactly that — the `KernelError` `resolveCapAddress` returns — so the
   reason rides as that error rather than as a second inductive whose
-  constructors would duplicate it.  Nothing is dropped: the discriminant
-  encoding is the one `KernelError.toDiscriminant` pins, and
-  `KernelError.ofDiscriminant?` inverts it.
+  constructors would duplicate it.  The fault message carries the error's
+  code, as the discriminant `KernelError.toDiscriminant` pins and
+  `KernelError.ofDiscriminant?` inverts; an error's payload (seL4's error
+  payload, `KernelError.erasePayload`) does not ride in the fault, which is
+  `Fault.codeOnly`.  WS-SX SX2.2 gives the fault seL4's lookup-fault words.
 * `unknownSyscall` — a syscall number outside the kernel's ABI.  The
   syscall number is the fault-specific word; the whole `x0`-`x7` window
   rides as context, so a handler can emulate the call and reply with the
@@ -93,6 +95,17 @@ propositional hypothesis in the proofs about it. -/
 instance : LawfulBEq Fault := inferInstance
 
 namespace Fault
+
+/-- The fault as its message carries it: a capability fault's error with its
+payload cleared (`KernelError.erasePayload`), every other fault as it is. -/
+def codeOnly : Fault → Fault
+  | .capFault a r e => .capFault a r e.erasePayload
+  | f => f
+
+/-- A fault whose capability-fault error carries no payload is its own message's. -/
+theorem codeOnly_eq_self_of_capFault (a : UInt64) (r : Bool) (e : KernelError)
+    (h : e.erasePayload = e) : (Fault.capFault a r e).codeOnly = .capFault a r e := by
+  simp [codeOnly, h]
 
 /-- WS-RR RR4.2 (congruence): two `vmFault`s are equal exactly when all three
 payload fields agree. -/
@@ -442,7 +455,7 @@ structure ThreadFaultWords where
   /-- A VM fault's status, a user exception's code. -/
   word1 : UInt64 := 0
   /-- A capability fault's lookup failure. -/
-  lookup : KernelError := .invalidCapability
+  lookup : KernelError := (.invalidCapability 0)
   ip : UInt64 := 0
   sp : UInt64 := 0
   lr : UInt64 := 0

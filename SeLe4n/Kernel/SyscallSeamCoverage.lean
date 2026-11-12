@@ -894,7 +894,10 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
     rw [syscallDispatchCrossCoreStep_of_ok hD]
     dsimp only
     refine footprintCoversWrites_trans U (footprintCoversWrites_trans U
-      (footprintCoversWrites_of_scheduler_eq U hTable hRegsSch)
+      (footprintCoversWrites_trans U
+        (footprintCoversWrites_of_scheduler_eq U hTable hRegsSch)
+        (footprintCoversWrites_of_scheduler_eq U hTable
+          (Architecture.recordErrorOverflow_scheduler _ tid ke)))
       (footprintCoversWrites_of_scheduler_eq U hTable
         (Platform.FFI.recordSyscallRefusal_scheduler_eq ctx e syscallId tid ke x0 _)))
       (syscallCommitTail_coversWrites U e _ _ _ hTable hRunE)

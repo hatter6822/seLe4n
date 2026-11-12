@@ -201,7 +201,7 @@ def bindNotification (notificationId : SeLe4n.ObjId) (tcbId : SeLe4n.ThreadId) :
                   | .error e => .error e
                   | .ok ((), st2) => .ok ((), st2)
     | none =>
-        if (st.getObject? notificationId).isSome then .error .invalidCapability
+        if (st.getObject? notificationId).isSome then .error (.invalidCapability 0)
         else .error .objectNotFound
 
 /-- WS-SM SM6.B (`UnbindNotification`): unbind TCB `tcbId` from its bound

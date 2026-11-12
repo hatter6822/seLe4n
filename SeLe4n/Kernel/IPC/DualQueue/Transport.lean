@@ -1244,7 +1244,7 @@ def endpointQueueRemoveDual
                               match storeTcbQueueLinks st3 tid none none none with
                               | .error e => .error e
                               | .ok st4 => .ok ((), st4)
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 /-- WS-F1: endpointQueueRemoveDual does not modify the scheduler.
@@ -2329,7 +2329,7 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                 | .ok st'' =>
                     .ok ((), recordSendCap (removeRunnable st'' sender) sender payload.badge
                       payload.grant)
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 /-- WS-SM SM6 (PR #873 round 8): **the sender a receive will dequeue, or `none`
@@ -2642,7 +2642,7 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                             | .ok ((), stStashed) =>
                                 .ok (receiver, removeRunnable stStashed receiver)
                           else .error .replyCapInvalid
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 -- ============================================================================
@@ -2732,7 +2732,7 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                 | .ok st'' =>
                     .ok ((), recordSendCap (removeRunnable st'' caller) caller payload.badge
                       payload.grant)
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
 /-- WS-F1/WS-E4/M-12: Reply to a thread blocked on reply, with message transfer.

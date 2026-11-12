@@ -243,7 +243,7 @@ theorem untypedRetypeOfChecked_heapRefused {src dst : CSpaceAddr} {childId : SeL
     RefusalCarrying.ofChecked (untypedRetypeAdmittedAt st src dst childId req)
         (untypedRetypePerformAt src dst childId req)
         (untypedRetypeObject src childId dst req) st =
-      .error (.untypedRegionExhausted, st) := by
+      .error (.untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64, st) := by
   unfold RefusalCarrying.ofChecked
   rw [untypedRetypeAdmittedAt_heapRefused hHeap,
     untypedRetypeObject_heapRefused src dst childId req st hHeap]

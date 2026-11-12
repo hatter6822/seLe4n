@@ -211,7 +211,7 @@ def resolveFaultHandlerCPtr (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) 
       | .error e => .error e
       | .ok ref =>
           match SystemState.lookupSlotCap st ref with
-          | none => .error .invalidCapability
+          | none => .error (.invalidCapability 0)
           | some cap =>
               if faultHandlerCapAuthorized cap then
                 match cap.target with
@@ -220,8 +220,8 @@ def resolveFaultHandlerCPtr (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) 
                     | some _ =>
                         .ok { endpoint := epId, cap := cap,
                               cspaceRoot := tcb.cspaceRoot }
-                    | none   => .error .invalidCapability
-                | _ => .error .invalidCapability
+                    | none   => .error (.invalidCapability 0)
+                | _ => .error (.invalidCapability 0)
               else .error .illegalAuthority
 
 /-- WS-RR RR4.7: resolve a thread's configured fault handler — gates 1 and 2
@@ -235,7 +235,7 @@ def resolveFaultHandler (st : SystemState) (tid : SeLe4n.ThreadId) :
   | none => .error .objectNotFound
   | some tcb =>
       match tcb.faultHandler with
-      | none => .error .invalidCapability
+      | none => .error (.invalidCapability 0)
       | some cptr => resolveFaultHandlerCPtr st tcb cptr
 
 /-- WS-RR RR4.10 (**the negative**): a thread with no `faultHandler` never
@@ -243,7 +243,7 @@ resolves — the arm that sends it to the fail-closed suspend. -/
 theorem resolveFaultHandler_none_of_noHandler (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hNone : tcb.faultHandler = none) :
-    resolveFaultHandler st tid = .error .invalidCapability := by
+    resolveFaultHandler st tid = .error (.invalidCapability 0) := by
   simp [resolveFaultHandler, hTcb, hNone]
 
 /-- WS-RR RR4.10: nor does a thread that is not a TCB at all. -/
@@ -350,7 +350,7 @@ theorem faultMessage_decodes (f : Fault) (ctx : FaultContext)
     Architecture.decodeFault
         { length := Architecture.faultMessageLength f, extraCaps := 0,
           label := (faultMessage f ctx badge).label }
-        (faultMessage f ctx badge).registers = some f :=
+        (faultMessage f ctx badge).registers = some f.codeOnly :=
   Architecture.decodeFault_encodeFault f ctx
 
 -- ============================================================================

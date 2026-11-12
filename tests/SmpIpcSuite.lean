@@ -652,7 +652,7 @@ private def runErrorPathChecks : IO Unit := do
   -- Wrong-kind object (a Reply object is not an endpoint): invalidCapability.
   assertBool "call on a wrong-kind object fails with invalidCapability"
     (match (endpointCallOnCore replyB.toObjId clientA (.frame callMsgA.badge false) c0 stFourCore).2 with
-     | .error .invalidCapability => true | _ => false)
+     | .error (.invalidCapability _) => true | _ => false)
   -- Oversized payload: a call reads its words from the caller's frame, so the
   -- bound is the message-info decode's — a word declaring one register too many
   -- does not decode, and the call never sees it.
@@ -664,7 +664,7 @@ private def runErrorPathChecks : IO Unit := do
      | .error .objectNotFound => true | _ => false)
   assertBool "receive on a wrong-kind object fails with invalidCapability"
     (match (endpointReceiveDualOnCore replyB.toObjId serverB (some replyB) c1 stFourCore).2 with
-     | .error .invalidCapability => true | _ => false)
+     | .error (.invalidCapability _) => true | _ => false)
   -- Reply-side duals.
   assertBool "reply to a non-blocked target fails with replyCapInvalid"
     (match (endpointReplyOnCore serverB clientA replyMsgB c1 stFourCore).2 with
@@ -1481,16 +1481,16 @@ private def runLiveApiChecks : IO Unit := do
       ((st'.queuedOn c1 apiServer))
   -- NO CAP (empty slot 0): the CSpace lookup fails closed.
   assertBool "live .call with no cap at the CPtr fails with invalidCapability"
-    (match apiDispatch [] 0 with | .error .invalidCapability => true | _ => false)
+    (match apiDispatch [] 0 with | .error (.invalidCapability 0) => true | _ => false)
   -- READ-ONLY cap (no `.write`): the authority gate rejects (syscallRequiredRight .call = .write),
   -- with seL4's answer for an endpoint cap without CanSend, InvalidCapability.
   assertBool "live .call with a read-only endpoint cap fails with invalidCapability"
     (match apiDispatch [(SeLe4n.Slot.ofNat 0, apiEpCapRO)] 0 with
-     | .error .invalidCapability => true | _ => false)
+     | .error (.invalidCapability _) => true | _ => false)
   -- WRONG-KIND cap (targets a TCB): the `.call` transition rejects it.
   assertBool "live .call resolving a non-endpoint cap fails with invalidCapability"
     (match apiDispatch [(SeLe4n.Slot.ofNat 0, apiWrongKindCap)] 0 with
-     | .error .invalidCapability => true | _ => false)
+     | .error (.invalidCapability _) => true | _ => false)
   -- Checked entry (dispatchSyscallChecked): a high→low policy denies the call.
   match endpointReceiveDual apiEp apiServer (some apiReply) (stApi [(SeLe4n.Slot.ofNat 0, apiEpCap)]) with
   | .error _ => assertBool "checked-dispatch setup (server recv) succeeded" false
@@ -2058,17 +2058,17 @@ private def runDonationReturnPopChecks : IO Unit := do
   assertBool "NEGATIVE: a head that heads another context is refused"
     (match returnDonatedSchedContext (popHeadLinkedTo (some (.head chainOtherSc)))
         popServer chainSc popClient none with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   assertBool "NEGATIVE: a head carrying no upward link is refused"
     (match returnDonatedSchedContext (popHeadLinkedTo none)
         popServer chainSc popClient none with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   assertBool "NEGATIVE: a head whose upward link names a frame above it is refused"
     (match returnDonatedSchedContext (popHeadLinkedTo (some (.frame chainOuterReply)))
         popServer chainSc popClient none with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   assertBool "NEGATIVE: a head naming no object is refused"
     (match returnDonatedSchedContext (popStore (some chainAbsentReply) none)
@@ -2084,31 +2084,31 @@ private def runDonationReturnPopChecks : IO Unit := do
     (match returnDonatedSchedContext
         (popStoreWith (mkTcb 83 40 none) (some chainHeadReply) (some chainOuterReply))
         popServer chainSc popClient (some popOuter) with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   assertBool "NEGATIVE: an outer caller that still holds a binding is refused"
     (match returnDonatedSchedContext
         (popStoreWith { popWaitingDonor with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound chainOtherSc), scBindingOwnerCode := 0 }
           (some chainHeadReply) (some chainOuterReply))
         popServer chainSc popClient (some popOuter) with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   assertBool "NEGATIVE: an outer caller naming no TCB is refused"
     (match returnDonatedSchedContext (popStore (some chainHeadReply) (some chainOuterReply))
         popServer chainSc popClient (some ⟨99⟩) with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   -- ...and the two self-reference clauses: the pop rewrites both of these
   -- threads, so a claim about their pre-state shape would not survive the step.
   assertBool "NEGATIVE: an outer caller that IS the rebound thread is refused"
     (match returnDonatedSchedContext (popStore (some chainHeadReply) (some chainOuterReply))
         popServer chainSc popClient (some popClient) with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   assertBool "NEGATIVE: an outer caller that IS the server is refused"
     (match returnDonatedSchedContext (popStore (some chainHeadReply) (some chainOuterReply))
         popServer chainSc popClient (some popServer) with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   -- WS-OD OD3.4: the resolver reads the *frame below the head*, and answers
   -- `none` at the bottom.  Both readings are exercised, because a resolver only
@@ -2151,22 +2151,22 @@ private def runDonationReturnPopChecks : IO Unit := do
   assertBool "NEGATIVE: a frame below the head linking up to a different frame is refused"
     (match replyStackOuterCaller?
         (popStoreOuterLinkedTo (some (.frame chainAbsentReply))) chainSc with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   assertBool "NEGATIVE: a frame below the head that heads a context is refused"
     (match replyStackOuterCaller?
         (popStoreOuterLinkedTo (some (.head chainOtherSc))) chainSc with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   assertBool "NEGATIVE: a frame below the head carrying no upward link is refused"
     (match replyStackOuterCaller? (popStoreOuterLinkedTo none) chainSc with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   -- The RR2.8 guard is unchanged by the widening: a context bound to someone
   -- else is still refused before anything is read or written.
   assertBool "NEGATIVE: a context not bound to the server is still refused"
     (match returnDonatedSchedContext (popStore none none) popOuter chainSc popClient none with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
 
 -- ============================================================================
@@ -2326,14 +2326,14 @@ private def runDonationPushChecks : IO Unit := do
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
           { pushFreshHead with next := some (.head pushSc) })
         pushDonor pushServer pushSc with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   assertBool "NEGATIVE: a donor whose reply already sits on a stack cannot push"
     (match donateSchedContext
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
           { pushFreshHead with prev := some pushOuterReply })
         pushDonor pushServer pushSc with
-     | .error e => e == KernelError.invalidArgument
+     | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
   -- ...and a *consumed* frame is refused too, with its own error: pushing one
   -- would build a stack whose pop cannot resolve an outer caller, which is the
@@ -2510,11 +2510,11 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
       (pushLinksOf wedged pushDonorReply == some (some pushOuterReply, some (.head pushSc)))
     assertBool "NEGATIVE: ...and the outer-caller resolution refuses it"
       (match replyStackOuterCaller? wedged pushSc with
-       | .error e => e == KernelError.invalidArgument
+       | .error e => e == (KernelError.invalidArgument 0)
        | .ok _ => false)
     assertBool "NEGATIVE: ...so the pop wedges, writing nothing"
       (match returnDonatedSchedContextResolved wedged pushServer pushSc pushDonor with
-       | .error e => e == KernelError.invalidArgument
+       | .error e => e == (KernelError.invalidArgument 0)
        | .ok _ => false)
     -- The splice is FAIL-CLOSED and the wrapper is TOTAL: a frame above that
     -- does not link back is refused by the primitive, and the cancellation still
@@ -2538,7 +2538,7 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
       | none => detached
     assertBool "the splice refuses a frame above that does not link back"
       (match cutReplyFrameOut danglingAbove pushOuterReply with
-       | .error e => e == KernelError.invalidArgument
+       | .error e => e == (KernelError.invalidArgument 0)
        | .ok _ => false)
     assertBool "...and the cancellation wrapper folds that refusal to the identity"
       (pushStackShape (cutThreadReplyFrameOut danglingAbove outerTcb)
@@ -2893,14 +2893,14 @@ private def runReplyFrameRemovalChecks : IO Unit := do
       (match wedged with
        | .ok ((), st') =>
            (match replyStackOuterCaller? st' pushSc with
-            | .error e => e == KernelError.invalidArgument
+            | .error e => e == (KernelError.invalidArgument 0)
             | .ok _ => false)
        | .error _ => false)
     assertBool "NEGATIVE: ...so the donation return wedges, writing nothing"
       (match wedged with
        | .ok ((), st') =>
            (match returnDonatedSchedContextResolved st' pushServer pushSc pushDonor with
-            | .error e => e == KernelError.invalidArgument
+            | .error e => e == (KernelError.invalidArgument 0)
             | .ok _ => false)
        | .error _ => false)
     -- The in-order path is unchanged: the head has nothing above it, so the

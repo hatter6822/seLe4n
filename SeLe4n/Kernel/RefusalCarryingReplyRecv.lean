@@ -108,7 +108,7 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
                   .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
               | .error e => .error (e, st)
             else .error (.replyCapInvalid, st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -150,9 +150,9 @@ a refusal to `onErr`, so no `Except` or tuple cell is built. -/
     (onErr : KernelError → α)
     (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) : α :=
   match cap? with
-  | none => onErr .invalidCapability
+  | none => onErr (.invalidCapability 0)
   | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr .invalidCapability
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr (.invalidCapability 0)
       else if !cap.hasRight .write then onErr .illegalAuthority
       else
         match cap.target with
@@ -160,7 +160,7 @@ a refusal to `onErr`, so no `Except` or tuple cell is built. -/
             match replyAnsweredCaller? st rid with
             | some c => onOk rid c cap.badge (cap.rights.mem .grant)
             | none => onErr .replyCapInvalid
-        | _ => onErr .invalidCapability
+        | _ => onErr (.invalidCapability 0)
 
 /-- `resolveReplyRecvReplyR` in continuation form (`resolveReplyRecvK_eq`), on
 the message length and the first message register: the slot is resolved
@@ -1305,7 +1305,7 @@ resolved in continuation form; a reply-receive that may block in place
           (fun e => .error (e, st)) resolved
       else endpointReplyRecvCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore
           cap st
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
@@ -1651,10 +1651,10 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           let callerCode := replyRecvTaintCallerCodeOf st tid cap layout rf len
@@ -2172,7 +2172,7 @@ replier's overflow words into the caller's buffer
           (fun e => .error (e, st))
           (fun rid c badge grant =>
             replyRecvLongResolvedR ctx epId tid c rid badge grant rf len label executingCore st)
-    | _ => .error (.invalidCapability, st)
+    | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
@@ -2291,10 +2291,10 @@ the state it was handed (`replyRecvLongOperandArmThenTaintR_eq`). -/
     (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
-    | none => .error (.invalidCapability, st)
+    | none => .error (.invalidCapability 0, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
-        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability 0, st)
+        else if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability 0, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           let callerCode := replyRecvTaintCallerCodeOf st tid cap SeLe4n.arm64DefaultLayout rf len

@@ -314,7 +314,7 @@ its type, `.invalidCapability`, before any right or address-space binding is
 read (spec §8.10.5b). -/
 private def isInvalidCapability (r : Except KernelError (Unit × SystemState)) : Bool :=
   match r with
-  | .error .invalidCapability => true
+  | .error (.invalidCapability _) => true
   | _                         => false
 
 -- ============================================================================
@@ -476,7 +476,7 @@ private def runAlignmentChecks : IO Unit := do
     | some stU =>
       assertBool "the capability's type is checked before alignment (invalidCapability wins)"
         (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameOdd) attacker Concurrency.bootCoreId stU with
-          | .error .invalidCapability => true | _ => false)
+          | .error (.invalidCapability _) => true | _ => false)
 
 -- ============================================================================
 -- §5c  WS-BP BP7.1 — authority over the address space is not authority over
@@ -514,14 +514,14 @@ private def runFrameCapabilityChecks : IO Unit := do
     -- VSpace-root capability, not a frame — refused, and nothing is mapped.
     let rRaw := dispatchSyscallAsCurrent (decodeMap 7 0x50000 frameABase) attacker Concurrency.bootCoreId st
     assertBool "the RETIRED reading (MR2 = a raw physical address) maps nothing"
-      (isErr .invalidCapability rRaw && nothingMapped rRaw)
+      (isErr (.invalidCapability 0) rRaw && nothingMapped rRaw)
     -- Naming memory without holding a frame capability, every other way.
     let rNotFrame := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotNotFrame) attacker Concurrency.bootCoreId st
     assertBool "a capability to a non-frame object is refused (invalidCapability)"
-      (isErr .invalidCapability rNotFrame && nothingMapped rNotFrame)
+      (isErr (.invalidCapability 0) rNotFrame && nothingMapped rNotFrame)
     let rEmpty := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotEmpty) attacker Concurrency.bootCoreId st
     assertBool "an empty CSpace slot is refused (invalidCapability)"
-      (isErr .invalidCapability rEmpty && nothingMapped rEmpty)
+      (isErr (.invalidCapability 0) rEmpty && nothingMapped rEmpty)
     let rNoRead := dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameNoRead) attacker Concurrency.bootCoreId st
     assertBool "a frame capability without `.read` is refused (illegalAuthority)"
       (isErr .illegalAuthority rNoRead && nothingMapped rNoRead)
@@ -576,7 +576,7 @@ private def runFrameCapabilityChecks : IO Unit := do
   | some stU =>
     assertBool "a held frame does not substitute for address-space authority"
       (match dispatchSyscallAsCurrent (decodeMap 7 0x50000 slotFrameRO) attacker Concurrency.bootCoreId stU with
-        | .error .invalidCapability => true | _ => false)
+        | .error (.invalidCapability _) => true | _ => false)
 
 -- ============================================================================
 -- §5d  WS-BP BP7.1 (`v0.36.5`) — memory reaches a thread only by a carve
@@ -766,13 +766,13 @@ private def runCarveChecks : IO Unit := do
       (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag carveVsp.toNat slotOwnCnRW slotCarved)
         carveOwner Concurrency.bootCoreId st))
   assertBool "the reserved sentinel as a child id is refused (invalidArgument)"
-    (isErr .invalidArgument
+    (isErr (.invalidArgument 0)
       (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 0 slotOwnCnRW slotCarved)
         carveOwner Concurrency.bootCoreId st))
   -- The syscall gate checks the capability's type before its right (seL4
   -- dispatches on the cap type first), so a VSpace-root cap is refused there.
   assertBool "a `.retype` capability to a non-untyped object is refused on its type (invalidCapability)"
-    (isErr .invalidCapability
+    (isErr (.invalidCapability 0)
       (dispatchSyscallAsCurrent (decodeCarve slotVspRetype frameTag 953 slotOwnCnRW slotCarved)
         carveOwner Concurrency.bootCoreId st))
   -- An exhausted untyped: three pages, then nothing.
@@ -787,7 +787,7 @@ private def runCarveChecks : IO Unit := do
       | .error _ => assertBool "the third of three carves succeeds" false
       | .ok ((), c) =>
         assertBool "a fourth carve of a three-page untyped is refused (untypedRegionExhausted)"
-          (isErr .untypedRegionExhausted (carveN c 963))
+          (isErr (.untypedRegionExhausted 0) (carveN c 963))
   assertBool "the carve refusals are refusals (no success path leaks through)"
     (refused (dispatchSyscallAsCurrent (decodeCarve slotUtNoRetype frameTag 953 slotOwnCnRW slotCarved)
       carveOwner Concurrency.bootCoreId st))
@@ -851,7 +851,7 @@ private def runUntypedCopyChecks : IO Unit := do
     assertBool "after the copy the source is full and the copy holds the source's index"
       (freeIndexAt stCopy slotUtRetype == some 0x3000 && freeIndexAt stCopy 10 == some 0)
     assertBool "a carve through the full source is refused (untypedRegionExhausted)"
-      (isErr .untypedRegionExhausted
+      (isErr (.untypedRegionExhausted 0)
         (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 953 slotOwnCnRW 11)
           carveOwner Concurrency.bootCoreId stCopy))
     match dispatchSyscallAsCurrent (decodeCarve 10 frameTag 953 slotOwnCnRW 11)
@@ -886,7 +886,7 @@ private def runResetChecks : IO Unit := do
     assertBool "a reset without `.retype` over the untyped is refused (illegalAuthority)"
       (isErr .illegalAuthority (dispatchSyscallAsCurrent (decodeReset slotUtNoRetype) carveOwner Concurrency.bootCoreId st))
     assertBool "a `.retype` capability to a non-untyped is refused on its type (invalidCapability)"
-      (isErr .invalidCapability (dispatchSyscallAsCurrent (decodeReset slotVspRetype) carveOwner Concurrency.bootCoreId st))
+      (isErr (.invalidCapability 0) (dispatchSyscallAsCurrent (decodeReset slotVspRetype) carveOwner Concurrency.bootCoreId st))
     -- WS-ZA ZA5.4 part 13, seL4's derivation rule: slot 0 has carved, so the
     -- frames in slots 8 and 9 are its derivation children, and a copy of it is
     -- refused (`ensureNoChildren` in `deriveCap`).
@@ -1065,16 +1065,16 @@ private def runChildUntypedChecks : IO Unit := do
     match r with | .error e' => e' == e | .ok _ => false
   -- The sizes the decode refuses, before anything is resolved.
   assertBool "a child untyped smaller than a page is refused (invalidArgument)"
-    (isErr .invalidArgument (dispatchSyscallAsCurrent
+    (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
       (decodeCarve slotUtRetype (untypedTagOfSize 11) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
   assertBool "a child untyped above seL4_MaxUntypedBits is refused (invalidArgument)"
-    (isErr .invalidArgument (dispatchSyscallAsCurrent
+    (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
       (decodeCarve slotUtRetype (untypedTagOfSize 48) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
   assertBool "a frame with a non-zero size is refused (invalidArgument) — a frame is one page"
-    (isErr .invalidArgument (dispatchSyscallAsCurrent
+    (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
       (decodeCarve slotUtRetype (frameTag + 12 * 256) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
   assertBool "a child larger than the parent's free region is refused (untypedRegionExhausted)"
-    (isErr .untypedRegionExhausted (dispatchSyscallAsCurrent
+    (isErr (.untypedRegionExhausted 0) (dispatchSyscallAsCurrent
       (decodeCarve slotUtRetype (untypedTagOfSize 14) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
   -- Carve a one-page child untyped into slot 12, a frame out of it into slot 13,
   -- and map the frame.
@@ -1110,7 +1110,7 @@ private def runChildUntypedChecks : IO Unit := do
       assertBool "and it maps"
         (mappedPaddr st2 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
       assertBool "the child is exhausted after one page (untypedRegionExhausted)"
-        (isErr .untypedRegionExhausted
+        (isErr (.untypedRegionExhausted 0)
           (dispatchSyscallAsCurrent (decodeCarve 12 frameTag 972 slotOwnCnRW 14) carveOwner Concurrency.bootCoreId st2))
       assertBool "a reset of the parent while the child's capability lives is refused"
         (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId st2))
@@ -1234,7 +1234,7 @@ private def runCarvedRootChecks : IO Unit := do
     match r with | .error e' => e' == e | .ok _ => false
   let one := SeLe4n.ASID.ofNat 1
   assertBool "a VSpace root with a non-zero size is refused (invalidArgument) — a root is one page"
-    (isErr .invalidArgument (dispatchSyscallAsCurrent
+    (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
       (decodeCarve slotUtRetype (vspaceRootTag + 256) 980 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
   assertBool "a device untyped cannot back a VSpace root (untypedDeviceRestriction) — a table is RAM"
     (isErr .untypedDeviceRestriction (dispatchSyscallAsCurrent
@@ -1316,7 +1316,7 @@ private def runFrameFinaliseChecks : IO Unit := do
     -- address is refused (`InvalidArgument`); its own address is a remap with
     -- the new rights, the record unchanged.
     assertBool "a capability whose mapping is live cannot map at another address (invalidArgument)"
-      (isErr .invalidArgument
+      (isErr (.invalidArgument 0)
         (dispatchSyscallAsCurrent (decodeOwnMap 0x61000 slotCarved permsRWUC) carveOwner Concurrency.bootCoreId st))
     let va := SeLe4n.Testing.fixtureUserVAddr 0x60000
     match dispatchSyscallAsCurrent (decodeOwnMap 0x60000 slotCarved permsRUC) carveOwner Concurrency.bootCoreId st with
@@ -1566,10 +1566,10 @@ private def runSetSpaceChecks : IO Unit := do
     assertBool "a read-only CSpace-root capability is refused (illegalAuthority)"
       (isErr .illegalAuthority (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnRO 12) carveOwner Concurrency.bootCoreId st1))
     assertBool "a CNode capability named as the VSpace root is refused (invalidCapability)"
-      (isErr .invalidCapability
+      (isErr (.invalidCapability 0)
         (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnCnRW) carveOwner Concurrency.bootCoreId st1))
     assertBool "an untyped capability named as the VSpace root is refused (invalidCapability)"
-      (isErr .invalidCapability
+      (isErr (.invalidCapability 0)
         (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotUtRetype) carveOwner Concurrency.bootCoreId st1))
     assertBool "one message register is refused"
       ((dispatchSyscallAsCurrent { decodeSetSpace slotWorkerTcb slotOwnCnGrant 12 with
@@ -1703,7 +1703,7 @@ private def runPageTableChecks : IO Unit := do
   let one := SeLe4n.ASID.ofNat 1
   let va : Nat := 0x70000
   assertBool "a page table with a non-zero size is refused (invalidArgument) — a table is one page"
-    (isErr .invalidArgument (dispatchSyscallAsCurrent
+    (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
       (decodeCarve slotUtRetype (pageTableTag + 256) 983 slotOwnCnRW 15) carveOwner Concurrency.bootCoreId st))
   assertBool "a device untyped cannot back a page table (untypedDeviceRestriction)"
     (isErr .untypedDeviceRestriction (dispatchSyscallAsCurrent
@@ -1730,7 +1730,7 @@ private def runPageTableChecks : IO Unit := do
     -- root a booted kernel holds — has nowhere for a table to hang from.
     assertBool "a table is refused in a root that owns no page (invalidArgument)"
       (match storeObject carveVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 3, mappings := {} }) st1 with
-       | .ok ((), s) => isErr .invalidArgument (dispatchSyscallAsCurrent (decodeTableMap 15 slotOwnVsp va) carveOwner Concurrency.bootCoreId s)
+       | .ok ((), s) => isErr (.invalidArgument 0) (dispatchSyscallAsCurrent (decodeTableMap 15 slotOwnVsp va) carveOwner Concurrency.bootCoreId s)
        | .error _ => false)
     assertBool "...and a frame is refused there too (translationFault): no table, no walk"
       (match storeObject carveVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 3, mappings := {} }) st1 with
@@ -1748,7 +1748,7 @@ private def runPageTableChecks : IO Unit := do
          (installOf st2 983).map (fun i => (i.root.toNat, i.level)) == some (980, 1) &&
          (installOf st2 984).map (fun i => (i.root.toNat, i.level)) == some (980, 2))
       assertBool "a table already installed is refused a second install (invalidCapability)"
-        (isErr .invalidCapability (dispatchSyscallAsCurrent (decodeTableMap 15 12 va) carveOwner Concurrency.bootCoreId st2))
+        (isErr (.invalidCapability 0) (dispatchSyscallAsCurrent (decodeTableMap 15 12 va) carveOwner Concurrency.bootCoreId st2))
       assertBool "two levels are not a walk: the frame is still refused (translationFault)"
         (isErr .translationFault (dispatchSyscallAsCurrent (decodeMapVia 12 1 va 14 permsRWUC) carveOwner Concurrency.bootCoreId st2))
       match runAll st2 [decodeTableMap 17 12 va, decodeMapVia 12 1 va 14 permsRWUC] with

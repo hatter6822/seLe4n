@@ -187,7 +187,7 @@ private def ib009_invalidVSpaceRoot : IO Unit := do
   ]
   match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat 1024) with
   | .ok _ => throw <| IO.userError "invalid vspace root should fail"
-  | .error e => expect "invalid vspace returns invalidArgument" (e == .invalidArgument)
+  | .error e => expect "invalid vspace returns invalidArgument" (e == (.invalidArgument 0))
 
 -- ============================================================================
 -- D3-J3: Field preservation
@@ -317,7 +317,7 @@ private def ib017_frozenInvalidVSpaceRoot : IO Unit := do
   ]
   match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat 1024) fst with
   | .ok _ => throw <| IO.userError "frozen invalid vspace root should fail"
-  | .error e => expect "frozen invalid vspace returns invalidArgument" (e == .invalidArgument)
+  | .error e => expect "frozen invalid vspace returns invalidArgument" (e == (.invalidArgument 0))
 
 end SeLe4n.Testing.IpcBufferSuite
 

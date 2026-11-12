@@ -360,7 +360,12 @@ theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
       exact (hW.trans (writeFaultRegistersToTcb_mappingStage _ tid _)).trans
         (faultDeliverOnCoreChecked_mappingStage _ _ tid _ _ e)
     · cases h
-      exact hW.trans (MappingStage.of_objects_eq
+      have hOv : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (k : KernelError),
+          MappingStage s (Architecture.recordErrorOverflow s t k) := fun s t k =>
+        MappingStage.of_objects_eq (Architecture.recordErrorOverflow_objects s t k)
+          (by unfold Architecture.recordErrorOverflow; split <;>
+                exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
+      exact (hW.trans (hOv _ _ _)).trans (MappingStage.of_objects_eq
         (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
         (by unfold Platform.FFI.recordSyscallRefusal; split
             · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩

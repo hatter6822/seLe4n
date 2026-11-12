@@ -57,7 +57,7 @@ pub mod registers;
 pub mod trap;
 
 pub use args::*;
-pub use decode::{decode_response, SyscallResponse};
+pub use decode::{decode_error, decode_response, SyscallResponse};
 pub use encode::{encode_syscall, SyscallRequest};
 pub use ipc_buffer::IpcBuffer;
 pub use message_info::MessageInfo;

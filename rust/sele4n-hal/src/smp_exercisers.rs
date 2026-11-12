@@ -1521,9 +1521,10 @@ struct RoundTrip {
     /// Whether the caller blocks: the dispatch answers `Blocked` and restores
     /// the other thread, instead of a frame to the caller.
     blocks: bool,
-    /// The success frame's `x1` and, when known, its `x2` that the round trip
-    /// must return; `None` checks only that the call succeeded.
-    returns: Option<(u64, Option<u64>)>,
+    /// The frame's `x1` and, where known, its `x2`-`x5` that the round trip
+    /// must return (a refusal's payload, seL4's MR0-MR3); `None` checks only
+    /// that the call succeeded.
+    returns: Option<(u64, [Option<u64>; 4])>,
     /// The extra-capability addresses a capability-carrying send, call or
     /// reply names, and, when given, the receive path after them, written
     /// unmeasured, before the call, into the `caps_or_badges` and, for the
@@ -2492,6 +2493,31 @@ const fn overflowed(
     }
 }
 
+/// A CNode Copy on the root CNode refused with `returns`, its four words `msg`.
+#[cfg(feature = "hw_target")]
+const fn cnode_refusal(
+    name: &'static str,
+    msg: [u64; 4],
+    returns: Option<(u64, [Option<u64>; 4])>,
+) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall: CSPACE_COPY,
+        cptr: CNODE_CAP,
+        msg_len: 4,
+        msg,
+        primed: None,
+        blocks: false,
+        caps_or_badges: None,
+        overflow: None,
+        returns,
+    }
+}
+
+/// A root slot no scenario fills: the empty source a Copy is refused from.
+#[cfg(feature = "hw_target")]
+const EMPTY_SOURCE_SLOT: u64 = 48;
+
 /// The long send's message length: four words in the sender's registers and
 /// two in its IPC buffer's overflow slots 0 and 1, which share a page.
 #[cfg(feature = "hw_target")]
@@ -2502,9 +2528,9 @@ const LONG_SEND_LENGTH: u64 = 6;
 #[cfg(feature = "hw_target")]
 const INVALID_MESSAGE_INFO: u64 = 32;
 #[cfg(feature = "hw_target")]
-const REFUSED_MESSAGE_INFO: Option<(u64, Option<u64>)> = Some((
+const REFUSED_MESSAGE_INFO: Option<(u64, [Option<u64>; 4])> = Some((
     (crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_MESSAGE_INFO) << 12,
-    None,
+    [None; 4],
 ));
 
 /// `KernelError.truncatedMessage`'s discriminant (`sele4n-types`'
@@ -2562,7 +2588,7 @@ const fn consumed(name: &'static str, reading: Option<u64>) -> RoundTrip {
         blocks: false,
         caps_or_badges: None,
         overflow: None,
-        returns: Some((CONSUMED_INFO_WORD, reading)),
+        returns: Some((CONSUMED_INFO_WORD, [reading, None, None, None])),
     }
 }
 
@@ -2581,7 +2607,7 @@ const fn yield_to(name: &'static str) -> RoundTrip {
         blocks: false,
         caps_or_badges: None,
         overflow: None,
-        returns: Some((CONSUMED_INFO_WORD, None)),
+        returns: Some((CONSUMED_INFO_WORD, [None; 4])),
     }
 }
 
@@ -3367,6 +3393,57 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             SCHED_CONTROL_CAP,
             4,
         ),
+        // seL4's error payloads (`setMRs_syscall_error`), each a Copy into
+        // the free copy slot refused before any write: a destination depth
+        // past 64 (`RangeError(1, 64)`), a destination index whose guard
+        // matches but whose depth stops inside the root's level (a depth
+        // mismatch), an empty source (`MissingCapability`, seL4's
+        // `cnode.c`), and a destination index whose guard bits differ (a
+        // guard mismatch, five words, the fifth written to the root task's
+        // IPC buffer `msg[4]` and counted in the length).
+        cnode_refusal(
+            "range-error-payload",
+            [
+                cap_address(COPY_SLOT),
+                cap_address(CNODE_SLOT),
+                cap_address(NOTIFICATION_SLOT),
+                65 | (64 << 8) | (ALL_RIGHTS << 16),
+            ],
+            refused_with(RANGE_ERROR, 2, [Some(1), Some(64), None, None]),
+        ),
+        cnode_refusal(
+            "failed-lookup-depth-mismatch",
+            [
+                ROOT_CNODE_GUARD >> 4,
+                cap_address(CNODE_SLOT),
+                cap_address(NOTIFICATION_SLOT),
+                60 | (64 << 8) | (ALL_RIGHTS << 16),
+            ],
+            // Not the source; DepthMismatch (3), 60 bits left, the level's 64.
+            refused_with(FAILED_LOOKUP, 4, [Some(0), Some(3), Some(60), Some(64)]),
+        ),
+        cnode_refusal(
+            "failed-lookup-missing-source",
+            root_slot_copy(EMPTY_SOURCE_SLOT, COPY_SLOT),
+            // The source; MissingCapability (2), the source's depth, 64.
+            refused_with(FAILED_LOOKUP, 3, [Some(1), Some(2), Some(64), None]),
+        ),
+        cnode_refusal(
+            "failed-lookup-guard-mismatch",
+            [
+                COPY_SLOT,
+                cap_address(CNODE_SLOT),
+                cap_address(NOTIFICATION_SLOT),
+                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+            ],
+            // Not the source; GuardMismatch (4), 64 bits left, the root's
+            // guard; its width (58) is the fifth word, in the buffer.
+            refused_with(
+                FAILED_LOOKUP,
+                5,
+                [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
+            ),
+        ),
         truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 4),
         truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
         truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
@@ -3947,7 +4024,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             overflow: None,
             returns: Some((
                 (crate::svc_dispatch::ERROR_LABEL_BASE + ALIGNMENT_ERROR) << 12,
-                None,
+                [None; 4],
             )),
             ..invocation(
                 "half-aligned-ipc-buffer",
@@ -9140,11 +9217,42 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     ),
 ];
 
-/// The refusal frame's `x1` for `KernelError` discriminant `code`.
+/// The refusal frame's `x1` for `KernelError` discriminant `code`: its label
+/// and its message length, the word count of the code's payload (seL4's
+/// `setMRs_syscall_error`: one for `InvalidCapability`, `InvalidArgument` and
+/// `UntypedRegionExhausted`, two for `RangeError`, none for a code without a
+/// payload).  A failed lookup's length depends on its fault
+/// ([`refused_with`]).
 #[cfg(feature = "hw_target")]
-const fn refused(code: u64) -> Option<(u64, Option<u64>)> {
-    Some(((crate::svc_dispatch::ERROR_LABEL_BASE + code) << 12, None))
+const fn refused(code: u64) -> Option<(u64, [Option<u64>; 4])> {
+    let length = match code {
+        INVALID_CAPABILITY | INVALID_ARGUMENT | UNTYPED_REGION_EXHAUSTED => 1,
+        RANGE_ERROR => 2,
+        _ => 0,
+    };
+    refused_with(code, length, [None; 4])
 }
+
+/// The refusal frame for `code` with message length `length` and the payload
+/// words `mrs` expected in `x2`-`x5` (`None` where not checked).
+#[cfg(feature = "hw_target")]
+const fn refused_with(
+    code: u64,
+    length: u64,
+    mrs: [Option<u64>; 4],
+) -> Option<(u64, [Option<u64>; 4])> {
+    Some((
+        ((crate::svc_dispatch::ERROR_LABEL_BASE + code) << 12) | length,
+        mrs,
+    ))
+}
+
+/// `KernelError.rangeError` and `.failedLookup`'s discriminants (seL4's
+/// `seL4_RangeError` and `seL4_FailedLookup`).
+#[cfg(feature = "hw_target")]
+const RANGE_ERROR: u64 = 59;
+#[cfg(feature = "hw_target")]
+const FAILED_LOOKUP: u64 = 60;
 /// `KernelError.invalidCapability`, `.translationFault`, `.revocationRequired`
 /// and `.invalidArgument`'s discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
@@ -9370,7 +9478,7 @@ const DECLASSIFICATION_REFUSAL: RoundTrip = RoundTrip {
     overflow: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
-        None,
+        [None; 4],
     )),
 };
 /// `KernelError::FlowDenied`'s discriminant.
@@ -9844,7 +9952,7 @@ const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     overflow: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + DECLASSIFICATION_DENIED_AT_RECEIVER) << 12,
-        None,
+        [None; 4],
     )),
 };
 /// The refusal ledger's status, read unmeasured for the refusal's slot.
@@ -10903,10 +11011,13 @@ const HEAP_REFUSED_RETYPE: RoundTrip = RoundTrip {
     blocks: false,
     caps_or_badges: None,
     overflow: None,
-    returns: Some((
-        (crate::svc_dispatch::ERROR_LABEL_BASE + UNTYPED_REGION_EXHAUSTED) << 12,
-        None,
-    )),
+    // seL4's `seL4_NotEnoughMemory`: MR0 the memory left, the kernel heap's
+    // free bytes the refusal read.
+    returns: refused_with(
+        UNTYPED_REGION_EXHAUSTED,
+        1,
+        [Some(HEAP_REFUSED_CEILING), None, None, None],
+    ),
 };
 
 /// **The kernel heap's refusal of a retype**: the free bytes the kernel is
@@ -11620,7 +11731,7 @@ fn queued_overflow_cap_fault(
         blocks: false,
         caps_or_badges: None,
         overflow: None,
-        returns: Some((CAP_FAULT_MESSAGE_INFO, None)),
+        returns: Some((CAP_FAULT_MESSAGE_INFO, [None; 4])),
     };
     let reply = partner_step(reply, REPLY, REPLY_CAP, 0, [0, 0], false);
     unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
@@ -12150,7 +12261,7 @@ fn fault_entries() -> Option<bool> {
         blocks: false,
         caps_or_badges: None,
         overflow: None,
-        returns: Some((VM_FAULT_MESSAGE_INFO, None)),
+        returns: Some((VM_FAULT_MESSAGE_INFO, [None; 4])),
     };
     let reply_fault = partner_step("reply-queued-fault", REPLY, REPLY_CAP, 0, [0, 0], false);
     for first in [true, false] {
@@ -12173,7 +12284,7 @@ fn fault_entries() -> Option<bool> {
     for kind in 1..FAULT_KINDS.len() {
         let receive = RoundTrip {
             name: FAULT_QUEUED_RECEIVES[kind],
-            returns: Some((FAULT_QUEUED_INFO[kind], None)),
+            returns: Some((FAULT_QUEUED_INFO[kind], [None; 4])),
             ..receive_fault
         };
         let reply = partner_step(
@@ -13578,13 +13689,17 @@ fn heap_allocations_round_trip_resuming(
         );
         return Some(false);
     };
-    if let (Dispatched::Returned(regs), Some((x1, x2))) = (&outcome, trip.returns) {
-        if regs[1] != x1 || x2.is_some_and(|x2| regs[2] != x2) {
+    if let (Dispatched::Returned(regs), Some((x1, mrs))) = (&outcome, trip.returns) {
+        let mrs_match = mrs
+            .iter()
+            .enumerate()
+            .all(|(i, mr)| mr.is_none_or(|mr| regs[2 + i] == mr));
+        if regs[1] != x1 || !mrs_match {
             crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: returned x1={:#x} x2={:#x}, \
-                 expected x1={x1:#x} x2={x2:?}",
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: returned x1={:#x} \
+                 x2..x5={:#x?}, expected x1={x1:#x} x2..x5={mrs:?}",
                 regs[1],
-                regs[2]
+                &regs[2..6]
             );
             return Some(false);
         }

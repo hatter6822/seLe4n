@@ -606,8 +606,8 @@ noncomputable def setPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe
           | .error e => .error e
         else
           .ok st
-      | none => .error .invalidArgument
-  | none => .error .invalidArgument
+      | none => .error (.invalidArgument 0)
+  | none => .error (.invalidArgument 0)
 
 -- ============================================================================
 -- D2-F: setMCPriorityOp
@@ -666,7 +666,7 @@ noncomputable def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : Se
             .ok st
         else
           .ok st
-      | none => .error .invalidArgument
-  | none => .error .invalidArgument
+      | none => .error (.invalidArgument 0)
+  | none => .error (.invalidArgument 0)
 
 end SeLe4n.Kernel.SchedContext.PriorityManagement

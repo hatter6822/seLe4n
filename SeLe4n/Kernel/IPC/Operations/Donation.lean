@@ -122,7 +122,7 @@ def endpointReplyWithDonation
             -- pipBoost must be recomputed from remaining waiters. Propagate reversion
             -- upward through the chain.
             .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
-      | none => .error .invalidArgument
+      | none => .error (.invalidArgument 0)
 
 -- **Audit IPC-2 (`v0.36.49`): `endpointReplyRecvWithDonation` is DELETED.**
 --
@@ -160,7 +160,7 @@ theorem endpointReplyWithDonation_unfold
            | .error e => .error e
            | .ok st'' =>
              .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
-       | none => .error .invalidArgument) := by
+       | none => .error (.invalidArgument 0)) := by
   rfl
 
 /-- **WS-OD / PR #895 review round 22: this composite REFUSES a delegated
@@ -408,7 +408,7 @@ theorem applyReplyDonation_characterisation
                    | .ok st' => .ok (removeRunnable
                        (SchedContextOps.settleReturnedContext st'
                          Concurrency.bootCoreId scId) holderVtid.val))
-              | none => .error .invalidArgument)
+              | none => .error (.invalidArgument 0))
          -- WS-ZA ZA6.34: a frame heading a context no thread holds is popped
          -- to the answered caller; one heading nothing pops nothing.
          | none => popUnheldReplyHead st rid targetVtid.val Concurrency.bootCoreId) := by
@@ -747,7 +747,7 @@ def applyRendezvousCallDonation (st : SystemState)
   | some donorV, some receiverV =>
       applyCallDonationOnCore st donorV receiverV
         (determineTargetCore st donor) (determineTargetCore st receiver)
-  | _, _ => .error .invalidArgument
+  | _, _ => .error (.invalidArgument 0)
 
 /-- **WS-OD OD5.5: `.replyRecv`'s (and `.receive`'s) re-donation is a PUSH at
 every chain depth.**

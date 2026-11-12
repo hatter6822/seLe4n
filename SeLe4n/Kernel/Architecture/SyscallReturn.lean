@@ -45,8 +45,8 @@ that previously lived only in `Platform.FFI.KernelError.toUInt32` (which
 becomes this function's `UInt32` instance, so the table exists exactly once).
 Discriminant `37` is retired (`retiredDiscriminants`) and no variant has it.  Mirrors `rust/sele4n-types/src/error.rs` exactly;
 `tests/SyscallDispatchSuite.lean` round-trips the pairing. -/
-def toDiscriminant : KernelError → Nat
-  | .invalidCapability             => 0
+@[inline] def toDiscriminant : KernelError → Nat
+  | .invalidCapability _           => 0
   | .objectNotFound                => 1
   | .illegalState                  => 2
   | .illegalAuthority              => 3
@@ -66,7 +66,7 @@ def toDiscriminant : KernelError → Nat
   | .notImplemented                => 17
   | .targetSlotOccupied            => 18
   | .replyCapInvalid               => 19
-  | .untypedRegionExhausted        => 20
+  | .untypedRegionExhausted _      => 20
   | .untypedTypeMismatch           => 21
   | .untypedDeviceRestriction      => 22
   | .untypedAllocSizeTooSmall      => 23
@@ -85,7 +85,7 @@ def toDiscriminant : KernelError → Nat
   | .objectStoreCapacityExceeded   => 36
   -- 37: retired (`retiredDiscriminants`).
   | .revocationRequired            => 38
-  | .invalidArgument               => 39
+  | .invalidArgument _             => 39
   | .mmioUnaligned                 => 40
   | .invalidSyscallArgument        => 41
   | .ipcTimeout                    => 42
@@ -107,8 +107,8 @@ def toDiscriminant : KernelError → Nat
   | .ipcCancelled                  => 57
   -- seL4's `seL4_TruncatedMessage`: a message shorter than its decode reads.
   | .truncatedMessage              => 58
-  | .rangeError                    => 59
-  | .depthMismatch                 => 60
+  | .rangeError _ _                => 59
+  | .failedLookup _ _              => 60
 
 /-- The inverse the tree never had: `Platform.FFI.KernelError.toUInt32` is
 one-directional, and the Rust side decodes with its own
@@ -116,7 +116,7 @@ one-directional, and the Rust side decodes with its own
 round trip (RA.A.5).  Fail-closed: out-of-range discriminants map to
 `none`, exactly as `from_u32` yields its `UnknownKernelError` sentinel. -/
 def ofDiscriminant? : Nat → Option KernelError
-  | 0  => some .invalidCapability
+  | 0  => some (.invalidCapability 0)
   | 1  => some .objectNotFound
   | 2  => some .illegalState
   | 3  => some .illegalAuthority
@@ -136,7 +136,7 @@ def ofDiscriminant? : Nat → Option KernelError
   | 17 => some .notImplemented
   | 18 => some .targetSlotOccupied
   | 19 => some .replyCapInvalid
-  | 20 => some .untypedRegionExhausted
+  | 20 => some (.untypedRegionExhausted 0)
   | 21 => some .untypedTypeMismatch
   | 22 => some .untypedDeviceRestriction
   | 23 => some .untypedAllocSizeTooSmall
@@ -155,7 +155,7 @@ def ofDiscriminant? : Nat → Option KernelError
   | 36 => some .objectStoreCapacityExceeded
   -- 37: retired (`retiredDiscriminants`), decodes to `none`.
   | 38 => some .revocationRequired
-  | 39 => some .invalidArgument
+  | 39 => some (.invalidArgument 0)
   | 40 => some .mmioUnaligned
   | 41 => some .invalidSyscallArgument
   | 42 => some .ipcTimeout
@@ -175,17 +175,35 @@ def ofDiscriminant? : Nat → Option KernelError
   | 56 => some .declassificationDeniedAtReceiver
   | 57 => some .ipcCancelled
   | 58 => some .truncatedMessage
-  | 59 => some .rangeError
-  | 60 => some .depthMismatch
+  | 59 => some (.rangeError 0 0)
+  | 60 => some (.failedLookup false .invalidRoot)
   | _  => none
 
-/-- The discriminant map is a section of its inverse: every `KernelError`
-survives the numeric round trip.  With `toDiscriminant_lt` this pins the
-map as a bijection onto the discriminants below `kernelErrorEncodingBound`
-that are not retired. -/
+/-- The discriminant map is a section of its inverse over codes: every
+`KernelError` survives the numeric round trip with its payload cleared
+(`erasePayload`) — the discriminant names the code, and the payload rides in
+the message registers (`Architecture.errorFrame`).  With `toDiscriminant_lt`
+this pins the map as a bijection from codes onto the discriminants below
+`kernelErrorEncodingBound` that are not retired. -/
 theorem ofDiscriminant?_toDiscriminant (e : KernelError) :
-    ofDiscriminant? (toDiscriminant e) = some e := by
+    ofDiscriminant? (toDiscriminant e) = some e.erasePayload := by
   cases e <;> rfl
+
+/-- Clearing the payload keeps the code. -/
+@[simp] theorem toDiscriminant_erasePayload (e : KernelError) :
+    toDiscriminant e.erasePayload = toDiscriminant e := by
+  cases e <;> rfl
+
+/-- Two errors share a discriminant exactly when they share a code. -/
+theorem toDiscriminant_eq_iff (e₁ e₂ : KernelError) :
+    toDiscriminant e₁ = toDiscriminant e₂ ↔ e₁.erasePayload = e₂.erasePayload := by
+  constructor
+  · intro h
+    have h₁ := ofDiscriminant?_toDiscriminant e₁
+    rw [h, ofDiscriminant?_toDiscriminant e₂] at h₁
+    exact (Option.some.inj h₁).symm
+  · intro h
+    rw [← toDiscriminant_erasePayload e₁, h, toDiscriminant_erasePayload]
 
 /-- **One past the largest `KernelError` discriminant**, named once so no
 caller has to write the literal: every value below it is a variant's or a
@@ -209,7 +227,7 @@ def retiredDiscriminants : List Nat := [37]
 
 /-- Every discriminant is inside the table. -/
 theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < kernelErrorEncodingBound := by
-  cases e <;> decide
+  cases e <;> simp [toDiscriminant, kernelErrorEncodingBound]
 
 /-- …and the bound is **tight**: the last in-range value is inhabited, so
 `kernelErrorEncodingBound` is the least strict upper bound rather than merely one.
@@ -251,6 +269,157 @@ theorem ofDiscriminant?_isSome_iff (n : Nat) :
 
 /-- The retired `allocationMisaligned` discriminant names no error. -/
 theorem ofDiscriminant?_retired : ofDiscriminant? 37 = none := rfl
+
+/-! ### The error payload, in seL4's message-register order
+
+`setMRs_syscall_error` (`src/object/tcb.c`) writes an error's payload into the
+caller's message registers, and `setMRs_lookup_failure` (`src/api/faults.c`)
+writes a lookup fault after `wasSource`. -/
+
+/-- The payload's words: `invalidCapability` and `invalidArgument` one (the
+capability's or the argument's number), `rangeError` two (min, max),
+`untypedRegionExhausted` one (the memory left), `failedLookup` one (`wasSource`)
+and its lookup fault's (`LookupFault.wordCount`); every other code none. -/
+@[inline] def payloadLength : KernelError → Nat
+  | .invalidCapability _ => 1
+  | .invalidArgument _ => 1
+  | .rangeError _ _ => 2
+  | .failedLookup _ f => 1 + f.wordCount
+  | .untypedRegionExhausted _ => 1
+  | _ => 0
+
+/-- Payload word `i` (message register `i`), `0` past the payload. -/
+@[inline] def payloadWord (e : KernelError) (i : Nat) : UInt64 :=
+  match e, i with
+  | .invalidCapability n, 0 => n
+  | .invalidArgument n, 0 => n
+  | .rangeError lo _, 0 => lo
+  | .rangeError _ hi, 1 => hi
+  | .failedLookup wasSource _, 0 => if wasSource then 1 else 0
+  | .failedLookup _ f, i + 1 => f.word i
+  | .untypedRegionExhausted m, 0 => m
+  | _, _ => 0
+
+/-- At most five words: a guard mismatch's, the one payload past the four
+inline message registers. -/
+theorem payloadLength_le (e : KernelError) : e.payloadLength ≤ 5 := by
+  cases e with
+  | failedLookup _ f => cases f <;> simp [payloadLength, LookupFault.wordCount]
+  | _ => simp [payloadLength]
+
+/-- **The message's length, as seL4's `setMR` chain returns it**: the payload's
+words, except that a fifth word counts only when it was written to the caller's
+IPC buffer (`setMR` past `n_msgRegisters` with no buffer answers
+`n_msgRegisters`). -/
+@[inline] def messageLength (e : KernelError) (overflowWritten : Bool) : Nat :=
+  if e.payloadLength ≤ 4 ∨ overflowWritten = true then e.payloadLength else 4
+
+theorem messageLength_le (e : KernelError) (w : Bool) : e.messageLength w ≤ 5 := by
+  unfold messageLength
+  have := payloadLength_le e
+  split <;> omega
+
+/-- The length is the payload's whenever the payload fits the four inline
+message registers. -/
+theorem messageLength_of_le_four (e : KernelError) (w : Bool) (h : e.payloadLength ≤ 4) :
+    e.messageLength w = e.payloadLength := by
+  unfold messageLength; rw [if_pos (Or.inl h)]
+
+/-! ### The error, from its words
+
+A refusal handed on as scalars (`SystemState.pushEntryReport`) is its
+discriminant and its five payload words; these rebuild it. -/
+
+/-- A lookup fault from its words in `setMRs_lookup_failure`'s order: the type
+word, then the fields. -/
+def _root_.SeLe4n.Model.LookupFault.ofWords (t a b c : UInt64) : LookupFault :=
+  if t = 2 then .missingCapability a
+  else if t = 3 then .depthMismatch a b
+  else if t = 4 then .guardMismatch a b c
+  else .invalidRoot
+
+/-- `e`'s code with the payload the words name. -/
+def withPayloadWords : KernelError → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → KernelError
+  | .invalidCapability _, w0, _, _, _, _ => .invalidCapability w0
+  | .invalidArgument _, w0, _, _, _, _ => .invalidArgument w0
+  | .rangeError _ _, w0, w1, _, _, _ => .rangeError w0 w1
+  | .failedLookup _ _, w0, w1, w2, w3, w4 =>
+      .failedLookup (w0 != 0) (LookupFault.ofWords w1 w2 w3 w4)
+  | .untypedRegionExhausted _, w0, _, _, _, _ => .untypedRegionExhausted w0
+  | e, _, _, _, _, _ => e
+
+/-- `withPayloadWords` as it runs: a payload of zeros is the closed constant,
+so rebuilding a refusal that carries no data builds nothing. -/
+def withPayloadWordsFast : KernelError → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → KernelError
+  | .invalidCapability _, w0, _, _, _, _ =>
+      if w0 = 0 then .invalidCapability 0 else .invalidCapability w0
+  | .invalidArgument _, w0, _, _, _, _ =>
+      if w0 = 0 then .invalidArgument 0 else .invalidArgument w0
+  | .rangeError _ _, w0, w1, _, _, _ => .rangeError w0 w1
+  | .failedLookup _ _, w0, w1, w2, w3, w4 =>
+      .failedLookup (w0 != 0) (LookupFault.ofWords w1 w2 w3 w4)
+  | .untypedRegionExhausted _, w0, _, _, _, _ =>
+      if w0 = 0 then .untypedRegionExhausted 0 else .untypedRegionExhausted w0
+  | e, _, _, _, _, _ => e
+
+@[csimp] theorem withPayloadWords_eq_fast : @withPayloadWords = @withPayloadWordsFast := by
+  funext e w0 w1 w2 w3 w4
+  cases e <;> simp only [withPayloadWords, withPayloadWordsFast] <;> split <;> simp_all
+
+/-- The error whose discriminant is `d` and whose payload words are `w0`–`w4`
+(`illegalState` for a discriminant that names none). -/
+@[inline] def ofPayloadWords (d : Nat) (w0 w1 w2 w3 w4 : UInt64) : KernelError :=
+  match ofDiscriminant? d with
+  | some e => e.withPayloadWords w0 w1 w2 w3 w4
+  | none => .illegalState
+
+/-- **An error is its discriminant and its payload words.** -/
+theorem ofPayloadWords_payloadWord (e : KernelError) :
+    ofPayloadWords e.toDiscriminant (e.payloadWord 0) (e.payloadWord 1) (e.payloadWord 2)
+      (e.payloadWord 3) (e.payloadWord 4) = e := by
+  unfold ofPayloadWords
+  rw [ofDiscriminant?_toDiscriminant]
+  cases e with
+  | failedLookup w f =>
+    cases w <;> cases f <;>
+      simp [erasePayload, withPayloadWords, payloadWord, LookupFault.ofWords, LookupFault.word,
+        LookupFault.typeWord]
+  | _ => rfl
+
+/-- Whether `e` is the error with discriminant `d` and payload words `w0`–`w4`,
+decided on the words. -/
+@[inline] def matchesWords (e : KernelError) (d : Nat) (w0 w1 w2 w3 w4 : UInt64) : Bool :=
+  e.toDiscriminant == d && e.payloadWord 0 == w0 && e.payloadWord 1 == w1 &&
+    e.payloadWord 2 == w2 && e.payloadWord 3 == w3 && e.payloadWord 4 == w4
+
+theorem matchesWords_iff (e ke : KernelError) :
+    e.matchesWords ke.toDiscriminant (ke.payloadWord 0) (ke.payloadWord 1) (ke.payloadWord 2)
+      (ke.payloadWord 3) (ke.payloadWord 4) = true ↔ e = ke := by
+  constructor
+  · intro h
+    simp only [matchesWords, Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩ := h
+    rw [← ofPayloadWords_payloadWord e, ← ofPayloadWords_payloadWord ke, h0, h1, h2, h3, h4, h5]
+  · rintro rfl
+    simp [matchesWords]
+
+/-- The payload's length from the words: the code, and for a lookup failure its
+type word (word 1). -/
+@[inline] def payloadLengthOfWords (d : Nat) (w1 : UInt64) : Nat :=
+  if d = 0 ∨ d = 39 ∨ d = 20 then 1
+  else if d = 59 then 2
+  else if d = 60 then
+    (if w1 = 2 then 3 else if w1 = 3 then 4 else if w1 = 4 then 5 else 2)
+  else 0
+
+theorem payloadLengthOfWords_eq (e : KernelError) :
+    payloadLengthOfWords e.toDiscriminant (e.payloadWord 1) = e.payloadLength := by
+  cases e with
+  | failedLookup w f =>
+    cases f <;> simp [payloadLengthOfWords, toDiscriminant, payloadWord, payloadLength,
+      LookupFault.word, LookupFault.typeWord, LookupFault.wordCount]
+  | _ => simp [payloadLengthOfWords, toDiscriminant, payloadLength]
+
 
 end SeLe4n.Model.KernelError
 
@@ -1403,7 +1572,7 @@ theorem blockedUnitReturn_staged_in_sender_frame
 /-- The status label of an error: discriminant `d` rides as
 `errorLabelBase + d`.  Never `0` (the base is positive) and never below the
 base, so no error can be read as a delivered message. -/
-def errorLabel (e : KernelError) : Nat :=
+@[inline] def errorLabel (e : KernelError) : Nat :=
   errorLabelBase + e.toDiscriminant
 
 /-- Decode a label back to its error: below the base is not an error
@@ -1434,9 +1603,10 @@ theorem ofErrorLabel?_none_of_lt_base (label : Nat) (h : label < errorLabelBase)
   unfold ofErrorLabel?
   rw [if_neg (Nat.not_le.mpr h)]
 
-/-- RA.A.5 — every error survives the label round trip. -/
+/-- RA.A.5 — every error's code survives the label round trip; the payload
+rides in the message registers (`errorFrame_payload_roundtrip`). -/
 theorem errorLabel_roundtrip (e : KernelError) :
-    ofErrorLabel? (errorLabel e) = some e := by
+    ofErrorLabel? (errorLabel e) = some e.erasePayload := by
   unfold ofErrorLabel? errorLabel
   rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
   exact KernelError.ofDiscriminant?_toDiscriminant e
@@ -1505,23 +1675,146 @@ heap number; the word is `MessageInfo.encode`'s (`errorLabelWord_eq_encode`). -/
 theorem errorLabelWord_eq_encode (e : KernelError) :
     errorLabelWord e =
       (MessageInfo.encode { length := 0, extraCaps := 0, label := errorLabel e }).toUInt64 := by
-  cases e <;> decide
+  have hLt := KernelError.toDiscriminant_lt e
+  unfold errorLabelWord errorLabel
+  generalize e.toDiscriminant = d at hLt ⊢
+  rw [show KernelError.kernelErrorEncodingBound = 61 from rfl] at hLt
+  revert d
+  decide
 
-/-- The error frame the boundary returns on a failed syscall: `x0 = 0`,
-the status label in `x1`, no message registers.  Computed at the boundary,
-**never staged into the TCB** — which is what keeps the error path
-state-preserving (RA.B.4). -/
-def errorFrame (e : KernelError) : SyscallReturnFrame :=
-  { x1 := errorLabelWord e }
+/-- **An error's `x1` word with its message length**: the status label in bits
+12-63 and the length (at most five words) in bits 0-6, as seL4's
+`replyFromKernel_error` writes `seL4_MessageInfo_new(error, 0, 0, len)`. -/
+@[inline] def errorInfoWord (e : KernelError) (len : Nat) : UInt64 :=
+  errorLabelWord e ||| len.toUInt64
+
+/-- The error frame the boundary returns on a failed syscall: `x0 = 0`, the
+status label and the message length in `x1`, and the payload's first four words
+in `x2`-`x5` (seL4's `msgRegisters`, MR0-MR3).  A fifth word goes to the
+caller's IPC buffer (`recordErrorOverflow`), and `overflowWritten` says whether
+it went, so the length is the one seL4's `setMR` chain returns
+(`KernelError.messageLength`).  Computed at the boundary, **never staged into
+the TCB** — the error path writes no thread's registers (RA.B.4). -/
+def errorFrame (e : KernelError) (overflowWritten : Bool) : SyscallReturnFrame :=
+  { x1 := errorInfoWord e (e.messageLength overflowWritten),
+    x2 := e.payloadWord 0, x3 := e.payloadWord 1,
+    x4 := e.payloadWord 2, x5 := e.payloadWord 3 }
+
+/-- The `x1` word of every discriminant and every length an error message can
+have decodes to that discriminant's label and that length.  Decided over the
+table. -/
+private theorem errorInfoWord_decodes_discriminants :
+    ∀ d, d < KernelError.kernelErrorEncodingBound → ∀ len, len ≤ 5 →
+      MessageInfo.decode
+          (((errorLabelBase + d).toUInt64 <<< 12) ||| len.toUInt64).toNat =
+        some { length := len, extraCaps := 0, label := errorLabelBase + d } := by
+  decide
 
 /-- An error frame's `x1` decodes back to the `MessageInfo` that names the
-error — the encode side is inside the decoder's fail-closed bounds.  Every
-`errorLabel` is a concrete literal per variant, so the whole statement is
-decided by evaluation, `KernelError.kernelErrorEncodingBound` cases at a time. -/
-theorem errorFrame_x1_decodes (e : KernelError) :
-    MessageInfo.decode (errorFrame e).x1.toNat =
-      some { length := 0, extraCaps := 0, label := errorLabel e } := by
-  cases e <;> decide
+error's code and its message's length — the encode side is inside the
+decoder's fail-closed bounds. -/
+theorem errorFrame_x1_decodes (e : KernelError) (w : Bool) :
+    MessageInfo.decode (errorFrame e w).x1.toNat =
+      some { length := e.messageLength w, extraCaps := 0, label := errorLabel e } :=
+  errorInfoWord_decodes_discriminants _ (KernelError.toDiscriminant_lt e) _
+    (KernelError.messageLength_le e w)
+
+/-- **The payload round trip**: the frame's message registers, and the fifth
+word where the payload has one, are the payload's words in seL4's order —
+`setMRs_syscall_error`'s, read back word for word. -/
+theorem errorFrame_payload_roundtrip (e : KernelError) (w : Bool) :
+    (errorFrame e w).x2 = e.payloadWord 0 ∧ (errorFrame e w).x3 = e.payloadWord 1 ∧
+      (errorFrame e w).x4 = e.payloadWord 2 ∧ (errorFrame e w).x5 = e.payloadWord 3 ∧
+      (errorFrame e w).x0 = 0 :=
+  ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **Where an error's fifth payload word goes** (seL4's `setMR` past
+`n_msgRegisters`): message register 4, overflow slot 0 of the caller's IPC
+buffer, at the address the shared resolver answers for a writable mapping
+(`IpcBufferRead.ipcBufferSlotPAddr?`, the one a delivery writes through, as
+seL4's `replyFromKernel_error` takes `lookupIPCBuffer(true, thread)`).  `none`
+when the payload fits the four inline registers, or the buffer does not
+resolve: then the word is not written and the length stops at four
+(`KernelError.messageLength`). -/
+@[inline] def errorOverflowPAddr? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : KernelError) : Option SeLe4n.PAddr :=
+  if e.payloadLength ≤ 4 then none
+  else
+    match st.getTcb? tid with
+    | some tcb => IpcBufferRead.ipcBufferSlotPAddr? st tcb 0 true
+    | none => none
+
+/-- **Write an error's fifth payload word** into the caller's IPC buffer,
+`msg[4]`, as a user-word store owed to RAM (`PhysicalWrite.storeUserWord`, the
+store a delivery's overflow words take, drained by the syscall seam).  Nothing
+when the payload fits the inline registers or the buffer does not resolve. -/
+def recordErrorOverflow (st : SystemState) (tid : SeLe4n.ThreadId) (e : KernelError) :
+    SystemState :=
+  match errorOverflowPAddr? st tid e with
+  | some pa => st.recordPhysicalWrite (.storeUserWord pa (e.payloadWord 4))
+  | none => st
+
+/-- The frame of an error returned to `tid`: its length counts the fifth word
+exactly when `recordErrorOverflow` writes it. -/
+@[inline] def errorFrameFor (st : SystemState) (tid : SeLe4n.ThreadId) (e : KernelError) :
+    SyscallReturnFrame :=
+  errorFrame e (errorOverflowPAddr? st tid e).isSome
+
+/-- An error whose payload fits the inline registers writes nothing. -/
+theorem recordErrorOverflow_of_le_four (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : KernelError) (h : e.payloadLength ≤ 4) : recordErrorOverflow st tid e = st := by
+  unfold recordErrorOverflow errorOverflowPAddr?
+  rw [if_pos h]
+
+/-- …and its frame is the one with no buffer to consult. -/
+theorem errorFrameFor_of_le_four (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : KernelError) (h : e.payloadLength ≤ 4) : errorFrameFor st tid e = errorFrame e false := by
+  unfold errorFrameFor errorOverflowPAddr?
+  rw [if_pos h]; rfl
+
+/-- **The error path's write** (RA.B.4, restated): it changes the state only by
+the one store of the caller's `msg[4]`, and only for a five-word payload whose
+buffer resolves; otherwise it changes nothing. -/
+theorem recordErrorOverflow_cases (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : KernelError) :
+    (errorOverflowPAddr? st tid e = none ∧ recordErrorOverflow st tid e = st) ∨
+      ∃ pa, errorOverflowPAddr? st tid e = some pa ∧ e.payloadLength = 5 ∧
+        recordErrorOverflow st tid e = st.recordPhysicalWrite (.storeUserWord pa (e.payloadWord 4)) := by
+  unfold recordErrorOverflow
+  cases hP : errorOverflowPAddr? st tid e with
+  | none => exact Or.inl ⟨rfl, rfl⟩
+  | some pa =>
+    refine Or.inr ⟨pa, rfl, ?_, rfl⟩
+    have h5 := KernelError.payloadLength_le e
+    unfold errorOverflowPAddr? at hP
+    split at hP
+    · cases hP
+    · omega
+
+/-- The error path's write touches only the physical-write ledger. -/
+theorem recordErrorOverflow_objects (st : SystemState) (tid : SeLe4n.ThreadId) (e : KernelError) :
+    (recordErrorOverflow st tid e).objects = st.objects := by
+  unfold recordErrorOverflow; split <;> rfl
+
+theorem recordErrorOverflow_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) (e : KernelError) :
+    (recordErrorOverflow st tid e).scheduler = st.scheduler := by
+  unfold recordErrorOverflow; split <;> rfl
+
+theorem recordErrorOverflow_machine (st : SystemState) (tid : SeLe4n.ThreadId) (e : KernelError) :
+    (recordErrorOverflow st tid e).machine = st.machine := by
+  unfold recordErrorOverflow; split <;> rfl
+
+theorem recordErrorOverflow_declassificationRefusals (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : KernelError) :
+    (recordErrorOverflow st tid e).declassificationRefusals = st.declassificationRefusals := by
+  unfold recordErrorOverflow; split <;> rfl
+
+/-- No thread's return frame moves with the fifth word's write. -/
+theorem readReturnFrame_recordErrorOverflow (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : KernelError) (t : SeLe4n.ThreadId) :
+    readReturnFrame (recordErrorOverflow st tid e) t = readReturnFrame st t := by
+  unfold readReturnFrame SystemState.getTcb?
+  rw [recordErrorOverflow_objects]
 
 -- ============================================================================
 -- §5b  Staging an error frame for a forcibly unblocked thread (WS-RR RR7.14)
@@ -1555,10 +1848,10 @@ because they are different facts:
 seL4 answers this differently: it sets the thread `Restart` so the syscall
 re-executes.  This kernel has no restart state, so the crossing has to end in an
 error the caller can distinguish, which is what these stage. -/
-def timeoutFrame : SyscallReturnFrame := errorFrame .ipcTimeout
+def timeoutFrame : SyscallReturnFrame := errorFrame .ipcTimeout false
 
 /-- **WS-RR RR7.14**: the cancellation twin — see `timeoutFrame`. -/
-def cancelledIpcFrame : SyscallReturnFrame := errorFrame .ipcCancelled
+def cancelledIpcFrame : SyscallReturnFrame := errorFrame .ipcCancelled false
 
 /-- **WS-RR RR7.14**: stage the timeout frame into a thread's saved register
 context.  The state-level spelling, for a call site that holds a `SystemState`;
@@ -2074,15 +2367,21 @@ theorem bit63Encoding_not_injective_on_badges :
   `caps_or_badges` words (seL4's `lookupExtraCaps`), not in message
   registers.  A v3 decoder reads every v4 label shifted by three bits and
   every overflow word five words early, so this is a version bump.
+* **5** — an error frame carries seL4's error payload
+  (`setMRs_syscall_error`): `x1`'s length is the payload's word count as
+  seL4's `setMR` chain returns it, `x2`-`x5` the payload's first four words
+  (MR0-MR3), and a guard mismatch's fifth word goes to the caller's IPC buffer
+  `msg[4]` (`recordErrorOverflow`).  A v4 decoder reads a payload-carrying
+  error's length as `0`, so this is a version bump.
 
 Mirrored as `SYSCALL_ABI_VERSION` in `rust/sele4n-types` at each flip, with
 each side's conformance suite pinning its own constant to the same literal —
 so a half-bumped tree fails its own suite rather than mis-decoding at
 runtime (plan §3.6). -/
-def syscallAbiVersion : Nat := 4
+def syscallAbiVersion : Nat := 5
 
 /-- The Lean half of the version pin (RA.A.7).  The Rust conformance test
 asserts the identical literal; a bump that forgets one side fails there. -/
-theorem syscallAbiVersion_pinned : syscallAbiVersion = 4 := rfl
+theorem syscallAbiVersion_pinned : syscallAbiVersion = 5 := rfl
 
 end SeLe4n.Kernel.Architecture

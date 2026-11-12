@@ -331,7 +331,7 @@ addresses and the depth word, which must set no bit past the two depths
     .ok { destIndex, srcRoot, srcIndex
           destDepth := CNodeOpWord.destDepth depths
           srcDepth := CNodeOpWord.srcDepth depths }
-  else .error .invalidArgument
+  else .error (.invalidArgument 3)
 
 /-- A copy's operands from its four words: the three addresses and the word of
 the depths and the rights mask, which must set no bit past the mask
@@ -343,7 +343,7 @@ the depths and the rights mask, which must set no bit past the mask
           destDepth := CNodeOpWord.destDepth w
           srcDepth := CNodeOpWord.srcDepth w
           rights := AccessRightSet.ofNat (CNodeOpWord.rights w) }
-  else .error .invalidArgument
+  else .error (.invalidArgument 3)
 
 /-- Decode CSpace copy arguments from message registers.
     Requires 4 message registers (destIndex, srcRoot, srcIndex, the depths and
@@ -1225,9 +1225,9 @@ def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
   let r3 ← requireMsgReg decoded.msgRegs 3
   let r4 ← requireMsgReg decoded.msgRegs 4
   -- AK4-B: bounds validation (matches Rust ABI constants).
-  if r1.val > serviceMaxMethodCount then .error .invalidArgument
-  else if r2.val > serviceMaxMessageSize then .error .invalidArgument
-  else if r3.val > serviceMaxMessageSize then .error .invalidArgument
+  if r1.val > serviceMaxMethodCount then .error (.invalidArgument 1)
+  else if r2.val > serviceMaxMessageSize then .error (.invalidArgument 2)
+  else if r3.val > serviceMaxMessageSize then .error (.invalidArgument 3)
   else if r4.val ≥ 2 then .error .invalidMessageInfo
   else
     pure { interfaceId    := InterfaceId.ofNat r0.val
@@ -1277,7 +1277,7 @@ theorem decodeServiceRegisterArgs_error_of_insufficient_regs
 theorem decodeServiceRegisterArgs_error_of_methodCount_too_large
     (d : SyscallDecodeResult) (hLen : truncationMinimum .serviceRegister ≤ d.msgInfo.length) (hSize : 5 ≤ d.msgRegs.size)
     (hMc : d.msgRegs[1].val > serviceMaxMethodCount) :
-    decodeServiceRegisterArgs d = .error .invalidArgument := by
+    decodeServiceRegisterArgs d = .error (.invalidArgument 1) := by
   have hL := requireMessageLength_of_le hLen
   simp only [decodeServiceRegisterArgs, hL, bind, Except.bind,
     requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
@@ -1499,9 +1499,9 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
 def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextConfigureArgs := do
   let args ← decodeSchedContextConfigureArgs decoded
-  if args.schedParams ≥ 4096 then .error .invalidArgument
-  else if args.budget = 0 then .error .invalidArgument
-  else if args.period = 0 then .error .invalidArgument
+  if args.schedParams ≥ 4096 then .error (.invalidArgument 3)
+  else if args.budget = 0 then .error (.invalidArgument 1)
+  else if args.period = 0 then .error (.invalidArgument 2)
   else pure args
 
 /-- AK3-J: A successful checked configure decode satisfies all CBS invariants. -/
@@ -1885,7 +1885,7 @@ def decodeSetPriorityArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetPriorityArgs := do
   requireMessageLength decoded (truncationMinimum .tcbSetPriority)
   let r0 ← requireMsgReg decoded.msgRegs 0
-  if r0.val > 0xFF then .error .invalidArgument
+  if r0.val > 0xFF then .error (.invalidArgument 0)
   else pure { newPriority := r0.val }
 
 /-- D2-C: Decode setMCPriority arguments from message registers.
@@ -1895,7 +1895,7 @@ def decodeSetMCPriorityArgs (decoded : SyscallDecodeResult)
     : Except KernelError SetMCPriorityArgs := do
   requireMessageLength decoded (truncationMinimum .tcbSetMCPriority)
   let r0 ← requireMsgReg decoded.msgRegs 0
-  if r0.val > 0xFF then .error .invalidArgument
+  if r0.val > 0xFF then .error (.invalidArgument 0)
   else pure { newMCP := r0.val }
 
 -- ============================================================================
@@ -2479,9 +2479,9 @@ read as its word (`CPtr.ofWord`), as the bind reads its thread's. -/
   let r2 ← get 2
   let r3 ← get 3
   let r4 ← get 4
-  if 4096 ≤ r3 then .error .invalidArgument
-  else if r1.toNat = 0 then .error .invalidArgument
-  else if r2.toNat = 0 then .error .invalidArgument
+  if 4096 ≤ r3 then .error (.invalidArgument 3)
+  else if r1.toNat = 0 then .error (.invalidArgument 1)
+  else if r2.toNat = 0 then .error (.invalidArgument 2)
   else pure { scCPtr := SeLe4n.CPtr.ofWord r0, budget := r1.toNat, period := r2.toNat,
               schedParams := r3.toNat, deadline := r4.toNat }
 
@@ -2542,9 +2542,9 @@ decode's order. -/
   let r2 ← get 2
   let r3 ← get 3
   let r4 ← get 4
-  if r1.toNat > serviceMaxMethodCount then .error .invalidArgument
-  else if r2.toNat > serviceMaxMessageSize then .error .invalidArgument
-  else if r3.toNat > serviceMaxMessageSize then .error .invalidArgument
+  if r1.toNat > serviceMaxMethodCount then .error (.invalidArgument 1)
+  else if r2.toNat > serviceMaxMessageSize then .error (.invalidArgument 2)
+  else if r3.toNat > serviceMaxMessageSize then .error (.invalidArgument 3)
   else if r4.toNat ≥ 2 then .error .invalidMessageInfo
   else
     pure { interfaceId    := InterfaceId.ofNat r0.toNat
@@ -2635,7 +2635,7 @@ theorem decodeIrqHandlerSetNotificationArgs_eq_by (layout : SyscallRegisterLayou
 @[inline] def decodeSetPriorityArgsBy (get : MsgRegReader)
     : Except KernelError SetPriorityArgs := do
   let r0 ← get 0
-  if r0.toNat > 0xFF then .error .invalidArgument
+  if r0.toNat > 0xFF then .error (.invalidArgument 0)
   else pure { newPriority := r0.toNat }
 
 theorem decodeSetPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
@@ -2656,7 +2656,7 @@ theorem decodeSetPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
 @[inline] def decodeSetMCPriorityArgsBy (get : MsgRegReader)
     : Except KernelError SetMCPriorityArgs := do
   let r0 ← get 0
-  if r0.toNat > 0xFF then .error .invalidArgument
+  if r0.toNat > 0xFF then .error (.invalidArgument 0)
   else pure { newMCP := r0.toNat }
 
 theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)

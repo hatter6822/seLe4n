@@ -2185,7 +2185,7 @@ def cspaceRevokeCdtFinalising (executingCore : Concurrency.CoreId) (addr : CSpac
     | some _ => .ok ((), cspaceRevokePerformAt executingCore addr.cnode addr.slot st)
     | none =>
       match st.getCNode? addr.cnode with
-      | some _ => .error .invalidCapability
+      | some _ => .error (.invalidCapability 0)
       | none => .error .objectNotFound
 
 /-- An admitted revocation is its writes. -/

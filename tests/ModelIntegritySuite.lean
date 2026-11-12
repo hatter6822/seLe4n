@@ -407,7 +407,7 @@ def cspaceMutate_from_null_rejected : IO Unit := do
 overloaded `.invalidCapability` with three different failure modes. -/
 def nullCapability_distinct_from_invalidCapability : IO Unit := do
   let e1 : KernelError := .nullCapability
-  let e2 : KernelError := .invalidCapability
+  let e2 : KernelError := (.invalidCapability 0)
   unless !(e1 == e2) do
     throw <| IO.userError "nullCapability and invalidCapability collided"
   expect ".nullCapability ≠ .invalidCapability" true
@@ -830,7 +830,7 @@ def mintReplyCap_derives_backed_reply_cap : IO Unit := do
   let badSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 2 }
   let badDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 3 }
   match SeLe4n.Kernel.mintReplyCap badSrc badDst st with
-  | .error e => expect "mintReplyCap from a non-Reply object → invalidCapability" (e == .invalidCapability)
+  | .error e => expect "mintReplyCap from a non-Reply object → invalidCapability" (e == (.invalidCapability 0))
   | .ok _ => throw <| IO.userError "mintReplyCap from a non-Reply object must be rejected"
 
 /-- WS-SM SM6.D (#7.4 / #7.5): the strengthened `replyCallerLinkage` third clause

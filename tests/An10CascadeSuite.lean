@@ -545,7 +545,7 @@ def an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability : IO Bool := do
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert cnodeAddr (.cnode cn) }
   match SeLe4n.Kernel.cspaceLookupSlot addr st with
-  | Except.error KernelError.invalidCapability => return true
+  | Except.error (KernelError.invalidCapability _) => return true
   | _ => return false
 
 /-- AN10-E.R2 — `cspaceResolvePath` rejects a non-CNode at the cnode

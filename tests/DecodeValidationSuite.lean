@@ -84,7 +84,7 @@ def test_t04_sc_rejects_high_priority : IO Unit := do
   -- context cptr=7, budget=1000, period=10000, params=4096 (bit 12), deadline=5000
   let stub := stubOf #[7, 1000, 10000, 4096, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
-  | .error .invalidArgument =>
+  | .error (.invalidArgument _) =>
     IO.println "check passed [parameter word ≥ 4096 rejected]"
   | _ =>
     throw <| IO.userError "T04: expected invalidArgument for a parameter word ≥ 4096"
@@ -93,7 +93,7 @@ def test_t04_sc_rejects_high_priority : IO Unit := do
 def test_t05_sc_rejects_high_domain : IO Unit := do
   let stub := stubOf #[7, 1000, 10000, 100 + 16 * 256, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
-  | .error .invalidArgument =>
+  | .error (.invalidArgument _) =>
     IO.println "check passed [domain ≥ 16 rejected]"
   | _ =>
     throw <| IO.userError "T05: expected invalidArgument for domain ≥ 16"
@@ -102,7 +102,7 @@ def test_t05_sc_rejects_high_domain : IO Unit := do
 def test_t06_sc_rejects_zero_budget : IO Unit := do
   let stub := stubOf #[7, 0, 10000, 100, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
-  | .error .invalidArgument =>
+  | .error (.invalidArgument _) =>
     IO.println "check passed [budget = 0 rejected]"
   | _ =>
     throw <| IO.userError "T06: expected invalidArgument for budget = 0"
@@ -111,7 +111,7 @@ def test_t06_sc_rejects_zero_budget : IO Unit := do
 def test_t07_sc_rejects_zero_period : IO Unit := do
   let stub := stubOf #[7, 1000, 0, 100, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
-  | .error .invalidArgument =>
+  | .error (.invalidArgument _) =>
     IO.println "check passed [period = 0 rejected]"
   | _ =>
     throw <| IO.userError "T07: expected invalidArgument for period = 0"
@@ -154,7 +154,7 @@ is never truncated into the valid configuration its low bits name. -/
 def test_t10_sc_rejects_high_param_bits : IO Unit := do
   for w in highBitParamWords do
     match decodeSchedContextConfigureArgsChecked (stubOf #[7, 1000, 10000, w, 5000]) with
-    | .error .invalidArgument => pure ()
+    | .error (.invalidArgument _) => pure ()
     | _ => throw <| IO.userError s!"T10: expected invalidArgument for parameter word {w}"
   IO.println "check passed [parameter words with a bit above bit 11 rejected]"
 
@@ -167,7 +167,7 @@ def test_t11_sc_word_reader_rejects_high_param_bits : IO Unit := do
     | 4 => .ok 5000 | _ => .error .invalidMessageInfo
   for w in highBitParamWords do
     match decodeSchedContextConfigureArgsCheckedBy (reader w) with
-    | .error .invalidArgument => pure ()
+    | .error (.invalidArgument _) => pure ()
     | _ => throw <| IO.userError s!"T11: expected invalidArgument for parameter word {w}"
   match decodeSchedContextConfigureArgsCheckedBy (reader (255 + 15 * 256)) with
   | .ok args =>

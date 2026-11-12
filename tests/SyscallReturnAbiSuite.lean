@@ -1180,8 +1180,8 @@ private def runAuditReadEndToEnd : IO Unit := do
     (match dispatchAudit auditLabeling SyscallId.auditRead.toNat rightlessCapPtr 3
         (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState with
      | .ok (.returns f, _) =>
-         f.x1 == (Kernel.Architecture.errorFrame KernelError.invalidCapability).x1 &&
-         f.x1 != (Kernel.Architecture.errorFrame KernelError.illegalAuthority).x1
+         f.x1 == (Kernel.Architecture.errorFrame (KernelError.invalidCapability 0) false).x1 &&
+         f.x1 != (Kernel.Architecture.errorFrame KernelError.illegalAuthority false).x1
      | _ => false)
   -- 10h — the order's other half: an AUDIT capability carrying only `.read`
   -- passes the target gate and is refused by the ARM's rights check on a
@@ -1190,7 +1190,7 @@ private def runAuditReadEndToEnd : IO Unit := do
     (match dispatchAudit auditLabeling SyscallId.auditDrain.toNat readOnlyAuditCapPtr 1
         1 0 0 auditWitnessState with
      | .ok (.returns f, st) =>
-         f.x1 == (Kernel.Architecture.errorFrame KernelError.illegalAuthority).x1 &&
+         f.x1 == (Kernel.Architecture.errorFrame KernelError.illegalAuthority false).x1 &&
          st.declassificationAuditLog.length == 2
      | _ => false)
 
@@ -1444,7 +1444,7 @@ private def runDeclassifiedBadgeDeliveryWitnesses : IO Unit := do
   -- resume — which is what makes the positive run a statement about the policy.
   let (_, signalD, sgisD, trailD, deliveredD) := declassifiedBadgeRun declassDeniedLabeling
   assertBool "11 CONTROL: under the deny-all policy the signal is refused as a declassification denial"
-    (signalD == .returns (Kernel.Architecture.errorFrame .declassificationDenied))
+    (signalD == .returns (Kernel.Architecture.errorFrame .declassificationDenied false))
   assertBool "11 CONTROL: ...no SGI is posted and no record is written"
     (sgisD.isEmpty && trailD.isEmpty)
   assertBool "11 CONTROL: ...and the waiter's core resumes no badge"

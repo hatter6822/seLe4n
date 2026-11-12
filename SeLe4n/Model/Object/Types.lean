@@ -1877,7 +1877,7 @@ structure TCB where
   /-- The fault's second word (`ThreadFaultWords.word1`). -/
   faultWord1 : UInt64 := 0
   /-- A capability fault's lookup failure (`ThreadFaultWords.lookup`). -/
-  faultLookup : KernelError := .invalidCapability
+  faultLookup : KernelError := (.invalidCapability 0)
   /-- The fault context's restart PC, `SP_EL0`, `LR`, `SPSR_EL1` and
       `x0`-`x7` (`ThreadFaultWords.ip` …). -/
   faultIp : UInt64 := 0

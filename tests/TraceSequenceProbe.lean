@@ -154,7 +154,7 @@ def classifyError (op : ProbeOp) (err : KernelError) : StepOutcome :=
   -- WS-F7: invalidCapability is expected for capLookup on empty slots
   -- Y3-D: capCopy may fail with targetSlotOccupied when dst slot is non-empty
   | .targetSlotOccupied => .expectedFailure err
-  | .invalidCapability =>
+  | .invalidCapability _ =>
       match op with
       | .capLookup => .expectedFailure err
       | .capCopy => .expectedFailure err

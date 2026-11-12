@@ -1141,7 +1141,7 @@ theorem vacatedCore_next_syscall_rejected
     Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30
         (PriorityInheritance.scheduleLocalSuccessor pre post execCore)
-      = Except.ok (.returns (Architecture.errorFrame .illegalState),
+      = Except.ok (.returns (Architecture.errorFrame .illegalState false),
                    PriorityInheritance.scheduleLocalSuccessor pre post execCore) :=
   Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hVacated

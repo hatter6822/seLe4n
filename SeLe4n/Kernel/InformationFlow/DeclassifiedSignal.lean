@@ -906,7 +906,7 @@ def notificationSignalDeclassifiedOnCore (ctx : GenericLabelingContext)
           -- error distinction is the ordinary signal's own (AK7 recovery:
           -- present-but-wrong-kind vs genuinely absent), decided through the
           -- typed kind-agnostic accessor.
-          if (st.getObjectType? notificationId).isSome then (st, .error .invalidCapability)
+          if (st.getObjectType? notificationId).isSome then (st, .error (.invalidCapability 0))
           else (st, .error .objectNotFound)
       | some _ =>
           let actor := declassificationActorOf ctx signaler
@@ -1689,12 +1689,12 @@ theorem declassifiedSignal_ordinary_eq_signal (ctx : GenericLabelingContext)
     -- ordinary signal's own recovery — the target gate is the ordinary
     -- signal's none-arm, decided through the typed accessor.
     have hL : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-        (if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+        (if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
          else (st, .error .objectNotFound)) := by
       rw [SystemState.getObject?_eq_getElem, ← getObjectType?_isSome_eq_raw]
       simp [notificationSignalDeclassifiedOnCore, hCur, hN]
     have hR : notificationSignalBoundOnCore notificationId badge c st =
-        (if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+        (if (st.getObject? notificationId).isSome then (st, .error (.invalidCapability 0))
          else (st, .error .objectNotFound)) := by
       unfold notificationSignalBoundOnCore boundDeliveryTarget? notificationSignalOnCore
       rw [hN]
@@ -2382,7 +2382,7 @@ theorem enforcement_sufficiency_declassifySignal
        st.getNotification? notificationId = none ∧
        (((st.getObjectType? notificationId).isSome ∧
            notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-             (st, .error .invalidCapability)) ∨
+             (st, .error (.invalidCapability 0))) ∨
         (st.getObjectType? notificationId = none ∧
            notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
              (st, .error .objectNotFound)))) ∨
@@ -2575,7 +2575,7 @@ theorem notificationSignalDeclassifiedOnCore_wrong_kind (ctx : GenericLabelingCo
     (hNone : st.getNotification? notificationId = none)
     (hSome : (st.getObjectType? notificationId).isSome = true) :
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-      (st, .error .invalidCapability) := by
+      (st, .error (.invalidCapability 0)) := by
   simp [notificationSignalDeclassifiedOnCore, hCur, hNone, hSome]
 
 /-- WS-SM SM9.C.1 (PR #872 review): an absent target answers the ordinary

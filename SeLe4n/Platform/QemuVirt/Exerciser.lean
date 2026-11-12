@@ -300,7 +300,7 @@ def qemuVirtExerciserRootInvoke (decoded : SyscallDecodeResult) :
           requiredRight := SeLe4n.Kernel.syscallRequiredRight decoded.syscallId }
       SeLe4n.Kernel.dispatchCheckedArmThenTaintFused ctx decoded tid
         SeLe4n.Kernel.Concurrency.bootCoreId gate st
-    | some _ => .error .invalidCapability
+    | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
   | some _ => .error .illegalState
   | none => .error .objectNotFound
