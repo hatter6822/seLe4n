@@ -362,6 +362,11 @@ pub mod lean_ready;
 // the memory it hands out.
 pub mod lean_heap;
 
+// The region allocator: a carve's cells in its untyped's own memory, found
+// through a map kept outside every range.  Inert until a carve sets a core's
+// allocation context.
+pub mod region;
+
 // WS-BP BP2.2: the kernel's own Lean runtime — objects, closures, big numbers,
 // strings, arrays, `ST.Ref` — over the heap above.  Its C entry points are
 // exported under `hw_target`; the set it must provide is derived from the Lean

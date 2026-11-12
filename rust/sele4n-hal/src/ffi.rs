@@ -620,6 +620,10 @@ pub extern "C" fn ffi_fatal_halt_all() -> ! {
 /// can recover from, so it halts the system rather than returning: a kernel
 /// that went on would hand out untypeds over memory it cannot address.
 ///
+/// The extension then goes under the region allocator's map
+/// ([`crate::region::register_boot_ram`]), whose storage the kernel heap
+/// serves here, at boot.  A refusal halts for the same reason.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiExtendBootRamMap`
 #[no_mangle]
 pub extern "C" fn ffi_extend_boot_ram_map(base: u64, size: u64) -> crate::lean_runtime::Obj {
@@ -629,6 +633,18 @@ pub extern "C" fn ffi_extend_boot_ram_map(base: u64, size: u64) -> crate::lean_r
             base,
             size,
             refusal
+        );
+        crate::gic::halt_all();
+    }
+    // SAFETY: the boot map now covers `[base, base + size)` as Normal RAM at
+    // its own address, past the kernel's reserved extent, and the kernel names
+    // it only through the region allocator and the physical writes.
+    if let Err(fault) = unsafe { crate::region::register_boot_ram(base as usize, size as usize) } {
+        crate::kprintln!(
+            "[boot] FATAL: the region map refuses RAM [{:#x}, +{:#x}): {:?}",
+            base,
+            size,
+            fault
         );
         crate::gic::halt_all();
     }
