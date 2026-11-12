@@ -200,10 +200,10 @@ private def row_objectNotFound_ipcBuffer_missing_tcb : KernelErrorRejection :=
 
 /-- Row: `decodeCSpaceMintArgs` rejects a word of the depths and the rights
 mask with a bit set past the mask (bit 21, `CNodeOpWord.rightsFits`) with
-`.invalidArgument`. -/
+`.invalidArgument 3`, the word's index. -/
 private def row_invalidArgument_mint_rights : KernelErrorRejection :=
   { syscall       := "decodeCSpaceMintArgs"
-    expectedError := (.invalidArgument 0)
+    expectedError := (.invalidArgument 3)
     scenarioTag   := "AN11A.2.invalidArgument.mint_rights"
     scenarioDesc  := "AK4-E: cspaceMint args rejected when the word of the" ++
                      " depths and the rights mask sets a bit past the mask"

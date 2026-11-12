@@ -832,7 +832,7 @@ private def returnAbiTraceLines : List String :=
     | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
     | e => e
   -- `KernelError.kernelErrorEncodingBound` = one past the largest `KernelError`
-  -- discriminant (the newest being `.depthMismatch` at 60); every
+  -- discriminant (the newest being `.failedLookup` at 60); every
   -- value below it is a variant's or a retired one (`37`, WS-ZA ZA5.4 part 14).  The boundary conjunct pins the count from above:
   -- when the next variant lands, `ofDiscriminant? count` stops being `none`, the
   -- fixture line diverges, and this range has to move with it rather than
@@ -892,6 +892,20 @@ private def returnAbiTraceLines : List String :=
   , (match capsSendScenario epCapNoGrantPtr with
      | .ok (f, _) => s!"[ret-abi] staged grant-denied transfer frame (installed extraCaps 0): {frameCells f}"
      | .error e => s!"[ret-abi] staged grant-denied transfer frame (installed extraCaps 0): dispatch-error {reprStr e}")
+  -- WS-SX SX1.2: the error frame's payload in seL4's MR order (x2-x5), its
+  -- length in x1 as `setMR` returns it: four words at most in registers, a
+  -- fifth counted only when the caller's IPC buffer takes it (`msg[4]`).
+  , s!"[ret-abi] range-error frame (1, 64): " ++
+      frameCells (Kernel.Architecture.errorFrame (.rangeError 1 64) false)
+  , s!"[ret-abi] missing-source failed-lookup frame: " ++
+      frameCells (Kernel.Architecture.errorFrame
+        (.failedLookup true (.missingCapability 64)) false)
+  , s!"[ret-abi] guard-mismatch failed-lookup frame, buffer: " ++
+      frameCells (Kernel.Architecture.errorFrame
+        (.failedLookup false (.guardMismatch 64 0x1f 58)) true)
+  , s!"[ret-abi] guard-mismatch failed-lookup frame, no buffer: " ++
+      frameCells (Kernel.Architecture.errorFrame
+        (.failedLookup false (.guardMismatch 64 0x1f 58)) false)
   ]
 
 private def fixturePath : String := "tests/fixtures/syscall_return_abi.expected"
@@ -1299,6 +1313,50 @@ private def cnodeCopyBitOwner (j : Nat) : String :=
     else "inconsistent"
   | .error _ => "reserved"
 
+/-- **WS-SX SX1.2: the error payload's message-register layout, measured.**
+Each payload shape is built with distinct sentinels in its numeric fields
+(`0xA1`, `0xA2`, `0xA3` in constructor order) and run through the error frame
+(`errorFrame`, MR0-MR3 in x2-x5, the caller's buffer taking MR4 as
+`recordErrorOverflow` writes it); MR `i` is owned by the field whose sentinel
+it holds, by `wasSource` when it moves with that flag alone, and is otherwise a
+constant (a lookup fault's type word).  The Rust side measures its own
+`SyscallError::payload` by the same rule against the same lines. -/
+private def errorPayloadLayoutLine (name : String) (fields : List String)
+    (build : Bool → UInt64 → UInt64 → UInt64 → KernelError) : String :=
+  let e := build true 0xA1 0xA2 0xA3
+  let flipped := build false 0xA1 0xA2 0xA3
+  let f := Kernel.Architecture.errorFrame e true
+  let g := Kernel.Architecture.errorFrame flipped true
+  let words := [f.x2, f.x3, f.x4, f.x5, e.payloadWord 4]
+  let other := [g.x2, g.x3, g.x4, g.x5, flipped.payloadWord 4]
+  let len := (f.x1 &&& 0x7f).toNat
+  let owner (i : Nat) : String :=
+    let w := words.getD i 0
+    match ([0xA1, 0xA2, 0xA3].zip fields).find? (fun (s, _) => s == w) with
+    | some (_, n) => n
+    | none => if w != other.getD i 0 then "wasSource" else s!"const {w.toNat}"
+  s!"errorPayload {name} length {len}" ++
+    String.join ((List.range len).map fun i => s!" mr{i} {owner i}")
+
+private def errorPayloadLayoutLines : List String :=
+  [ errorPayloadLayoutLine "invalidCapability" ["capNumber"]
+      (fun _ a _ _ => .invalidCapability a)
+  , errorPayloadLayoutLine "invalidArgument" ["argNumber"]
+      (fun _ a _ _ => .invalidArgument a)
+  , errorPayloadLayoutLine "rangeError" ["rangeMin", "rangeMax"]
+      (fun _ a b _ => .rangeError a b)
+  , errorPayloadLayoutLine "untypedRegionExhausted" ["memoryLeft"]
+      (fun _ a _ _ => .untypedRegionExhausted a)
+  , errorPayloadLayoutLine "failedLookup.invalidRoot" []
+      (fun ws _ _ _ => .failedLookup ws .invalidRoot)
+  , errorPayloadLayoutLine "failedLookup.missingCapability" ["bitsLeft"]
+      (fun ws a _ _ => .failedLookup ws (.missingCapability a))
+  , errorPayloadLayoutLine "failedLookup.depthMismatch" ["bitsLeft", "bitsFound"]
+      (fun ws a b _ => .failedLookup ws (.depthMismatch a b))
+  , errorPayloadLayoutLine "failedLookup.guardMismatch" ["bitsLeft", "guardFound", "bitsFound"]
+      (fun ws a b c => .failedLookup ws (.guardMismatch a b c))
+  , errorPayloadLayoutLine "illegalState" [] (fun _ _ _ _ => .illegalState) ]
+
 /-- Which field of a move's CNode operation word owns bit `j`, decided by
 decoding `2^j` alone through the move's decode (`cnodeOpArgsOfWords`): a depth,
 or `reserved` where the decode refuses the bit (a move takes no rights). -/
@@ -1323,6 +1381,7 @@ private def abiLayoutTableLines : List String :=
          s!"syscallAbiVersion {Kernel.Architecture.syscallAbiVersion}" ]
     ++ (List.range 64).map (fun j => s!"cnodeCopyBit {j} {cnodeCopyBitOwner j}")
     ++ (List.range 64).map (fun j => s!"cnodeMoveBit {j} {cnodeMoveBitOwner j}")
+    ++ errorPayloadLayoutLines
 
 private def abiLayoutFixturePath : String := "tests/fixtures/abi_layout.expected"
 

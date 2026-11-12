@@ -1,7 +1,8 @@
 # WS-SX — seL4 ABI fidelity
 
 > **Workstream**: WS-SX (the syscall and invocation ABI made seL4's).
-> **Status**: **PLANNED** — registered at `v0.37.19` (this plan, docs only).
+> **Status**: **ACTIVE** — registered at `v0.37.19` (this plan, docs only);
+> SX1 landed at `v0.37.20`.
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX11, numbered in the order they are implemented, one PR each.
@@ -188,6 +189,14 @@ runs. Every reading a row does not name stays as it was. A sub-task's proofs
 land in that sub-task.
 
 ### SX1 — Error payloads (D2, D2b, D3)
+
+**LANDED at `v0.37.20`.** Payload fields are machine words (`UInt64`, seL4's
+`word_t`), so a refusal is its discriminant and five payload words. The routed
+entry report carries five word stacks beside its code stack, and the FFI words
+entry hands a refusal on as those words; the error is rebuilt only in the
+declassification ledger's records branch. The QEMU exerciser also runs
+`failed-lookup-guard-mismatch`, which checks x1–x5; its MR4 (`bitsFound`) goes to the
+buffer's `msg[4]`, which the scenario does not read.
 
 The label is unchanged until SX10.
 

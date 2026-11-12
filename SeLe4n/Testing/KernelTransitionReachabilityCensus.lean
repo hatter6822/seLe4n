@@ -1240,6 +1240,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.overflowOneOperandSpecR
   , `SeLe4n.Kernel.undoFillRefusal
   , `SeLe4n.Kernel.dispatchOverflowOneCheckedR
+  -- WS-SX SX1: the five-word invocations' arm as the continuation entry's
+  -- specification names it, which the compiled entry runs as
+  -- `overflowedRoutedArm` (`overflowedRoutedArm_eq`), now that the ABI entry
+  -- calls the routed entry directly (`syscallEntryRoutedWith_eq`); and the
+  -- boxed refusal's frame, which the ABI entry runs from the refusal's words
+  -- (`errorRefusalWordsW_eq`, D2b).
+  , `SeLe4n.Kernel.overflowedArmOf
+  , `SeLe4n.Platform.FFI.errorRefusalWords
   -- WS-ZA ZA6.31: specifications of in-place fault forms the entries run in
   -- their place: the checked delivery's (`faultDeliverCheckedWords_eq`) and a
   -- receive's take of a queued caller (`receiveCallTake_inPlace`,

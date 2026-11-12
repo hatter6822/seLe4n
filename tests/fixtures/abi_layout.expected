@@ -78,7 +78,7 @@ maxMessageRegisters 120
 maxExtraCaps 3
 maxLabel 4503599627370495
 errorLabelBase 4503599627370240
-syscallAbiVersion 4
+syscallAbiVersion 5
 cnodeCopyBit 0 destDepth
 cnodeCopyBit 1 destDepth
 cnodeCopyBit 2 destDepth
@@ -207,3 +207,12 @@ cnodeMoveBit 60 reserved
 cnodeMoveBit 61 reserved
 cnodeMoveBit 62 reserved
 cnodeMoveBit 63 reserved
+errorPayload invalidCapability length 1 mr0 capNumber
+errorPayload invalidArgument length 1 mr0 argNumber
+errorPayload rangeError length 2 mr0 rangeMin mr1 rangeMax
+errorPayload untypedRegionExhausted length 1 mr0 memoryLeft
+errorPayload failedLookup.invalidRoot length 2 mr0 wasSource mr1 const 1
+errorPayload failedLookup.missingCapability length 3 mr0 wasSource mr1 const 2 mr2 bitsLeft
+errorPayload failedLookup.depthMismatch length 4 mr0 wasSource mr1 const 3 mr2 bitsLeft mr3 bitsFound
+errorPayload failedLookup.guardMismatch length 5 mr0 wasSource mr1 const 4 mr2 bitsLeft mr3 guardFound mr4 bitsFound
+errorPayload illegalState length 0

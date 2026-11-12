@@ -2513,6 +2513,85 @@ fn abi_layout_matches_the_lean_table() {
         };
         rendered.push_str(&std::format!("cnodeMoveBit {j} {owner}\n"));
     }
+    // The error payload's message-register layout, measured as the Lean side
+    // measures it: each shape is built with the sentinels `0xA1`, `0xA2`,
+    // `0xA3` in its numeric fields, and MR `i` is owned by the field whose
+    // sentinel it holds, by `wasSource` when it moves with that flag alone, and
+    // is otherwise a constant (a lookup fault's type word).
+    type Build = fn(bool, u64, u64, u64) -> SyscallError;
+    let shapes: [(&str, &[&str], Build); 9] = [
+        ("invalidCapability", &["capNumber"], |_, a, _, _| {
+            SyscallError::InvalidCapability { cap_number: a }
+        }),
+        ("invalidArgument", &["argNumber"], |_, a, _, _| {
+            SyscallError::InvalidArgument { arg_number: a }
+        }),
+        ("rangeError", &["rangeMin", "rangeMax"], |_, a, b, _| {
+            SyscallError::RangeError { min: a, max: b }
+        }),
+        ("untypedRegionExhausted", &["memoryLeft"], |_, a, _, _| {
+            SyscallError::UntypedRegionExhausted { memory_left: a }
+        }),
+        ("failedLookup.invalidRoot", &[], |ws, _, _, _| {
+            SyscallError::FailedLookup {
+                was_source: ws,
+                fault: LookupFault::InvalidRoot,
+            }
+        }),
+        (
+            "failedLookup.missingCapability",
+            &["bitsLeft"],
+            |ws, a, _, _| SyscallError::FailedLookup {
+                was_source: ws,
+                fault: LookupFault::MissingCapability { bits_left: a },
+            },
+        ),
+        (
+            "failedLookup.depthMismatch",
+            &["bitsLeft", "bitsFound"],
+            |ws, a, b, _| SyscallError::FailedLookup {
+                was_source: ws,
+                fault: LookupFault::DepthMismatch {
+                    bits_left: a,
+                    bits_found: b,
+                },
+            },
+        ),
+        (
+            "failedLookup.guardMismatch",
+            &["bitsLeft", "guardFound", "bitsFound"],
+            |ws, a, b, c| SyscallError::FailedLookup {
+                was_source: ws,
+                fault: LookupFault::GuardMismatch {
+                    bits_left: a,
+                    guard_found: b,
+                    bits_found: c,
+                },
+            },
+        ),
+        ("illegalState", &[], |_, _, _, _| {
+            SyscallError::Code(KernelError::IllegalState)
+        }),
+    ];
+    for (name, fields, build) in shapes {
+        let (words, len) = build(true, 0xA1, 0xA2, 0xA3).payload();
+        let (other, _) = build(false, 0xA1, 0xA2, 0xA3).payload();
+        rendered.push_str(&std::format!("errorPayload {name} length {len}"));
+        for i in 0..len {
+            let w = words[i];
+            let owner = match [0xA1u64, 0xA2, 0xA3]
+                .iter()
+                .zip(fields.iter())
+                .find(|(s, _)| **s == w)
+            {
+                Some((_, n)) => std::string::String::from(*n),
+                None if w != other[i] => std::string::String::from("wasSource"),
+                None => std::format!("const {w}"),
+            };
+            rendered.push_str(&std::format!(" mr{i} {owner}"));
+        }
+        rendered.push('\n');
+    }
     assert_eq!(
         rendered, LEAN_TABLE,
         "the Rust MessageInfo layout or ABI bounds disagree with the Lean table; \

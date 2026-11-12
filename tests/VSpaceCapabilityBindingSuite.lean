@@ -1073,8 +1073,10 @@ private def runChildUntypedChecks : IO Unit := do
   assertBool "a frame with a non-zero size is refused (invalidArgument) — a frame is one page"
     (isErr (.invalidArgument 0) (dispatchSyscallAsCurrent
       (decodeCarve slotUtRetype (frameTag + 12 * 256) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
-  assertBool "a child larger than the parent's free region is refused (untypedRegionExhausted)"
-    (isErr (.untypedRegionExhausted 0) (dispatchSyscallAsCurrent
+  -- seL4's `NotEnoughMemory` answers the bytes the untyped has left: all of
+  -- its three pages (0x3000), nothing carved yet.
+  assertBool "a child larger than the parent's free region is refused (untypedRegionExhausted 0x3000)"
+    (isErr (.untypedRegionExhausted 0x3000) (dispatchSyscallAsCurrent
       (decodeCarve slotUtRetype (untypedTagOfSize 14) 970 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st))
   -- Carve a one-page child untyped into slot 12, a frame out of it into slot 13,
   -- and map the frame.
@@ -1315,8 +1317,8 @@ private def runFrameFinaliseChecks : IO Unit := do
     -- seL4's `Page_Map` on a capability whose mapping is live: another
     -- address is refused (`InvalidArgument`); its own address is a remap with
     -- the new rights, the record unchanged.
-    assertBool "a capability whose mapping is live cannot map at another address (invalidArgument)"
-      (isErr (.invalidArgument 0)
+    assertBool "a capability whose mapping is live cannot map at another address (invalidArgument 1, the address word)"
+      (isErr (.invalidArgument 1)
         (dispatchSyscallAsCurrent (decodeOwnMap 0x61000 slotCarved permsRWUC) carveOwner Concurrency.bootCoreId st))
     let va := SeLe4n.Testing.fixtureUserVAddr 0x60000
     match dispatchSyscallAsCurrent (decodeOwnMap 0x60000 slotCarved permsRUC) carveOwner Concurrency.bootCoreId st with

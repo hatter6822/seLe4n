@@ -1,3 +1,63 @@
+## v0.37.20 — error payloads and the `LookupFault` type
+
+WS-SX SX1 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D2, D2b, D3). A refusal
+now returns seL4's error payload in the message registers, in
+`setMRs_syscall_error`'s order. The label is unchanged until SX10.
+
+- **The payload codes.** `invalidCapability` carries the capability's number,
+  `invalidArgument` the argument's, `rangeError` its min and max, and
+  `untypedRegionExhausted` the memory left. Each field is a machine word
+  (`UInt64`), as seL4's are. `depthMismatch` retires into
+  `failedLookup (wasSource) (LookupFault)`, with seL4's four lookup faults:
+  `invalidRoot`, `missingCapability bitsLeft`, `depthMismatch bitsLeft
+  bitsFound` and `guardMismatch bitsLeft guardFound bitsFound`.
+- **Every site sets its number.** The decoders name the word that failed. A
+  VSpace remap at another ASID is `invalidCapability 1`, and one at another
+  address is `invalidArgument 1`. A page-table map whose root is not an
+  address space is `invalidCapability 1`. A carve the region cannot hold
+  answers its free bytes. A carve the kernel heap cannot hold answers the
+  heap's free bytes.
+- **The CNode operations refuse as seL4's do**, in `decodeCNodeInvocation`'s
+  order:
+  1. the destination's range, its walk and its emptiness;
+  2. the source root (`failedLookup true invalidRoot` when it is not a CNode);
+  3. the source's range and its walk;
+  4. an empty source (`failedLookup true (missingCapability srcDepth)`).
+
+  A walk that runs out of bits reports the guard before the depth, as
+  `resolveAddressBits` does.
+- **The frame** (`errorFrame`) carries the payload in x2–x5 and its length in
+  x1, as `setMR` returns it. A guard mismatch has a fifth word. It is written
+  to the caller's IPC buffer `msg[4]` when the buffer resolves
+  (`recordErrorOverflow`, D3). When the buffer does not resolve, the length
+  clamps to 4. `syscallAbiVersion` is 5.
+- **No refusal builds an error (D2b).** A routed arm pushes a refusal's
+  discriminant and its five payload words beside its report code. The words
+  go onto one stack per word (`MachineState.entryReportWord0`–`4`, radix
+  2^64), so a push followed by its pop is still the identity on every state.
+  The ABI entry hands a refusal to the caller's frame as those words
+  (`entryReportOutcomeW`, `abiEntryFinishW`, `errorRefusalWordsW`). It
+  rebuilds the error only where the declassification ledger records one.
+  `syscallEntryRoutedWith_eq` proves the routed entry equal to the continued
+  entry for any join point that keeps the report's three laws.
+- **Proofs.**
+  - `ofDiscriminant?_toDiscriminant` (the code round trip, the payload
+    erased).
+  - `ofPayloadWords_payloadWord` (an error is its discriminant and its words).
+  - `errorFrame_payload_roundtrip`.
+  - `errorFrame_x1_decodes`, which now gains the length.
+  - The boundary's error-path theorems are restated over the fifth word's
+    write. It moves only the physical-write ledger, and no return frame
+    (`readReturnFrame_recordErrorOverflow`).
+- **Rust.**
+  - `sele4n-types` gains `LookupFault` and `SyscallError` (code plus payload),
+    and `DepthMismatch` becomes `FailedLookup`.
+  - `sele4n-abi` gains `decode_error`.
+  - `SYSCALL_ABI_VERSION` is 5.
+  - The QEMU exerciser checks x2–x5, and gains `range-error-payload`,
+    `failed-lookup-depth-mismatch`, `failed-lookup-missing-source` and
+    `failed-lookup-guard-mismatch`.
+
 ## v0.37.19 — WS-SX registered: the seL4 ABI fidelity plan
 
 Docs only. No code changes. This registers WS-SX, which makes the syscall and

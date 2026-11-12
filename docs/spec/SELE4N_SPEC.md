@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.19` (`lakefile.toml`) |
+| **Package version** | `0.37.20` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 627,586 across 625 Lean files |
 | **Test LoC** | 89,492 across 70 Lean test suites |
@@ -3135,6 +3135,31 @@ bounded from both sides so it is the least strict upper bound.  Discriminant `37
 (the former `allocationMisaligned`) is retired and reserved
 (`retiredDiscriminants`, `ofDiscriminant?_retired`): it decodes to no error, in
 Lean and in Rust (`KernelError::RETIRED`), and is never reassigned (`v0.36.125`).
+
+**WS-SX SX1 (v0.37.20) — an error carries seL4's payload.**  Four
+`KernelError` constructors take seL4's fields as machine words (`UInt64`, seL4's
+`word_t`): `invalidArgument argNumber`, `invalidCapability capNumber`,
+`rangeError rangeMin rangeMax` and `untypedRegionExhausted memoryLeft`; and
+`failedLookup wasSource fault` (discriminant 60, formerly `depthMismatch`)
+carries a `LookupFault` — `invalidRoot`, `missingCapability bitsLeft`,
+`depthMismatch bitsLeft bitsFound`, `guardMismatch bitsLeft guardFound
+bitsFound`, seL4's `lookup_fault`.  `invalidArgument` names the argument's word
+index; a CNode invocation's refusals take seL4's lookup faults (an empty source
+is `failedLookup true (missingCapability srcDepth)`, `cnode.c`), and an untyped's
+`memoryLeft` is its free bytes.  The discriminant round trip is over codes, the
+payload ignored (`ofDiscriminant?_toDiscriminant` with `erasePayload`).  The
+error frame (`errorFrame`) writes the payload in seL4's message-register order,
+`setMRs_syscall_error` and `setMRs_lookup_failure`: MR0–MR3 in x2–x5, MR4 to the
+caller's IPC buffer at `msg[4]` when it has one, and the length in x1 as
+`setMR` returns it (`errorFrame_payload_roundtrip`, `errorFrame_x1_decodes`).
+The error path's frame theorem is restated: a refusal changes only the caller's
+`msg[4]`, and only on a five-word payload with a buffer.  A compiled refusal
+hands its payload on unboxed: the routed entry report keeps five word stacks
+beside its code stack (`entryReportWord0`–`entryReportWord4`), and the FFI
+words entry (`abiEntryFinishW`) builds the frame from the discriminant and the
+words, rebuilding the error only where the declassification ledger records it,
+so a refusal reads 0 heap cells.  `syscallAbiVersion` is 5; the Rust mirror is
+`sele4n_types::{LookupFault, SyscallError}` and `sele4n_abi::decode_error`.
 
 **WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
 A thread taken out of a blocking IPC has no value to receive, and both

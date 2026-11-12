@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — PLANNED (registered v0.37.19, plan only)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -138,7 +138,18 @@ capabilities (SX7), timeout faults with SetTimeoutEndpoint and SetSchedParams
 (SX10) and closure (SX11). Rows and decisions D1–D17 (each default taken, owner
 card open) are in
 [`SEL4_ABI_FIDELITY_PLAN.md`](../planning/SEL4_ABI_FIDELITY_PLAN.md). It
-supersedes WS-UC's "next PR" scope; SX1 is the next cut.
+supersedes WS-UC's "next PR" scope.
+
+SX1 (`v0.37.20`) gave every error seL4's payload: `LookupFault`, the payload
+fields as machine words (`UInt64`), `failedLookup` in place of `depthMismatch`,
+the error frame's x2–x5 in seL4's MR order with MR4 in the caller's buffer
+`msg[4]`, and `syscallAbiVersion` 5. **Standing constraints for new code:** a
+new refusal sets seL4's payload (the argument's word index for
+`invalidArgument`, the capability's number for `invalidCapability`); a compiled
+refusal hands its payload on as words (`entryReportOutcomeW`,
+`abiEntryFinishW`), never as a boxed `KernelError` built on the entry path;
+a new `KernelError` constructor's payload words are closed constants or
+`UInt64` fields. SX2 is the next cut.
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
