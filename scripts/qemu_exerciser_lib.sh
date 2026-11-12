@@ -810,9 +810,11 @@ for driver in drivers:
             "tcb-set-affinity-short", "tcb-set-fault-handler-short", "tcb-set-space-short",
             "irq-control-get-short", "irq-handler-set-notification-short",
             "audit-drain-short", "audit-read-short",
-            # WS-UC UC4: a carved CNode copied out of, revoked and retired.
-            "untyped-retype-owned-cnode", "owned-cnode-copy", "owned-cnode-revoke",
-            "owned-cnode-delete", "owned-cnode-untyped-reset",
+            # WS-UC UC4: a capability copied into a carved CNode and out of
+            # it, the CNode retired while the copy lives on.
+            "untyped-retype-owned-cnode", "owned-cnode-fill", "owned-cnode-copy-out",
+            "owned-cnode-slot-delete", "owned-cnode-delete", "owned-cnode-escaped-move",
+            "owned-cnode-escaped-delete", "owned-cnode-untyped-reset",
         }
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
@@ -993,12 +995,14 @@ for driver in drivers:
                 failures.append(f"heap-allocations-per-syscall: no pinned scenario deletes a carved {kind}'s capability before its carve runs again")
 
         # WS-UC UC4: a carve owns its cells, and its retire returns them.  The
-        # owned-CNode window runs a CNode's carve, a copy of its capability,
-        # the copy's revoke and the carved capability's delete, and reads this
-        # core's allocations and frees across all four: once in each run, the
-        # cells allocated and the cells freed are each the CNode's carve pin.
-        # A cell the carve shares with another object, or one the retire
-        # leaves behind or takes from another object, moves the frees off it.
+        # owned-CNode window runs a CNode's carve, a capability copied into
+        # one of its slots and out of it into a root slot, the carved slot's
+        # delete and the carved capability's delete (the copy out lives on),
+        # and reads this core's allocations and frees across all five: once
+        # in each run, the cells allocated and the cells freed are each the
+        # CNode's carve pin.  A cell the carve shares with another object, one
+        # the escaped copy keeps, or one the retire leaves behind or takes
+        # from another object, moves the frees off it.
         owned_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: owned-cnode-retire: core 0( \(first call\))?: allocated (\d+) freed (\d+)$")
         owned = [m for m in (owned_re.fullmatch(line) for line in lines) if m]
         owned_cnode = [carved.get(("untyped-retype-owned-cnode", first)) for first in (True, False)]

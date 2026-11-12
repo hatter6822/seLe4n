@@ -8386,15 +8386,20 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
 ];
 
 /// **WS-UC UC4: a carve owns its cells, and the retire returns them.**  A
-/// CNode carved, its capability copied out of it, the copy revoked (it is the
-/// carved capability's derivation child) and the carved capability deleted,
-/// which retires the CNode; then the boot untyped reset, so the next run
-/// carves where this one did.  Each step is a measured reading; across the
-/// first four, [`carved_cnode_retire`] also reads this core's frees, and the
+/// CNode carved and a capability (the boot endpoint's) copied into one of its
+/// slots; that capability copied out of the carved CNode into a root slot,
+/// where it outlives the CNode; the carved slot emptied (a CNode retires only
+/// once every slot is empty) and the carved capability deleted, which retires
+/// the CNode.  After the window the escaped copy is moved (refused with no
+/// capability in its slot, so its success shows the copy outlived the
+/// retire) and deleted, and the boot untyped reset, so the next run carves
+/// where this one did.  Each step is a measured reading; across the first
+/// five, [`carved_cnode_retire`] also reads this core's frees, and the
 /// host-side gate holds both the cells allocated and the cells freed to the
-/// CNode's carve pin: every cell the carve made, and no other, comes back.
+/// CNode's carve pin: every cell the carve made comes back, the escaped copy
+/// holding none of them, and no other.
 #[cfg(feature = "hw_target")]
-const CARVED_CNODE_RETIRE: [RoundTrip; 5] = [
+const CARVED_CNODE_RETIRE: [RoundTrip; 8] = [
     invocation(
         "untyped-retype-owned-cnode",
         UNTYPED_RETYPE,
@@ -8402,22 +8407,50 @@ const CARVED_CNODE_RETIRE: [RoundTrip; 5] = [
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
     ),
     invocation(
-        "owned-cnode-copy",
+        "owned-cnode-fill",
         CSPACE_COPY,
-        CNODE_CAP,
-        root_slot_copy(FRAME_SLOT, MOVE_SLOT),
+        cap_address(FRAME_SLOT),
+        [
+            CARVED_CNODE_SLOT,
+            cap_address(CNODE_SLOT),
+            cap_address(ENDPOINT_SLOT),
+            CARVED_CNODE_RADIX | (64 << 8) | (ALL_RIGHTS << 16),
+        ],
     ),
     invocation(
-        "owned-cnode-revoke",
-        CSPACE_REVOKE,
+        "owned-cnode-copy-out",
+        CSPACE_COPY,
         CNODE_CAP,
-        [FRAME_SLOT, 0, 0, 0],
+        [
+            cap_address(MOVE_SLOT),
+            cap_address(FRAME_SLOT),
+            CARVED_CNODE_SLOT,
+            64 | (CARVED_CNODE_RADIX << 8) | (ALL_RIGHTS << 16),
+        ],
+    ),
+    invocation(
+        "owned-cnode-slot-delete",
+        CSPACE_DELETE,
+        cap_address(FRAME_SLOT),
+        [CARVED_CNODE_SLOT, 0, 0, 0],
     ),
     invocation(
         "owned-cnode-delete",
         CSPACE_DELETE,
         CNODE_CAP,
         [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "owned-cnode-escaped-move",
+        CSPACE_MOVE,
+        CNODE_CAP,
+        root_slot_pair(MOVE_SLOT, MINT_SLOT),
+    ),
+    invocation(
+        "owned-cnode-escaped-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MINT_SLOT, 0, 0, 0],
     ),
     invocation(
         "owned-cnode-untyped-reset",
@@ -8427,9 +8460,24 @@ const CARVED_CNODE_RETIRE: [RoundTrip; 5] = [
     ),
 ];
 
+/// The carved CNode's radix ([`CNODE_TYPE`]'s size bits; the carve gives it
+/// no guard), the depth that names one of its slots from its own capability.
+#[cfg(feature = "hw_target")]
+const CARVED_CNODE_RADIX: u64 = CNODE_TYPE >> 8;
+
+/// The carved CNode's slot the escaping capability is copied through.
+#[cfg(feature = "hw_target")]
+const CARVED_CNODE_SLOT: u64 = 1;
+
+/// The steps of [`CARVED_CNODE_RETIRE`] its window reads across: the carve to
+/// the retire.
+#[cfg(feature = "hw_target")]
+const CARVED_CNODE_WINDOW: usize = 5;
+
 /// The carve-to-retire window of [`CARVED_CNODE_RETIRE`]: its steps measured
-/// one by one, and across the carve, the copy, the revoke and the delete this
-/// core's allocations and frees, read under one mask so no tick's cells are
+/// one by one, and across the carve, the fill, the copy out, the slot's
+/// delete and the carved capability's delete this core's allocations and
+/// frees, read under one mask so no tick's cells are
 /// charged to it.  Printed as `owned-cnode-retire: … allocated A freed F`;
 /// the host-side gate holds `A` and `F` each to the CNode's carve pin.
 #[cfg(feature = "hw_target")]
@@ -8442,7 +8490,7 @@ fn carved_cnode_retire(which: &str) -> Option<bool> {
     };
     let saved = crate::interrupts::disable_interrupts();
     let before = read();
-    let (window, rest) = CARVED_CNODE_RETIRE.split_at(4);
+    let (window, rest) = CARVED_CNODE_RETIRE.split_at(CARVED_CNODE_WINDOW);
     let mut ok = window
         .iter()
         .all(|step| heap_allocations_round_trip(step, which) == Some(true));
