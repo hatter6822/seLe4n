@@ -361,7 +361,7 @@ for driver in drivers:
             "refill-yield", "reply", "reply-cap-delete", "reply-cap-mint",
             "reply-cap-mint-over-copy", "reply-cap-over-copy-delete", "reply-delete",
             "reply-queued-fault", "reply-recv", "reply-to-badged-call", "reschedule-sgi",
-            "resume-carved-tcb", "resume-shared-tcb", "root-set-ipc-buffer",
+            "resume-carved-tcb", "resume-shared-tcb", "root-ipc-buffer-back", "root-set-ipc-buffer",
             "sched-context-bind", "sched-context-configure", "sched-context-consumed",
             "sched-context-consumed-reset", "sched-context-rebind", "sched-context-unbind",
             "sched-context-unbind-suspended", "sched-context-unbind-waiting",
