@@ -47,7 +47,7 @@ line's interrupt node. -/
 @[inline] def Capability.namesObjectWord (c : Capability) (o : Nat) : Bool :=
   match c.target with
   | .object x => x.val == o
-  | .cnodeSlot cn _ => cn.val == o
+  | .cnodeSlotWord word => (SeLe4n.Model.CapTarget.wordCnode word).val == o
   | .replyCap r => r.toNat == o
   | .auditTrail _ => false
   | .schedControl _ => false
@@ -59,7 +59,9 @@ theorem Capability.namesObjectWord_iff (c : Capability) (o : SeLe4n.ObjId) :
   unfold Capability.namesObjectWord Capability.namedObject
   cases c.target with
   | object x => cases x; cases o; simp
-  | cnodeSlot cn _ => cases cn; cases o; simp
+  | cnodeSlotWord w =>
+    cases o; simp only [beq_iff_eq, Option.some.injEq]
+    exact ⟨fun h => by rw [← h], fun h => by rw [h]⟩
   | replyCap r =>
     cases o
     simp only [SeLe4n.ReplyId.toObjId, SeLe4n.ObjId.ofNat, Option.some.injEq, SeLe4n.ObjId.mk.injEq,
@@ -99,7 +101,7 @@ def capIsFinal (st : SystemState) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) : 
   | some c =>
     match c.target with
     | .object x => st.linksMissObject ⟨cnode, slot⟩ x.val
-    | .cnodeSlot cn _ => st.linksMissObject ⟨cnode, slot⟩ cn.val
+    | .cnodeSlotWord word => st.linksMissObject ⟨cnode, slot⟩ (SeLe4n.Model.CapTarget.wordCnode word).val
     | .replyCap rp => st.linksMissObject ⟨cnode, slot⟩ rp.toNat
     | .auditTrail _ => true
     | .schedControl _ => true
@@ -156,7 +158,7 @@ theorem capIsFinal_eq_true_iff_links (st : SystemState) (r : SlotRef) :
     unfold Capability.namedObject
     cases c.target with
     | object x => simpa using linksMissObject_iff st r x
-    | cnodeSlot cn _ => simpa using linksMissObject_iff st r cn
+    | cnodeSlotWord w => simpa using linksMissObject_iff st r (CapTarget.wordCnode w)
     | replyCap rp => simpa using linksMissObject_iff st r rp.toObjId
     | auditTrail _ => simp
     | schedControl _ => simp

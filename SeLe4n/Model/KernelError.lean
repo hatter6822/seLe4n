@@ -37,7 +37,7 @@ is what makes it placeable below every consumer.
 
 namespace SeLe4n.Model
 
-/-- F-04: Kernel error codes. This inductive has 57 variants.
+/-- F-04: Kernel error codes. This inductive has 60 variants.
 **Coding convention**: Prefer explicit match arms over `| _ =>` catch-all
 patterns when matching on `KernelError`. Lean's exhaustiveness checker will
 flag missing arms at compile time, but catch-all patterns silently swallow
@@ -211,6 +211,21 @@ inductive KernelError where
                            -- any argument is read, as seL4's `decode*Invocation`
                            -- answers `length < n`.  The model's own discriminant
                            -- (58), not seL4's numeric code.
+  | rangeError            -- seL4's `seL4_RangeError`: an invocation argument
+                           -- outside the range its operation admits — a CNode
+                           -- operation's depth outside `1 .. 64` (seL4's
+                           -- `rangeCheck` in `lookupSlotForCNodeOp`), refused
+                           -- before the lookup it would bound.  The model's own
+                           -- discriminant (59); seL4 also returns the range's
+                           -- bounds, which this kernel's error return does not
+                           -- carry.
+  | depthMismatch         -- seL4's `seL4_FailedLookup` with a depth-mismatch
+                           -- lookup fault: a CNode operation's address that,
+                           -- resolved to its stated depth, stops at a slot whose
+                           -- capability is no CNode with bits still to resolve, or
+                           -- reaches a CNode whose level needs more bits than
+                           -- remain (`resolveCNodeOpSlot`).  The model's own
+                           -- discriminant (60).
   deriving Repr, DecidableEq
 
 end SeLe4n.Model

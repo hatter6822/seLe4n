@@ -1542,7 +1542,8 @@ passing `cap` as a literal never builds it. -/
       cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex)
     (fun r => Capability.overwrite_eq _ _ _ _ _ _ _ _ _ _)
     (fun _ => Capability.ofFields cap.target cap.rights cap.badgeWord cap.badged cap.mapAsid
-      cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex) rfl h a
+      cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex) (Capability.ofFields_eq _ _ _ _ _ _ _ _ _)
+    h a
 
 theorem insertCellFrom_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) :

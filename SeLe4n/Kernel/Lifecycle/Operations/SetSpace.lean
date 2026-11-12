@@ -200,7 +200,7 @@ theorem capabilityCellOver_eq (o : Option Capability) (target : CapTarget)
   · rw [Capability.overwriteObject_eq]
   · rfl
   · rw [Capability.overwrite_eq]
-  · rfl
+  · rw [Capability.ofFields_eq]
 
 /-- **Slot `s` of `t` written with the capability of `target` and `rights`
 alone, over the spare record `a` keeps for it** (`TCB.spaceSpare`): the record

@@ -198,17 +198,18 @@ private def row_objectNotFound_ipcBuffer_missing_tcb : KernelErrorRejection :=
         (default : SystemState) (ThreadId.ofNat 1)
         (SeLe4n.VAddr.ofNat 0x400) }
 
-/-- Row: `decodeCSpaceMintArgs` rejects rights > 0x1F with
+/-- Row: `decodeCSpaceMintArgs` rejects a word of the depths and the rights
+mask with a bit set past the mask (bit 21, `CNodeOpWord.rightsFits`) with
 `.invalidArgument`. -/
 private def row_invalidArgument_mint_rights : KernelErrorRejection :=
   { syscall       := "decodeCSpaceMintArgs"
     expectedError := .invalidArgument
     scenarioTag   := "AN11A.2.invalidArgument.mint_rights"
-    scenarioDesc  := "AK4-E: cspaceMint args rejected when rights word" ++
-                     " exceeds 0x1F (5-bit AccessRightSet width)"
+    scenarioDesc  := "AK4-E: cspaceMint args rejected when the word of the" ++
+                     " depths and the rights mask sets a bit past the mask"
     runScenario   := fun _ =>
       runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs (mkDecoded
-        #[rv 0, rv 1, rv 0x20, rv 0])) }
+        #[rv 0, rv 1, rv 0, rv (0x200000 + 0x4040), rv 0])) }
 
 /-- Row: `decodeSyscallId` rejects an unknown syscall number with
 `.invalidSyscallNumber`. -/

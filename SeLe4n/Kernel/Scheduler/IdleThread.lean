@@ -169,7 +169,7 @@ theorem isIdleObjId_idleThreadId_toObjId (c : CoreId) :
 def capTargetsReservedKernelObject (cap : SeLe4n.Model.Capability) : Bool :=
   match cap.target with
   | .object oid => isReservedKernelObjId oid
-  | .cnodeSlot cnode _ => isReservedKernelObjId cnode
+  | .cnodeSlotWord word => isReservedKernelObjId (SeLe4n.Model.CapTarget.wordCnode word)
   | .replyCap _ => false
   | .auditTrail _ => false
   | .schedControl _ => false
@@ -196,7 +196,8 @@ theorem capTargetsReservedKernelObject_irqNode (cap : SeLe4n.Model.Capability) {
     capTargetsReservedKernelObject cap = true := by
   have hN := SeLe4n.Model.isIrqNodeObjId_irqNodeId (count := SeLe4n.InterruptLineSet.capacity) hLine
   rcases hNames with h | ⟨s, h⟩ <;>
-    simp [capTargetsReservedKernelObject, h, isReservedKernelObjId, hN]
+    simp [capTargetsReservedKernelObject, h, isReservedKernelObjId, hN,
+      SeLe4n.Model.CapTarget.cnodeSlot]
 
 /-- **WS-RR RR5.13**: a slot the recogniser rejects is no core's idle slot. -/
 theorem idleThreadId_toObjId_ne_of_not_isIdleObjId (oid : SeLe4n.ObjId)

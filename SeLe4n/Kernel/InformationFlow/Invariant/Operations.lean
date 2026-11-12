@@ -337,17 +337,17 @@ theorem notificationSignalChecked_NI
 Replaces the prior hypothesis-accepting version. -/
 private theorem cspaceCopyChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
-    (src dst : CSpaceAddr)
+    (src dst : CSpaceAddr) (mask : AccessRightSet)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hProjection : ∀ t t', cspaceCopy src dst t = .ok ((), t') →
+    (hProjection : ∀ t t', cspaceCopy src dst mask t = .ok ((), t') →
         projectState ctx observer t' = projectState ctx observer t)
-    (hStep₁ : cspaceCopyChecked ctx src dst s₁ = .ok ((), s₁'))
-    (hStep₂ : cspaceCopyChecked ctx src dst s₂ = .ok ((), s₂')) :
+    (hStep₁ : cspaceCopyChecked ctx src dst mask s₁ = .ok ((), s₁'))
+    (hStep₂ : cspaceCopyChecked ctx src dst mask s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  have hFlow := enforcementSoundness_cspaceCopyChecked ctx src dst s₁ s₁' hStep₁
-  rw [cspaceCopyChecked_eq_cspaceCopy_when_allowed ctx src dst s₁ hFlow] at hStep₁
-  rw [cspaceCopyChecked_eq_cspaceCopy_when_allowed ctx src dst s₂ hFlow] at hStep₂
+  have hFlow := enforcementSoundness_cspaceCopyChecked ctx src dst mask s₁ s₁' hStep₁
+  rw [cspaceCopyChecked_eq_cspaceCopy_when_allowed ctx src dst mask s₁ hFlow] at hStep₁
+  rw [cspaceCopyChecked_eq_cspaceCopy_when_allowed ctx src dst mask s₂ hFlow] at hStep₂
   unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
 
 /-- R5-A/M-01: cspaceMoveChecked NI — projection-based (internalized).
@@ -1212,35 +1212,35 @@ cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)
 + CDT.addEdge between the two slots (CDT only). -/
 theorem cspaceCopy_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (src dst : CSpaceAddr) (st st' : SystemState)
+    (src dst : CSpaceAddr) (mask : AccessRightSet) (st st' : SystemState)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hObjInv : st.objects.invExt)
-    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    (hStep : cspaceCopy src dst mask st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨cap, stIns, -, -, hInsert, -, rfl⟩ := cspaceCopy_ok_decompose hStep
   have hInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst _ hObjInv hInsert
   rw [untypedSourceSetFull_preserves_projection ctx observer _ src cap hSrcHigh
       ((SystemState.cdtAddChild_agreeObjects hInvIns src dst .copy).2),
     projectState_cdtAddChild ctx observer _ _ _ _ hInvIns,
-    cspaceInsertSlot_preserves_projection ctx observer dst cap.withoutMapping st stIns hDstHigh
+    cspaceInsertSlot_preserves_projection ctx observer dst (cap.maskRights mask).withoutMapping st stIns hDstHigh
       hObjInv hInsert]
 
 /-- WS-H9: cspaceCopy preserves low-equivalence. -/
 private theorem cspaceCopy_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
-    (src dst : CSpaceAddr) (s₁ s₂ s₁' s₂' : SystemState)
+    (src dst : CSpaceAddr) (mask : AccessRightSet) (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
-    (hStep₁ : cspaceCopy src dst s₁ = .ok ((), s₁'))
-    (hStep₂ : cspaceCopy src dst s₂ = .ok ((), s₂')) :
+    (hStep₁ : cspaceCopy src dst mask s₁ = .ok ((), s₁'))
+    (hStep₂ : cspaceCopy src dst mask s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
-    cspaceCopy_preserves_projection ctx observer src dst s₁ s₁' hSrcHigh hDstHigh hObjInv₁ hStep₁,
-    cspaceCopy_preserves_projection ctx observer src dst s₂ s₂' hSrcHigh hDstHigh hObjInv₂ hStep₂]
+    cspaceCopy_preserves_projection ctx observer src dst mask s₁ s₁' hSrcHigh hDstHigh hObjInv₁ hStep₁,
+    cspaceCopy_preserves_projection ctx observer src dst mask s₂ s₂' hSrcHigh hDstHigh hObjInv₂ hStep₂]
   exact hLow
 
 /-- WS-H9: cspaceMove at non-observable CNodes preserves projection. -/

@@ -112,11 +112,12 @@ noncomputable def dispatchOverflowedCheckedR (ctx : LabelingContext) (sid : Sysc
   match sid with
   | .schedContextConfigure => dispatchConfigureCheckedR capAddr rf w tid executingCore
   | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr rf w tid executingCore
+  | .cspaceMint => dispatchMintCheckedR ctx capAddr rf w tid executingCore
   | _ => fun st => .error (.illegalState, st)
 
 /-- The syscalls `routedOverflowOne` admits: the five-word invocations. -/
 theorem routedOverflowOne_cases {sid : SyscallId} (h : routedOverflowOne sid = true) :
-    sid = .schedContextConfigure ∨ sid = .serviceRegister := by
+    sid = .schedContextConfigure ∨ sid = .serviceRegister ∨ sid = .cspaceMint := by
   cases sid <;> simp_all [routedOverflowOne]
 
 /-- **The overflowed route's operand arm**: the arm `dispatchOverflowedCheckedR`
@@ -129,6 +130,7 @@ noncomputable def overflowedArmOf (ctx : LabelingContext) (sid : SyscallId)
   match sid with
   | .schedContextConfigure => configureOperandArmR rf w tid
   | .serviceRegister => serviceRegisterOperandArmR ctx tid rf w
+  | .cspaceMint => mintOperandArmR ctx tid rf w
   | _ => fun _ st => .error (.invalidCapability, st)
 
 /-- Every overflowed call is the operand dispatch of its arm. -/
@@ -138,7 +140,7 @@ theorem dispatchOverflowedCheckedR_eq_operand (ctx : LabelingContext) (sid : Sys
     (h : routedOverflowOne sid = true) :
     dispatchOverflowedCheckedR ctx sid capAddr rf w tid executingCore =
       dispatchOperandCheckedR capAddr tid executingCore (overflowedArmOf ctx sid rf w tid) := by
-  rcases routedOverflowOne_cases h with rfl | rfl <;> rfl
+  rcases routedOverflowOne_cases h with rfl | rfl | rfl <;> rfl
 
 /-- The overflowed arm refuses a missing operand as the operand check does. -/
 theorem overflowedArmOf_none (ctx : LabelingContext) (sid : SyscallId)
@@ -179,10 +181,12 @@ theorem dispatchOverflowedCheckedR_eq (ctx : LabelingContext) (S : SystemState)
         st := by
   refine congrFun ?_ st
   have hA5 := overflowedDecode_agree S tid rf sid capAddr mi hLen
-  rcases routedOverflowOne_cases hRt with rfl | rfl
+  rcases routedOverflowOne_cases hRt with rfl | rfl | rfl
   · exact dispatchConfigureCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
       executingCore rfl hA5 (show 5 ≤ mi.length by omega)
   · exact dispatchServiceRegisterCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
+      executingCore rfl hA5 (show 5 ≤ mi.length by omega)
+  · exact dispatchMintCheckedR_eq ctx (overflowedDecode S tid rf _ capAddr mi) rf _ tid
       executingCore rfl hA5 (show 5 ≤ mi.length by omega)
 
 /-! ## An invocation short of its arguments (seL4's `seL4_TruncatedMessage`) -/
@@ -224,7 +228,8 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
     have hL := fun k => @requireMessageLength_of_lt decoded k <;>
     cases target <;>
     simp only [hS, truncationTarget, ↓reduceIte, Bool.false_eq_true, Option.some.injEq,
-      decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs, decodeCSpaceDeleteArgs,
+      decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs, decodeMintReplyCapArgs,
+      decodeCSpaceDeleteArgs,
       decodeUntypedRetypeArgs, decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
       decodeVSpaceUnifyInstructionArgs, decodeServiceRegisterArgs,
       decodeSchedContextConfigureArgsChecked, decodeSchedContextConfigureArgs,
@@ -285,6 +290,7 @@ theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallD
       all_goals first
         | exact applySyscallTaintAfter_configure st tid decoded h pe pl pt post
         | exact applySyscallTaintAfter_serviceRegister st tid decoded h pe pl pt post
+        | exact applySyscallTaintAfter_cspaceMint st tid decoded h pe pl pt post
     · exact applySyscallTaintAfter_routed st tid decoded hI pe pl pt post
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb rootCn ref _ _ hRef

@@ -592,12 +592,12 @@ to an unrestricted domain; the wrapper gates on `securityFlowsTo`.
 Returns `flowDenied` when `securityFlowsTo srcLabel dstLabel = false`. -/
 def cspaceCopyChecked
     (ctx : LabelingContext)
-    (src dst : CSpaceAddr) : Kernel Unit :=
+    (src dst : CSpaceAddr) (mask : AccessRightSet) : Kernel Unit :=
   fun st =>
     let srcLabel := ctx.objectLabelOf src.cnode
     let dstLabel := ctx.objectLabelOf dst.cnode
     if securityFlowsTo srcLabel dstLabel then
-      cspaceCopy src dst st
+      cspaceCopy src dst mask st
     else
       .error .flowDenied
 

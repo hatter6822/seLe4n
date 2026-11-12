@@ -276,8 +276,35 @@ rewrites it there.
   - The pins are unchanged.
   - Every other reading stays 0.
 
-### UC4 — A carve owns its cells, and no pass moves them
+### UC4 — A carve owns its cells, and no pass moves them — **LANDED `v0.37.17`**
 
+- **Done.** `CapTarget.copyOver` writes any source into the destination's
+  own target cell whatever either names (`CapTarget.over`): every target
+  constructor carries one word, a CNode slot's pair packed into one
+  (`CapTarget.cnodeSlotWord`, `SeLe4n.pairWords`); `copyOver_eq` still holds.  `Capability.ofFields`, the
+  record the no-spare build path of `insertCellWith` stores, builds its target
+  afresh (`CapTarget.fresh`, `fresh_eq`, `Capability.ofFields_eq`), so a minted
+  reply capability no longer holds the reply object's own target cell.  In
+  `insertCellLoop` the displacement arm moves the displaced entry
+  (`RHEntry.bumpDist`) and the present-key arm writes the slot's own entry
+  (`RHEntry.withValue`); `insertCellLoop_eq` still holds.  A scan of the
+  generated C found three more reuse sites that filled one cell with
+  another's fields, each now out of line and joined by `@[csimp]`: the queue
+  unlink's neighbour writes (`queueUnlinkPredecessor_eq_impl`,
+  `queueUnlinkSuccessor_eq_impl`) and the slot lookup's result
+  (`cspaceLookupSlot_eq_impl`).  The scan is not kept (owner decision, see
+  the scanner item below).  Each fix is a fast form proven equal to its
+  specification; that it owns its cell is how it is written, checked for
+  `copyOver` by cell address in `ModelIntegritySuite` and for a CNode's
+  carve-to-retire by the window below.  The
+  heap counts frees per core (`kernel_frees_on`), and the owned-CNode window
+  (carve, a capability copied into the carved CNode and out of it into a root
+  slot, the carved slot's delete and the carved capability's delete, the
+  escaped copy living on past the retire) allocates and frees 23 cells, the cnode/2 pin,
+  in both runs.  Measured, no pin rises: UC1 attributed no cell to sharing,
+  and the exercised carves already built every cell they hold (the shared
+  target was reachable only on the no-spare build path and the `.cnodeSlot`
+  arm, which no pinned scenario takes).  Readings: CHANGELOG `v0.37.17`.
 - **Work.**
   - `CapTarget.copyOver` builds its own cell in its last two arms, the
     `.cnodeSlot` arm and the destination that is not one-field (F5). Proof:
@@ -291,6 +318,12 @@ rewrites it there.
     built for one key or object into a cell taken from another. The ZA6.31
     scanner is not in the tree; it lives only in that audit's evidence. This
     row commits one, and tests it by breaking the relation (CLAUDE.md).
+    *Dropped (owner decision):* a scan that traces fields only within one
+    function cannot decide a field that comes from a parameter or a call
+    result, and refusing those fails 181 real sites (in-place updates
+    through a helper, the in-place copy itself, list loops) that no source
+    change inside one function resolves.  The claim rests on the proofs of
+    the fixes and on the owned-CNode window.
 - **Cells.** Every target cell, spare record and entry cell a carve builds is
   that carve's own, and no later operation moves it into another object.
 - **Boundary.** The arm that changes is the non-one-field destination over a
@@ -299,8 +332,9 @@ rewrites it there.
   - The cnode/2 pin, and any other pin that held a shared cell, rises by the
     cells UC1 attributed to sharing.
   - A new reading: carve a CNode, copy a capability out of it, then delete and
-    revoke it. The cells it frees equal its pin.
-  - The scanner reports 0 hits on the tree.
+    revoke it. The cells it frees equal its pin. *Met:* the copy out
+    outlives the retire, and the window frees 23, the cnode/2 pin.
+  - The scanner reports 0 hits on the tree. *Dropped with the scanner.*
   - Every other reading stays 0.
 
 ### UC5 — The region allocator, inert (Rust)

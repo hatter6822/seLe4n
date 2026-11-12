@@ -1213,6 +1213,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchAuditedCheckedR
   , `SeLe4n.Kernel.dispatchConfigureCheckedR
   , `SeLe4n.Kernel.dispatchServiceRegisterCheckedR
+  , `SeLe4n.Kernel.dispatchMintCheckedR
   , `SeLe4n.Kernel.dispatchOverflowedCheckedR
   , `SeLe4n.Kernel.dispatchOperandCheckedR
   -- The long call's, reply's and reply-receive's and the capability-carrying

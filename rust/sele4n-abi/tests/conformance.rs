@@ -106,30 +106,40 @@ fn xval_004_endpoint_reply() {
 // CSpace syscalls (RUST-XVAL-005 through RUST-XVAL-008)
 // ============================================================================
 
-/// RUST-XVAL-005: CSpace mint register layout.
+/// RUST-XVAL-005: CSpace mint register layout: a copy's four words, and the
+/// badge in the IPC buffer's overflow slot 0 (message register 4).  The Lean
+/// side's XVAL-003 encodes the same arguments to the same five words.
 #[test]
 fn xval_005_cspace_mint() {
     let args = cspace::CSpaceMintArgs {
-        src_slot: Slot::from(10u64),
-        dst_slot: Slot::from(20u64),
-        rights: AccessRights::try_from(0x07u8).unwrap(), // read|write|grant
+        copy: cspace::CSpaceCopyArgs {
+            slots: cspace::CNodeOpArgs {
+                dest_index: CPtr::from(10u64),
+                src_root: CPtr::from(3u64),
+                src_index: CPtr::from(20u64),
+                dest_depth: 64,
+                src_depth: 64,
+            },
+            rights: AccessRights::try_from(0x07u8).unwrap(), // read|write|grant
+        },
         badge: Badge::from(999u64),
     };
     let encoded = args.encode();
+    assert_eq!(encoded, [10, 3, 20, 64 | (64 << 8) | (7 << 16), 999]);
     let req = SyscallRequest {
         cap_addr: CPtr::from(500u64),
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
-        msg_regs: encoded,
+        msg_info: MessageInfo::new(5, 0, 0).unwrap(),
+        msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceMint,
     };
     verify_regs(
         &req,
         &[
             (0, 500, "x0=CPtr"),
-            (2, 10, "x2=srcSlot"),
-            (3, 20, "x3=dstSlot"),
-            (4, 0x07, "x4=rights"),
-            (5, 999, "x5=badge"),
+            (2, 10, "x2=destIndex"),
+            (3, 3, "x3=srcRoot"),
+            (4, 20, "x4=srcIndex"),
+            (5, 64 | (64 << 8) | (7 << 16), "x5=depths|rights<<16"),
             (6, 4, "x7=SyscallId::CSpaceMint"),
         ],
     );
@@ -139,21 +149,33 @@ fn xval_005_cspace_mint() {
 #[test]
 fn xval_006_cspace_copy() {
     let args = cspace::CSpaceCopyArgs {
-        src_slot: Slot::from(5u64),
-        dst_slot: Slot::from(15u64),
+        slots: cspace::CNodeOpArgs {
+            dest_index: CPtr::from(15u64),
+            src_root: CPtr::from(3u64),
+            src_index: CPtr::from(5u64),
+            dest_depth: 64,
+            src_depth: 8,
+        },
+        rights: AccessRights::try_from(0x03u8).unwrap(),
     };
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(600u64),
-        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
-        msg_regs: [encoded[0], encoded[1], 0, 0],
+        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
+        msg_regs: encoded,
         syscall_id: SyscallId::CSpaceCopy,
     };
     verify_regs(
         &req,
         &[
-            (2, 5, "x2=srcSlot"),
-            (3, 15, "x3=dstSlot"),
+            (2, 15, "x2=destIndex"),
+            (3, 3, "x3=srcRoot"),
+            (4, 5, "x4=srcIndex"),
+            (
+                5,
+                64 | (8 << 8) | (3 << 16),
+                "x5=destDepth|srcDepth<<8|rights<<16",
+            ),
             (6, 5, "x7=SyscallId::CSpaceCopy"),
         ],
     );
@@ -163,21 +185,26 @@ fn xval_006_cspace_copy() {
 #[test]
 fn xval_007_cspace_move() {
     let args = cspace::CSpaceMoveArgs {
-        src_slot: Slot::from(7u64),
-        dst_slot: Slot::from(14u64),
+        dest_index: CPtr::from(14u64),
+        src_root: CPtr::from(3u64),
+        src_index: CPtr::from(7u64),
+        dest_depth: 64,
+        src_depth: 8,
     };
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(700u64),
-        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
-        msg_regs: [encoded[0], encoded[1], 0, 0],
+        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
+        msg_regs: encoded,
         syscall_id: SyscallId::CSpaceMove,
     };
     verify_regs(
         &req,
         &[
-            (2, 7, "x2=srcSlot"),
-            (3, 14, "x3=dstSlot"),
+            (2, 14, "x2=destIndex"),
+            (3, 3, "x3=srcRoot"),
+            (4, 7, "x4=srcIndex"),
+            (5, 64 | (8 << 8), "x5=destDepth|srcDepth<<8"),
             (6, 6, "x7=SyscallId::CSpaceMove"),
         ],
     );
@@ -563,13 +590,13 @@ fn live_syscall_numbers() -> impl Iterator<Item = u64> {
     (0..SyscallId::ENCODING_BOUND).filter(|n| !SyscallId::RETIRED.contains(n))
 }
 
-/// Verify KernelError roundtrip for every variant (0–58).
+/// Verify KernelError roundtrip for every variant (0–60).
 /// WS-SM SM9.C.1: DeclassificationDeniedAtReceiver at 56 extends SM9.A.2's
 /// range of 0..=55 (which extended SM8.C.9's range of 0..=54).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    // 59 discriminants (0–58), TruncatedMessage at 58.
-    for i in 0..=58u32 {
+    // 61 discriminants (0–60), DepthMismatch at 60.
+    for i in 0..=60u32 {
         if KernelError::RETIRED.contains(&i) {
             assert!(KernelError::from_u32(i).is_none(), "retired {i} decoded");
             continue;
@@ -578,7 +605,7 @@ fn kernel_error_exhaustive_roundtrip() {
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(59).is_none());
+    assert!(KernelError::from_u32(61).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 10 variants (0–9, including SchedContext,
@@ -596,9 +623,16 @@ fn type_tag_exhaustive_roundtrip() {
 #[test]
 fn cspace_args_roundtrip_all() {
     let mint = cspace::CSpaceMintArgs {
-        src_slot: Slot::from(1u64),
-        dst_slot: Slot::from(2u64),
-        rights: AccessRights::try_from(0x1Fu8).unwrap(),
+        copy: cspace::CSpaceCopyArgs {
+            slots: cspace::CNodeOpArgs {
+                dest_index: CPtr::from(2u64),
+                src_root: CPtr::from(1u64),
+                src_index: CPtr::from(1u64),
+                dest_depth: 64,
+                src_depth: 64,
+            },
+            rights: AccessRights::try_from(0x1Fu8).unwrap(),
+        },
         badge: Badge::from(0xDEADu64),
     };
     assert_eq!(
@@ -607,8 +641,14 @@ fn cspace_args_roundtrip_all() {
     );
 
     let copy = cspace::CSpaceCopyArgs {
-        src_slot: Slot::from(3u64),
-        dst_slot: Slot::from(4u64),
+        slots: cspace::CNodeOpArgs {
+            dest_index: CPtr::from(4u64),
+            src_root: CPtr::from(1u64),
+            src_index: CPtr::from(3u64),
+            dest_depth: 64,
+            src_depth: 64,
+        },
+        rights: AccessRights::ALL,
     };
     assert_eq!(
         cspace::CSpaceCopyArgs::decode(&copy.encode()).unwrap(),
@@ -616,8 +656,11 @@ fn cspace_args_roundtrip_all() {
     );
 
     let mv = cspace::CSpaceMoveArgs {
-        src_slot: Slot::from(5u64),
-        dst_slot: Slot::from(6u64),
+        dest_index: CPtr::from(6u64),
+        src_root: CPtr::from(1u64),
+        src_index: CPtr::from(5u64),
+        dest_depth: 1,
+        src_depth: 2,
     };
     assert_eq!(cspace::CSpaceMoveArgs::decode(&mv.encode()).unwrap(), mv);
 
@@ -879,8 +922,8 @@ fn access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn kernel_error_non_exhaustive() {
-    // 59 discriminants (0–58) roundtrip, TruncatedMessage at 58.
-    for i in 0..=58u32 {
+    // 61 discriminants (0–60) roundtrip, DepthMismatch at 60.
+    for i in 0..=60u32 {
         if KernelError::RETIRED.contains(&i) {
             assert!(KernelError::from_u32(i).is_none());
             continue;
@@ -889,7 +932,7 @@ fn kernel_error_non_exhaustive() {
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(59).is_none());
+    assert!(KernelError::from_u32(61).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -961,9 +1004,9 @@ fn unknown_kernel_error_fallback() {
 
     // WS-RA / WS-RR RR4 (ABI v3): errors ride the x1 label in the top of
     // the 20-bit range — label ERROR_LABEL_BASE + d names discriminant d.
-    // Discriminant 59 — first unrecognized after TruncatedMessage (58).
+    // Discriminant 61 — first unrecognized after DepthMismatch (60).
     let base = sele4n_types::ERROR_LABEL_BASE;
-    let regs = [0, (base + 59) << 12, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 61) << 12, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
@@ -1059,17 +1102,20 @@ fn ipc_buffer_inline_error_variant() {
     }
 }
 
-/// V1-F (M-RS-4): CSpaceMintArgs decode returns InvalidArgument for invalid rights.
+/// CSpaceMintArgs decode returns InvalidArgument for a word with a bit set
+/// past the rights field (the message's structure is right, its argument is
+/// not); every 5-bit rights mask decodes, since the kernel masks with it.
 #[test]
 fn cspace_mint_invalid_rights_error_variant() {
     assert_eq!(
-        cspace::CSpaceMintArgs::decode(&[1, 2, 0x20, 42]),
+        cspace::CSpaceMintArgs::decode(&[1, 2, 3, 1 << 21, 42]),
         Err(KernelError::InvalidArgument)
     );
     assert_eq!(
-        cspace::CSpaceMintArgs::decode(&[1, 2, u64::MAX, 42]),
+        cspace::CSpaceMintArgs::decode(&[1, 2, 3, u64::MAX, 42]),
         Err(KernelError::InvalidArgument)
     );
+    assert!(cspace::CSpaceMintArgs::decode(&[1, 2, 3, 0x1F << 16, 42]).is_ok());
 }
 
 /// V1-G (M-RS-5): PagePerms checked_bitor rejects W^X violations.
@@ -1158,12 +1204,12 @@ fn identifier_validation() {
 // ============================================================================
 
 /// W1-H / AA1 / AG3 / AL6 / AL1b / AN7-E / R5.E / WS-SM SM5.B: KernelError
-/// variant count matches Lean (discriminants 0-58, TruncatedMessage the
-/// last at 58).  Detects Lean-Rust enum divergence automatically.
+/// variant count matches Lean (discriminants 0-60, DepthMismatch the
+/// last at 60).  Detects Lean-Rust enum divergence automatically.
 #[test]
 fn kernel_error_variant_count() {
     // One past the largest discriminant (Lean's `kernelErrorEncodingBound`).
-    const KERNEL_ERROR_COUNT: u32 = 59;
+    const KERNEL_ERROR_COUNT: u32 = 61;
     // All expected variants exist, and the retired discriminant (37) has none
     for i in 0..KERNEL_ERROR_COUNT {
         assert_eq!(
@@ -1612,7 +1658,9 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(56).is_some()); // DeclassificationDeniedAtReceiver (SM9.C.1)
     assert!(KernelError::from_u32(57).is_some()); // IpcCancelled (WS-RR RR7.14)
     assert!(KernelError::from_u32(58).is_some()); // TruncatedMessage
-    assert!(KernelError::from_u32(59).is_none());
+    assert!(KernelError::from_u32(59).is_some()); // RangeError
+    assert!(KernelError::from_u32(60).is_some()); // DepthMismatch
+    assert!(KernelError::from_u32(61).is_none());
 }
 
 // --- D6: TCB operation conformance ---
@@ -2433,6 +2481,38 @@ fn abi_layout_matches_the_lean_table() {
     rendered.push_str(&std::format!("maxLabel {}\n", message_info::MAX_LABEL));
     rendered.push_str(&std::format!("errorLabelBase {ERROR_LABEL_BASE}\n"));
     rendered.push_str(&std::format!("syscallAbiVersion {SYSCALL_ABI_VERSION}\n"));
+    // The CNode operation word, measured as the Lean side measures it: a
+    // copy's decode (a mint's too) of `2^j` alone names a depth or the rights
+    // mask, and a move's names a depth; a bit the decode refuses is reserved.
+    for j in 0..64 {
+        let word = 1u64 << j;
+        let owner = match cspace::CSpaceCopyArgs::decode(&[0, 0, 0, word]) {
+            Ok(a) => {
+                let (d, s, r) = (a.slots.dest_depth, a.slots.src_depth, a.rights.raw());
+                if d != 0 && s == 0 && r == 0 {
+                    "destDepth"
+                } else if s != 0 && d == 0 && r == 0 {
+                    "srcDepth"
+                } else if r != 0 && d == 0 && s == 0 {
+                    "rights"
+                } else {
+                    "inconsistent"
+                }
+            }
+            Err(_) => "reserved",
+        };
+        rendered.push_str(&std::format!("cnodeCopyBit {j} {owner}\n"));
+    }
+    for j in 0..64 {
+        let word = 1u64 << j;
+        let owner = match cspace::CSpaceMoveArgs::decode(&[0, 0, 0, word]) {
+            Ok(a) if a.dest_depth != 0 && a.src_depth == 0 => "destDepth",
+            Ok(a) if a.src_depth != 0 && a.dest_depth == 0 => "srcDepth",
+            Ok(_) => "inconsistent",
+            Err(_) => "reserved",
+        };
+        rendered.push_str(&std::format!("cnodeMoveBit {j} {owner}\n"));
+    }
     assert_eq!(
         rendered, LEAN_TABLE,
         "the Rust MessageInfo layout or ABI bounds disagree with the Lean table; \
@@ -2609,17 +2689,19 @@ fn wrappers_name_their_syscalls() {
     let _ = sele4n_sys::ipc::notification_wait(cap);
     assert_names("notification_wait", SyscallId::NotificationWait);
 
-    let _ = sele4n_sys::cspace::cspace_mint(
-        cap,
-        Slot::from(0u64),
-        Slot::from(1u64),
-        AccessRights::ALL,
-        Badge::from(1u64),
-    );
+    let slots = cspace::CNodeOpArgs {
+        dest_index: CPtr::from(1u64),
+        src_root: cap,
+        src_index: CPtr::from(0u64),
+        dest_depth: 64,
+        src_depth: 64,
+    };
+    let _ =
+        sele4n_sys::cspace::cspace_mint(cap, slots, AccessRights::ALL, Badge::from(1u64), &mut buf);
     assert_names("cspace_mint", SyscallId::CSpaceMint);
-    let _ = sele4n_sys::cspace::cspace_copy(cap, Slot::from(0u64), Slot::from(1u64));
+    let _ = sele4n_sys::cspace::cspace_copy(cap, slots, AccessRights::ALL);
     assert_names("cspace_copy", SyscallId::CSpaceCopy);
-    let _ = sele4n_sys::cspace::cspace_move(cap, Slot::from(0u64), Slot::from(1u64));
+    let _ = sele4n_sys::cspace::cspace_move(cap, slots);
     assert_names("cspace_move", SyscallId::CSpaceMove);
     let _ = sele4n_sys::cspace::cspace_delete(cap, Slot::from(0u64));
     assert_names("cspace_delete", SyscallId::CSpaceDelete);

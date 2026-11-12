@@ -110,7 +110,7 @@ objects through capability slot contents. -/
 def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target : CapTarget) : Bool :=
   match target with
   | .object oid => objectObservable ctx observer oid
-  | .cnodeSlot cnode _ => objectObservable ctx observer cnode
+  | .cnodeSlotWord word => objectObservable ctx observer (SeLe4n.Model.CapTarget.wordCnode word)
   -- WS-SM SM6.D: a reply cap now references a `Reply` object by `ReplyId`; the
   -- slot reveals that object's identity, so it is observable iff the reply
   -- object is — consistent with the `.object`/`.cnodeSlot` arms above.

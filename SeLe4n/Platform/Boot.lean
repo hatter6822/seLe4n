@@ -1637,7 +1637,7 @@ def bootCapabilityDanglingBootError : String :=
     configured Reply; every other target claims no kind. -/
 @[inline] def bootCapTargetKindInstalled (objs : List ObjectEntry) (c : Capability) : Bool :=
   match c.target with
-  | .cnodeSlot cn _ => objs.any fun e => decide (e.id = cn) && e.obj.objectType == .cnode
+  | .cnodeSlotWord word => objs.any fun e => decide (e.id = (SeLe4n.Model.CapTarget.wordCnode word)) && e.obj.objectType == .cnode
   | .replyCap r => objs.any fun e => decide (e.id = r.toObjId) && e.obj.objectType == .reply
   | _ => true
 
@@ -8074,10 +8074,10 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capTargetKindBacked
     exact ⟨e'.obj, bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem cores config ist h
       e' he', hT⟩
   cases hT : c.target with
-  | cnodeSlot cn _ =>
+  | cnodeSlotWord w =>
     rw [hT] at hC
-    obtain ⟨o, hO', hK⟩ := hInst cn .cnode hC
-    show ist.state.getCNode? cn ≠ none
+    obtain ⟨o, hO', hK⟩ := hInst (SeLe4n.Model.CapTarget.wordCnode w) .cnode hC
+    show ist.state.getCNode? (SeLe4n.Model.CapTarget.wordCnode w) ≠ none
     unfold SystemState.getCNode?; rw [hO']
     cases o <;> simp_all [KernelObject.objectType]
   | replyCap r =>

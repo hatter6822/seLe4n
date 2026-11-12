@@ -774,7 +774,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       · exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
           (cspaceCopy_runQueueStage hC)).2
       · exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
-          (cspaceCopyPerform_runQueueStage _ _ _)).2
+          (cspaceCopyPerform_runQueueStage _ _ _ _)).2
     all_goals try cases hStep
   case irqHandlerClear =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -809,7 +809,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object cnodeId =>
       try dsimp only [] at hStep
-      cases hDec : decodeCSpaceCopyArgs decoded with
+      cases hDec : decodeMintReplyCapArgs decoded with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep

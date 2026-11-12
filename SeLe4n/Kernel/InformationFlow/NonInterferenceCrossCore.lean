@@ -476,8 +476,8 @@ theorem copyThreadSpacesZombie_crossCoreNonInterference
 
 /-- WS-ZA ZA6.32: **the bind's copy writes no core** — the node slot's capability
 and its derivation edge are the object store and the CDT. -/
-theorem cspaceCopy_confinedToCores {src dst : CSpaceAddr} {st st' : SystemState}
-    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+theorem cspaceCopy_confinedToCores {src dst : CSpaceAddr} {mask : AccessRightSet} {st st' : SystemState}
+    (hStep : cspaceCopy src dst mask st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
   obtain ⟨cap, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
   exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
@@ -521,7 +521,7 @@ theorem irqHandlerSetNotificationFromCap_crossCoreNonInterference
     rcases hC with hC | rfl
     · exact cspaceCopy_confinedToCores hC
     · exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-        (cspaceCopyPerform_scheduler _ _ _) (cspaceCopyPerform_machine _ _ _)
+        (cspaceCopyPerform_scheduler _ _ _ _) (cspaceCopyPerform_machine _ _ _ _)
   exact crossCoreNonInterference_ofCores ctx observer
     (by simpa using hne)
     (observableSlotsConfinedToCores_trans

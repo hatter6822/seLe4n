@@ -279,8 +279,8 @@ theorem cspaceMintWithCdt_machine_eq {st st' : SystemState} {src dst : CSpaceAdd
   obtain ⟨_, stM, hMint, -, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep
   rw [untypedSourceSetFull_machine, SystemState.cdtAddChild_machine, cspaceMint_machine_eq hMint]
 
-theorem cspaceCopy_machine_eq {st st' : SystemState} {src dst : CSpaceAddr}
-    (hStep : cspaceCopy src dst st = .ok ((), st')) : st'.machine = st.machine := by
+theorem cspaceCopy_machine_eq {st st' : SystemState} {src dst : CSpaceAddr} {mask : AccessRightSet}
+    (hStep : cspaceCopy src dst mask st = .ok ((), st')) : st'.machine = st.machine := by
   obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
   rw [untypedSourceSetFull_machine, SystemState.cdtAddChild_machine,
     cspaceInsertSlot_preserves_machine _ _ _ _ hIns]
@@ -1305,7 +1305,7 @@ theorem irqHandlerSetNotification_stepCovers {e ec : CoreId} {line : Nat} {src :
     stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨-, st1, -, -, -, hD, hC⟩ := irqHandlerSetNotification_ok hB.1.2.1 h
   have h1 := cspaceDeleteSlotZombie_stepCovers e ec _ st st1 hB hD
-  exact stepCoversInv_trans h1.1 ((cspaceCopy_keyFrame _ _ _ _ h1.2 hC).stepCoversInv
+  exact stepCoversInv_trans h1.1 ((cspaceCopy_keyFrame _ _ _ _ _ h1.2 hC).stepCoversInv
     (hRes := by rw [cspaceCopy_machine_eq hC])
     (hBank := banksKeptOffCore_of_eq (by rw [cspaceCopy_machine_eq hC])))
 
@@ -1524,7 +1524,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     unfold cspaceCopyChecked at h
     dsimp only at h
     split at h
-    · exact (cspaceCopy_keyFrame _ _ _ _ hInv h).stepCoversInv
+    · exact (cspaceCopy_keyFrame _ _ _ _ _ hInv h).stepCoversInv
         (hRes := by rw [cspaceCopy_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [cspaceCopy_machine_eq h]))
     · cases h
   case none.cspaceMove.object cnodeId =>

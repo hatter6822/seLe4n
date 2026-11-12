@@ -311,7 +311,7 @@ private def slotTargetBacked (st : SystemState) (cap : Capability) : Bool :=
   -- A `.cnodeSlot` names the CNode it descends, so the typed read is
   -- the stronger and the honest one: a capability pointing at a
   -- non-CNode is not backed for this purpose.
-  | .cnodeSlot cnId _ => (st.getCNode? cnId).isSome
+  | .cnodeSlotWord word => (st.getCNode? (SeLe4n.Model.CapTarget.wordCnode word)).isSome
   -- WS-SM SM6.D: a reply cap must target an actual `.reply` object, not
   -- merely *some* object sharing that ObjId namespace — `getReply?`
   -- returns `some` only for a `.reply` at `rid.toObjId`.

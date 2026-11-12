@@ -48,8 +48,8 @@ theorem cspaceMintWithCdt {src dst : CSpaceAddr} {rights : AccessRightSet}
   have F2 := F.trans (cdtAddChild stM src dst .mint F.invExt)
   exact F2.trans (untypedSourceSetFull _ src _ F2.invExt)
 
-theorem cspaceCopy {src dst : CSpaceAddr} {st st' : SystemState} (hInv : st.objects.invExt)
-    (hStep : _root_.SeLe4n.Kernel.cspaceCopy src dst st = .ok ((), st')) : RecordsFrame st st' := by
+theorem cspaceCopy {src dst : CSpaceAddr} {mask : AccessRightSet} {st st' : SystemState} (hInv : st.objects.invExt)
+    (hStep : _root_.SeLe4n.Kernel.cspaceCopy src dst mask st = .ok ((), st')) : RecordsFrame st st' := by
   obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
   have F := cspaceInsertSlot hInv hIns
   have F2 := F.trans (cdtAddChild st2 src dst .copy F.invExt)

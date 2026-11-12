@@ -446,7 +446,7 @@ theorem slotRetireTarget_of_final {st : SystemState} {cnode : SeLe4n.ObjId}
   cases ht : c.target with
   | object y => rw [ht] at ho; cases ho; simp [hK, hF]
   | replyCap r => rw [ht] at ho; cases ho; simp [hK, hF]
-  | cnodeSlot cn _ => rw [ht] at ho; cases ho; simp [hK, hF]
+  | cnodeSlotWord _ => rw [ht] at ho; cases ho; simp [hK, hF]
   | auditTrail _ => rw [ht] at ho; cases ho
   | schedControl _ => rw [ht] at ho; cases ho
   | irqControl _ => rw [ht] at ho; cases ho

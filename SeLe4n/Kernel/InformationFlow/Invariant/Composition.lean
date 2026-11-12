@@ -142,10 +142,10 @@ inductive NonInterferenceStep
       (hStep : Architecture.vspaceLookup asid vaddr st = .ok (paddr, st'))
     : NonInterferenceStep ctx observer st st'
   | cspaceCopy
-      (src dst : CSpaceAddr)
+      (src dst : CSpaceAddr) (mask : AccessRightSet)
       (hSrcHigh : objectObservable ctx observer src.cnode = false)
       (hDstHigh : objectObservable ctx observer dst.cnode = false)
-      (hStep : SeLe4n.Kernel.cspaceCopy src dst st = .ok ((), st'))
+      (hStep : SeLe4n.Kernel.cspaceCopy src dst mask st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | cspaceMove
       (src dst : CSpaceAddr)
@@ -468,8 +468,8 @@ theorem step_preserves_projection
     exact vspaceUnmapPage_preserves_projection ctx observer asid vaddr st st' hRH hObjInv hOp
   | vspaceLookup asid vaddr paddr hOp =>
     have := vspaceLookup_preserves_state st asid vaddr paddr st' hOp; subst this; rfl
-  | cspaceCopy src dst hSH hDH hOp =>
-    exact cspaceCopy_preserves_projection ctx observer src dst st st' hSH hDH hObjInv hOp
+  | cspaceCopy src dst mask hSH hDH hOp =>
+    exact cspaceCopy_preserves_projection ctx observer src dst mask st st' hSH hDH hObjInv hOp
   | cspaceMove src dst hSH hDH hOp =>
     exact cspaceMove_preserves_projection ctx observer src dst st st' hSH hDH hObjInv hOp
   | cspaceDeleteSlot addr hAH hOp =>

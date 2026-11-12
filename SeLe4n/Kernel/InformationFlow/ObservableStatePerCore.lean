@@ -995,7 +995,7 @@ theorem capTargetObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Securi
     capTargetObservable ctx (IfObserver.ofLabel L₂) target = true := by
   cases target with
   | object oid => exact objectObservable_monotone ctx hFlow oid h
-  | cnodeSlot cnode _ => exact objectObservable_monotone ctx hFlow cnode h
+  | cnodeSlotWord w => exact objectObservable_monotone ctx hFlow (SeLe4n.Model.CapTarget.wordCnode w) h
   | replyCap rid => exact objectObservable_monotone ctx hFlow rid.toObjId h
   -- WS-SM SM9.A.9: an audit-trail capability names no object, so its
   -- observability is constant `true` and monotonicity is immediate.  The arm is

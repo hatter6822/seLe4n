@@ -1375,12 +1375,12 @@ theorem cspaceDeleteSlot_confinedToCore (st st' : SystemState) (addr : CSpaceAdd
       (SeLe4n.Kernel.spliceDeletedCdtNode_scheduler _ _) (SeLe4n.Kernel.spliceDeletedCdtNode_machine _ _))
 
 /-- SM8.B.3: `cspaceCopy` writes only the object store and the CDT. -/
-theorem cspaceCopy_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) (c₀ : CoreId)
-    (hStep : SeLe4n.Kernel.cspaceCopy src dst st = .ok ((), st')) :
+theorem cspaceCopy_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) (mask : AccessRightSet) (c₀ : CoreId)
+    (hStep : SeLe4n.Kernel.cspaceCopy src dst mask st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
   obtain ⟨cap, st2, -, -, hIns, -, rfl⟩ := SeLe4n.Kernel.cspaceCopy_ok_decompose hStep
   refine observableSlotsConfinedToCore_trans
-    (cspaceInsertSlot_confinedToCore st st2 dst cap.withoutMapping c₀ hIns) ?_
+    (cspaceInsertSlot_confinedToCore st st2 dst (cap.maskRights mask).withoutMapping c₀ hIns) ?_
   refine observableSlotsConfinedToCore_trans (cdtAddChild_confinedToCore st2 src dst .copy c₀) ?_
   -- WS-ZA ZA5.4: setting the untyped source full writes one CNode.
   exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
@@ -1794,16 +1794,16 @@ theorem nonInterference_perCore_vspaceLookup (ctx : LabelingContext) (observer :
     (vspaceLookup_confinedToCore st st' asid vaddr paddr bootCoreId hStep)
 
 theorem nonInterference_perCore_cspaceCopy (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (src dst : CSpaceAddr)
+    (st st' : SystemState) (src dst : CSpaceAddr) (mask : AccessRightSet)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
-    (hStep : SeLe4n.Kernel.cspaceCopy src dst st = .ok ((), st')) :
+    (hStep : SeLe4n.Kernel.cspaceCopy src dst mask st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.cspaceCopy src dst hSrcHigh hDstHigh hStep)
-    (cspaceCopy_confinedToCore st st' src dst bootCoreId hStep)
+    (.cspaceCopy src dst mask hSrcHigh hDstHigh hStep)
+    (cspaceCopy_confinedToCore st st' src dst mask bootCoreId hStep)
 
 theorem nonInterference_perCore_cspaceMove (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (src dst : CSpaceAddr)
