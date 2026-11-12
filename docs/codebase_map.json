@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "carve-owns-cells",
-      "commit_sha": "762d1c8791deb65c1d75c18edaf4f350cbf00a25",
-      "tree_sha": "1e789b924821fe47e23926d8aebe45a21889f1cc",
-      "committed_at_utc": "2026-11-11T23:55:04+00:00"
+      "branch": "region-allocator",
+      "commit_sha": "ca825c2c2ebad2fd4026a87879b96a5f8fdaaed4",
+      "tree_sha": "68167e5ea0ded04de4db1e2405ad532440607e55",
+      "committed_at_utc": "2026-11-12T01:18:11+00:00"
     }
   },
   "source_sync": {
