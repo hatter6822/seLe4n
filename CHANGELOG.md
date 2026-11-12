@@ -123,8 +123,16 @@ reset/reuse that fills one object's cell with another object's fields.
   6 / 240, reply 10 / 256, tcb 19 / 2040, sched-context 8 / 440, frame 6 / 152,
   page-table 8 / 232, cnode 23 / 1128, vspace-root 101 / 3568, untyped 7 / 184)
   and every other reading is 0.
-- **Boot heap** (the same runs): 753 pages after the library initializer and
-  1337 after the install, as at `v0.37.16`.
+- **Boot heap** (QEMU `virt` exerciser image): before the root task's IPC
+  buffer, 753 pages (103000 live allocations) after the library initializer
+  and 1337 (108963) after the install.  With it, 757 (103186) and 1349
+  (109290).  The library initializer's 4 pages and 186 allocations are the
+  larger initial objects: the 64-slot root CNode and the IPC-buffer
+  untyped's object and capability.  The install's further 8 pages and 141
+  allocations are the boot step's own: the four objects it carves (records,
+  store and index entries, child records), their four capabilities and
+  derivation links, the three installed tables' slots, and the page's
+  mapping and epoch entries in the root VSpace.
 
 ## v0.37.16 — the object and ASID tables are built boot-sized
 
