@@ -64,14 +64,14 @@ namespace LookupFault
 
 /-- seL4's lookup-failure type word, `lufType + 1`: `seL4_InvalidRoot` (1),
 `seL4_MissingCapability` (2), `seL4_DepthMismatch` (3), `seL4_GuardMismatch` (4). -/
-def typeWord : LookupFault → UInt64
+@[inline] def typeWord : LookupFault → UInt64
   | .invalidRoot => 1
   | .missingCapability _ => 2
   | .depthMismatch _ _ => 3
   | .guardMismatch _ _ _ => 4
 
 /-- The words `setMRs_lookup_failure` writes: the type word and the fields. -/
-def wordCount : LookupFault → Nat
+@[inline] def wordCount : LookupFault → Nat
   | .invalidRoot => 1
   | .missingCapability _ => 2
   | .depthMismatch _ _ => 3
@@ -80,7 +80,7 @@ def wordCount : LookupFault → Nat
 /-- Word `i` of the fault, in `setMRs_lookup_failure`'s order: the type word,
 then `bitsLeft`, then `bitsFound` (a depth mismatch) or `guardFound` and
 `bitsFound` (a guard mismatch); `0` past the last. -/
-def word (f : LookupFault) (i : Nat) : UInt64 :=
+@[inline] def word (f : LookupFault) (i : Nat) : UInt64 :=
   match f, i with
   | f, 0 => f.typeWord
   | .missingCapability l, 1 => l

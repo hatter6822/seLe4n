@@ -240,7 +240,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
                 match ntfnCap.target with
                 | .object notifId =>
                     bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
-                | _ => .error (.invalidCapability 0)
+                | _ => .error .illegalState
             | none => .error (.invalidCapability 0)
           | none => .error .objectNotFound
     | _ => .error (.invalidCapability 0)
@@ -789,7 +789,7 @@ refusal is read where it is, never rebuilt. -/
                         (fun st => storeBindNotification st notifId
                           (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
                         (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
-                    | _ => .error (.invalidCapability 0, st)
+                    | _ => .error (.illegalState, st)
                   else .error (.illegalAuthority, st))
           | none => .error (.invalidCapability 0, st)
         | none => .error (.objectNotFound, st)
@@ -811,10 +811,10 @@ refusal is read where it is, never rebuilt. -/
       match decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
+        if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else
         resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
           args.srcIndex args.srcDepth st
-          (fun e =>
-            if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else .error (e, st))
+          (fun e => .error (e, st))
           (fun srcCNode srcSlot dstCNode dstSlot =>
             RefusalCarrying.ofChecked
               (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
@@ -862,10 +862,10 @@ refusal is read where it is, never rebuilt. -/
       match decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
+        if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else
         resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
           args.srcIndex args.srcDepth st
-          (fun e =>
-            if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else .error (e, st))
+          (fun e => .error (e, st))
           (fun srcCNode srcSlot dstCNode dstSlot =>
             RefusalCarrying.ofChecked
               (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
@@ -1443,6 +1443,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         | ok p =>
           obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
           dsimp only [cspaceMoveAdmittedAt, cspaceMovePerformAt]
+          rw [show cnodeInvoked cnodeId st = true from
+            cnodeInvoked_of_resolveCNodeOpSlots_ok hR]
+          simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
           apply RefusalCarrying.ofChecked_eq
           intro hA
           simp only [Bool.and_eq_true] at hA
@@ -1506,6 +1509,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         | ok p =>
           obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
           dsimp only [cspaceCopyAdmittedAt, cspaceCopyPerformAt]
+          rw [show cnodeInvoked cnodeId st = true from
+            cnodeInvoked_of_resolveCNodeOpSlots_ok hR]
+          simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
           apply RefusalCarrying.ofChecked_eq
           intro hA
           simp only [Bool.and_eq_true] at hA
@@ -2336,10 +2342,10 @@ write alone (`cspaceMintPerformAt`); a refusal is in the state handed in
     match decodeCSpaceMintArgsBy (msgRegOfFileThen layout regs w) with
     | .error e => .error (e, st)
     | .ok args =>
+      if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else
       resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
         args.srcIndex args.srcDepth st
-        (fun e =>
-          if !cnodeInvoked cnodeId st then .error (.objectNotFound, st) else .error (e, st))
+        (fun e => .error (e, st))
         (fun srcCNode srcSlot dstCNode dstSlot =>
           RefusalCarrying.ofChecked
             (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
@@ -2372,6 +2378,9 @@ theorem dispatchMintByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
       | ok p =>
         obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
         dsimp only [cspaceMintAdmittedAt, cspaceMintPerformAt]
+        rw [show cnodeInvoked cnodeId st = true from
+          cnodeInvoked_of_resolveCNodeOpSlots_ok hR]
+        simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [Bool.and_eq_true] at hA

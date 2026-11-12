@@ -29,16 +29,17 @@ open SeLe4n.Model
 
 /-- **The invocation arm**: `dispatchOperandCheckedK` on the operand and the
 invocation's arm (`invocationOperandArmR`) over the caller's registers, its
-results reported. -/
+results reported, the arm's refusal pushed from its words
+(`dispatchOperandCheckedKW`), so a refusal with a payload builds no error. -/
 @[noinline] def invocationRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (sid : SyscallId) (capWord : UInt64) (st : SystemState) :
     SystemState :=
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
-    dispatchOperandCheckedK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+    dispatchOperandCheckedKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
       (invocationOperandArmR ctx sid (SeLe4n.CPtr.ofWord capWord) tcb.registerContext tid
         executingCore)
-      st entryReportGeneral entryReportResolved entryReportLookup
+      st entryReportGeneral (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

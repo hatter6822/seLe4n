@@ -228,9 +228,10 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
     | replyRecv capAddr msgInfo =>
       simp only [replyRecvRoutedArm, hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | invoke sid capAddr =>
-      simp only [invocationRoutedArm, hO, finish_operand finish kGen kRes kLook hG hR hL]; rfl
+      simp only [invocationRoutedArm, hO, dispatchOperandCheckedKW_eq,
+        liftReport_entryReportResolved, finish_operand finish kGen kRes kLook hG hR hL]; rfl
     | overflowOne sid capAddr =>
-      simp only [overflowOneRoutedArm, hO]
+      simp only [overflowOneRoutedArm, hO, overflowOneOperandKW_eq, liftReport_entryReportResolved]
       rw [ipcBufferReadMrK_comp (finish _ _)]
       simp only [shortArgsRoutedArm, finish_operand finish kGen kRes kLook hG hR hL, finish_overflowOne finish kGen kRes kLook hG hR hL]
       rfl
@@ -265,8 +266,8 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
           sid capAddr len hRt
       dsimp only
       rw [overflowedRoutedArm_eq ctx executingCore tid sid capAddr.word len st hOv]
-      simp only [overflowedLongArmWith, shortArgsRoutedArm, hO,
-        ipcBufferReadMrK_comp (finish _ _), finish_operand finish kGen kRes kLook hG hR hL,
+      simp only [overflowedLongArmWith, shortArgsRoutedArm, hO, longOperandKW_eq,
+        liftReport_entryReportResolved, ipcBufferReadMrK_comp (finish _ _), finish_operand finish kGen kRes kLook hG hR hL,
         finish_long finish kGen kRes kLook hG hR hL]
       rfl
     | shortArgs sid capAddr =>

@@ -3435,22 +3435,30 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             // The source; MissingCapability (2), the source's depth, 64.
             refused_with(FAILED_LOOKUP, 3, [Some(1), Some(2), Some(64), None]),
         ),
-        cnode_refusal(
-            "failed-lookup-guard-mismatch",
-            [
-                COPY_SLOT,
-                cap_address(CNODE_SLOT),
-                cap_address(NOTIFICATION_SLOT),
-                ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
-            ],
-            // Not the source; GuardMismatch (4), 64 bits left, the root's
-            // guard; its width (58) is the fifth word, in the buffer.
-            refused_with(
-                FAILED_LOOKUP,
-                5,
-                [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
-            ),
-        ),
+        // The fifth word lands in the root task's buffer `msg[4]`, the word
+        // a later five-word call (a configure's deadline, a service
+        // register's grant flag) reads as its argument, so the round trip
+        // names the buffer ([`RoundTrip::overflow`]) and the word goes back
+        // to the boot's zero after the measured window.
+        RoundTrip {
+            overflow: Some((ROOT_IPC_BUFFER, 0)),
+            ..cnode_refusal(
+                "failed-lookup-guard-mismatch",
+                [
+                    COPY_SLOT,
+                    cap_address(CNODE_SLOT),
+                    cap_address(NOTIFICATION_SLOT),
+                    ROOT_SLOT_DEPTHS | (ALL_RIGHTS << 16),
+                ],
+                // Not the source; GuardMismatch (4), 64 bits left, the root's
+                // guard; its width (58) is the fifth word, in the buffer.
+                refused_with(
+                    FAILED_LOOKUP,
+                    5,
+                    [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
+                ),
+            )
+        },
         truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 4),
         truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
         truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),

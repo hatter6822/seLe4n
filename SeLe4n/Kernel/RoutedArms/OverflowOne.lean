@@ -51,9 +51,9 @@ dispatch told them apart, a result under the first. -/
   | some (.tcb tcb) =>
     SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
       (fun _ => shortArgsRoutedArm executingCore tid sid capWord st)
-      (fun w => overflowOneOperandK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+      (fun w => overflowOneOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
         (overflowOneOperandArmR ctx sid tcb.registerContext w tid) st entryReportGeneral
-        entryReportResolved entryReportLookup)
+        (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup)
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 end SeLe4n.Kernel

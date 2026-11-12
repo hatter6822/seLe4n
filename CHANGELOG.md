@@ -40,6 +40,21 @@ now returns seL4's error payload in the message registers, in
   rebuilds the error only where the declassification ledger records one.
   `syscallEntryRoutedWith_eq` proves the routed entry equal to the continued
   entry for any join point that keeps the report's three laws.
+- **A refusal with a payload reaches the report as words.** The invocation,
+  one-overflow-word and overflowed arms hand their operand arm's result to a
+  continuation on words (`dispatchOperandCheckedKW`, `longOperandKW`,
+  `overflowOneOperandKW`): `noCapRefusalW` takes the refusal apart, each
+  payload constructor down to its words, so the join point the arm's refusal
+  sites meet at takes the code and the words as scalars and no lookup fault,
+  failed lookup or carve refusal is built on the way (`noCapRefusalW_eq`,
+  `dispatchOperandCheckedKW_eq`). The CNode Copy, Move and Mint arms ask that
+  the invoked object is a CNode before the walk, so their refusal goes straight
+  to that join point. The generated `RoutedArms` C allocates no error.
+- **seL4's IllegalOperation.** A `TCB_SetSpace` whose CSpace or VSpace root
+  capability names an object of the wrong kind, and a `TCB_BindNotification`
+  whose capability is not a notification, are refused `.illegalState`, the
+  model's code for seL4's `seL4_IllegalOperation` (`decodeSetSpace`,
+  `decodeBindNotification`), where they were `invalidCapability`.
 - **Proofs.**
   - `ofDiscriminant?_toDiscriminant` (the code round trip, the payload
     erased).
@@ -56,7 +71,10 @@ now returns seL4's error payload in the message registers, in
   - `SYSCALL_ABI_VERSION` is 5.
   - The QEMU exerciser checks x2–x5, and gains `range-error-payload`,
     `failed-lookup-depth-mismatch`, `failed-lookup-missing-source` and
-    `failed-lookup-guard-mismatch`.
+    `failed-lookup-guard-mismatch`. The guard mismatch's fifth word lands in
+    the root task's buffer `msg[4]`, which a later five-word call reads as an
+    argument (a configure's deadline), so the scenario names the buffer and
+    the word goes back to zero after it.
 
 ## v0.37.19 — WS-SX registered: the seL4 ABI fidelity plan
 

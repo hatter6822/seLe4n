@@ -53,9 +53,9 @@ not read runs the short-arguments arm (`overflowedRoutedArm_eq`). -/
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid
             (SeLe4n.Kernel.Architecture.IpcBufferRead.overflowSecondRead tcb.ipcBuffer (length - 4))
             (fun _ => shortArgsRoutedArm executingCore tid sid capWord st)
-            (fun _ => longOperandK sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
+            (fun _ => longOperandKW sid (SeLe4n.CPtr.ofWord capWord) tid executingCore
               (arm w tcb.registerContext) (length - 4) st entryReportGeneral
-              entryReportResolved entryReportLookup))
+              (entryReportPushOk 1) (entryReportPushErrorW 1) entryReportLookup))
   | _ => entryReportGeneral (.error (.illegalState, st))
 
 /-- **The overflowed arm**: the configure's, the service register's or the CNode

@@ -1398,8 +1398,7 @@ its extra capability: `syscallLookupCap` on a gate at the caller's CSpace root a
 depth, requiring `.write` — so the reserved-idle refusal is the chokepoint's own
 (`syscallResolveCap_ok_not_reserved`) rather than a second lift-point check — and
 the resolved capability must target a **TCB** the store holds (a capability to any
-other kind of object is `.invalidCapability`, the answer `bindNotification` gives a
-non-notification target).  `validateThreadIdArg` still promotes the id, so the
+other kind of object is `.invalidCapability`).  `validateThreadIdArg` still promotes the id, so the
 sentinel is refused where every raw operand is and `schedContextBind`'s
 `ValidThreadId` signature is met without a second proof.
 
@@ -1825,8 +1824,10 @@ slots, so it is authority to pass capabilities on — the right `.cspaceMint` an
 `.cspaceCopy` gate on — and to change what the CNode holds.  MR1 addresses a
 capability to the new **VSpace root**, held with `.write`, the right
 `.vspaceMap` gates a change to an address space on.  Each must name an object of
-its kind; the operation checks the kinds again against the store, so a resolver
-and an operation that disagreed about them would refuse rather than install.
+its kind, or the call is refused `.illegalState` (seL4's `decodeSetSpace` answers
+a CNode or VSpace capability of the wrong kind `seL4_IllegalOperation`); the
+operation checks the kinds again against the store, so a resolver and an
+operation that disagreed about them would refuse rather than install.
 The slots are returned, not the objects: the operation copies each slot's
 capability into the thread's slot, derived from it. -/
 def resolveSetSpace (callerTid : SeLe4n.ThreadId)
@@ -1836,12 +1837,12 @@ def resolveSetSpace (callerTid : SeLe4n.ThreadId)
   | .error e => .error e
   | .ok (cnSrc, cnCap, cnId) =>
     if !cnCap.hasRight .write then .error .illegalAuthority
-    else if (st.getCNode? cnId).isNone then .error (.invalidCapability 0)
+    else if (st.getCNode? cnId).isNone then .error .illegalState
     else
       match resolveCallerCapSlot callerTid args.vspaceRoot .write st with
       | .error e => .error e
       | .ok (vrSrc, _, vrId) =>
-        if (st.getVSpaceRoot? vrId).isNone then .error (.invalidCapability 0)
+        if (st.getVSpaceRoot? vrId).isNone then .error .illegalState
         else .ok (cnSrc, vrSrc)
 
 /-- `resolveCallerCapSlot` in continuation form: the slot is resolved through
@@ -1996,10 +1997,10 @@ theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.T
     (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
   resolveCallerCapSlotK callerTid args.cspaceRoot .grant st onErr (fun cnC cnS cnCap cnId =>
     if !cnCap.hasRight .write then onErr .illegalAuthority
-    else if (st.getCNode? cnId).isNone then onErr (.invalidCapability 0)
+    else if (st.getCNode? cnId).isNone then onErr .illegalState
     else
       resolveCallerCapSlotK callerTid args.vspaceRoot .write st onErr (fun vrC vrS _ vrId =>
-        if (st.getVSpaceRoot? vrId).isNone then onErr (.invalidCapability 0)
+        if (st.getVSpaceRoot? vrId).isNone then onErr .illegalState
         else onOk cnC cnS vrC vrS))
 
 theorem resolveSetSpaceK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
@@ -3499,7 +3500,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 match ntfnCap.target with
                 | .object notifId =>
                     bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
-                | _ => .error (.invalidCapability 0)
+                | _ => .error .illegalState
             | none => .error (.invalidCapability 0)
           | none => .error .objectNotFound
     | _ => fun _ => .error (.invalidCapability 0)
