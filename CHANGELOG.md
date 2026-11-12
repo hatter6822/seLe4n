@@ -1,3 +1,108 @@
+## v0.37.18 — the region allocator, inert
+
+WS-UC UC5. The HAL gets the allocator a carve's cells will live in: a range
+in the carve's untyped's own memory. It is still inert. Nothing sets a core's
+allocation context, so every allocation still goes to the kernel heap.
+
+- **Decision D7, decided by the owner: one map byte per 512 B granule.** The
+  plan's per-page byte could not name an address's range. Kernel kinds are
+  smaller than a page, and carves bumped at their own alignment put ranges of
+  different sizes in one page. The other ways found the range through bytes
+  inside a range or its padding. A user can control those bytes, and they
+  could forge a header for the backstop. So the map (`region/map.rs`) keeps
+  one byte per 512 B granule, outside every range. The byte is 0 for no range,
+  or the log2 size of the naturally aligned range that holds the granule. A
+  range is at least 512 B, and UC6's sizes round to at least that. The plan's
+  UC5 row, D4's boot cost and UC6's rounding are amended to match.
+- **The range header.** It holds the range's log2 size, an atomic live count,
+  a bump cursor, a cell-start bitmap and a live bitmap, one bit per 8 bytes
+  each. It is `24 + size / 32` bytes (`region::header_bytes`), 40 B for a
+  512 B range. A cell is bumped at the cursor, rounded to 8 bytes. A cell that
+  ends exactly at the range's end is served; one that would pass the end is
+  refused, and the image halts.
+- **Free and size, by address.** `lean_free_small`, `lean_small_mem_size`, and
+  the big path's `kernel_free` / `kernel_usable_size` (and so
+  `lean_runtime::allocated_bytes`) send an address inside the heap's arena to
+  the heap and every other address to the region. A region free clears the
+  cell's live bit with one atomic `fetch_and`, which refuses a double free.
+  It then decrements the live count. It takes no lock, and the bytes are not
+  reused. A cell's size runs to the next cell start or to the cursor, because
+  the Lean header has no spare bits (`m_cs_sz = 0`).
+- **The backstop (D2).** `Region::begin_range` and `region::admit_page_zero`
+  each find every recorded range meeting their bytes through the map, and
+  halt on a live count above 0. Otherwise they unrecord those ranges whole,
+  so a frame's later contents can never be read as a header.
+  `apply_physical_write` asks `admit_page_zero` before every zero.
+- **The context.** There is a word per core. `kernel_alloc_small` and
+  `kernel_alloc` consult it before the heap. A context is held only through
+  `region::enter_context`, which masks interrupts until its guard drops.
+  Nothing calls it yet.
+- **The map's RAM is reserved at boot, not taken from the heap (D4).** As
+  seL4 reserves its boot-time structures, the map of each RAM extension takes
+  the extension's top pages, and its untyped covers the rest. The Lean boot
+  owns the layout (`SeLe4n/Platform/Boot/RegionMapReservation.lean`): an
+  extension of `S` bytes reserves the fewest whole pages `R` with
+  `513 · R ≥ S`, about 2 MiB per GiB. QEMU `virt`'s 768 MiB extension
+  reserves 384 pages at `[0x7FE8_0000, 0x8000_0000)`, so its untyped is
+  `[0x5000_0000, 0x7FE8_0000)` (`qemuVirtRegionMap_layout`). A 16 GiB Pi 5
+  reserves 384 + 7666 pages, about 31.4 MiB of RAM.
+  - Both deployments build their RAM untypeds from `untypedExtentOf`.
+    `rpi5RootTaskUntypeds_regions` and `qemuVirtRootTaskUntyped_region` now
+    state the untypeds are the extensions below their maps. Proved:
+    `regionMap_fits_reserve` (the map of the covered RAM fits),
+    `untypedSizeOf_tiles` (the untyped and the map tile the extension),
+    `rpi5BootRamExtensions_fit` (every accepted extension fits) and
+    `rpi5RootTaskUntypeds_clear_of_regionMaps` (no untyped meets a map).
+    `rpi5InitialObjectsFor_covers_ram` covers the RAM below each map.
+  - The QEMU exerciser's root IPC-buffer untyped (`v0.37.17`) took the last
+    four pages of RAM, which are now the map's. It now takes the shipped root
+    untyped's last four pages, directly below the map
+    (`qemuVirtExerciserRootIpcBufferUntyped`, `[0x7FE7_C000, 0x7FE8_0000)`),
+    and the exerciser's root untyped stops below it.
+    `qemuVirtExerciserRootUntypeds_tile` now also states the IPC-buffer
+    untyped ends at the region map's base.
+  - `extendBootRamMap` hands the HAL each extension's covered part and map
+    base (`ffi_reserve_region_map`) after mapping it. The HAL checks the
+    layout (`region::reservation_layout`) and halts the boot on unaligned,
+    unmapped or overlapping input rather than shrinking the map. It then
+    zeroes and registers the map (`region::register_reserved_map`).
+    `register_ram` refuses an extent or reservation meeting any other.
+  - Every thread-memory decode (`decode_install`, `decode_physical_write`,
+    the user-word capture, the restore commit) takes
+    `region::thread_ram_covered`, which refuses a reservation's pages, so
+    the map is kernel-only.
+- **Tests** (host, `region::tests`):
+  - the map's whole-range record and its overlap refusals;
+  - a bump ending at the range's end, and one byte past it;
+  - a zero over a live count of 1 refused and over 0 admitted;
+  - a planted leaked cell refusing a reset, a smaller carve, a larger carve
+    and a zero until it is freed;
+  - the backstop query on a page of mixed sizes whose padding holds forged
+    headers, reading exactly the recorded live ranges;
+  - the kernel entries' routing by context and by address, run inside the
+    kernel heap's own test, with a second extent registered as the boot
+    registers one: its reservation excluded from thread RAM and refused to
+    every later extent and reservation;
+  - QEMU's reservation layout, and refusals of a map past the mapped RAM,
+    covered RAM past it, a map meeting its RAM, and unaligned or empty input;
+  - a lookup over every granule of the covered RAM with the map in the
+    reservation, which leaves the covered RAM's bytes untouched.
+  - `ak9_platform_suite` checks every board's untypeds stop at their maps,
+    with the 8 GiB firmware account's sizes written by hand.
+- **Readings** (QEMU `virt`, Lean-linked image, fresh archive, on the tree
+  merged with `v0.37.17`). Two runs of
+  `test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, each PASS, with
+  the serial log kept. The two runs' 9356 reading lines are byte-identical.
+  - Every pin is unchanged: endpoint 6 / 248, notification 6 / 240, reply
+    10 / 256, tcb 19 / 2040, sched-context 8 / 440, cnode 23 / 1128, frame
+    6 / 152, page-table 8 / 232, vspace-root 101 / 3568, untyped 7 / 184.
+  - The owned-CNode window allocates 23 and frees 23.
+  - Every other reading is 0.
+- **Boot heap** (the same runs, identical in both): 757 pages (103186 live
+  allocations) after the library initializer and 1349 pages (109290) after
+  the install, all as at `v0.37.17` with the root task's IPC buffer. The map
+  costs the heap nothing; its 1.5 MiB is reserved RAM.
+
 ## v0.37.17 — a carve owns its cells; seL4's CNode Copy, Move and Mint
 
 WS-UC UC4.  Every cell a carve builds is that carve's own, and no later

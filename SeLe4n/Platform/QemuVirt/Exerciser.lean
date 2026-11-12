@@ -148,18 +148,22 @@ def qemuVirtExerciserAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 10
 def qemuVirtExerciserRootIpcBufferPages : Nat := 4
 
 /-- The root task's IPC-buffer untyped: the last
-    `qemuVirtExerciserRootIpcBufferPages` pages of RAM, which the root task's
-    own untyped gives up (`qemuVirtExerciserRootTaskUntyped`). -/
+    `qemuVirtExerciserRootIpcBufferPages` pages of the shipped root untyped,
+    which the root task's own untyped gives up
+    (`qemuVirtExerciserRootTaskUntyped`).  The shipped root untyped ends where
+    the region map's reservation begins (`qemuVirtRegionMap_layout`), so these
+    pages lie directly below the map, never in it. -/
 def qemuVirtExerciserRootIpcBufferUntyped : UntypedObject :=
   SeLe4n.Platform.RPi5.rpi5InitialUntyped
-    (qemuVirtRamTop - qemuVirtExerciserRootIpcBufferPages * 4096)
+    (qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize -
+      qemuVirtExerciserRootIpcBufferPages * 4096)
     (qemuVirtExerciserRootIpcBufferPages * 4096)
 
 /-- The root task's untyped in the exerciser: the shipped one less the IPC
-    buffer untyped's pages at the top of RAM. -/
+    buffer untyped's pages at its top. -/
 def qemuVirtExerciserRootTaskUntyped : UntypedObject :=
   SeLe4n.Platform.RPi5.rpi5InitialUntyped qemuVirtKernelReservedEnd
-    (qemuVirtRamTop - qemuVirtKernelReservedEnd - qemuVirtExerciserRootIpcBufferPages * 4096)
+    (qemuVirtRootTaskUntyped.regionSize - qemuVirtExerciserRootIpcBufferPages * 4096)
 
 /-- The IPC-buffer untyped's object id, the first above the boot objects. -/
 def qemuVirtExerciserRootIpcBufferUntypedId : SeLe4n.ObjId := ⟨11⟩
@@ -483,8 +487,10 @@ theorem qemuVirtExerciserBoundPlatformConfig_checked :
 
 /-- The root task's two untypeds tile the shipped root untyped's region: the
     root task's from the kernel's extent up, the IPC buffer's directly above it
-    to the top of RAM, so the exerciser hands the root task the same memory as
-    the shipped deployment, one IPC buffer's pages set aside. -/
+    to the shipped untyped's top, which is the region map's base
+    (`regionMapBaseOf`), so the exerciser hands the root task the same memory
+    as the shipped deployment, one IPC buffer's pages set aside, and none of
+    the map's reserved pages. -/
 theorem qemuVirtExerciserRootUntypeds_tile :
     qemuVirtExerciserRootTaskUntyped.regionBase = qemuVirtRootTaskUntyped.regionBase ∧
     qemuVirtExerciserRootTaskUntyped.regionBase.toNat +
@@ -492,7 +498,10 @@ theorem qemuVirtExerciserRootUntypeds_tile :
       qemuVirtExerciserRootIpcBufferUntyped.regionBase.toNat ∧
     qemuVirtExerciserRootIpcBufferUntyped.regionBase.toNat +
         qemuVirtExerciserRootIpcBufferUntyped.regionSize =
-      qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize := by
+      qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize ∧
+    [qemuVirtExerciserRootIpcBufferUntyped.regionBase.toNat +
+        qemuVirtExerciserRootIpcBufferUntyped.regionSize] =
+      qemuVirtBootRamExtensions.map regionMapBaseOf := by
   decide
 
 /-- The root task's IPC buffer is page aligned, canonical, and under a level-0

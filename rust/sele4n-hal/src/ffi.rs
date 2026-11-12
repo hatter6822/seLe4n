@@ -620,6 +620,9 @@ pub extern "C" fn ffi_fatal_halt_all() -> ! {
 /// can recover from, so it halts the system rather than returning: a kernel
 /// that went on would hand out untypeds over memory it cannot address.
 ///
+/// The region allocator's map of the extension is reserved separately, by
+/// [`ffi_reserve_region_map`], which the boot calls next.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiExtendBootRamMap`
 #[no_mangle]
 pub extern "C" fn ffi_extend_boot_ram_map(base: u64, size: u64) -> crate::lean_runtime::Obj {
@@ -629,6 +632,52 @@ pub extern "C" fn ffi_extend_boot_ram_map(base: u64, size: u64) -> crate::lean_r
             base,
             size,
             refusal
+        );
+        crate::gic::halt_all();
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
+/// Reserve the region allocator's map of one RAM extension from physical RAM
+/// ([`crate::region::register_reserved_map`]), as seL4 reserves its boot-time
+/// kernel structures: `[covered_base, covered_base + covered_size)` is the
+/// part of the extension its untyped covers, and the map takes the pages from
+/// `map_base`, the untyped's end, up to the extension's end.  The layout is
+/// the verified boot's (`Platform.Boot.RegionMapReservation`); this checks it
+/// rather than trusting it.
+///
+/// The verified Lean boot calls it right after [`ffi_extend_boot_ram_map`] for
+/// the same extension, before any untyped exists.  The map is then kernel-only:
+/// the thread-memory decodes refuse every page of it
+/// ([`crate::region::thread_ram_covered`]).  A reservation that does not fit —
+/// not page-aligned, outside the mapped RAM, or meeting covered RAM or another
+/// reservation — halts the system rather than truncating the map, since a map
+/// that covered less than its untyped would leave carved ranges unfindable.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiReserveRegionMap`
+#[no_mangle]
+pub extern "C" fn ffi_reserve_region_map(
+    covered_base: u64,
+    covered_size: u64,
+    map_base: u64,
+) -> crate::lean_runtime::Obj {
+    // SAFETY: the boot calls this once per extension, before any untyped
+    // exists and before any secondary runs; `register_reserved_map` checks
+    // that both ranges are mapped RAM before it writes the map's pages.
+    let reserved = unsafe {
+        crate::region::register_reserved_map(
+            covered_base as usize,
+            covered_size as usize,
+            map_base as usize,
+        )
+    };
+    if let Err(fault) = reserved {
+        crate::kprintln!(
+            "[boot] FATAL: the region map refuses RAM [{:#x}, +{:#x}) with its map at {:#x}: {:?}",
+            covered_base,
+            covered_size,
+            map_base,
+            fault
         );
         crate::gic::halt_all();
     }
@@ -1863,7 +1912,7 @@ pub extern "C" fn ffi_restore_commit(
     let translation = match crate::user_translation::decode_install(
         table_base,
         asid,
-        crate::mmu::is_boot_cacheable_range,
+        crate::region::thread_ram_covered,
     ) {
         Ok(t) => t,
         Err(_) => crate::gic::halt_all(),
@@ -1897,7 +1946,7 @@ pub extern "C" fn mmu_apply_physical_write(
         tag,
         addr,
         value,
-        crate::mmu::is_boot_cacheable_range,
+        crate::region::thread_ram_covered,
     ) {
         Ok(write) => crate::user_translation::apply_physical_write(write),
         Err(_) => crate::gic::halt_all(),
@@ -1972,7 +2021,7 @@ pub extern "C" fn ffi_capture_user_words(
             index,
             base,
             count,
-            crate::mmu::is_boot_cacheable_range,
+            crate::region::thread_ram_covered,
         )
     };
     if captured.is_none() {
@@ -1992,7 +2041,7 @@ pub extern "C" fn mmu_install_translation(table_base: u64, asid: u64) -> crate::
     match crate::user_translation::decode_install(
         table_base,
         asid,
-        crate::mmu::is_boot_cacheable_range,
+        crate::region::thread_ram_covered,
     ) {
         Ok(translation) => crate::user_translation::install_translation(translation),
         Err(_) => crate::gic::halt_all(),

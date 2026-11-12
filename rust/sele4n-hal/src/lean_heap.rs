@@ -1036,6 +1036,9 @@ pub enum KernelHeapError {
     Fault(HeapFault),
     /// The arena has no memory left for the request.
     Exhausted,
+    /// The address, or this core's allocation context, is the region
+    /// allocator's, and it refused ([`crate::region`]).
+    Region(crate::region::RegionFault),
 }
 
 /// The kernel heap: taken into service on first use, from the extent the
@@ -1149,13 +1152,30 @@ fn with_kernel_heap_masked<R>(
     })
 }
 
-/// `lean_alloc_small(sz, slot_idx)` on the kernel heap.
+/// Whether `addr` lies in the heap's arena.  An address outside it is the
+/// region allocator's, so every free and size query is classified by address
+/// first, and a region cell's is answered without the heap's lock.
+fn in_arena(addr: usize) -> bool {
+    let (start, len) = arena_extent();
+    addr.wrapping_sub(start) < len
+}
+
+/// `lean_alloc_small(sz, slot_idx)` on the kernel heap, or, when this core
+/// has an allocation context ([`crate::region::context_alloc`]), in its
+/// range.
 ///
 /// # Errors
 ///
 /// `Init` if the arena cannot be taken into service, `Fault(SlotMismatch)` for a
 /// size that is not its slot's, `Exhausted` when no page is left.
+/// `Region` when this core's context range refuses the cell.
 pub fn kernel_alloc_small(size: u32, slot: u32) -> Result<usize, KernelHeapError> {
+    if slot as usize >= SLOT_COUNT || size as usize != slot_size(slot as usize) {
+        return Err(KernelHeapError::Fault(HeapFault::SlotMismatch));
+    }
+    if let Some(cell) = crate::region::context_alloc(size as usize, OBJECT_SIZE_DELTA) {
+        return cell.map_err(KernelHeapError::Region);
+    }
     with_kernel_heap(|heap| heap.alloc_small(size as usize, slot as usize))?
         .map_err(KernelHeapError::Fault)?
         .ok_or(KernelHeapError::Exhausted)
@@ -1168,7 +1188,12 @@ pub fn kernel_alloc_small(size: u32, slot: u32) -> Result<usize, KernelHeapError
 ///
 /// `Init` if the arena cannot be taken into service, `Exhausted` when the heap
 /// cannot serve the request (including an alignment beyond a page).
+/// `Region` when this core's context range refuses the cell, or the
+/// alignment is beyond [`crate::region::CELL_ALIGN`].
 pub fn kernel_alloc(size: usize, align: usize) -> Result<usize, KernelHeapError> {
+    if let Some(cell) = crate::region::context_alloc(size, align) {
+        return cell.map_err(KernelHeapError::Region);
+    }
     with_kernel_heap(|heap| heap.alloc(size, align))?.ok_or(KernelHeapError::Exhausted)
 }
 
@@ -1178,7 +1203,12 @@ pub fn kernel_alloc(size: usize, align: usize) -> Result<usize, KernelHeapError>
 ///
 /// `Init` if the arena cannot be taken into service; `Fault` when `addr` is not
 /// a live allocation.
+/// `Region` for an address outside the arena that is not a live region
+/// cell.
 pub fn kernel_free(addr: usize) -> Result<(), KernelHeapError> {
+    if !in_arena(addr) {
+        return crate::region::kernel_free(addr).map_err(KernelHeapError::Region);
+    }
     with_kernel_heap(|heap| heap.free(addr))?.map_err(KernelHeapError::Fault)
 }
 
@@ -1188,7 +1218,12 @@ pub fn kernel_free(addr: usize) -> Result<(), KernelHeapError> {
 ///
 /// `Init` if the arena cannot be taken into service; `Fault` when `addr` is not
 /// a live allocation.
+/// `Region` for an address outside the arena that is not a live region
+/// cell.
 pub fn kernel_usable_size(addr: usize) -> Result<usize, KernelHeapError> {
+    if !in_arena(addr) {
+        return crate::region::kernel_cell_size(addr).map_err(KernelHeapError::Region);
+    }
     with_kernel_heap(|heap| heap.usable_size(addr))?.map_err(KernelHeapError::Fault)
 }
 
@@ -1198,7 +1233,12 @@ pub fn kernel_usable_size(addr: usize) -> Result<usize, KernelHeapError> {
 ///
 /// `Init` if the arena cannot be taken into service; `Fault` when `addr` is not
 /// a live small object.
+/// `Region` for an address outside the arena that is not a live region
+/// cell.
 pub fn kernel_free_small(addr: usize) -> Result<(), KernelHeapError> {
+    if !in_arena(addr) {
+        return crate::region::kernel_free(addr).map_err(KernelHeapError::Region);
+    }
     with_kernel_heap(|heap| heap.free_small(addr))?.map_err(KernelHeapError::Fault)
 }
 
@@ -1208,7 +1248,14 @@ pub fn kernel_free_small(addr: usize) -> Result<(), KernelHeapError> {
 ///
 /// `Init` if the arena cannot be taken into service; `Fault` when `addr` is not
 /// a live small object.
+/// `Region` for an address outside the arena that is not a live region
+/// cell.
 pub fn kernel_small_size(addr: usize) -> Result<u32, KernelHeapError> {
+    if !in_arena(addr) {
+        let size = crate::region::kernel_cell_size(addr).map_err(KernelHeapError::Region)?;
+        return u32::try_from(size)
+            .map_err(|_| KernelHeapError::Region(crate::region::RegionFault::Corrupt));
+    }
     let size = with_kernel_heap(|heap| heap.small_size(addr))?.map_err(KernelHeapError::Fault)?;
     // A class size is at most `MAX_SMALL_OBJECT_SIZE`, so it fits.
     Ok(size as u32)
@@ -2152,5 +2199,8 @@ mod tests {
             kernel_heap_free_bytes().unwrap() > 0,
             "the freed pages are free bytes again"
         );
+        // The region allocator's routing shares the kernel heap's entries, so
+        // it is exercised here, in the one test that touches them.
+        crate::region::tests::kernel_entries_route_by_context_and_address();
     }
 }

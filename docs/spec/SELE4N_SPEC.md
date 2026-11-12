@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.17` (`lakefile.toml`) |
+| **Package version** | `0.37.18` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 627,339 across 624 Lean files |
-| **Test LoC** | 89,473 across 70 Lean test suites |
-| **Proved declarations** | 24,028 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 627,586 across 625 Lean files |
+| **Test LoC** | 89,492 across 70 Lean test suites |
+| **Proved declarations** | 24,041 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -713,12 +713,17 @@ configuration.
   per extension, at ids `6, 7, …` and root-CNode slots `5, 6, …` (since BP7.10,
   which retired the two fixed first-gigabyte untypeds), and
   `rpi5RootTaskUntypeds_regions` states its regions **are**
-  `rpi5BootRamExtensions v`.  Every gate holds over every admissible
+  `rpi5BootRamExtensions v` below their region maps (`untypedExtentOf`, since
+  `v0.37.18`).  `rpi5BootRamExtensions_fit` shows every extension holds its
+  map and an untyped beside it, and
+  `rpi5RootTaskUntypeds_clear_of_regionMaps` shows no untyped meets a map.
+  Every gate holds over every admissible
   configuration (§6.2.17), and
   `rpi5RootTaskCNodeFor_slotsAddressable` adds that every root-CNode slot is
   below the CNode's sixteen.  `rpi5InitialObjectsFor_covers_ram` is the
   direction the placement conjunct cannot state: every RAM address outside the
-  kernel's reserved extent lies in some root-task untyped, on every board.
+  kernel's reserved extent and below its extension's region map lies in some
+  root-task untyped, on every board.
   `rpi5DeploymentBootStateAt_untypedInstalled` says the boot installs each.
   `tests/Ak9PlatformSuite.lean` runs this on 1, 2, 3, 4 and 8 GiB device trees.
 
@@ -4703,6 +4708,42 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   out of it into the root CNode, where it outlives the CNode's retire) holds
   the cells a CNode's carve-to-retire allocates and frees each to the CNode's
   carve pin.
+- **The region allocator** (since `v0.37.18`, WS-UC UC5, inert): the HAL's
+  `region` module serves cells from a range in an untyped's memory: a
+  naturally aligned power-of-two block of at least 512 B.
+  - **The map.** A range is found through a map kept outside every range, one
+    byte per 512 B granule of the RAM the untypeds cover (`region::map`;
+    decision D7). The byte is the log2 size of the range holding the granule,
+    so no lookup reads region memory.
+  - **The reservation.** The map's storage is reserved from physical RAM at
+    boot, never from the kernel heap. The Lean boot lays it out
+    (`Platform.Boot.RegionMapReservation`): each RAM extension's top
+    `regionMapReserveBytes` (the fewest whole pages `R` with `513 · R ≥ S`)
+    hold its map, and its untyped covers the rest (`untypedExtentOf`).
+    `extendBootRamMap` hands the HAL each layout (`ffi_reserve_region_map`).
+    The HAL checks it (`region::reservation_layout`) and halts the boot on one
+    that does not fit, rather than shrinking the map. It then zeroes and
+    registers the map (`region::register_reserved_map`). Every thread-memory
+    decode takes `region::thread_ram_covered`, which refuses a reservation's
+    pages, so the map is kernel-only. QEMU `virt` reserves 1.5 MiB at
+    `[0x7FE8_0000, 0x8000_0000)` (`qemuVirtRegionMap_layout`). The QEMU
+    exerciser's root IPC-buffer untyped is the shipped root untyped's top four
+    pages, directly below the map (`qemuVirtExerciserRootUntypeds_tile`).
+  - **The header.** A range's header holds its log2 size, an atomic live
+    count, a bump cursor, a cell-start bitmap and a live bitmap. It is
+    `24 + size / 32` bytes (`region::header_bytes`).
+  - **Free and size.** A free clears its cell's live bit and decrements the
+    count with atomics, without a lock, and the bytes are not reused. A cell's
+    size runs to the next cell start or to the cursor.
+  - **Classification.** The heap's free and size entries classify by address,
+    the arena's to the heap and every other address to the region.
+  - **The backstop.** Beginning a range (`Region::begin_range`) or zeroing a
+    page (`admit_page_zero`, called by `apply_physical_write`) over bytes of a
+    recorded range whose live count is above 0 halts. Otherwise those ranges
+    are unrecorded whole.
+  - **Inert.** Allocations go to a range only while a core holds an
+    allocation context (`region::enter_context`, interrupts masked while it is
+    held), and nothing sets one yet. So every carve still reads its heap pin.
 - **In-place rewrite** (`v0.35.64`): a transition that rewrites an
   existing object of the same, bookkeeping-neutral kind uses
   `SystemState.rewriteObject` (and the typed `updateTcb` /

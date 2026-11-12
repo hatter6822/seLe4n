@@ -1853,8 +1853,8 @@ variant declared `[0, ramSize)` whole, so no variant was covered and the bridge
 refused every real board.  The deployment's first-gigabyte RAM is now derived
 from the account (`rpi5LowRamTopFor`), so the board is accepted, bound to the
 8 GiB member cut at `0x3fc00000`, and the root task's untypeds describe the
-reported RAM outside the kernel's extent and nothing the firmware kept.  The
-negative is the retired reading: the uncut members are covered by none of the
+reported RAM outside the kernel's extent and nothing the firmware kept, less
+the top pages of each region, which hold its region map.  The negative is the retired reading: the uncut members are covered by none of the
 account's ranges.  The shared corpus carries the same account as
 `eight_gib_rpi5_firmware`. -/
 def realFirmwareAccountBindsTheReportedRam : IO Unit := do
@@ -1893,9 +1893,14 @@ def realFirmwareAccountBindsTheReportedRam : IO Unit := do
           match ist.state.objects[rpi5RootTaskUntypedId i]? with
           | some (.untyped ut) => some (ut.regionBase.toNat, ut.regionSize)
           | _ => none
-      expect "BP7.10 the root task owns exactly the reported RAM outside the kernel's extent"
-        (decide (untypeds = [(0x10000000, 0x3fc00000 - 0x10000000),
-          (0x40000000, 0x200000000 - 0x40000000)]))
+      -- Each region's top pages hold its region map (`regionMapBaseOf`), so
+      -- each untyped stops where its map begins.
+      let reported : List (Nat × Nat) :=
+        [(0x10000000, 0x3fc00000 - 0x10000000), (0x40000000, 0x200000000 - 0x40000000)]
+      expect "BP7.10 the root task owns exactly the reported RAM outside the kernel's extent and the region maps"
+        (decide (untypeds = reported.map SeLe4n.Platform.untypedExtentOf) &&
+          decide (untypeds = [(0x10000000, 0x2fa82000), (0x40000000, 0x1bf206000)]) &&
+          decide (reported.map SeLe4n.Platform.regionMapBaseOf = [0x3fa82000, 0x1ff206000]))
 
 /-- The number of RAM regions outside the kernel's reserved extent each fixture
 variant has, written by hand from `rpi5MemoryMapForConfig` rather than
@@ -1928,8 +1933,10 @@ def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
           (declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := RPi5Platform)))
         -- WS-BP BP4.7, BP7.10: the RAM the boot maps outside the kernel's
         -- extent is the RAM the root task owns — one installed untyped per
-        -- extension of the bound variant, over exactly that extension, named
-        -- by the root CNode at slot `5 + i`, and no untyped id past the last.
+        -- extension of the bound variant, over exactly that extension below
+        -- its region map (`untypedExtentOf`, ending at `regionMapBaseOf`),
+        -- named by the root CNode at slot `5 + i`, and no untyped id past the
+        -- last.
         let exts := rpi5BootRamExtensions (rpi5VariantFor config.machineConfig)
         expect s!"BP4.7 the {name} board has {ramUntypedCount gib} RAM untyped(s) outside the kernel's extent"
           (decide (exts.length = ramUntypedCount gib))
@@ -1940,9 +1947,12 @@ def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
         for (e, i) in exts.zipIdx do
           let installed := match ist.state.objects[rpi5RootTaskUntypedId i]? with
             | some (.untyped ut) =>
-                decide (ut.regionBase.toNat = e.1) && decide (ut.regionSize = e.2) && !ut.isDevice
+                decide (ut.regionBase.toNat = e.1) &&
+                  decide (ut.regionSize = (SeLe4n.Platform.untypedExtentOf e).2) &&
+                  decide (ut.regionBase.toNat + ut.regionSize = SeLe4n.Platform.regionMapBaseOf e) &&
+                  SeLe4n.Platform.regionMapFits e && !ut.isDevice
             | _ => false
-          expect s!"BP4.7 the {name} board installs untyped {i} over its extension {i}" installed
+          expect s!"BP4.7 the {name} board installs untyped {i} over its extension {i} below its region map" installed
           expect s!"BP4.7 the {name} root CNode names untyped {i} at slot {5 + i} with retype"
             (rootSlots.any fun (sl, cap) =>
               decide (sl = rpi5RootTaskUntypedSlot i) &&
@@ -2729,9 +2739,18 @@ def qemuVirt_deployment_boots : IO Unit := do
       | other => throw <| IO.userError s!"the root CNode resolves 4 past its guard: {reprStr other}"
       IO.println "  PASS: the root task's capability addresses carry the root CNode's guard bit"
   unless [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)]
-      == qemuVirtBootRamExtensions do
-    throw <| IO.userError "the root task's untyped is not the RAM the boot maps"
-  IO.println "  PASS: the root task's untyped is the RAM the boot maps"
+      == qemuVirtBootRamExtensions.map SeLe4n.Platform.untypedExtentOf do
+    throw <| IO.userError "the root task's untyped is not the RAM the boot maps below the region map"
+  IO.println "  PASS: the root task's untyped is the RAM the boot maps below the region map"
+  -- WS-UC UC5: the region map's reservation is the rest of the extension, and
+  -- the untyped meets none of it.
+  for e in qemuVirtBootRamExtensions do
+    let mapBase := SeLe4n.Platform.regionMapBaseOf e
+    let untypedEnd := qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize
+    unless SeLe4n.Platform.regionMapFits e && untypedEnd == mapBase &&
+        mapBase + SeLe4n.Platform.regionMapReserveBytes e.2 == e.1 + e.2 do
+      throw <| IO.userError s!"the region map's reservation at {mapBase} does not tile the extension"
+  IO.println "  PASS: the region map's reservation is the extension's top, outside the untyped"
 
 end SeLe4n.Testing.Ak9PlatformSuite
 

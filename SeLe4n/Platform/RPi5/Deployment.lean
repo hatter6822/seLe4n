@@ -234,29 +234,36 @@ def rpi5InitialUntyped (base size : Nat) : UntypedObject :=
     than listed, so the RAM the HAL maps and the RAM the root task owns are one
     list (`rpi5RootTaskUntypeds_regions`) — and since BP7.10 that list is all
     the RAM the configuration declares outside the kernel's extent, the first
-    gigabyte's part cut where the board's firmware said it ends. -/
+    gigabyte's part cut where the board's firmware said it ends.  **WS-UC UC5**:
+    each untyped covers its extension below the region map's reservation
+    (`untypedSizeOf`), which the boot hands the HAL for the map
+    (`Platform.FFI.extendBootRamMap`), so no untyped covers the map. -/
 def rpi5RootTaskUntypeds (v : BCM2712Config) : List (SeLe4n.ObjId × UntypedObject) :=
   (rpi5BootRamExtensions v).mapIdx fun i e =>
-    (rpi5RootTaskUntypedId i, rpi5InitialUntyped e.1 e.2)
+    (rpi5RootTaskUntypedId i, rpi5InitialUntyped e.1 (untypedSizeOf e.2))
 
-/-- The untypeds built over any extension list have exactly its regions —
+/-- The untypeds built over any extension list have exactly its untyped
+    parts (`untypedExtentOf`) —
     stated over the list, so no proof about a configuration's untypeds asks the
     kernel to evaluate that configuration's extensions: with the first region
     sized `lowRamTop - rpi5RamOrigin` (`v0.36.36`), `Nat.sub` would unfold once
     per unit of its literal second argument. -/
 private theorem untypedsOver_regions (l : List (Nat × Nat)) :
-    (l.mapIdx fun i e => (rpi5RootTaskUntypedId i, rpi5InitialUntyped e.1 e.2)).map
-        (fun u => (u.2.regionBase.toNat, u.2.regionSize)) = l := by
+    (l.mapIdx fun i e => (rpi5RootTaskUntypedId i, rpi5InitialUntyped e.1 (untypedSizeOf e.2))).map
+        (fun u => (u.2.regionBase.toNat, u.2.regionSize)) = l.map untypedExtentOf := by
   apply List.ext_getElem
   · simp
   · intro i h₁ h₂
-    simp
+    simp only [List.getElem_map, List.getElem_mapIdx, rpi5InitialUntyped_base,
+      rpi5InitialUntyped_size]
+    unfold untypedExtentOf
+    rfl
 
-/-- **WS-BP BP4.7**: the untypeds' regions are exactly the extensions the boot
-    maps, in order — on every configuration. -/
+/-- **WS-BP BP4.7, WS-UC UC5**: the untypeds' regions are exactly the untyped
+    parts of the extensions the boot maps, in order — on every configuration. -/
 theorem rpi5RootTaskUntypeds_regions (v : BCM2712Config) :
     (rpi5RootTaskUntypeds v).map (fun u => (u.2.regionBase.toNat, u.2.regionSize)) =
-      rpi5BootRamExtensions v :=
+      (rpi5BootRamExtensions v).map untypedExtentOf :=
   untypedsOver_regions (rpi5BootRamExtensions v)
 
 /-- **WS-BP BP7.10**: how many extensions an admissible configuration has — the
@@ -483,7 +490,8 @@ private theorem untyped_of_mem (v : BCM2712Config) (e : ObjectEntry) (ut : Untyp
     (he : e ∈ rpi5InitialObjectsFor v) (hObj : e.obj = .untyped ut) :
     ∃ (i : Nat) (h : i < (rpi5BootRamExtensions v).length),
       e.id = rpi5RootTaskUntypedId i ∧
-        ut = rpi5InitialUntyped (rpi5BootRamExtensions v)[i].1 (rpi5BootRamExtensions v)[i].2 := by
+        ut = rpi5InitialUntyped (rpi5BootRamExtensions v)[i].1
+          (untypedSizeOf (rpi5BootRamExtensions v)[i].2) := by
   unfold rpi5InitialObjectsFor at he
   rcases List.mem_append.mp he with hFixed | hUnt
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at hFixed
@@ -521,10 +529,11 @@ private theorem extension_placed (mc : SeLe4n.MachineConfig)
     (hRes : mc.kernelReserved = rpi5KernelReserved)
     (hDev : ∀ r ∈ mc.memoryMap, r.kind = .ram → ∀ d ∈ mc.kernelDevices, r.endAddr ≤ d.base.toNat)
     (x : Nat × Nat) (hx : x ∈ bootRamExtensionsOf mc.memoryMap) :
-    (untypedWithinDeclaredRegion mc (rpi5InitialUntyped x.1 x.2) &&
-      untypedClearOfKernel mc (rpi5InitialUntyped x.1 x.2) &&
-      untypedClearOfKernelDevices mc (rpi5InitialUntyped x.1 x.2)) = true := by
+    (untypedWithinDeclaredRegion mc (rpi5InitialUntyped x.1 (untypedSizeOf x.2)) &&
+      untypedClearOfKernel mc (rpi5InitialUntyped x.1 (untypedSizeOf x.2)) &&
+      untypedClearOfKernelDevices mc (rpi5InitialUntyped x.1 (untypedSizeOf x.2))) = true := by
   obtain ⟨r, hr, hk, hlo, hend, hkre, _⟩ := mem_bootRamExtensionsOf _ _ hx
+  have hle := untypedSizeOf_le x.2
   simp only [Bool.and_eq_true]
   refine ⟨⟨?_, ?_⟩, ?_⟩
   · unfold untypedWithinDeclaredRegion
@@ -545,14 +554,20 @@ private theorem extension_placed (mc : SeLe4n.MachineConfig)
       rpi5InitialUntyped_size]
     left
     have := hDev r hr hk d hd
-    simpa [SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat, hend] using this
+    have hE : x.1 + x.2 ≤ d.base.toNat := by
+      simpa [SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat, hend] using this
+    simp only [SeLe4n.PAddr.toNat] at hE ⊢
+    omega
 
 /-- Two untypeds over extensions that do not overlap do not overlap either
     (stated over the extensions, for the reason above). -/
 private theorem extensions_disjoint_untyped (a b : Nat × Nat) (h : a.1 + a.2 ≤ b.1) :
-    (rpi5InitialUntyped a.1 a.2).regionBase.val + (rpi5InitialUntyped a.1 a.2).regionSize ≤
-      (rpi5InitialUntyped b.1 b.2).regionBase.val := by
-  simpa [rpi5InitialUntyped, SeLe4n.PAddr.ofNat] using h
+    (rpi5InitialUntyped a.1 (untypedSizeOf a.2)).regionBase.val +
+        (rpi5InitialUntyped a.1 (untypedSizeOf a.2)).regionSize ≤
+      (rpi5InitialUntyped b.1 (untypedSizeOf b.2)).regionBase.val := by
+  have hle := untypedSizeOf_le a.2
+  simp only [rpi5InitialUntyped, SeLe4n.PAddr.ofNat]
+  omega
 
 /-- **WS-BP BP7.10**: the one gate the projection forgets, decided over the
     structure rather than by evaluation — every untyped is its extension, which
@@ -945,23 +960,76 @@ theorem rpi5PlatformConfigFromDtb_deployment_ok (blob : ByteArray) (config : Pla
     conjunct cannot state because it bounds the untypeds from above only.  With
     BP7.10 the extensions reach down to the kernel's extent, so the first
     gigabyte needs no case of its own — and only the part of it the firmware
-    reported is in the map to be covered. -/
+    reported is in the map to be covered.  **WS-UC UC5**: except the region
+    map's reservation at the top of each extension (`regionMapBaseOf`), which
+    is the kernel's, as seL4's boot-time structures are. -/
 theorem rpi5InitialObjectsFor_covers_ram (v : BCM2712Config)
     (r : SeLe4n.MemoryRegion) (hr : r ∈ rpi5MemoryMapForConfig v) (hk : r.kind = .ram)
     (a : Nat) (hlo : r.base.toNat ≤ a) (hhi : a < r.endAddr)
-    (hk' : rpi5KernelReservedEnd ≤ a) :
+    (hk' : rpi5KernelReservedEnd ≤ a)
+    (hMap : ∀ e ∈ rpi5BootRamExtensions v, e.1 ≤ a → a < regionMapBaseOf e) :
     ∃ e ∈ rpi5InitialObjectsFor v, ∃ ut, e.obj = .untyped ut ∧ ut.isDevice = false ∧
       ut.regionBase.toNat ≤ a ∧ a < ut.regionBase.toNat + ut.regionSize := by
   obtain ⟨ext, hExt, h1, h2⟩ := bootRamExtensionsOf_covers _ r hr hk a hlo hhi hk'
+  have hBelow := hMap ext hExt h1
   obtain ⟨i, hi, hEq⟩ := List.mem_iff_getElem.mp hExt
-  refine ⟨untypedEntry (rpi5RootTaskUntypedId i) (rpi5InitialUntyped ext.1 ext.2), ?_,
-    _, rfl, rfl, ?_, ?_⟩
+  refine ⟨untypedEntry (rpi5RootTaskUntypedId i)
+      (rpi5InitialUntyped ext.1 (untypedSizeOf ext.2)), ?_, _, rfl, rfl, ?_, ?_⟩
   · refine List.mem_append_right _ (List.mem_map.mpr ⟨(rpi5RootTaskUntypedId i,
-      rpi5InitialUntyped ext.1 ext.2), ?_, rfl⟩)
+      rpi5InitialUntyped ext.1 (untypedSizeOf ext.2)), ?_, rfl⟩)
     unfold rpi5RootTaskUntypeds
     exact List.mem_mapIdx.mpr ⟨i, hi, by rw [← hEq]; rfl⟩
   · simp only [rpi5InitialUntyped_base]; omega
-  · simp only [rpi5InitialUntyped_base, rpi5InitialUntyped_size]; omega
+  · simp only [rpi5InitialUntyped_base, rpi5InitialUntyped_size]
+    unfold regionMapBaseOf at hBelow
+    omega
+
+/-- An untyped over the `i`-th of pairwise-disjoint extensions ends at or
+    before the `j`-th extension's reservation, or the `j`-th extension ends at
+    or before it begins.  Stated over the list with the sizes generalised, so
+    the kernel never unfolds `untypedSizeOf`'s division. -/
+private theorem untyped_clear_of_reservation (l : List (Nat × Nat))
+    (hP : l.Pairwise (fun a b => a.1 + a.2 ≤ b.1 ∨ b.1 + b.2 ≤ a.1))
+    (i j : Nat) (hi : i < l.length) (hj : j < l.length) :
+    l[i].1 + untypedSizeOf l[i].2 ≤ regionMapBaseOf l[j] ∨ l[j].1 + l[j].2 ≤ l[i].1 := by
+  have hB : regionMapBaseOf l[j] = l[j].1 + untypedSizeOf l[j].2 := by
+    unfold regionMapBaseOf; rfl
+  rw [hB]
+  by_cases hij : i = j
+  · subst hij; exact Or.inl (Nat.le_refl _)
+  · have hle := untypedSizeOf_le l[i].2
+    have hP' := List.pairwise_iff_getElem.mp hP
+    generalize untypedSizeOf l[i].2 = a at *
+    generalize untypedSizeOf l[j].2 = b at *
+    rcases Nat.lt_or_gt_of_ne hij with hlt | hgt
+    · rcases hP' i j hi hj hlt with h | h
+      · left; omega
+      · right; exact h
+    · rcases hP' j i hj hi hgt with h | h
+      · right; exact h
+      · left; omega
+
+/-- **WS-UC UC5**: no root-task untyped meets any extension's region-map
+    reservation `[regionMapBaseOf e, e.1 + e.2)`, on every admissible
+    configuration: an untyped ends where its own extension's reservation
+    begins, and the extensions are pairwise disjoint.  So no capability the
+    boot hands out names the map, and no carve can retype or map it. -/
+theorem rpi5RootTaskUntypeds_clear_of_regionMaps (v : BCM2712Config) (hv : v.Admissible)
+    (u : SeLe4n.ObjId × UntypedObject) (hu : u ∈ rpi5RootTaskUntypeds v)
+    (e : Nat × Nat) (he : e ∈ rpi5BootRamExtensions v) :
+    u.2.regionBase.toNat + u.2.regionSize ≤ regionMapBaseOf e ∨
+      e.1 + e.2 ≤ u.2.regionBase.toNat := by
+  unfold rpi5RootTaskUntypeds at hu
+  obtain ⟨i, hi, hEq⟩ := List.mem_mapIdx.mp hu
+  obtain ⟨j, hj, hj'⟩ := List.mem_iff_getElem.mp he
+  have hBase : u.2.regionBase.toNat = (rpi5BootRamExtensions v)[i].1 := by
+    rw [← hEq]; exact rpi5InitialUntyped_base _ _
+  have hSize : u.2.regionSize = untypedSizeOf (rpi5BootRamExtensions v)[i].2 := by
+    rw [← hEq]; exact rpi5InitialUntyped_size _ _
+  have h := untyped_clear_of_reservation _ (extensions_pairwise_disjoint v hv) i j hi hj
+  rw [hj'] at h
+  rw [hBase, hSize]
+  exact h
 
 /-- **WS-BP BP4.7**: and every one of those untypeds is an object of the state
     the hardware boot installs, at its own id, on every admissible

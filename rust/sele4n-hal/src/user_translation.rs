@@ -349,6 +349,12 @@ pub const fn icache_maintenance(write: PhysicalWrite) -> Option<crate::cache::IC
 pub fn apply_physical_write(write: PhysicalWrite) {
     match write {
         PhysicalWrite::ZeroPage(page) => {
+            // The region allocator's backstop: no zero lands on a range with
+            // a live cell, and the dead ranges the page meets are unrecorded
+            // before the frame's owner can write a byte of it.
+            if let Err(fault) = crate::region::admit_page_zero(page as usize, PAGE_BYTES as usize) {
+                crate::region::halt(fault);
+            }
             #[cfg(target_arch = "aarch64")]
             {
                 // SAFETY: `page` passed `thread_page_admissible`: one
