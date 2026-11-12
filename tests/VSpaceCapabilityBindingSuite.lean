@@ -1567,11 +1567,11 @@ private def runSetSpaceChecks : IO Unit := do
       (isErr .illegalAuthority (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnRW 12) carveOwner Concurrency.bootCoreId st1))
     assertBool "a read-only CSpace-root capability is refused (illegalAuthority)"
       (isErr .illegalAuthority (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnRO 12) carveOwner Concurrency.bootCoreId st1))
-    assertBool "a CNode capability named as the VSpace root is refused (invalidCapability)"
-      (isErr (.invalidCapability 0)
+    assertBool "a CNode capability named as the VSpace root is refused (illegalState, seL4's IllegalOperation)"
+      (isErr .illegalState
         (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnCnRW) carveOwner Concurrency.bootCoreId st1))
-    assertBool "an untyped capability named as the VSpace root is refused (invalidCapability)"
-      (isErr (.invalidCapability 0)
+    assertBool "an untyped capability named as the VSpace root is refused (illegalState, seL4's IllegalOperation)"
+      (isErr .illegalState
         (dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotUtRetype) carveOwner Concurrency.bootCoreId st1))
     assertBool "one message register is refused"
       ((dispatchSyscallAsCurrent { decodeSetSpace slotWorkerTcb slotOwnCnGrant 12 with
