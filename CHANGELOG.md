@@ -85,18 +85,16 @@ allocation context, so every allocation still goes to the kernel heap.
 - **Readings** (QEMU `virt`, Lean-linked image, fresh archive). These are two
   runs of `test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, each
   PASS, and two more runs of the same gate keeping the serial log. The kept
-  runs' reading lines are identical to each other and to `v0.37.17`'s, apart
-  from the absolute counters, which start one allocation later (the map's
-  storage).
+  runs' reading lines are identical to each other and, apart from the
+  absolute counters, to `v0.37.17`'s.
   - Every pin is unchanged: endpoint 6 / 248, notification 6 / 240, reply
     10 / 256, tcb 19 / 2040, sched-context 8 / 440, cnode 23 / 1128, frame
     6 / 152, page-table 8 / 232, vspace-root 101 / 3568, untyped 7 / 184.
   - The owned-CNode window allocates 23 and frees 23.
   - Every other reading is 0.
-- **Boot heap** (the same runs): 753 pages after the library initializer, as
-  at `v0.37.17`. After the install it is 1721 pages, up from 1337, with
-  108923 live allocations, up from 108922. The 384 pages (1.5 MiB) are the
-  map of QEMU's one 768 MiB RAM extension: one byte per 512 B (D4).
+- **Boot heap** (the same runs): 753 pages after the library initializer and
+  1337 pages after the install, with 108922 live allocations, all as at
+  `v0.37.17`. The map costs the heap nothing; its 1.5 MiB is reserved RAM.
 
 ## v0.37.17 — a carve owns its cells, and no pass moves them
 
