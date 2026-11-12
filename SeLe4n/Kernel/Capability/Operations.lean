@@ -318,6 +318,132 @@ theorem resolveCapAddress_congr_getCNode?
       | rfl
       | (exact ih _ (by omega) _)
 
+/-- **The CNode-operation walk** (seL4's `resolveAddressBits` under
+`lookupSlotForCNodeOp`): `resolveCapAddress`'s walk, answering
+`.depthMismatch` where seL4's lookup stops with bits still to resolve — a
+level that needs more bits than remain, or a slot on the way that is empty or
+names no CNode — where `resolveCapAddress` answers `.illegalState`,
+`.invalidCapability` or `.objectNotFound`.  Every success is
+`resolveCapAddress`'s (`resolveCNodeOpAddress_ok_iff`). -/
+def resolveCNodeOpAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat)
+    (st : SystemState) : Except KernelError SlotRef :=
+  if hZero : bitsRemaining = 0 then .error .illegalState
+  else
+    match st.getCNode? rootId with
+    | some cn =>
+      let consumed := cn.guardWidth + cn.radixWidth
+      if hCons : consumed = 0 then .error .illegalState
+      else if bitsRemaining < consumed then .error .depthMismatch
+      else
+        let slotIndex := addr.slotBits (bitsRemaining - consumed) cn.radixWidth
+        let guardExtracted := addr.guardBits (bitsRemaining - consumed) cn.radixWidth cn.guardWidth
+        if guardExtracted ≠ cn.guardValue then .error .invalidCapability
+        else
+          let slot := SeLe4n.Slot.ofNat slotIndex
+          if bitsRemaining - consumed = 0 then
+            .ok { cnode := rootId, slot := slot }
+          else
+            match cn.lookup slot with
+            | some cap =>
+              match cap.target with
+              | .object childId =>
+                if (st.getCNode? childId).isSome then
+                  have hConsPos : consumed > 0 := Nat.pos_of_ne_zero hCons
+                  have hBitsPos : bitsRemaining > 0 := Nat.pos_of_ne_zero hZero
+                  have : bitsRemaining - consumed < bitsRemaining := Nat.sub_lt hBitsPos hConsPos
+                  resolveCNodeOpAddress childId addr (bitsRemaining - consumed) st
+                else .error .depthMismatch
+              | _ => .error .depthMismatch
+            | none => .error .depthMismatch
+    | none => .error .objectNotFound
+  termination_by bitsRemaining
+
+/-- The CNode-operation walk and `resolveCapAddress` succeed together, at the
+same slot: they differ only in which refusal they answer. -/
+theorem resolveCNodeOpAddress_ok_iff (addr : SeLe4n.CPtr) (st : SystemState) (ref : SlotRef) :
+    ∀ (bitsRemaining : Nat) (rootId : SeLe4n.ObjId),
+      resolveCNodeOpAddress rootId addr bitsRemaining st = .ok ref ↔
+        resolveCapAddress rootId addr bitsRemaining st = .ok ref := by
+  intro bitsRemaining
+  induction bitsRemaining using Nat.strongRecOn with
+  | _ bits ih =>
+    intro rootId
+    rw [resolveCNodeOpAddress, resolveCapAddress]
+    by_cases hZ : bits = 0
+    · simp [hZ]
+    · simp only [hZ, ↓reduceDIte]
+      cases hR : st.getCNode? rootId with
+      | none => simp
+      | some cn =>
+        simp only []
+        by_cases hC : cn.guardWidth + cn.radixWidth = 0
+        · simp [hC]
+        · simp only [hC, ↓reduceDIte]
+          by_cases hL : bits < cn.guardWidth + cn.radixWidth
+          · simp [hL]
+          · simp only [hL, ↓reduceIte]
+            split
+            · simp
+            · split
+              · exact Iff.rfl
+              · split
+                · rename_i cap _
+                  split
+                  · rename_i childId _
+                    cases hChild : st.getCNode? childId with
+                    | none =>
+                      simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
+                      rw [resolveCapAddress]
+                      have : bits - (cn.guardWidth + cn.radixWidth) ≠ 0 := by assumption
+                      simp [this, hChild]
+                    | some _ =>
+                      simp only [Option.isSome_some, ↓reduceIte]
+                      exact ih _ (by omega) childId
+                  · simp
+                · simp
+
+/-- **seL4's `lookupSlotForCNodeOp`**, from a CNode `rootId` already known to
+be the operation's root: a depth outside `1 .. 64` is refused `.rangeError`
+before any lookup (seL4's `rangeCheck`), and the address is then resolved to
+exactly that depth (`resolveCNodeOpAddress`). -/
+def resolveCNodeOpSlot (rootId : SeLe4n.ObjId) (index : SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) : Except KernelError SlotRef :=
+  if depth < 1 ∨ 64 < depth then .error .rangeError
+  else resolveCNodeOpAddress rootId index depth st
+
+/-- A CNode operation's slot is the one `resolveCapAddress` resolves at the
+stated depth, which is in `1 .. 64`. -/
+theorem resolveCNodeOpSlot_ok_iff (rootId : SeLe4n.ObjId) (index : SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) (ref : SlotRef) :
+    resolveCNodeOpSlot rootId index depth st = .ok ref ↔
+      (1 ≤ depth ∧ depth ≤ 64) ∧ resolveCapAddress rootId index depth st = .ok ref := by
+  unfold resolveCNodeOpSlot
+  by_cases h : depth < 1 ∨ 64 < depth
+  · simp only [h, ↓reduceIte, reduceCtorEq, false_iff, not_and]
+    intro hR; omega
+  · simp only [h, ↓reduceIte, resolveCNodeOpAddress_ok_iff]
+    constructor
+    · intro hR; exact ⟨by omega, hR⟩
+    · intro hR; exact hR.2
+
+/-- A CNode operation's slot reads only CNodes. -/
+theorem resolveCNodeOpAddress_congr_getCNode?
+    (st₁ st₂ : SystemState) (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id)
+    (addr : SeLe4n.CPtr) :
+    ∀ (bitsRemaining : Nat) (rootId : SeLe4n.ObjId),
+      resolveCNodeOpAddress rootId addr bitsRemaining st₁
+        = resolveCNodeOpAddress rootId addr bitsRemaining st₂ := by
+  intro bitsRemaining
+  induction bitsRemaining using Nat.strongRecOn with
+  | _ bits ih =>
+    intro rootId
+    rw [resolveCNodeOpAddress, resolveCNodeOpAddress]
+    simp only [hCNode]
+    repeat' (first | split | (simp only []; split))
+    all_goals first
+      | rfl
+      | (refine ih _ ?_ _; omega)
+
 /-- …and `lookupSlotCap` reads only the slot's CNode. -/
 theorem lookupSlotCap_congr_getCNode?
     (st₁ st₂ : SystemState) (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id)

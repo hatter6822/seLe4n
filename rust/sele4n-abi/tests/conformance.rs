@@ -563,13 +563,13 @@ fn live_syscall_numbers() -> impl Iterator<Item = u64> {
     (0..SyscallId::ENCODING_BOUND).filter(|n| !SyscallId::RETIRED.contains(n))
 }
 
-/// Verify KernelError roundtrip for every variant (0–58).
+/// Verify KernelError roundtrip for every variant (0–60).
 /// WS-SM SM9.C.1: DeclassificationDeniedAtReceiver at 56 extends SM9.A.2's
 /// range of 0..=55 (which extended SM8.C.9's range of 0..=54).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    // 59 discriminants (0–58), TruncatedMessage at 58.
-    for i in 0..=58u32 {
+    // 61 discriminants (0–60), DepthMismatch at 60.
+    for i in 0..=60u32 {
         if KernelError::RETIRED.contains(&i) {
             assert!(KernelError::from_u32(i).is_none(), "retired {i} decoded");
             continue;
@@ -578,7 +578,7 @@ fn kernel_error_exhaustive_roundtrip() {
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(59).is_none());
+    assert!(KernelError::from_u32(61).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 10 variants (0–9, including SchedContext,
@@ -879,8 +879,8 @@ fn access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn kernel_error_non_exhaustive() {
-    // 59 discriminants (0–58) roundtrip, TruncatedMessage at 58.
-    for i in 0..=58u32 {
+    // 61 discriminants (0–60) roundtrip, DepthMismatch at 60.
+    for i in 0..=60u32 {
         if KernelError::RETIRED.contains(&i) {
             assert!(KernelError::from_u32(i).is_none());
             continue;
@@ -889,7 +889,7 @@ fn kernel_error_non_exhaustive() {
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(59).is_none());
+    assert!(KernelError::from_u32(61).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -961,9 +961,9 @@ fn unknown_kernel_error_fallback() {
 
     // WS-RA / WS-RR RR4 (ABI v3): errors ride the x1 label in the top of
     // the 20-bit range — label ERROR_LABEL_BASE + d names discriminant d.
-    // Discriminant 59 — first unrecognized after TruncatedMessage (58).
+    // Discriminant 61 — first unrecognized after DepthMismatch (60).
     let base = sele4n_types::ERROR_LABEL_BASE;
-    let regs = [0, (base + 59) << 12, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 61) << 12, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
@@ -1158,12 +1158,12 @@ fn identifier_validation() {
 // ============================================================================
 
 /// W1-H / AA1 / AG3 / AL6 / AL1b / AN7-E / R5.E / WS-SM SM5.B: KernelError
-/// variant count matches Lean (discriminants 0-58, TruncatedMessage the
-/// last at 58).  Detects Lean-Rust enum divergence automatically.
+/// variant count matches Lean (discriminants 0-60, DepthMismatch the
+/// last at 60).  Detects Lean-Rust enum divergence automatically.
 #[test]
 fn kernel_error_variant_count() {
     // One past the largest discriminant (Lean's `kernelErrorEncodingBound`).
-    const KERNEL_ERROR_COUNT: u32 = 59;
+    const KERNEL_ERROR_COUNT: u32 = 61;
     // All expected variants exist, and the retired discriminant (37) has none
     for i in 0..KERNEL_ERROR_COUNT {
         assert_eq!(
@@ -1612,7 +1612,9 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(56).is_some()); // DeclassificationDeniedAtReceiver (SM9.C.1)
     assert!(KernelError::from_u32(57).is_some()); // IpcCancelled (WS-RR RR7.14)
     assert!(KernelError::from_u32(58).is_some()); // TruncatedMessage
-    assert!(KernelError::from_u32(59).is_none());
+    assert!(KernelError::from_u32(59).is_some()); // RangeError
+    assert!(KernelError::from_u32(60).is_some()); // DepthMismatch
+    assert!(KernelError::from_u32(61).is_none());
 }
 
 // --- D6: TCB operation conformance ---

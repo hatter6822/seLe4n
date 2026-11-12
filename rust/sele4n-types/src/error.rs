@@ -2,8 +2,10 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/KernelError.lean`.
-//! Discriminants 0–58 other than the retired 37 are a 1:1 mapping from the
-//! Lean inductive (58 variants after `TruncatedMessage` at 58 — seL4's
+//! Discriminants 0–60 other than the retired 37 are a 1:1 mapping from the
+//! Lean inductive (60 variants after `RangeError` at 59 and `DepthMismatch` at
+//! 60 — seL4's `seL4_RangeError` and its depth-mismatch `seL4_FailedLookup`
+//! for a CNode operation's address — and `TruncatedMessage` at 58 — seL4's
 //! `seL4_TruncatedMessage`, an invocation's message shorter than its decode
 //! reads — and WS-RR RR7.14's `IpcCancelled` at 57, the error a forcibly-cancelled
 //! blocking IPC returns, distinct from `IpcTimeout`'s budget expiry —
@@ -19,7 +21,7 @@
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
 ///
-/// Discriminants 0–48 match the Lean `KernelError` inductive exactly.
+/// Discriminants 0–60 (37 retired) match the Lean `KernelError` inductive exactly.
 /// `UnknownKernelError` (255) is a Rust-side sentinel for unrecognized codes.
 /// The discriminant values use `#[repr(u32)]` for ABI stability.
 ///
@@ -161,8 +163,17 @@ pub enum KernelError {
     /// argument words than its decode reads.  Answered once the capability is
     /// found and its kind accepted, before any argument is read.
     TruncatedMessage = 58,
+    /// seL4's `seL4_RangeError`: an invocation argument outside the range its
+    /// operation admits — a CNode operation's depth outside `1..=64` — refused
+    /// before the lookup it would bound.
+    RangeError = 59,
+    /// seL4's `seL4_FailedLookup` with a depth-mismatch lookup fault: a CNode
+    /// operation's address that, resolved to its stated depth, stops at a slot
+    /// holding no CNode with bits still to resolve, or reaches a CNode level
+    /// needing more bits than remain.
+    DepthMismatch = 60,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
-    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–58.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–60.
     UnknownKernelError = 255,
 }
 
@@ -235,6 +246,8 @@ impl KernelError {
             56 => Some(Self::DeclassificationDeniedAtReceiver),
             57 => Some(Self::IpcCancelled),
             58 => Some(Self::TruncatedMessage),
+            59 => Some(Self::RangeError),
+            60 => Some(Self::DepthMismatch),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -306,6 +319,8 @@ impl std::fmt::Display for KernelError {
             Self::AuditFieldTooLarge => write!(f, "audit field too wide to export (read refused rather than truncated)"),
             Self::DeclassificationDeniedAtReceiver => write!(f, "declassification denied at the resolved receiver (the second hop, not the caller's)"),
             Self::TruncatedMessage => write!(f, "message shorter than the invocation's arguments"),
+            Self::RangeError => write!(f, "argument outside its operation's range"),
+            Self::DepthMismatch => write!(f, "CNode address does not resolve to exactly its depth"),
             Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
@@ -328,7 +343,8 @@ mod tests {
         // WS-SM SM9.C.1: DeclassificationDeniedAtReceiver added at discriminant 56.
         // WS-RR RR7.14: IpcCancelled added at discriminant 57.
         // TruncatedMessage added at discriminant 58.
-        for i in 0..=58u32 {
+        // RangeError and DepthMismatch added at discriminants 59 and 60.
+        for i in 0..=60u32 {
             if KernelError::RETIRED.contains(&i) {
                 assert!(KernelError::from_u32(i).is_none(), "retired {i} decoded");
                 continue;
@@ -341,7 +357,7 @@ mod tests {
     #[test]
     fn from_u32_out_of_range() {
         // T1-G: Discriminants in gaps and beyond range must return None
-        assert!(KernelError::from_u32(59).is_none());
+        assert!(KernelError::from_u32(61).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
         assert_eq!(
@@ -393,23 +409,23 @@ mod tests {
     ///   | objectStoreCapacityExceeded (36)
     #[test]
     fn lean_rust_correspondence() {
-        // 59 discriminants (0-58, 37 retired) — verify the range matches
-        // Lean's `kernelErrorEncodingBound` (TruncatedMessage at 58).
-        let max_valid = 58u32;
+        // 61 discriminants (0-60, 37 retired) — verify the range matches
+        // Lean's `kernelErrorEncodingBound` (DepthMismatch at 60).
+        let max_valid = 60u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify from_u32: unknown discriminants in the gap (59–254) return None
+        // Verify from_u32: unknown discriminants in the gap (61–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–58 are sequential.
-    /// TruncatedMessage extended the range at 58, after WS-RR RR7.14's
-    /// IpcCancelled at 57.
+    /// T1-H: Discriminant ordering — kernel variants 0–60 are sequential.
+    /// RangeError (59) and DepthMismatch (60) extended the range after
+    /// TruncatedMessage at 58.
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=58u32 {
+        for i in 0..=60u32 {
             let e = KernelError::from_u32(i);
             if KernelError::RETIRED.contains(&i) {
                 assert!(e.is_none(), "retired discriminant {i} decoded");
@@ -424,7 +440,7 @@ mod tests {
     }
 
     /// AF6-A: UnknownKernelError sentinel at discriminant 255.
-    /// The None range starts past the last kernel discriminant, 58.
+    /// The None range starts past the last kernel discriminant, 60.
     #[test]
     fn unknown_kernel_error_sentinel() {
         assert_eq!(KernelError::UnknownKernelError as u32, 255);
@@ -432,8 +448,8 @@ mod tests {
             KernelError::from_u32(255),
             Some(KernelError::UnknownKernelError)
         );
-        // Gap between 58 and 255 is all None
-        for i in 59..255u32 {
+        // Gap between 60 and 255 is all None
+        for i in 61..255u32 {
             assert!(
                 KernelError::from_u32(i).is_none(),
                 "unexpected variant at {i}"
