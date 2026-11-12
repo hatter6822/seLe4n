@@ -226,6 +226,22 @@ theorem untypedRetypeObject_of_admitted {src dst : CSpaceAddr} {childId : SeLe4n
         rfl
     | _ => rw [hT] at hRest; cases hRest
 
+/-- `cspaceDstRefusal`, inlined, so its caller reads the destination's two
+words and builds no slot reference. -/
+@[inline] def untypedRetypeDstRefusal (dst : CSpaceAddr) (st : SystemState) :
+    Except KernelError Unit :=
+  match st.getCNode? dst.cnode with
+  | some cn =>
+      if !cn.slotAddressable dst.slot then .error (.invalidArgument 0)
+      else
+        match cn.lookup dst.slot with
+        | some _ => .error .targetSlotOccupied
+        | none => .ok ()
+  | none => .error .objectNotFound
+
+theorem untypedRetypeDstRefusal_eq (dst : CSpaceAddr) (st : SystemState) :
+    untypedRetypeDstRefusal dst st = cspaceDstRefusal dst st := rfl
+
 /-- **The refusal `untypedRetypeObject` answers**, read from the checks'
 results in the specification's order, without building the request or
 running the carve: the heap's (`heapOk`), the request's (`admissibleOk`), the
@@ -233,7 +249,7 @@ issuing slot's, the destination's, then `retypeFromUntyped`'s.  Every result
 is a word or a shared constant.  An admitted carve has no refusal, and reads
 `illegalState` here (`untypedRetypeObject_refused` holds only for a refused
 one). -/
-@[noinline] def untypedRetypeRefusalWith (st : SystemState) (src dst : CSpaceAddr)
+@[inline] def untypedRetypeRefusalWith (st : SystemState) (src dst : CSpaceAddr)
     (childId : SeLe4n.ObjId) (heapOk admissibleOk : Bool) (ty : KernelObjectType)
     (size : Nat) : KernelError :=
   if !heapOk then .untypedRegionExhausted st.machine.kernelHeapFreeBytes.toUInt64 else
@@ -250,14 +266,14 @@ one). -/
       match st.getUntyped? untypedId with
       | none => .untypedTypeMismatch
       | some ut =>
-        match cspaceDstRefusal dst st with
+        match untypedRetypeDstRefusal dst st with
         | .error e => e
         | .ok () =>
           if st.objects.size ≥ maxObjects then .objectStoreCapacityExceeded
           else if childId = untypedId then .childIdSelfOverwrite
           else if (st.getObject? childId).isSome ||
               isIrqNodeObjId InterruptLineSet.capacity childId then .childIdCollision
-          else if ut.children.any (fun c => c.objId == childId) then .childIdCollision
+          else if !childrenNameNone childId ut.children then .childIdCollision
           else if ut.isDevice && !ty.deviceBackable then .untypedDeviceRestriction
           else if !objectIdInAddressSpace st.machine childId then .addressOutOfBounds
           else if size < objectTypeAllocSize ty then .untypedAllocSizeTooSmall
@@ -278,6 +294,8 @@ theorem untypedRetypeObject_refused {src dst : CSpaceAddr} {childId : SeLe4n.Obj
         (req.admissible st) req.objectType req.size) := by
   unfold untypedRetypeAdmittedAt at hA
   unfold untypedRetypeObject untypedRetypeRefusalWith
+  rw [untypedRetypeDstRefusal_eq]
+  simp only [childrenNameNone_eq, Bool.not_not]
   cases hH : req.heapAdmitted st
   · rfl
   cases hM : req.admissible st

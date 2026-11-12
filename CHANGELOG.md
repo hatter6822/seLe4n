@@ -67,7 +67,10 @@ now returns seL4's error payload in the message registers, in
   from the checks in their order, without building the request
   (`untypedRetypeObject_refused`, `untypedRetypeRefusalCode_eq`), so the
   region's refusal (`untypedRegionExhausted` with the bytes left) and every
-  other carve refusal build nothing.
+  other carve refusal build nothing. It is inlined into the arm and reads the
+  destination and the untyped's children without a slot reference or a
+  closure (`untypedRetypeDstRefusal`, `childrenNameNone`), so the carves that
+  succeed build nothing more either.
 - **seL4's IllegalOperation.** A `TCB_SetSpace` whose CSpace or VSpace root
   capability names an object of the wrong kind, and a `TCB_BindNotification`
   whose capability is not a notification, are refused `.illegalState`, the
