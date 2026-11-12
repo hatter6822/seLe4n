@@ -4700,8 +4700,10 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   generated C reached from the `@[export]`s over the store, Robin Hood, retire
   and capability-copy code, refuses any reset or reuse shape it cannot
   classify, and flags a reused cell filled from another cell; the QEMU heap
-  gate's owned-CNode window holds the cells a CNode's carve-to-retire
-  allocates and frees each to the CNode's carve pin.
+  gate's owned-CNode window (a capability copied into the carved CNode and
+  out of it into the root CNode, where it outlives the CNode's retire) holds
+  the cells a CNode's carve-to-retire allocates and frees each to the CNode's
+  carve pin.
 - **In-place rewrite** (`v0.35.64`): a transition that rewrites an
   existing object of the same, bookkeeping-neutral kind uses
   `SystemState.rewriteObject` (and the typed `updateTcb` /

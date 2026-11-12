@@ -108,13 +108,19 @@ reset/reuse that fills one object's cell with another object's fields.
   and plants ten synthetic shapes.
 - **Frees, counted.** The kernel heap counts each free to the freeing core
   (`HeapStats::frees_by_core`, `kernel_frees_on`), tested on the host.  The
-  QEMU exerciser's owned-CNode scenario carves a CNode, copies its capability,
-  revokes the copy and deletes the carved capability (then resets the
-  untyped), and reads this core's allocations and frees across the four; the
-  heap gate holds both to the CNode's carve pin.
+  QEMU exerciser's owned-CNode scenario carves a CNode, copies the boot
+  endpoint's capability into one of its slots, copies that capability out of
+  the carved CNode (the carved CNode as the copy's source root) into a root
+  slot, empties the carved slot and deletes the carved capability, which
+  retires the CNode while the escaped copy lives on, and reads this core's
+  allocations and frees across the five; the heap gate holds both to the
+  CNode's carve pin.  After the window the escaped copy is moved (a move from
+  an empty slot is refused, so the move's success shows the copy outlived the
+  retire) and deleted, and the untyped reset.
 - **Readings** (QEMU `virt`, Lean-linked image, fresh archive, two runs,
   identical): the owned-CNode window allocates 23 and frees 23 in both runs,
-  the cnode/2 pin; its copy, revoke, delete and reset read 0.  No pin rises:
+  the cnode/2 pin; its fill, copy out, slot delete, delete, escaped move,
+  escaped delete and reset read 0.  No pin rises:
   UC1 attributed no cell to sharing, and the scenarios' carves already built
   every cell they hold (the shared target was reachable only on the no-spare
   build path and the `.cnodeSlot` arm, which no pinned scenario takes; the

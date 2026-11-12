@@ -294,7 +294,9 @@ rewrites it there.
   slot lookup's result (`cspaceLookupSlot_eq_impl`).  The scanner is
   `scripts/check_cell_reuse_ownership.py` (Tier 1, self-test first).  The
   heap counts frees per core (`kernel_frees_on`), and the owned-CNode window
-  (carve, copy, revoke, delete) allocates and frees 23 cells, the cnode/2 pin,
+  (carve, a capability copied into the carved CNode and out of it into a root
+  slot, the carved slot's delete and the carved capability's delete, the
+  escaped copy living on past the retire) allocates and frees 23 cells, the cnode/2 pin,
   in both runs.  Measured, no pin rises: UC1 attributed no cell to sharing,
   and the exercised carves already built every cell they hold (the shared
   target was reachable only on the no-spare build path and the `.cnodeSlot`
