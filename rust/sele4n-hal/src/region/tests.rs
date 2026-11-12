@@ -381,10 +381,15 @@ pub(crate) fn kernel_entries_route_by_context_and_address() {
     let (base, len) = (ram.base, 16 * PAGE);
     let storage = ram.storage.as_ptr() as usize;
     // SAFETY: a leaked buffer and its leaked map storage, named only here.
-    assert_eq!(unsafe { register_ram(base, len, storage) }, Ok(()));
+    assert_eq!(unsafe { register_ram(base, len, storage, 0) }, Ok(()));
     // SAFETY: refused before anything is written.
-    let again = unsafe { register_ram(base + PAGE, PAGE, storage) };
-    assert_eq!(again, Err(RegionFault::Uncovered), "a registered extent");
+    let again = unsafe { register_ram(base + PAGE, PAGE, storage, 0) };
+    assert_eq!(
+        again,
+        Err(RegionFault::ReservationOverlap),
+        "a registered extent"
+    );
+    reservations_are_excluded_and_never_overlap(base, len);
     let counted = lean_heap::kernel_allocations_on(0).unwrap();
     let range = base + 2 * PAGE;
     let guard = enter_context(range, 10).expect("the range begins");
@@ -444,4 +449,169 @@ pub(crate) fn kernel_entries_route_by_context_and_address() {
         "unrecorded"
     );
     assert_eq!(ram.storage[0].load(Ordering::Relaxed), 0);
+}
+
+/// A second extent registered as the boot registers one, with its map in a
+/// reservation at its top: the reservation is excluded from thread RAM, its
+/// covered RAM is not, and no later extent or reservation may meet either it
+/// or the first extent `[first, first + first_len)`.  Called from the routing
+/// test, the one test that registers segments.
+fn reservations_are_excluded_and_never_overlap(first: usize, first_len: usize) {
+    let ram: &'static Ram = Box::leak(Box::new(Ram::new(4 * PAGE)));
+    let (covered, map_base) = (ram.base, ram.base + 3 * PAGE);
+    // SAFETY: a leaked, zeroed buffer named only here; its top page holds the
+    // map of the three below.
+    let registered = unsafe { register_ram(covered, 3 * PAGE, map_base, PAGE) };
+    assert_eq!(registered, Ok(()));
+    assert!(meets_reservation(map_base, PAGE));
+    assert!(meets_reservation(map_base + PAGE - 1, 1));
+    assert!(
+        meets_reservation(covered + 2 * PAGE, 2 * PAGE),
+        "a page across its start"
+    );
+    assert!(
+        !meets_reservation(covered, 3 * PAGE),
+        "the covered RAM is a thread's"
+    );
+    assert!(!meets_reservation(first, first_len));
+    assert!(!meets_reservation(map_base + PAGE, PAGE), "past its end");
+    // SAFETY: each is refused before anything is written.
+    unsafe {
+        assert_eq!(
+            register_ram(map_base, PAGE, map_base + PAGE, PAGE),
+            Err(RegionFault::ReservationOverlap),
+            "an extent over a reservation"
+        );
+        assert_eq!(
+            register_ram(map_base + PAGE, PAGE, first + PAGE, PAGE),
+            Err(RegionFault::ReservationOverlap),
+            "a reservation in a covered extent"
+        );
+        assert_eq!(
+            register_ram(map_base + PAGE, PAGE, map_base, PAGE),
+            Err(RegionFault::ReservationOverlap),
+            "a reservation over a reservation"
+        );
+        assert_eq!(
+            register_ram(map_base + PAGE, PAGE, map_base + PAGE, PAGE),
+            Err(RegionFault::ReservationOverlap),
+            "a reservation in its own extent"
+        );
+        assert_eq!(
+            register_ram(map_base + PAGE, 0, map_base + 2 * PAGE, PAGE),
+            Err(RegionFault::Misaligned)
+        );
+    }
+    // The registered map serves the covered RAM's last granule from the
+    // reservation's bytes.
+    let range = covered + 3 * PAGE - GRANULE;
+    let guard = enter_context(range, 9).expect("the last granule begins");
+    drop(guard);
+    assert_eq!(kernel_live_count(range), Ok(0));
+    assert_eq!(admit_page_zero(covered + 2 * PAGE, PAGE), Ok(()));
+    assert_eq!(kernel_live_count(range), Err(RegionFault::NotRegion));
+    assert_eq!(
+        enter_context(map_base, 9).err(),
+        Some(RegionFault::Uncovered)
+    );
+}
+
+/// The QEMU boot's extension `[0x5000_0000, 0x8000_0000)` as the Lean boot
+/// lays it out (`qemuVirtRegionMap_layout`): the untyped covers up to
+/// `0x7FE8_0000`, and the map's 1569792 bytes take the 384 pages above.
+#[test]
+fn the_reservation_layout_matches_the_boot_and_fits_the_extension() {
+    let mapped = |b: u64, l: u64| b >= 0x5000_0000 && b + l <= 0x8000_0000;
+    let layout = reservation_layout(0x5000_0000, 0x2FE8_0000, 0x7FE8_0000, mapped);
+    assert_eq!(
+        layout,
+        Ok(Reservation {
+            covered_base: 0x5000_0000,
+            covered_len: 0x2FE8_0000,
+            map_base: 0x7FE8_0000,
+            storage_len: 1_569_792,
+            reserved_len: 0x18_0000,
+        })
+    );
+    // The map's last page ends at the extension's end, and a map one page
+    // higher is refused, not truncated.
+    assert_eq!(0x7FE8_0000_usize + 0x18_0000, 0x8000_0000);
+    assert_eq!(
+        reservation_layout(0x5000_0000, 0x2FE8_0000, 0x7FE8_1000, mapped),
+        Err(RegionFault::ReservationUnmapped)
+    );
+    // Covered RAM past the mapped RAM is refused.
+    assert_eq!(
+        reservation_layout(0x5000_0000, 0x3000_0000, 0x8000_0000, mapped),
+        Err(RegionFault::ReservationUnmapped)
+    );
+    // A map meeting its covered RAM is refused.
+    assert_eq!(
+        reservation_layout(0x5000_0000, 0x2FE8_0000, 0x7FE7_F000, mapped),
+        Err(RegionFault::ReservationOverlap)
+    );
+    assert_eq!(
+        reservation_layout(0x5000_0000, 0x2FE8_0000, 0x4FFF_F000, mapped),
+        Err(RegionFault::ReservationOverlap),
+        "a map below its RAM that runs into it"
+    );
+    // Unaligned or empty input is refused.
+    for (base, len, map) in [
+        (0x5000_0200, 0x1000, 0x7FE8_0000),
+        (0x5000_0000, 0x1200, 0x7FE8_0000),
+        (0x5000_0000, 0x1000, 0x7FE8_0200),
+        (0x5000_0000, 0, 0x7FE8_0000),
+    ] {
+        assert_eq!(
+            reservation_layout(base, len, map, mapped),
+            Err(RegionFault::Misaligned)
+        );
+    }
+}
+
+/// The map, kept in the top page of its extension as the boot keeps it,
+/// describes every granule of the covered RAM below and nothing above it, and
+/// its bytes are the reservation's alone.
+#[test]
+fn the_reserved_map_finds_ranges_over_all_covered_ram() {
+    let ram = Ram::new(64 * PAGE);
+    let covered = 63 * PAGE;
+    let reserved = reservation_layout(ram.base, covered, ram.base + covered, |_, _| true)
+        .expect("the layout fits");
+    assert_eq!(reserved.storage_len, covered / GRANULE);
+    assert_eq!(reserved.reserved_len, PAGE);
+    // SAFETY: the buffer's top page, zeroed and named only as the map.
+    let storage = unsafe {
+        core::slice::from_raw_parts(
+            (ram.base + covered) as *const AtomicU8,
+            reserved.storage_len,
+        )
+    };
+    let map = RangeMap::new(ram.base, storage).unwrap();
+    assert_eq!(map.end(), ram.base + covered);
+    let first = Range::new(ram.base, 9).unwrap();
+    let last = Range::new(ram.base + covered - GRANULE, 9).unwrap();
+    let middle = Range::new(ram.base + 32 * PAGE, 15).unwrap();
+    for range in [first, last, middle] {
+        assert_eq!(map.record(range), Ok(()));
+    }
+    assert_eq!(map.range_of(ram.base), Some(first));
+    assert_eq!(map.range_of(ram.base + covered - 1), Some(last));
+    assert_eq!(map.range_of(ram.base + 40 * PAGE - 8), Some(middle));
+    assert_eq!(map.range_of(ram.base + covered), None, "the reservation");
+    assert_eq!(
+        map.record(Range::new(ram.base + covered, 9).unwrap()),
+        Err(MapRefusal::Uncovered)
+    );
+    assert_eq!(
+        map.record(Range::new(ram.base, 18).unwrap()),
+        Err(MapRefusal::Uncovered),
+        "a range running into the reservation"
+    );
+    // The map's bytes are in the reservation: the covered RAM reads as zero.
+    // SAFETY: inside this test's own buffer.
+    let below = unsafe { core::slice::from_raw_parts(ram.base as *const u8, covered) };
+    assert!(below.iter().all(|&b| b == 0));
+    assert_eq!(storage[0].load(Ordering::Relaxed), 9);
+    assert_eq!(storage[reserved.storage_len - 1].load(Ordering::Relaxed), 9);
 }

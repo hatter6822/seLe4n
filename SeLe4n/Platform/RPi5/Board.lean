@@ -10,6 +10,7 @@
 import SeLe4n.Machine
 import SeLe4n.Platform.DeviceTree
 import SeLe4n.Platform.Boot.MemoryCoverage
+import SeLe4n.Platform.Boot.RegionMapReservation
 
 /-!
 # Raspberry Pi 5 — Board Definition (BCM2712)
@@ -1320,5 +1321,25 @@ theorem rpi5BootRamExtensions_admissible (v : BCM2712Config) (hv : v.Admissible)
   by_cases hG : rpi5FirstGigabyteTop < v.ramSize
   · simp [hG, hLow, hHigh hG]
   · simp [hG, hLow]
+
+/-- **WS-UC UC5**: an extension the HAL accepts holds the region map's
+    reservation beside a nonempty untyped — it is whole 2 MiB blocks. -/
+theorem regionMapFits_of_accepted (e : Nat × Nat)
+    (h : rpi5BootRamExtensionAccepted e = true) : regionMapFits e = true := by
+  apply regionMapFits_of_two_pages
+  unfold rpi5BootRamExtensionAccepted at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨⟨hPos, hBase⟩, hEnd⟩, _⟩, _⟩, _⟩ := h
+  unfold SeLe4n.pageBytes
+  omega
+
+/-- **WS-UC UC5**: every extension of every admissible configuration holds the
+    region map's reservation, so the boot never hands the HAL a truncated
+    untyped or a reservation that does not fit. -/
+theorem rpi5BootRamExtensions_fit (v : BCM2712Config) (hv : v.Admissible) :
+    (rpi5BootRamExtensions v).all regionMapFits = true := by
+  have h := rpi5BootRamExtensions_admissible v hv
+  simp only [List.all_eq_true] at h ⊢
+  exact fun e he => regionMapFits_of_accepted e (h e he)
 
 end SeLe4n.Platform.RPi5

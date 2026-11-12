@@ -100,14 +100,30 @@ def qemuVirtInitialVSpace (asid : SeLe4n.ASID) (page : Nat) : VSpaceRoot :=
   { asid := asid, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16
     tableBase := some (qemuVirtBootTablePage page) }
 
-/-- The root task's untyped — the one extension the boot maps. -/
+/-- The root task's untyped — the one extension the boot maps, below the
+    region map's reservation at its top (WS-UC UC5, `untypedSizeOf`). -/
 def qemuVirtRootTaskUntyped : UntypedObject :=
-  rpi5InitialUntyped qemuVirtKernelReservedEnd (qemuVirtRamTop - qemuVirtKernelReservedEnd)
+  rpi5InitialUntyped qemuVirtKernelReservedEnd
+    (untypedSizeOf (qemuVirtRamTop - qemuVirtKernelReservedEnd))
 
-/-- The untyped's region is exactly the extension the boot maps. -/
+/-- The untyped's region is exactly the untyped part of the extension the boot
+    maps (`untypedExtentOf`). -/
 theorem qemuVirtRootTaskUntyped_region :
     [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)] =
-      qemuVirtBootRamExtensions := rfl
+      qemuVirtBootRamExtensions.map untypedExtentOf := by
+  unfold qemuVirtBootRamExtensions untypedExtentOf
+  rfl
+
+/-- **WS-UC UC5**: the extension holds its reservation, and the untyped ends
+    where the region map begins: `[0x5000_0000, 0x7FE8_0000)` for the
+    untyped, `[0x7FE8_0000, 0x8000_0000)` (1.5 MiB, 384 pages) for the map. -/
+theorem qemuVirtRegionMap_layout :
+    qemuVirtBootRamExtensions.all regionMapFits = true ∧
+      qemuVirtBootRamExtensions.map regionMapBaseOf = [0x7FE8_0000] ∧
+      qemuVirtBootRamExtensions.map (fun e => regionMapReserveBytes e.2) = [0x18_0000] ∧
+      qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize =
+        0x7FE8_0000 := by
+  decide
 
 /-- The root CNode's 59-bit guard: its top bit set, so the root task's
     capability address for slot `n` is `2^63 + n`.  WS-ZA ZA4.8: every

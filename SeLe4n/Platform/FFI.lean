@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.Boot.InitialThreads
+import SeLe4n.Platform.Boot.RegionMapReservation
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Kernel.Architecture.TrapFrameSave
 import SeLe4n.Kernel.Architecture.ContextRestore
@@ -427,6 +428,19 @@ opaque ffiFatalHaltAll : BaseIO Unit
     Rust: `ffi_extend_boot_ram_map` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_extend_boot_ram_map"]
 opaque ffiExtendBootRamMap (base size : UInt64) : BaseIO Unit
+
+/-- **WS-UC UC5**: put the RAM `[coveredBase, coveredBase + coveredSize)` under
+    the HAL's region map, the map kept at `mapBase`: one byte per 512-byte
+    granule, in RAM the boot map already covers and no untyped covers
+    (`Platform.untypedExtentOf`, `Platform.regionMapBaseOf`).  The HAL checks
+    the reservation: whole pages, inside the mapped RAM, clear of the covered
+    RAM and of every earlier reservation and covered range.  A reservation it
+    refuses **halts the system**, as an extension it cannot map does.  Called
+    only by `extendBootRamMap`.
+
+    Rust: `ffi_reserve_region_map` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_reserve_region_map"]
+opaque ffiReserveRegionMap (coveredBase coveredSize mapBase : UInt64) : BaseIO Unit
 
 /-- **WS-SM SM7.B.5 + B.6 + SM7.F.3**: bounded acquire-poll for round
     generation `gen` acknowledged — spins up to `timeoutTicks`
@@ -1590,9 +1604,16 @@ boot state carries (`rpi5BootRamExtensionsFor_eq`), so the RAM the HAL maps and
 the RAM the kernel's model declares are one map.  `mem_bootRamExtensionsOf`
 proves every extension is RAM of that map and `bootRamExtensionsOf_covers`
 that every RAM address of it outside the kernel's extent is in some extension;
-`rpi5BootRamExtensions_admissible` that each is one the HAL accepts. -/
+`rpi5BootRamExtensions_admissible` that each is one the HAL accepts.
+
+**WS-UC UC5**: each extension's top is then reserved for the region map
+(`ffiReserveRegionMap`).  Its untyped covers the rest (`untypedExtentOf`), so
+the map lies in mapped RAM that no capability names. -/
 def extendBootRamMap (extensions : List (Nat × Nat)) : BaseIO Unit :=
-  extensions.forM fun e => ffiExtendBootRamMap (UInt64.ofNat e.1) (UInt64.ofNat e.2)
+  extensions.forM fun e => do
+    ffiExtendBootRamMap (UInt64.ofNat e.1) (UInt64.ofNat e.2)
+    ffiReserveRegionMap (UInt64.ofNat e.1) (UInt64.ofNat (untypedExtentOf e).2)
+      (UInt64.ofNat (regionMapBaseOf e))
 
 /-- **WS-RR RR7.27**: the DTB-driven hardware boot, with its failure handled.
 

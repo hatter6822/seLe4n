@@ -25,6 +25,15 @@
 //! which range an address is in.  A recorded range's header holds only what
 //! [`Region::begin_range`] wrote there.
 //!
+//! **The map's storage is reserved from physical RAM at boot**, as seL4
+//! reserves its boot-time kernel structures, and never from the kernel heap.
+//! The verified boot lays it out (`Platform.Boot.RegionMapReservation`): the
+//! map of each RAM extension takes the top pages of the extension, and the
+//! extension's untyped covers the rest.  [`register_reserved_map`] checks that
+//! layout and refuses one that does not fit, and the thread-memory decodes
+//! refuse every page of a reservation ([`thread_ram_covered`]), so the map is
+//! kernel-only and no capability can retype or map it.
+//!
 //! **A free decrements the live count without a lock and never reuses the
 //! bytes.**  It clears the cell's live bit with one atomic `fetch_and`, which
 //! also refuses a double free, and then decrements the count.  The bytes
@@ -125,8 +134,12 @@ pub enum RegionFault {
     ContextBusy,
     /// The map has no room for another extent of RAM.
     MapFull,
-    /// The map's storage could not be allocated.
-    MapStorage,
+    /// A map reservation meets the RAM it describes, or a registered extent
+    /// or reservation.
+    ReservationOverlap,
+    /// A map reservation, or the RAM it describes, is not RAM the boot map
+    /// covers: a reservation that does not fit.
+    ReservationUnmapped,
 }
 
 impl From<MapRefusal> for RegionFault {
@@ -409,12 +422,14 @@ impl<'a> Region<'a> {
 /// (`mmu::MAX_RAM_EXTENSIONS`).
 pub const MAX_SEGMENTS: usize = crate::mmu::MAX_RAM_EXTENSIONS;
 
-/// One covered extent: its base, its length and its map's storage.  Written
-/// once at boot, before [`SEGMENT_COUNT`] publishes it.
+/// One covered extent: its base, its length, its map's storage and the
+/// reservation the storage lies in.  Written once at boot, before
+/// [`SEGMENT_COUNT`] publishes it.
 struct Segment {
     base: AtomicUsize,
     len: AtomicUsize,
     storage: AtomicUsize,
+    reserved_len: AtomicUsize,
 }
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -422,6 +437,7 @@ const EMPTY_SEGMENT: Segment = Segment {
     base: AtomicUsize::new(0),
     len: AtomicUsize::new(0),
     storage: AtomicUsize::new(0),
+    reserved_len: AtomicUsize::new(0),
 };
 
 static SEGMENTS: [Segment; MAX_SEGMENTS] = [EMPTY_SEGMENT; MAX_SEGMENTS];
@@ -469,8 +485,16 @@ fn with_change_lock<R>(f: impl FnOnce() -> R) -> R {
     result
 }
 
-/// Puts `[base, base + len)` under the kernel's map, with `storage` as the
-/// map's `len / GRANULE` bytes, which must read as zero.
+/// Whether `[a, a + a_len)` and `[b, b + b_len)` share a byte.
+const fn meets(a: usize, a_len: usize, b: usize, b_len: usize) -> bool {
+    a_len > 0 && b_len > 0 && a < b.saturating_add(b_len) && b < a.saturating_add(a_len)
+}
+
+/// Puts `[base, base + len)` under the kernel's map, with the map's
+/// `len / GRANULE` bytes at `storage`, which must read as zero.
+/// `[storage, storage + reserved_len)` is the RAM the storage was reserved in
+/// (`0` for storage outside covered RAM): no thread page may lie in it
+/// ([`thread_ram_covered`]).
 ///
 /// # Safety
 ///
@@ -480,57 +504,183 @@ fn with_change_lock<R>(f: impl FnOnce() -> R) -> R {
 ///
 /// # Errors
 ///
-/// `Misaligned` for an extent that is not whole granules, `Uncovered` for
-/// one meeting a registered extent, `MapFull` with every segment taken.
-pub unsafe fn register_ram(base: usize, len: usize, storage: usize) -> Result<(), RegionFault> {
+/// `Misaligned` for an extent that is not whole granules or is empty.
+/// `ReservationOverlap` when the extent or the reservation meets a
+/// registered extent or reservation, or each other.  `MapFull` with every
+/// segment taken.
+pub unsafe fn register_ram(
+    base: usize,
+    len: usize,
+    storage: usize,
+    reserved_len: usize,
+) -> Result<(), RegionFault> {
     with_change_lock(|| {
         let count = SEGMENT_COUNT.load(Ordering::Acquire);
         if count >= MAX_SEGMENTS {
             return Err(RegionFault::MapFull);
         }
-        if !base.is_multiple_of(map::GRANULE)
+        if len == 0
+            || !base.is_multiple_of(map::GRANULE)
             || !len.is_multiple_of(map::GRANULE)
             || base.checked_add(len).is_none()
+            || storage.checked_add(reserved_len).is_none()
         {
             return Err(RegionFault::Misaligned);
         }
-        if segments().any(|r| base < r.map.end() && r.map.base() < base + len) {
-            return Err(RegionFault::Uncovered);
+        let clash = meets(base, len, storage, reserved_len)
+            || (0..count).any(|i| {
+                let s = &SEGMENTS[i];
+                let (b, l) = (
+                    s.base.load(Ordering::Relaxed),
+                    s.len.load(Ordering::Relaxed),
+                );
+                let r = s.storage.load(Ordering::Relaxed);
+                let rl = s.reserved_len.load(Ordering::Relaxed);
+                meets(base, len, b, l)
+                    || meets(base, len, r, rl)
+                    || meets(storage, reserved_len, b, l)
+                    || meets(storage, reserved_len, r, rl)
+            });
+        if clash {
+            return Err(RegionFault::ReservationOverlap);
         }
         let s = &SEGMENTS[count];
         s.base.store(base, Ordering::Relaxed);
         s.len.store(len, Ordering::Relaxed);
         s.storage.store(storage, Ordering::Relaxed);
+        s.reserved_len.store(reserved_len, Ordering::Relaxed);
         SEGMENT_COUNT.store(count + 1, Ordering::Release);
         Ok(())
     })
 }
 
-/// Puts a boot RAM extension under the kernel's map, taking the map's
-/// storage from the kernel heap: [`map::RangeMap::storage_bytes`] of it,
-/// whole pages, zeroed.  `ffi_extend_boot_ram_map` calls it once per
-/// extension, after the boot map covers the extension.
-///
-/// # Safety
-///
-/// As [`register_ram`] for `[base, base + len)`.
+/// Where a boot RAM extension's region map lies: the map of
+/// `[covered_base, covered_base + covered_len)` at `map_base`, in
+/// `reserved_len` bytes of whole pages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Reservation {
+    /// The first byte the map describes.
+    pub covered_base: usize,
+    /// The bytes the map describes: the extension's untyped.
+    pub covered_len: usize,
+    /// The map's first byte.
+    pub map_base: usize,
+    /// The map's bytes, one per granule of the covered RAM.
+    pub storage_len: usize,
+    /// The reservation: the map's bytes rounded up to whole pages.
+    pub reserved_len: usize,
+}
+
+/// The reservation the boot names (`Platform.FFI.extendBootRamMap`, from
+/// `Platform.untypedExtentOf` and `Platform.regionMapBaseOf`), checked: the
+/// covered RAM is nonempty whole pages, the map starts on a page, the map and
+/// the covered RAM do not meet, and both lie in RAM that `mapped` says the
+/// boot map covers.  The layout is the Lean boot's; this only refuses one that
+/// does not fit, and never shrinks or moves it.
 ///
 /// # Errors
 ///
-/// `MapStorage` when the heap cannot serve the storage, and
-/// [`register_ram`]'s refusals.
-pub unsafe fn register_boot_ram(base: usize, len: usize) -> Result<(), RegionFault> {
-    let bytes = RangeMap::storage_bytes(len);
-    if bytes == 0 {
+/// `Misaligned` for an unaligned or empty extent or map, `ReservationOverlap`
+/// when the map meets the covered RAM, `ReservationUnmapped` when either lies
+/// outside the mapped RAM, which is a reservation that does not fit.
+pub fn reservation_layout(
+    covered_base: usize,
+    covered_len: usize,
+    map_base: usize,
+    mapped: impl Fn(u64, u64) -> bool,
+) -> Result<Reservation, RegionFault> {
+    let page = crate::lean_heap::PAGE_SIZE;
+    if covered_len == 0
+        || !covered_base.is_multiple_of(page)
+        || !covered_len.is_multiple_of(page)
+        || !map_base.is_multiple_of(page)
+    {
         return Err(RegionFault::Misaligned);
     }
-    let storage = crate::lean_heap::kernel_alloc(bytes, crate::lean_heap::PAGE_SIZE)
-        .map_err(|_| RegionFault::MapStorage)?;
-    // SAFETY: `storage` is a live heap allocation of at least `bytes` bytes,
-    // which this function owns and never frees.
-    unsafe { core::ptr::write_bytes(storage as *mut u8, 0, bytes) };
-    // SAFETY: the caller's contract, and `storage` is ours alone.
-    unsafe { register_ram(base, len, storage) }
+    let storage_len = RangeMap::storage_bytes(covered_len);
+    let reserved_len = storage_len
+        .checked_next_multiple_of(page)
+        .ok_or(RegionFault::Misaligned)?;
+    if covered_base.checked_add(covered_len).is_none()
+        || map_base.checked_add(reserved_len).is_none()
+    {
+        return Err(RegionFault::Misaligned);
+    }
+    if meets(covered_base, covered_len, map_base, reserved_len) {
+        return Err(RegionFault::ReservationOverlap);
+    }
+    if !mapped(covered_base as u64, covered_len as u64)
+        || !mapped(map_base as u64, reserved_len as u64)
+    {
+        return Err(RegionFault::ReservationUnmapped);
+    }
+    Ok(Reservation {
+        covered_base,
+        covered_len,
+        map_base,
+        storage_len,
+        reserved_len,
+    })
+}
+
+/// Puts a boot RAM extension's untyped under the kernel's map, the map kept at
+/// `map_base` in RAM the boot map covers and no untyped covers.
+/// `ffi_reserve_region_map` calls it once per extension, after the boot map
+/// covers the extension.  The reservation is checked
+/// ([`reservation_layout`]), and its storage is zeroed.
+///
+/// # Safety
+///
+/// `[covered_base, covered_base + covered_len)` and the reservation must be
+/// RAM the kernel owns at its own address for the rest of its life, which no
+/// Rust reference aliases and no untyped covers.
+///
+/// # Errors
+///
+/// [`reservation_layout`]'s and [`register_ram`]'s refusals.
+pub unsafe fn register_reserved_map(
+    covered_base: usize,
+    covered_len: usize,
+    map_base: usize,
+) -> Result<Reservation, RegionFault> {
+    let layout = reservation_layout(
+        covered_base,
+        covered_len,
+        map_base,
+        crate::mmu::is_boot_cacheable_range,
+    )?;
+    // SAFETY: the caller's contract; the reservation is mapped RAM no other
+    // code names, and its bytes are written once here, before the segment is
+    // published.
+    unsafe { core::ptr::write_bytes(map_base as *mut u8, 0, layout.reserved_len) };
+    // SAFETY: the caller's contract, and the storage is the reservation's.
+    unsafe { register_ram(covered_base, covered_len, map_base, layout.reserved_len) }?;
+    Ok(layout)
+}
+
+/// Whether `[base, base + len)` meets a registered map reservation.
+#[must_use]
+pub fn meets_reservation(base: usize, len: usize) -> bool {
+    let count = SEGMENT_COUNT.load(Ordering::Acquire).min(MAX_SEGMENTS);
+    (0..count).any(|i| {
+        let s = &SEGMENTS[i];
+        meets(
+            base,
+            len,
+            s.storage.load(Ordering::Relaxed),
+            s.reserved_len.load(Ordering::Relaxed),
+        )
+    })
+}
+
+/// **RAM a thread's page may lie in**: RAM the boot map covers
+/// (`mmu::is_boot_cacheable_range`) that meets no region map reservation.
+/// The predicate every thread-memory decode is given, so no page descriptor,
+/// zeroing, user-word access or installed table can name the map.
+#[must_use]
+pub fn thread_ram_covered(base: u64, size: u64) -> bool {
+    crate::mmu::is_boot_cacheable_range(base, size)
+        && !meets_reservation(base as usize, size as usize)
 }
 
 /// The backstop at a page's zeroing (`user_translation::apply_physical_write`):
