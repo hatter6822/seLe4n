@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "region-allocator",
-      "commit_sha": "4e99477ae8b46046b938e7401a01ac62d020c779",
-      "tree_sha": "59429842bb7c1387c9fea533a3758dbf7ef1f953",
-      "committed_at_utc": "2026-11-12T02:26:20+00:00"
+      "branch": "sel4-error-abi",
+      "commit_sha": "3ddabba60b4178cd8039af0c4c1e7dbe2f0dfd50",
+      "tree_sha": "3eb216b7a18b397a50e1af7129b1553f367d6b98",
+      "committed_at_utc": "2026-11-12T13:19:14+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 36275
   },
   "readme_sync": {
-    "version": "0.37.18",
+    "version": "0.37.19",
     "lean_toolchain": "v4.28.0",
     "production_files": 625,
     "production_loc": 627586,
