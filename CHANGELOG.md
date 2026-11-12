@@ -1,3 +1,42 @@
+## v0.37.19 — WS-SX registered: the seL4 ABI fidelity plan
+
+Docs only. No code changes. This registers WS-SX, which makes the syscall and
+invocation ABI seL4's, one PR per row
+(`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). It replaces WS-UC's "next PR"
+scope: the root task's boot IPC buffer and the guard in the capability with
+`CNode_Mutate`. Both are now rows of the plan.
+
+- **The rows, in execution order:**
+  1. SX1: error payloads in seL4's message-register layout, and the `LookupFault` type.
+  2. SX2: the CNode guard in the capability, and one resolver, seL4's
+     `resolveAddressBits`, that stops at a non-CNode capability and reports a
+     lookup fault. UC4's CNode-only walk retires.
+  3. SX3: receive-side refusals become capability faults.
+  4. SX4: the Restart thread state, replacing `ipcCancelled`.
+  5. SX5: the boot builds the root task's IPC buffer, with the boot shape and
+     its invariant base case extended. The exerciser's boot-time invocations
+     are then deleted.
+  6. SX6: seL4-MCS's eleven syscalls, invocation labels and the x6 reply register.
+  7. SX7: capability arguments as extra capabilities, looked up at decode.
+     SetIPCBuffer's frame capability becomes the buffer the kernel reads.
+  8. SX8: timeout faults, SetTimeoutEndpoint and SetSchedParams, replacing the
+     timeout unblocking of blocked IPC.
+  9. SX9: Mutate, Rotate, CancelBadgedSends, and index-and-depth Delete and Revoke.
+  10. SX10: seL4's error codes in the label.
+  11. SX11: closure.
+- **The label.** Today the label carries `errorLabelBase` plus the model's
+  code, so that a receive's fault tag is never read as an error. In seL4 a
+  receive never returns an error. Its failures are capability faults, a
+  cancelled IPC restarts, and a budget overrun is a timeout fault. Once SX3,
+  SX4, SX6 and SX8 bring that here, seL4's codes 1–10 can sit in the label
+  (SX10). One overlap remains, and it is seL4's own: a Call on an endpoint
+  can return an error or a server reply with the same label.
+- **Decisions D1–D17** are each default taken, with the owner card open. D7 (the
+  IPC buffer read through its frame capability) follows the owner's rule to
+  implement seL4's behaviour rather than defer it.
+- **Registered** in `docs/REGISTERED_DEBT.md`'s workstream registry and in
+  `docs/agent_guide/WORKSTREAM_CONTEXT.md`. No debt row is opened or closed.
+
 ## v0.37.18 — the region allocator, inert
 
 WS-UC UC5. The HAL gets the allocator a carve's cells will live in: a range
