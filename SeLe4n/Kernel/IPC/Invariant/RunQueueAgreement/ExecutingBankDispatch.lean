@@ -415,7 +415,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     dsimp only at h
     split at h
     · exact hF (cspaceCopy_savedRegsKept hInv h)
-        ((cspaceCopy_keyFrame _ _ _ _ hInv h).stepCoversInv (e := e')
+        ((cspaceCopy_keyFrame _ _ _ _ _ hInv h).stepCoversInv (e := e')
           (hRes := by rw [cspaceCopy_machine_eq h])
           (hBank := banksKeptOffCore_of_eq (by rw [cspaceCopy_machine_eq h])))
     · cases h

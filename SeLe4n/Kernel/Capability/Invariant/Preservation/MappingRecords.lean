@@ -376,9 +376,9 @@ theorem cspaceInsertSlot_objects_invExt {addr : CSpaceAddr} {cap : Capability}
 /-- **The copy keeps the mappings recorded**: it inserts a capability carrying
 no record into an empty slot, adds a derivation edge and may set the source
 full. -/
-theorem cspaceCopy_preserves_liveMappingsRecorded {src dst : CSpaceAddr} {st st' : SystemState}
+theorem cspaceCopy_preserves_liveMappingsRecorded {src dst : CSpaceAddr} {mask : AccessRightSet} {st st' : SystemState}
     (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded)
-    (h : cspaceCopy src dst st = .ok ((), st')) : st'.liveMappingsRecorded := by
+    (h : cspaceCopy src dst mask st = .ok ((), st')) : st'.liveMappingsRecorded := by
   obtain ⟨cap, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose h
   have hI2 := cspaceInsertSlot_objects_invExt hInv hIns
   exact untypedSourceSetFull_preserves_liveMappingsRecorded

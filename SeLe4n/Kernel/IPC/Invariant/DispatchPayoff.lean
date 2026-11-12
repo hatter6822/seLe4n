@@ -891,7 +891,9 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               simp only [hDec] at hStep
               split at hStep
               · cases hStep
-              refine cspaceMintWithCdt_preserves_ipcInvariantFull st st' _ _ args.rights _
+              split at hStep
+              · cases hStep
+              refine cspaceMintWithCdt_preserves_ipcInvariantFull st st' _ _ _ _
                 hObjInv hInv ?_ hStep
               intro b hb
               split at hb
@@ -908,7 +910,9 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               simp only [hDec] at hStep
               split at hStep
               · cases hStep
-              exact cspaceCopy_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
+              split at hStep
+              · cases hStep
+              exact cspaceCopy_preserves_ipcInvariantFull st st' _ _ _ hObjInv hInv hStep
         all_goals try cases hStep
       case cspaceMove =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -917,6 +921,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              split at hStep
+              · cases hStep
               split at hStep
               · cases hStep
               exact cspaceMove_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
@@ -1283,12 +1289,18 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               split at hStep
               · cases hStep
               rename_i hG
+              cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth
+                  args.srcRoot args.srcIndex args.srcDepth st with
+              | error e => simp only [hR] at hStep; cases hStep
+              | ok p =>
+              obtain ⟨src, dst⟩ := p
+              simp only [hR] at hStep
               unfold cspaceMintChecked at hStep
               simp only [] at hStep
               split at hStep
               · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
-                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG]
+                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG, hR]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hU
@@ -1304,12 +1316,18 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               split at hStep
               · cases hStep
               rename_i hG
+              cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth
+                  args.srcRoot args.srcIndex args.srcDepth st with
+              | error e => simp only [hR] at hStep; cases hStep
+              | ok p =>
+              obtain ⟨src, dst⟩ := p
+              simp only [hR] at hStep
               unfold cspaceCopyChecked at hStep
               simp only [] at hStep
               split at hStep
               · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
-                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG]
+                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG, hR]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hU
@@ -1325,12 +1343,18 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               split at hStep
               · cases hStep
               rename_i hG
+              cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth
+                  args.srcRoot args.srcIndex args.srcDepth st with
+              | error e => simp only [hR] at hStep; cases hStep
+              | ok p =>
+              obtain ⟨src, dst⟩ := p
+              simp only [hR] at hStep
               unfold cspaceMoveChecked at hStep
               simp only [] at hStep
               split at hStep
               · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
-                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG]
+                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG, hR]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hU
@@ -2468,13 +2492,14 @@ theorem syscallDispatchQuiescence_inhabited_call :
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedCall] at hSy
 
-/-- A `.cspaceMint` decode whose registers decode: srcSlot 0 (also the bind
+/-- A `.cspaceMint` decode whose registers decode: destIndex 0 (also the bind
 decoder's thread id -- the sentinel, so that field refuses at validation),
-dstSlot 999 (also the retype decoder's type tag -- invalid, so that decoder
-refuses), rights word 3, badge word 5. -/
+srcRoot 999 (also the retype decoder's type tag -- invalid, so that decoder
+refuses), srcIndex 3, the operation word 3 (destination depth 3, source depth
+and rights 0), badge word 5. -/
 private def witnessDecodedMint : SyscallDecodeResult :=
-  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 4, extraCaps := 0, label := 0 },
-    syscallId := .cspaceMint, msgRegs := #[⟨0⟩, ⟨999⟩, ⟨3⟩, ⟨5⟩] }
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 5, extraCaps := 0, label := 0 },
+    syscallId := .cspaceMint, msgRegs := #[⟨0⟩, ⟨999⟩, ⟨3⟩, ⟨3⟩, ⟨5⟩] }
 
 private def witnessGateMint : SyscallGate :=
   { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
@@ -2500,15 +2525,12 @@ theorem syscallDispatchQuiescence_inhabited_mint :
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
-    simp only [Architecture.SyscallArgDecode.decodeCSpaceMintArgs,
-      witnessDecodedMint, Architecture.SyscallArgDecode.requireMessageLength,
-      Architecture.SyscallArgDecode.truncationMinimum, requireMsgReg, bind, Except.bind, pure,
-      Except.pure] at hDec
-    split at hDec
-    · cases hDec
-    · injection hDec with hArgs
-      subst hArgs
-      exact SeLe4n.Badge.ofNatMasked_valid _
+    have hWords : Architecture.SyscallArgDecode.decodeCSpaceMintArgs witnessDecodedMint
+        = Architecture.SyscallArgDecode.cnodeMintArgsOfWords (SeLe4n.CPtr.ofNat 0)
+            (SeLe4n.CPtr.ofNat 999) (SeLe4n.CPtr.ofNat 3) 3 5 := rfl
+    rw [hWords] at hDec
+    rw [Architecture.SyscallArgDecode.cnodeMintArgsOfWords_badge hDec]
+    exact SeLe4n.Badge.ofNatMasked_valid _
   · intro epId hSy
     simp [witnessDecodedMint] at hSy
   · intro epId hSy

@@ -88,11 +88,11 @@ end MappingArmPremises
 
 /-! ### The slot-writing arms -/
 
-theorem cspaceCopy_mappingStage {src dst : CSpaceAddr} {st st' : SystemState}
-    (hC : capabilityInvariantBundle st) (h : cspaceCopy src dst st = .ok ((), st')) :
+theorem cspaceCopy_mappingStage {src dst : CSpaceAddr} {mask : AccessRightSet} {st st' : SystemState}
+    (hC : capabilityInvariantBundle st) (h : cspaceCopy src dst mask st = .ok ((), st')) :
     MappingStage st st' :=
   MappingStage.of_preserves (fun _ => objects_invExt_of_capabilityInvariantBundle _
-      (cspaceCopy_preserves_capabilityInvariantBundle st st' src dst hC h))
+      (cspaceCopy_preserves_capabilityInvariantBundle st st' src dst mask hC h))
     (fun hI hL => cspaceCopy_preserves_liveMappingsRecorded hI hL h)
     fun hI hB => cspaceCopy_preserves_bookkeepingAgrees hI hB h
 

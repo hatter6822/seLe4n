@@ -127,7 +127,7 @@ theorem dispatchCapabilityOnly_recordsStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object cnodeId =>
       try dsimp only [] at hStep
-      cases hDec : decodeCSpaceCopyArgs decoded with
+      cases hDec : decodeMintReplyCapArgs decoded with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep

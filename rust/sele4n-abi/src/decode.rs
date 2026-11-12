@@ -205,10 +205,10 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_label() {
-        // 58 is TruncatedMessage.  The first unrecognized discriminant is
-        // 59 (label BASE + 59) → UnknownKernelError, still an Err —
+        // 60 is DepthMismatch.  The first unrecognized discriminant is
+        // 61 (label BASE + 61) → UnknownKernelError, still an Err —
         // fail-closed.
-        let regs = [0, error_x1(59), 0, 0, 0, 0, 0];
+        let regs = [0, error_x1(61), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
         // The top of the range — the blocked-resume sentinel's label,
         // discriminant 255 — is the same fail-closed answer.
@@ -225,6 +225,17 @@ mod tests {
         // message-info word.
         let regs = [0, error_x1(58), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::TruncatedMessage));
+    }
+
+    #[test]
+    fn decode_range_and_depth_mismatch_errors() {
+        // Discriminants 59 and 60 survive the label round trip: a CNode
+        // operation's depth outside 1..=64 (seL4's `seL4_RangeError`) and its
+        // address not resolving to exactly that depth.
+        let regs = [0, error_x1(59), 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::RangeError));
+        let regs = [0, error_x1(60), 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::DepthMismatch));
     }
 
     #[test]

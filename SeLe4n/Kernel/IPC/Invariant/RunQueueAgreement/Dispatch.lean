@@ -235,7 +235,7 @@ theorem irqHandlerSetNotification_runQueueEntryStage {ec : Concurrency.CoreId} {
   obtain ⟨-, st1, -, -, -, hD, hC | rfl⟩ := irqHandlerSetNotification_ok_cases h
   · exact (cspaceDeleteSlotZombie_runQueueEntryStage hD).trans (cspaceCopy_runQueueStage hC).entry
   · exact (cspaceDeleteSlotZombie_runQueueEntryStage hD).trans
-      (cspaceCopyPerform_runQueueStage _ _ _).entry
+      (cspaceCopyPerform_runQueueStage _ _ _ _).entry
 
 /-- The capability-only dispatch keeps the run queues in agreement with the
 threads' links on every arm but the yieldTo, which links its caller
@@ -300,7 +300,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object cnodeId =>
       try dsimp only [] at hStep
-      cases hDec : decodeCSpaceCopyArgs decoded with
+      cases hDec : decodeMintReplyCapArgs decoded with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep

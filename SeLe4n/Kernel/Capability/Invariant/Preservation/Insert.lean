@@ -286,7 +286,7 @@ theorem mintReplyCap_preserves_capabilityBundleOffCoverage
                   = .ok ((), st') := by simpa [hSrc, hTgt, hRep] using hStep
               exact cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st' dst _ hInv.offCoverage
                 (by show st.getReply? _ ≠ none; rw [hRep]; simp) hInsert
-      | cnodeSlot a b => simp [hSrc, hTgt] at hStep
+      | cnodeSlotWord _ => simp [hSrc, hTgt] at hStep
       | replyCap rid => simp [hSrc, hTgt] at hStep
       | auditTrail _ => simp [hSrc, hTgt] at hStep
       | schedControl _ => simp [hSrc, hTgt] at hStep

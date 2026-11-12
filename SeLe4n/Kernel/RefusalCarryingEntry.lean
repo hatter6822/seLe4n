@@ -1451,14 +1451,16 @@ theorem longOperandK_spec {β : Type} (sid : SyscallId) (capAddr : SeLe4n.CPtr) 
   simp only [hR] at h
   exact h
 
-/-- **The one-overflow-word route's operand arm**: the configure's or the
-service register's, with its fifth word `w`; no other syscall is routed here
-(`routedOverflowOne`, `dispatchOverflowOneCheckedR_eq_operand`). -/
+/-- **The one-overflow-word route's operand arm**: the configure's, the
+service register's or the CNode mint's, with its fifth word `w`; no other
+syscall is routed here (`routedOverflowOne`,
+`dispatchOverflowOneCheckedR_eq_operand`). -/
 @[inline] def overflowOneOperandArmR (ctx : LabelingContext) (sid : SyscallId)
     (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId) :
     Option Capability → RefusalCarrying Unit :=
   match sid with
   | .serviceRegister => serviceRegisterOperandArmR ctx tid regs w
+  | .cspaceMint => mintOperandArmR ctx tid regs w
   | _ => configureOperandArmR regs w tid
 
 theorem overflowOneOperandArmR_none (ctx : LabelingContext) (sid : SyscallId)

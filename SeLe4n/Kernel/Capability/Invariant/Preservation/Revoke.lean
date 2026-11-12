@@ -275,12 +275,12 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
       · rwa [e]
       · exact absurd ⟨cap, hS, by unfold Capability.namedObject; rw [hTg]; exact congrArg some hxo⟩ (hx ⟨oid, slot⟩)
       · rw [hU] at hK; exact absurd rfl hK
-    | cnodeSlot cn s =>
+    | cnodeSlotWord w =>
       rw [hTg] at hK
-      change st.getCNode? cn ≠ none at hK
-      show st'.getCNode? cn ≠ none
+      change st.getCNode? (CapTarget.wordCnode w) ≠ none at hK
+      show st'.getCNode? (CapTarget.wordCnode w) ≠ none
       unfold SystemState.getCNode? at hK ⊢
-      rcases hW cn with e | ⟨hxo, -, -⟩ | ⟨U, -, -, hU, -⟩
+      rcases hW (CapTarget.wordCnode w) with e | ⟨hxo, -, -⟩ | ⟨U, -, -, hU, -⟩
       · rwa [e]
       · exact absurd ⟨cap, hS, by unfold Capability.namedObject; rw [hTg]; exact congrArg some hxo⟩ (hx ⟨oid, slot⟩)
       · rw [hU] at hK; exact absurd rfl hK
@@ -387,7 +387,7 @@ theorem slotRetireTarget_names {st : SystemState} {cnode : SeLe4n.ObjId} {slot :
         simp only [Bool.and_eq_true] at hc
         exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hc.2⟩
       · exact absurd rfl hT
-    | cnodeSlot cn _ =>
+    | cnodeSlotWord _ =>
       rw [hTg] at hT
       dsimp only at hT ⊢
       split at hT

@@ -318,6 +318,212 @@ theorem resolveCapAddress_congr_getCNode?
       | rfl
       | (exact ih _ (by omega) _)
 
+/-- **The CNode-operation walk** (seL4's `resolveAddressBits` under
+`lookupSlotForCNodeOp`): `resolveCapAddress`'s walk, answering
+`.depthMismatch` where seL4's lookup stops with bits still to resolve — a
+level that needs more bits than remain, or a slot on the way that is empty or
+names no CNode — where `resolveCapAddress` answers `.illegalState`,
+`.invalidCapability` or `.objectNotFound`.  Every success is
+`resolveCapAddress`'s (`resolveCNodeOpAddress_ok_iff`). -/
+def resolveCNodeOpAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat)
+    (st : SystemState) : Except KernelError SlotRef :=
+  if hZero : bitsRemaining = 0 then .error .illegalState
+  else
+    match st.getCNode? rootId with
+    | some cn =>
+      let consumed := cn.guardWidth + cn.radixWidth
+      if hCons : consumed = 0 then .error .illegalState
+      else if bitsRemaining < consumed then .error .depthMismatch
+      else
+        let slotIndex := addr.slotBits (bitsRemaining - consumed) cn.radixWidth
+        let guardExtracted := addr.guardBits (bitsRemaining - consumed) cn.radixWidth cn.guardWidth
+        if guardExtracted ≠ cn.guardValue then .error .invalidCapability
+        else
+          let slot := SeLe4n.Slot.ofNat slotIndex
+          if bitsRemaining - consumed = 0 then
+            .ok { cnode := rootId, slot := slot }
+          else
+            match cn.lookup slot with
+            | some cap =>
+              match cap.target with
+              | .object childId =>
+                if (st.getCNode? childId).isSome then
+                  have hConsPos : consumed > 0 := Nat.pos_of_ne_zero hCons
+                  have hBitsPos : bitsRemaining > 0 := Nat.pos_of_ne_zero hZero
+                  have : bitsRemaining - consumed < bitsRemaining := Nat.sub_lt hBitsPos hConsPos
+                  resolveCNodeOpAddress childId addr (bitsRemaining - consumed) st
+                else .error .depthMismatch
+              | _ => .error .depthMismatch
+            | none => .error .depthMismatch
+    | none => .error .objectNotFound
+  termination_by bitsRemaining
+
+/-- The CNode-operation walk and `resolveCapAddress` succeed together, at the
+same slot: they differ only in which refusal they answer. -/
+theorem resolveCNodeOpAddress_ok_iff (addr : SeLe4n.CPtr) (st : SystemState) (ref : SlotRef) :
+    ∀ (bitsRemaining : Nat) (rootId : SeLe4n.ObjId),
+      resolveCNodeOpAddress rootId addr bitsRemaining st = .ok ref ↔
+        resolveCapAddress rootId addr bitsRemaining st = .ok ref := by
+  intro bitsRemaining
+  induction bitsRemaining using Nat.strongRecOn with
+  | _ bits ih =>
+    intro rootId
+    rw [resolveCNodeOpAddress, resolveCapAddress]
+    by_cases hZ : bits = 0
+    · simp [hZ]
+    · simp only [hZ, ↓reduceDIte]
+      cases hR : st.getCNode? rootId with
+      | none => simp
+      | some cn =>
+        simp only []
+        by_cases hC : cn.guardWidth + cn.radixWidth = 0
+        · simp [hC]
+        · simp only [hC, ↓reduceDIte]
+          by_cases hL : bits < cn.guardWidth + cn.radixWidth
+          · simp [hL]
+          · simp only [hL, ↓reduceIte]
+            split
+            · simp
+            · split
+              · exact Iff.rfl
+              · split
+                · rename_i cap _
+                  split
+                  · rename_i childId _
+                    cases hChild : st.getCNode? childId with
+                    | none =>
+                      simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
+                      rw [resolveCapAddress]
+                      have : bits - (cn.guardWidth + cn.radixWidth) ≠ 0 := by assumption
+                      simp [this, hChild]
+                    | some _ =>
+                      simp only [Option.isSome_some, ↓reduceIte]
+                      exact ih _ (by omega) childId
+                  · simp
+                · simp
+
+/-- **seL4's `lookupSlotForCNodeOp`**, from a CNode `rootId` already known to
+be the operation's root: a depth outside `1 .. 64` is refused `.rangeError`
+before any lookup (seL4's `rangeCheck`), and the address is then resolved to
+exactly that depth (`resolveCNodeOpAddress`). -/
+def resolveCNodeOpSlot (rootId : SeLe4n.ObjId) (index : SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) : Except KernelError SlotRef :=
+  if depth < 1 ∨ 64 < depth then .error .rangeError
+  else resolveCNodeOpAddress rootId index depth st
+
+/-- A CNode operation's slot is the one `resolveCapAddress` resolves at the
+stated depth, which is in `1 .. 64`. -/
+theorem resolveCNodeOpSlot_ok_iff (rootId : SeLe4n.ObjId) (index : SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) (ref : SlotRef) :
+    resolveCNodeOpSlot rootId index depth st = .ok ref ↔
+      (1 ≤ depth ∧ depth ≤ 64) ∧ resolveCapAddress rootId index depth st = .ok ref := by
+  unfold resolveCNodeOpSlot
+  by_cases h : depth < 1 ∨ 64 < depth
+  · simp only [h, ↓reduceIte, reduceCtorEq, false_iff, not_and]
+    intro hR; omega
+  · simp only [h, ↓reduceIte, resolveCNodeOpAddress_ok_iff]
+    constructor
+    · intro hR; exact ⟨by omega, hR⟩
+    · intro hR; exact hR.2
+
+/-- A CNode operation's slot reads only CNodes. -/
+theorem resolveCNodeOpAddress_congr_getCNode?
+    (st₁ st₂ : SystemState) (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id)
+    (addr : SeLe4n.CPtr) :
+    ∀ (bitsRemaining : Nat) (rootId : SeLe4n.ObjId),
+      resolveCNodeOpAddress rootId addr bitsRemaining st₁
+        = resolveCNodeOpAddress rootId addr bitsRemaining st₂ := by
+  intro bitsRemaining
+  induction bitsRemaining using Nat.strongRecOn with
+  | _ bits ih =>
+    intro rootId
+    rw [resolveCNodeOpAddress, resolveCNodeOpAddress]
+    simp only [hCNode]
+    repeat' (first | split | (simp only []; split))
+    all_goals first
+      | rfl
+      | (refine ih _ ?_ _; omega)
+
+/-- A CNode operation's depth is one seL4's `rangeCheck` admits: `1 .. 64`. -/
+@[inline] def cnodeOpDepthInRange (depth : Nat) : Bool := 1 ≤ depth && depth ≤ 64
+
+/-- A CNode operation's walk that succeeds starts at a CNode. -/
+theorem cnodeInvoked_of_resolveCNodeOpAddress_ok {rootId : SeLe4n.ObjId} {addr : SeLe4n.CPtr}
+    {bits : Nat} {st : SystemState} {ref : SlotRef}
+    (h : resolveCNodeOpAddress rootId addr bits st = .ok ref) :
+    (st.getCNode? rootId).isSome = true := by
+  rw [resolveCNodeOpAddress] at h
+  split at h
+  · cases h
+  · cases hC : st.getCNode? rootId with
+    | none => rw [hC] at h; cases h
+    | some _ => rfl
+
+/-- **seL4's source root** for a CNode Copy, Mint or Move: `srcRoot` names a
+capability in the caller's CSpace, looked up at the caller's root depth, and
+that capability must name a CNode (`.invalidCapability` otherwise, as seL4's
+`decodeCNodeInvocation` refuses a source root that is not a CNode capability).
+A lookup that fails answers the resolver's own refusal. -/
+def resolveCNodeOpSrcRoot (callerTid : SeLe4n.ThreadId) (srcRoot : SeLe4n.CPtr)
+    (st : SystemState) : Except KernelError SeLe4n.ObjId :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some tcb =>
+    match st.getCNode? tcb.cspaceRoot with
+    | none => .error .invalidCapability
+    | some rootCn =>
+      match resolveCapAddress tcb.cspaceRoot srcRoot rootCn.depth st with
+      | .error e => .error e
+      | .ok ref =>
+        match SystemState.lookupSlotCap st ref with
+        | some cap =>
+          match cap.target with
+          | .object id => if (st.getCNode? id).isSome then .ok id else .error .invalidCapability
+          | _ => .error .invalidCapability
+        | none => .error .invalidCapability
+
+/-- **The two slots of a CNode Copy, Mint or Move** (seL4's
+`decodeCNodeInvocation`): each depth is range-checked, the destination's then
+the source's, before any lookup (`.rangeError`); the destination is resolved
+exactly from the invoked CNode `destRoot` and must be empty
+(`.targetSlotOccupied`, seL4's `ensureEmptySlot`); the source root is resolved
+in the caller's CSpace (`resolveCNodeOpSrcRoot`) and the source resolved
+exactly from it.  The answer is the source and then the destination. -/
+def resolveCNodeOpSlots (callerTid : SeLe4n.ThreadId) (destRoot : SeLe4n.ObjId)
+    (destIndex : SeLe4n.CPtr) (destDepth : Nat) (srcRoot srcIndex : SeLe4n.CPtr)
+    (srcDepth : Nat) (st : SystemState) : Except KernelError (CSpaceAddr × CSpaceAddr) :=
+  if !cnodeOpDepthInRange destDepth then .error .rangeError
+  else if !cnodeOpDepthInRange srcDepth then .error .rangeError
+  else
+    match resolveCNodeOpAddress destRoot destIndex destDepth st with
+    | .error e => .error e
+    | .ok dst =>
+      if (SystemState.lookupSlotCap st dst).isSome then .error .targetSlotOccupied
+      else
+        match resolveCNodeOpSrcRoot callerTid srcRoot st with
+        | .error e => .error e
+        | .ok srcRootId =>
+          match resolveCNodeOpAddress srcRootId srcIndex srcDepth st with
+          | .error e => .error e
+          | .ok src => .ok (src, dst)
+
+/-- Resolved slots name a destination in a CNode the invoked root reaches: the
+invoked root is a CNode. -/
+theorem cnodeInvoked_of_resolveCNodeOpSlots_ok {callerTid : SeLe4n.ThreadId}
+    {destRoot : SeLe4n.ObjId} {destIndex srcRoot srcIndex : SeLe4n.CPtr}
+    {destDepth srcDepth : Nat} {st : SystemState} {p : CSpaceAddr × CSpaceAddr}
+    (h : resolveCNodeOpSlots callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+      = .ok p) :
+    (st.getCNode? destRoot).isSome = true := by
+  unfold resolveCNodeOpSlots at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  cases hD : resolveCNodeOpAddress destRoot destIndex destDepth st with
+  | error e => rw [hD] at h; cases h
+  | ok dst => exact cnodeInvoked_of_resolveCNodeOpAddress_ok hD
+
 /-- …and `lookupSlotCap` reads only the slot's CNode. -/
 theorem lookupSlotCap_congr_getCNode?
     (st₁ st₂ : SystemState) (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id)
@@ -457,6 +663,183 @@ theorem resolveCapAddressKUnrolled_eq {α : Type} (rootId : SeLe4n.ObjId) (addr 
       by_cases hCons : cn.guardWidth + cn.radixWidth = 0
       · simp only [hCons, ↓reduceIte, ↓reduceDIte]
       · simp only [hCons, ↓reduceIte, ↓reduceDIte]
+
+/-- `resolveCNodeOpAddress` in continuation form, its first level unrolled as
+`resolveCapAddressKUnrolled`'s is: a root that resolves the whole index (one
+level) reaches `onOk` in the caller's own body, so neither the `Except` nor the
+`SlotRef` is built; a deeper walk matches the specification's result
+(`resolveCNodeOpAddressK_eq`). -/
+@[inline] def resolveCNodeOpAddressK {α : Type} (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (bits : Nat) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  if bits = 0 then onErr .illegalState
+  else
+    match st.getCNode? rootId with
+    | some cn =>
+      if cn.guardWidth + cn.radixWidth = 0 then onErr .illegalState
+      else if bits < cn.guardWidth + cn.radixWidth then onErr .depthMismatch
+      else if addr.guardBits (bits - (cn.guardWidth + cn.radixWidth)) cn.radixWidth cn.guardWidth
+          ≠ cn.guardValue then onErr .invalidCapability
+      else if bits - (cn.guardWidth + cn.radixWidth) = 0 then
+        onOk rootId (SeLe4n.Slot.ofNat
+          (addr.slotBits (bits - (cn.guardWidth + cn.radixWidth)) cn.radixWidth))
+      else
+        match resolveCNodeOpAddress rootId addr bits st with
+        | .error e => onErr e
+        | .ok ref => onOk ref.cnode ref.slot
+    | none => onErr .objectNotFound
+
+theorem resolveCNodeOpAddressK_eq {α : Type} (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (bits : Nat) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.Slot → α) :
+    resolveCNodeOpAddressK rootId addr bits st onErr onOk =
+      match resolveCNodeOpAddress rootId addr bits st with
+      | .error e => onErr e
+      | .ok ref => onOk ref.cnode ref.slot := by
+  unfold resolveCNodeOpAddressK
+  by_cases hZ : bits = 0
+  · rw [resolveCNodeOpAddress]; simp only [hZ, ↓reduceIte, ↓reduceDIte]
+  · simp only [hZ, ↓reduceIte]
+    cases hC : st.getCNode? rootId with
+    | none => rw [resolveCNodeOpAddress]; simp only [hZ, hC, ↓reduceDIte]
+    | some cn =>
+      simp only []
+      by_cases hCons : cn.guardWidth + cn.radixWidth = 0
+      · rw [resolveCNodeOpAddress]; simp only [hZ, hC, hCons, ↓reduceIte, ↓reduceDIte]
+      · simp only [hCons, ↓reduceIte]
+        by_cases hL : bits < cn.guardWidth + cn.radixWidth
+        · rw [resolveCNodeOpAddress]; simp only [hZ, hC, hCons, hL, ↓reduceIte, ↓reduceDIte]
+        · simp only [hL, ↓reduceIte]
+          by_cases hG : addr.guardBits (bits - (cn.guardWidth + cn.radixWidth)) cn.radixWidth
+              cn.guardWidth ≠ cn.guardValue
+          · rw [if_pos hG, resolveCNodeOpAddress]
+            simp only [hZ, hC, hCons, hL, ↓reduceIte, ↓reduceDIte]
+            rw [if_pos hG]
+          · rw [if_neg hG]
+            by_cases hLeaf : bits - (cn.guardWidth + cn.radixWidth) = 0
+            · rw [if_pos hLeaf, resolveCNodeOpAddress]
+              simp only [hZ, hC, hCons, hL, ↓reduceIte, ↓reduceDIte]
+              rw [if_neg hG, if_pos hLeaf]
+            · rw [if_neg hLeaf]
+
+/-- `resolveCNodeOpSrcRoot` in continuation form: the source root's slot is
+resolved through `resolveCapAddressKUnrolled` and handed on as the CNode it
+names, so no slot reference or `Except` is built (`resolveCNodeOpSrcRootK_eq`). -/
+@[inline] def resolveCNodeOpSrcRootK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcRoot : SeLe4n.CPtr) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → α) : α :=
+  match st.getTcb? callerTid with
+  | none => onErr .objectNotFound
+  | some tcb =>
+    match st.getCNode? tcb.cspaceRoot with
+    | none => onErr .invalidCapability
+    | some rootCn =>
+      resolveCapAddressKUnrolled tcb.cspaceRoot srcRoot rootCn.depth st onErr
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | some cap =>
+            match cap.target with
+            | .object id => if (st.getCNode? id).isSome then onOk id else onErr .invalidCapability
+            | _ => onErr .invalidCapability
+          | none => onErr .invalidCapability)
+
+theorem resolveCNodeOpSrcRootK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcRoot : SeLe4n.CPtr) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → α) :
+    resolveCNodeOpSrcRootK callerTid srcRoot st onErr onOk =
+      match resolveCNodeOpSrcRoot callerTid srcRoot st with
+      | .error e => onErr e
+      | .ok id => onOk id := by
+  unfold resolveCNodeOpSrcRootK resolveCNodeOpSrcRoot
+  cases st.getTcb? callerTid with
+  | none => rfl
+  | some tcb =>
+    simp only []
+    cases st.getCNode? tcb.cspaceRoot with
+    | none => rfl
+    | some rootCn =>
+      simp only [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+      cases resolveCapAddress tcb.cspaceRoot srcRoot rootCn.depth st with
+      | error e => rfl
+      | ok ref =>
+        simp only []
+        cases SystemState.lookupSlotCap st ref with
+        | none => rfl
+        | some cap =>
+          simp only []
+          cases cap.target with
+          | object id => simp only []; split <;> rfl
+          | _ => rfl
+
+/-- `resolveCNodeOpSlots` in continuation form: the source's and the
+destination's CNode and slot go to `onOk`, so no address pair is built
+(`resolveCNodeOpSlotsK_eq`). -/
+@[inline] def resolveCNodeOpSlotsK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (destRoot : SeLe4n.ObjId) (destIndex : SeLe4n.CPtr) (destDepth : Nat)
+    (srcRoot srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  if !cnodeOpDepthInRange destDepth then onErr .rangeError
+  else if !cnodeOpDepthInRange srcDepth then onErr .rangeError
+  else
+    resolveCNodeOpAddressK destRoot destIndex destDepth st onErr fun dCn dSlot =>
+      if (SystemState.lookupSlotCap st { cnode := dCn, slot := dSlot }).isSome then
+        onErr .targetSlotOccupied
+      else
+        resolveCNodeOpSrcRootK callerTid srcRoot st onErr fun srcRootId =>
+          resolveCNodeOpAddressK srcRootId srcIndex srcDepth st onErr fun sCn sSlot =>
+            onOk sCn sSlot dCn dSlot
+
+theorem resolveCNodeOpSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (destRoot : SeLe4n.ObjId) (destIndex : SeLe4n.CPtr) (destDepth : Nat)
+    (srcRoot srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
+    resolveCNodeOpSlotsK callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+        onErr onOk =
+      match resolveCNodeOpSlots callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+      with
+      | .error e => onErr e
+      | .ok (src, dst) => onOk src.cnode src.slot dst.cnode dst.slot := by
+  unfold resolveCNodeOpSlotsK resolveCNodeOpSlots
+  split
+  · rfl
+  split
+  · rfl
+  rw [resolveCNodeOpAddressK_eq]
+  cases resolveCNodeOpAddress destRoot destIndex destDepth st with
+  | error e => rfl
+  | ok dst =>
+    simp only []
+    split
+    · rfl
+    rw [resolveCNodeOpSrcRootK_eq]
+    cases resolveCNodeOpSrcRoot callerTid srcRoot st with
+    | error e => rfl
+    | ok rid =>
+      simp only [resolveCNodeOpAddressK_eq]
+      cases resolveCNodeOpAddress rid srcIndex srcDepth st with
+      | error e => rfl
+      | ok src => rfl
+
+/-- `resolveCNodeOpSlots` as compiled: its continuation form, the two addresses
+built only at the end, from the four words the walks hand on, so no result of a
+walk is taken apart into the answer's cells (`resolveCNodeOpSlots_eq_impl`). -/
+def resolveCNodeOpSlotsImpl (callerTid : SeLe4n.ThreadId) (destRoot : SeLe4n.ObjId)
+    (destIndex : SeLe4n.CPtr) (destDepth : Nat) (srcRoot srcIndex : SeLe4n.CPtr)
+    (srcDepth : Nat) (st : SystemState) : Except KernelError (CSpaceAddr × CSpaceAddr) :=
+  resolveCNodeOpSlotsK callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+    .error (fun srcCNode srcSlot dstCNode dstSlot =>
+      .ok (⟨srcCNode, srcSlot⟩, ⟨dstCNode, dstSlot⟩))
+
+@[csimp] theorem resolveCNodeOpSlots_eq_impl :
+    @resolveCNodeOpSlots = @resolveCNodeOpSlotsImpl := by
+  funext callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+  unfold resolveCNodeOpSlotsImpl
+  rw [resolveCNodeOpSlotsK_eq]
+  cases resolveCNodeOpSlots callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st with
+  | error e => rfl
+  | ok p => rfl
 
 /-- WS-H13/H-01 (deliverable 9): `resolveCapAddress` returns `.error .illegalState`
 when called with zero bits remaining. -/
@@ -1775,22 +2158,25 @@ theorem cspaceRevoke_ok_decompose (addr : CSpaceAddr) (st st' : SystemState)
 -- WS-E4/C-02: Capability copy, move, and mutate operations
 -- ============================================================================
 
-/-- WS-E4/C-02: Copy a capability from source to destination without rights change.
+/-- WS-E4/C-02: Copy a capability from source to destination, its rights
+masked by `mask` (seL4's `CNode_Copy`, `maskCapRights`).
 
-Unlike `cspaceMint`, copy does not attenuate rights or change the badge.
+Unlike `cspaceMint`, copy does not change the badge, and it never refuses a
+mask: the copy holds the rights the source and the mask both hold.  A mask of
+every right (`AccessRightSet.full`) keeps the source's rights.
 The destination slot must be empty (H-02 guard via `cspaceInsertSlot`).
 A CDT derivation edge of type `.copy` is recorded. -/
-def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
+def cspaceCopy (src dst : CSpaceAddr) (mask : AccessRightSet) : Kernel Unit :=
   fun st =>
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (cap, st') =>
         -- AL1b (AK7-I.cascade): type-level null-cap rejection. Promote the
-        -- looked-up cap to `NonNullCap`; `none` is `.error .nullCapability`
+        -- masked cap to `NonNullCap`; `none` is `.error .nullCapability`
         -- (distinct from `.invalidCapability`). A null cap cannot be
         -- meaningfully copied — it would clutter CDT tracking and the
         -- destination with an always-inert capability. Fail fast.
-        match cap.toNonNull? with
+        match (cap.maskRights mask).toNonNull? with
         | none => .error .nullCapability
         | some capNN =>
             -- WS-BP BP7.1 (`v0.36.7`): a copy is a *derivation* — a new
@@ -1811,10 +2197,12 @@ def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
 capability, not null and not refused by the untyped derivation rule, installed
 without its mapping record at `dst`, the edge recorded, and the source set full
 when it names an untyped. -/
-theorem cspaceCopy_ok_decompose {src dst : CSpaceAddr} {st st' : SystemState}
-    (h : cspaceCopy src dst st = .ok ((), st')) :
-    ∃ cap st2, SystemState.lookupSlotCap st src = some cap ∧ cap.isNull = false ∧
-      cspaceInsertSlot dst cap.withoutMapping st = .ok ((), st2) ∧
+theorem cspaceCopy_ok_decompose {src dst : CSpaceAddr} {mask : AccessRightSet}
+    {st st' : SystemState}
+    (h : cspaceCopy src dst mask st = .ok ((), st')) :
+    ∃ cap st2, SystemState.lookupSlotCap st src = some cap ∧
+      (cap.maskRights mask).isNull = false ∧
+      cspaceInsertSlot dst (cap.maskRights mask).withoutMapping st = .ok ((), st2) ∧
       untypedDeriveRefused st src cap = false ∧
       st' = untypedSourceSetFull (st2.cdtAddChild src dst .copy) src cap := by
   unfold cspaceCopy cspaceLookupSlot at h
@@ -1825,13 +2213,14 @@ theorem cspaceCopy_ok_decompose {src dst : CSpaceAddr} {st st' : SystemState}
   | some cap =>
     rw [hL] at h
     simp only at h
-    by_cases hN : cap.isNull = true
-    · have : cap.toNonNull? = none := by unfold Capability.toNonNull?; simp [hN]
+    by_cases hN : (cap.maskRights mask).isNull = true
+    · have : (cap.maskRights mask).toNonNull? = none := by
+        unfold Capability.toNonNull?; simp [hN]
       rw [this] at h; cases h
-    · have hN' : cap.isNull = false := by simpa using hN
+    · have hN' : (cap.maskRights mask).isNull = false := by simpa using hN
       rw [Capability.toNonNull?_of_not_null hN'] at h
       simp only at h
-      cases hI : cspaceInsertSlot dst cap.withoutMapping st with
+      cases hI : cspaceInsertSlot dst (cap.maskRights mask).withoutMapping st with
       | error e => rw [hI] at h; cases h
       | ok pr =>
         obtain ⟨u, st2⟩ := pr; cases u
@@ -2354,43 +2743,50 @@ theorem mintReplyCapWithCdt_of_admitted {src dst : CSpaceAddr} {st : SystemState
     | _ => rw [hP] at hT; simp at hT
 
 /-- WS-ZA ZA5.3: **`cspaceCopy`'s checks**, read before any write: the source
-slot holds a capability that is not null, and the destination is admitted.
-Exactly the copy's refusals (`cspaceCopy_of_admitted`), so a dispatcher that
+slot holds a capability that, masked, is not null, and the destination is
+admitted.  Exactly the copy's refusals (`cspaceCopy_of_admitted`), so a dispatcher that
 reads them first hands the state to `cspaceCopyPerform` alone. -/
-@[inline] def cspaceCopyAdmitted (src dst : CSpaceAddr) (st : SystemState) : Bool :=
+@[inline] def cspaceCopyAdmitted (src dst : CSpaceAddr) (mask : AccessRightSet)
+    (st : SystemState) : Bool :=
   (match SystemState.lookupSlotCap st src with
-   | some cap => cap.isNotNull && !untypedDeriveRefused st src cap
+   | some cap => (cap.maskRights mask).isNotNull && !untypedDeriveRefused st src cap
    | none => false) &&
   cspaceDstAdmitted dst st
 
 /-- WS-ZA ZA5.3: **`cspaceCopy`'s writes**, in place: the derived capability and
 the copy's edge (`cspaceInstallPerform`). -/
-@[inline] def cspaceCopyPerform (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+@[inline] def cspaceCopyPerform (src dst : CSpaceAddr) (mask : AccessRightSet)
+    (st : SystemState) : SystemState :=
   match SystemState.lookupSlotCap st src with
-  | some cap => untypedSourceSetFull (cspaceInstallPerform src dst cap.withoutMapping .copy st) src cap
+  | some cap =>
+      untypedSourceSetFull
+        (cspaceInstallPerform src dst (cap.maskRights mask).withoutMapping .copy st) src cap
   | none => st
 
-/-- `cspaceCopyPerform` as compiled: the source capability's fields, with no
-mapping record, are written straight over the destination slot's own record
+/-- `cspaceCopyPerform` as compiled: the source capability's fields, its rights
+masked and with no mapping record, are written straight over the destination slot's own record
 (`CNode.insertFields`), so copying a mapped capability builds no unmapped
 capability first (WS-ZA ZA5.3 part 6). -/
-@[inline] def cspaceCopyPerformImpl (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+@[inline] def cspaceCopyPerformImpl (src dst : CSpaceAddr) (mask : AccessRightSet)
+    (st : SystemState) : SystemState :=
   match SystemState.lookupSlotCap st src with
   | some cap =>
       untypedSourceSetFull
         ((st.storeCNodeWith dst.cnode
-          (·.insertFields dst.slot cap.target cap.rights cap.badgeWord cap.badged cap.freeIndex)).cdtAddChild
+          (·.insertFields dst.slot cap.target (cap.rights.maskBy mask) cap.badgeWord
+            cap.badged cap.freeIndex)).cdtAddChild
           src dst .copy) src cap
   | none => st
 
 @[csimp] theorem cspaceCopyPerform_eq_impl : @cspaceCopyPerform = @cspaceCopyPerformImpl := by
-  funext src dst st
+  funext src dst mask st
   unfold cspaceCopyPerform cspaceCopyPerformImpl cspaceInstallPerform
   simp only [CNode.insertFields_eq_insert]; rfl
 
 /-- The copy's writes keep the scheduler. -/
-theorem cspaceCopyPerform_scheduler (src dst : CSpaceAddr) (st : SystemState) :
-    (cspaceCopyPerform src dst st).scheduler = st.scheduler := by
+theorem cspaceCopyPerform_scheduler (src dst : CSpaceAddr) (mask : AccessRightSet)
+    (st : SystemState) :
+    (cspaceCopyPerform src dst mask st).scheduler = st.scheduler := by
   unfold cspaceCopyPerform cspaceInstallPerform
   split
   · rw [untypedSourceSetFull_scheduler, SystemState.cdtAddChild_scheduler,
@@ -2398,8 +2794,9 @@ theorem cspaceCopyPerform_scheduler (src dst : CSpaceAddr) (st : SystemState) :
   · rfl
 
 /-- The copy's writes keep the machine. -/
-theorem cspaceCopyPerform_machine (src dst : CSpaceAddr) (st : SystemState) :
-    (cspaceCopyPerform src dst st).machine = st.machine := by
+theorem cspaceCopyPerform_machine (src dst : CSpaceAddr) (mask : AccessRightSet)
+    (st : SystemState) :
+    (cspaceCopyPerform src dst mask st).machine = st.machine := by
   unfold cspaceCopyPerform cspaceInstallPerform
   split
   · rw [untypedSourceSetFull_machine, SystemState.cdtAddChild_machine,
@@ -2407,9 +2804,10 @@ theorem cspaceCopyPerform_machine (src dst : CSpaceAddr) (st : SystemState) :
   · rfl
 
 /-- WS-ZA ZA5.3: an admitted copy is its writes. -/
-theorem cspaceCopy_of_admitted {src dst : CSpaceAddr} {st : SystemState}
-    (h : cspaceCopyAdmitted src dst st = true) :
-    cspaceCopy src dst st = .ok ((), cspaceCopyPerform src dst st) := by
+theorem cspaceCopy_of_admitted {src dst : CSpaceAddr} {mask : AccessRightSet}
+    {st : SystemState}
+    (h : cspaceCopyAdmitted src dst mask st = true) :
+    cspaceCopy src dst mask st = .ok ((), cspaceCopyPerform src dst mask st) := by
   unfold cspaceCopyAdmitted at h
   unfold cspaceCopy cspaceCopyPerform cspaceLookupSlot
   cases hL : SystemState.lookupSlotCap st src with
@@ -2417,7 +2815,7 @@ theorem cspaceCopy_of_admitted {src dst : CSpaceAddr} {st : SystemState}
   | some cap =>
     simp only [hL, Capability.isNotNull, Bool.and_eq_true, Bool.not_eq_true'] at h
     obtain ⟨⟨hN, hU⟩, hD⟩ := h
-    have hNN : cap.toNonNull? = some ⟨cap, hN⟩ := by
+    have hNN : (cap.maskRights mask).toNonNull? = some ⟨cap.maskRights mask, hN⟩ := by
       unfold Capability.toNonNull?; rw [dif_pos hN]
     simp only [hNN, cspaceInsertSlot_of_admitted hD, hU, Bool.false_eq_true, ↓reduceIte]
     rfl
@@ -2508,40 +2906,45 @@ each step the CNode and the two slot words rather than two slot addresses, so no
 address record is built per invocation (WS-ZA ZA5.3 part 6).  Each is the step on
 the two addresses, by definition. -/
 
-/-- `cspaceMintAdmitted` on slots `srcSlot` and `dstSlot` of `cnode`, with the
-badge as the register carries it: the word, 0 for no badge (seL4's mint). -/
-def cspaceMintAdmittedAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
+/-- `cspaceMintAdmitted` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`, with the badge as the register carries it: the word, 0 for no
+badge (seL4's mint). -/
+def cspaceMintAdmittedAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (badge : SeLe4n.Badge) (st : SystemState) : Bool :=
-  cspaceMintAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights
+  cspaceMintAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ rights
     (if badge.val = 0 then none else some badge) st
 
 /-- `cspaceMintAdmittedAt` as compiled: the checks read no badge (whether the
 minted capability is null is a question of its target and rights), so none is
 built (WS-ZA ZA5.3 part 6). -/
-def cspaceMintAdmittedAtImpl (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
+def cspaceMintAdmittedAtImpl (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (_badge : SeLe4n.Badge) (st : SystemState) : Bool :=
-  cspaceMintAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights none st
+  cspaceMintAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ rights none st
 
 @[csimp] theorem cspaceMintAdmittedAt_eq_impl : @cspaceMintAdmittedAt = @cspaceMintAdmittedAtImpl := by
-  funext cnode srcSlot dstSlot rights badge st
+  funext srcCNode srcSlot dstCNode dstSlot rights badge st
   rfl
 
-/-- `cspaceMintPerform` on slots `srcSlot` and `dstSlot` of `cnode`, with the
-badge as the register carries it (0 for no badge). -/
-def cspaceMintPerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
+/-- `cspaceMintPerform` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`, with the badge as the register carries it (0 for no badge). -/
+def cspaceMintPerformAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (badge : SeLe4n.Badge) (st : SystemState) : SystemState :=
-  cspaceMintPerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights
+  cspaceMintPerform ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ rights
     (if badge.val = 0 then none else some badge) st
 
 /-- `cspaceMintPerformAt` as compiled: the register's badge word is the minted
 capability's word, its flag whether the word is nonzero, so no `Option` is built
 (WS-ZA ZA5.3 part 6). -/
-def cspaceMintPerformAtImpl (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
+def cspaceMintPerformAtImpl (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot)
     (rights : AccessRightSet) (badge : SeLe4n.Badge) (st : SystemState) : SystemState :=
-  cspaceMintPerformWords ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights badge (badge.word != 0) st
+  cspaceMintPerformWords ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ rights badge (badge.word != 0) st
 
 @[csimp] theorem cspaceMintPerformAt_eq_impl : @cspaceMintPerformAt = @cspaceMintPerformAtImpl := by
-  funext cnode srcSlot dstSlot rights badge st
+  funext srcCNode srcSlot dstCNode dstSlot rights badge st
   unfold cspaceMintPerformAt cspaceMintPerformAtImpl
   rw [cspaceMintPerform_eq_impl]
   unfold cspaceMintPerformImpl
@@ -2562,25 +2965,41 @@ def mintReplyCapPerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
     (st : SystemState) : SystemState :=
   mintReplyCapPerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
 
-/-- `cspaceCopyAdmitted` on slots `srcSlot` and `dstSlot` of `cnode`. -/
-def cspaceCopyAdmittedAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
+/-- `cspaceCopyAdmitted` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`. -/
+def cspaceCopyAdmittedAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (mask : AccessRightSet)
     (st : SystemState) : Bool :=
-  cspaceCopyAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
+  cspaceCopyAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ mask st
 
-/-- `cspaceCopyPerform` on slots `srcSlot` and `dstSlot` of `cnode`. -/
-def cspaceCopyPerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
+/-- `cspaceCopyPerform` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`. -/
+def cspaceCopyPerformAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (mask : AccessRightSet)
     (st : SystemState) : SystemState :=
-  cspaceCopyPerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
+  cspaceCopyPerform ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ mask st
 
-/-- `cspaceMoveAdmitted` on slots `srcSlot` and `dstSlot` of `cnode`. -/
-def cspaceMoveAdmittedAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
-    (st : SystemState) : Bool :=
-  cspaceMoveAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
+/-- `cspaceMoveAdmitted` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`. -/
+def cspaceMoveAdmittedAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (st : SystemState) : Bool :=
+  cspaceMoveAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ st
 
-/-- `cspaceMovePerform` on slots `srcSlot` and `dstSlot` of `cnode`. -/
-def cspaceMovePerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
-    (st : SystemState) : SystemState :=
-  cspaceMovePerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
+/-- `cspaceMovePerform` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`. -/
+def cspaceMovePerformAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (st : SystemState) : SystemState :=
+  cspaceMovePerform ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ st
+
+/-- **The rights a CNode Mint grants**: the requested rights masked by the
+source capability's (seL4's `maskCapRights` on the derived capability, never a
+refusal).  A source slot that holds nothing leaves them as requested; the mint
+refuses that slot itself. -/
+@[inline] def mintMaskedRights (st : SystemState) (src : CSpaceAddr)
+    (rights : AccessRightSet) : AccessRightSet :=
+  match SystemState.lookupSlotCap st src with
+  | some parent => AccessRightSet.inter rights parent.rights
+  | none => rights
 
 /-! Each install's checks admit only a destination in a CNode, so an admitted
 install's CNode invocation passes the CNode guard (`cnodeInvoked`). -/
@@ -2591,8 +3010,9 @@ theorem cnodeInvoked_of_mintAdmitted {src dst : CSpaceAddr} {rights : AccessRigh
   unfold cspaceMintAdmitted at h
   exact cnodeInvoked_of_dstAdmitted (Bool.and_eq_true _ _ ▸ h).2
 
-theorem cnodeInvoked_of_copyAdmitted {src dst : CSpaceAddr} {st : SystemState}
-    (h : cspaceCopyAdmitted src dst st = true) : cnodeInvoked dst.cnode st = true := by
+theorem cnodeInvoked_of_copyAdmitted {src dst : CSpaceAddr} {mask : AccessRightSet}
+    {st : SystemState}
+    (h : cspaceCopyAdmitted src dst mask st = true) : cnodeInvoked dst.cnode st = true := by
   unfold cspaceCopyAdmitted at h
   exact cnodeInvoked_of_dstAdmitted (Bool.and_eq_true _ _ ▸ h).2
 

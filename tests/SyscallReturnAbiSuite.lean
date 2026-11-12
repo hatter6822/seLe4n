@@ -832,7 +832,7 @@ private def returnAbiTraceLines : List String :=
     | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
     | e => e
   -- `KernelError.kernelErrorEncodingBound` = one past the largest `KernelError`
-  -- discriminant (the newest being `.truncatedMessage` at 58); every
+  -- discriminant (the newest being `.depthMismatch` at 60); every
   -- value below it is a variant's or a retired one (`37`, WS-ZA ZA5.4 part 14).  The boundary conjunct pins the count from above:
   -- when the next variant lands, `ofDiscriminant? count` stops being `none`, the
   -- fixture line diverges, and this range has to move with it rather than
@@ -1285,6 +1285,32 @@ private def abiRegisterLines : List String :=
     ++ (l.msgRegs.toList.zipIdx.map fun (r, i) => s!"register msgReg{i} x{r.val}")
     ++ [s!"register syscallNum x{l.syscallNumReg.val}"]
 
+/-- Which field of a copy's CNode operation word owns bit `j`, decided by
+decoding `2^j` alone through the copy's decode (`cnodeCopyArgsOfWords`, a
+mint's decode too): a depth, the rights mask, or `reserved` where the decode
+refuses the bit. -/
+private def cnodeCopyBitOwner (j : Nat) : String :=
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.cnodeCopyArgsOfWords
+      (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (2 ^ j) with
+  | .ok a =>
+    if a.destDepth != 0 && a.srcDepth == 0 && a.rights.bits == 0 then "destDepth"
+    else if a.srcDepth != 0 && a.destDepth == 0 && a.rights.bits == 0 then "srcDepth"
+    else if a.rights.bits != 0 && a.destDepth == 0 && a.srcDepth == 0 then "rights"
+    else "inconsistent"
+  | .error _ => "reserved"
+
+/-- Which field of a move's CNode operation word owns bit `j`, decided by
+decoding `2^j` alone through the move's decode (`cnodeOpArgsOfWords`): a depth,
+or `reserved` where the decode refuses the bit (a move takes no rights). -/
+private def cnodeMoveBitOwner (j : Nat) : String :=
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.cnodeOpArgsOfWords
+      (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (2 ^ j) with
+  | .ok a =>
+    if a.destDepth != 0 && a.srcDepth == 0 then "destDepth"
+    else if a.srcDepth != 0 && a.destDepth == 0 then "srcDepth"
+    else "inconsistent"
+  | .error _ => "reserved"
+
 private def abiLayoutTableLines : List String :=
   "# ABI layout: MessageInfo fields and bounds (Lean/Rust cross-check)"
     :: (List.range 64).map (fun j => s!"bit {j} {abiLayoutBitOwner j}")
@@ -1295,6 +1321,8 @@ private def abiLayoutTableLines : List String :=
          s!"maxLabel {MessageInfo.maxLabel}",
          s!"errorLabelBase {Kernel.Architecture.errorLabelBase}",
          s!"syscallAbiVersion {Kernel.Architecture.syscallAbiVersion}" ]
+    ++ (List.range 64).map (fun j => s!"cnodeCopyBit {j} {cnodeCopyBitOwner j}")
+    ++ (List.range 64).map (fun j => s!"cnodeMoveBit {j} {cnodeMoveBitOwner j}")
 
 private def abiLayoutFixturePath : String := "tests/fixtures/abi_layout.expected"
 

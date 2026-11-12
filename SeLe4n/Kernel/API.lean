@@ -994,7 +994,7 @@ borrowed: every arm calls the one copy, and the arm keeps its state unshared. -/
   | .irqControl _ => sid == .irqControlGet
   | .irqHandler _ =>
       sid == .irqHandlerAck || sid == .irqHandlerSetNotification || sid == .irqHandlerClear
-  | .cnodeSlot _ _ => false
+  | .cnodeSlotWord word => false
 
 /-- **The answer to a capability of the right type without the syscall's
 right.**  seL4's `decodeInvocation` refuses an endpoint or notification
@@ -3183,15 +3183,15 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- mapping a destroyed frame capability recorded is removed with it.
             cspaceRevokeCdtFinalising executingCore addr st
     | _ => fun _ => .error .invalidCapability
-  -- PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap.  Same src/dst-slot
-  -- ABI as `cspaceCopy` (reuses `decodeCSpaceCopyArgs`); the cap names the CNode, and
+  -- PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap.  Two slots of the
+  -- invoked CNode (`decodeMintReplyCapArgs`); the cap names the CNode, and
   -- `mintReplyCapWithCdt` derives `.replyCap (ReplyId.ofObjId target)` at the dst slot
   -- (fail-closed when the src is not an `.object`-to-Reply cap).  CDT-tracked so the
   -- minted reply cap is revocable through `.cspaceRevoke`.
   | .mintReplyCap =>
     some <| match cap.target with
     | .object cnodeId =>
-        fun st => match decodeCSpaceCopyArgs decoded with
+        fun st => match decodeMintReplyCapArgs decoded with
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
@@ -3842,7 +3842,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object cnodeId =>
       try dsimp only [] at hStep
-      cases hDec : decodeCSpaceCopyArgs decoded with
+      cases hDec : decodeMintReplyCapArgs decoded with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
@@ -4571,11 +4571,13 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-            let badge : Option SeLe4n.Badge :=
-              if args.badge.val = 0 then none else some args.badge
-            cspaceMintWithCdt src dst args.rights badge st
+            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+                args.srcIndex args.srcDepth st with
+            | .error e => .error e
+            | .ok (src, dst) =>
+                let badge : Option SeLe4n.Badge :=
+                  if args.badge.val = 0 then none else some args.badge
+                cspaceMintWithCdt src dst (mintMaskedRights st src args.rights) badge st
     | _ => fun _ => .error .invalidCapability
   | .cspaceCopy =>
     match cap.target with
@@ -4584,9 +4586,10 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-            cspaceCopy src dst st
+            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+                args.srcIndex args.srcDepth st with
+            | .error e => .error e
+            | .ok (src, dst) => cspaceCopy src dst args.rights st
     | _ => fun _ => .error .invalidCapability
   | .cspaceMove =>
     match cap.target with
@@ -4595,9 +4598,10 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-            cspaceMove src dst st
+            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+                args.srcIndex args.srcDepth st with
+            | .error e => .error e
+            | .ok (src, dst) => cspaceMove src dst st
     | _ => fun _ => .error .invalidCapability
   -- V8-H/D1: cspaceDelete, vspaceMap, vspaceUnmap, serviceRevoke,
   -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
@@ -5090,11 +5094,13 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-            let badge : Option SeLe4n.Badge :=
-              if args.badge.val = 0 then none else some args.badge
-            cspaceMintChecked ctx src dst args.rights badge st
+            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+                args.srcIndex args.srcDepth st with
+            | .error e => .error e
+            | .ok (src, dst) =>
+                let badge : Option SeLe4n.Badge :=
+                  if args.badge.val = 0 then none else some args.badge
+                cspaceMintChecked ctx src dst (mintMaskedRights st src args.rights) badge st
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace copy — checked for source→destination CNode flow
   | .cspaceCopy =>
@@ -5104,9 +5110,10 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-            cspaceCopyChecked ctx src dst st
+            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+                args.srcIndex args.srcDepth st with
+            | .error e => .error e
+            | .ok (src, dst) => cspaceCopyChecked ctx src dst args.rights st
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace move — checked for source→destination CNode flow
   | .cspaceMove =>
@@ -5116,9 +5123,10 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-            cspaceMoveChecked ctx src dst st
+            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+                args.srcIndex args.srcDepth st with
+            | .error e => .error e
+            | .ok (src, dst) => cspaceMoveChecked ctx src dst st
     | _ => fun _ => .error .invalidCapability
   -- V8-H/D1: cspaceDelete, vspaceMap, vspaceUnmap, serviceRevoke,
   -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
@@ -6492,9 +6500,11 @@ theorem syscallRequiredRight_total (sid : SyscallId) :
 -- ============================================================================
 
 /-- WS-K-C: When cspaceMint dispatch succeeds, the kernel-level `cspaceMintWithCdt`
-is invoked with the decoded source slot, destination slot, rights, and badge
-from message registers. CDT-tracked (C-01).  The arm first refuses with
-`.objectNotFound` unless the invoked object is a CNode (`cnodeInvoked`). -/
+is invoked with the source and destination slots the arguments name
+(`resolveCNodeOpSlots`, seL4's CNode addressing), the requested rights masked
+by the source capability's (`mintMaskedRights`, seL4's `maskCapRights`) and
+the badge. CDT-tracked (C-01).  The arm first refuses with `.objectNotFound`
+unless the invoked object is a CNode (`cnodeInvoked`). -/
 theorem dispatchWithCap_cspaceMint_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -6503,17 +6513,20 @@ theorem dispatchWithCap_cspaceMint_delegates
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceMintArgs decoded = .ok args) :
     dispatchWithCap decoded tid executingCore gate cap =
-      let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-      let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-      let badge : Option SeLe4n.Badge :=
-        if args.badge.val = 0 then none else some args.badge
       fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
-        cspaceMintWithCdt src dst args.rights badge st := by
+        match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+            args.srcIndex args.srcDepth st with
+        | .error e => .error e
+        | .ok (src, dst) =>
+            let badge : Option SeLe4n.Badge :=
+              if args.badge.val = 0 then none else some args.badge
+            cspaceMintWithCdt src dst (mintMaskedRights st src args.rights) badge st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceCopy dispatch succeeds, the kernel-level `cspaceCopy`
-is invoked with the decoded source and destination slots, once the invoked
-object is a CNode (`cnodeInvoked`; `.objectNotFound` otherwise). -/
+is invoked with the source and destination slots the arguments name
+(`resolveCNodeOpSlots`, seL4's CNode addressing) and the rights mask, once the
+invoked object is a CNode (`cnodeInvoked`; `.objectNotFound` otherwise). -/
 theorem dispatchWithCap_cspaceCopy_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -6522,15 +6535,17 @@ theorem dispatchWithCap_cspaceCopy_delegates
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceCopyArgs decoded = .ok args) :
     dispatchWithCap decoded tid executingCore gate cap =
-      let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-      let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
       fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
-        cspaceCopy src dst st := by
+        match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+            args.srcIndex args.srcDepth st with
+        | .error e => .error e
+        | .ok (src, dst) => cspaceCopy src dst args.rights st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceMove dispatch succeeds, the kernel-level `cspaceMove`
-is invoked with the decoded source and destination slots, once the invoked
-object is a CNode (`cnodeInvoked`; `.objectNotFound` otherwise). -/
+is invoked with the source and destination slots the arguments name
+(`resolveCNodeOpSlots`, seL4's CNode addressing), once the invoked object is a
+CNode (`cnodeInvoked`; `.objectNotFound` otherwise). -/
 theorem dispatchWithCap_cspaceMove_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -6539,10 +6554,11 @@ theorem dispatchWithCap_cspaceMove_delegates
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceMoveArgs decoded = .ok args) :
     dispatchWithCap decoded tid executingCore gate cap =
-      let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-      let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
       fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
-        cspaceMove src dst st := by
+        match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+            args.srcIndex args.srcDepth st with
+        | .error e => .error e
+        | .ok (src, dst) => cspaceMove src dst st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C / WS-BP BP7.1 (`v0.36.7`): When cspaceDelete dispatch succeeds, the

@@ -151,6 +151,35 @@ theorem mk_checked_valid (bits : Nat) (h : bits < 2 ^ 5) :
 /-- The empty rights set (no permissions). -/
 @[inline] def empty : AccessRightSet := ⟨0⟩
 
+/-- Every right, the five bits: the mask under which a copy keeps every right
+its source holds (`maskBy_full`). -/
+@[inline] def full : AccessRightSet := ⟨31⟩
+
+/-- **`a` masked by `m`**, seL4's `maskCapRights`: each of the five rights `a`
+holds is kept where `m` holds it too, and a bit of `a` past the five is kept as
+it is, so a mask only ever removes rights. -/
+@[inline] def maskBy (a m : AccessRightSet) : AccessRightSet :=
+  ⟨a.bits >>> 5 <<< 5 ||| (a.bits &&& m.bits &&& 31)⟩
+
+/-- The mask of every right keeps every right (`full`). -/
+theorem maskBy_full (a : AccessRightSet) : a.maskBy full = a := by
+  rcases a with ⟨a⟩
+  unfold maskBy full
+  congr 1
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [Nat.testBit_or, Nat.testBit_shiftLeft, Nat.testBit_shiftRight, Nat.testBit_and]
+  by_cases h : i < 5
+  · have hLowBits : (31 : Nat).testBit i = true := by
+      have : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 := by omega
+      rcases this with rfl | rfl | rfl | rfl | rfl <;> decide
+    simp [hLowBits, show ¬ (5 ≤ i) by omega]
+  · have hLowBits : (31 : Nat).testBit i = false := by
+      apply Nat.testBit_lt_two_pow
+      have : (31 : Nat) < 2 ^ 5 := by decide
+      exact Nat.lt_of_lt_of_le this (Nat.pow_le_pow_right (by decide) (by omega))
+    simp [hLowBits, show 5 ≤ i by omega, show 5 + (i - 5) = i by omega]
+
 /-- U2-K: `empty` is valid. -/
 theorem empty_valid : empty.valid := by decide
 
@@ -334,7 +363,11 @@ the reader, `.write` for the drain — so a monitoring deployment can hand out a
 read-only audit capability that cannot drain. -/
 inductive CapTarget where
   | object (id : SeLe4n.ObjId)
-  | cnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
+  /-- Slot `slot` of CNode `cnode`, held as the one word of the pair
+      (`SeLe4n.pairWords`, built by `CapTarget.cnodeSlot`) so that every
+      constructor is one word and a copy writes any target over any other in
+      place (WS-UC UC4, `CapTarget.copyOver`). -/
+  | cnodeSlotWord (word : Nat)
   | replyCap (replyId : SeLe4n.ReplyId)
   /-- WS-SM SM9.A.9: the declassification audit trail.  It names nothing — the
       trail is a singleton `SystemState` component, not an object in the store —
@@ -372,6 +405,41 @@ inductive CapTarget where
     fallback. The chosen default is `.object SeLe4n.ObjId.sentinel`, matching
     the H-06/WS-E3 sentinel convention. -/
 instance : Inhabited CapTarget := ⟨.object SeLe4n.ObjId.sentinel⟩
+
+/-- WS-UC UC4: **the target naming slot `slot` of CNode `cnode`**, the word of
+the pair.  Injective (`cnodeSlot_inj`), and every `.cnodeSlotWord` is one
+(`cnodeSlotWord_eq_cnodeSlot`). -/
+def CapTarget.cnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) : CapTarget :=
+  .cnodeSlotWord (SeLe4n.pairWords cnode.val slot.val)
+
+/-- The CNode a slot target's word names. -/
+def CapTarget.wordCnode (word : Nat) : SeLe4n.ObjId := ⟨(SeLe4n.unpairWord word).1⟩
+
+/-- The slot a slot target's word names. -/
+def CapTarget.wordSlot (word : Nat) : SeLe4n.Slot := SeLe4n.Slot.ofNat (SeLe4n.unpairWord word).2
+
+@[simp] theorem CapTarget.wordCnode_pair (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
+    CapTarget.wordCnode (SeLe4n.pairWords cnode.val slot.val) = cnode := by
+  simp [CapTarget.wordCnode, SeLe4n.unpairWord_pairWords]
+
+@[simp] theorem CapTarget.wordSlot_pair (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
+    CapTarget.wordSlot (SeLe4n.pairWords cnode.val slot.val) = slot := by
+  simp [CapTarget.wordSlot, SeLe4n.unpairWord_pairWords, SeLe4n.Slot.ofNat]
+
+theorem CapTarget.cnodeSlotWord_eq_cnodeSlot (word : Nat) :
+    CapTarget.cnodeSlotWord word = .cnodeSlot (CapTarget.wordCnode word) (CapTarget.wordSlot word) := by
+  simp [CapTarget.cnodeSlot, CapTarget.wordCnode, CapTarget.wordSlot, SeLe4n.Slot.ofNat,
+    SeLe4n.pairWords_unpairWord]
+
+@[simp] theorem CapTarget.cnodeSlot_inj {c c' : SeLe4n.ObjId} {s s' : SeLe4n.Slot} :
+    CapTarget.cnodeSlot c s = .cnodeSlot c' s' ↔ c = c' ∧ s = s' := by
+  constructor
+  · intro h
+    have h' := congrArg (fun t => match t with
+      | .cnodeSlotWord w => (CapTarget.wordCnode w, CapTarget.wordSlot w) | _ => (c, s)) h
+    simpa [CapTarget.cnodeSlot] using h'
+  · rintro ⟨rfl, rfl⟩; rfl
+
 
 /-- WS-ZA ZA6.35: the word an audit-trail or interrupt-control target holds.  It
 carries no meaning (no check reads it); the boot writes it and a copy or mint
@@ -700,6 +768,29 @@ returned as it is, so deriving it builds no record (WS-ZA ZA5.3 part 6). -/
     obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
     cases cap; simp_all
   · rw [if_neg h]
+
+/-- **The capability with its rights masked by `mask`**, seL4's
+`maskCapRights` (`AccessRightSet.maskBy`), every other field kept.  A copy
+derives its capability so (`cspaceCopy`), never refusing a mask, as seL4's
+`CNode_Copy` does not. -/
+@[inline] def maskRights (cap : Capability) (mask : AccessRightSet) : Capability :=
+  { cap with rights := cap.rights.maskBy mask }
+
+@[simp] theorem maskRights_target (cap : Capability) (mask : AccessRightSet) :
+    (cap.maskRights mask).target = cap.target := rfl
+
+@[simp] theorem maskRights_rights (cap : Capability) (mask : AccessRightSet) :
+    (cap.maskRights mask).rights = cap.rights.maskBy mask := rfl
+
+@[simp] theorem maskRights_badge (cap : Capability) (mask : AccessRightSet) :
+    (cap.maskRights mask).badge = cap.badge := rfl
+
+@[simp] theorem maskRights_freeIndex (cap : Capability) (mask : AccessRightSet) :
+    (cap.maskRights mask).freeIndex = cap.freeIndex := rfl
+
+/-- The mask of every right leaves the capability as it is. -/
+@[simp] theorem maskRights_full (cap : Capability) : cap.maskRights .full = cap := by
+  unfold maskRights; rw [AccessRightSet.maskBy_full]
 
 /-- AK7-I (F-M07 / MEDIUM): Null capability predicate.
 
@@ -1265,171 +1356,161 @@ def slotLinkWords : Nat := 8
 /-- WS-ZA ZA5.4: the target naming object `id`, built fresh, out of line. -/
 @[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
 
-/-- WS-ZA ZA5.4: the target naming object `id`, written over `t` when `t` already
-names an object, a reply, a core's scheduling control or an interrupt line (a
-constructor of one field, the same cell size, so
-the compiler reuses `t`'s cell for the new one: a slot whose last capability was
-a reply capability is carved into in place).  Out of line, with a distinct
-fallback arm, so the one-field arms keep their reuse of `t`'s cell. -/
-@[noinline] def CapTarget.objectOver (t : CapTarget) (id : SeLe4n.ObjId) : CapTarget :=
-  match t with
-  | .object _ => .object id
-  | .replyCap _ => .object id
-  | .schedControl _ => .object id
-  | .irqHandler _ => .object id
-  | .auditTrail _ => .object id
-  | .irqControl _ => .object id
-  | _ => CapTarget.ofObject id
-
-theorem CapTarget.objectOver_eq (t : CapTarget) (id : SeLe4n.ObjId) :
-    t.objectOver id = .object id := by
-  cases t <;> rfl
-
 /-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, built fresh,
 out of line. -/
 @[noinline] def CapTarget.ofIrqHandler (line : Nat) : CapTarget := .irqHandler line
 
-/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, written over
-`t` when `t` is a constructor of one field (an object, a reply or a handler: the
-same cell size, so the compiler reuses `t`'s cell), as `objectOver` writes an
-object's.  Out of line, with a distinct fallback arm. -/
-@[noinline] def CapTarget.irqHandlerOver (t : CapTarget) (line : Nat) : CapTarget :=
-  match t with
-  | .object _ => .irqHandler line
-  | .replyCap _ => .irqHandler line
-  | .schedControl _ => .irqHandler line
-  | .irqHandler _ => .irqHandler line
-  | .auditTrail _ => .irqHandler line
-  | .irqControl _ => .irqHandler line
-  | _ => CapTarget.ofIrqHandler line
-
-theorem CapTarget.irqHandlerOver_eq (t : CapTarget) (line : Nat) :
-    t.irqHandlerOver line = .irqHandler line := by
-  cases t <;> rfl
-
 /-- WS-ZA ZA6.35: the target naming reply `rid`, built fresh, out of line. -/
 @[noinline] def CapTarget.ofReplyCap (rid : SeLe4n.ReplyId) : CapTarget := .replyCap rid
-
-/-- WS-ZA ZA6.35: the target naming reply `rid`, written over `t` when `t` is a
-constructor of one field, as `objectOver` writes an object's. -/
-@[noinline] def CapTarget.replyCapOver (t : CapTarget) (rid : SeLe4n.ReplyId) : CapTarget :=
-  match t with
-  | .object _ => .replyCap rid
-  | .replyCap _ => .replyCap rid
-  | .schedControl _ => .replyCap rid
-  | .irqHandler _ => .replyCap rid
-  | .auditTrail _ => .replyCap rid
-  | .irqControl _ => .replyCap rid
-  | _ => CapTarget.ofReplyCap rid
-
-theorem CapTarget.replyCapOver_eq (t : CapTarget) (rid : SeLe4n.ReplyId) :
-    t.replyCapOver rid = .replyCap rid := by
-  cases t <;> rfl
 
 /-- WS-ZA ZA6.35: core `core`'s scheduling-control target, built fresh, out of
 line. -/
 @[noinline] def CapTarget.ofSchedControl (core : Nat) : CapTarget := .schedControl core
 
-/-- WS-ZA ZA6.35: core `core`'s scheduling-control target, written over `t` when
-`t` is a constructor of one field, as `objectOver` writes an object's. -/
-@[noinline] def CapTarget.schedControlOver (t : CapTarget) (core : Nat) : CapTarget :=
-  match t with
-  | .object _ => .schedControl core
-  | .replyCap _ => .schedControl core
-  | .schedControl _ => .schedControl core
-  | .irqHandler _ => .schedControl core
-  | .auditTrail _ => .schedControl core
-  | .irqControl _ => .schedControl core
-  | _ => CapTarget.ofSchedControl core
-
-theorem CapTarget.schedControlOver_eq (t : CapTarget) (core : Nat) :
-    t.schedControlOver core = .schedControl core := by
-  cases t <;> rfl
-
 /-- WS-ZA ZA6.35: the audit-trail target of word `code`, built fresh, out of
 line. -/
 @[noinline] def CapTarget.ofAuditTrail (code : Nat) : CapTarget := .auditTrail code
-
-/-- WS-ZA ZA6.35: the audit-trail target of word `code`, written over `t` when `t`
-is a constructor of one field, as `objectOver` writes an object's. -/
-@[noinline] def CapTarget.auditTrailOver (t : CapTarget) (code : Nat) : CapTarget :=
-  match t with
-  | .object _ => .auditTrail code
-  | .replyCap _ => .auditTrail code
-  | .schedControl _ => .auditTrail code
-  | .irqHandler _ => .auditTrail code
-  | .auditTrail _ => .auditTrail code
-  | .irqControl _ => .auditTrail code
-  | _ => CapTarget.ofAuditTrail code
-
-theorem CapTarget.auditTrailOver_eq (t : CapTarget) (code : Nat) :
-    t.auditTrailOver code = .auditTrail code := by
-  cases t <;> rfl
 
 /-- WS-ZA ZA6.35: the interrupt-control target of word `code`, built fresh, out
 of line. -/
 @[noinline] def CapTarget.ofIrqControl (code : Nat) : CapTarget := .irqControl code
 
-/-- WS-ZA ZA6.35: the interrupt-control target of word `code`, written over `t`
-when `t` is a constructor of one field, as `objectOver` writes an object's. -/
-@[noinline] def CapTarget.irqControlOver (t : CapTarget) (code : Nat) : CapTarget :=
-  match t with
-  | .object _ => .irqControl code
-  | .replyCap _ => .irqControl code
-  | .schedControl _ => .irqControl code
-  | .irqHandler _ => .irqControl code
-  | .auditTrail _ => .irqControl code
-  | .irqControl _ => .irqControl code
-  | _ => CapTarget.ofIrqControl code
+/-- WS-UC UC4: the target naming slot `word`'s pair, built fresh, out of line. -/
+@[noinline] def CapTarget.ofCnodeSlotWord (word : Nat) : CapTarget := .cnodeSlotWord word
 
-theorem CapTarget.irqControlOver_eq (t : CapTarget) (code : Nat) :
-    t.irqControlOver code = .irqControl code := by
+/-- WS-UC UC4: **a target's constructor, as a number** (`0` object, `1` CNode
+slot, `2` reply, `3` audit trail, `4` scheduling control, `5` IRQ control, `6`
+IRQ handler). -/
+def CapTarget.tag : CapTarget → Nat
+  | .object _ => 0
+  | .cnodeSlotWord _ => 1
+  | .replyCap _ => 2
+  | .auditTrail _ => 3
+  | .schedControl _ => 4
+  | .irqControl _ => 5
+  | .irqHandler _ => 6
+
+/-- WS-UC UC4: `CapTarget.tag`, out of line: `CapTarget.over` branches on it
+without the compiler seeing which constructor each branch holds. -/
+@[noinline] def CapTarget.tagOf (t : CapTarget) : Nat := t.tag
+
+/-- WS-UC UC4: **a target's one word**: every constructor carries one number
+(an object id, a reply id, a paired CNode slot, a code, a core or a line), so
+compiled this is the cell's one field. -/
+def CapTarget.word : CapTarget → Nat
+  | .object id => id.val
+  | .cnodeSlotWord w => w
+  | .replyCap rid => rid.val
+  | .auditTrail code => code
+  | .schedControl core => core
+  | .irqControl code => code
+  | .irqHandler line => line
+
+/-- WS-UC UC4: **the target of constructor `k` carrying word `w`**, the inverse
+of `tag` and `word` (`ofTagWord_tag_word`); a `k` past the last constructor
+names an IRQ handler. -/
+@[inline] def CapTarget.ofTagWord (k w : Nat) : CapTarget :=
+  match k with
+  | 0 => .object ⟨w⟩
+  | 1 => .cnodeSlotWord w
+  | 2 => .replyCap ⟨w⟩
+  | 3 => .auditTrail w
+  | 4 => .schedControl w
+  | 5 => .irqControl w
+  | _ => .irqHandler w
+
+@[simp] theorem CapTarget.ofTagWord_tag_word (t : CapTarget) :
+    CapTarget.ofTagWord t.tag t.word = t := by
   cases t <;> rfl
 
-/-- WS-UC UC4: the target naming slot `slot` of CNode `cnode`, built fresh, out
-of line. -/
-@[noinline] def CapTarget.ofCnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) : CapTarget :=
-  .cnodeSlot cnode slot
+@[simp] theorem CapTarget.tagOf_eq (t : CapTarget) : t.tagOf = t.tag := rfl
 
-/-- WS-UC UC4: the target naming slot `slot` of CNode `cnode`, written over `t`
-when `t` already names a CNode slot (the one constructor of two fields, the
-same cell size, so the compiler reuses `t`'s cell), and built fresh otherwise
-(`ofCnodeSlot`), so the record it is written into owns it either way. -/
-@[noinline] def CapTarget.cnodeSlotOver (t : CapTarget) (cnode : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) : CapTarget :=
-  match t with
-  | .cnodeSlot _ _ => .cnodeSlot cnode slot
-  | _ => CapTarget.ofCnodeSlot cnode slot
+/-- WS-UC UC4: **the target of constructor `k` carrying word `w`, written over
+`t` in `t`'s cell**.  Every target constructor is one word, the same cell size,
+so the compiler can build any of them in any other's cell; it does so only
+where it has matched `t` against one constructor (reset and reuse), and a match
+whose arms all build the same thing is folded into one arm with no constructor
+matched.  So each branch here first tests `t`'s constructor number out of line
+(`tagOf`), which the compiler cannot see through, and then matches `t` against
+that one constructor, the rest refuted by the test: every branch matches `t`
+and builds the new target in its cell, allocating nothing.  Equal to
+`ofTagWord k w` (`over_eq`). -/
+@[noinline] def CapTarget.over (t : CapTarget) (k w : Nat) : CapTarget :=
+  if h0 : t.tagOf = 0 then
+    match t, h0 with
+    | .object _, _ => CapTarget.ofTagWord k w
+    | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h | .schedControl _, h
+    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+  else if h1 : t.tagOf = 1 then
+    match t, h1 with
+    | .cnodeSlotWord _, _ => CapTarget.ofTagWord k w
+    | .object _, h | .replyCap _, h | .auditTrail _, h | .schedControl _, h
+    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+  else if h2 : t.tagOf = 2 then
+    match t, h2 with
+    | .replyCap _, _ => CapTarget.ofTagWord k w
+    | .object _, h | .cnodeSlotWord _, h | .auditTrail _, h | .schedControl _, h
+    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+  else if h3 : t.tagOf = 3 then
+    match t, h3 with
+    | .auditTrail _, _ => CapTarget.ofTagWord k w
+    | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .schedControl _, h
+    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+  else if h4 : t.tagOf = 4 then
+    match t, h4 with
+    | .schedControl _, _ => CapTarget.ofTagWord k w
+    | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h
+    | .irqControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+  else if h5 : t.tagOf = 5 then
+    match t, h5 with
+    | .irqControl _, _ => CapTarget.ofTagWord k w
+    | .object _, h | .cnodeSlotWord _, h | .replyCap _, h | .auditTrail _, h
+    | .schedControl _, h | .irqHandler _, h => absurd h (by simp [CapTarget.tag])
+  else
+    match t, h0, h1, h2, h3, h4, h5 with
+    | .irqHandler _, _, _, _, _, _, _ => CapTarget.ofTagWord k w
+    | .object _, h, _, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .cnodeSlotWord _, _, h, _, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .replyCap _, _, _, h, _, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .auditTrail _, _, _, _, h, _, _ => absurd (by simp [CapTarget.tag]) h
+    | .schedControl _, _, _, _, _, h, _ => absurd (by simp [CapTarget.tag]) h
+    | .irqControl _, _, _, _, _, _, h => absurd (by simp [CapTarget.tag]) h
 
-theorem CapTarget.cnodeSlotOver_eq (t : CapTarget) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
-    t.cnodeSlotOver cnode slot = .cnodeSlot cnode slot := by
-  cases t <;> rfl
+theorem CapTarget.over_eq (t : CapTarget) (k w : Nat) :
+    t.over k w = CapTarget.ofTagWord k w := by
+  unfold CapTarget.over
+  cases t <;> simp [CapTarget.tag]
+
+/-- WS-ZA ZA5.4: the target naming object `id`, written over `t` in `t`'s cell
+(`CapTarget.over`), whatever `t` names. -/
+@[inline] def CapTarget.objectOver (t : CapTarget) (id : SeLe4n.ObjId) : CapTarget :=
+  t.over 0 id.val
+
+theorem CapTarget.objectOver_eq (t : CapTarget) (id : SeLe4n.ObjId) :
+    t.objectOver id = .object id := by
+  simp [CapTarget.objectOver, CapTarget.over_eq, CapTarget.ofTagWord]
+
+/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, written
+over `t` in `t`'s cell (`CapTarget.over`), whatever `t` names. -/
+@[inline] def CapTarget.irqHandlerOver (t : CapTarget) (line : Nat) : CapTarget :=
+  t.over 6 line
+
+theorem CapTarget.irqHandlerOver_eq (t : CapTarget) (line : Nat) :
+    t.irqHandlerOver line = .irqHandler line := by
+  simp [CapTarget.irqHandlerOver, CapTarget.over_eq, CapTarget.ofTagWord]
 
 /-- WS-ZA ZA6.35, WS-UC UC4: **the target `src`, written into the record's own
-target `t`**.  Each arm is out of line (`objectOver`, `replyCapOver`,
-`schedControlOver`, `irqHandlerOver`, `auditTrailOver`, `irqControlOver`,
-`cnodeSlotOver`), so the compiler builds the new constructor in `t`'s cell when
-the two are of one size and in a fresh cell otherwise, and never answers `src`
-itself: a copy, mint or move leaves its slot a target cell of its own, shared
-with nothing (not with the source slot's record, and not with the target a
-reply object holds), which the next capability written there, a carve's among
-them, writes over in turn.  Equal to `src` (`copyOver_eq`). -/
+target `t`**: `src`'s constructor and word, built in `t`'s cell
+(`CapTarget.over`) whatever either names, so a copy, mint or move allocates
+nothing and never answers `src` itself: it leaves its slot a target cell of its
+own, shared with nothing (not with the source slot's record, and not with the
+target a reply object holds), which the next capability written there, a
+carve's among them, writes over in turn.  Equal to `src` (`copyOver_eq`). -/
 @[noinline] def CapTarget.copyOver (t src : CapTarget) : CapTarget :=
-  match src with
-  | .object id => t.objectOver id
-  | .replyCap rid => t.replyCapOver rid
-  | .schedControl core => t.schedControlOver core
-  | .irqHandler line => t.irqHandlerOver line
-  | .auditTrail code => t.auditTrailOver code
-  | .irqControl code => t.irqControlOver code
-  | .cnodeSlot cnode slot => t.cnodeSlotOver cnode slot
+  t.over src.tagOf src.word
 
 theorem CapTarget.copyOver_eq (t src : CapTarget) : t.copyOver src = src := by
-  unfold CapTarget.copyOver
-  cases src <;>
-    simp only [CapTarget.objectOver_eq, CapTarget.replyCapOver_eq,
-      CapTarget.schedControlOver_eq, CapTarget.irqHandlerOver_eq,
-      CapTarget.auditTrailOver_eq, CapTarget.irqControlOver_eq, CapTarget.cnodeSlotOver_eq]
+  simp [CapTarget.copyOver, CapTarget.over_eq]
 
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, written over the
 record `r` (a slot's spare): out of line, so `r` is the only record the
@@ -1506,7 +1587,7 @@ theorem Capability.overwriteIrqHandler_eq (r : Capability) (line : Nat)
 
 /-- WS-UC UC4: **the target `t`, in a cell of its own**: each constructor
 rebuilt out of line (`ofObject`, `ofReplyCap`, `ofSchedControl`, `ofIrqHandler`,
-`ofAuditTrail`, `ofIrqControl`, `ofCnodeSlot`), so the record that holds the
+`ofAuditTrail`, `ofIrqControl`, `ofCnodeSlotWord`), so the record that holds the
 result shares no cell with whatever holds `t` (a source slot's record, a reply
 object's own target).  Equal to `t` (`fresh_eq`). -/
 @[noinline] def CapTarget.fresh (t : CapTarget) : CapTarget :=
@@ -1517,7 +1598,7 @@ object's own target).  Equal to `t` (`fresh_eq`). -/
   | .irqHandler line => CapTarget.ofIrqHandler line
   | .auditTrail code => CapTarget.ofAuditTrail code
   | .irqControl code => CapTarget.ofIrqControl code
-  | .cnodeSlot cnode slot => CapTarget.ofCnodeSlot cnode slot
+  | .cnodeSlotWord word => CapTarget.ofCnodeSlotWord word
 
 theorem CapTarget.fresh_eq (t : CapTarget) : t.fresh = t := by
   cases t <;> rfl

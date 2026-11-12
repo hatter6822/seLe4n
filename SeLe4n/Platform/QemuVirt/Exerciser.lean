@@ -141,20 +141,87 @@ instance qemuVirtExerciserPlatformBinding : PlatformBinding QemuVirtExerciserPla
     scenarios end, and whose next use is a copy rather than a carve. -/
 def qemuVirtExerciserAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 10
 
-/-- The exerciser's root CNode: the shipped root CNode's capabilities and the
-    audit trail's, with read and write (`Capability.auditTrailManage`), in
-    `qemuVirtExerciserAuditSlot`. -/
-def qemuVirtExerciserRootTaskCNode : CNode :=
-  qemuVirtRootCNodeOf
-    (qemuVirtRootTaskCNodeSlots ++ [(qemuVirtExerciserAuditSlot, Capability.auditTrailManage)])
+/-- The root task's IPC buffer's pages: the buffer frame and the three tables
+    that complete the walk to it, carved at boot from their own untyped
+    (`qemuVirtExerciserRootIpcBufferUntyped`), so the root task's untyped keeps
+    no child the boot made and its reset scenarios still find it empty. -/
+def qemuVirtExerciserRootIpcBufferPages : Nat := 4
 
+/-- The root task's IPC-buffer untyped: the last
+    `qemuVirtExerciserRootIpcBufferPages` pages of the shipped root untyped,
+    which the root task's own untyped gives up
+    (`qemuVirtExerciserRootTaskUntyped`).  The shipped root untyped ends where
+    the region map's reservation begins (`qemuVirtRegionMap_layout`), so these
+    pages lie directly below the map, never in it. -/
+def qemuVirtExerciserRootIpcBufferUntyped : UntypedObject :=
+  SeLe4n.Platform.RPi5.rpi5InitialUntyped
+    (qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize -
+      qemuVirtExerciserRootIpcBufferPages * 4096)
+    (qemuVirtExerciserRootIpcBufferPages * 4096)
+
+/-- The root task's untyped in the exerciser: the shipped one less the IPC
+    buffer untyped's pages at its top. -/
+def qemuVirtExerciserRootTaskUntyped : UntypedObject :=
+  SeLe4n.Platform.RPi5.rpi5InitialUntyped qemuVirtKernelReservedEnd
+    (qemuVirtRootTaskUntyped.regionSize - qemuVirtExerciserRootIpcBufferPages * 4096)
+
+/-- The IPC-buffer untyped's object id, the first above the boot objects. -/
+def qemuVirtExerciserRootIpcBufferUntypedId : SeLe4n.ObjId := ⟨11⟩
+
+/-- The root CNode slot of the IPC-buffer untyped's capability; the three
+    tables' capabilities follow it, and then the buffer frame's
+    (`qemuVirtExerciserRootIpcBufferFrameSlot`).  Past the 32 slots the
+    shipped root CNode has, which the exerciser fills. -/
+def qemuVirtExerciserRootIpcBufferUntypedSlot : Nat := 32
+
+/-- The root CNode slot of the IPC buffer frame's capability, seL4's
+    `seL4_CapInitThreadIPCBuffer`. -/
+def qemuVirtExerciserRootIpcBufferFrameSlot : Nat :=
+  qemuVirtExerciserRootIpcBufferUntypedSlot + 4
+
+/-- **The root task's IPC buffer address**: the first page of the 512 GiB
+    window under level-0 index 2 of its address space, a window no exerciser
+    scenario maps into (the scenarios' window is index 1, the HAL's
+    `FRAME_VADDR`).  `rust/sele4n-hal/src/smp_exercisers.rs` names it
+    `ROOT_IPC_BUFFER`. -/
+def qemuVirtExerciserRootIpcBufferVAddr : Nat := 2 <<< 39
+
+/-- The exerciser's root CNode geometry: one level resolving a whole 64-bit
+    CPtr, a 58-bit guard over 64 slots.  The guard's value is the shipped
+    root's shifted by one, so a slot's capability address is `2^63 + n`, as in
+    the shipped geometry (`qemuVirtRootCNodeOf`), and the 32 slots past the
+    shipped ones hold what the boot gives the root task. -/
+def qemuVirtExerciserRootCNodeOf (slots : List (SeLe4n.Slot × Capability)) : CNode :=
+  CNode.ofList 64 58 (qemuVirtRootTaskCNodeGuard / 2) 6 slots
+
+/-- The exerciser's root CNode: the shipped root CNode's capabilities, the
+    audit trail's, with read and write (`Capability.auditTrailManage`), in
+    `qemuVirtExerciserAuditSlot`, and the IPC-buffer untyped's in
+    `qemuVirtExerciserRootIpcBufferUntypedSlot`. -/
+def qemuVirtExerciserRootTaskCNode : CNode :=
+  qemuVirtExerciserRootCNodeOf
+    (qemuVirtRootTaskCNodeSlots ++
+      [ (qemuVirtExerciserAuditSlot, Capability.auditTrailManage)
+      , (SeLe4n.Slot.ofNat qemuVirtExerciserRootIpcBufferUntypedSlot,
+          SeLe4n.Platform.RPi5.rpi5InitialCap qemuVirtExerciserRootIpcBufferUntypedId
+            [.read, .write, .retype]) ])
+
+set_option maxRecDepth 8192 in
 /-- The exerciser's initial objects: the shipped deployment's, its root CNode
-    (the second entry) replaced by the exerciser's. -/
+    (the second entry) replaced by the exerciser's and its root untyped (the
+    fifth) by the exerciser's, and the IPC-buffer untyped after them. -/
 def qemuVirtExerciserInitialObjects : List ObjectEntry :=
-  qemuVirtInitialObjects.set 1
+  ((qemuVirtInitialObjects.set 1
     { id := qemuVirtRootTaskCNodeId, obj := .cnode qemuVirtExerciserRootTaskCNode
       hSlots := fun _ h => by cases h; exact CNode.slotsUnique_holds _
-      hMappings := fun _ h => nomatch h }
+      hMappings := fun _ h => nomatch h }).set 4
+    { id := qemuVirtRootTaskUntypedId, obj := .untyped qemuVirtExerciserRootTaskUntyped
+      hSlots := fun _ h => nomatch h
+      hMappings := fun _ h => nomatch h }) ++
+  [ { id := qemuVirtExerciserRootIpcBufferUntypedId
+      obj := .untyped qemuVirtExerciserRootIpcBufferUntyped
+      hSlots := fun _ h => nomatch h
+      hMappings := fun _ h => nomatch h } ]
 
 /-- The configuration the exerciser's boot checks, whatever the account. -/
 def qemuVirtExerciserBoundPlatformConfig : PlatformConfig :=
@@ -163,6 +230,110 @@ def qemuVirtExerciserBoundPlatformConfig : PlatformConfig :=
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := QemuVirtExerciserPlatform)
     initialThreads := PlatformBinding.initialThreads (platform := QemuVirtExerciserPlatform)
     initialInterfaces := PlatformBinding.serviceInterfaces (platform := QemuVirtExerciserPlatform) }
+
+-- ============================================================================
+-- The root task's IPC buffer
+-- ============================================================================
+
+/-- The root task's capability address for root CNode slot `slot`: the guard's
+    top bit and the slot (`qemuVirtExerciserRootCNodeOf`). -/
+def qemuVirtExerciserRootCapAddress (slot : Nat) : SeLe4n.CPtr :=
+  SeLe4n.CPtr.ofNat (2 ^ 63 + slot)
+
+/-- One invocation the boot makes for the root task: four message words, no
+    extra capability. -/
+def qemuVirtExerciserRootInvocation (syscallId : SyscallId) (slot : Nat)
+    (words : List Nat) : SyscallDecodeResult :=
+  { capAddr := qemuVirtExerciserRootCapAddress slot
+    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    syscallId := syscallId
+    msgRegs := (words.map fun w => ⟨w⟩).toArray
+    inlineCount := 4 }
+
+/-- **The invocations that give the root task its IPC buffer**, as seL4's boot
+    gives its initial thread one (`create_ipcbuf_frame_cap`, with the tables of
+    `create_it_address_space`): three page tables and a frame carved from the
+    IPC-buffer untyped into the slots after its own (`untypedRetype`, the tag
+    words 9 and 8), each table installed on the walk to
+    `qemuVirtExerciserRootIpcBufferVAddr` (`pageTableMap`), the frame mapped
+    there read-write, user and cacheable (`vspaceMap`, `PagePermissions` word
+    `0b11011`), and the address set as the root TCB's buffer
+    (`tcbSetIPCBuffer`).  They are the kernel's own transitions, invoked on the
+    root task's capabilities: the untyped's (slot 32), the root CNode's
+    (slot 2), the address space's (slot 3) and the TCB's (slot 1). -/
+def qemuVirtExerciserRootIpcBufferInvocations : List SyscallDecodeResult :=
+  let utSlot := qemuVirtExerciserRootIpcBufferUntypedSlot
+  let ut := qemuVirtExerciserRootIpcBufferUntypedId.toNat
+  let va := qemuVirtExerciserRootIpcBufferVAddr
+  let cnode := (qemuVirtExerciserRootCapAddress 2).toNat
+  let vspace := (qemuVirtExerciserRootCapAddress 3).toNat
+  let table (i : Nat) : List SyscallDecodeResult :=
+    [ qemuVirtExerciserRootInvocation .untypedRetype utSlot [9, ut + 1 + i, cnode, utSlot + 1 + i]
+    , qemuVirtExerciserRootInvocation .pageTableMap (utSlot + 1 + i) [vspace, va, 0, 0] ]
+  table 0 ++ table 1 ++ table 2 ++
+  [ qemuVirtExerciserRootInvocation .untypedRetype utSlot
+      [8, ut + 4, cnode, qemuVirtExerciserRootIpcBufferFrameSlot]
+  , qemuVirtExerciserRootInvocation .vspaceMap 3
+      [1, va, (qemuVirtExerciserRootCapAddress qemuVirtExerciserRootIpcBufferFrameSlot).toNat,
+        0b11011]
+  , qemuVirtExerciserRootInvocation .tcbSetIPCBuffer 1 [va, 0, 0, 0] ]
+
+/-- **One invocation by the root task, made by the boot**: the checked
+    dispatcher's capability path for the root thread on the boot core, as the
+    compiled dispatcher runs it (`SeLe4n.Kernel.dispatchSyscallCheckedImpl`) —
+    its CSpace root, then the capability resolved there with the syscall's
+    right, the checked arm and the taint step in one
+    (`dispatchCheckedArmThenTaintFused`) — without that dispatcher's first test, that the caller is the thread current
+    on the trapping core.  That test ties a trap to its caller; the boot is not
+    a trap, and no thread is current on any core until the first schedule. -/
+def qemuVirtExerciserRootInvoke (decoded : SyscallDecodeResult) :
+    SeLe4n.Model.Kernel Unit := fun st =>
+  let tid := SeLe4n.ThreadId.mk qemuVirtLowerWitnessIndex
+  let ctx := PlatformBinding.labeling (platform := QemuVirtExerciserPlatform)
+  match st.getObject? tid.toObjId with
+  | some (.tcb tcb) =>
+    match st.getObject? tcb.cspaceRoot with
+    | some (.cnode rootCn) =>
+      let gate : SeLe4n.Kernel.SyscallGate :=
+        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr
+          capDepth := rootCn.depth
+          requiredRight := SeLe4n.Kernel.syscallRequiredRight decoded.syscallId }
+      SeLe4n.Kernel.dispatchCheckedArmThenTaintFused ctx decoded tid
+        SeLe4n.Kernel.Concurrency.bootCoreId gate st
+    | some _ => .error .invalidCapability
+    | none => .error .objectNotFound
+  | some _ => .error .illegalState
+  | none => .error .objectNotFound
+
+/-- **The boot's last step**: each of `qemuVirtExerciserRootIpcBufferInvocations`
+    made in turn for the root task (`qemuVirtExerciserRootInvoke`) on the
+    state the boot installed.  The first refusal stops it. -/
+def qemuVirtExerciserGiveRootIpcBuffer (st : SystemState) : Except KernelError SystemState :=
+  qemuVirtExerciserRootIpcBufferInvocations.foldlM
+    (fun st decoded =>
+      match qemuVirtExerciserRootInvoke decoded st with
+      | .ok ((), st') => .ok st'
+      | .error e => .error e)
+    st
+
+/-- The step on the live kernel state, as a syscall seam commits one: the
+    state the dispatches leave, its physical-write and instruction-cache
+    ledgers read and cleared in the same step and then performed (the buffer
+    page and the tables scrubbed, the four descriptors stored).  A refusal
+    changes nothing and halts every PE. -/
+def qemuVirtExerciserGiveRootIpcBufferOrHalt : BaseIO Unit := do
+  let owed ← Platform.FFI.modifyGetKernelState (fun st =>
+    match qemuVirtExerciserGiveRootIpcBuffer st with
+    | .ok post =>
+        (some (post.drainedPhysicalWrites, post.pendingIcacheMaintenance),
+          SeLe4n.Kernel.Architecture.clearIcacheMaintenance
+            (SeLe4n.Kernel.Architecture.clearPhysicalWrites post))
+    | .error _ => (none, st))
+  match owed with
+  | none => ffiFatalHaltAll
+  | some (writes, icache) => do
+      Platform.FFI.completePhysicalWrites writes
+      Platform.FFI.completeIcacheMaintenance icache
 
 -- ============================================================================
 -- The boot, and the entry
@@ -174,10 +345,12 @@ def bootAndInitialiseQemuVirtExerciser (config : PlatformConfig) :
   bootAndInitialisePlatform QemuVirtExerciserPlatform config
 
 /-- The exerciser's boot with its failure handled: a refused boot halts every
-    PE. -/
+    PE.  An accepted one ends by giving the root task its IPC buffer
+    (`qemuVirtExerciserGiveRootIpcBufferOrHalt`), so the root task's first
+    syscall finds it mapped, as seL4's initial thread does. -/
 def bootAndInitialiseQemuVirtExerciserOrHalt (config : PlatformConfig) : BaseIO Unit := do
   match ← bootAndInitialiseQemuVirtExerciser config with
-  | .ok _ => pure ()
+  | .ok _ => qemuVirtExerciserGiveRootIpcBufferOrHalt
   | .error _ => ffiFatalHaltAll
 
 /-- **The exerciser image's only correct boot call** — the `virt` device-tree
@@ -270,7 +443,8 @@ theorem qemuVirtExerciserBoundPlatformConfig_wellFormed :
   rw [objectIdsUnique_eq_transparent]
   decide
 
--- WS-ZA ZA6.4: the root CNode's 32 cells, as the shipped deployment's.
+-- WS-ZA ZA6.4: the root CNode's cells: the shipped deployment's, the audit trail's and
+-- the IPC-buffer untyped's, in a 64-slot geometry.
 set_option maxRecDepth 8192 in
 theorem qemuVirtExerciserBoundPlatformConfig_bootSafe :
     qemuVirtExerciserBoundPlatformConfig.initialObjects.all
@@ -310,5 +484,32 @@ theorem qemuVirtExerciserBoundPlatformConfig_checked :
     qemuVirtExerciserBoundPlatformConfig_rootDistinct
     qemuVirtExerciserBoundPlatformConfig_rootNonSentinel
     qemuVirtExerciserBoundPlatformConfig_rootSafe qemuVirtBootVSpaceRootEntry rfl
+
+/-- The root task's two untypeds tile the shipped root untyped's region: the
+    root task's from the kernel's extent up, the IPC buffer's directly above it
+    to the shipped untyped's top, which is the region map's base
+    (`regionMapBaseOf`), so the exerciser hands the root task the same memory
+    as the shipped deployment, one IPC buffer's pages set aside, and none of
+    the map's reserved pages. -/
+theorem qemuVirtExerciserRootUntypeds_tile :
+    qemuVirtExerciserRootTaskUntyped.regionBase = qemuVirtRootTaskUntyped.regionBase ∧
+    qemuVirtExerciserRootTaskUntyped.regionBase.toNat +
+        qemuVirtExerciserRootTaskUntyped.regionSize =
+      qemuVirtExerciserRootIpcBufferUntyped.regionBase.toNat ∧
+    qemuVirtExerciserRootIpcBufferUntyped.regionBase.toNat +
+        qemuVirtExerciserRootIpcBufferUntyped.regionSize =
+      qemuVirtRootTaskUntyped.regionBase.toNat + qemuVirtRootTaskUntyped.regionSize ∧
+    [qemuVirtExerciserRootIpcBufferUntyped.regionBase.toNat +
+        qemuVirtExerciserRootIpcBufferUntyped.regionSize] =
+      qemuVirtBootRamExtensions.map regionMapBaseOf := by
+  decide
+
+/-- The root task's IPC buffer is page aligned, canonical, and under a level-0
+    entry of its own: not the scenarios' window (level-0 index 1). -/
+theorem qemuVirtExerciserRootIpcBufferVAddr_placed :
+    qemuVirtExerciserRootIpcBufferVAddr % 4096 = 0 ∧
+    qemuVirtExerciserRootIpcBufferVAddr < 2 ^ 48 ∧
+    qemuVirtExerciserRootIpcBufferVAddr >>> 39 = 2 := by
+  decide
 
 end SeLe4n.Platform.QemuVirt

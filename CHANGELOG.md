@@ -54,6 +54,13 @@ allocation context, so every allocation still goes to the kernel heap.
     `rpi5BootRamExtensions_fit` (every accepted extension fits) and
     `rpi5RootTaskUntypeds_clear_of_regionMaps` (no untyped meets a map).
     `rpi5InitialObjectsFor_covers_ram` covers the RAM below each map.
+  - The QEMU exerciser's root IPC-buffer untyped (`v0.37.17`) took the last
+    four pages of RAM, which are now the map's. It now takes the shipped root
+    untyped's last four pages, directly below the map
+    (`qemuVirtExerciserRootIpcBufferUntyped`, `[0x7FE7_C000, 0x7FE8_0000)`),
+    and the exerciser's root untyped stops below it.
+    `qemuVirtExerciserRootUntypeds_tile` now also states the IPC-buffer
+    untyped ends at the region map's base.
   - `extendBootRamMap` hands the HAL each extension's covered part and map
     base (`ffi_reserve_region_map`) after mapping it. The HAL checks the
     layout (`region::reservation_layout`) and halts the boot on unaligned,
@@ -82,33 +89,49 @@ allocation context, so every allocation still goes to the kernel heap.
     reservation, which leaves the covered RAM's bytes untouched.
   - `ak9_platform_suite` checks every board's untypeds stop at their maps,
     with the 8 GiB firmware account's sizes written by hand.
-- **Readings** (QEMU `virt`, Lean-linked image, fresh archive). These are two
-  runs of `test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, each
-  PASS, and two more runs of the same gate keeping the serial log. The kept
-  runs' reading lines are identical to each other and, apart from the
-  absolute counters, to `v0.37.17`'s.
+- **Readings** (QEMU `virt`, Lean-linked image, fresh archive, on the tree
+  merged with `v0.37.17`). Two runs of
+  `test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, each PASS, with
+  the serial log kept. The two runs' 9356 reading lines are byte-identical.
   - Every pin is unchanged: endpoint 6 / 248, notification 6 / 240, reply
     10 / 256, tcb 19 / 2040, sched-context 8 / 440, cnode 23 / 1128, frame
     6 / 152, page-table 8 / 232, vspace-root 101 / 3568, untyped 7 / 184.
   - The owned-CNode window allocates 23 and frees 23.
   - Every other reading is 0.
-- **Boot heap** (the same runs): 753 pages after the library initializer and
-  1337 pages after the install, with 108922 live allocations, all as at
-  `v0.37.17`. The map costs the heap nothing; its 1.5 MiB is reserved RAM.
+- **Boot heap** (the same runs, identical in both): 757 pages (103186 live
+  allocations) after the library initializer and 1349 pages (109290) after
+  the install, all as at `v0.37.17` with the root task's IPC buffer. The map
+  costs the heap nothing; its 1.5 MiB is reserved RAM.
 
-## v0.37.17 — a carve owns its cells, and no pass moves them
+## v0.37.17 — a carve owns its cells; seL4's CNode Copy, Move and Mint
 
 WS-UC UC4.  Every cell a carve builds is that carve's own, and no later
 operation moves another object into it: a capability copy builds its own
-target cell, the compiled Robin Hood insert moves a displaced entry instead of
-rebuilding it, and a Tier 1 scan of the generated C refuses any compiled
-reset/reuse that fills one object's cell with another object's fields.
+target cell, and the compiled Robin Hood insert moves a displaced entry instead
+of rebuilding it.  Each fix is a fast form proven equal to its specification;
+the QEMU owned-CNode window measures a carved CNode's carve-to-retire.  No gate
+reads the generated C for this: the scan that found these sites is not kept
+(see below).  CNode Copy, Move and Mint take seL4's addressing and rights
+masking.
 
-- **Copies build their own cells.** `CapTarget.copyOver`'s `.cnodeSlot` arm
-  and its arm for a destination of another shape returned `src` itself, so the
-  copy shared the source's target cell; both now build a fresh one
-  (`CapTarget.cnodeSlotOver`, `CapTarget.ofCnodeSlot`), and `copyOver_eq`
-  (`t.copyOver src = src`) still holds.  `Capability.ofFields`, the record
+- **Copies build their own cells, in place, across every shape.**
+  `CapTarget.copyOver`'s `.cnodeSlot` arm and its arm for a destination of
+  another shape returned `src` itself, so the copy shared the source's target
+  cell.  Every target constructor now carries one word: a CNode slot target
+  pairs its CNode and slot into one (`CapTarget.cnodeSlotWord`,
+  `SeLe4n.pairWords`, inverted by `unpairWord`; `CapTarget.cnodeSlot` is the
+  paired constructor's builder, `CapTarget.cnodeSlot_inj`).  So every
+  constructor has the same cell, and `copyOver` writes `src`'s constructor and
+  word into the destination's own cell whatever either names
+  (`CapTarget.over`, `over_eq`); `copyOver_eq` (`t.copyOver src = src`) still
+  holds.  `over` tests the destination's constructor out of line
+  (`CapTarget.tagOf`) and matches it against that one constructor in each
+  branch: a match whose arms all build the same thing is folded into a single
+  default arm, which matches nothing, so the compiler reuses no cell there.
+  `objectOver` and `irqHandlerOver` are `over` at one constructor; the other
+  per-constructor builders are retired.  `ModelIntegritySuite` checks every
+  pair of the seven constructors, object to CNode slot and back among them, by
+  cell address.  `Capability.ofFields`, the record
   `insertCellWith` builds when its slot keeps no spare record, builds its
   target afresh (`CapTarget.fresh`, `fresh_eq`, `Capability.ofFields_eq`), so a
   minted reply capability no longer holds the boot reply object's own target
@@ -120,39 +143,92 @@ reset/reuse that fills one object's cell with another object's fields.
   (`RHEntry.withValue`) where the compiler had written the slot's key and
   distance into the inserted cell; `insertCellLoop_eq` still holds.
   `RHEntry.withValueOf` is retired.
-- **What the scan found besides.** The queue unlink's neighbour writes reused
-  the removed thread's cell for its neighbour's record, and the slot lookup
-  reused the address's cell for its result.  Each now runs an out-of-line fast
+- **CNode Copy and Move address their slots as seL4 does.**  Each names its
+  destination by an index and a depth in the invoked CNode, and its source by
+  an index and a depth in a source root, a CNode capability's address in the
+  caller's CSpace (`CNodeOpArgs`).  The four arguments are x2 the destination
+  index, x3 the source root, x4 the source index, and x5 the two depths packed
+  into one word: bits `[0, 8)` and `[8, 16)`, with bits `[16, 21)` for a
+  mint's rights (`CNodeOpWord`).  A copy or a move that sets a bit from 16 up
+  is refused `.invalidArgument`, and the truncation minimum is 4.  The slots
+  resolve in seL4's order (`resolveCNodeOpSlots`).  Both depths are checked
+  against `1 .. 64` first, refused `.rangeError`.  Then the destination is
+  resolved to exactly its depth and must be empty (`.targetSlotOccupied`).
+  The source root must name a CNode (`.invalidCapability`).  Then the source
+  is resolved to exactly its depth.  A lookup that stops with bits still to
+  resolve is `.depthMismatch` (`resolveCNodeOpAddress`).  The compiled arm
+  resolves in continuation form (`resolveCNodeOpSlotsK`,
+  `resolveCNodeOpSlotsK_eq`, `resolveCNodeOpSlots_eq_impl`), so it builds no
+  slot reference.  The Lean suite and `sele4n-abi` each render the word's
+  layout by decoding every bit alone, against `abi_layout.expected`.
+  `mintReplyCap` keeps two slot numbers of the invoked CNode and now has its
+  own decoder (`decodeMintReplyCapArgs`).
+- **Mint is seL4's CNode_Mint, and Copy and Mint mask rights.**  A mint
+  names its slots as a copy does and adds the badge, its fifth word, read from
+  overflow slot 0 of the caller's IPC buffer (`CSpaceMintArgs`, five words,
+  truncation minimum 5, a routed one-overflow syscall).  A copy's and a mint's
+  rights are the operation word's bits `[16, 21)`; the new capability's rights
+  are their intersection with the source's, never refused (seL4's
+  `maskCapRights`; `Capability.maskRights`, `AccessRightSet.maskBy`).  A move
+  carries no rights and refuses any bit from 16 up.
+- **The QEMU root task has an IPC buffer from boot.**  As seL4's boot gives its
+  initial thread one, the exerciser image's boot ends by mapping the root task
+  a buffer page and setting it as its buffer
+  (`qemuVirtExerciserGiveRootIpcBufferOrHalt`).  The page and the three tables
+  on its walk are carved from a four-page untyped at the top of RAM, which the
+  root task's untyped gives up (`qemuVirtExerciserRootUntypeds_tile`), so the
+  root untyped keeps no boot-made child.  They are mapped at `2^40`, level-0
+  index 2 (`qemuVirtExerciserRootIpcBufferVAddr`), through the kernel's own
+  capability path: retype, page-table map, map and set-IPC-buffer, run as the
+  compiled checked dispatcher runs them after its caller-current test
+  (`qemuVirtExerciserRootInvoke`).  The physical writes they owe (four page
+  scrubs, three table descriptors, one page descriptor) are performed before
+  the first syscall.  The root CNode grows to 64 slots with a 58-bit guard,
+  so every capability address is unchanged; slots 32 to 36 hold the
+  untyped, the tables and the frame (seL4's `seL4_CapInitThreadIPCBuffer`).
+  The shipped `virt` and Raspberry Pi 5 boots are untouched.  Every exerciser
+  mint is now the five-word mint, its badge written to the root task's
+  current buffer and cleared after; the short mint stays an explicit
+  four-word message, refused `TruncatedMessage`.
+- **What a reading of the generated C found besides.** The queue unlink's
+  neighbour writes reused the removed thread's cell for its neighbour's
+  record, and the slot lookup reused the address's cell for its result.  Each now runs an out-of-line fast
   form joined to its specification by `@[csimp]`
   (`queueUnlinkPredecessor_eq_impl`, `queueUnlinkSuccessor_eq_impl` over
   `TCB.withQueueNextCode` / `TCB.withQueuePrevCodes`;
   `cspaceLookupSlot_eq_impl` over `lookupSlotCapOut`).
-- **The scan** (`scripts/check_cell_reuse_ownership.py`, Tier 1 after the
-  build, self-test first).  It reads the C of `lake query SeLe4n:modules`,
-  walks the C symbol graph from every `@[export]` (derived from the code view),
-  and scans the reached functions of the store, Robin Hood, retire and
-  capability-copy modules and every Robin Hood specialisation.  Every
-  exclusivity test must be the compiler's slow reset or its in-place shape,
-  every reuse token is spent on its reuse or released, and every field write
-  lands in an allocated or reused cell; anything else is refused.  A reused
-  cell is flagged when it takes at least as many object fields, at their own
-  positions, from another cell as it keeps of its own; scalar fields are data
-  and are not counted.  A derivation that comes back empty fails.  The tree:
-  2147 reuse sites in 3313 reached functions, 0 findings (before this
-  version's fixes: the sites above).  The self-test breaks the relation on the
-  real tree, retargeting the field reads of each of 1040 slow reuse sites that
-  keep their own fields to another parameter with the reset and reuse left in
-  place (each flagged), handing 436 real reuse tokens to a call (each refused),
-  and plants ten synthetic shapes.
+- **No generated-C gate.**  A scan of the generated C's reset/reuse sites
+  found the sites above while this version was written, and is not kept.  It
+  traces a field only through projections inside one function; a field that
+  comes from a parameter or a call result it cannot trace, and refusing those
+  fails 181 real sites (in-place field updates through a helper, the in-place
+  capability copy itself, list loops with an accumulator), which no source
+  change inside one function resolves.  So the evidence is the fixes
+  themselves: the two paths that shared a cell (the no-spare record build,
+  now `CapTarget.fresh`, and the CNode-slot copy arm, now `CapTarget.over` on
+  the one-word `CapTarget`) and the moved sites are each a fast form proven
+  equal to its specification (`Capability.ofFields_eq`, `fresh_eq`,
+  `copyOver_eq`, `over_eq`, `insertCellLoop_eq`,
+  `queueUnlinkPredecessor_eq_impl`, `queueUnlinkSuccessor_eq_impl`,
+  `cspaceLookupSlot_eq_impl`).  The proofs fix what each form computes; that
+  it builds or reuses its own cell is how the form is written, which
+  `ModelIntegritySuite` checks for `copyOver` by cell address and the
+  owned-CNode window below checks by counting frees.
 - **Frees, counted.** The kernel heap counts each free to the freeing core
   (`HeapStats::frees_by_core`, `kernel_frees_on`), tested on the host.  The
-  QEMU exerciser's owned-CNode scenario carves a CNode, copies its capability,
-  revokes the copy and deletes the carved capability (then resets the
-  untyped), and reads this core's allocations and frees across the four; the
-  heap gate holds both to the CNode's carve pin.
+  QEMU exerciser's owned-CNode scenario carves a CNode, copies the boot
+  endpoint's capability into one of its slots, copies that capability out of
+  the carved CNode (the carved CNode as the copy's source root) into a root
+  slot, empties the carved slot and deletes the carved capability, which
+  retires the CNode while the escaped copy lives on, and reads this core's
+  allocations and frees across the five; the heap gate holds both to the
+  CNode's carve pin.  After the window the escaped copy is moved (a move from
+  an empty slot is refused, so the move's success shows the copy outlived the
+  retire) and deleted, and the untyped reset.
 - **Readings** (QEMU `virt`, Lean-linked image, fresh archive, two runs,
   identical): the owned-CNode window allocates 23 and frees 23 in both runs,
-  the cnode/2 pin; its copy, revoke, delete and reset read 0.  No pin rises:
+  the cnode/2 pin; its fill, copy out, slot delete, delete, escaped move,
+  escaped delete and reset read 0.  No pin rises:
   UC1 attributed no cell to sharing, and the scenarios' carves already built
   every cell they hold (the shared target was reachable only on the no-spare
   build path and the `.cnodeSlot` arm, which no pinned scenario takes; the
@@ -161,8 +237,16 @@ reset/reuse that fills one object's cell with another object's fields.
   6 / 240, reply 10 / 256, tcb 19 / 2040, sched-context 8 / 440, frame 6 / 152,
   page-table 8 / 232, cnode 23 / 1128, vspace-root 101 / 3568, untyped 7 / 184)
   and every other reading is 0.
-- **Boot heap** (the same runs): 753 pages after the library initializer and
-  1337 after the install, as at `v0.37.16`.
+- **Boot heap** (QEMU `virt` exerciser image): before the root task's IPC
+  buffer, 753 pages (103000 live allocations) after the library initializer
+  and 1337 (108963) after the install.  With it, 757 (103186) and 1349
+  (109290).  The library initializer's 4 pages and 186 allocations are the
+  larger initial objects: the 64-slot root CNode and the IPC-buffer
+  untyped's object and capability.  The install's further 8 pages and 141
+  allocations are the boot step's own: the four objects it carves (records,
+  store and index entries, child records), their four capabilities and
+  derivation links, the three installed tables' slots, and the page's
+  mapping and epoch entries in the root VSpace.
 
 ## v0.37.16 — the object and ASID tables are built boot-sized
 

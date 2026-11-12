@@ -185,7 +185,7 @@ capability that finalises nothing), then the copy of `src` into it
 @[inline] def irqHandlerSetNotificationPerform (line : Nat) (src : CSpaceAddr)
     (st : SystemState) :
     SystemState :=
-  cspaceCopyPerform src (irqNodeAddr line) (cspaceDeletePerform (irqNodeAddr line) st)
+  cspaceCopyPerform src (irqNodeAddr line) .full (cspaceDeletePerform (irqNodeAddr line) st)
 
 /-- **The bind's writes over the node slot's notification capability**: the
 node slot emptied by the zombie delete every slot delete is (`zombieDeleteAt`,
@@ -193,7 +193,7 @@ here one finalising delete), then the copy of `src` into it
 (`cspaceCopyPerform`). -/
 @[inline] def irqHandlerSetNotificationOverFinalPerform (executingCore : Concurrency.CoreId)
     (line : Nat) (src : CSpaceAddr) (st : SystemState) : SystemState :=
-  cspaceCopyPerform src (irqNodeAddr line)
+  cspaceCopyPerform src (irqNodeAddr line) .full
     (zombieDeleteAt executingCore (irqNodeAddr line).cnode (irqNodeAddr line).slot st)
 
 /-- **The bind's writes**, whichever delete the node slot takes: the plain one
@@ -235,7 +235,7 @@ def irqHandlerSetNotification (executingCore : Concurrency.CoreId) (line : Nat)
       else
         match cspaceDeleteSlotZombie executingCore (irqNodeAddr line) st with
         | .error e => .error e
-        | .ok ((), st1) => cspaceCopy src (irqNodeAddr line) st1
+        | .ok ((), st1) => cspaceCopy src (irqNodeAddr line) .full st1
 
 /-- An admitted bind is its in-place writes. -/
 theorem irqHandlerSetNotification_of_admitted {ec : Concurrency.CoreId} {line : Nat}
@@ -349,14 +349,14 @@ is not null and names no untyped, and the destination is admitted. -/
 theorem cspaceCopyAdmitted_of_parts {src dst : CSpaceAddr} {cap : Capability} {st : SystemState}
     (hL : st.lookupSlotCap src = some cap) (hNN : cap.isNotNull = true)
     (hU : ∀ n, cap.target = .object n → st.getUntyped? n = none)
-    (hD : cspaceDstAdmitted dst st = true) : cspaceCopyAdmitted src dst st = true := by
+    (hD : cspaceDstAdmitted dst st = true) : cspaceCopyAdmitted src dst .full st = true := by
   unfold cspaceCopyAdmitted
   have hR : untypedDeriveRefused st src cap = false := by
     unfold untypedDeriveRefused
     cases hT : cap.target with
     | object n => simp [hU n hT]
     | _ => rfl
-  simp [hL, hNN, hR, hD]
+  simp [hL, hNN, hR, hD, Capability.maskRights_full]
 
 
 /-- **The in-place bind's copy is the copy**: after the plain delete of the node
@@ -367,7 +367,7 @@ theorem irqHandlerSetNotification_inPlace_copy {line : Nat} {src : CSpaceAddr}
     {cap : Capability} {st : SystemState} (hInv : st.objects.invExt)
     (hL : st.lookupSlotCap src = some cap) (hA : irqNotificationCapAdmitted st cap = true)
     (hP : irqHandlerSetNotificationInPlace st line src.cnode cap = true) :
-    cspaceCopy src (irqNodeAddr line) (cspaceDeletePerform (irqNodeAddr line) st) =
+    cspaceCopy src (irqNodeAddr line) .full (cspaceDeletePerform (irqNodeAddr line) st) =
       .ok ((), irqHandlerSetNotificationPerform line src st) := by
   unfold irqHandlerSetNotificationInPlace at hP
   simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hP
@@ -529,7 +529,7 @@ theorem irqHandlerSetNotification_overFinal_copy (ec : Concurrency.CoreId) {line
     (hL : st.lookupSlotCap src = some cap) (hA : irqNotificationCapAdmitted st cap = true)
     (hC : cnodeInvoked (irqNodeId line) st = true)
     (hO : irqHandlerSetNotificationOverFinal st line src.cnode cap = true) :
-    cspaceCopy src (irqNodeAddr line)
+    cspaceCopy src (irqNodeAddr line) .full
         (zombieDeleteAt ec (irqNodeAddr line).cnode (irqNodeAddr line).slot st) =
       .ok ((), irqHandlerSetNotificationOverFinalPerform ec line src st) := by
   unfold irqHandlerSetNotificationOverFinal at hO
@@ -569,8 +569,8 @@ theorem irqHandlerSetNotification_ok_cases {ec : Concurrency.CoreId} {line : Nat
     ∃ cap st1, st.lookupSlotCap src = some cap ∧ irqNotificationCapAdmitted st cap = true ∧
       cnodeInvoked (irqNodeId line) st = true ∧
       cspaceDeleteSlotZombie ec (irqNodeAddr line) st = .ok ((), st1) ∧
-      (cspaceCopy src (irqNodeAddr line) st1 = .ok ((), st') ∨
-        st' = cspaceCopyPerform src (irqNodeAddr line) st1) := by
+      (cspaceCopy src (irqNodeAddr line) .full st1 = .ok ((), st') ∨
+        st' = cspaceCopyPerform src (irqNodeAddr line) .full st1) := by
   unfold irqHandlerSetNotification at h
   cases hL : st.lookupSlotCap src with
   | none => rw [hL] at h; cases h
@@ -612,7 +612,7 @@ theorem irqHandlerSetNotification_ok {ec : Concurrency.CoreId} {line : Nat}
     ∃ cap st1, st.lookupSlotCap src = some cap ∧ irqNotificationCapAdmitted st cap = true ∧
       cnodeInvoked (irqNodeId line) st = true ∧
       cspaceDeleteSlotZombie ec (irqNodeAddr line) st = .ok ((), st1) ∧
-      cspaceCopy src (irqNodeAddr line) st1 = .ok ((), st') := by
+      cspaceCopy src (irqNodeAddr line) .full st1 = .ok ((), st') := by
   unfold irqHandlerSetNotification at h
   cases hL : st.lookupSlotCap src with
   | none => rw [hL] at h; cases h

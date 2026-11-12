@@ -466,7 +466,7 @@ the capability is final (`SystemState.capIsFinal`). -/
     | .object x => if retirableKind st x && st.capIsFinal cnode slot then x.val + 1 else 0
     | .replyCap r =>
       if retirableKind st r.toObjId && st.capIsFinal cnode slot then r.toObjId.val + 1 else 0
-    | .cnodeSlot cn _ => if retirableKind st cn && st.capIsFinal cnode slot then cn.val + 1 else 0
+    | .cnodeSlotWord word => if retirableKind st (SeLe4n.Model.CapTarget.wordCnode word) && st.capIsFinal cnode slot then (SeLe4n.Model.CapTarget.wordCnode word).val + 1 else 0
     | .auditTrail _ => 0
     | .schedControl _ => 0
     | .irqControl _ => 0
@@ -495,7 +495,7 @@ nothing**: the check a delete's fast path asks of the capability it read
   match cap.target with
   | .object x => !(retirableKind st x && st.capIsFinal cnode slot)
   | .replyCap r => !(retirableKind st r.toObjId && st.capIsFinal cnode slot)
-  | .cnodeSlot cn _ => !(retirableKind st cn && st.capIsFinal cnode slot)
+  | .cnodeSlotWord word => !(retirableKind st (SeLe4n.Model.CapTarget.wordCnode word) && st.capIsFinal cnode slot)
   | .auditTrail _ => true
   | .schedControl _ => true
   | .irqControl _ => true
@@ -510,7 +510,7 @@ theorem slotRetireTarget_eq_zero_iff {st : SystemState} {cnode : SeLe4n.ObjId}
   cases cap.target with
   | object x => cases retirableKind st x <;> cases st.capIsFinal cnode slot <;> simp
   | replyCap r => cases retirableKind st r.toObjId <;> cases st.capIsFinal cnode slot <;> simp
-  | cnodeSlot cn _ => cases retirableKind st cn <;> cases st.capIsFinal cnode slot <;> simp
+  | cnodeSlotWord w => cases retirableKind st (SeLe4n.Model.CapTarget.wordCnode w) <;> cases st.capIsFinal cnode slot <;> simp
   | auditTrail _ => simp
   | schedControl _ => simp
   | irqControl _ => simp

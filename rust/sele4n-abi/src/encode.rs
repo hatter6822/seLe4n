@@ -78,8 +78,10 @@ mod tests {
     fn encode_cspace_mint() {
         let req = SyscallRequest {
             cap_addr: CPtr::from(42u64),
-            msg_info: MessageInfo::new(4, 0, 0).unwrap(),
-            msg_regs: [1, 2, 3, 4], // srcSlot, dstSlot, rights, badge
+            // destIndex, srcRoot, srcIndex, depths|rights; the badge is the
+            // fifth word, in the IPC buffer's overflow slot.
+            msg_info: MessageInfo::new(5, 0, 0).unwrap(),
+            msg_regs: [1, 2, 3, 4],
             syscall_id: SyscallId::CSpaceMint,
         };
         let regs = encode_syscall(&req).unwrap();

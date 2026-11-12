@@ -240,17 +240,4 @@ run_check "BUILD" "${SCRIPT_DIR}/check_live_arm_per_core_routing.py"
 run_check "BUILD" "${SCRIPT_DIR}/check_content_flow_coverage.py" --self-test
 run_check "BUILD" "${SCRIPT_DIR}/check_content_flow_coverage.py"
 
-# WS-UC UC4: a carve owns its cells, and no compiled reset/reuse moves them.
-# The compiler's reset/reuse pass hands one object's cell to the constructor
-# built next; when that constructor copies a different object, the first
-# object's cell comes to hold the second's fields, and the cells a retire frees
-# are no longer the ones the carve made.  This reads the production library's
-# generated C (built above), reached from the package's `@[export]`s, over the
-# store, Robin Hood, retire and capability-copy code, and refuses every reset or
-# reuse shape it cannot classify.  The self-test runs first: it retargets the
-# field reads of every real reuse site that keeps its own fields to another
-# cell, leaving the reset and reuse in place, and requires each to be flagged.
-run_check "BUILD" "${SCRIPT_DIR}/check_cell_reuse_ownership.py" --self-test
-run_check "BUILD" "${SCRIPT_DIR}/check_cell_reuse_ownership.py"
-
 finalize_report

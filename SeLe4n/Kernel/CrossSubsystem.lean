@@ -1603,8 +1603,8 @@ theorem cspaceMintWithCdt_preservesFieldsOutside
       (untypedSourceSetFull_preservesFieldsOutside _ _ _))
 
 theorem cspaceCopy_preservesFieldsOutside
-    (src dst : CSpaceAddr) (st st' : SystemState)
-    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    (src dst : CSpaceAddr) (mask : AccessRightSet) (st st' : SystemState)
+    (hStep : cspaceCopy src dst mask st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
   obtain ⟨_, st₂, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
   exact preservesFieldsOutside_trans (cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hIns)

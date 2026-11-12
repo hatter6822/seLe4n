@@ -1577,16 +1577,16 @@ theorem cspaceMintWithCdt_preserves_ipcInvariantFull
 already at rest in the source slot of a state satisfying the badge clause; the
 source is then set full when it names an untyped. -/
 theorem cspaceCopy_preserves_ipcInvariantFull
-    (st st' : SystemState) (src dst : CSpaceAddr)
+    (st st' : SystemState) (src dst : CSpaceAddr) (mask : AccessRightSet)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    (hStep : cspaceCopy src dst mask st = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨cap, st2, hL, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
   have hBadgeSrc := lookupSlotCap_badge_valid st src cap hInv.badgeWellFormed.2 hL
   have hInv2 := cspaceInsertSlot_preserves_objects_invExt st st2 dst _ hObjInv hIns
   have hMid := cdtRecord_bundle_frame st2 src dst DerivationOp.copy hInv2
-    (cspaceInsertSlot_preserves_ipcInvariantFull st st2 dst cap.withoutMapping hObjInv hInv
-      (fun b hb => hBadgeSrc b hb) hIns)
+    (cspaceInsertSlot_preserves_ipcInvariantFull st st2 dst (cap.maskRights mask).withoutMapping
+      hObjInv hInv (fun b hb => hBadgeSrc b hb) hIns)
   obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .copy hObjInv hL hIns
   exact untypedSourceSetFull_preserves_ipcInvariantFull _ src cnS cap
     (SystemState.cdtAddChild_agreeObjects hInv2 src dst .copy).2 hMid hOS hLS

@@ -1506,10 +1506,11 @@ struct RoundTrip {
     /// The capability address in `x0`.
     cptr: u64,
     /// The message length in `x1`'s `MessageInfo`: at most 4, except for the
-    /// scheduling-context configure and the service register, whose fifth
-    /// word the kernel reads from the root task's IPC buffer, mapped for the
-    /// duration of their group, and the long send, whose words past the
-    /// fourth it reads from the sender's.
+    /// scheduling-context configure, the service register and the mint, whose
+    /// fifth word the kernel reads from the root task's IPC buffer (the boot's,
+    /// [`ROOT_IPC_BUFFER`], or the window's page while a scenario points the
+    /// buffer there), and the long send, whose words past the fourth it reads
+    /// from the sender's.
     msg_len: u64,
     /// The message registers `x2` to `x5`.
     msg: [u64; 4],
@@ -1532,6 +1533,14 @@ struct RoundTrip {
     /// and `getReceiveSlots`).  The two threads share the buffer, so the
     /// receive path is the receiver's as well.
     caps_or_badges: Option<(u64, [u64; 3], Option<[u64; 3]>)>,
+    /// The first overflow word of a message longer than the four registers
+    /// carry (`IpcBufferRead.ipcBufferOverflowBaseWord`, word 5 of the
+    /// buffer), written unmeasured before the call into the IPC buffer at
+    /// this address, the caller's own, and cleared after it, so a later
+    /// call reading that word still finds the zero the kernel scrubbed: a
+    /// mint's badge (seL4's `seL4_CNode_Mint`, whose fifth argument is
+    /// read from the buffer).
+    overflow: Option<(u64, u64)>,
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1745,6 +1754,7 @@ const fn kernel_step(name: &'static str, syscall: u64) -> RoundTrip {
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     }
 }
@@ -1765,9 +1775,9 @@ const AUDIT_DRAIN: u64 = 32;
 #[cfg(feature = "hw_target")]
 const DECLASSIFY_SIGNAL: u64 = 33;
 
-/// The root CNode's guard bit (`qemuVirtRootTaskCNodeGuard`, the top bit of its
-/// 59-bit guard over a 32-slot radix): a slot's capability address is the slot
-/// with bit 63 set, so
+/// The root CNode's guard bit (the top bit of its 58-bit guard over a 64-slot
+/// radix, `qemuVirtExerciserRootCNodeOf`): a slot's capability address is the
+/// slot with bit 63 set, so
 /// every address the round trips resolve is a word `≥ 2^63`, read without a
 /// heap number at the decode and at every guard and slot extraction of the
 /// lookup (WS-ZA ZA4.8).
@@ -1778,6 +1788,81 @@ const ROOT_CNODE_GUARD: u64 = 1 << 63;
 #[cfg(feature = "hw_target")]
 const fn cap_address(slot: u64) -> u64 {
     ROOT_CNODE_GUARD | slot
+}
+
+/// **The root task's IPC buffer**, which the boot maps and sets
+/// (`qemuVirtExerciserRootIpcBufferVAddr`, seL4's initial-thread IPC buffer):
+/// the first page under level-0 index 2 of the root task's address space,
+/// beside the scenarios' window ([`FRAME_VADDR`], index 1).  A scenario that
+/// points the root task's buffer elsewhere points it back here when it is
+/// done (`root-ipc-buffer-back`).
+#[cfg(feature = "hw_target")]
+const ROOT_IPC_BUFFER: u64 = 2 << 39;
+
+/// The CNode operation word (`sele4n_abi::args::cspace::cnode_op_word`) of a
+/// copy or a move between two of the root task's slots: both resolved at the
+/// root CNode's whole depth, its 58-bit guard and its 6-bit radix.
+#[cfg(feature = "hw_target")]
+const ROOT_SLOT_DEPTHS: u64 = 64 | (64 << 8);
+
+/// A move's four words from root slot `src` to root slot `dest` (seL4's
+/// `seL4_CNode_Move` addressing): the destination index in the invoked root
+/// CNode, the source root (the root task's own CNode capability), the source
+/// index, and both depths.
+#[cfg(feature = "hw_target")]
+const fn root_slot_pair(src: u64, dest: u64) -> [u64; 4] {
+    root_slot_masked(src, dest, 0)
+}
+
+/// Every access right, as a copy's or a mint's rights mask (seL4's
+/// `seL4_AllRights`): read, write, grant, grant-reply and retype.
+#[cfg(feature = "hw_target")]
+const ALL_RIGHTS: u64 = 0x1f;
+
+/// A copy's four words from root slot `src` to root slot `dest` (seL4's
+/// `seL4_CNode_Copy`): [`root_slot_pair`]'s addressing with every right in the
+/// mask, so the copy keeps the source's rights.
+#[cfg(feature = "hw_target")]
+const fn root_slot_copy(src: u64, dest: u64) -> [u64; 4] {
+    root_slot_masked(src, dest, ALL_RIGHTS)
+}
+
+/// [`root_slot_pair`]'s addressing with `rights` in the operation word's
+/// rights field (`sele4n_abi::args::cspace::cnode_op_word::RIGHTS_SHIFT`).
+#[cfg(feature = "hw_target")]
+const fn root_slot_masked(src: u64, dest: u64, rights: u64) -> [u64; 4] {
+    [
+        cap_address(dest),
+        cap_address(CNODE_SLOT),
+        cap_address(src),
+        ROOT_SLOT_DEPTHS | (rights << 16),
+    ]
+}
+
+/// **The CNode mint** (seL4's `seL4_CNode_Mint`) from root slot `src` to
+/// root slot `dest`, its capability masked by `rights` and badged `badge`:
+/// five words, [`root_slot_masked`]'s four and the badge, which the kernel
+/// reads from the root task's IPC buffer at `buffer`
+/// ([`RoundTrip::overflow`]).
+#[cfg(feature = "hw_target")]
+const fn mint(
+    name: &'static str,
+    src: u64,
+    dest: u64,
+    rights: u64,
+    badge: u64,
+    buffer: u64,
+) -> RoundTrip {
+    RoundTrip {
+        msg_len: 5,
+        overflow: Some((buffer, badge)),
+        ..invocation(
+            name,
+            CSPACE_MINT,
+            CNODE_CAP,
+            root_slot_masked(src, dest, rights),
+        )
+    }
 }
 
 /// The root task's CNode slots the round trips name.
@@ -1953,6 +2038,7 @@ const fn signal(name: &'static str) -> RoundTrip {
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     }
 }
@@ -1974,16 +2060,13 @@ const NOTIFICATION_MINT_RIGHTS: u64 = 0x3;
 /// The badged notification capability's mint (unmeasured, before the round
 /// trips one thread makes alone).
 #[cfg(feature = "hw_target")]
-const WIDE_BADGE_SETUP: [RoundTrip; 1] = [invocation(
+const WIDE_BADGE_SETUP: [RoundTrip; 1] = [mint(
     "mint-wide-badged-notification",
-    CSPACE_MINT,
-    CNODE_CAP,
-    [
-        NOTIFICATION_SLOT,
-        MINT_SLOT,
-        NOTIFICATION_MINT_RIGHTS,
-        WIDE_SIGNAL_BADGE,
-    ],
+    NOTIFICATION_SLOT,
+    MINT_SLOT,
+    NOTIFICATION_MINT_RIGHTS,
+    WIDE_SIGNAL_BADGE,
+    ROOT_IPC_BUFFER,
 )];
 /// Its delete (unmeasured, after them), so the mint slot is empty again.
 #[cfg(feature = "hw_target")]
@@ -2015,6 +2098,7 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         primed: Some(NOTIFICATION_CAP),
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     RoundTrip {
@@ -2026,6 +2110,7 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
 ];
@@ -2050,6 +2135,7 @@ const fn partner_step(
         primed: None,
         blocks,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     }
 }
@@ -2103,6 +2189,11 @@ const fn receive_slot_path(slot: u64) -> [u64; 3] {
 /// pinned by `caps_or_badges_word_is_the_abi_layout`).
 #[cfg(any(feature = "hw_target", test))]
 const CAPS_OR_BADGES_WORD: u64 = 122;
+/// The IPC buffer's first overflow word, message register 4
+/// (`IpcBufferRead.ipcBufferOverflowBaseWord`, `sele4n_abi::IpcBuffer::msg`
+/// past the four registers): word 5, after the tag and `msg[0..4]`.
+#[cfg(feature = "hw_target")]
+const OVERFLOW_BASE_WORD: u64 = 5;
 
 /// The index of the IPC buffer's `receive_cnode` word, the first of the three
 /// receive-path words (`IpcBufferRead.ipcBufferReceiveCNodeWord`;
@@ -2363,6 +2454,7 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     }
 }
@@ -2395,6 +2487,7 @@ const fn overflowed(
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: refused(code),
     }
 }
@@ -2434,6 +2527,7 @@ const fn truncated(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) ->
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: refused(TRUNCATED_MESSAGE),
     }
 }
@@ -2467,6 +2561,7 @@ const fn consumed(name: &'static str, reading: Option<u64>) -> RoundTrip {
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: Some((CONSUMED_INFO_WORD, reading)),
     }
 }
@@ -2485,6 +2580,7 @@ const fn yield_to(name: &'static str) -> RoundTrip {
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: Some((CONSUMED_INFO_WORD, None)),
     }
 }
@@ -2505,6 +2601,7 @@ const fn configure(name: &'static str, msg: [u64; 4]) -> RoundTrip {
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     }
 }
@@ -2523,6 +2620,7 @@ const fn service_register(name: &'static str, cptr: u64, msg: [u64; 4]) -> Round
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     }
 }
@@ -2695,13 +2793,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             "cspace-copy",
             CSPACE_COPY,
             CNODE_CAP,
-            [NOTIFICATION_SLOT, COPY_SLOT, 0, 0],
+            root_slot_copy(NOTIFICATION_SLOT, COPY_SLOT),
         ),
         invocation(
             "cspace-move",
             CSPACE_MOVE,
             CNODE_CAP,
-            [COPY_SLOT, MOVE_SLOT, 0, 0],
+            root_slot_pair(COPY_SLOT, MOVE_SLOT),
         ),
         invocation(
             "cspace-delete",
@@ -2711,11 +2809,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
     ],
     &[
-        invocation(
+        mint(
             "cspace-mint",
-            CSPACE_MINT,
-            CNODE_CAP,
-            [NOTIFICATION_SLOT, MINT_SLOT, 0x3, 5],
+            NOTIFICATION_SLOT,
+            MINT_SLOT,
+            READ_WRITE_RIGHTS,
+            5,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "cspace-revoke",
@@ -3114,7 +3214,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             "frame-copy-mapped",
             CSPACE_COPY,
             CNODE_CAP,
-            [FRAME_SLOT, MOVE_SLOT, 0, 0],
+            root_slot_copy(FRAME_SLOT, MOVE_SLOT),
         ),
         invocation(
             "frame-copy-delete",
@@ -3126,7 +3226,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             "frame-copy-for-revoke",
             CSPACE_COPY,
             CNODE_CAP,
-            [FRAME_SLOT, MOVE_SLOT, 0, 0],
+            root_slot_copy(FRAME_SLOT, MOVE_SLOT),
         ),
         invocation(
             "vspace-map-copy",
@@ -3199,6 +3299,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         kernel_step("refill-wait-tick", TIMER_TICK_STEP),
@@ -3266,7 +3367,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             SCHED_CONTROL_CAP,
             4,
         ),
-        truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 3),
+        truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 4),
         truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
         truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
         truncated("cspace-delete-short", CSPACE_DELETE, CNODE_CAP, 0),
@@ -3355,6 +3456,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         RoundTrip {
@@ -3368,12 +3470,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         },
         RoundTrip {
             caps_or_badges: None,
+            overflow: None,
             returns: REFUSED_MESSAGE_INFO,
             msg_len: BAD_MESSAGE_LENGTH,
             ..signal("bad-message-info")
         },
         RoundTrip {
             caps_or_badges: None,
+            overflow: None,
             msg_len: HIGH_MESSAGE_INFO,
             ..signal("high-message-info")
         },
@@ -3386,6 +3490,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         // Every other syscall with a message past its inline words, five
@@ -3401,7 +3506,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             "overflowed-cspace-mint",
             CSPACE_MINT,
             NOTIFICATION_CAP,
-            5,
+            6,
             INVALID_CAPABILITY,
         ),
         overflowed(
@@ -3839,6 +3944,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         // place; then the buffers put back.
         RoundTrip {
             caps_or_badges: None,
+            overflow: None,
             returns: Some((
                 (crate::svc_dispatch::ERROR_LABEL_BASE + ALIGNMENT_ERROR) << 12,
                 None,
@@ -3875,6 +3981,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         kernel_step("mask-ticks", MASK_TICKS_STEP),
@@ -4569,11 +4676,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
         ),
         // A send through an endpoint capability without the grant right: seL4
         // transfers no capability, whatever the message names.
-        invocation(
+        mint(
             "caps-no-grant-send-mint",
-            CSPACE_MINT,
-            CNODE_CAP,
-            [ENDPOINT_SLOT, NO_GRANT_ENDPOINT_SLOT, READ_WRITE_RIGHTS, 0],
+            ENDPOINT_SLOT,
+            NO_GRANT_ENDPOINT_SLOT,
+            READ_WRITE_RIGHTS,
+            0,
+            TAIL_IPC_BUFFER,
         ),
         invocation(
             "caps-no-grant-send-resume",
@@ -5318,6 +5427,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -5370,6 +5480,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -5428,6 +5539,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -5493,6 +5605,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -5709,6 +5822,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -5922,6 +6036,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -5989,6 +6104,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -6333,6 +6449,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -6625,6 +6742,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -6916,6 +7034,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -7137,6 +7256,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             primed: None,
             blocks: false,
             caps_or_badges: None,
+            overflow: None,
             returns: None,
         },
         invocation(
@@ -8043,6 +8163,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             PAGE_TABLE_CAPS[0],
             [0; 4],
         ),
+        // The window's page is gone, so the root task's buffer goes back to
+        // the one the boot gave it, where the mints below read their badges.
+        invocation(
+            "root-ipc-buffer-back",
+            TCB_SET_IPC_BUFFER,
+            ROOT_TCB_CAP,
+            [ROOT_IPC_BUFFER, 0, 0, 0],
+        ),
         invocation(
             "page-table-delete-1",
             CSPACE_DELETE,
@@ -8057,7 +8185,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             "irq-control-copy",
             CSPACE_COPY,
             CNODE_CAP,
-            [IRQ_CONTROL_SLOT, FRAME_SLOT, 0, 0],
+            root_slot_copy(IRQ_CONTROL_SLOT, FRAME_SLOT),
         ),
         invocation(
             "irq-control-copy-delete",
@@ -8065,11 +8193,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        mint(
             "irq-control-mint",
-            CSPACE_MINT,
-            CNODE_CAP,
-            [IRQ_CONTROL_SLOT, FRAME_SLOT, IRQ_CONTROL_RIGHTS, 0],
+            IRQ_CONTROL_SLOT,
+            FRAME_SLOT,
+            IRQ_CONTROL_RIGHTS,
+            0,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "irq-control-mint-delete",
@@ -8077,11 +8207,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        mint(
             "irq-control-mint-attenuated",
-            CSPACE_MINT,
-            CNODE_CAP,
-            [IRQ_CONTROL_SLOT, FRAME_SLOT, 0, 0],
+            IRQ_CONTROL_SLOT,
+            FRAME_SLOT,
+            0,
+            0,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "irq-control-mint-attenuated-delete",
@@ -8089,16 +8221,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        invocation(
+        mint(
             "irq-control-mint-badged",
-            CSPACE_MINT,
-            CNODE_CAP,
-            [
-                IRQ_CONTROL_SLOT,
-                FRAME_SLOT,
-                IRQ_CONTROL_RIGHTS,
-                IRQ_CONTROL_BADGE,
-            ],
+            IRQ_CONTROL_SLOT,
+            FRAME_SLOT,
+            IRQ_CONTROL_RIGHTS,
+            IRQ_CONTROL_BADGE,
+            ROOT_IPC_BUFFER,
         ),
         invocation(
             "irq-control-mint-badged-delete",
@@ -8257,15 +8386,20 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
 ];
 
 /// **WS-UC UC4: a carve owns its cells, and the retire returns them.**  A
-/// CNode carved, its capability copied out of it, the copy revoked (it is the
-/// carved capability's derivation child) and the carved capability deleted,
-/// which retires the CNode; then the boot untyped reset, so the next run
-/// carves where this one did.  Each step is a measured reading; across the
-/// first four, [`carved_cnode_retire`] also reads this core's frees, and the
+/// CNode carved and a capability (the boot endpoint's) copied into one of its
+/// slots; that capability copied out of the carved CNode into a root slot,
+/// where it outlives the CNode; the carved slot emptied (a CNode retires only
+/// once every slot is empty) and the carved capability deleted, which retires
+/// the CNode.  After the window the escaped copy is moved (refused with no
+/// capability in its slot, so its success shows the copy outlived the
+/// retire) and deleted, and the boot untyped reset, so the next run carves
+/// where this one did.  Each step is a measured reading; across the first
+/// five, [`carved_cnode_retire`] also reads this core's frees, and the
 /// host-side gate holds both the cells allocated and the cells freed to the
-/// CNode's carve pin: every cell the carve made, and no other, comes back.
+/// CNode's carve pin: every cell the carve made comes back, the escaped copy
+/// holding none of them, and no other.
 #[cfg(feature = "hw_target")]
-const CARVED_CNODE_RETIRE: [RoundTrip; 5] = [
+const CARVED_CNODE_RETIRE: [RoundTrip; 8] = [
     invocation(
         "untyped-retype-owned-cnode",
         UNTYPED_RETYPE,
@@ -8273,22 +8407,50 @@ const CARVED_CNODE_RETIRE: [RoundTrip; 5] = [
         [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
     ),
     invocation(
-        "owned-cnode-copy",
+        "owned-cnode-fill",
         CSPACE_COPY,
-        CNODE_CAP,
-        [FRAME_SLOT, MOVE_SLOT, 0, 0],
+        cap_address(FRAME_SLOT),
+        [
+            CARVED_CNODE_SLOT,
+            cap_address(CNODE_SLOT),
+            cap_address(ENDPOINT_SLOT),
+            CARVED_CNODE_RADIX | (64 << 8) | (ALL_RIGHTS << 16),
+        ],
     ),
     invocation(
-        "owned-cnode-revoke",
-        CSPACE_REVOKE,
+        "owned-cnode-copy-out",
+        CSPACE_COPY,
         CNODE_CAP,
-        [FRAME_SLOT, 0, 0, 0],
+        [
+            cap_address(MOVE_SLOT),
+            cap_address(FRAME_SLOT),
+            CARVED_CNODE_SLOT,
+            64 | (CARVED_CNODE_RADIX << 8) | (ALL_RIGHTS << 16),
+        ],
+    ),
+    invocation(
+        "owned-cnode-slot-delete",
+        CSPACE_DELETE,
+        cap_address(FRAME_SLOT),
+        [CARVED_CNODE_SLOT, 0, 0, 0],
     ),
     invocation(
         "owned-cnode-delete",
         CSPACE_DELETE,
         CNODE_CAP,
         [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "owned-cnode-escaped-move",
+        CSPACE_MOVE,
+        CNODE_CAP,
+        root_slot_pair(MOVE_SLOT, MINT_SLOT),
+    ),
+    invocation(
+        "owned-cnode-escaped-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MINT_SLOT, 0, 0, 0],
     ),
     invocation(
         "owned-cnode-untyped-reset",
@@ -8298,9 +8460,24 @@ const CARVED_CNODE_RETIRE: [RoundTrip; 5] = [
     ),
 ];
 
+/// The carved CNode's radix ([`CNODE_TYPE`]'s size bits; the carve gives it
+/// no guard), the depth that names one of its slots from its own capability.
+#[cfg(feature = "hw_target")]
+const CARVED_CNODE_RADIX: u64 = CNODE_TYPE >> 8;
+
+/// The carved CNode's slot the escaping capability is copied through.
+#[cfg(feature = "hw_target")]
+const CARVED_CNODE_SLOT: u64 = 1;
+
+/// The steps of [`CARVED_CNODE_RETIRE`] its window reads across: the carve to
+/// the retire.
+#[cfg(feature = "hw_target")]
+const CARVED_CNODE_WINDOW: usize = 5;
+
 /// The carve-to-retire window of [`CARVED_CNODE_RETIRE`]: its steps measured
-/// one by one, and across the carve, the copy, the revoke and the delete this
-/// core's allocations and frees, read under one mask so no tick's cells are
+/// one by one, and across the carve, the fill, the copy out, the slot's
+/// delete and the carved capability's delete this core's allocations and
+/// frees, read under one mask so no tick's cells are
 /// charged to it.  Printed as `owned-cnode-retire: … allocated A freed F`;
 /// the host-side gate holds `A` and `F` each to the CNode's carve pin.
 #[cfg(feature = "hw_target")]
@@ -8313,7 +8490,7 @@ fn carved_cnode_retire(which: &str) -> Option<bool> {
     };
     let saved = crate::interrupts::disable_interrupts();
     let before = read();
-    let (window, rest) = CARVED_CNODE_RETIRE.split_at(4);
+    let (window, rest) = CARVED_CNODE_RETIRE.split_at(CARVED_CNODE_WINDOW);
     let mut ok = window
         .iter()
         .all(|step| heap_allocations_round_trip(step, which) == Some(true));
@@ -8355,7 +8532,7 @@ fn carved_cnode_retire(which: &str) -> Option<bool> {
 /// measured; the last rewinds the boot untyped, so the steady-state run
 /// starts where the first did.
 #[cfg(feature = "hw_target")]
-const LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
+static LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
     // A child untyped carved, and an endpoint carved from it (its recorder a
     // carved untyped, not the boot one); its reset refused while the
     // endpoint's capability is its derivation child; its revoke, which deletes
@@ -8438,13 +8615,13 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         "moved-parent-copy",
         CSPACE_COPY,
         CNODE_CAP,
-        [FRAME_SLOT, COPY_SLOT, 0, 0],
+        root_slot_copy(FRAME_SLOT, COPY_SLOT),
     ),
     invocation(
         "parent-cap-move",
         CSPACE_MOVE,
         CNODE_CAP,
-        [FRAME_SLOT, MINT_SLOT, 0, 0],
+        root_slot_pair(FRAME_SLOT, MINT_SLOT),
     ),
     invocation(
         "moved-parent-child-delete",
@@ -9130,6 +9307,7 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     RoundTrip {
@@ -9141,6 +9319,7 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     partner_step(
@@ -9188,6 +9367,7 @@ const DECLASSIFICATION_REFUSAL: RoundTrip = RoundTrip {
     primed: None,
     blocks: false,
     caps_or_badges: None,
+    overflow: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
         None,
@@ -9219,6 +9399,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // The trail's status.
@@ -9231,6 +9412,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // The target object of the first visible entry, chunk 0.
@@ -9243,6 +9425,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // The first visible entry's authorization basis: its byte count.
@@ -9255,6 +9438,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Its second chunk: a chunk past the first.
@@ -9267,6 +9451,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // The refusal ledger's status.
@@ -9279,6 +9464,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Its counters.
@@ -9291,6 +9477,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Slot 0's refusal: its tags.
@@ -9303,6 +9490,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Its subject's chunk count.
@@ -9315,6 +9503,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Its subject domain's chunk count.
@@ -9327,6 +9516,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Its requested target's chunk count.
@@ -9339,6 +9529,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Its subject, chunk 0.
@@ -9351,6 +9542,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Its subject domain, chunk 0.
@@ -9363,6 +9555,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Its requested target, chunk 0.
@@ -9375,6 +9568,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Its refused receiver's chunk count (none: 0).
@@ -9387,6 +9581,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Whether the second visible entry names the first.
@@ -9399,6 +9594,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // The same verdict over the pair named in full.
@@ -9411,6 +9607,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     // Whether the first visible entry names the drained timestamp 0 of its run.
@@ -9423,6 +9620,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     RoundTrip {
@@ -9434,6 +9632,7 @@ const AUDIT_SCENARIO: [RoundTrip; 22] = [
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     },
     invocation(
@@ -9642,6 +9841,7 @@ const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     primed: None,
     blocks: false,
     caps_or_badges: None,
+    overflow: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + DECLASSIFICATION_DENIED_AT_RECEIVER) << 12,
         None,
@@ -9658,6 +9858,7 @@ const BOUND_REFUSAL_STATUS: RoundTrip = RoundTrip {
     primed: None,
     blocks: false,
     caps_or_badges: None,
+    overflow: None,
     returns: None,
 };
 /// The slots emptied again, unmeasured: the bound line's handler cleared and
@@ -9804,6 +10005,7 @@ fn bound_declassified_signals(which: &str) -> bool {
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     };
     if heap_allocations_round_trip(&read, which) != Some(true) {
@@ -9881,6 +10083,7 @@ const YIELD_TO_LINK: RoundTrip = RoundTrip {
     primed: None,
     blocks: false,
     caps_or_badges: None,
+    overflow: None,
     returns: None,
 };
 /// ...and its second: the partner, now current, blocks on the notification,
@@ -9937,11 +10140,13 @@ const PARTNER_SETUP: [RoundTrip; 3] = [
         [REPLY_OBJECT_SLOT, REPLY_CAP_SLOT],
         false,
     ),
-    invocation(
+    mint(
         "mint-badged-endpoint",
-        CSPACE_MINT,
-        CNODE_CAP,
-        [ENDPOINT_SLOT, MINT_SLOT, ENDPOINT_RIGHTS, ENDPOINT_BADGE],
+        ENDPOINT_SLOT,
+        MINT_SLOT,
+        ENDPOINT_RIGHTS,
+        ENDPOINT_BADGE,
+        ROOT_IPC_BUFFER,
     ),
 ];
 /// `ESR_EL1` of an `SVC` from AArch64 (exception class `0x15`).
@@ -10475,7 +10680,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                     }
                     RECEIVE_PATH_STEP => {
                         let words = [step.msg[0], step.msg[1], step.msg[2]];
-                        let written = write_buffer_words(step.cptr, RECEIVE_PATH_WORD, words);
+                        let written = write_buffer_words(step.cptr, RECEIVE_PATH_WORD, &words);
                         if !written {
                             crate::kprintln!(
                                 "[smp-test] FAIL: heap-allocations-per-syscall: {}: the receive path was not written",
@@ -10697,6 +10902,7 @@ const HEAP_REFUSED_RETYPE: RoundTrip = RoundTrip {
     primed: None,
     blocks: false,
     caps_or_badges: None,
+    overflow: None,
     returns: Some((
         (crate::svc_dispatch::ERROR_LABEL_BASE + UNTYPED_REGION_EXHAUSTED) << 12,
         None,
@@ -10815,6 +11021,7 @@ const fn irq_handler_ack(name: &'static str, slot: u64) -> RoundTrip {
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     }
 }
@@ -11081,6 +11288,7 @@ fn interrupt_entries(which: &str) -> bool {
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: None,
     };
     let block = partner_step("irq-wait-blocks", WAIT, NOTIFICATION_CAP, 0, [0, 0], true);
@@ -11411,6 +11619,7 @@ fn queued_overflow_cap_fault(
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: Some((CAP_FAULT_MESSAGE_INFO, None)),
     };
     let reply = partner_step(reply, REPLY, REPLY_CAP, 0, [0, 0], false);
@@ -11588,11 +11797,13 @@ const RECEIVE_NO_RIGHT_SLOT: u64 = EMPTY_SLOT;
 /// minted with the write right alone, deleted after.
 #[cfg(feature = "hw_target")]
 fn receive_phase_cap_faults(which: &str) -> bool {
-    let mint_no_receive = invocation(
+    let mint_no_receive = mint(
         "receive-no-right-mint",
-        CSPACE_MINT,
-        CNODE_CAP,
-        [ENDPOINT_SLOT, RECEIVE_NO_RIGHT_SLOT, WRITE_ONLY_RIGHTS, 0],
+        ENDPOINT_SLOT,
+        RECEIVE_NO_RIGHT_SLOT,
+        WRITE_ONLY_RIGHTS,
+        0,
+        FRAME_VADDR,
     );
     let delete_no_receive = invocation(
         "receive-no-right-delete",
@@ -11887,7 +12098,7 @@ fn fault_entries() -> Option<bool> {
         "copy-fault-handler",
         CSPACE_COPY,
         CNODE_CAP,
-        [ENDPOINT_SLOT, FAULT_HANDLER_SLOT, 0, 0],
+        root_slot_copy(ENDPOINT_SLOT, FAULT_HANDLER_SLOT),
     );
     let delete_handler = invocation(
         "delete-fault-handler",
@@ -11938,6 +12149,7 @@ fn fault_entries() -> Option<bool> {
         primed: None,
         blocks: false,
         caps_or_badges: None,
+        overflow: None,
         returns: Some((VM_FAULT_MESSAGE_INFO, None)),
     };
     let reply_fault = partner_step("reply-queued-fault", REPLY, REPLY_CAP, 0, [0, 0], false);
@@ -12151,9 +12363,18 @@ fn fault_entries() -> Option<bool> {
             return Some(false);
         }
     }
+    let root_buffer_back = invocation(
+        "fault-long-root-ipc-buffer-back",
+        TCB_SET_IPC_BUFFER,
+        ROOT_TCB_CAP,
+        [ROOT_IPC_BUFFER, 0, 0, 0],
+    );
     if !unmeasured_all(
         &MOVE_TEARDOWN[4..],
         "the long fault reply's page teardown failed",
+    ) || !unmeasured(
+        &root_buffer_back,
+        "the root task's IPC buffer was not set back",
     ) {
         return Some(false);
     }
@@ -12225,6 +12446,24 @@ fn dispatch_round_trip_at(
     frame.gprs[4] = trip.msg[2];
     frame.gprs[5] = trip.msg[3];
     frame.gprs[7] = trip.syscall;
+    if let Some((buffer, word)) = trip.overflow {
+        if !write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[word]) {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {}: the IPC buffer at \
+                 {buffer:#x} has no translation",
+                trip.name
+            );
+            return (
+                Dispatched::Failed,
+                None,
+                None,
+                Resumed {
+                    regs: [0; 6],
+                    pc: 0,
+                },
+            );
+        }
+    }
     let saved_daif = crate::interrupts::disable_interrupts();
     let before = own_heap_allocations(core);
     let (dispatched, restored) = {
@@ -12239,6 +12478,12 @@ fn dispatch_round_trip_at(
         (dispatched, crate::trap::take_restored())
     };
     let after = own_heap_allocations(core);
+    if let Some((buffer, _)) = trip.overflow {
+        // The word back to the zero the boot's scrub left, outside the
+        // measured window; the page was mapped a moment ago, so this write
+        // finds it again.
+        let _ = write_buffer_words(buffer, OVERFLOW_BASE_WORD, &[0]);
+    }
     // The restore replaced the published frame with the resumed thread's
     // context: its `x0` to `x5` and its PC are what that thread resumes with.
     let mut resumed = Resumed {
@@ -12637,14 +12882,18 @@ fn root_user_page(vaddr: u64) -> Option<u64> {
 /// page has no translation to RAM past the kernel's extent.
 #[cfg(feature = "hw_target")]
 fn write_caps_or_badges(buffer: u64, words: [u64; 3]) -> bool {
-    write_buffer_words(buffer, CAPS_OR_BADGES_WORD, words)
+    write_buffer_words(buffer, CAPS_OR_BADGES_WORD, &words)
 }
 
-/// Write `words` into the three words of the IPC buffer the root task's
-/// tables map at `buffer` from word `first` on: its `caps_or_badges`
-/// ([`write_caps_or_badges`]) or its receive path ([`RECEIVE_PATH_STEP`]).
+/// Write `words` (at most three) into the IPC buffer the root task's tables
+/// map at `buffer` from word `first` on: its `caps_or_badges`
+/// ([`write_caps_or_badges`]), its receive path ([`RECEIVE_PATH_STEP`]) or a
+/// message's first overflow word ([`RoundTrip::overflow`]).
 #[cfg(feature = "hw_target")]
-fn write_buffer_words(buffer: u64, first: u64, words: [u64; 3]) -> bool {
+fn write_buffer_words(buffer: u64, first: u64, words: &[u64]) -> bool {
+    if words.len() > 3 {
+        return false;
+    }
     let Some(page) = root_user_page(buffer & !0xFFF) else {
         return false;
     };
@@ -12730,8 +12979,9 @@ fn move_failed(why: &str) -> Option<bool> {
 /// state ([`MOVE_RUNNING`]); the timer masked by the caller.
 #[cfg(feature = "hw_target")]
 fn affinity_move_running() -> Option<bool> {
-    // The page first: mapped at the root task's IPC buffer address, it is also
-    // the buffer the configure reads its fifth word from.
+    // The page first, at the scenarios' window; the configure reads its
+    // fifth word from the root task's own buffer (`ROOT_IPC_BUFFER`), which
+    // the boot scrubbed.
     if !unmeasured_all(&MOVE_SETUP_PAGE, "the code page's setup failed")
         || !unmeasured(&MOVE_MAP_CODE, "the code page was not mapped")
         || !unmeasured_all(&MOVE_SETUP_THREAD, "the moved thread's setup failed")
@@ -12988,7 +13238,7 @@ const REMOTE_COPY: RoundTrip = invocation(
     "remote-asid-frame-copy",
     CSPACE_COPY,
     CNODE_CAP,
-    [FRAME_SLOT, MOVE_SLOT, 0, 0],
+    root_slot_copy(FRAME_SLOT, MOVE_SLOT),
 );
 #[cfg(feature = "hw_target")]
 const REMOTE_MAP: RoundTrip = invocation(
@@ -13305,7 +13555,7 @@ fn heap_allocations_round_trip_resuming(
     let name = trip.name;
     if let Some((buffer, words, path)) = trip.caps_or_badges {
         let path_written = match path {
-            Some(path) => write_buffer_words(buffer, RECEIVE_PATH_WORD, path),
+            Some(path) => write_buffer_words(buffer, RECEIVE_PATH_WORD, &path),
             None => true,
         };
         if !(write_caps_or_badges(buffer, words) && path_written) {

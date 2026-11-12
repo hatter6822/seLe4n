@@ -201,7 +201,7 @@ def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutco
       let dstSlot := SeLe4n.Slot.ofNat ((tid.toNat + 8) % 16)
       let src : SeLe4n.Kernel.CSpaceAddr := { cnode := probeCNodeId, slot := srcSlot }
       let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := probeCNodeId, slot := dstSlot }
-      match SeLe4n.Kernel.cspaceCopy src dst st with
+      match SeLe4n.Kernel.cspaceCopy src dst .full st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .capCopy err
   | .receive =>

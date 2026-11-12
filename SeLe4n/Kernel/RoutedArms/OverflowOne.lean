@@ -13,8 +13,8 @@ import SeLe4n.Kernel.RoutedArms.Report
 # The one-overflow-word route's arm, out of line
 
 The routed entry's `.overflowOne` arm (`syscallEntryCheckedK`): a
-scheduling-context configure or a service register, its fifth word read from
-overflow slot 0 of the caller's IPC buffer, as its own function.  The syscall
+scheduling-context configure, a service register or a CNode mint, its fifth
+word read from overflow slot 0 of the caller's IPC buffer, as its own function.  The syscall
 and the operand's address cross as words, the state owned, and the result is
 the state with its report pushed (`RoutedArms.Report`); the read, the TLB
 fill and its undo are the entry's own.

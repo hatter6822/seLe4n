@@ -179,7 +179,8 @@ seL4 reads a word of the caller's IPC buffer only where a transfer copies it
 (`copyMRs`, for the send, the call, the reply and the reply-receive's reply)
 or a decoder reads an argument past the registers (`getSyscallArg`); the
 model's decoders read at most four words except the scheduling-context
-configure's and the service register's five (`truncationMinimum`).  Every
+configure's, the service register's and the CNode mint's five
+(`truncationMinimum`).  Every
 other syscall reads none: the receive, the wait and the yield read no message
 (`handleRecv`, `handleYield`), the signal and the declassified signal take the
 capability's badge, and every other invocation's arguments are its registers.
@@ -187,9 +188,10 @@ A long message-info word on one of those reads no IPC-buffer word and cannot be
 refused or clamped by the buffer.  No wildcard: a new syscall states its
 answer. -/
 def syscallReadsOverflow : SyscallId → Bool
-  | .send | .call | .reply | .replyRecv | .schedContextConfigure | .serviceRegister => true
+  | .send | .call | .reply | .replyRecv | .schedContextConfigure | .serviceRegister
+  | .cspaceMint => true
   | .notificationSignal | .declassifySignal | .receive | .notificationWait | .yield
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .untypedRetype
+  | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .untypedRetype
   | .untypedReset | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction | .declassify
   | .auditRead | .auditDrain | .serviceRevoke | .serviceQuery | .schedContextBind
   | .schedContextUnbind | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
@@ -233,7 +235,7 @@ open SeLe4n.Kernel.Architecture.IpcBufferRead in
 
     **Why this exists:** `arm64DefaultLayout.msgRegs` provides 4 inline
     positions (x2..x5). Syscalls with 5+ message registers (e.g.,
-    `serviceRegister`, `schedContextConfigure`) encode the overflow into the
+    `serviceRegister`, `schedContextConfigure`, `cspaceMint`) encode the overflow into the
     thread's IPC buffer. Without this merge step, the Lean kernel would
     reject every such Rust-encoded syscall — the critical `R-ABI-C01`
     finding.
@@ -909,8 +911,9 @@ inductive RegisterRoutedSyscall where
   | invoke (sid : SyscallId) (capAddr : CPtr)
   /-- WS-ZA ZA5.2, ZA5.5: a capability invocation with exactly one overflow
       word (`routedOverflowOne`: the scheduling-context configure, whose fifth
-      argument is the domain, and the service register, whose fifth is whether
-      the interface needs the grant right): the syscall and its operand
+      argument is the domain, the service register, whose fifth is whether
+      the interface needs the grant right, and the CNode mint, whose fifth is
+      the badge): the syscall and its operand
       address; its first four arguments are the layout's message registers and
       the fifth is overflow slot 0 of the caller's IPC buffer. -/
   | overflowOne (sid : SyscallId) (capAddr : CPtr)
@@ -962,12 +965,13 @@ inductive RegisterRoutedSyscall where
 /-- WS-ZA ZA5.1: the capability invocations the register file routes as
 `invoke`: every invocation whose arguments fit the layout's message registers,
 whose taint step is the identity and whose rights are checked in the classic
-order.  The scheduling-context configure and the service register carry one
-argument word more and are routed as `overflowOne` (`routedOverflowOne`); the
+order.  The scheduling-context configure, the service register and the CNode
+mint carry one argument word more and are routed as `overflowOne`
+(`routedOverflowOne`); the
 declassification and audit calls, whose taint steps are not the identity or
 whose targets are checked first, are routed as `audited` (`routedAudited`). -/
 def routedInvocation : SyscallId → Bool
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind | .schedContextConsumed
@@ -1001,7 +1005,7 @@ theorem routedInvocationSid?_some {n : Nat} {sid : SyscallId}
 overflow word, whose taint step is the identity and whose rights are checked in
 the classic order. -/
 def routedOverflowOne : SyscallId → Bool
-  | .schedContextConfigure | .serviceRegister => true
+  | .schedContextConfigure | .serviceRegister | .cspaceMint => true
   | _ => false
 
 /-- The one-overflow-word invocation syscall number `n` names, if any. -/

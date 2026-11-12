@@ -856,13 +856,13 @@ mod tests {
 
     #[test]
     fn error_frame_regs_offsets_every_discriminant() {
-        // WS-RA / ABI v3: every KernelError discriminant 0..=58 rides the
+        // WS-RA / ABI v3: every KernelError discriminant 0..=60 rides the
         // x1 label at ERROR_LABEL_BASE + disc (label 0 is success;
         // discriminant 0 is a real error — the aliasing the offset from
         // zero exists to prevent; and every label below the base is a
         // delivered message's own, so no error can be read as a delivery
         // either), and no other register carries anything.
-        for disc in 0..=58u32 {
+        for disc in 0..=60u32 {
             let regs = error_frame_regs(disc);
             assert_eq!(
                 regs[1] >> 12,
@@ -919,20 +919,20 @@ mod tests {
         assert_eq!(mi.label(), BLOCKED_RESUME_SENTINEL_LABEL);
         // Nonzero (never success) and the last label of the status range,
         // naming discriminant 255 — beyond the kernel-emittable set
-        // 0..=58, and exactly the Rust-only `UnknownKernelError` sentinel.
+        // 0..=60, and exactly the Rust-only `UnknownKernelError` sentinel.
         // The range position is a compile-time assert at the constant's
-        // definition; these GROUND the 58 against the canonical KernelError
-        // space (`TruncatedMessage` is the last real discriminant, 59 the
+        // definition; these GROUND the 60 against the canonical KernelError
+        // space (`DepthMismatch` is the last real discriminant, 61 the
         // first unknown) and the 255 against the sentinel variant.
         assert_ne!(BLOCKED_RESUME_SENTINEL_LABEL, 0);
         assert_eq!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE, 255);
-        assert!(sele4n_types::KernelError::from_u32(58).is_some());
-        assert!(sele4n_types::KernelError::from_u32(59).is_none());
+        assert!(sele4n_types::KernelError::from_u32(60).is_some());
+        assert!(sele4n_types::KernelError::from_u32(61).is_none());
         assert_eq!(
             sele4n_types::KernelError::from_u32(255),
             Some(sele4n_types::KernelError::UnknownKernelError)
         );
-        for disc in 0..=58u32 {
+        for disc in 0..=60u32 {
             assert_ne!(
                 error_frame_regs(disc)[1],
                 regs[1],

@@ -184,8 +184,8 @@ theorem cspaceMintWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpace
   exact ((cspaceMint_runQueueStage hMint).trans (cdtRecord_runQueueStage stM src dst .mint)).trans
     (untypedSourceSetFull_runQueueStage _ _ _)
 
-theorem cspaceCopy_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
-    (h : cspaceCopy src dst st = .ok ((), st')) : RunQueueStage st st' := by
+theorem cspaceCopy_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr} {mask : AccessRightSet}
+    (h : cspaceCopy src dst mask st = .ok ((), st')) : RunQueueStage st st' := by
   obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose h
   exact ((cspaceInsertSlot_runQueueStage hIns).trans (cdtRecord_runQueueStage st2 src dst .copy)).trans
     (untypedSourceSetFull_runQueueStage _ _ _)
@@ -200,8 +200,8 @@ theorem storeCNodeWith_runQueueStage (st : SystemState) (id : SeLe4n.ObjId)
 
 /-- The copy's writes: the slot's store, the edge, and the untyped source set
 full. -/
-theorem cspaceCopyPerform_runQueueStage (src dst : CSpaceAddr) (st : SystemState) :
-    RunQueueStage st (cspaceCopyPerform src dst st) := by
+theorem cspaceCopyPerform_runQueueStage (src dst : CSpaceAddr) (mask : AccessRightSet) (st : SystemState) :
+    RunQueueStage st (cspaceCopyPerform src dst mask st) := by
   unfold cspaceCopyPerform cspaceInstallPerform
   split
   · exact ((storeCNodeWith_runQueueStage _ _ _).trans (cdtRecord_runQueueStage _ src dst .copy)).trans

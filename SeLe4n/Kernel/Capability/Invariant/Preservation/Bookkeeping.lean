@@ -80,9 +80,9 @@ theorem cspaceDeleteSlot_preserves_bookkeepingAgrees {addr : CSpaceAddr}
       ((cspaceDeleteSlotCore_preserves_bookkeepingAgrees hInv hB hC).of_objects_ghosts rfl
         ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)⟩
 
-theorem cspaceCopy_preserves_bookkeepingAgrees {src dst : CSpaceAddr} {st st' : SystemState}
+theorem cspaceCopy_preserves_bookkeepingAgrees {src dst : CSpaceAddr} {mask : AccessRightSet} {st st' : SystemState}
     (hInv : st.objects.invExt) (hB : st.bookkeepingAgrees)
-    (h : cspaceCopy src dst st = .ok ((), st')) : st'.bookkeepingAgrees := by
+    (h : cspaceCopy src dst mask st = .ok ((), st')) : st'.bookkeepingAgrees := by
   obtain ⟨cap, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose h
   have hI2 := cspaceInsertSlot_objects_invExt hInv hIns
   exact untypedSourceSetFull_preserves_bookkeepingAgrees

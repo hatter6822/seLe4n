@@ -812,12 +812,20 @@ private def decodeRevoke (slot : Nat) : SyscallDecodeResult :=
   , msgRegs   := #[SeLe4n.RegValue.ofNat slot] }
 
 /-- `.cspaceCopy` of `src` to `dst` in the owner's CSpace root, invoked on the
-grant-bearing root capability. -/
-private def decodeCopy (src dst : Nat) : SyscallDecodeResult :=
+grant-bearing root capability, which is also the source root; both indices are
+resolved at the root's `radix` bits (it has no guard), and the copy's rights
+mask is every right (seL4's `seL4_AllRights`), so the copy keeps the source's. -/
+private def decodeCopyAt (radix src dst : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat slotOwnCnGrant
-  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
   , syscallId := .cspaceCopy
-  , msgRegs   := #[SeLe4n.RegValue.ofNat src, SeLe4n.RegValue.ofNat dst] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat dst, SeLe4n.RegValue.ofNat slotOwnCnGrant,
+                   SeLe4n.RegValue.ofNat src,
+                   SeLe4n.RegValue.ofNat (radix + radix * 256 + 31 * 65536)] }
+
+/-- `decodeCopyAt` in the 4-bit root every scenario but the table scenario
+uses. -/
+private def decodeCopy (src dst : Nat) : SyscallDecodeResult := decodeCopyAt 4 src dst
 
 /-- Run a list of dispatches in order, stopping at the first refusal. -/
 private def runAll (st : SystemState) :
@@ -1768,7 +1776,7 @@ private def runPageTableChecks : IO Unit := do
         -- A copy carries no mapping record, so it may map the frame again;
         -- only the address is wrong.
         assertBool "an unaligned virtual address inside a complete walk is refused (alignmentError)"
-          (match runAll st3 [decodeCopy 14 22] with
+          (match runAll st3 [decodeCopyAt 5 14 22] with
            | .ok sCopy =>
                isErr .alignmentError
                  (dispatchSyscallAsCurrent
@@ -1790,7 +1798,7 @@ private def runPageTableChecks : IO Unit := do
         -- mapping and every table beneath it; destroying one of several leaves
         -- it installed.
         let at15 : CSpaceAddr := { cnode := carveCn, slot := SeLe4n.Slot.ofNat 15 }
-        match runAll st3 [decodeCopy 15 21, decodeDelete 21] with
+        match runAll st3 [decodeCopyAt 5 15 21, decodeDelete 21] with
         | .error e => assertBool s!"copying the level-1 table capability, then deleting the copy, succeeds (got {repr e})" false
         | .ok sCopy =>
           assertBool "a table another capability still names stays installed, with everything beneath it"
@@ -1799,7 +1807,7 @@ private def runPageTableChecks : IO Unit := do
         -- Finality is read off the slot's derivation links (`capIsFinal`, seL4's
         -- `isFinalCapability`): the copy is the original's first child, so
         -- neither is final while both live, and the one left is final again.
-        match runAll st3 [decodeCopy 15 21] with
+        match runAll st3 [decodeCopyAt 5 15 21] with
         | .error e => assertBool s!"copying the level-1 table capability succeeds (got {repr e})" false
         | .ok sTwo => do
           assertBool "while a copy lives, neither the original nor the copy is final"

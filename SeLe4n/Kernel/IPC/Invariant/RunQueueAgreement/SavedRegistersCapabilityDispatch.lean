@@ -1348,7 +1348,7 @@ theorem irqHandlerSetNotification_savedRegsKeptOffCore {e ec : CoreId} {line : N
     (fun _ _ _ hQ hD => hQ.delete B hD) (fun d _ hQ => hQ.finalise B d) (.start hB) hZ
   have hInv1 : st1.objects.invExt := (cspaceDeleteSlotZombie_stepCovers e ec _ st st1 hB hZ).2
   have C : stepCovers e st1 st' :=
-    ((cspaceCopy_keyFrame _ _ _ _ hInv1 hC).stepCoversInv
+    ((cspaceCopy_keyFrame _ _ _ _ _ hInv1 hC).stepCoversInv
       (hRes := by rw [cspaceCopy_machine_eq hC])
       (hBank := banksKeptOffCore_of_eq (by rw [cspaceCopy_machine_eq hC]))).1
   have hK : savedRegsKept st1 st' := by
