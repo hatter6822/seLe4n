@@ -4053,10 +4053,13 @@ run_check "INVARIANT" rg -n -U '^@\[inline\] def untypedRetypeAdmittedAt [^\n]*\
 run_check "INVARIANT" rg -n -U '^def CarveRequest\.heapAdmitted \(st : SystemState\) \(req : CarveRequest\) : Bool :=\n  decide \(req\.heapBytes st ≤ st\.machine\.kernelHeapFreeBytes\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_heapRefused_stateUnchanged($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeOfChecked_heapRefused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
-# The routed retype arm answers the heap refusal itself, before the split carve,
-# so the general path it would fall back to (a second decode) never runs; and a
-# refusal crosses the boundary as scalar words, building no frame or outcome.
-run_check "INVARIANT" rg -n -U '^              \(fun srcCnode srcSlot dstCnode dstSlot =>\n([ \t]*(--[^\n]*)?\n)*                if !CarveRequest\.heapAdmittedW st k n then \.error \(\.untypedRegionExhausted st\.machine\.kernelHeapFreeBytes\.toUInt64, st\) else\n                RefusalCarrying\.ofChecked$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+# The routed retype arm answers the heap refusal itself, then every other carve
+# refusal from the checks' words (`untypedRetypeRefusalCode`), so the general
+# path (a second decode) never runs for a carve; and a refusal crosses the
+# boundary as scalar words, building no frame or outcome.
+run_check "INVARIANT" rg -n -U '^              \(fun srcCnode srcSlot dstCnode dstSlot =>\n([ \t]*(--[^\n]*)?\n)*                if !CarveRequest\.heapAdmittedW st k n then \.error \(\.untypedRegionExhausted st\.machine\.kernelHeapFreeBytes\.toUInt64, st\) else\n([ \t]*(--[^\n]*)?\n)*                if untypedRetypeAdmittedCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild\.val\n                    k n asid then\n                  \.ok \(\(\), untypedRetypePerformCode srcCnode srcSlot dstCnode dstSlot\n[^\n]*\n                else\n                  \.error \(untypedRetypeRefusalCode st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩\n                    vChild\.val k n asid, st\)\)\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_refused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeRefusalCode_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
 run_check "INVARIANT" rg -n '^theorem errorOutcomeWords_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'fun ke s => \(\(Architecture\.SyscallOutcome\.returns \(Architecture\.errorFrame ke\)\)\.words' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextVSpaceRoot[^\n]*\n  \{ asid := asid, mappings := \{\}, tableBase := some \(untypedNextFrame ut idx\)\.base \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
