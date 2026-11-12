@@ -275,10 +275,11 @@ def qemuVirtExerciserRootIpcBufferInvocations : List SyscallDecodeResult :=
   , qemuVirtExerciserRootInvocation .tcbSetIPCBuffer 1 [va, 0, 0, 0] ]
 
 /-- **One invocation by the root task, made by the boot**: the checked
-    dispatcher's capability path (`SeLe4n.Kernel.dispatchSyscallChecked`) for
-    the root thread on the boot core — its CSpace root, the capability resolved
-    there with the syscall's right, the checked arm, and the taint step —
-    without that dispatcher's first test, that the caller is the thread current
+    dispatcher's capability path for the root thread on the boot core, as the
+    compiled dispatcher runs it (`SeLe4n.Kernel.dispatchSyscallCheckedImpl`) —
+    its CSpace root, then the capability resolved there with the syscall's
+    right, the checked arm and the taint step in one
+    (`dispatchCheckedArmThenTaintFused`) — without that dispatcher's first test, that the caller is the thread current
     on the trapping core.  That test ties a trap to its caller; the boot is not
     a trap, and no thread is current on any core until the first schedule. -/
 def qemuVirtExerciserRootInvoke (decoded : SyscallDecodeResult) :
@@ -293,13 +294,8 @@ def qemuVirtExerciserRootInvoke (decoded : SyscallDecodeResult) :
         { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr
           capDepth := rootCn.depth
           requiredRight := SeLe4n.Kernel.syscallRequiredRight decoded.syscallId }
-      match SeLe4n.Kernel.syscallInvokeTyped decoded.syscallId gate
-          (SeLe4n.Kernel.dispatchWithCapChecked ctx decoded tid
-            SeLe4n.Kernel.Concurrency.bootCoreId gate) st with
-      | .error e => .error e
-      | .ok ((), stPost) =>
-          .ok ((), SeLe4n.Kernel.applySyscallTaint
-            (SeLe4n.Kernel.syscallTaintPlan st tid decoded) st stPost)
+      SeLe4n.Kernel.dispatchCheckedArmThenTaintFused ctx decoded tid
+        SeLe4n.Kernel.Concurrency.bootCoreId gate st
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
   | some _ => .error .illegalState
