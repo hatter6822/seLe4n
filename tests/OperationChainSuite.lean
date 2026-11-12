@@ -2500,11 +2500,13 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       expect "chain27: cspaceDelete dispatch clears slot 0" ((cn.lookup (((SeLe4n.Slot.ofNat 0) : SeLe4n.Slot))).isNone)
     | _ => throw <| IO.userError "chain27: CNode not found after delete"
   | .error err => throw <| IO.userError s!"chain27: cspaceDelete syscall failed: {toString err}"
-  -- === cspaceCopy (syscallId=5): x2=srcSlot(0), x3=dstSlot(2) ===
+  -- === cspaceCopy (syscallId=5): x2=destIndex(2), x3=srcRoot (the caller's
+  -- address 0, its capability to the target CNode), x4=srcIndex(0), x5=both
+  -- depths 4 (the CNode's 4-bit radix, no guard) ===
   let stCopy := buildSyscallState 5 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
-    [(2, 0), (3, 2)]  -- srcSlot=0, dstSlot=2
+    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stCopy with
   | .ok (_, stAfter) =>
@@ -2513,11 +2515,12 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       expect "chain27: cspaceCopy dispatch populates slot 2" ((cn.lookup (((SeLe4n.Slot.ofNat 2) : SeLe4n.Slot))).isSome)
     | _ => throw <| IO.userError "chain27: CNode not found after copy"
   | .error err => throw <| IO.userError s!"chain27: cspaceCopy syscall failed: {toString err}"
-  -- === cspaceMove (syscallId=6): x2=srcSlot(0), x3=dstSlot(3) ===
+  -- === cspaceMove (syscallId=6): x2=destIndex(3), x3=srcRoot(0), x4=srcIndex(0),
+  -- x5=both depths 4 ===
   let stMove := buildSyscallState 6 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
-    [(2, 0), (3, 3)]  -- srcSlot=0, dstSlot=3
+    [(2, 3), (3, 0), (4, 0), (5, 4 + 4 * 256)]
     [(cnodeTarget, .cnode), (epId, .endpoint)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMove with
   | .ok (_, stAfter) =>
@@ -2527,6 +2530,26 @@ private def chain27SyscallCSpaceOps : IO Unit := do
       expect "chain27: cspaceMove dispatch clears source slot 0" ((cn.lookup (((SeLe4n.Slot.ofNat 0) : SeLe4n.Slot))).isNone)
     | _ => throw <| IO.userError "chain27: CNode not found after move"
   | .error err => throw <| IO.userError s!"chain27: cspaceMove syscall failed: {toString err}"
+  -- === seL4's CNode-operation refusals, in seL4's order ===
+  let copyRefusal (label : String) (args : List (Nat × Nat)) (want : KernelError) : IO Unit := do
+    let stBad := buildSyscallState 5 0 cnodeTarget
+      (AccessRightSet.ofList [.read, .write, .grant])
+      [(cnodeTarget, .cnode cnode), (epId, .endpoint {})] args
+      [(cnodeTarget, .cnode), (epId, .endpoint)]
+      [(1, ({ target := .object epId, rights := AccessRightSet.ofList [.read] } : Capability))]
+    match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stBad with
+    | .error err => expect s!"chain27: {label} refused {toString want}" (err == want)
+    | .ok _ => throw <| IO.userError s!"chain27: {label} unexpectedly succeeded"
+  copyRefusal "copy at destination depth 0" [(2, 2), (3, 0), (4, 0), (5, 0 + 4 * 256)] .rangeError
+  copyRefusal "copy at source depth 65" [(2, 2), (3, 0), (4, 0), (5, 4 + 65 * 256)] .rangeError
+  copyRefusal "copy whose destination depth stops short of the radix"
+    [(2, 2), (3, 0), (4, 0), (5, 3 + 4 * 256)] .depthMismatch
+  copyRefusal "copy into an occupied destination"
+    [(2, 0), (3, 0), (4, 0), (5, 4 + 4 * 256)] .targetSlotOccupied
+  copyRefusal "copy whose source root names an endpoint"
+    [(2, 2), (3, 1), (4, 0), (5, 4 + 4 * 256)] .invalidCapability
+  copyRefusal "copy whose depth word sets a rights bit"
+    [(2, 2), (3, 0), (4, 0), (5, 4 + 4 * 256 + 65536)] .invalidArgument
 
 /-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntry.
 

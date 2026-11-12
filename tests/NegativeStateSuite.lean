@@ -2766,12 +2766,12 @@ private def runWSKGCSpaceChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs shortDecode)
     .invalidMessageInfo
 
-  -- K-G-NEG-02: decodeCSpaceCopyArgs with insufficient msgRegs (< 2) → invalidMessageInfo
+  -- K-G-NEG-02: decodeCSpaceCopyArgs with insufficient msgRegs (< 4) → invalidMessageInfo
   let oneRegDecode : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 2, extraCaps := 0, label := 0 }
+    msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .cspaceCopy
-    msgRegs := #[⟨10⟩]  -- only 1, need 2
+    msgRegs := #[⟨10⟩]  -- only 1, need 4
   }
   expectErr "K-G-NEG-02 cspaceCopy decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs oneRegDecode)

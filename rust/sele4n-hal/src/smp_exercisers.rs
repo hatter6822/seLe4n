@@ -1780,6 +1780,26 @@ const fn cap_address(slot: u64) -> u64 {
     ROOT_CNODE_GUARD | slot
 }
 
+/// The CNode operation word (`sele4n_abi::args::cspace::cnode_op_word`) of a
+/// copy or a move between two of the root task's slots: both resolved at the
+/// root CNode's whole depth, its 59-bit guard and its 5-bit radix.
+#[cfg(feature = "hw_target")]
+const ROOT_SLOT_DEPTHS: u64 = 64 | (64 << 8);
+
+/// A copy's or a move's four words from root slot `src` to root slot `dest`
+/// (seL4's `seL4_CNode_Copy` addressing): the destination index in the invoked
+/// root CNode, the source root (the root task's own CNode capability), the
+/// source index, and both depths.
+#[cfg(feature = "hw_target")]
+const fn root_slot_pair(src: u64, dest: u64) -> [u64; 4] {
+    [
+        cap_address(dest),
+        cap_address(CNODE_SLOT),
+        cap_address(src),
+        ROOT_SLOT_DEPTHS,
+    ]
+}
+
 /// The root task's CNode slots the round trips name.
 #[cfg(feature = "hw_target")]
 const ROOT_TCB_SLOT: u64 = 1;
@@ -2695,13 +2715,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             "cspace-copy",
             CSPACE_COPY,
             CNODE_CAP,
-            [NOTIFICATION_SLOT, COPY_SLOT, 0, 0],
+            root_slot_pair(NOTIFICATION_SLOT, COPY_SLOT),
         ),
         invocation(
             "cspace-move",
             CSPACE_MOVE,
             CNODE_CAP,
-            [COPY_SLOT, MOVE_SLOT, 0, 0],
+            root_slot_pair(COPY_SLOT, MOVE_SLOT),
         ),
         invocation(
             "cspace-delete",
@@ -3114,7 +3134,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             "frame-copy-mapped",
             CSPACE_COPY,
             CNODE_CAP,
-            [FRAME_SLOT, MOVE_SLOT, 0, 0],
+            root_slot_pair(FRAME_SLOT, MOVE_SLOT),
         ),
         invocation(
             "frame-copy-delete",
@@ -3126,7 +3146,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             "frame-copy-for-revoke",
             CSPACE_COPY,
             CNODE_CAP,
-            [FRAME_SLOT, MOVE_SLOT, 0, 0],
+            root_slot_pair(FRAME_SLOT, MOVE_SLOT),
         ),
         invocation(
             "vspace-map-copy",
@@ -8057,7 +8077,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 8] = [
             "irq-control-copy",
             CSPACE_COPY,
             CNODE_CAP,
-            [IRQ_CONTROL_SLOT, FRAME_SLOT, 0, 0],
+            root_slot_pair(IRQ_CONTROL_SLOT, FRAME_SLOT),
         ),
         invocation(
             "irq-control-copy-delete",
@@ -8276,7 +8296,7 @@ const CARVED_CNODE_RETIRE: [RoundTrip; 5] = [
         "owned-cnode-copy",
         CSPACE_COPY,
         CNODE_CAP,
-        [FRAME_SLOT, MOVE_SLOT, 0, 0],
+        root_slot_pair(FRAME_SLOT, MOVE_SLOT),
     ),
     invocation(
         "owned-cnode-revoke",
@@ -8438,13 +8458,13 @@ const LIFECYCLE_SCENARIO: [RoundTrip; 82] = [
         "moved-parent-copy",
         CSPACE_COPY,
         CNODE_CAP,
-        [FRAME_SLOT, COPY_SLOT, 0, 0],
+        root_slot_pair(FRAME_SLOT, COPY_SLOT),
     ),
     invocation(
         "parent-cap-move",
         CSPACE_MOVE,
         CNODE_CAP,
-        [FRAME_SLOT, MINT_SLOT, 0, 0],
+        root_slot_pair(FRAME_SLOT, MINT_SLOT),
     ),
     invocation(
         "moved-parent-child-delete",
@@ -11887,7 +11907,7 @@ fn fault_entries() -> Option<bool> {
         "copy-fault-handler",
         CSPACE_COPY,
         CNODE_CAP,
-        [ENDPOINT_SLOT, FAULT_HANDLER_SLOT, 0, 0],
+        root_slot_pair(ENDPOINT_SLOT, FAULT_HANDLER_SLOT),
     );
     let delete_handler = invocation(
         "delete-fault-handler",
@@ -12988,7 +13008,7 @@ const REMOTE_COPY: RoundTrip = invocation(
     "remote-asid-frame-copy",
     CSPACE_COPY,
     CNODE_CAP,
-    [FRAME_SLOT, MOVE_SLOT, 0, 0],
+    root_slot_pair(FRAME_SLOT, MOVE_SLOT),
 );
 #[cfg(feature = "hw_target")]
 const REMOTE_MAP: RoundTrip = invocation(

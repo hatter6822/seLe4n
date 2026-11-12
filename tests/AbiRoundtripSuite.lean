@@ -256,11 +256,12 @@ private def t06_cspace_mint_rights_rejected : IO Unit := do
     | .ok _ =>
       throw <| IO.userError "expected error, got ok"
 
-/-- AK4-G-T07: cspaceCopy (2-arg) — shortest inline path. -/
+/-- AK4-G-T07: cspaceCopy (4 words, all inline): the destination index, the
+source root, the source index and the packed depths. -/
 private def t07_cspace_copy_minimal : IO Unit := do
   let syscallId := 5  -- cspaceCopy
-  let msgLen := 2
-  let inline : Array UInt64 := #[1, 2]
+  let msgLen := 4
+  let inline : Array UInt64 := #[2, 7, 1, 0x0D05]
   let overflow : Array UInt64 := #[]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
@@ -274,8 +275,11 @@ private def t07_cspace_copy_minimal : IO Unit := do
     | .error e =>
       throw <| IO.userError s!"per-syscall decode failed: {toString e}"
     | .ok args =>
-      expect "srcSlot=1" (args.srcSlot.toNat == 1)
-      expect "dstSlot=2" (args.dstSlot.toNat == 2)
+      expect "destIndex=2" (args.destIndex.toNat == 2)
+      expect "srcRoot=7" (args.srcRoot.toNat == 7)
+      expect "srcIndex=1" (args.srcIndex.toNat == 1)
+      expect "destDepth=5" (args.destDepth == 5)
+      expect "srcDepth=13" (args.srcDepth == 13)
 
 /-- AK4-G-T08: size invariant — `msgRegs.size = inlineCount + overflowCount`
     across all decoded results. -/

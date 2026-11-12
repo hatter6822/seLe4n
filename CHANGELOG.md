@@ -35,6 +35,26 @@ reset/reuse that fills one object's cell with another object's fields.
   (`RHEntry.withValue`) where the compiler had written the slot's key and
   distance into the inserted cell; `insertCellLoop_eq` still holds.
   `RHEntry.withValueOf` is retired.
+- **CNode Copy and Move address their slots as seL4 does.**  Each names its
+  destination by an index and a depth in the invoked CNode, and its source by
+  an index and a depth in a source root, a CNode capability's address in the
+  caller's CSpace (`CNodeOpArgs`).  The four arguments are x2 the destination
+  index, x3 the source root, x4 the source index, and x5 the two depths packed
+  into one word: bits `[0, 8)` and `[8, 16)`, with bits `[16, 21)` for a
+  mint's rights (`CNodeOpWord`).  A copy or a move that sets a bit from 16 up
+  is refused `.invalidArgument`, and the truncation minimum is 4.  The slots
+  resolve in seL4's order (`resolveCNodeOpSlots`).  Both depths are checked
+  against `1 .. 64` first, refused `.rangeError`.  Then the destination is
+  resolved to exactly its depth and must be empty (`.targetSlotOccupied`).
+  The source root must name a CNode (`.invalidCapability`).  Then the source
+  is resolved to exactly its depth.  A lookup that stops with bits still to
+  resolve is `.depthMismatch` (`resolveCNodeOpAddress`).  The compiled arm
+  resolves in continuation form (`resolveCNodeOpSlotsK`,
+  `resolveCNodeOpSlotsK_eq`, `resolveCNodeOpSlots_eq_impl`), so it builds no
+  slot reference.  The Lean suite and `sele4n-abi` each render the word's
+  layout by decoding every bit alone, against `abi_layout.expected`.
+  `mintReplyCap` keeps two slot numbers of the invoked CNode and now has its
+  own decoder (`decodeMintReplyCapArgs`).
 - **What the scan found besides.** The queue unlink's neighbour writes reused
   the removed thread's cell for its neighbour's record, and the slot lookup
   reused the address's cell for its result.  Each now runs an out-of-line fast

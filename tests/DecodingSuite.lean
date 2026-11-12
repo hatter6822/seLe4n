@@ -293,22 +293,35 @@ private def sad002_cspaceMintInsufficient : IO Unit := do
   let result := decodeCSpaceMintArgs stub
   expect "SAD-002a mint insufficient" (!result.isOk)
 
-/-- SAD-003: decodeCSpaceCopyArgs — valid decode with 2 registers. -/
+/-- SAD-003: decodeCSpaceCopyArgs — valid decode with 4 registers, the depths
+packed in the fourth (`CNodeOpWord`); a short message and a depth word with a
+bit past the depths are refused. -/
 private def sad003_cspaceCopy : IO Unit := do
-  let stub := mkStub #[⟨5⟩, ⟨15⟩]
+  let stub := mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨CNodeOpWord.pack 64 3 0⟩]
   let result := decodeCSpaceCopyArgs stub
   expect "SAD-003a copy ok" result.isOk
   match result with
   | .ok args =>
-    expect "SAD-003b srcSlot" (args.srcSlot.toNat == 5)
-    expect "SAD-003c dstSlot" (args.dstSlot.toNat == 15)
+    expect "SAD-003b srcIndex" (args.srcIndex.toNat == 5)
+    expect "SAD-003c destIndex" (args.destIndex.toNat == 15)
+    expect "SAD-003d srcRoot" (args.srcRoot.toNat == 9)
+    expect "SAD-003e depths" (args.destDepth == 64 && args.srcDepth == 3)
   | .error _ => expect "SAD-003 unexpected error" false
+  expect "SAD-003f copy short"
+    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩]) with
+      | .error .truncatedMessage => true | _ => false)
+  expect "SAD-003g copy stray depth bit"
+    (match decodeCSpaceCopyArgs (mkStub #[⟨15⟩, ⟨9⟩, ⟨5⟩, ⟨65536⟩]) with
+      | .error .invalidArgument => true | _ => false)
 
 /-- SAD-004: decodeCSpaceMoveArgs — valid decode. -/
 private def sad004_cspaceMove : IO Unit := do
-  let stub := mkStub #[⟨3⟩, ⟨8⟩]
+  let stub := mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, ⟨CNodeOpWord.pack 2 2 0⟩]
   let result := decodeCSpaceMoveArgs stub
   expect "SAD-004a move ok" result.isOk
+  expect "SAD-004b move stray rights bit"
+    (match decodeCSpaceMoveArgs (mkStub #[⟨3⟩, ⟨1⟩, ⟨8⟩, ⟨CNodeOpWord.pack 2 2 1⟩]) with
+      | .error .invalidArgument => true | _ => false)
 
 /-- SAD-005: decodeCSpaceDeleteArgs — valid and insufficient. -/
 private def sad005_cspaceDelete : IO Unit := do

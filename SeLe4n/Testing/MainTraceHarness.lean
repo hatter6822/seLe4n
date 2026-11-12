@@ -1385,18 +1385,28 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       let hasDst := (SeLe4n.Model.SystemState.lookupSlotCap stMinted ksdDstSlot).isSome
       IO.println s!"[KSD-001] cspaceMint via decoded regs destination populated: {hasDst}"
 
-  -- KSD-002: CSpace copy via decoded registers — success path
+  -- KSD-002: CSpace copy via decoded registers — success path.  The two
+  -- indices name slots 0 and 1 of the CNode, each at the CNode's whole width
+  -- (seL4's index-and-depth addressing, `resolveCNodeOpSlot`).
+  let ksdWidth : Nat := match stKsd.getCNode? ksdCnodeId with
+    | some cn => cn.guardWidth + cn.radixWidth
+    | none => 0
   let copyDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 2, extraCaps := 0, label := 0 }
+    msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .cspaceCopy
-    msgRegs := #[⟨0⟩, ⟨1⟩]  -- srcSlot=0, dstSlot=1
+    -- destIndex=1, srcRoot, srcIndex=0, both depths the CNode's width
+    msgRegs := #[⟨1⟩, ⟨0⟩, ⟨0⟩,
+      ⟨SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack ksdWidth ksdWidth 0⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs copyDecoded with
   | .error e => IO.println s!"[KSD-002] cspaceCopy decode error: {reprStr e}"
   | .ok copyArgs =>
-    let copySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := ksdCnodeId, slot := copyArgs.srcSlot }
-    let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := ksdCnodeId, slot := copyArgs.dstSlot }
+    match SeLe4n.Kernel.resolveCNodeOpSlot ksdCnodeId copyArgs.srcIndex copyArgs.srcDepth stKsd,
+      SeLe4n.Kernel.resolveCNodeOpSlot ksdCnodeId copyArgs.destIndex copyArgs.destDepth stKsd with
+    | .error e, _ | _, .error e =>
+      IO.println s!"[KSD-002] cspaceCopy slot resolution error: {reprStr e}"
+    | .ok copySrc, .ok copyDst =>
     match SeLe4n.Kernel.cspaceCopy copySrc copyDst stKsd with
     | .error e => IO.println s!"[KSD-002] cspaceCopy dispatch error: {reprStr e}"
     | .ok (_, stCopied) =>
@@ -1653,19 +1663,23 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
       |>.withLifecycleObjectType moveCnId .cnode
       |>.buildChecked)
 
-  -- Decode move args: srcSlot=0, dstSlot=2
+  -- Decode move args: srcIndex=0, destIndex=2, each at the CNode's width (2)
   let moveDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 2, extraCaps := 0, label := 0 }
+    msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .cspaceMove
-    msgRegs := #[⟨0⟩, ⟨2⟩, ⟨0⟩, ⟨0⟩]
+    msgRegs := #[⟨2⟩, ⟨0⟩, ⟨0⟩,
+      ⟨SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.pack 2 2 0⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs moveDecoded with
   | .error e => IO.println s!"[MOV-001] cspaceMove decode error: {reprStr e}"
   | .ok moveArgs =>
-    let decodedSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := moveArgs.srcSlot }
-    let decodedDst : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := moveArgs.dstSlot }
-    IO.println s!"[MOV-001] cspaceMove decode ok: src=slot{moveArgs.srcSlot.toNat} dst=slot{moveArgs.dstSlot.toNat}"
+    match SeLe4n.Kernel.resolveCNodeOpSlot moveCnId moveArgs.srcIndex moveArgs.srcDepth stMove,
+      SeLe4n.Kernel.resolveCNodeOpSlot moveCnId moveArgs.destIndex moveArgs.destDepth stMove with
+    | .error e, _ | _, .error e =>
+      IO.println s!"[MOV-001] cspaceMove slot resolution error: {reprStr e}"
+    | .ok decodedSrc, .ok decodedDst =>
+    IO.println s!"[MOV-001] cspaceMove decode ok: src=slot{decodedSrc.slot.toNat} dst=slot{decodedDst.slot.toNat}"
 
     match SeLe4n.Kernel.cspaceMove decodedSrc decodedDst stMove with
     | .error e => IO.println s!"[MOV-002] cspaceMove dispatch error: {reprStr e}"

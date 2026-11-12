@@ -69,9 +69,10 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-            cspaceCopyChecked ctx src dst st
+            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+                args.srcIndex args.srcDepth st with
+            | .error e => .error e
+            | .ok (src, dst) => cspaceCopyChecked ctx src dst st
     | _ => .error .invalidCapability
   | .cspaceMove =>
     match cap.target with
@@ -80,9 +81,10 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-            cspaceMoveChecked ctx src dst st
+            match resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+                args.srcIndex args.srcDepth st with
+            | .error e => .error e
+            | .ok (src, dst) => cspaceMoveChecked ctx src dst st
     | _ => .error .invalidCapability
   | .cspaceDelete =>
     match cap.target with
@@ -107,7 +109,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | .mintReplyCap =>
     match cap.target with
     | .object cnodeId =>
-        match decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
+        match decodeMintReplyCapArgsBy (msgRegOfFile layout regs) with
         | .error e => .error e
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
@@ -431,6 +433,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hMint := decodeCSpaceMintArgs_eq_by layout regs decoded hRegs
   have hCopy := decodeCSpaceCopyArgs_eq_by layout regs decoded hRegs
   have hMove := decodeCSpaceMoveArgs_eq_by layout regs decoded hRegs
+  have hReply := decodeMintReplyCapArgs_eq_by layout regs decoded hRegs
   have hDelete := decodeCSpaceDeleteArgs_eq_by layout regs decoded hRegs
   have hRetype := decodeUntypedRetypeArgs_eq_by layout regs decoded hRegs
   have hMap := decodeVSpaceMapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
@@ -453,7 +456,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
     simp only [truncationMinimum] at hLen <;>
     cases target <;>
     simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hLen,
-      hMint, hCopy, hMove, hDelete, hRetype, hMap, hUnmap,
+      hMint, hCopy, hMove, hReply, hDelete, hRetype, hMap, hUnmap,
       hScBind, hNtfn, hPrio, hMcp, hIpcBuf, hAff, hFault,
       hSpace, hPt, hIrqGet, hIrqNtfn, decodeVSpaceUnifyInstructionArgs,
       dispatchCapabilityOnlyChecked]
@@ -836,13 +839,18 @@ refusal is read where it is, never rebuilt. -/
       match decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-        let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-        RefusalCarrying.ofChecked
-          (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
-            cspaceMoveAdmittedAt cnodeId args.srcSlot args.dstSlot st)
-          (fun st => cspaceMovePerformAt cnodeId args.srcSlot args.dstSlot st)
-          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+        resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
+          args.srcIndex args.srcDepth st
+          (fun _ =>
+            match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
+            | .error e => .error (e, st)
+            | .ok r => .ok r)
+          (fun srcCNode srcSlot dstCNode dstSlot =>
+            RefusalCarrying.ofChecked
+              (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
+                cspaceMoveAdmittedAt srcCNode srcSlot dstCNode dstSlot st)
+              (fun st => cspaceMovePerformAt srcCNode srcSlot dstCNode dstSlot st)
+              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .cspaceDelete =>
     match cap.target with
@@ -869,7 +877,7 @@ refusal is read where it is, never rebuilt. -/
   | .mintReplyCap =>
     match cap.target with
     | .object cnodeId =>
-      match decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
+      match decodeMintReplyCapArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
         let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
@@ -884,13 +892,18 @@ refusal is read where it is, never rebuilt. -/
       match decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-        let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-        RefusalCarrying.ofChecked
-          (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
-            cspaceCopyAdmittedAt cnodeId args.srcSlot args.dstSlot st)
-          (fun st => cspaceCopyPerformAt cnodeId args.srcSlot args.dstSlot st)
-          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+        resolveCNodeOpSlotsK tid cnodeId args.destIndex args.destDepth args.srcRoot
+          args.srcIndex args.srcDepth st
+          (fun _ =>
+            match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
+            | .error e => .error (e, st)
+            | .ok r => .ok r)
+          (fun srcCNode srcSlot dstCNode dstSlot =>
+            RefusalCarrying.ofChecked
+              (securityFlowsTo (ctx.objectLabelOf srcCNode) (ctx.objectLabelOf dstCNode) &&
+                cspaceCopyAdmittedAt srcCNode srcSlot dstCNode dstSlot st)
+              (fun st => cspaceCopyPerformAt srcCNode srcSlot dstCNode dstSlot st)
+              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .vspaceMap =>
     match cap.target with
@@ -1467,13 +1480,23 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        dsimp only [cspaceMoveAdmittedAt, cspaceMovePerformAt]
-        apply RefusalCarrying.ofChecked_eq
-        intro hA
-        simp only [Bool.and_eq_true] at hA
-        simp only [dispatchInvocationBy, hD, cspaceMoveChecked, hA.1, ↓reduceIte,
-          cnodeInvoked_of_moveAdmitted hA.2, Bool.not_true, Bool.false_eq_true,
-          cspaceMove_of_admitted hA.2]
+        dsimp only
+        rw [resolveCNodeOpSlotsK_eq]
+        cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+            args.srcIndex args.srcDepth st with
+        | error e =>
+          simp only [RefusalCarrying.ofKernel]
+          generalize dispatchInvocationBy _ _ _ _ _ _ _ _ st = r
+          cases r <;> rfl
+        | ok p =>
+          obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
+          dsimp only [cspaceMoveAdmittedAt, cspaceMovePerformAt]
+          apply RefusalCarrying.ofChecked_eq
+          intro hA
+          simp only [Bool.and_eq_true] at hA
+          simp only [dispatchInvocationBy, hD, cspaceMoveChecked, hA.1, ↓reduceIte, cnodeInvoked,
+            cnodeInvoked_of_resolveCNodeOpSlots_ok hR, hR, Bool.not_true, Bool.false_eq_true,
+            cspaceMove_of_admitted hA.2]
     all_goals rfl
   case cspaceDelete =>
     cases target
@@ -1505,7 +1528,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     cases target
     case object cnodeId =>
       dsimp only
-      cases hD : decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
+      cases hD : decodeMintReplyCapArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
         dsimp only [mintReplyCapAdmittedAt, mintReplyCapPerformAt]
@@ -1521,13 +1544,23 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        dsimp only [cspaceCopyAdmittedAt, cspaceCopyPerformAt]
-        apply RefusalCarrying.ofChecked_eq
-        intro hA
-        simp only [Bool.and_eq_true] at hA
-        simp only [dispatchInvocationBy, hD, cspaceCopyChecked, hA.1, ↓reduceIte,
-          cnodeInvoked_of_copyAdmitted hA.2, Bool.not_true, Bool.false_eq_true,
-          cspaceCopy_of_admitted hA.2]
+        dsimp only
+        rw [resolveCNodeOpSlotsK_eq]
+        cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth args.srcRoot
+            args.srcIndex args.srcDepth st with
+        | error e =>
+          simp only [RefusalCarrying.ofKernel]
+          generalize dispatchInvocationBy _ _ _ _ _ _ _ _ st = r
+          cases r <;> rfl
+        | ok p =>
+          obtain ⟨⟨sc, ss⟩, ⟨dc, ds⟩⟩ := p
+          dsimp only [cspaceCopyAdmittedAt, cspaceCopyPerformAt]
+          apply RefusalCarrying.ofChecked_eq
+          intro hA
+          simp only [Bool.and_eq_true] at hA
+          simp only [dispatchInvocationBy, hD, cspaceCopyChecked, hA.1, ↓reduceIte, cnodeInvoked,
+            cnodeInvoked_of_resolveCNodeOpSlots_ok hR, hR, Bool.not_true, Bool.false_eq_true,
+            cspaceCopy_of_admitted hA.2]
     all_goals rfl
   case vspaceMap =>
     cases target

@@ -444,6 +444,86 @@ theorem resolveCNodeOpAddress_congr_getCNode?
       | rfl
       | (refine ih _ ?_ _; omega)
 
+/-- A CNode operation's depth is one seL4's `rangeCheck` admits: `1 .. 64`. -/
+@[inline] def cnodeOpDepthInRange (depth : Nat) : Bool := 1 ≤ depth && depth ≤ 64
+
+/-- A CNode operation's walk that succeeds starts at a CNode. -/
+theorem cnodeInvoked_of_resolveCNodeOpAddress_ok {rootId : SeLe4n.ObjId} {addr : SeLe4n.CPtr}
+    {bits : Nat} {st : SystemState} {ref : SlotRef}
+    (h : resolveCNodeOpAddress rootId addr bits st = .ok ref) :
+    (st.getCNode? rootId).isSome = true := by
+  rw [resolveCNodeOpAddress] at h
+  split at h
+  · cases h
+  · cases hC : st.getCNode? rootId with
+    | none => rw [hC] at h; cases h
+    | some _ => rfl
+
+/-- **seL4's source root** for a CNode Copy, Mint or Move: `srcRoot` names a
+capability in the caller's CSpace, looked up at the caller's root depth, and
+that capability must name a CNode (`.invalidCapability` otherwise, as seL4's
+`decodeCNodeInvocation` refuses a source root that is not a CNode capability).
+A lookup that fails answers the resolver's own refusal. -/
+def resolveCNodeOpSrcRoot (callerTid : SeLe4n.ThreadId) (srcRoot : SeLe4n.CPtr)
+    (st : SystemState) : Except KernelError SeLe4n.ObjId :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some tcb =>
+    match st.getCNode? tcb.cspaceRoot with
+    | none => .error .invalidCapability
+    | some rootCn =>
+      match resolveCapAddress tcb.cspaceRoot srcRoot rootCn.depth st with
+      | .error e => .error e
+      | .ok ref =>
+        match SystemState.lookupSlotCap st ref with
+        | some cap =>
+          match cap.target with
+          | .object id => if (st.getCNode? id).isSome then .ok id else .error .invalidCapability
+          | _ => .error .invalidCapability
+        | none => .error .invalidCapability
+
+/-- **The two slots of a CNode Copy, Mint or Move** (seL4's
+`decodeCNodeInvocation`): each depth is range-checked, the destination's then
+the source's, before any lookup (`.rangeError`); the destination is resolved
+exactly from the invoked CNode `destRoot` and must be empty
+(`.targetSlotOccupied`, seL4's `ensureEmptySlot`); the source root is resolved
+in the caller's CSpace (`resolveCNodeOpSrcRoot`) and the source resolved
+exactly from it.  The answer is the source and then the destination. -/
+def resolveCNodeOpSlots (callerTid : SeLe4n.ThreadId) (destRoot : SeLe4n.ObjId)
+    (destIndex : SeLe4n.CPtr) (destDepth : Nat) (srcRoot srcIndex : SeLe4n.CPtr)
+    (srcDepth : Nat) (st : SystemState) : Except KernelError (CSpaceAddr × CSpaceAddr) :=
+  if !cnodeOpDepthInRange destDepth then .error .rangeError
+  else if !cnodeOpDepthInRange srcDepth then .error .rangeError
+  else
+    match resolveCNodeOpAddress destRoot destIndex destDepth st with
+    | .error e => .error e
+    | .ok dst =>
+      if (SystemState.lookupSlotCap st dst).isSome then .error .targetSlotOccupied
+      else
+        match resolveCNodeOpSrcRoot callerTid srcRoot st with
+        | .error e => .error e
+        | .ok srcRootId =>
+          match resolveCNodeOpAddress srcRootId srcIndex srcDepth st with
+          | .error e => .error e
+          | .ok src => .ok (src, dst)
+
+/-- Resolved slots name a destination in a CNode the invoked root reaches: the
+invoked root is a CNode. -/
+theorem cnodeInvoked_of_resolveCNodeOpSlots_ok {callerTid : SeLe4n.ThreadId}
+    {destRoot : SeLe4n.ObjId} {destIndex srcRoot srcIndex : SeLe4n.CPtr}
+    {destDepth srcDepth : Nat} {st : SystemState} {p : CSpaceAddr × CSpaceAddr}
+    (h : resolveCNodeOpSlots callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+      = .ok p) :
+    (st.getCNode? destRoot).isSome = true := by
+  unfold resolveCNodeOpSlots at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  cases hD : resolveCNodeOpAddress destRoot destIndex destDepth st with
+  | error e => rw [hD] at h; cases h
+  | ok dst => exact cnodeInvoked_of_resolveCNodeOpAddress_ok hD
+
 /-- …and `lookupSlotCap` reads only the slot's CNode. -/
 theorem lookupSlotCap_congr_getCNode?
     (st₁ st₂ : SystemState) (hCNode : ∀ id, st₁.getCNode? id = st₂.getCNode? id)
@@ -583,6 +663,183 @@ theorem resolveCapAddressKUnrolled_eq {α : Type} (rootId : SeLe4n.ObjId) (addr 
       by_cases hCons : cn.guardWidth + cn.radixWidth = 0
       · simp only [hCons, ↓reduceIte, ↓reduceDIte]
       · simp only [hCons, ↓reduceIte, ↓reduceDIte]
+
+/-- `resolveCNodeOpAddress` in continuation form, its first level unrolled as
+`resolveCapAddressKUnrolled`'s is: a root that resolves the whole index (one
+level) reaches `onOk` in the caller's own body, so neither the `Except` nor the
+`SlotRef` is built; a deeper walk matches the specification's result
+(`resolveCNodeOpAddressK_eq`). -/
+@[inline] def resolveCNodeOpAddressK {α : Type} (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (bits : Nat) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  if bits = 0 then onErr .illegalState
+  else
+    match st.getCNode? rootId with
+    | some cn =>
+      if cn.guardWidth + cn.radixWidth = 0 then onErr .illegalState
+      else if bits < cn.guardWidth + cn.radixWidth then onErr .depthMismatch
+      else if addr.guardBits (bits - (cn.guardWidth + cn.radixWidth)) cn.radixWidth cn.guardWidth
+          ≠ cn.guardValue then onErr .invalidCapability
+      else if bits - (cn.guardWidth + cn.radixWidth) = 0 then
+        onOk rootId (SeLe4n.Slot.ofNat
+          (addr.slotBits (bits - (cn.guardWidth + cn.radixWidth)) cn.radixWidth))
+      else
+        match resolveCNodeOpAddress rootId addr bits st with
+        | .error e => onErr e
+        | .ok ref => onOk ref.cnode ref.slot
+    | none => onErr .objectNotFound
+
+theorem resolveCNodeOpAddressK_eq {α : Type} (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (bits : Nat) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.Slot → α) :
+    resolveCNodeOpAddressK rootId addr bits st onErr onOk =
+      match resolveCNodeOpAddress rootId addr bits st with
+      | .error e => onErr e
+      | .ok ref => onOk ref.cnode ref.slot := by
+  unfold resolveCNodeOpAddressK
+  by_cases hZ : bits = 0
+  · rw [resolveCNodeOpAddress]; simp only [hZ, ↓reduceIte, ↓reduceDIte]
+  · simp only [hZ, ↓reduceIte]
+    cases hC : st.getCNode? rootId with
+    | none => rw [resolveCNodeOpAddress]; simp only [hZ, hC, ↓reduceDIte]
+    | some cn =>
+      simp only []
+      by_cases hCons : cn.guardWidth + cn.radixWidth = 0
+      · rw [resolveCNodeOpAddress]; simp only [hZ, hC, hCons, ↓reduceIte, ↓reduceDIte]
+      · simp only [hCons, ↓reduceIte]
+        by_cases hL : bits < cn.guardWidth + cn.radixWidth
+        · rw [resolveCNodeOpAddress]; simp only [hZ, hC, hCons, hL, ↓reduceIte, ↓reduceDIte]
+        · simp only [hL, ↓reduceIte]
+          by_cases hG : addr.guardBits (bits - (cn.guardWidth + cn.radixWidth)) cn.radixWidth
+              cn.guardWidth ≠ cn.guardValue
+          · rw [if_pos hG, resolveCNodeOpAddress]
+            simp only [hZ, hC, hCons, hL, ↓reduceIte, ↓reduceDIte]
+            rw [if_pos hG]
+          · rw [if_neg hG]
+            by_cases hLeaf : bits - (cn.guardWidth + cn.radixWidth) = 0
+            · rw [if_pos hLeaf, resolveCNodeOpAddress]
+              simp only [hZ, hC, hCons, hL, ↓reduceIte, ↓reduceDIte]
+              rw [if_neg hG, if_pos hLeaf]
+            · rw [if_neg hLeaf]
+
+/-- `resolveCNodeOpSrcRoot` in continuation form: the source root's slot is
+resolved through `resolveCapAddressKUnrolled` and handed on as the CNode it
+names, so no slot reference or `Except` is built (`resolveCNodeOpSrcRootK_eq`). -/
+@[inline] def resolveCNodeOpSrcRootK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcRoot : SeLe4n.CPtr) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → α) : α :=
+  match st.getTcb? callerTid with
+  | none => onErr .objectNotFound
+  | some tcb =>
+    match st.getCNode? tcb.cspaceRoot with
+    | none => onErr .invalidCapability
+    | some rootCn =>
+      resolveCapAddressKUnrolled tcb.cspaceRoot srcRoot rootCn.depth st onErr
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | some cap =>
+            match cap.target with
+            | .object id => if (st.getCNode? id).isSome then onOk id else onErr .invalidCapability
+            | _ => onErr .invalidCapability
+          | none => onErr .invalidCapability)
+
+theorem resolveCNodeOpSrcRootK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcRoot : SeLe4n.CPtr) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → α) :
+    resolveCNodeOpSrcRootK callerTid srcRoot st onErr onOk =
+      match resolveCNodeOpSrcRoot callerTid srcRoot st with
+      | .error e => onErr e
+      | .ok id => onOk id := by
+  unfold resolveCNodeOpSrcRootK resolveCNodeOpSrcRoot
+  cases st.getTcb? callerTid with
+  | none => rfl
+  | some tcb =>
+    simp only []
+    cases st.getCNode? tcb.cspaceRoot with
+    | none => rfl
+    | some rootCn =>
+      simp only [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+      cases resolveCapAddress tcb.cspaceRoot srcRoot rootCn.depth st with
+      | error e => rfl
+      | ok ref =>
+        simp only []
+        cases SystemState.lookupSlotCap st ref with
+        | none => rfl
+        | some cap =>
+          simp only []
+          cases cap.target with
+          | object id => simp only []; split <;> rfl
+          | _ => rfl
+
+/-- `resolveCNodeOpSlots` in continuation form: the source's and the
+destination's CNode and slot go to `onOk`, so no address pair is built
+(`resolveCNodeOpSlotsK_eq`). -/
+@[inline] def resolveCNodeOpSlotsK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (destRoot : SeLe4n.ObjId) (destIndex : SeLe4n.CPtr) (destDepth : Nat)
+    (srcRoot srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  if !cnodeOpDepthInRange destDepth then onErr .rangeError
+  else if !cnodeOpDepthInRange srcDepth then onErr .rangeError
+  else
+    resolveCNodeOpAddressK destRoot destIndex destDepth st onErr fun dCn dSlot =>
+      if (SystemState.lookupSlotCap st { cnode := dCn, slot := dSlot }).isSome then
+        onErr .targetSlotOccupied
+      else
+        resolveCNodeOpSrcRootK callerTid srcRoot st onErr fun srcRootId =>
+          resolveCNodeOpAddressK srcRootId srcIndex srcDepth st onErr fun sCn sSlot =>
+            onOk sCn sSlot dCn dSlot
+
+theorem resolveCNodeOpSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (destRoot : SeLe4n.ObjId) (destIndex : SeLe4n.CPtr) (destDepth : Nat)
+    (srcRoot srcIndex : SeLe4n.CPtr) (srcDepth : Nat) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
+    resolveCNodeOpSlotsK callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+        onErr onOk =
+      match resolveCNodeOpSlots callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+      with
+      | .error e => onErr e
+      | .ok (src, dst) => onOk src.cnode src.slot dst.cnode dst.slot := by
+  unfold resolveCNodeOpSlotsK resolveCNodeOpSlots
+  split
+  · rfl
+  split
+  · rfl
+  rw [resolveCNodeOpAddressK_eq]
+  cases resolveCNodeOpAddress destRoot destIndex destDepth st with
+  | error e => rfl
+  | ok dst =>
+    simp only []
+    split
+    · rfl
+    rw [resolveCNodeOpSrcRootK_eq]
+    cases resolveCNodeOpSrcRoot callerTid srcRoot st with
+    | error e => rfl
+    | ok rid =>
+      simp only [resolveCNodeOpAddressK_eq]
+      cases resolveCNodeOpAddress rid srcIndex srcDepth st with
+      | error e => rfl
+      | ok src => rfl
+
+/-- `resolveCNodeOpSlots` as compiled: its continuation form, the two addresses
+built only at the end, from the four words the walks hand on, so no result of a
+walk is taken apart into the answer's cells (`resolveCNodeOpSlots_eq_impl`). -/
+def resolveCNodeOpSlotsImpl (callerTid : SeLe4n.ThreadId) (destRoot : SeLe4n.ObjId)
+    (destIndex : SeLe4n.CPtr) (destDepth : Nat) (srcRoot srcIndex : SeLe4n.CPtr)
+    (srcDepth : Nat) (st : SystemState) : Except KernelError (CSpaceAddr × CSpaceAddr) :=
+  resolveCNodeOpSlotsK callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+    .error (fun srcCNode srcSlot dstCNode dstSlot =>
+      .ok (⟨srcCNode, srcSlot⟩, ⟨dstCNode, dstSlot⟩))
+
+@[csimp] theorem resolveCNodeOpSlots_eq_impl :
+    @resolveCNodeOpSlots = @resolveCNodeOpSlotsImpl := by
+  funext callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st
+  unfold resolveCNodeOpSlotsImpl
+  rw [resolveCNodeOpSlotsK_eq]
+  cases resolveCNodeOpSlots callerTid destRoot destIndex destDepth srcRoot srcIndex srcDepth st with
+  | error e => rfl
+  | ok p => rfl
 
 /-- WS-H13/H-01 (deliverable 9): `resolveCapAddress` returns `.error .illegalState`
 when called with zero bits remaining. -/
@@ -2688,25 +2945,29 @@ def mintReplyCapPerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
     (st : SystemState) : SystemState :=
   mintReplyCapPerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
 
-/-- `cspaceCopyAdmitted` on slots `srcSlot` and `dstSlot` of `cnode`. -/
-def cspaceCopyAdmittedAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
-    (st : SystemState) : Bool :=
-  cspaceCopyAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
+/-- `cspaceCopyAdmitted` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`. -/
+def cspaceCopyAdmittedAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (st : SystemState) : Bool :=
+  cspaceCopyAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ st
 
-/-- `cspaceCopyPerform` on slots `srcSlot` and `dstSlot` of `cnode`. -/
-def cspaceCopyPerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
-    (st : SystemState) : SystemState :=
-  cspaceCopyPerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
+/-- `cspaceCopyPerform` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`. -/
+def cspaceCopyPerformAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (st : SystemState) : SystemState :=
+  cspaceCopyPerform ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ st
 
-/-- `cspaceMoveAdmitted` on slots `srcSlot` and `dstSlot` of `cnode`. -/
-def cspaceMoveAdmittedAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
-    (st : SystemState) : Bool :=
-  cspaceMoveAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
+/-- `cspaceMoveAdmitted` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`. -/
+def cspaceMoveAdmittedAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (st : SystemState) : Bool :=
+  cspaceMoveAdmitted ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ st
 
-/-- `cspaceMovePerform` on slots `srcSlot` and `dstSlot` of `cnode`. -/
-def cspaceMovePerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
-    (st : SystemState) : SystemState :=
-  cspaceMovePerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
+/-- `cspaceMovePerform` on slot `srcSlot` of `srcCNode` and slot `dstSlot` of
+`dstCNode`. -/
+def cspaceMovePerformAt (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (dstCNode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (st : SystemState) : SystemState :=
+  cspaceMovePerform ⟨srcCNode, srcSlot⟩ ⟨dstCNode, dstSlot⟩ st
 
 /-! Each install's checks admit only a destination in a CNode, so an admitted
 install's CNode invocation passes the CNode guard (`cnodeInvoked`). -/

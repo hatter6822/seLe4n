@@ -224,7 +224,8 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
     have hL := fun k => @requireMessageLength_of_lt decoded k <;>
     cases target <;>
     simp only [hS, truncationTarget, ↓reduceIte, Bool.false_eq_true, Option.some.injEq,
-      decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs, decodeCSpaceDeleteArgs,
+      decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs, decodeMintReplyCapArgs,
+      decodeCSpaceDeleteArgs,
       decodeUntypedRetypeArgs, decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
       decodeVSpaceUnifyInstructionArgs, decodeServiceRegisterArgs,
       decodeSchedContextConfigureArgsChecked, decodeSchedContextConfigureArgs,

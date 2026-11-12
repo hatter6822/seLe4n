@@ -908,6 +908,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               simp only [hDec] at hStep
               split at hStep
               · cases hStep
+              split at hStep
+              · cases hStep
               exact cspaceCopy_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
         all_goals try cases hStep
       case cspaceMove =>
@@ -917,6 +919,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              split at hStep
+              · cases hStep
               split at hStep
               · cases hStep
               exact cspaceMove_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
@@ -1304,12 +1308,18 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               split at hStep
               · cases hStep
               rename_i hG
+              cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth
+                  args.srcRoot args.srcIndex args.srcDepth st with
+              | error e => simp only [hR] at hStep; cases hStep
+              | ok p =>
+              obtain ⟨src, dst⟩ := p
+              simp only [hR] at hStep
               unfold cspaceCopyChecked at hStep
               simp only [] at hStep
               split at hStep
               · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
-                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG]
+                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG, hR]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hU
@@ -1325,12 +1335,18 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               split at hStep
               · cases hStep
               rename_i hG
+              cases hR : resolveCNodeOpSlots tid cnodeId args.destIndex args.destDepth
+                  args.srcRoot args.srcIndex args.srcDepth st with
+              | error e => simp only [hR] at hStep; cases hStep
+              | ok p =>
+              obtain ⟨src, dst⟩ := p
+              simp only [hR] at hStep
               unfold cspaceMoveChecked at hStep
               simp only [] at hStep
               split at hStep
               · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
-                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG]
+                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG, hR]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hU

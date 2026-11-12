@@ -139,21 +139,26 @@ fn xval_005_cspace_mint() {
 #[test]
 fn xval_006_cspace_copy() {
     let args = cspace::CSpaceCopyArgs {
-        src_slot: Slot::from(5u64),
-        dst_slot: Slot::from(15u64),
+        dest_index: CPtr::from(15u64),
+        src_root: CPtr::from(3u64),
+        src_index: CPtr::from(5u64),
+        dest_depth: 64,
+        src_depth: 8,
     };
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(600u64),
-        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
-        msg_regs: [encoded[0], encoded[1], 0, 0],
+        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
+        msg_regs: encoded,
         syscall_id: SyscallId::CSpaceCopy,
     };
     verify_regs(
         &req,
         &[
-            (2, 5, "x2=srcSlot"),
-            (3, 15, "x3=dstSlot"),
+            (2, 15, "x2=destIndex"),
+            (3, 3, "x3=srcRoot"),
+            (4, 5, "x4=srcIndex"),
+            (5, 64 | (8 << 8), "x5=destDepth|srcDepth<<8"),
             (6, 5, "x7=SyscallId::CSpaceCopy"),
         ],
     );
@@ -163,21 +168,26 @@ fn xval_006_cspace_copy() {
 #[test]
 fn xval_007_cspace_move() {
     let args = cspace::CSpaceMoveArgs {
-        src_slot: Slot::from(7u64),
-        dst_slot: Slot::from(14u64),
+        dest_index: CPtr::from(14u64),
+        src_root: CPtr::from(3u64),
+        src_index: CPtr::from(7u64),
+        dest_depth: 64,
+        src_depth: 8,
     };
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(700u64),
-        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
-        msg_regs: [encoded[0], encoded[1], 0, 0],
+        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
+        msg_regs: encoded,
         syscall_id: SyscallId::CSpaceMove,
     };
     verify_regs(
         &req,
         &[
-            (2, 7, "x2=srcSlot"),
-            (3, 14, "x3=dstSlot"),
+            (2, 14, "x2=destIndex"),
+            (3, 3, "x3=srcRoot"),
+            (4, 7, "x4=srcIndex"),
+            (5, 64 | (8 << 8), "x5=destDepth|srcDepth<<8"),
             (6, 6, "x7=SyscallId::CSpaceMove"),
         ],
     );
@@ -607,8 +617,11 @@ fn cspace_args_roundtrip_all() {
     );
 
     let copy = cspace::CSpaceCopyArgs {
-        src_slot: Slot::from(3u64),
-        dst_slot: Slot::from(4u64),
+        dest_index: CPtr::from(4u64),
+        src_root: CPtr::from(1u64),
+        src_index: CPtr::from(3u64),
+        dest_depth: 64,
+        src_depth: 64,
     };
     assert_eq!(
         cspace::CSpaceCopyArgs::decode(&copy.encode()).unwrap(),
@@ -616,8 +629,11 @@ fn cspace_args_roundtrip_all() {
     );
 
     let mv = cspace::CSpaceMoveArgs {
-        src_slot: Slot::from(5u64),
-        dst_slot: Slot::from(6u64),
+        dest_index: CPtr::from(6u64),
+        src_root: CPtr::from(1u64),
+        src_index: CPtr::from(5u64),
+        dest_depth: 1,
+        src_depth: 2,
     };
     assert_eq!(cspace::CSpaceMoveArgs::decode(&mv.encode()).unwrap(), mv);
 
@@ -2435,6 +2451,26 @@ fn abi_layout_matches_the_lean_table() {
     rendered.push_str(&std::format!("maxLabel {}\n", message_info::MAX_LABEL));
     rendered.push_str(&std::format!("errorLabelBase {ERROR_LABEL_BASE}\n"));
     rendered.push_str(&std::format!("syscallAbiVersion {SYSCALL_ABI_VERSION}\n"));
+    // The CNode operation word, measured as the Lean side measures it: a
+    // copy's decode of `2^j` alone names a depth; a bit it refuses is a
+    // mint's rights if a mint's word admits it, and reserved otherwise.
+    for j in 0..64 {
+        let word = 1u64 << j;
+        let owner = match cspace::CSpaceCopyArgs::decode(&[0, 0, 0, word]) {
+            Ok(a) if a.dest_depth != 0 && a.src_depth == 0 => "destDepth",
+            Ok(a) if a.src_depth != 0 && a.dest_depth == 0 => "srcDepth",
+            Ok(_) => "inconsistent",
+            Err(_) if cspace::cnode_op_word::mint_fits(word) => {
+                if cspace::cnode_op_word::rights(word) != 0 {
+                    "rights"
+                } else {
+                    "inconsistent"
+                }
+            }
+            Err(_) => "reserved",
+        };
+        rendered.push_str(&std::format!("cnodeOpBit {j} {owner}\n"));
+    }
     assert_eq!(
         rendered, LEAN_TABLE,
         "the Rust MessageInfo layout or ABI bounds disagree with the Lean table; \
@@ -2619,9 +2655,16 @@ fn wrappers_name_their_syscalls() {
         Badge::from(1u64),
     );
     assert_names("cspace_mint", SyscallId::CSpaceMint);
-    let _ = sele4n_sys::cspace::cspace_copy(cap, Slot::from(0u64), Slot::from(1u64));
+    let slots = cspace::CNodeOpArgs {
+        dest_index: CPtr::from(1u64),
+        src_root: cap,
+        src_index: CPtr::from(0u64),
+        dest_depth: 64,
+        src_depth: 64,
+    };
+    let _ = sele4n_sys::cspace::cspace_copy(cap, slots);
     assert_names("cspace_copy", SyscallId::CSpaceCopy);
-    let _ = sele4n_sys::cspace::cspace_move(cap, Slot::from(0u64), Slot::from(1u64));
+    let _ = sele4n_sys::cspace::cspace_move(cap, slots);
     assert_names("cspace_move", SyscallId::CSpaceMove);
     let _ = sele4n_sys::cspace::cspace_delete(cap, Slot::from(0u64));
     assert_names("cspace_delete", SyscallId::CSpaceDelete);

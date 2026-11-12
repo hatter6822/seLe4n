@@ -1285,6 +1285,24 @@ private def abiRegisterLines : List String :=
     ++ (l.msgRegs.toList.zipIdx.map fun (r, i) => s!"register msgReg{i} x{r.val}")
     ++ [s!"register syscallNum x{l.syscallNumReg.val}"]
 
+/-- Which field of the CNode operation word owns bit `j`, decided by decoding
+`2^j` alone: a copy's or a move's decode (`cnodeOpArgsOfWords`) names a depth,
+and a bit it refuses is a mint's rights if a mint's word admits it, `reserved`
+otherwise. -/
+private def cnodeOpBitOwner (j : Nat) : String :=
+  let w := 2 ^ j
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.cnodeOpArgsOfWords
+      (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) (SeLe4n.CPtr.ofNat 0) w with
+  | .ok a =>
+    if a.destDepth != 0 && a.srcDepth == 0 then "destDepth"
+    else if a.srcDepth != 0 && a.destDepth == 0 then "srcDepth"
+    else "inconsistent"
+  | .error _ =>
+    if SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.mintFits w then
+      if SeLe4n.Kernel.Architecture.SyscallArgDecode.CNodeOpWord.rights w != 0 then "rights"
+      else "inconsistent"
+    else "reserved"
+
 private def abiLayoutTableLines : List String :=
   "# ABI layout: MessageInfo fields and bounds (Lean/Rust cross-check)"
     :: (List.range 64).map (fun j => s!"bit {j} {abiLayoutBitOwner j}")
@@ -1295,6 +1313,7 @@ private def abiLayoutTableLines : List String :=
          s!"maxLabel {MessageInfo.maxLabel}",
          s!"errorLabelBase {Kernel.Architecture.errorLabelBase}",
          s!"syscallAbiVersion {Kernel.Architecture.syscallAbiVersion}" ]
+    ++ (List.range 64).map (fun j => s!"cnodeOpBit {j} {cnodeOpBitOwner j}")
 
 private def abiLayoutFixturePath : String := "tests/fixtures/abi_layout.expected"
 

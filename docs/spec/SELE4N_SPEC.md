@@ -7951,7 +7951,7 @@ capability plus an index-and-depth pair, where this ABI passes one word.
 | Syscall | Minimum | seL4 counterpart and its check |
 |---------|---------|--------------------------------|
 | `cspaceMint` | 4 | `decodeCNodeInvocation`, Mint `length < 6` |
-| `cspaceCopy`, `cspaceMove` | 2 | `decodeCNodeInvocation`, `length < 4` |
+| `cspaceCopy`, `cspaceMove` | 4 | `decodeCNodeInvocation`, `length < 4` (the CNode operation word, below) |
 | `cspaceDelete`, `cspaceRevoke` | 1 | `decodeCNodeInvocation`, `length < 2` |
 | `untypedRetype` | 4 | `decodeUntypedInvocation`, `length < 6` |
 | `vspaceMap` | 4 | `decodeARMFrameInvocation`, Map `length < 3` |
@@ -7967,6 +7967,35 @@ capability plus an index-and-depth pair, where this ABI passes one word.
 
 The IPC calls, the signal (`notificationSignal`) and the declassifications
 have minimum 0, because seL4 checks no length for an IPC or a signal.
+
+**The CNode operation word.**  `cspaceCopy` and `cspaceMove` address their two
+slots as seL4's `seL4_CNode_Copy` and `seL4_CNode_Move` do, by an index and a
+depth each: x2 is the destination index, resolved in the invoked CNode; x3 is
+the source root, the address of a CNode capability in the caller's CSpace,
+resolved at the caller's root depth; x4 is the source index, resolved in that
+CNode; and x5 packs the destination depth in bits `[0, 8)` and the source
+depth in bits `[8, 16)`.  Bits `[16, 21)` are a mint's rights.  A copy or a
+move that sets any bit from 16 up is refused `.invalidArgument`.  seL4 passes
+the source root as an extra capability and each depth as a word of its own.
+Packing the depths is what keeps the two operations within the four inline
+argument registers, so they read no IPC-buffer word.  The layout has one owner,
+`CNodeOpWord` (`SyscallArgDecode`), which the decoders read through.  The Lean
+suite and the Rust ABI crate (`sele4n_abi::args::cspace::cnode_op_word`) each
+render the layout by decoding every bit alone, and both renderings must equal
+`tests/fixtures/abi_layout.expected`.
+
+The slots resolve in seL4's order (`resolveCNodeOpSlots`).  First each depth
+is checked against `1 .. 64`, the destination's and then the source's, before
+any lookup; a depth outside that range is `.rangeError`.  Then the
+destination is resolved to exactly its depth (`resolveCNodeOpAddress`) and
+must be empty (`.targetSlotOccupied`).  Then the source root must name a
+CNode, or the call is refused `.invalidCapability`.  Last, the source is
+resolved to exactly its depth.  A lookup that stops with bits still to resolve
+is `.depthMismatch`.  Every other lookup refusal is the resolver's own code.
+On the compiled path the resolution runs in continuation form
+(`resolveCNodeOpSlotsK`), so it builds no slot reference or pair.
+`mintReplyCap` names two slots of the invoked CNode by number
+(`decodeMintReplyCapArgs`).
 
 **One owner.** `truncationMinimum` (`SyscallArgDecode`) is the table.  The
 router (`routedShortTail`), every decode's first action and the audit arms
